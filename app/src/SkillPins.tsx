@@ -8,7 +8,7 @@
  * `purlis skill pin` calls too, one commit. A chat may write its persona's pins, so a pin is
  * always seen and can always be undone.
  */
-import { type SkillPinner } from "./bindings";
+import { type SkillPinner, type SkillPinsRefused } from "./bindings";
 import { pinnerSaid } from "./skillStudio";
 import { Button } from "./ui/button/Button";
 import { Switch } from "./ui/choice/Switch";
@@ -18,11 +18,21 @@ export function pinnedChats(by: SkillPinner): string {
   return by.at === "workspace" ? `${by.name}'s chats` : `chats as ${by.name}`;
 }
 
-/** **The Pin switch** of a studio row: on while `by` pins `name`. */
+/** Why a chat reads none of a pinner's pins, in one sentence: `ops's pins aren't used: …`. */
+export function pinsRefusedSaid(refused: SkillPinsRefused): string {
+  return `${refused.by.name}'s pins aren't used: ${refused.why}.`;
+}
+
+/**
+ * **The Pin switch** of a studio row: on while `by` pins `name`. Where a chat reads none of
+ * `by`'s pins (`refused`), it says "not used" and why, so a pin that has no effect never looks
+ * as if it works.
+ */
 export function SkillPinSwitch({
   name,
   by,
   pinned,
+  refused,
   busy,
   onPin,
 }: {
@@ -30,24 +40,64 @@ export function SkillPinSwitch({
   /** The workspace or the persona the studio is filtered to. */
   by: SkillPinner;
   pinned: boolean;
+  refused?: SkillPinsRefused | null;
   busy: boolean;
   /** Pins it (`true`) or unpins it. */
   onPin: (on: boolean) => void;
 }) {
+  const unused = refused !== undefined && refused !== null;
   return (
     <Switch
-      aria-label={`Pin ${name} for ${by.name}`}
+      aria-label={`Pin ${name} for ${pinnerSaid(by)}`}
       isSelected={pinned}
       isDisabled={busy}
       tooltip={
-        pinned
-          ? `Pinned for ${pinnedChats(by)}: no router hides it from them`
-          : `Keep it listed for ${pinnedChats(by)}, past any budget`
+        unused
+          ? pinsRefusedSaid(refused)
+          : pinned
+            ? `Pinned for ${pinnedChats(by)}: no router hides it from them`
+            : `Keep it listed for ${pinnedChats(by)}, past any budget`
       }
       onChange={onPin}
     >
-      Pinned
+      {unused && pinned ? "Pinned, not used" : "Pinned"}
     </Switch>
+  );
+}
+
+/**
+ * **Why a pinner's pins aren't used**, with the way out: Remove for the entry that is not a
+ * skill's name, one change, or the file to edit where the list is too long.
+ */
+export function SkillPinsRefusedLine({
+  refused,
+  busy,
+  onRemove,
+}: {
+  refused: SkillPinsRefused;
+  busy: boolean;
+  /** Unpins `bad`, the entry that is not a skill's name. */
+  onRemove: (bad: string) => void;
+}) {
+  const bad = refused.bad;
+  return (
+    <span className="honest" data-testid="skill-pins-refused">
+      {pinsRefusedSaid(refused)}{" "}
+      {bad === null ? (
+        <>
+          Unpin some, or edit <code>{refused.file}</code>.
+        </>
+      ) : (
+        <Button
+          size="sm"
+          aria-label={`Remove the pin ${JSON.stringify(bad)} from ${pinnerSaid(refused.by)}`}
+          isDisabled={busy}
+          onPress={() => onRemove(bad)}
+        >
+          Remove it
+        </Button>
+      )}
+    </span>
   );
 }
 
@@ -55,13 +105,19 @@ export function SkillPinSwitch({
 export function SkillPinnedBy({
   name,
   pinners,
+  refused = [],
   busy,
   onUnpin,
+  onRemove,
 }: {
   name: string;
   pinners: readonly SkillPinner[];
+  /** Each of `pinners` whose pins a chat reads none of, and why. */
+  refused?: readonly SkillPinsRefused[];
   busy: boolean;
   onUnpin: (by: SkillPinner) => void;
+  /** Unpins `bad`, an entry of `by`'s that is not a skill's name. */
+  onRemove?: (by: SkillPinner, bad: string) => void;
 }) {
   return (
     <section aria-labelledby="skill-pinned-by-heading" data-testid="skill-pinned-by">
@@ -70,19 +126,32 @@ export function SkillPinnedBy({
         <p className="honest">No workspace or persona pins {name}.</p>
       ) : (
         <ul aria-label={`Who pins ${name}`}>
-          {pinners.map((by) => (
-            <li key={`${by.at}\u0000${by.name}`}>
-              Pinned for {pinnerSaid(by)}{" "}
-              <Button
-                size="sm"
-                aria-label={`Unpin ${name} for ${by.name}`}
-                isDisabled={busy}
-                onPress={() => onUnpin(by)}
-              >
-                Unpin
-              </Button>
-            </li>
-          ))}
+          {pinners.map((by) => {
+            const unused = refused.find((one) => one.by.at === by.at && one.by.name === by.name);
+            return (
+              <li key={`${by.at}\u0000${by.name}`}>
+                Pinned for {pinnerSaid(by)}{" "}
+                <Button
+                  size="sm"
+                  aria-label={`Unpin ${name} for ${pinnerSaid(by)}`}
+                  isDisabled={busy}
+                  onPress={() => onUnpin(by)}
+                >
+                  Unpin
+                </Button>
+                {unused !== undefined && (
+                  <>
+                    {" "}
+                    <SkillPinsRefusedLine
+                      refused={unused}
+                      busy={busy}
+                      onRemove={(bad) => onRemove?.(by, bad)}
+                    />
+                  </>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

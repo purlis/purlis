@@ -27,7 +27,7 @@ import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { clashSaid, SkillStudioHarnesses } from "./SkillStudioHarnesses";
 import { Button, ButtonRow } from "./ui/button/Button";
-import { SkillPinSwitch } from "./SkillPins";
+import { SkillPinSwitch, SkillPinsRefusedLine } from "./SkillPins";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
 import { SkillRowActions } from "./SkillRowActions";
@@ -98,6 +98,21 @@ const DRAFT_WITH_A_CHAT = "Ask a chat to draft a skill";
 /** The levels a skill can be pinned at (SK-15d): the project's. A built-in skill is always
  *  listed, and a harness's or a repo's is never purlis's to route. */
 const PINNABLE: ReadonlySet<StudioSkill["level"]> = new Set(["project", "workspace", "persona"]);
+
+/**
+ * **The row of each name that carries its Pin switch** (SK-15d): of its rows at one of the
+ * project's levels, the copy a chat gets, or else the first, where a pin of it may still be
+ * written.
+ */
+function pinRowsOf(skills: readonly StudioSkill[]): Map<string, StudioSkill> {
+  const rows = new Map<string, StudioSkill>();
+  for (const skill of skills) {
+    if (!PINNABLE.has(skill.level)) continue;
+    const was = rows.get(skill.name);
+    if (was === undefined || (!was.on && skill.on)) rows.set(skill.name, skill);
+  }
+  return rows;
+}
 
 /** The type a dragged row carries, so a drop from elsewhere is not read as a skill. */
 const DRAGGED = "application/x-purlis-skill";
@@ -546,10 +561,10 @@ export function SkillStudioTab({
   // first row of a name a chat could have pinned (one of the project's levels), where the chat
   // gets it or a pin of it is still written, so a pin can always be undone.
   const pinner = pinnerOf(scope);
-  const pinRows = new Set<string>();
+  const pinRows = pinRowsOf(studio.skills);
+  const refusedPins = pinner === null ? null : (studio.pins_refused ?? null);
   const pinOf = (skill: StudioSkill) => {
-    if (pinner === null || !PINNABLE.has(skill.level) || pinRows.has(skill.name)) return null;
-    pinRows.add(skill.name);
+    if (pinner === null || pinRows.get(skill.name) !== skill) return null;
     const pinned = skill.pinned_by.some((by) => by.at === pinner.at && by.name === pinner.name);
     return skill.on || pinned ? pinned : null;
   };
@@ -563,6 +578,7 @@ export function SkillStudioTab({
           name={skill.name}
           by={pinner}
           pinned={pinned}
+          refused={refusedPins}
           busy={busy}
           onPin={(on) =>
             change(on ? "The skill was not pinned" : "The skill was not unpinned", () =>
@@ -596,6 +612,19 @@ export function SkillStudioTab({
       {panel}
       {drafted}
       {starts}
+      {refusedPins !== null && (
+        <p>
+          <SkillPinsRefusedLine
+            refused={refusedPins}
+            busy={busy}
+            onRemove={(bad) =>
+              change("The pin was not removed", () =>
+                commands.skillPin(plane, refusedPins.by, bad, false),
+              )
+            }
+          />
+        </p>
+      )}
       <div
         className="skill-levels"
         role="group"

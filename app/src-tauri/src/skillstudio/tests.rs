@@ -91,6 +91,7 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             harnesses: Vec::new(),
             clashes: Vec::new(),
             first: StudioFirst::default(),
+            pins_refused: None,
         }
     );
 }
@@ -487,4 +488,26 @@ fn a_row_says_which_of_the_studios_workspace_and_persona_pin_it_sk15d() {
         ]
     );
     assert!(pins(None, None).iter().all(|(_, by)| by.is_empty()));
+    assert_eq!(
+        studio(&root, None, true, Some("alpha"), None, &no_harness()).pins_refused,
+        None
+    );
+
+    // A list a chat would not read says why, on the studio of its workspace (SK-15d).
+    std::fs::write(
+        root.join("workspaces/alpha/workspace.json"),
+        r#"{"settings": {"skills": {"pinned": ["deploy", "Bad Name"]}}}"#,
+    )
+    .unwrap();
+    let refused = studio(&root, None, true, Some("alpha"), None, &no_harness())
+        .pins_refused
+        .expect("refused");
+    assert_eq!(refused.by, alpha);
+    assert_eq!(refused.bad.as_deref(), Some("Bad Name"));
+    assert_eq!(refused.file, "workspaces/alpha/workspace.json");
+    assert!(
+        studio(&root, None, true, None, Some("ops"), &no_harness())
+            .pins_refused
+            .is_none()
+    );
 }

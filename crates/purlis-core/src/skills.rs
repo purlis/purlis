@@ -48,7 +48,7 @@ mod on_machine;
 pub mod persona;
 mod routing;
 
-pub use routing::{PinnedBy, pinners_of, pins_written};
+pub use routing::{PinnedBy, PinsRefused, pinners_of, pins_file, pins_refused, pins_written};
 pub(crate) use routing::{pin, pinners_of_a_chat, pins_or_none};
 
 pub use on_machine::on_machine;

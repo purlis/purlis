@@ -68,6 +68,7 @@ function page(lifecycle: unknown, unused: number | null) {
     used_by: ["release"],
     uses_cut: false,
     pinned_by: [] as unknown[],
+    pins_refused: [] as unknown[],
   };
 }
 
@@ -147,12 +148,48 @@ describe("a skill's history, state and uses", () => {
     const pins = await screen.findByTestId("skill-pinned-by");
     expect(pins.textContent).toContain("Pinned for workspace ops");
     expect(pins.textContent).toContain("Pinned for persona reviewer");
-    fireEvent.click(screen.getByRole("button", { name: "Unpin deploy for reviewer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unpin deploy for persona reviewer" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_pin")?.args).toMatchObject({
         plane: "p",
         by: { at: "persona", name: "reviewer" },
         name: "deploy",
+        on: false,
+      }),
+    );
+  });
+
+  it("says on Pinned by that a pinner's pins aren't used, and removes the bad entry (SK-15d)", async () => {
+    const asked: Array<{ cmd: string; args: unknown }> = [];
+    mockIPC((cmd, args) => {
+      asked.push({ cmd, args });
+      if (cmd === "skill_details")
+        return {
+          ...page({ state: "active" }, null),
+          pinned_by: [{ at: "workspace", name: "ops" }],
+          pins_refused: [
+            {
+              by: { at: "workspace", name: "ops" },
+              why: '"Bad" is not a skill\'s name (it holds a capital)',
+              bad: "Bad",
+              file: "workspaces/ops/workspace.json",
+            },
+          ],
+        };
+      if (cmd === "skill_pin") return { notes: [] };
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
+
+    const pins = await screen.findByTestId("skill-pinned-by");
+    expect(pins.textContent).toContain(`ops's pins aren't used: "Bad" is not a skill's name`);
+    fireEvent.click(
+      screen.getByRole("button", { name: 'Remove the pin "Bad" from workspace ops' }),
+    );
+    await waitFor(() =>
+      expect(asked.find((one) => one.cmd === "skill_pin")?.args).toMatchObject({
+        by: { at: "workspace", name: "ops" },
+        name: "Bad",
         on: false,
       }),
     );

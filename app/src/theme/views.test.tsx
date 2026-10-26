@@ -762,6 +762,7 @@ const ORDINARY: Answers = {
     used_by: ["release"],
     uses_cut: false,
     pinned_by: [],
+    pins_refused: [],
   },
   // The skill tab's panels, as the core answers them (ADR 0101 §6): the Runs panel's table.
   skill_panels: [

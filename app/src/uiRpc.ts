@@ -9319,6 +9319,8 @@ export type SkillDetails = {
 	 *  chats: the workspaces first, then the personas.
 	 */
 	pinned_by: SkillPinner[],
+	/**  Of those, each whose pins a chat reads none of, and why (SK-15d). */
+	pins_refused: SkillPinsRefused[],
 };
 
 /**  One version's diff. */
@@ -9461,6 +9463,23 @@ export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: s
  *  `PinnedBy`.
  */
 export type SkillPinner = { at: "workspace"; name: string } | { at: "persona"; name: string };
+
+/**
+ *  **Why a chat reads none of a pinner's pins** (SK-15d): the core's `PinsRefused`, with whose
+ *  list it is.
+ */
+export type SkillPinsRefused = {
+	by: SkillPinner,
+	/**
+	 *  What is wrong, in a clause: `"Not A Name" is not a skill's name (…)`, `the list holds more
+	 *  than 64 pins`.
+	 */
+	why: string,
+	/**  The entry that is not a skill's name, which Unpin takes out; null for too many. */
+	bad: string | null,
+	/**  The file the list is written in, relative to the project. */
+	file: string,
+};
 
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
@@ -9860,6 +9879,11 @@ export type Studio = {
 	clashes: StudioClash[],
 	/**  What it offers to start from (SK-22, #2785): the core's `skills::first_open`. */
 	first: StudioFirst,
+	/**
+	 *  Why a chat reads none of the pins of the workspace or the persona it is filtered to,
+	 *  where it reads none (SK-15d): its rows' Pin switches then say so.
+	 */
+	pins_refused: SkillPinsRefused | null,
 };
 
 /**

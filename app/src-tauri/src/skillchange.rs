@@ -662,6 +662,33 @@ impl From<purlis_core::skills::PinnedBy> for SkillPinner {
     }
 }
 
+/// **Why a chat reads none of a pinner's pins** (SK-15d): the core's `PinsRefused`, with whose
+/// list it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillPinsRefused {
+    pub by: SkillPinner,
+    /// What is wrong, in a clause: `"Not A Name" is not a skill's name (…)`, `the list holds more
+    /// than 64 pins`.
+    pub why: String,
+    /// The entry that is not a skill's name, which Unpin takes out; null for too many.
+    pub bad: Option<String>,
+    /// The file the list is written in, relative to the project.
+    pub file: String,
+}
+
+/// Why a chat reads none of `by`'s pins in the project at `root`, or `None`.
+pub(crate) fn pins_refused(
+    root: &std::path::Path,
+    by: &purlis_core::skills::PinnedBy,
+) -> Option<SkillPinsRefused> {
+    purlis_core::skills::pins_refused(root, by).map(|refused| SkillPinsRefused {
+        by: by.clone().into(),
+        why: refused.why,
+        bad: refused.bad,
+        file: refused.file,
+    })
+}
+
 /// **Pins `name` for `by`'s chats, or unpins it** (SK-15d, #3232): the core's `verbs::pin`,
 /// which `purlis skill pin` calls too, one commit.
 pub(crate) fn pin(

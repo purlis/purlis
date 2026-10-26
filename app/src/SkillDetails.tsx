@@ -196,9 +196,13 @@ export function SkillDetailsPanel({
       <SkillPinnedBy
         name={name}
         pinners={page.pinned_by}
+        refused={page.pins_refused}
         busy={busy}
         onUnpin={(by) =>
           change("The skill was not unpinned", () => commands.skillPin(plane, by, name, false))
+        }
+        onRemove={(by, bad) =>
+          change("The pin was not removed", () => commands.skillPin(plane, by, bad, false))
         }
       />
     </div>

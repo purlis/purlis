@@ -42,25 +42,78 @@ pub(crate) fn pins_of(
                 .map(|persona| crate::personaverbs::pinned_skills(plane, persona))
                 .unwrap_or_default(),
         );
+    read_pins(written).map_err(|refused| match refused.bad {
+        Some(_) => format!(
+            "a pin of this chat's {}, so none of its pins are read",
+            refused.why
+        ),
+        None => format!("this chat has more than {MOST_PINS} pins, so none of them are read"),
+    })
+}
+
+/// **Why a list of pins is not read** (SK-15d, #3232): the entry that is not a skill's name, or
+/// that it holds more than [`MOST_PINS`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PinsRefused {
+    /// What is wrong, in a clause: `"Not A Name" is not a skill's name (…)`, `the list holds more
+    /// than 64 pins`.
+    pub why: String,
+    /// The entry that is not a skill's name, which unpinning takes out; `None` for too many.
+    pub bad: Option<String>,
+    /// The file the list is written in, relative to the project.
+    pub file: String,
+}
+
+/// `written`, each name once, or why a chat reads none of it ([`pins_of`]).
+fn read_pins(written: impl Iterator<Item = String>) -> Result<Vec<String>, PinsRefused> {
     let mut seen = std::collections::HashSet::new();
     let mut pins = Vec::new();
     for name in written {
         if let Some(problem) = purlis_skills::change::name_problem(&name) {
-            return Err(format!(
-                "a pin of this chat's is not a skill's name ({problem}), so none of its pins \
-                 are read"
-            ));
+            return Err(PinsRefused {
+                why: format!("{name:?} is not a skill's name ({problem})"),
+                bad: Some(name),
+                file: String::new(),
+            });
         }
         if seen.insert(name.clone()) {
             pins.push(name);
         }
         if pins.len() > MOST_PINS {
-            return Err(format!(
-                "this chat has more than {MOST_PINS} pins, so none of them are read"
-            ));
+            return Err(PinsRefused {
+                why: format!("the list holds more than {MOST_PINS} pins"),
+                bad: None,
+                file: String::new(),
+            });
         }
     }
     Ok(pins)
+}
+
+/// **Why a chat would read none of `by`'s pins**, or `None` where it reads them (SK-15d): the
+/// pinner's own list held to the limits [`pins_of`] holds a chat's to, so a pin that has no
+/// effect never looks as if it works.
+pub fn pins_refused(plane: &Path, by: &PinnedBy) -> Option<PinsRefused> {
+    read_pins(pins_written(plane, by).into_iter())
+        .err()
+        .map(|refused| PinsRefused {
+            file: pins_file(plane, by),
+            ..refused
+        })
+}
+
+/// The file `by`'s pins are written in, relative to the project.
+pub fn pins_file(plane: &Path, by: &PinnedBy) -> String {
+    match by {
+        PinnedBy::Workspace(ws) => crate::settings::workspace::named(ws),
+        PinnedBy::Persona(persona) => {
+            let path = crate::personas::def_path(plane, persona);
+            path.strip_prefix(plane)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .into_owned()
+        }
+    }
 }
 
 /// **A chat's pins, or none where they are refused** ([`pins_of`]), the refusal said in the log:
@@ -149,6 +202,18 @@ pub(crate) fn pin(plane: &Path, by: &PinnedBy, name: &str, on: bool) -> Result<b
     let mut pins = pins_written(plane, by);
     if pins.iter().any(|one| one == name) == on {
         return Ok(false);
+    }
+    // A chat reads none of a list past the most it reads, so a pin that would take it there is
+    // refused rather than written to no effect (SK-15d).
+    if on && pins.len() >= MOST_PINS {
+        let whose = match by {
+            PinnedBy::Workspace(ws) => ws,
+            PinnedBy::Persona(persona) => persona,
+        };
+        return Err(format!(
+            "{whose} already pins {MOST_PINS} skills, the most a chat reads, so {name} was not \
+             pinned: unpin one first"
+        ));
     }
     if on {
         pins.push(name.to_owned());

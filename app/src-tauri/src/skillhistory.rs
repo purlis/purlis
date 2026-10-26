@@ -118,6 +118,8 @@ pub struct SkillDetails {
     /// Every workspace and persona that pins it (SK-15d), so no router hides it from their
     /// chats: the workspaces first, then the personas.
     pub pinned_by: Vec<crate::skillchange::SkillPinner>,
+    /// Of those, each whose pins a chat reads none of, and why (SK-15d).
+    pub pins_refused: Vec<crate::skillchange::SkillPinsRefused>,
 }
 
 /// One version's diff.
@@ -180,6 +182,7 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
         .collect();
     let built_in = built_in();
     let node = purlis_core::skills::graph::uses_of(root, built_in.as_deref(), name);
+    let pinners = purlis_core::skills::pinners_of(root, name);
     SkillDetails {
         copies,
         uses: node
@@ -194,10 +197,11 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
             .collect(),
         used_by: node.used_by,
         uses_cut: node.cut,
-        pinned_by: purlis_core::skills::pinners_of(root, name)
-            .into_iter()
-            .map(Into::into)
+        pins_refused: pinners
+            .iter()
+            .filter_map(|by| crate::skillchange::pins_refused(root, by))
             .collect(),
+        pinned_by: pinners.into_iter().map(Into::into).collect(),
     }
 }
 

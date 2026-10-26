@@ -9,8 +9,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
-import type { SkillPinner } from "./bindings";
-import { SkillPinnedBy, SkillPinSwitch } from "./SkillPins";
+import type { SkillPinner, SkillPinsRefused } from "./bindings";
+import { SkillPinnedBy, SkillPinSwitch, SkillPinsRefusedLine } from "./SkillPins";
 import { expectFocusInSight } from "./stories.testkit";
 
 const OPS: SkillPinner = { at: "workspace", name: "ops" };
@@ -59,7 +59,7 @@ type Story = StoryObj<typeof meta>;
  */
 export const PinnedByTwo: Story = {
   play: async ({ canvas, userEvent }) => {
-    const pin = canvas.getByRole("switch", { name: "Pin deploy for ops" });
+    const pin = canvas.getByRole("switch", { name: "Pin deploy for workspace ops" });
     await expect(pin).not.toBeChecked();
 
     await userEvent.tab();
@@ -72,9 +72,11 @@ export const PinnedByTwo: Story = {
     await expect(list).toHaveTextContent("Pinned for persona reviewer");
 
     await userEvent.tab();
-    await expect(canvas.getByRole("button", { name: "Unpin deploy for ops" })).toHaveFocus();
+    await expect(
+      canvas.getByRole("button", { name: "Unpin deploy for workspace ops" }),
+    ).toHaveFocus();
     await userEvent.tab();
-    const unpin = canvas.getByRole("button", { name: "Unpin deploy for reviewer" });
+    const unpin = canvas.getByRole("button", { name: "Unpin deploy for persona reviewer" });
     await expect(unpin).toHaveFocus();
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
@@ -96,5 +98,48 @@ export const PinnedByNone: Story = {
     await expect(canvas.getByTestId("skill-pinned-by")).toHaveTextContent(
       "No workspace or persona pins deploy.",
     );
+  },
+};
+
+const BAD: SkillPinsRefused = {
+  by: OPS,
+  why: '"Deploy Now" is not a skill\'s name (it holds a capital)',
+  bad: "Deploy Now",
+  file: "workspaces/ops/workspace.json",
+};
+
+/**
+ * **Pins that aren't used**: ops's list holds an entry that is no skill's name, so a chat reads
+ * none of it. The switch says "Pinned, not used", the line says why, and Remove it takes the
+ * entry out; Tab reaches the switch, then Remove it, each in sight.
+ */
+export const PinsNotUsed: Story = {
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-3)", inlineSize: 520 }}>
+      <SkillPinSwitch
+        name="deploy"
+        by={OPS}
+        pinned
+        refused={BAD}
+        busy={false}
+        onPin={() => undefined}
+      />
+      <p style={{ margin: 0 }}>
+        <SkillPinsRefusedLine refused={BAD} busy={false} onRemove={() => undefined} />
+      </p>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    await expect(canvas.getByText("Pinned, not used")).toBeInTheDocument();
+    await userEvent.tab();
+    await expect(
+      canvas.getByRole("switch", { name: "Pin deploy for workspace ops" }),
+    ).toHaveFocus();
+    await userEvent.tab();
+    await expect(
+      canvas.getByRole("button", { name: 'Remove the pin "Deploy Now" from workspace ops' }),
+    ).toHaveFocus();
+    expectFocusInSight();
+    (document.activeElement as HTMLElement | null)?.blur();
   },
 };

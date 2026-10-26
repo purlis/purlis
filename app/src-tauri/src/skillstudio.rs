@@ -395,6 +395,9 @@ pub struct Studio {
     pub clashes: Vec<StudioClash>,
     /// What it offers to start from (SK-22, #2785): the core's `skills::first_open`.
     pub first: StudioFirst,
+    /// Why a chat reads none of the pins of the workspace or the persona it is filtered to,
+    /// where it reads none (SK-15d): its rows' Pin switches then say so.
+    pub pins_refused: Option<crate::skillchange::SkillPinsRefused>,
 }
 
 /// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
@@ -453,6 +456,7 @@ pub(crate) fn studio(
             harnesses: Vec::new(),
             clashes: Vec::new(),
             first: StudioFirst::default(),
+            pins_refused: None,
         };
     }
     let off = workspace
@@ -474,6 +478,9 @@ pub(crate) fn studio(
             (by, pins)
         })
         .collect();
+    let pins_refused = pinners
+        .iter()
+        .find_map(|(by, _)| crate::skillchange::pins_refused(root, by));
     let pinned_by = |name: &str| {
         pinners
             .iter()
@@ -550,6 +557,7 @@ pub(crate) fn studio(
         harnesses,
         clashes,
         first,
+        pins_refused,
     }
 }
 

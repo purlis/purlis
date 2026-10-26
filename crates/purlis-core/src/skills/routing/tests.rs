@@ -539,3 +539,73 @@ fn a_chat_says_which_of_its_workspace_and_persona_pin_anything_sk15d() {
         ]
     );
 }
+
+#[test]
+fn a_pin_past_the_most_a_chat_reads_is_refused_and_says_why_sk15d() {
+    let (tmp, _bundle) = a_plane_of(super::MOST_PINS + 1);
+    let root = tmp.path();
+    let workspace = PinnedBy::Workspace("smart-ide".to_owned());
+    for at in 0..super::MOST_PINS {
+        assert!(pin(root, &workspace, &format!("skill-{at:02}"), true).unwrap());
+    }
+
+    let past = format!("skill-{:02}", super::MOST_PINS);
+    let refused = pin(root, &workspace, &past, true).unwrap_err();
+
+    assert!(refused.contains("already pins 64 skills"), "{refused}");
+    assert!(!pins_written(root, &workspace).contains(&past));
+    assert_eq!(pins_refused(root, &workspace), None);
+    // Unpinning one is still taken.
+    assert!(pin(root, &workspace, "skill-00", false).unwrap());
+}
+
+#[test]
+fn a_pinners_list_that_a_chat_would_not_read_says_why_and_names_a_bad_entry_sk15d() {
+    let (tmp, _bundle) = a_plane_of(2);
+    let root = tmp.path();
+    let workspace = PinnedBy::Workspace("smart-ide".to_owned());
+    std::fs::write(
+        root.join("workspaces/smart-ide/workspace.json"),
+        r#"{"settings": {"skills": {"pinned": ["skill-00", "Not A Name"]}}}"#,
+    )
+    .unwrap();
+
+    let refused = pins_refused(root, &workspace).expect("refused");
+    assert_eq!(refused.bad.as_deref(), Some("Not A Name"));
+    assert!(
+        refused.why.contains("\"Not A Name\" is not a skill's name"),
+        "{}",
+        refused.why
+    );
+    assert_eq!(refused.file, "workspaces/smart-ide/workspace.json");
+    assert_eq!(
+        pins_refused(root, &PinnedBy::Persona("reviewer".to_owned())),
+        None
+    );
+
+    // The bad entry is unpinned like any other, and the list is read again.
+    assert!(pin(root, &workspace, "Not A Name", false).unwrap());
+    assert_eq!(pins_refused(root, &workspace), None);
+    assert_eq!(pins_written(root, &workspace), ["skill-00"]);
+}
+
+#[test]
+fn a_pinners_list_of_too_many_says_so_and_names_no_entry_sk15d() {
+    let (tmp, _bundle) = a_plane_of(1);
+    let root = tmp.path();
+    let names: Vec<String> = (0..=super::MOST_PINS)
+        .map(|at| format!("\"p-{at}\""))
+        .collect();
+    std::fs::write(
+        root.join("workspaces/smart-ide/workspace.json"),
+        format!(
+            r#"{{"settings": {{"skills": {{"pinned": [{}]}}}}}}"#,
+            names.join(",")
+        ),
+    )
+    .unwrap();
+
+    let refused = pins_refused(root, &PinnedBy::Workspace("smart-ide".to_owned())).unwrap();
+    assert_eq!(refused.bad, None);
+    assert!(refused.why.contains("more than 64 pins"), "{}", refused.why);
+}
