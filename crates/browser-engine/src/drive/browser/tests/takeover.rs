@@ -1425,3 +1425,356 @@ fn a_code_typed_across_several_boxes_stays_out_of_answers_about_another_page() {
 
     assert!(text.contains("\"Your code (blanked) is right\""), "{text}");
 }
+
+/// A browser over a large page (#3043): a read of its whole tree takes `takes` a frame, a key
+/// waits `key_waits` for it, and a read may take `read_may_take`.
+fn a_large_page(
+    takes: Duration,
+    key_waits: Duration,
+    read_may_take: Duration,
+) -> (super::Browser, Arc<super::Engine>) {
+    a_large_page_kept_for(takes, key_waits, read_may_take, Duration::from_secs(10))
+}
+
+/// [`a_large_page`], a read that came used for `kept_for`.
+fn a_large_page_kept_for(
+    takes: Duration,
+    key_waits: Duration,
+    read_may_take: Duration,
+    kept_for: Duration,
+) -> (super::Browser, Arc<super::Engine>) {
+    let (browser, engine) = super::browser_with(crate::drive::Limits {
+        key_reads_within: key_waits,
+        tree_reads_within: read_may_take,
+        tree_read_kept_for: kept_for,
+        ..super::limits()
+    });
+    super::super::lock(&engine.model).ax_takes = Some(takes);
+    (browser, engine)
+}
+
+/// The person types a key into the page's first field (Name), blanked from the tree around it
+/// (#2967), so a key into any other field reads the page's whole tree.
+fn typed_into_the_first_field(browser: &super::Browser, engine: &super::Engine, aim: &Aim) {
+    super::super::lock(&engine.model).focused_backend = Some(20);
+    browser.person_input(&key(aim, "a", true)).unwrap();
+}
+
+/// A script of the page moves the focus to the main document's Secret word field.
+fn the_focus_moves_to_the_secret_word(engine: &super::Engine) {
+    focus_on(engine, &[("PAGE-1", "12")]);
+    let mut model = super::super::lock(&engine.model);
+    model.focused_on.insert("S-PAGE-1".into(), Some(21));
+    model.focused_on.insert("S-PAYMENT".into(), None);
+}
+
+/// A script of the page moves the focus into the payment frame's button.
+fn the_focus_moves_into_the_payment_frame(engine: &super::Engine) {
+    focus_on(engine, &[("PAYMENT-FRAME", "3")]);
+    let mut model = super::super::lock(&engine.model);
+    model.focused_on.insert("S-PAGE-1".into(), Some(50));
+    model.focused_on.insert("S-PAYMENT".into(), Some(7));
+}
+
+/// The element the field read after the last key sent was, by its engine id.
+fn read_after_the_key(engine: &super::Engine) -> Option<i64> {
+    engine
+        .sent("DOM.resolveNode")
+        .last()
+        .and_then(|s| s.params["backendNodeId"].as_i64())
+}
+
+/// Sleeps past a read's end, with room for a busy machine.
+fn past_the_read() {
+    std::thread::sleep(Duration::from_millis(1500));
+}
+
+#[test]
+fn a_key_whose_page_reads_past_its_limit_is_held_and_said_so() {
+    // #3043: the page's tree takes longer to read than the key waits for it.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(600),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+
+    let started = Instant::now();
+    let held = browser.person_input(&key(&aim, "x", true));
+
+    assert_eq!(held, Err(Refusal::PageUnreadInTime));
+    assert!(
+        started.elapsed() < Duration::from_millis(500),
+        "the key waited {:?}",
+        started.elapsed()
+    );
+    assert!(
+        held.unwrap_err().to_string().contains("held back"),
+        "the key is said to be held"
+    );
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+}
+
+#[test]
+fn the_read_a_held_key_left_running_is_what_the_next_key_is_blanked_from() {
+    // #3043: the read goes on past the key it was made for, and the next key takes it.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    typed_into_the_first_field(&browser, &engine, &aim);
+    the_focus_moves_to_the_secret_word(&engine);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    past_the_read();
+
+    browser.person_input(&key(&aim, "y", true)).unwrap();
+
+    assert_eq!(page_reads(&engine), 1, "the page was read again");
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 2);
+    assert_eq!(read_after_the_key(&engine), Some(21));
+    super::super::lock(&engine.model).value = "held-then-typed".into();
+    browser.person_input(&key(&aim, "z", true)).unwrap();
+    browser.hand_back();
+    let text = snapshot(&browser, 1);
+    assert!(!text.contains("held-then-typed"), "{text}");
+}
+
+#[test]
+fn a_kept_read_is_not_used_once_the_focus_moved_into_a_frame() {
+    // #3043: while the person waited for the read, a script moved the focus from the main
+    // document's field into a frame. The read is not the page now: the key waits for another.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    typed_into_the_first_field(&browser, &engine, &aim);
+    the_focus_moves_to_the_secret_word(&engine);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    // The read has come; the script moves the focus after it.
+    past_the_read();
+    the_focus_moves_into_the_payment_frame(&engine);
+
+    let stale = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(stale, Err(Refusal::PageUnreadInTime));
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 1, "a key went");
+    // Read anew, the field the key goes to is the one in the frame.
+    let _ = browser.person_input(&key(&aim, "y", true));
+    past_the_read();
+    browser.person_input(&key(&aim, "y", true)).unwrap();
+    assert_eq!(page_reads(&engine), 2);
+    assert_eq!(read_after_the_key(&engine), Some(7));
+}
+
+#[test]
+fn a_kept_read_is_not_used_once_the_focus_moved_out_of_a_frame() {
+    // #3043: the focus was in a frame's field when the read began, and a script moved it to
+    // the main document's field since.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    typed_into_the_first_field(&browser, &engine, &aim);
+    the_focus_moves_into_the_payment_frame(&engine);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    past_the_read();
+    the_focus_moves_to_the_secret_word(&engine);
+
+    let stale = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(stale, Err(Refusal::PageUnreadInTime));
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 1, "a key went");
+    let _ = browser.person_input(&key(&aim, "y", true));
+    past_the_read();
+    browser.person_input(&key(&aim, "y", true)).unwrap();
+    assert_eq!(read_after_the_key(&engine), Some(21));
+}
+
+#[test]
+fn a_read_that_came_long_before_its_key_is_read_anew() {
+    // #3043: a read is used only for a while after it came.
+    let (browser, engine) = a_large_page_kept_for(
+        Duration::from_millis(200),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+        Duration::from_millis(200),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    typed_into_the_first_field(&browser, &engine, &aim);
+    the_focus_moves_to_the_secret_word(&engine);
+    let _ = browser.person_input(&key(&aim, "x", true));
+    past_the_read();
+
+    let old = browser.person_input(&key(&aim, "y", true));
+    let _ = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(old, Err(Refusal::PageUnreadInTime));
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 1, "a key went");
+    assert_eq!(page_reads(&engine), 2, "the page was not read anew");
+}
+
+#[test]
+fn keys_sent_at_once_wait_on_one_read_each_within_its_own_limit() {
+    // #3043: keys typed in a burst, while the page is read, start no second read.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(600),
+        Duration::from_millis(300),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    typed_into_the_first_field(&browser, &engine, &aim);
+    the_focus_moves_to_the_secret_word(&engine);
+
+    let answers: Vec<(Result<(), Refusal>, Duration)> = std::thread::scope(|scope| {
+        let keys: Vec<_> = ["x", "y", "z"]
+            .into_iter()
+            .map(|letter| {
+                let (browser, aim) = (&browser, &aim);
+                scope.spawn(move || {
+                    let started = Instant::now();
+                    let answer = browser.person_input(&key(aim, letter, true));
+                    (answer, started.elapsed())
+                })
+            })
+            .collect();
+        keys.into_iter().map(|k| k.join().unwrap()).collect()
+    });
+
+    for (answer, took) in &answers {
+        assert_eq!(answer, &Err(Refusal::PageUnreadInTime));
+        assert!(*took < Duration::from_millis(550), "a key waited {took:?}");
+    }
+    assert_eq!(page_reads(&engine), 1, "the page was read more than once");
+}
+
+#[test]
+fn a_key_whose_page_read_outlived_the_reads_own_limit_is_held_never_unknown() {
+    // #3043: the read itself ran past what a read may take, so no key knows the page.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(400),
+        Duration::from_millis(100),
+        Duration::from_millis(150),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    std::thread::sleep(Duration::from_millis(800));
+
+    let next = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(next, Err(Refusal::PageUnreadInTime));
+    assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
+}
+
+#[test]
+fn a_key_after_a_press_of_the_mouse_reads_the_page_anew() {
+    // #3043: a press may move the focus, so a read made before it is not the key's.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    let _ = browser.person_input(&key(&aim, "x", true));
+    std::thread::sleep(Duration::from_millis(1200));
+    browser.person_input(&press(&aim, 5.0, 5.0)).unwrap();
+
+    let _ = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(page_reads(&engine), 2, "the page was not read anew");
+}
+
+#[test]
+fn a_kept_read_is_not_used_once_the_focus_moved_inside_a_shadow_root() {
+    // #3043: the focus moved from one field to another inside one shadow host, so the document
+    // names the host before and after. The key waits, and a read of the page as it is now blanks
+    // the field that has the focus.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.shadow_of.insert(30, vec![20, 21]);
+        model.focused_on.insert("S-PAGE-1".into(), Some(30));
+    }
+    browser.take_over();
+    let aim = aim_now(&browser);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    past_the_read();
+    // A script of the page moves the focus to the other field inside the host.
+    focus_on(&engine, &[("PAGE-1", "12")]);
+
+    let stale = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(stale, Err(Refusal::PageUnreadInTime));
+    assert!(
+        engine.sent("Input.dispatchKeyEvent").is_empty(),
+        "a key went"
+    );
+    // The page reads quickly now: the key's own read is the page as it is.
+    super::super::lock(&engine.model).ax_takes = None;
+    browser.person_input(&key(&aim, "z", true)).unwrap();
+    assert_eq!(read_after_the_key(&engine), Some(21));
+}
+
+#[test]
+fn a_kept_read_whose_field_the_engine_cannot_describe_is_not_used() {
+    // #3043: where the engine cannot say what the field is now, the key waits.
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    browser.take_over();
+    let aim = aim_now(&browser);
+    typed_into_the_first_field(&browser, &engine, &aim);
+    the_focus_moves_to_the_secret_word(&engine);
+    assert_eq!(
+        browser.person_input(&key(&aim, "x", true)),
+        Err(Refusal::PageUnreadInTime)
+    );
+    past_the_read();
+    engine.on(|sent, _| {
+        (sent.method == "DOM.describeNode" && sent.params["backendNodeId"] == 21).then(|| {
+            Err(crate::cdp::CallError::Engine {
+                code: -32000,
+                message: "Could not describe the node".into(),
+            })
+        })
+    });
+
+    let unsure = browser.person_input(&key(&aim, "y", true));
+
+    assert_eq!(unsure, Err(Refusal::PageUnreadInTime));
+    assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 1, "a key went");
+}

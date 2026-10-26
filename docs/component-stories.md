@@ -86,7 +86,10 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
 - The picture is of the story's frame. A story that draws outside it (a dialog, a menu, a
   popover) sets `parameters: { screenshot: "page" }`; one with nothing stable to draw sets
   `screenshot: false` and says why. Its baselines are then obsolete: delete them in the same
-  change, or put the `update-baselines` label on.
+  change, or put the `update-baselines` label on. A story whose `play` ends with what it
+  pictures gone, such as a dialog it answers, calls `await pictureNow()`
+  (`app/src/stories.testkit.ts`) while it is drawn: the picture is taken there, and not again
+  after `play`.
 - A rule axe must not run on a story is turned off on that story alone, in
   `parameters.a11y.config.rules`, with the reason beside it. Never turn a rule off for every
   story.
@@ -136,7 +139,10 @@ text draws the same each time.
 titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,
 `accessibility` or `screenshot`), the first line of why, and the axe rules it broke. It says the
 same in WebKit as in Chromium: `tools/story-failures.mjs` is the Vitest reporter that keeps each
-error's message, and the script that turns the reports into annotations. An error in a story
+error's message, and the script that turns the reports into annotations. The annotation is put
+on the story file's line the story failed at, the first frame of its error in a story file, so it
+shows on the pull request's diff; a failure with no such frame, axe's or the screenshot gate's,
+is on the check alone. An error in a story
 file or a suite outside any one story is an annotation of its own, and a run that fails without
 naming anything says so.
 

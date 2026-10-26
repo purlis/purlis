@@ -36,15 +36,16 @@
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
 use super::super::kept::Kept;
-use super::super::keys::command_of;
+use super::super::keys::{command_of, is_modifier};
 use super::super::tree::{FrameAx, NodeKey, Snapshot};
 use super::{ACTIVE_ELEMENT, FOCUSED_HERE, READ_VALUE};
-use super::{Browser, Session, refusal};
+use super::{Browser, Session, read_trees, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
     ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PersonInput, Refusal,
@@ -87,13 +88,39 @@ pub(crate) struct Typing {
     /// document number it was blanked under (#2295): a key into it while it keeps the focus
     /// needs no new read of the page.
     focus: Option<Focused>,
+    /// The read of a page's trees under way for the person's keys, or come and not yet used:
+    /// every key that waits for the page waits on this one read (#3043).
+    reading: Option<Arc<Reading>>,
+}
+
+/// A read of every frame's tree of a page for the person's keys (#3043): its page's target, the
+/// lease's epoch and the page's document number when it began, and its answer once it came.
+struct Reading {
+    target: String,
+    epoch: u64,
+    shows: u64,
+    /// The answer, and when it came.
+    answer: Mutex<Option<(Instant, ReadAnswer)>>,
+    came: Condvar,
+}
+
+/// What a read of a page's trees for the person's keys came to (#3043).
+type ReadAnswer = Result<Arc<Vec<FrameAx>>, Refusal>;
+
+impl Reading {
+    /// The read's answer is `answer`: every key waiting on it is told.
+    fn answered(&self, answer: ReadAnswer) {
+        *lock(&self.answer) = Some((Instant::now(), answer));
+        self.came.notify_all();
+    }
 }
 
 /// Whether input lands on what the person saw (#2638), with what judging it read: the page's
 /// trees, or the field the last key went to, still focused, for the key to go on with (#2974).
+/// A read of the trees says whether an earlier key began it (#3043).
 struct Landing {
     lands: bool,
-    read: Option<Vec<FrameAx>>,
+    read: Option<(Vec<FrameAx>, bool)>,
     focused: Option<Focused>,
 }
 
@@ -185,8 +212,9 @@ impl Browser {
             self.inner.purlis_drives.store(false, Ordering::SeqCst);
             lease.epoch
         };
-        // A field blanked in an earlier turn is asked about again from the page itself.
-        lock(&self.typing).focus = None;
+        // A field blanked in an earlier turn is asked about again from the page itself, and
+        // the page read again.
+        lock(&self.typing).forget_reads();
         // Whatever waits for the page wakes now, and finds itself cut.
         self.inner.changed.notify_all();
         epoch
@@ -201,7 +229,7 @@ impl Browser {
             return self.epoch();
         }
         self.keep_typing_out();
-        lock(&self.typing).focus = None;
+        lock(&self.typing).forget_reads();
         // What a login the person cut had filled is emptied before the agent has the page.
         self.clear_cut_logins();
         let mut lease = lock(&self.lease);
@@ -316,6 +344,8 @@ impl Browser {
         if self.driver() != Driver::Person {
             return Err(Refusal::NotDriving);
         }
+        // What the key reads of the page is read by then, or the key is held back (#3043).
+        let by = Instant::now() + self.inner.limits.key_reads_within;
         let target = self.target(None)?;
         let (session, moved_on) = {
             let state = lock(&self.inner.state);
@@ -336,7 +366,7 @@ impl Browser {
         // The field the landing was judged by, still focused: the one the key goes on into.
         let mut landed_in = None;
         if moved_on {
-            let landing = self.lands_on_what_was_seen(&target, &session, input)?;
+            let landing = self.lands_on_what_was_seen(&target, &session, input, by)?;
             if !landing.lands {
                 return Err(Refusal::Missed);
             }
@@ -354,16 +384,27 @@ impl Browser {
             } => {
                 let text = (*down).then(|| typed(key, *modifiers)).flatten();
                 let edits = *down && edits(key, *modifiers);
+                // A key that may move the focus (Tab, an arrow) leaves a read made before it
+                // for no later key (#3043).
+                if *down && !edits && !is_modifier(key) {
+                    lock(&self.typing).reading = None;
+                }
                 let field = if edits {
                     // The field the last key went to, still focused, is blanked already: only
                     // the document is asked what has the focus (#2295).
                     match landed_in.or_else(|| self.still_focused(&target)) {
                         Some(focused) => Some((focused.field, focused.read)),
-                        None => match self.blank_focus_in(
-                            &target,
-                            read.take().or_else(|| self.first_field_read(&target)),
-                        ) {
-                            Ok((field, read)) => {
+                        None => match self
+                            .read_for_a_key(&target, read.take(), by)
+                            .map(|(read, kept)| (self.blank_focus_in(&target, Some(read)), kept))?
+                        {
+                            // A read an earlier key began, which the person may have waited
+                            // for, is checked against where the focus is now: where it has
+                            // moved since, the key waits for a new read (#3043).
+                            (Ok((field, _)), true) if !self.focus_is_on(&field) => {
+                                return Err(Refusal::PageUnreadInTime);
+                            }
+                            (Ok((field, read)), _) => {
                                 let read = std::sync::Arc::new(read);
                                 let shows = lock(&self.inner.state)
                                     .page(&target)
@@ -375,7 +416,7 @@ impl Browser {
                                 });
                                 Some((field, read))
                             }
-                            Err(Refusal::NothingFocused) => {
+                            (Err(Refusal::NothingFocused), _) => {
                                 // Nothing the tree shows has the focus: unless the document has
                                 // nothing focused either, the key waits.
                                 if self.focus_unseen(&session, &target) {
@@ -383,7 +424,7 @@ impl Browser {
                                 }
                                 None
                             }
-                            Err(why) => return Err(why),
+                            (Err(why), _) => return Err(why),
                         },
                     }
                 } else {
@@ -451,8 +492,11 @@ impl Browser {
             } => {
                 // A press may send what was typed away (a form's button): it is read first.
                 if *kind == MouseKind::Pressed {
-                    lock(&self.typing).focus = None;
-                    lock(&self.typing).end_run(&target);
+                    {
+                        let mut typing = lock(&self.typing);
+                        typing.forget_reads();
+                        typing.end_run(&target);
+                    }
                     self.keep_typing_out();
                 }
                 let bit = button_bit(*button);
@@ -671,6 +715,7 @@ impl Browser {
         target: &str,
         session: &str,
         input: &PersonInput,
+        by: Instant,
     ) -> Result<Landing, Refusal> {
         let seen = input.aim().document;
         match input {
@@ -690,7 +735,7 @@ impl Browser {
                         focused: Some(focused),
                     });
                 }
-                let trees = self.trees_of(target)?;
+                let (trees, kept) = self.trees_for_a_key(target, by)?;
                 let snapshot = self.snapshot_from(target, &trees);
                 let reached = match snapshot.focused() {
                     // Nothing the tree shows has the focus: unless the document has nothing
@@ -707,7 +752,7 @@ impl Browser {
                 let lands = !lock(&self.inner.state).moved_at(target, seen, &reached, false);
                 Ok(Landing {
                     lands,
-                    read: Some(trees),
+                    read: Some((trees, kept)),
                     focused: None,
                 })
             }
@@ -781,7 +826,7 @@ impl Browser {
     /// the person has typed into no field of the page yet, since a code typed one character a
     /// box is kept out whole from the whole tree (#2144); and only where the element is in the
     /// page's own document, the tree marks it focused, and it holds no frame. `None` otherwise.
-    fn first_field_read(&self, target: &str) -> Option<Vec<FrameAx>> {
+    fn first_field_read(&self, target: &str, by: Instant) -> Option<Vec<FrameAx>> {
         if lock(&self.typing)
             .touched
             .iter()
@@ -798,10 +843,11 @@ impl Browser {
         let backend = self.focused_in(&session, target)?;
         let around = self
             .devtools()
-            .call(
+            .call_within(
                 "Accessibility.getPartialAXTree",
                 json!({ "backendNodeId": backend, "fetchRelatives": true }),
                 Some(&session),
+                by.saturating_duration_since(Instant::now()),
             )
             .ok()?;
         let nodes = around.get("nodes")?.clone();
@@ -861,6 +907,167 @@ impl Browser {
             || editable
     }
 
+    /// What a key into `target`'s page blanks its field from (#3043): `landed`, the read its
+    /// landing was judged by, where there is one; else the tree around the page's first field
+    /// (#2967); else every frame's whole tree, read by `by`. With whether an earlier key began
+    /// the read (#3043).
+    fn read_for_a_key(
+        &self,
+        target: &str,
+        landed: Option<(Vec<FrameAx>, bool)>,
+        by: Instant,
+    ) -> Result<(Vec<FrameAx>, bool), Refusal> {
+        if let Some(landed) = landed {
+            return Ok(landed);
+        }
+        match self.first_field_read(target, by) {
+            Some(read) => Ok((read, false)),
+            None => self.trees_for_a_key(target, by),
+        }
+    }
+
+    /// Whether `field` has the focus of its own document now, that document having the focus
+    /// of the page, and is no element that holds a document (a frame's). A field a read of the
+    /// whole page an earlier key began found is checked so before its key goes (#3043): a
+    /// script may have moved the focus while the person waited for the read. Anything else is
+    /// not: where the document names another element (a shadow host, whose inside it does not
+    /// say), or the engine cannot say, the key waits, and its own read of the page, fresh, is
+    /// what the next key is blanked from.
+    fn focus_is_on(&self, (target, key): &(String, NodeKey)) -> bool {
+        let session = lock(&self.inner.state)
+            .page(target)
+            .and_then(|page| page.frames.get(&key.frame))
+            .map(|frame| frame.session.clone());
+        let Some(session) = session else {
+            return false;
+        };
+        match self.focused_in(&session, &key.frame) {
+            Some(now) if now == key.backend => !self.holds_a_document(&session, now),
+            _ => false,
+        }
+    }
+
+    /// Whether the element `backend` of `session`'s document holds a document of its own (a
+    /// frame, an object, an embed); taken to, where the engine cannot say.
+    fn holds_a_document(&self, session: &str, backend: i64) -> bool {
+        self.devtools()
+            .call(
+                "DOM.describeNode",
+                json!({ "backendNodeId": backend }),
+                Some(session),
+            )
+            .map_or(true, |described| {
+                !described["node"]["frameId"].is_null()
+                    || !described["node"]["contentDocument"].is_null()
+            })
+    }
+
+    /// Every frame's tree of `target`'s page for the person's key, read by `by` (#3043). The
+    /// read runs on past the key, within [`Limits::tree_reads_within`](crate::drive::Limits):
+    /// a key it outlives is held back, [`Refusal::PageUnreadInTime`]. Every key into the page
+    /// waits on the same one read, under way or come and not yet used, where the lease and the
+    /// page's document are still as they were and nothing that may move the focus reached the
+    /// page since; once used or failed, the next key reads anew. A read that came more than
+    /// [`Limits::tree_read_kept_for`](crate::drive::Limits) before is read anew too. A read that
+    /// fails in time holds the key back as well: never [`Refusal::Unknown`], since the key was
+    /// not sent. Answers whether an earlier key began the read: its field is then checked
+    /// against where the focus is now before the key goes.
+    fn trees_for_a_key(&self, target: &str, by: Instant) -> Result<(Vec<FrameAx>, bool), Refusal> {
+        let epoch = self.epoch();
+        let shows = lock(&self.inner.state)
+            .page(target)
+            .map_or(0, |page| page.shows);
+        let (reading, begun) = {
+            let mut typing = lock(&self.typing);
+            match &typing.reading {
+                // Under way, or come and not used yet: every key waits on the one read.
+                Some(reading)
+                    if reading.target == target
+                        && reading.epoch == epoch
+                        && reading.shows == shows =>
+                {
+                    (Arc::clone(reading), false)
+                }
+                _ => {
+                    let reading = Arc::new(Reading {
+                        target: target.to_owned(),
+                        epoch,
+                        shows,
+                        answer: Mutex::new(None),
+                        came: Condvar::new(),
+                    });
+                    typing.reading = Some(Arc::clone(&reading));
+                    (reading, true)
+                }
+            }
+        };
+        if begun {
+            self.begin_reading(target, &reading);
+        }
+        let (came, answer) = {
+            let mut answer = lock(&reading.answer);
+            loop {
+                if let Some((came, answer)) = answer.as_ref() {
+                    break (*came, answer.clone());
+                }
+                let left = by.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(Refusal::PageUnreadInTime);
+                }
+                answer = reading
+                    .came
+                    .wait_timeout(answer, left)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .0;
+            }
+        };
+        // Used, or failed: the next key that needs the page reads it anew.
+        {
+            let mut typing = lock(&self.typing);
+            if typing
+                .reading
+                .as_ref()
+                .is_some_and(|kept| Arc::ptr_eq(kept, &reading))
+            {
+                typing.reading = None;
+            }
+        }
+        let trees = answer?;
+        // A read that came long before the key that would use it is not the page now.
+        if came.elapsed() > self.inner.limits.tree_read_kept_for {
+            return Err(Refusal::PageUnreadInTime);
+        }
+        Ok((trees.as_ref().clone(), !begun))
+    }
+
+    /// Begins `reading` of every frame's tree of `target`'s page, on a thread of its own, each
+    /// frame's within [`Limits::tree_reads_within`](crate::drive::Limits) (#3043). A read past
+    /// that limit, or one that cannot begin, holds the keys waiting on it back.
+    fn begin_reading(&self, target: &str, reading: &Arc<Reading>) {
+        let frames = match self.frames_to_read(target) {
+            Ok(frames) => frames,
+            Err(why) => return reading.answered(Err(why)),
+        };
+        let devtools = Arc::clone(&self.inner.devtools);
+        let within = self.inner.limits.tree_reads_within;
+        let told = Arc::clone(reading);
+        let begun = std::thread::Builder::new()
+            .name("purlis-tree-read".into())
+            .spawn(move || {
+                told.answered(
+                    read_trees(&*devtools, frames, within)
+                        .map(Arc::new)
+                        .map_err(|why| match why {
+                            CallError::TimedOut => Refusal::PageUnreadInTime,
+                            other => refusal(other),
+                        }),
+                );
+            });
+        if begun.is_err() {
+            reading.answered(Err(Refusal::PageUnreadInTime));
+        }
+    }
+
     /// Whether the document of `frame` on `session` has an element focused (or one inside a
     /// frame), though its tree shows none: then a key typed now would go where purlis cannot
     /// blank it.
@@ -888,6 +1095,13 @@ impl Browser {
 }
 
 impl Typing {
+    /// Forgets the field blanked last and any read of a page for the person's keys: the page is
+    /// asked anew at the next key.
+    fn forget_reads(&mut self) {
+        self.focus = None;
+        self.reading = None;
+    }
+
     /// The field `key` holds `now`, as read from the field itself: answers what every field
     /// typed into held when last read, and the order they were first typed into.
     fn read(&mut self, key: &NodeKey, now: &str) -> (HashMap<NodeKey, String>, Vec<NodeKey>) {

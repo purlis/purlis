@@ -431,10 +431,13 @@ pub fn revert(
     git(plane, &["restore", &source, "--worktree", "--", &spec])
         .map_err(|why| format!("{name} was not reverted: {why}"))?;
     if pending_in(plane, &[&folder_rel])?.is_empty() {
-        (cx.say)(crate::repocmd::Say::Info(format!(
-            "{name} is already as version {} has it, so nothing changed.",
-            short(commit)
-        )));
+        (cx.say)(crate::repocmd::Say::Info(
+            format!(
+                "{name} is already as version {} has it, so nothing changed.",
+                short(commit)
+            )
+            .into(),
+        ));
         return Ok(folder);
     }
     cx.done(format!("{name} is as version {} has it", short(commit)));

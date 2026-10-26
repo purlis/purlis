@@ -2799,6 +2799,7 @@ impl Chats {
                 ))
             })
             .collect();
+        let built_in = built_in_skills_here();
         let mut changed: Vec<u32> = started
             .into_iter()
             .filter(|(_, workspace, persona, harness, then)| {
@@ -2807,6 +2808,7 @@ impl Chats {
                     workspace.as_deref(),
                     persona.as_deref(),
                     *harness,
+                    built_in.as_deref(),
                 ) != *then
             })
             .map(|(session, ..)| session)
@@ -3779,6 +3781,7 @@ impl Chats {
                 workspace.as_deref(),
                 under.persona.as_deref(),
                 harness,
+                built_in_skills_here().as_deref(),
             )
         });
         // A start under this number has been told nothing yet (#1450).
@@ -6117,6 +6120,12 @@ fn ran_as_started(
         ),
         None => RunSandbox::Off,
     }
+}
+
+/// The built-in skills of the bundle beside this app, which count against a chat's skill budget
+/// in its restart stamp as they do where the chat is armed (SK-15).
+fn built_in_skills_here() -> Option<std::path::PathBuf> {
+    crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin))
 }
 
 #[cfg(test)]

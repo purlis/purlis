@@ -70,16 +70,19 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
             let (names, unread) = plane.read_workspaces().unwrap_or_default();
             for (path, code) in &unread {
                 unseen += 1;
-                say(Say::Fail(wscmd::cannot_check_workspace(path, *code)));
+                say(Say::Fail(wscmd::cannot_check_workspace(path, *code).into()));
             }
             names
         }
         Scope::One(name) => {
             let Ok(workspace) = plane.workspace(name) else {
-                say(Say::Fail(format!(
-                    "invalid workspace name '{}'",
-                    crate::personas::one_line(name)
-                )));
+                say(Say::Fail(
+                    format!(
+                        "invalid workspace name '{}'",
+                        crate::personas::one_line(name)
+                    )
+                    .into(),
+                ));
                 return 1;
             };
             // Through the link, and the errno kept: a directory that is a symlink loop is not
@@ -92,21 +95,22 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                         std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
                     ) =>
                 {
-                    say(Say::Fail(format!("no workspace '{name}'")));
+                    say(Say::Fail(format!("no workspace '{name}'").into()));
                     return 1;
                 }
                 Err(e) => {
-                    say(Say::Fail(wscmd::cannot_check_workspace(
-                        workspace.dir(),
-                        e.raw_os_error(),
-                    )));
+                    say(Say::Fail(
+                        wscmd::cannot_check_workspace(workspace.dir(), e.raw_os_error()).into(),
+                    ));
                     return 1;
                 }
             }
         }
     };
     if names.is_empty() && unseen == 0 {
-        say(Say::Info("No workspaces to reinitialize.".to_string()));
+        say(Say::Info(
+            "No workspaces to reinitialize.".to_string().into(),
+        ));
         return 0;
     }
 
@@ -164,50 +168,71 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                 // stays exactly as it is, and one command may not advise what the other
                 // rules out.
                 Did::Foreign => match wslayer::checkout_row(&dir, rel) {
-                    Some((_, inside)) => say(Say::Warn(format!(
-                        "'{name}': {rel} holds content purlis did not write — left completely \
+                    Some((_, inside)) => say(Say::Warn(
+                        format!(
+                            "'{name}': {rel} holds content purlis did not write — left completely \
                          untouched, and hidden in that checkout while it is there; if this is \
                          your own file and you mean to commit it: git add -f {inside}"
-                    ))),
-                    None => say(Say::Warn(format!(
-                        "'{name}': {rel} was not written by purlis — left completely \
+                        )
+                        .into(),
+                    )),
+                    None => say(Say::Warn(
+                        format!(
+                            "'{name}': {rel} was not written by purlis — left completely \
                          untouched; purlis never overwrites it."
-                    ))),
+                        )
+                        .into(),
+                    )),
                 },
                 // Not `foreign` and never "remove it": the approvals in that file are the
                 // harness's own, and deleting it to get charter's copy back destroys them.
-                Did::HarnessBehind => say(Say::Warn(format!(
-                    "'{name}': {rel} is a file purlis cannot vouch for as its own write, and \
+                Did::HarnessBehind => say(Say::Warn(
+                    format!(
+                        "'{name}': {rel} is a file purlis cannot vouch for as its own write, and \
                      the harness saves its approvals into that file, so purlis does not \
                      rewrite it: the plane's machine-local rules it lacks are not in force \
                      there."
-                ))),
-                Did::Blocked => say(Say::Fail(format!(
-                    "'{name}': {rel} could not be written — something is in the way at that \
+                    )
+                    .into(),
+                )),
+                Did::Blocked => say(Say::Fail(
+                    format!(
+                        "'{name}': {rel} could not be written — something is in the way at that \
                      path. purlis never deletes or renames existing content."
-                ))),
-                Did::Unreadable => say(Say::Warn(format!(
-                    "'{name}': {rel} cannot be read — left exactly as it is; purlis writes \
+                    )
+                    .into(),
+                )),
+                Did::Unreadable => say(Say::Warn(
+                    format!(
+                        "'{name}': {rel} cannot be read — left exactly as it is; purlis writes \
                      there again only if that file turns out to be exactly what purlis last \
                      wrote."
-                ))),
+                    )
+                    .into(),
+                )),
                 // A sentence of its own: nothing is in the way at that path, so `blocked`'s
                 // wording would send the operator looking for an obstruction that is not
                 // there. What stopped the write is that the file could not be hidden.
-                Did::Withheld => say(Say::Fail(format!(
-                    "'{name}': {rel} was not written — purlis could not hide it in that \
+                Did::Withheld => say(Say::Fail(
+                    format!(
+                        "'{name}': {rel} was not written — purlis could not hide it in that \
                      checkout's .git/info/exclude, and a machine-local file it cannot hide \
                      would be committable there."
-                ))),
+                    )
+                    .into(),
+                )),
                 // #1583: the record names it, the project's own note of what it offered does
                 // not. Its own sentence, never `foreign`'s: it may be purlis's older copy. Not
                 // a repair `reinit` can make — the same gate stands here — so the row names
                 // what does: the file moved aside, this command writes the current text.
-                Did::Unconfirmed => say(Say::Warn(format!(
-                    "'{name}': purlis has newer text for {rel} but cannot confirm it wrote the \
+                Did::Unconfirmed => say(Say::Warn(
+                    format!(
+                        "'{name}': purlis has newer text for {rel} but cannot confirm it wrote the \
                      file there now, so it is left as is. If it is purlis's own older copy, move \
                      it aside and run `purlis workspace reinit {name}` to write the current one."
-                ))),
+                    )
+                    .into(),
+                )),
                 // charter#1072: every worktree of that clone went unchecked, and "nothing to
                 // do" printed over them. Not a repair either, and not one `reinit` can make.
                 Did::Unlisted => {
@@ -222,7 +247,7 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                     say(Say::Warn(format!(
                         "'{name}': git could not list the worktrees of {label}, so none of them \
                          was checked or given purlis's layer; {fix}."
-                    )));
+                    ).into()));
                 }
                 // charter#1072: a line left out of a shared exclude because it would hide a
                 // file of yours in another checkout reading it. Not a repair — the
@@ -232,11 +257,14 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                     let why = wslayer::checkout_row(&dir, rel)
                         .map(|(tree, _)| crate::guest::unhidden(root, &tree))
                         .unwrap_or_default();
-                    say(Say::Warn(format!(
-                        "'{name}': {rel} does not hide all of purlis's files in that checkout \
+                    say(Say::Warn(
+                        format!(
+                            "'{name}': {rel} does not hide all of purlis's files in that checkout \
                          — {}.",
-                        why.join("; ")
-                    )));
+                            why.join("; ")
+                        )
+                        .into(),
+                    ));
                 }
                 // charter's ruling H: a write charter could not record first is not made, and
                 // the lines stay. Not `blocked`: nothing is in the way at that path. With the
@@ -250,20 +278,26 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                     } else {
                         format!("; {refused}")
                     };
-                    say(Say::Warn(format!(
-                        "'{name}': {rel} — purlis could not publish its record there first, so \
+                    say(Say::Warn(
+                        format!(
+                            "'{name}': {rel} — purlis could not publish its record there first, so \
                          it wrote nothing and kept every exclude line it had{tail}."
-                    )));
+                        )
+                        .into(),
+                    ));
                 }
                 Did::Removed => {
                     // Its own sentence rather than the `wrote`/`refreshed` pair below, which
                     // would call a deletion "refreshed". A removal is the one repair here
                     // whose CAUSE the operator cannot see in the workspace — the plane stopped
                     // declaring it — so the row has to carry it.
-                    say(Say::Done(format!(
-                        "Reinitialized '{name}' → removed {rel} — the plane no longer declares \
+                    say(Say::Done(
+                        format!(
+                            "Reinitialized '{name}' → removed {rel} — the plane no longer declares \
                          it (purlis's harness layer)."
-                    )));
+                        )
+                        .into(),
+                    ));
                 }
                 Did::Created | Did::Refreshed => {
                     let what = if row.did == Did::Created {
@@ -271,9 +305,10 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                     } else {
                         "refreshed"
                     };
-                    say(Say::Done(format!(
-                        "Reinitialized '{name}' → {what} {rel} (purlis's harness layer)."
-                    )));
+                    say(Say::Done(
+                        format!("Reinitialized '{name}' → {what} {rel} (purlis's harness layer).")
+                            .into(),
+                    ));
                 }
                 Did::Present => {}
             }
@@ -291,12 +326,15 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
             let stopped = wslayer::stopped_at(&found.path, found.code);
             let shown =
                 crate::shown::readable(&stopped.to_string_lossy(), crate::memstore::PATH_LIMIT);
-            say(Say::Warn(format!(
-                "'{name}': {} cannot be checked — purlis writes nothing there it cannot see; \
+            say(Say::Warn(
+                format!(
+                    "'{name}': {} cannot be checked — purlis writes nothing there it cannot see; \
                  {}.",
-                found.rel,
-                crate::memstore::uncheckable_fix(found.code, &shown, "that path")
-            )));
+                    found.rel,
+                    crate::memstore::uncheckable_fix(found.code, &shown, "that path")
+                )
+                .into(),
+            ));
         }
 
         for (rel, blocker) in &before.in_the_way {
@@ -344,7 +382,9 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                 &blocker.path.to_string_lossy(),
                 crate::memstore::PATH_LIMIT,
             );
-            say(Say::Warn(format!("'{name}': {rel} {did} — {shown} {fix}.")));
+            say(Say::Warn(
+                format!("'{name}': {rel} {did} — {shown} {fix}.").into(),
+            ));
         }
 
         // The BACKFILL half, and the reason it is checked AFTER rather than read off the
@@ -376,7 +416,7 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                     say(Say::Fail(format!(
                         "'{name}': workspace.json could not be written — something is in the way \
                          at that path. purlis never deletes or renames existing content."
-                    )));
+                    ).into()));
                 }
                 Err(_) => {
                     // An `lstat` that fails proves nothing about the file, and "could not be
@@ -384,7 +424,7 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                     say(Say::Warn(format!(
                         "'{name}': workspace.json cannot be checked — purlis cannot say whether \
                          it is there; restoring read access to it clears this."
-                    )));
+                    ).into()));
                 }
             }
         }
@@ -400,11 +440,14 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
                 .iter()
                 .any(|(rel, _)| rel.as_str() == wslayer::STRUCTURE_MARKER)
             {
-                say(Say::Warn(format!(
-                    "'{name}': {} could not be written, so this workspace still reads as \
+                say(Say::Warn(
+                    format!(
+                        "'{name}': {} could not be written, so this workspace still reads as \
                      structure v{after} and stays flagged for reinit.",
-                    wslayer::STRUCTURE_MARKER
-                )));
+                        wslayer::STRUCTURE_MARKER
+                    )
+                    .into(),
+                ));
             }
             // Files it did add are still reported.
             before.ok = before.missing.is_empty();
@@ -419,19 +462,24 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
         } else {
             before.missing.join(", ")
         };
-        say(Say::Done(format!("Reinitialized '{name}' → added {what}.")));
+        say(Say::Done(
+            format!("Reinitialized '{name}' → added {what}.").into(),
+        ));
         if plane.is_live(name) && before.missing.iter().any(|rel| LIVE_SHARED.contains(rel)) {
-            say(Say::Info(format!(
-                "  '{name}' is LIVE — commit the restored files: purlis save"
-            )));
+            say(Say::Info(
+                format!("  '{name}' is LIVE — commit the restored files: purlis save").into(),
+            ));
         }
     }
 
     if repaired.is_empty() && blocked.is_empty() && unresolved.is_empty() && unseen == 0 {
-        say(Say::Done(format!(
-            "Up to date (structure v{}) — nothing to do.",
-            wslayer::STRUCTURE_VERSION
-        )));
+        say(Say::Done(
+            format!(
+                "Up to date (structure v{}) — nothing to do.",
+                wslayer::STRUCTURE_VERSION
+            )
+            .into(),
+        ));
     } else if names.len() + unseen > 1 {
         // Two units, named as two. "Applied N repair(s)" is the number the rows above add up
         // to; "across M of T workspace(s)" is the number an operator checks against the plane
@@ -456,13 +504,16 @@ pub fn reinit(root: &Path, scope: Scope, now: chrono::DateTime<chrono::Utc>, say
         } else {
             format!("{unseen} could not be checked; ")
         };
-        say(Say::Info(format!(
-            "Applied {} across {} of {}; {stuck}{kept}{unchecked}\
+        say(Say::Info(
+            format!(
+                "Applied {} across {} of {}; {stuck}{kept}{unchecked}\
              the rest were current.",
-            counted(repairs, "repair", "repairs"),
-            repaired.len(),
-            counted(names.len() + unseen, "workspace", "workspaces")
-        )));
+                counted(repairs, "repair", "repairs"),
+                repaired.len(),
+                counted(names.len() + unseen, "workspace", "workspaces")
+            )
+            .into(),
+        ));
     }
     0
 }

@@ -53,6 +53,7 @@ pub mod moving;
 mod read;
 mod reference;
 pub mod review;
+pub mod router;
 pub mod runs;
 mod share;
 mod stamp;
@@ -73,6 +74,7 @@ pub use read::{
 };
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
+pub use router::{Hidden, HiddenWhy, INDEX, Index, Router, Routing, StillOver};
 pub use share::{Shared, named, named_at, share};
 pub use stamp::{Reload, Stamp};
 
@@ -105,6 +107,17 @@ pub enum Route {
     /// The harness finds it itself, where it lies: a harness or repo skill ([`OutsideSkill`]). purlis
     /// hands it nothing, and can only ask the harness to leave it out.
     Own,
+}
+
+impl Route {
+    /// **Whether a harness on this route that leaves one of its own skills out by its name still
+    /// gets the copy purlis hands of that name** (SK-15): on [`Route::Plugin`] purlis's copies
+    /// come under their plugin's namespace, and on [`Route::Briefing`] purlis names them in the
+    /// briefing, apart from what the harness finds itself. On [`Route::Config`] purlis's folder is
+    /// one the harness discovers as its own, so a switch by name would reach purlis's copy too.
+    pub fn off_by_name_spares_handed(self) -> bool {
+        matches!(self, Self::Plugin | Self::Briefing)
+    }
 }
 
 /// Where a skill in a chat's set comes from: its level.
@@ -314,6 +327,12 @@ pub enum Reason {
     /// A workspace or persona skill whose level's folder was made while a chat that could have
     /// made it was running (SK-9): the sentence that says which, and when it reaches chats.
     MadeWhileAChatRan(String),
+    /// A plane skill named as purlis's index skill ([`router::INDEX`], ADR 0102 §2), which a
+    /// router shows in its place: it never loads until it is renamed.
+    IndexName,
+    /// A harness or repo skill named as purlis's index skill (SK-15): the name is purlis's in
+    /// every chat, so the index a router hands is the one copy of it.
+    HiddenByIndex,
 }
 
 impl Reason {
@@ -411,6 +430,10 @@ impl std::fmt::Display for Reason {
                 f.write_str("archived: it never loads until it is restored from its tab")
             }
             Self::MadeWhileAChatRan(why) => f.write_str(why),
+            Self::IndexName => f.write_str(
+                "purlis's index skill has this name, so this skill never loads: rename it",
+            ),
+            Self::HiddenByIndex => f.write_str("hidden by purlis's index skill of this name"),
         }
     }
 }
@@ -429,6 +452,9 @@ pub struct SkillSet {
     /// Every skill from outside the plane that has the name of a skill purlis hands the chat, by name
     /// ([`SkillSet::with_outside`]), and what came of it.
     pub clashes: Vec<Clash>,
+    /// What a router made of the set (SK-15, ADR 0102), or `None` where none ran: which skills
+    /// its listing hides, each still in [`Self::effective`], and the chat's pins.
+    pub routing: Option<Routing>,
 }
 
 /// A harness skill a chat's persona names, which the chat's harness loads by itself.
@@ -616,10 +642,10 @@ impl SkillSet {
 
     /// The effective skills that come from the plane, by name: what a route hands over beside
     /// the built-in directory (ADR 0063 as amended 2026-10-20). Each has one name in the set. A
-    /// harness or repo skill is never among them: the harness reads those itself.
+    /// harness or repo skill is never among them: the harness reads those itself. Nor is one a
+    /// router hid ([`Self::hidden_by_router`]): the route hands the index skill in its place.
     pub fn from_the_plane(&self) -> impl Iterator<Item = &Effective> {
-        self.effective
-            .iter()
+        self.listed()
             .filter(|effective| effective.origin.of_the_plane())
     }
 
@@ -681,6 +707,20 @@ impl SkillSet {
                 .parent()
                 .map(Path::to_path_buf)
                 .unwrap_or_default();
+            // The index skill's name is purlis's on every route, whether or not a router hands
+            // one to this chat (SK-15): where the harness can leave its own copy out by that name
+            // and keep purlis's, it is asked to ([`Route::off_by_name_spares_handed`]); elsewhere
+            // it loads, and its studio row says so.
+            if one.id == router::INDEX && !one.off && route.off_by_name_spares_handed() {
+                self.left_out.push(LeftOut {
+                    name: one.id,
+                    origin: one.origin,
+                    local: false,
+                    folder,
+                    reason: Reason::HiddenByIndex,
+                });
+                continue;
+            }
             // A built-in skill never loses to any other copy: purlis's is the one handed, and
             // the other is listed as hidden by it, whatever the route.
             if handed.is_some_and(|at| self.effective[at].origin == Origin::BuiltIn) {
@@ -1180,6 +1220,16 @@ fn level(
                 local,
                 folder,
                 reason: Reason::Archived,
+            });
+            continue;
+        }
+        if origin.of_the_plane() && skill.name == router::INDEX {
+            set.left_out.push(LeftOut {
+                name: skill.name,
+                origin,
+                local,
+                folder,
+                reason: Reason::IndexName,
             });
             continue;
         }

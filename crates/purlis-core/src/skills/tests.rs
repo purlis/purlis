@@ -909,16 +909,16 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
         });
         let typing = chat.typed("review", &values).unwrap();
         assert_eq!(typing.text, text, "{harness:?}");
-        assert_eq!(typing.held.skill, known_as, "{harness:?}");
-        assert_eq!(typing.held.confirmed, confirmed, "{harness:?}");
-        assert_eq!(typing.held.workspace.as_deref(), Some("smart-ide"));
-        assert_eq!(
-            typing.held.level.map(|level| level.origin),
-            Some(Origin::Project)
-        );
+        let Start::Held(held) = typing.start else {
+            panic!("a listed skill's run is held")
+        };
+        assert_eq!(held.skill, known_as, "{harness:?}");
+        assert_eq!(held.confirmed, confirmed, "{harness:?}");
+        assert_eq!(held.workspace.as_deref(), Some("smart-ide"));
+        assert_eq!(held.level.map(|level| level.origin), Some(Origin::Project));
         // What a prompt holding the text is marked with.
         let sent = crate::skillspan::PromptMarks::of(&format!("{text} and more"));
-        assert!(sent.holds(typing.held.text), "{harness:?}");
+        assert!(sent.holds(held.text), "{harness:?}");
         let refused = chat.typed("deploy", &[]).unwrap_err();
         assert!(
             refused.contains("not one of this chat's skills"),
@@ -993,7 +993,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
     };
 
     let set = in_the_studio(None, &plane, None, None);
-    let harnesses = harnesses_in_the_studio(&set, &plane, None, &[], &env, &Known::of(&plane));
+    let harnesses = harnesses_in_the_studio(&set, &plane, None, &[], &[], &env, &Known::of(&plane));
 
     let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);
@@ -1124,6 +1124,7 @@ fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_or_opencode()
             }),
             None,
             route,
+            None,
             None,
         );
         assert_eq!(set.built_in_dir(), Some(built_in.as_path()), "{route:?}");

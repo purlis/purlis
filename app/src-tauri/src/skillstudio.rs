@@ -109,6 +109,81 @@ pub struct StudioSkill {
     /// What the built-in lints say of a skill from outside the plane (SK-8): that it widens the
     /// chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
     pub lint: Vec<String>,
+    /// Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
+    /// own budget: the chat still has it, through the index skill. Empty where every one lists it.
+    pub hidden: Vec<SkillHiddenOn>,
+    /// Whether that chat's workspace or persona pins it, so no router hides it.
+    pub pinned: bool,
+}
+
+/// A skill router (SK-15, ADR 0102): the core's `Router`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillRouter {
+    /// purlis's own.
+    BuiltIn,
+}
+
+impl From<purlis_core::skills::Router> for SkillRouter {
+    fn from(router: purlis_core::skills::Router) -> SkillRouter {
+        match router {
+            purlis_core::skills::Router::BuiltIn => SkillRouter::BuiltIn,
+        }
+    }
+}
+
+/// Why a router hid a skill: the core's `HiddenWhy`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum SkillHiddenWhy {
+    /// The chat's skills are past its budget, and this one is not pinned.
+    OverBudget,
+}
+
+impl From<purlis_core::skills::HiddenWhy> for SkillHiddenWhy {
+    fn from(why: purlis_core::skills::HiddenWhy) -> SkillHiddenWhy {
+        match why {
+            purlis_core::skills::HiddenWhy::OverBudget => SkillHiddenWhy::OverBudget,
+        }
+    }
+}
+
+/// **A skill a router hid** from a chat's list (SK-15): which router, why, and the core's line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillHidden {
+    pub router: SkillRouter,
+    pub why: SkillHiddenWhy,
+    /// The line a person is shown.
+    pub said: String,
+}
+
+impl From<&purlis_core::skills::Hidden> for SkillHidden {
+    fn from(hidden: &purlis_core::skills::Hidden) -> SkillHidden {
+        SkillHidden {
+            router: hidden.router.into(),
+            why: hidden.why.into(),
+            said: hidden.to_string(),
+        }
+    }
+}
+
+/// A skill a router hid on one harness's chats (SK-15).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillHiddenOn {
+    pub harness: HarnessKind,
+    /// The harness, as a person reads its name.
+    pub title: String,
+    pub hidden: SkillHidden,
+}
+
+impl From<&purlis_core::skills::HiddenOn> for SkillHiddenOn {
+    fn from(on: &purlis_core::skills::HiddenOn) -> SkillHiddenOn {
+        SkillHiddenOn {
+            harness: on.harness.into(),
+            title: on.harness.title().to_owned(),
+            hidden: (&on.hidden).into(),
+        }
+    }
 }
 
 /// How well a skill fits a harness, as its badge draws it (SK-8): the core's `Fit`.
@@ -431,6 +506,8 @@ pub(crate) fn studio(
             switch: None,
             compat: row.compat.iter().map(Into::into).collect(),
             lint: row.lint,
+            hidden: row.hidden.iter().map(Into::into).collect(),
+            pinned: row.pinned,
         })
         .collect();
     let (harnesses, clashes) = harnesses(&all);
@@ -480,6 +557,8 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
         switch,
         compat: row.compat.iter().map(Into::into).collect(),
         lint: row.lint,
+        hidden: row.hidden.iter().map(Into::into).collect(),
+        pinned: row.pinned,
     }
 }
 

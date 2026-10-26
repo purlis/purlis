@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! `purlis skill list | show | new | edit | mv | rm | restore | grant | share | install | update |
-//! runs | history | revert | deprecate | archive | owners | uses` (SK-2, #2765; SK-4, #2767; SK-3,
-//! #2766; SK-7, #2770; SK-19, #2782): the skills a chat in this project gets, and why each other one
-//! is left out, as the Skill studio shows them; making, editing, renaming, moving, deleting and
-//! restoring a skill, each one commit; where a project skill reaches and what a workspace turned
-//! off; Share; every run of a skill with its signals; and a skill's history, its lifecycle state,
-//! its owners and the skills it names and is named by. The same verbs the studio calls
+//! runs | history | revert | deprecate | archive | owners | uses | pin` (SK-2, #2765; SK-4, #2767;
+//! SK-3, #2766; SK-7, #2770; SK-19, #2782; SK-15, #2778): the skills a chat in this project gets,
+//! and why each other one is left out or hidden, as the Skill studio shows them; making, editing,
+//! renaming, moving, deleting and restoring a skill, each one commit; where a project skill
+//! reaches and what a workspace turned off; Share; every run of a skill with its signals; a
+//! skill's history, its lifecycle state, its owners and the skills it names and is named by; and
+//! the pins of a workspace or a persona. The same verbs the studio calls
 //! (`purlis_core::skills::verbs`, `history`, `lifecycle`, `graph`). Behind the `skill-studio` flag
 //! until its finish line (#2786).
 
@@ -86,6 +87,23 @@ pub enum SkillCommand {
         /// Turn it back on in that workspace, where the project granted it.
         #[arg(long, group = "switch", requires = "workspace")]
         on: bool,
+    },
+    /// Pin a skill for a workspace's chats (`-w`) or for chats as a persona (`-p`): they always
+    /// list it, and the router never hides it behind the index skill when their skills outgrow
+    /// the budget. `--off` unpins it.
+    #[command(group(clap::ArgGroup::new("by").required(true).args(["workspace", "persona"])))]
+    Pin {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        /// The workspace whose chats pin it.
+        #[arg(short = 'w', long = "workspace")]
+        workspace: Option<String>,
+        /// The persona whose chats pin it.
+        #[arg(short = 'p', long = "persona")]
+        persona: Option<String>,
+        /// Unpin it instead.
+        #[arg(long)]
+        off: bool,
     },
     /// Make a skill from a template, at the project's root or, with `-w`, in a workspace, or,
     /// with `-p`, a persona's own; with `--local`, kept on this machine. A project skill starts
@@ -501,7 +519,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 .filter(|(_, row)| row.name == name)
                 .collect();
             if copies.is_empty() {
-                voice::err(&format!(
+                voice::err(format!(
                     "No skill is named {name:?} here. `purlis skill list` lists every one."
                 ));
                 return Ok(2);
@@ -562,14 +580,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             let (_, was) = match verbs::text_of(root, &level, &name) {
                 Ok(read) => read,
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
             };
             let now = match new_text(from.as_deref(), &was) {
                 Ok(now) => now,
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
             };
@@ -595,7 +613,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             let mut name = name;
             if let Some(new) = new {
                 if let Err(why) = verbs::rename(&mut cx, &level, &name, &new) {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
                 name = new;
@@ -611,7 +629,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 match Grant::from_words(&grant) {
                     Ok(grant) => Some(grant),
                     Err(why) => {
-                        voice::err(&format!(
+                        voice::err(format!(
                             "{why}: --grant takes root, all, or workspace names"
                         ));
                         return Ok(2);
@@ -619,7 +637,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
             };
             if verbs::needs_grant(&level, &target) && grant.is_none() {
-                voice::err(&format!(
+                voice::err(format!(
                     "{}. Add --grant root, --grant all, or --grant <workspace>…",
                     verbs::GRANT_NEEDED
                 ));
@@ -638,7 +656,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             match verbs::users(root, &level, &name) {
                 Ok(users) => say_users(&users),
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
             }
@@ -659,7 +677,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 .into_iter()
                 .find(|one| one.name == name)
             else {
-                voice::err(&format!(
+                voice::err(format!(
                     "No deleted skill named {name:?} can be restored: `purlis skill restore` lists those that can."
                 ));
                 return Ok(2);
@@ -677,14 +695,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             Ok(changed) => {
                 if !changed {
                     let state = if on { "on" } else { "off" };
-                    voice::ok(&format!("{name} was already {state} in {workspace}."));
+                    voice::ok(already_switched(&name, state, &workspace));
                 }
                 Ok(0)
             }
             Err(why) => {
-                voice::err(&why);
+                voice::err(why.to_string());
                 if on && why.contains("would reach it") {
-                    voice::info(&format!(
+                    voice::info(format!(
                         "To grant it: purlis skill grant {name} {workspace}"
                     ));
                 }
@@ -695,7 +713,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             let grant = match Grant::from_words(&grant) {
                 Ok(grant) => grant,
                 Err(why) => {
-                    voice::err(&format!(
+                    voice::err(format!(
                         "{why}. Say where it reaches: root (the project's root only), all (every \
                          workspace), or the workspaces' names. To turn it off in a workspace: \
                          purlis skill grant <name> -w <workspace> --off"
@@ -706,7 +724,37 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             match verbs::grant(&mut cx, &name, &grant) {
                 Ok(_) => Ok(0),
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
+                    Ok(1)
+                }
+            }
+        }
+        SkillCommand::Pin {
+            name,
+            workspace,
+            persona,
+            off,
+        } => {
+            let by = match (workspace, persona) {
+                (Some(ws), _) => purlis_core::skills::PinnedBy::Workspace(ws),
+                (None, Some(persona)) => purlis_core::skills::PinnedBy::Persona(persona),
+                (None, None) => unreachable!("clap requires -w or -p"),
+            };
+            let refused = match by {
+                purlis_core::skills::PinnedBy::Workspace(_) => {
+                    crate::brokered::manifest_refused("skill pin")
+                }
+                purlis_core::skills::PinnedBy::Persona(_) => None,
+            };
+            match refused.map_or_else(|| verbs::pin(&mut cx, &by, &name, !off), Err) {
+                Ok(true) => Ok(0),
+                Ok(false) => {
+                    let state = if off { "not pinned" } else { "already pinned" };
+                    voice::ok(format!("{name} was {state} there."));
+                    Ok(0)
+                }
+                Err(why) => {
+                    voice::err(why);
                     Ok(1)
                 }
             }
@@ -716,7 +764,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             match verbs::share(&mut cx, &at.level().at, &name) {
                 Ok(_) => Ok(0),
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     Ok(1)
                 }
             }
@@ -750,14 +798,14 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         } => match source::confirm(&mut cx, &Remote { url, branch }) {
             Ok(_) => Ok(0),
             Err(why) => {
-                voice::err(&esc(&why));
+                voice::err(esc(&why).to_string());
                 Ok(1)
             }
         },
         SkillCommand::Update { name: None, .. } => {
             let found = source::updates(root);
             for one in &found.unasked {
-                voice::warn(&esc(&format!("{} ({}): {}", one.name, one.level, one.why)));
+                voice::warn(esc(&format!("{} ({}): {}", one.name, one.level, one.why)).to_string());
             }
             for one in &found.unconfirmed {
                 println!(
@@ -800,7 +848,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             let update = match source::update_review(root, &level, &name) {
                 Ok(update) => update,
                 Err(why) => {
-                    voice::err(&esc(&why));
+                    voice::err(esc(&why).to_string());
                     return Ok(1);
                 }
             };
@@ -838,11 +886,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     return Ok(0);
                 }
                 for line in &diff.unseen {
-                    voice::warn(line);
+                    voice::warn(line.to_string());
                 }
                 print!("{}", diff.text);
                 if diff.cut {
-                    voice::info(&format!(
+                    voice::info(format!(
                         "The diff is cut at {} KiB.",
                         history::MOST_DIFF / 1024
                     ));
@@ -850,7 +898,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(0)
             }
             Err(why) => {
-                voice::err(&why);
+                voice::err(why.to_string());
                 Ok(1)
             }
         },
@@ -868,7 +916,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     Ok(0)
                 }
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why);
                     Ok(1)
                 }
             }
@@ -884,7 +932,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     Ok(0)
                 }
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     Ok(1)
                 }
             }
@@ -900,7 +948,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             // leaves what widens out when it hands the skill over).
             match history::revert_widens(root, &level, &name, &commit) {
                 Ok(Some(widens)) => {
-                    voice::warn(&widens);
+                    voice::warn(widens.to_string());
                     if !yes && !asked(&format!("Revert {name} to {}?", history::short(&commit))) {
                         voice::info("Nothing was reverted.");
                         return Ok(1);
@@ -908,7 +956,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 }
                 Ok(None) => {}
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     return Ok(1);
                 }
             }
@@ -951,7 +999,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                         Ok(0)
                     }
                     Err(why) => {
-                        voice::err(&why);
+                        voice::err(why.to_string());
                         Ok(1)
                     }
                 };
@@ -959,11 +1007,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             match lifecycle::set_owners(&mut cx, &at.level(), &name, &owners) {
                 Ok(true) => Ok(0),
                 Ok(false) => {
-                    voice::ok(&format!("{name}'s owners were already those."));
+                    voice::ok(owners_unchanged(&name));
                     Ok(0)
                 }
                 Err(why) => {
-                    voice::err(&why);
+                    voice::err(why.to_string());
                     Ok(1)
                 }
             }
@@ -981,7 +1029,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 println!("{line}");
             }
             if node.cut {
-                voice::info(&format!(
+                voice::info(format!(
                     "The project holds more than {} skills, and the rest were not read.",
                     purlis_core::skills::graph::MOST_SKILLS
                 ));
@@ -992,6 +1040,33 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
 }
 
 /// One deleted skill as `skill restore` lists it: its name and its level, each escaped.
+/// `<name> was already on in <workspace>.`: both names are spliced escaped (SK-54, #3225).
+fn already_switched(name: &str, state: &'static str, workspace: &str) -> Markup {
+    Markup::new()
+        .text(name)
+        .own(" was already ")
+        .own(state)
+        .own(" in ")
+        .text(workspace)
+        .own(".")
+}
+
+/// `<name>'s owners were already those.`, the name escaped (SK-54).
+fn owners_unchanged(name: &str) -> Markup {
+    Markup::new()
+        .text(name)
+        .own("'s owners were already those.")
+}
+
+/// `<name> was already <state>.`, the name escaped (SK-54).
+fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
+    Markup::new()
+        .text(name)
+        .own(" was already ")
+        .own(lifecycle.word())
+        .own(".")
+}
+
 fn restorable(name: &str, level: &Level) -> Markup {
     Markup::new().text(name).own("  ").text(level)
 }
@@ -1047,11 +1122,11 @@ fn lifecycle_set(
     match lifecycle::set(cx, level, name, lifecycle) {
         Ok(true) => Ok(0),
         Ok(false) => {
-            voice::ok(&format!("{name} was already {}.", lifecycle.word()));
+            voice::ok(already_in(name, lifecycle));
             Ok(0)
         }
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             Ok(1)
         }
     }
@@ -1325,7 +1400,7 @@ fn install(
         let browse = match source::browse(root, source) {
             Ok(browse) => browse,
             Err(why) => {
-                voice::err(&esc(&why));
+                voice::err(esc(&why).to_string());
                 return Ok(1);
             }
         };
@@ -1348,7 +1423,7 @@ fn install(
         match Grant::from_words(grant) {
             Ok(grant) => Some(grant),
             Err(why) => {
-                voice::err(&format!(
+                voice::err(format!(
                     "{why}: --grant takes root, all, or workspace names"
                 ));
                 return Ok(2);
@@ -1358,7 +1433,7 @@ fn install(
     let review = match source::review(root, source, names) {
         Ok(review) => review,
         Err(why) => {
-            voice::err(&esc(&why));
+            voice::err(esc(&why).to_string());
             return Ok(1);
         }
     };
@@ -1382,9 +1457,12 @@ fn install(
     if listed.iter().all(|one| one.source.remote != source.remote)
         && let Err(why) = source::add(cx, source, which)
     {
-        voice::warn(&esc(&format!(
-            "The source was not added to this project's sources: {why}"
-        )));
+        voice::warn(
+            esc(&format!(
+                "The source was not added to this project's sources: {why}"
+            ))
+            .to_string(),
+        );
     }
     done(source::install(
         cx,
@@ -1573,7 +1651,7 @@ fn done<T>(answer: Result<T, String>) -> Result<Code, String> {
         Ok(_) => Ok(0),
         Err(why) => {
             // A refusal may quote a source's own words: escaped like everything else it says.
-            voice::err(&esc(&why));
+            voice::err(esc(&why).to_string());
             Ok(1)
         }
     }
@@ -1653,17 +1731,17 @@ fn say_users(users: &verbs::Users) {
             .map(|persona| format!("chats as {persona}, in every workspace")),
     );
     if !reach.is_empty() {
-        voice::info(&format!("Used by {}", reach.join(", ")));
+        voice::info(format!("Used by {}", reach.join(", ")));
     }
     if !users.personas.is_empty() {
-        voice::info(&format!(
+        voice::info(format!(
             "Named by {}: {}",
             purlis_core::counts::counted(users.personas.len(), "persona", "personas"),
             users.personas.join(", ")
         ));
     }
     if !users.skills.is_empty() {
-        voice::info(&format!(
+        voice::info(format!(
             "Named by {}: {}",
             purlis_core::counts::counted(users.skills.len(), "skill", "skills"),
             users.skills.join(", ")
@@ -1680,7 +1758,14 @@ fn level(row: &StudioRow) -> String {
 fn state(row: &StudioRow) -> String {
     match &row.left_out {
         None if row.unchecked => format!("on: {}", purlis_core::skills::UNCHECKED),
-        None => "on".to_owned(),
+        None => match row.hidden.first() {
+            Some(first) => {
+                let on: Vec<&str> = row.hidden.iter().map(|one| one.harness.title()).collect();
+                format!("on, {} (on {})", first.hidden, on.join(", "))
+            }
+            None if row.pinned => "on, pinned".to_owned(),
+            None => "on".to_owned(),
+        },
         Some(why) => format!("left out: {why}"),
     }
 }
@@ -1698,6 +1783,17 @@ fn row_json(row: &StudioRow) -> Value {
         "written": row.written,
         "named": row.named,
         "unchecked": row.unchecked,
+        "hidden": row
+            .hidden
+            .iter()
+            .map(|one| json!({
+                "harness": one.harness.title(),
+                "router": one.hidden.router,
+                "why": one.hidden.why,
+                "said": one.hidden.to_string(),
+            }))
+            .collect::<Vec<_>>(),
+        "pinned": row.pinned,
     })
 }
 
