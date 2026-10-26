@@ -960,9 +960,15 @@ pub enum Start {
 
 impl ChatSkills {
     /// **The text that starts skill `name` of this chat's set**, with `values` for its arguments
-    /// in the order it declares them ([`Given::of`]), and the run it starts, or why there is
-    /// none: a skill that is not in the chat's set is never typed.
-    pub fn typed(&self, name: &str, values: &[String]) -> Result<Typing, String> {
+    /// in the order it declares them ([`Given::of`]), and the run it starts, its text digested
+    /// under the chat's `salt` ([`crate::skillspan::PromptSalt`]), or why there is none: a skill
+    /// that is not in the chat's set is never typed.
+    pub fn typed(
+        &self,
+        name: &str,
+        values: &[String],
+        salt: &crate::skillspan::PromptSalt,
+    ) -> Result<Typing, String> {
         let offered = self
             .offered
             .iter()
@@ -992,7 +998,7 @@ impl ChatSkills {
                 origin: offered.effective.origin,
                 local: offered.effective.local,
             }),
-            text: crate::skillspan::PromptMarks::digest(&text),
+            text: crate::skillspan::PromptMarks::digest(&text, salt),
             confirmed: self.harness.typed_start(),
         });
         Ok(Typing { text, start: held })
