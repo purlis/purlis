@@ -66,6 +66,7 @@ import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Form, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { RESULTS } from "./ActionResultNotice";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What an empty Inbox says (I-12). */
@@ -230,6 +231,9 @@ export function Inbox({
   // so it gives its place up as it leaves the front and hands it over again as it comes back.
   const shown = useProjectShown();
   const placeWindowLines = shown ? windowLines?.at : undefined;
+  // The results the window keeps (#3344), under the Notices, in the same place-giving way.
+  const placeResults = shown ? windowLines?.resultsAt : undefined;
+  const resultsCount = windowLines?.results ?? 0;
   const asking = elsewhere?.asking ?? [];
   const quiet = elsewhere?.quiet ?? [];
   // Named only where the window can bring the project forward.
@@ -469,7 +473,7 @@ export function Inbox({
             <section
               className="inbox-notices"
               aria-label={NOTICES}
-              hidden={noticed === 0 && windowLinesCount === 0}
+              hidden={noticed === 0 && windowLinesCount === 0 && resultsCount === 0}
               ref={noticesAt}
             >
               <PanelSectionTitle level={3} className="inbox-chain">
@@ -488,6 +492,16 @@ export function Inbox({
                   )}
                 </NoticeList>
               </NoticeWayGuard>
+              {/* **Results** (#3344): what the person's actions answered, newest first, each the
+              notice that stood at the top of the content, with the same ways on. */}
+              {placeResults !== undefined && (
+                <section aria-label={RESULTS} hidden={resultsCount === 0}>
+                  <PanelSectionTitle level={3} className="inbox-chain">
+                    {RESULTS}
+                  </PanelSectionTitle>
+                  <div className="inbox-results" ref={placeResults} />
+                </section>
+              )}
             </section>
           )}
           {updates !== undefined && <UpdateList updates={updates} stops={stops} />}
@@ -503,6 +517,10 @@ export type WindowLines = {
   at: (element: HTMLDivElement | null) => void;
   /** How many lines the window lists now. */
   count: number;
+  /** Handed the element the window's kept results are drawn into, under the Notices (#3344). */
+  resultsAt?: (element: HTMLDivElement | null) => void;
+  /** How many results the window keeps for this project. */
+  results?: number;
 };
 
 /**

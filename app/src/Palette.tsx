@@ -579,7 +579,9 @@ export function Palette({
           className={showing.refused ? "refusal said" : "said"}
           role={showing.refused ? "alert" : "status"}
         >
-          <span>{showing.words}</span>
+          <span>
+            {showing.title === undefined ? showing.words : `${showing.title}. ${showing.words}`}
+          </span>
           {showing.settings !== undefined && onSettings !== undefined && (
             <SaidLink
               way={showing.settings}

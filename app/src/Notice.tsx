@@ -16,7 +16,8 @@ import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { PersonaMark } from "./PersonaMark";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
-import { Button, ButtonRow } from "./ui/button/Button";
+import { X } from "lucide-react";
+import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 
 /**
  * **A Notice: a standing line in a project's window about something true now** (CONTEXT.md,
@@ -90,6 +91,9 @@ type Ways = {
   /** What Dismiss does, where it is more than putting the line away: said as its tooltip
    *  (qw386). */
   dismissSays?: string;
+  /** Dismiss drawn as a × icon button, named and tipped "Dismiss": a line that closes rather
+   *  than is answered, as an action's result (#3344). */
+  closes?: boolean;
 };
 
 /** At least one way out, said in the type: a Notice with none does not compile. */
@@ -137,7 +141,7 @@ export const NoticeOf = createContext<{
 
 export function Notice(props: NoticeProps) {
   const { cause, tone = "news", at = "inbox", label, persona, children, under } = props;
-  const { fixes, link, copy, onDismiss, dismissSays } = props as Ways;
+  const { fixes, link, copy, onDismiss, dismissSays, closes } = props as Ways;
   const list = useContext(Listed);
   const provided = useContext(NoticeOf);
   // A granting way out waits for the list it is drawn in to say it has settled (#1695).
@@ -225,7 +229,18 @@ export function Notice(props: NoticeProps) {
           Copy command
         </Button>
       )}
-      {onDismiss && (
+      {onDismiss && closes === true && (
+        <IconButton
+          size="sm"
+          variant="ghost"
+          aria-label="Dismiss"
+          tooltip={dismissSays}
+          onPress={onDismiss}
+          className="notice-dismiss"
+          icon={<X aria-hidden="true" />}
+        />
+      )}
+      {onDismiss && closes !== true && (
         <Button
           size="sm"
           variant="ghost"

@@ -100,10 +100,6 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "under the box, with what was typed kept: Send is the retry. And, where the form was " +
       "opened for a task that asks nothing now, the sentence that says so, beside Close",
   },
-  "App.tsx": {
-    count: 1,
-    why: "what the last action answered: replaced by the next action, not about something true now",
-  },
   "AskPersona.tsx": {
     count: 1,
     why: ACTION,

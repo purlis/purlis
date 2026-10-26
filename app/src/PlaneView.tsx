@@ -184,6 +184,7 @@ import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
+import { workspaceMade } from "./actionResult";
 import { Inbox, landOnGroupIn, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
@@ -4377,9 +4378,15 @@ export const PlaneView = memo(function PlaneView({
       // the workspace strip draws what is pinned. A pin the store refused leaves the
       // workspace made and says why, beside what charter said about making it.
       const pinned = await pinWorkspace(name, true);
-      const words = pinned.ok ? answer.data : [...answer.data, pinned.refused];
-      // charter's own lines, which say where it landed and whether it is LOCAL or LIVE.
-      setReport({ from: "workspace.create", refused: false, words: words.join(" ") });
+      // Said in the app's own words, with Open; the core's lines, where it landed and whether
+      // it is LOCAL or LIVE, are kept behind Details, less the lines written for an agent
+      // (#3344, `actionResult.ts`).
+      setReport(
+        workspaceMade(name, answer.data, {
+          onOpen: () => focusWorkspace(name),
+          pinRefused: pinned.ok ? undefined : pinned.refused,
+        }),
+      );
       // The plane is read again rather than this window writing the workspace into its own
       // copy of the sidebar, and the strip lands on what was just made: it holds no chats, so
       // `picked` is the only thing that can put the window in it.
@@ -4416,7 +4423,7 @@ export const PlaneView = memo(function PlaneView({
       );
       setReplan((asked) => asked + 1);
     },
-    [pinWorkspace, plane],
+    [focusWorkspace, pinWorkspace, plane],
   );
 
   /** Asks for a new vault. It makes nothing: the dialog asks, and `vault_create` makes one. */

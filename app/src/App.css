@@ -3807,6 +3807,45 @@ body {
   cursor: pointer;
 }
 
+/* **What an action answered** (`ActionResultNotice.tsx`, #3344, the sidebar-views prototype's
+   Q3 A): a notice at the top of the content, at most 640px wide, its title in the primary words
+   and its one sentence in the muted tier under it; what the core said, behind Details, in mono
+   on the code ground. The same notice is listed under Results in the Inbox's Notices. */
+.action-result {
+  max-inline-size: 640px;
+  margin: var(--space-3) var(--space-5) 0;
+}
+
+/* A kept result's notice is drawn in the Results list's place; its keyboard handler is no box. */
+.action-result-kept {
+  display: contents;
+}
+
+.action-result-title {
+  display: block;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.action-result-says {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.action-result-details {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background-color: var(--terminal-background);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* **A refusal's way to its setting** (`SaidLink.tsx`, #1201): beside the last action's words, on
    the window's line under the title bar and on the palette's line, a link in the line's own
    colour, as a Notice's ways out are, set off by the space `SaidLink` draws before it. Its focus
