@@ -84,11 +84,11 @@ pub(super) fn workspace_ok(plane: &Path, ws: &str, say: &mut dyn FnMut(Say)) -> 
     match crate::worktree::confine::workspace_dir(plane, ws) {
         Ok(_) => {
             // `ws` passed `workspace_name_ok` above, so it prints as itself from here on.
-            say(Say::Info(format!("workspace: {ws}")));
+            say(Say::Info(format!("workspace: {ws}").into()));
             true
         }
         Err(why) => {
-            say(Say::Fail(shown::line(&why.to_string())));
+            say(Say::Fail(shown::line(&why.to_string()).into()));
             false
         }
     }
@@ -99,9 +99,9 @@ pub(super) fn workspace_ok(plane: &Path, ws: &str, say: &mut dyn FnMut(Say)) -> 
 fn why_given(why: Option<&str>, tail: &str, say: &mut dyn FnMut(Say)) -> Option<String> {
     let why = why.unwrap_or_default().trim();
     if why.is_empty() {
-        say(Say::Fail(format!(
-            "--why is required: one line saying {tail}."
-        )));
+        say(Say::Fail(
+            format!("--why is required: one line saying {tail}.").into(),
+        ));
         return None;
     }
     if shown::one_line(why, TEXT_LIMIT) != why {
@@ -117,14 +117,16 @@ fn why_given(why: Option<&str>, tail: &str, say: &mut dyn FnMut(Say)) -> Option<
 }
 
 fn unknown(ws: &str, slug: &str, say: &mut dyn FnMut(Say)) -> u8 {
-    say(Say::Fail(format!(
-        "no change {} in workspace '{ws}'.",
-        named(slug)
-    )));
-    say(Say::Info(format!(
-        "List them: purlis change list  ·  create it: purlis change create {} --why \"…\"",
-        named(slug)
-    )));
+    say(Say::Fail(
+        format!("no change {} in workspace '{ws}'.", named(slug)).into(),
+    ));
+    say(Say::Info(
+        format!(
+            "List them: purlis change list  ·  create it: purlis change create {} --why \"…\"",
+            named(slug)
+        )
+        .into(),
+    ));
     REFUSED
 }
 
@@ -140,7 +142,7 @@ pub(super) fn load(
         return Err(unknown(ws, slug, say));
     }
     store::read(plane, ws, slug).map_err(|e| {
-        say(Say::Fail(e.to_string()));
+        say(Say::Fail(e.to_string().into()));
         1
     })
 }
@@ -151,11 +153,11 @@ pub(super) fn save(plane: &Path, ws: &str, record: &Record, say: &mut dyn FnMut(
     match store::write(plane, ws, record) {
         Ok(_) => 0,
         Err(WriteError::Record(e)) => {
-            say(Say::Fail(e.to_string()));
+            say(Say::Fail(e.to_string().into()));
             REFUSED
         }
         Err(WriteError::Plane(e)) => {
-            say(Say::Fail(e));
+            say(Say::Fail(e.into()));
             1
         }
     }
@@ -201,23 +203,28 @@ pub fn create(
             "{} is not a change name (letters, digits, '.', '_', '-'; must not start with a dot \
              or a dash).",
             named(slug)
-        )));
-        say(Say::Info(format!(
-            "The slug names a file in this plane, a branch in every member, and the \
+        ).into()));
+        say(Say::Info(
+            format!(
+                "The slug names a file in this plane, a branch in every member, and the \
              `{}:` trailer on each landing commit — so it is refused rather than \
              rewritten.",
-            super::land::TRAILER
-        )));
+                super::land::TRAILER
+            )
+            .into(),
+        ));
         return 1;
     }
     let Some(why) = why_given(why, "what this work is for", say) else {
         return 1;
     };
     if store::exists(plane, ws, slug) {
-        say(Say::Fail(format!(
-            "change '{slug}' already exists in workspace '{ws}'."
-        )));
-        say(Say::Info(format!("Show it: purlis change show {slug}")));
+        say(Say::Fail(
+            format!("change '{slug}' already exists in workspace '{ws}'.").into(),
+        ));
+        say(Say::Info(
+            format!("Show it: purlis change show {slug}").into(),
+        ));
         return REFUSED;
     }
     let record = Record::new(slug, &why, by, &now_iso(now));
@@ -225,10 +232,10 @@ pub fn create(
     if code != 0 {
         return code;
     }
-    say(Say::Done(format!("change '{slug}' created")));
-    say(Say::Info(format!(
-        "Add its repos: purlis change add {slug} <repo>"
-    )));
+    say(Say::Done(format!("change '{slug}' created").into()));
+    say(Say::Info(
+        format!("Add its repos: purlis change add {slug} <repo>").into(),
+    ));
     0
 }
 
@@ -250,26 +257,26 @@ pub fn add(
         Err(code) => return code,
     };
     if crate::repos::clone_at(plane, ws, repo).is_none() {
-        say(Say::Fail(format!(
-            "{}: no clone in workspace '{ws}'.",
-            named(repo)
-        )));
-        say(Say::Info(format!(
-            "Clone it first: purlis clone {} -w {ws}",
-            named(repo)
-        )));
+        say(Say::Fail(
+            format!("{}: no clone in workspace '{ws}'.", named(repo)).into(),
+        ));
+        say(Say::Info(
+            format!("Clone it first: purlis clone {} -w {ws}", named(repo)).into(),
+        ));
         return REFUSED;
     }
     if record.member(repo).is_some() {
-        say(Say::Fail(format!(
-            "'{}' is already a member of '{slug}'.",
-            named(repo)
-        )));
-        say(Say::Info(format!(
-            "Change its branch or blockers by editing workspaces/{ws}/changes/{slug}.json, or \
+        say(Say::Fail(
+            format!("'{}' is already a member of '{slug}'.", named(repo)).into(),
+        ));
+        say(Say::Info(
+            format!(
+                "Change its branch or blockers by editing workspaces/{ws}/changes/{slug}.json, or \
              drop it first: purlis change drop {slug} {} --why \"…\"",
-            named(repo)
-        )));
+                named(repo)
+            )
+            .into(),
+        ));
         return REFUSED;
     }
     // An empty `--branch` is no branch named, as Python's `args.branch or default` reads it.
@@ -278,7 +285,7 @@ pub fn add(
         .map(str::to_string)
         .unwrap_or_else(|| default_branch(slug));
     if let Some(complaint) = branch_refusal(&branch) {
-        say(Say::Fail(complaint));
+        say(Say::Fail(complaint.into()));
         return 1;
     }
     let member = Member {
@@ -296,17 +303,19 @@ pub fn add(
         return code;
     }
     if let Some(lifted) = lifted {
-        say(Say::Warn(format!(
-            "the exclusion recorded on {} is lifted: {}",
-            cell(&lifted.at),
-            cell(&lifted.why)
-        )));
+        say(Say::Warn(
+            format!(
+                "the exclusion recorded on {} is lifted: {}",
+                cell(&lifted.at),
+                cell(&lifted.why)
+            )
+            .into(),
+        ));
     }
     say(Say::Out(member_line(&record, &member)));
-    say(Say::Done(format!(
-        "'{}' is a member of '{slug}'",
-        named(repo)
-    )));
+    say(Say::Done(
+        format!("'{}' is a member of '{slug}'", named(repo)).into(),
+    ));
     0
 }
 
@@ -332,10 +341,9 @@ pub fn drop(
         return 1;
     };
     if record.exclusion(repo).is_some() {
-        say(Say::Fail(format!(
-            "'{}' is already excluded from '{slug}'.",
-            named(repo)
-        )));
+        say(Say::Fail(
+            format!("'{}' is already excluded from '{slug}'.", named(repo)).into(),
+        ));
         return REFUSED;
     }
     let dependents = record.dependents(repo);
@@ -349,11 +357,14 @@ pub fn drop(
         } else {
             "needs"
         };
-        say(Say::Fail(format!(
-            "'{}' cannot be dropped from '{slug}': {} still {verb} it to land first.",
-            named(repo),
-            names.join(", ")
-        )));
+        say(Say::Fail(
+            format!(
+                "'{}' cannot be dropped from '{slug}': {} still {verb} it to land first.",
+                named(repo),
+                names.join(", ")
+            )
+            .into(),
+        ));
         say(Say::Info(
             "Drop those members first, or edit their `needs` — a blocker nothing will land is a \
              member that never becomes ready."
@@ -378,8 +389,9 @@ pub fn drop(
             named(repo),
             counted(record.members.len(), "member", "members")
         )
+        .into()
     } else {
-        format!("'{}' excluded (never a member)", named(repo))
+        format!("'{}' excluded (never a member)", named(repo)).into()
     }));
     0
 }
@@ -390,23 +402,25 @@ pub fn forget(plane: &Path, ws: &str, slug: &str, say: &mut dyn FnMut(Say)) -> u
         return 1;
     }
     if !store::exists(plane, ws, slug) {
-        say(Say::Fail(format!(
-            "no change {} in workspace '{ws}'.",
-            named(slug)
-        )));
+        say(Say::Fail(
+            format!("no change {} in workspace '{ws}'.", named(slug)).into(),
+        ));
         return REFUSED;
     }
     match store::forget(plane, ws, slug) {
         Ok(Some(_)) => {
-            say(Say::Done(format!(
-                "change '{slug}' forgotten — the record is gone; branches, requests and the \
+            say(Say::Done(
+                format!(
+                    "change '{slug}' forgotten — the record is gone; branches, requests and the \
                  landing log are untouched."
-            )));
+                )
+                .into(),
+            ));
             0
         }
         Ok(None) => unknown(ws, slug, say),
         Err(e) => {
-            say(Say::Fail(e));
+            say(Say::Fail(e.into()));
             1
         }
     }
@@ -420,13 +434,13 @@ pub fn list(plane: &Path, ws: &str, say: &mut dyn FnMut(Say)) -> u8 {
     }
     let listing = store::read_all(plane, ws);
     if let Some(unread) = listing.unread {
-        say(Say::Fail(unread.why));
+        say(Say::Fail(unread.why.into()));
         return 1;
     }
     if listing.records.is_empty() && listing.refused.is_empty() {
         say(Say::Info(format!(
             "No changes in workspace '{ws}'. Create one: purlis change create <slug> --why \"…\""
-        )));
+        ).into()));
         return 0;
     }
     let names: Vec<String> = listing.records.iter().map(|r| cell(&r.change)).collect();
@@ -443,11 +457,9 @@ pub fn list(plane: &Path, ws: &str, say: &mut dyn FnMut(Say)) -> u8 {
         )));
     }
     for (slug, complaint) in &listing.refused {
-        say(Say::Fail(format!(
-            "{}: {}",
-            named(slug),
-            shown::line(complaint)
-        )));
+        say(Say::Fail(
+            format!("{}: {}", named(slug), shown::line(complaint)).into(),
+        ));
     }
     u8::from(!listing.refused.is_empty())
 }

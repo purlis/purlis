@@ -74,13 +74,13 @@ pub struct UpdateArgs {
 /// `charter update`: say what this command cannot do, and where to read what a version brought.
 pub fn update_report(args: &UpdateArgs) -> Report {
     let mut report = Report::new_public();
-    report.said.push(Say::Warn(not_the_installer()));
-    report.said.push(Say::Info(WHAT_IT_BROUGHT.to_owned()));
+    report.said.push(Say::Warn(not_the_installer().into()));
+    report.said.push(Say::Info(WHAT_IT_BROUGHT.into()));
     if !args.to.is_empty() {
-        report.said.push(Say::Warn(NO_TARGET.to_owned()));
+        report.said.push(Say::Warn(NO_TARGET.into()));
     }
     if args.bump {
-        report.said.push(Say::Warn(NO_BUMP.to_owned()));
+        report.said.push(Say::Warn(NO_BUMP.into()));
     }
     report
 }
@@ -236,35 +236,46 @@ pub fn version_report(root: Option<&Path>) -> Report {
             report.said.push(Say::Info(
                 "this control plane pins no purlis version, so there is nothing to conform \
                  to."
-                .to_owned(),
+                .into(),
             ));
-            report.said.push(Say::Info(format!("  {THE_APP_MOVES_IT}")));
+            report
+                .said
+                .push(Say::Info(format!("  {THE_APP_MOVES_IT}").into()));
         }
         PinVerdict::Met(pin) => {
-            report.said.push(Say::Ok(format!(
-                "this purlis is {pin}, which is what this control plane pins."
-            )));
+            report.said.push(Say::Ok(
+                format!("this purlis is {pin}, which is what this control plane pins.").into(),
+            ));
         }
         PinVerdict::PythonLine(pin) => {
             report.said.push(Say::Info(format!(
                 "this control plane pins {pin}, a release of the Python charter (charter-cp): an \
                  older charter line, not a version of this app, so it is not drift and there is \
                  nothing to compare."
-            )));
-            report.said.push(Say::Info(format!(
-                "  to hold this plane to this app instead:  set `[charter] version = \
+            ).into()));
+            report.said.push(Say::Info(
+                format!(
+                    "  to hold this plane to this app instead:  set `[charter] version = \
                  \"{version}\"` in charter.toml, or remove the pin."
-            )));
+                )
+                .into(),
+            ));
         }
         PinVerdict::Drift(pin) => {
-            report.said.push(Say::Warn(format!(
-                "drift: this control plane pins {pin}, and this purlis is {version}."
-            )));
-            report.said.push(Say::Info(format!("  {THE_APP_MOVES_IT}")));
-            report.said.push(Say::Info(format!(
-                "  conform the plane instead:  set `[charter] version = \"{version}\"` in \
+            report.said.push(Say::Warn(
+                format!("drift: this control plane pins {pin}, and this purlis is {version}.")
+                    .into(),
+            ));
+            report
+                .said
+                .push(Say::Info(format!("  {THE_APP_MOVES_IT}").into()));
+            report.said.push(Say::Info(
+                format!(
+                    "  conform the plane instead:  set `[charter] version = \"{version}\"` in \
                  charter.toml, or update the app to the version the plane pins."
-            )));
+                )
+                .into(),
+            ));
         }
     }
     report
@@ -280,13 +291,20 @@ pub fn version_report(root: Option<&Path>) -> Report {
 /// Exit 1, because the operator asked for something that did not happen.
 pub fn version_move_refusal(verb: &str) -> Report {
     let mut report = Report::new_public();
-    report.said.push(Say::Err(format!(
-        "purlis version {verb} moves a pin by installing the purlis it names, and this \
+    report.said.push(Say::Err(
+        format!(
+            "purlis version {verb} moves a pin by installing the purlis it names, and this \
          purlis cannot install itself."
-    )));
-    report.said.push(Say::Info(format!("  {THE_APP_MOVES_IT}")));
+        )
+        .into(),
+    ));
+    report
+        .said
+        .push(Say::Info(format!("  {THE_APP_MOVES_IT}").into()));
     report.said.push(Say::Info(
-        "  what this purlis is, and what this plane pins:  purlis version".to_owned(),
+        "  what this purlis is, and what this plane pins:  purlis version"
+            .to_owned()
+            .into(),
     ));
     report.code = 1;
     report
@@ -326,7 +344,9 @@ pub fn update_report_with_channel(config_root: Option<&Path>, args: &UpdateArgs)
         .unwrap_or_default();
     // Second, right under the refusal that names the app as the mover — not at the bottom,
     // where it would read as a footnote to a different subject.
-    report.said.insert(1, Say::Info(channel_line(channel)));
+    report
+        .said
+        .insert(1, Say::Info(channel_line(channel).into()));
     report
 }
 
@@ -342,36 +362,41 @@ pub fn update_report_with_channel(config_root: Option<&Path>, args: &UpdateArgs)
 pub fn set_channel_report(config_root: Option<&Path>, word: &str) -> Report {
     let mut report = Report::new_public();
     let Some(channel) = crate::updates::Channel::named(word) else {
-        report.said.push(Say::Err(format!(
-            "{word:?} is not an update channel. There are two: stable and dev."
-        )));
+        report.said.push(Say::Err(
+            format!("{word:?} is not an update channel. There are two: stable and dev.").into(),
+        ));
         report.code = 1;
         return report;
     };
     let Some(config_root) = config_root else {
         report.said.push(Say::Err(
-            "this machine has no config home, so purlis has nowhere to keep the channel."
-                .to_owned(),
+            "this machine has no config home, so purlis has nowhere to keep the channel.".into(),
         ));
         report.code = 1;
         return report;
     };
     match crate::machine::update(config_root, |store| store.channel = channel) {
         Ok(_) => {
-            report.said.push(Say::Ok(format!(
-                "the app on this machine now updates from the {} channel.",
-                channel.name()
-            )));
-            report.said.push(Say::Info(format!(
-                "  it reads {} at its next check; nothing is installed until you say so in the \
+            report.said.push(Say::Ok(
+                format!(
+                    "the app on this machine now updates from the {} channel.",
+                    channel.name()
+                )
+                .into(),
+            ));
+            report.said.push(Say::Info(
+                format!(
+                    "  it reads {} at its next check; nothing is installed until you say so in the \
                  app.",
-                channel.endpoint()
-            )));
+                    channel.endpoint()
+                )
+                .into(),
+            ));
         }
         Err(why) => {
-            report.said.push(Say::Err(format!(
-                "the channel could not be recorded: {why}"
-            )));
+            report.said.push(Say::Err(
+                format!("the channel could not be recorded: {why}").into(),
+            ));
             report.code = 1;
         }
     }

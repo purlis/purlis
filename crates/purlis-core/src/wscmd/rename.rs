@@ -432,36 +432,40 @@ pub fn rename(request: &Request, say: Sink) -> u8 {
     let Request { root, old, new, .. } = *request;
     for name in [old, new] {
         if wscmd::workspace_dir(root, name).is_none() {
-            say(Say::Fail(format!(
-                "invalid workspace name '{}' (use letters, digits, '.', '_', '-'; must not \
+            say(Say::Fail(
+                format!(
+                    "invalid workspace name '{}' (use letters, digits, '.', '_', '-'; must not \
                  start with a dot)",
-                crate::personas::one_line(name)
-            )));
+                    crate::personas::one_line(name)
+                )
+                .into(),
+            ));
             return 1;
         }
     }
     if old == new {
-        say(Say::Fail(format!(
-            "'{old}' is already called that — nothing to rename."
-        )));
+        say(Say::Fail(
+            format!("'{old}' is already called that — nothing to rename.").into(),
+        ));
         return 1;
     }
 
     // A rename that got past its commit point and did not finish is finished before anything
     // else is renamed, so two renames never interleave.
-    let resuming = match read_journal(root) {
-        Some(journal) if journal.from == old && journal.to == new => journal.committed(root),
-        Some(journal) if journal.committed(root) => {
-            say(Say::Fail(format!(
+    let resuming =
+        match read_journal(root) {
+            Some(journal) if journal.from == old && journal.to == new => journal.committed(root),
+            Some(journal) if journal.committed(root) => {
+                say(Say::Fail(format!(
                 "renaming '{}' to '{}' was interrupted and has not finished — finish it first: \
                  purlis workspace rename {} {}",
                 journal.from, journal.to, journal.from, journal.to
-            )));
-            return 1;
-        }
-        // Written and never acted on: the old name still works, and this rename replaces it.
-        _ => false,
-    };
+            ).into()));
+                return 1;
+            }
+            // Written and never acted on: the old name still works, and this rename replaces it.
+            _ => false,
+        };
 
     if !request.running.is_empty() {
         let (are, them) = if request.running.len() == 1 {
@@ -473,14 +477,17 @@ pub fn rename(request: &Request, say: Sink) -> u8 {
             "Refusing to rename '{old}' — {are} running in it: {}. A running chat keeps the old \
              path; close {them} first.",
             request.running.join(", "),
-        )));
+        ).into()));
         return 1;
     }
     if let Err(why) = crate::worktree::relocation_refusal(root) {
-        say(Say::Fail(format!(
-            "'{old}' was not renamed: {why}, and a rename would leave its worktrees under the \
+        say(Say::Fail(
+            format!(
+                "'{old}' was not renamed: {why}, and a rename would leave its worktrees under the \
              old name."
-        )));
+            )
+            .into(),
+        ));
         return 1;
     }
 
@@ -488,24 +495,28 @@ pub fn rename(request: &Request, say: Sink) -> u8 {
     let to = root.join("workspaces").join(new);
     if !resuming {
         if !wscmd::workspace_dir_exists(root, old) {
-            say(Say::Fail(format!("no workspace '{old}'")));
+            say(Say::Fail(format!("no workspace '{old}'").into()));
             return 1;
         }
         if let Err(why) = crate::contain::no_link_on_the_way(root, &from) {
-            say(Say::Fail(format!(
-                "'{old}' does not resolve to a directory inside this plane, so it was not \
+            say(Say::Fail(
+                format!(
+                    "'{old}' does not resolve to a directory inside this plane, so it was not \
                  renamed ({why})."
-            )));
+                )
+                .into(),
+            ));
             return 1;
         }
         if wscmd::workspace_dir_exists(root, new) && !same_directory(&from, &to) {
-            say(Say::Fail(format!(
-                "workspace '{new}' already exists — pick another name or remove it first."
-            )));
+            say(Say::Fail(
+                format!("workspace '{new}' already exists — pick another name or remove it first.")
+                    .into(),
+            ));
             return 1;
         }
         if let Some(warning) = fresh_warning(&starts_fresh_on_disk(root, old)) {
-            say(Say::Warn(warning));
+            say(Say::Warn(warning.into()));
         }
         let journal = Journal {
             from: old.to_string(),
@@ -513,10 +524,13 @@ pub fn rename(request: &Request, say: Sink) -> u8 {
             moved: false,
         };
         if let Err(why) = write_journal(root, &journal) {
-            say(Say::Fail(format!(
-                "could not record the rename before starting it ({why}), so nothing was \
+            say(Say::Fail(
+                format!(
+                    "could not record the rename before starting it ({why}), so nothing was \
                  renamed."
-            )));
+                )
+                .into(),
+            ));
             return 1;
         }
         if crashed(Step::Journal) {
@@ -534,10 +548,13 @@ pub fn rename(request: &Request, say: Sink) -> u8 {
         drop(moving);
         if let Err(why) = moved {
             let _ = std::fs::remove_file(journal_path(root));
-            say(Say::Fail(format!(
-                "could not rename workspaces/{old} to workspaces/{new} ({why}), so nothing was \
+            say(Say::Fail(
+                format!(
+                    "could not rename workspaces/{old} to workspaces/{new} ({why}), so nothing was \
                  renamed."
-            )));
+                )
+                .into(),
+            ));
             return 1;
         }
         // Best effort: `Journal::committed` reads the disk as well, so a journal that still
@@ -559,26 +576,31 @@ pub fn rename(request: &Request, say: Sink) -> u8 {
                 Ok(()) => format!(
                     "could not record that workspaces/{old} moved ({why}), so it was put back \
                      and nothing was renamed."
-                ),
+                )
+                .into(),
                 Err(stuck) => format!(
                     "could not record that workspaces/{old} moved ({why}), nor put it back \
                      ({stuck}). It is at workspaces/{new}: finish with purlis workspace \
                      rename {old} {new}"
-                ),
+                )
+                .into(),
             }));
             return 1;
         }
     } else {
-        say(Say::Info(format!(
-            "Finishing the rename of '{old}' to '{new}' that was interrupted."
-        )));
+        say(Say::Info(
+            format!("Finishing the rename of '{old}' to '{new}' that was interrupted.").into(),
+        ));
         // A directory under the old name that something created since the move is not this
         // workspace, and is left alone and said.
         if wscmd::workspace_dir_exists(root, old) {
-            say(Say::Warn(format!(
-                "workspaces/{old} exists again — something recreated it after the rename. It \
+            say(Say::Warn(
+                format!(
+                    "workspaces/{old} exists again — something recreated it after the rename. It \
                  is left as it is."
-            )));
+                )
+                .into(),
+            ));
         }
     }
     if crashed(Step::Move) {
@@ -699,34 +721,40 @@ fn finish(request: &Request, say: Sink) -> u8 {
     }
 
     if !left.is_empty() {
-        say(Say::Fail(format!(
-            "Renamed workspaces/{old} to workspaces/{new}, but not everything that names it \
+        say(Say::Fail(
+            format!(
+                "Renamed workspaces/{old} to workspaces/{new}, but not everything that names it \
              followed. Run the same command again to finish: purlis workspace rename {old} {new}"
-        )));
+            )
+            .into(),
+        ));
         wscmd::say_each(say, left);
         return 1;
     }
     let _ = std::fs::remove_file(journal_path(root));
     for stale in config_named(root, old) {
-        say(Say::Warn(stale));
+        say(Say::Warn(stale.into()));
     }
-    say(Say::Done(format!("Renamed workspace '{old}' to '{new}'.")));
+    say(Say::Done(
+        format!("Renamed workspace '{old}' to '{new}'.").into(),
+    ));
     if links_left_behind > 0 {
-        say(Say::Warn(format!(
-            "The work {} to {} of '{new}' still {} under \
+        say(Say::Warn(
+            format!(
+                "The work {} to {} of '{new}' still {} under \
              '{old}': it was called '{new}' before, and an alias back to a name a key left \
              would close a cycle.",
-            plural(links_left_behind, "link", "links"),
-            counted(links_left_behind, "todo", "todos"),
-            plural(links_left_behind, "resolves", "resolve")
-        )));
+                plural(links_left_behind, "link", "links"),
+                counted(links_left_behind, "todo", "todos"),
+                plural(links_left_behind, "resolves", "resolve")
+            )
+            .into(),
+        ));
     }
     if grants_left > 0 {
-        say(Say::Warn(crate::dispatchwithin::left_behind_said(
-            grants_left,
-            old,
-            Some(new),
-        )));
+        say(Say::Warn(
+            crate::dispatchwithin::left_behind_said(grants_left, old, Some(new)).into(),
+        ));
     }
 
     // Something tracked moved only for a LIVE workspace or a committed default — asked of the
@@ -751,7 +779,7 @@ fn save(root: &Path, old: &str, new: &str, say: Sink) {
         say(Say::Info(
             "Not saved: this plane has not been told how it is saved yet — the next \
              `purlis save` takes the rename."
-                .to_string(),
+                .into(),
         ));
         return;
     }
@@ -775,7 +803,7 @@ fn save(root: &Path, old: &str, new: &str, say: Sink) {
     if code != 0 {
         say(Say::Warn(
             "The rename is done on disk; the save did not finish, and the next save takes it."
-                .to_string(),
+                .into(),
         ));
     }
 }
