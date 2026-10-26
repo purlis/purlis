@@ -15,11 +15,15 @@
  * one that draws outside its frame (a dialog, a menu, a popover), or `false` for none. Which it
  * is goes to the reporter with the test, since no index of the stories has a story's
  * parameters: the stories check fails on a baseline of a story that takes none.
+ *
+ * A story whose `play` ends with what it pictures gone (a dialog it answers) takes its picture
+ * during `play`, with `pictureNow()` (`src/stories.testkit.ts`), and none is taken after it.
  */
 import "./handed";
-import { afterEach, expect } from "vitest";
+import { afterEach, beforeEach, expect, type TestContext } from "vitest";
 import { page } from "vitest/browser";
 import { facesLoaded } from "../src/theme/theme";
+import { PICTURE_GLOBAL } from "../src/stories.testkit";
 import { cellInTest, pictureOf } from "./matrix";
 
 type Taken = false | "frame" | "page";
@@ -39,13 +43,15 @@ const still = document.createElement("style");
 still.textContent = "* { caret-color: transparent !important; }";
 document.head.append(still);
 
-afterEach(async (context) => {
+/** The test running now, and whether its picture has been taken. */
+let running: { context: TestContext; taken: boolean } | undefined;
+
+/** Compares the story's picture with its baseline. */
+async function picture(context: TestContext): Promise<void> {
   const story = (context as unknown as Ran).story;
   if (!story) return;
   const taken = story.parameters.screenshot ?? "frame";
-  context.task.meta.screenshot = { story: story.id, taken };
-  // A story that already failed says why itself; a picture of it adds nothing.
-  if (taken === false || context.task.result?.state === "fail") return;
+  if (taken === false) return;
   const frames = document.querySelectorAll("[data-story-frame]");
   const frame = taken === "page" ? document.body : frames[frames.length - 1];
   if (!frame) throw new Error(`story ${story.id} drew no [data-story-frame] to take a picture of`);
@@ -55,4 +61,32 @@ afterEach(async (context) => {
   await facesLoaded();
   await document.fonts.ready;
   await expect.element(page.elementLocator(frame)).toMatchScreenshot(pictureOf(story.id, cell));
+}
+
+beforeEach((context) => {
+  running = { context, taken: false };
+});
+
+// `pictureNow()`, from a story's `play`: its picture, once, while what it pictures is drawn.
+(globalThis as Record<string, unknown>)[PICTURE_GLOBAL] = async () => {
+  if (!running || running.taken) return;
+  running.taken = true;
+  await picture(running.context);
+};
+
+afterEach(async (context) => {
+  const now = running;
+  running = undefined;
+  // What the story's picture is of goes to the reporter whatever happens next, a picture taken
+  // during `play` or none at all.
+  const story = (context as unknown as Ran).story;
+  if (story)
+    context.task.meta.screenshot = {
+      story: story.id,
+      taken: story.parameters.screenshot ?? "frame",
+    };
+  // A story that already failed says why itself; a picture of it adds nothing. One taken during
+  // its `play` is not taken again.
+  if (now?.taken || context.task.result?.state === "fail") return;
+  await picture(context);
 });

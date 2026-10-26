@@ -55,6 +55,13 @@ pub const SKILLS: &str = "skills";
 /// The key in [`SKILLS`] that lists the names turned off.
 pub const SKILLS_OFF: &str = "off";
 
+/// The key in [`SKILLS`] that lists the names the workspace pins (SK-15, ADR 0102 §4): skills its
+/// chats always list, which no router hides.
+pub const SKILLS_PINNED: &str = "pinned";
+
+/// The keys a workspace's [`SKILLS`] holds, each a list of skill names.
+const SKILLS_KEYS: [&str; 2] = [SKILLS_OFF, SKILLS_PINNED];
+
 /// The table that holds what a workspace's sends to a pool's runner leave out besides what a
 /// save to the forge refuses (#2046, the operator's ruling of 2026-10-25):
 /// `settings.runners.leave_out`, a list of files and folders, each relative to the top of the
@@ -321,14 +328,18 @@ pub fn standing(text: &str, workspace: &str) -> Vec<Refusal> {
     out
 }
 
-/// What a workspace's `settings.skills` holds that `purlis_skills::turned_off` would not read
-/// (#2767): anything but `off`, and an `off` that is not a list of names. The reader then turns
-/// nothing off, so a save that would write it is refused.
+/// What a workspace's `settings.skills` holds that `purlis_skills::turned_off` and
+/// `purlis_core::skills::pinned_in` would not read (#2767, SK-15): anything but `off` and
+/// `pinned`, and either that is not a list of names. The reader then reads nothing of it, so a
+/// save that would write it is refused.
 pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
     let Some(table) = top.get(SKILLS) else {
         return Vec::new();
     };
-    let shape = format!("a workspace's {SKILLS} are {{\"{SKILLS_OFF}\": [\"<skill>\", …]}}");
+    let shape = format!(
+        "a workspace's {SKILLS} are {{\"{SKILLS_OFF}\": [\"<skill>\", …], \"{SKILLS_PINNED}\": \
+         [\"<skill>\", …]}}"
+    );
     let Some(table) = table.as_table() else {
         return vec![Refusal::at(
             format!("{KEY}.{SKILLS} in {file} is not an object — {shape}"),
@@ -338,15 +349,20 @@ pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
     table
         .iter()
         .filter_map(|(key, value)| {
-            let why = if key != SKILLS_OFF {
+            let why = if !SKILLS_KEYS.contains(&key.as_str()) {
                 format!("{KEY}.{SKILLS}.{key} in {file} is not read — {shape}")
             } else if !value
                 .as_array()
                 .is_some_and(|names| names.iter().all(toml::Value::is_str))
             {
+                let reads = if key == SKILLS_OFF {
+                    "turns nothing off"
+                } else {
+                    "pins nothing"
+                };
                 format!(
-                    "{KEY}.{SKILLS}.{SKILLS_OFF} in {file} is not a list of skill names, so it \
-                     turns nothing off — {shape}"
+                    "{KEY}.{SKILLS}.{key} in {file} is not a list of skill names, so it {reads} \
+                     — {shape}"
                 )
             } else {
                 return None;
