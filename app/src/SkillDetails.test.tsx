@@ -145,6 +145,7 @@ describe("a skill's history, state and uses", () => {
           ],
         };
       if (cmd === "skill_pin") return { notes: [] };
+      if (cmd === "skill_grade_plan") return { running: null };
       throw new Error(`unexpected ${cmd}`);
     });
     render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
@@ -181,6 +182,7 @@ describe("a skill's history, state and uses", () => {
           ],
         };
       if (cmd === "skill_pin") return { notes: [] };
+      if (cmd === "skill_grade_plan") return { running: null };
       throw new Error(`unexpected ${cmd}`);
     });
     render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
@@ -204,6 +206,7 @@ describe("a skill's history, state and uses", () => {
   it("says no workspace or persona pins it", async () => {
     mockIPC((cmd) => {
       if (cmd === "skill_details") return page({ state: "active" }, null);
+      if (cmd === "skill_grade_plan") return { running: null };
       throw new Error(`unexpected ${cmd}`);
     });
     render(<SkillDetailsPanel plane="p" name="deploy" changed={0} />);
