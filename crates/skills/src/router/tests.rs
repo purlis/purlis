@@ -420,7 +420,7 @@ fn a_repo_or_harness_skill_named_as_the_index_is_hidden_by_it() {
 }
 
 #[test]
-fn on_the_config_route_the_index_goes_by_a_name_of_its_own_and_that_name_is_kept_for_it() {
+fn on_the_config_route_the_index_goes_by_a_name_of_its_own() {
     let tmp = tempfile::tempdir().unwrap();
     let (plane, built_in) = three(tmp.path());
 
@@ -442,7 +442,7 @@ fn on_the_config_route_the_index_goes_by_a_name_of_its_own_and_that_name_is_kept
         assert_eq!(index.name, INDEX, "{route:?} is as it was");
     }
 
-    // A project, repo or harness skill of that name is kept from it, with one reason.
+    // A project skill of that name is kept from it; a repo's is a clash.
     skill(&plane.join(PROJECT_DIR), "purlis-skill-index", "Mine.", "");
     let theirs = crate::OutsideSkill {
         skill: crate::Skill {
@@ -459,11 +459,7 @@ fn on_the_config_route_the_index_goes_by_a_name_of_its_own_and_that_name_is_kept
         unread: None,
     };
     let set = set_on(&plane, &built_in, Route::Config).with_outside(Route::Config, [theirs]);
-    assert!(
-        set.effective
-            .iter()
-            .all(|e| e.skill.name != "purlis-skill-index")
-    );
+    // The project's copy is left out; the repo's loads beside purlis's index, under one name.
     let reasons: Vec<(crate::Origin, &Reason)> = set
         .left_out
         .iter()
@@ -472,10 +468,19 @@ fn on_the_config_route_the_index_goes_by_a_name_of_its_own_and_that_name_is_kept
         .collect();
     assert_eq!(
         reasons,
-        [
-            (crate::Origin::Project, &Reason::BuiltInsOwnName),
-            (crate::Origin::Repo, &Reason::BuiltInsOwnName),
-        ]
+        [(crate::Origin::Project, &Reason::BuiltInsOwnName)]
+    );
+    assert!(
+        set.effective
+            .iter()
+            .any(|e| e.skill.name == "purlis-skill-index" && e.origin == crate::Origin::Repo)
+    );
+    assert_eq!(
+        set.clashes
+            .iter()
+            .map(|c| (c.name.as_str(), c.outcome))
+            .collect::<Vec<_>>(),
+        [("purlis-skill-index", crate::Outcome::EitherOne)]
     );
     // Elsewhere the name is the project's to use.
     let plugin = set_on(&plane, &built_in, Route::Plugin);

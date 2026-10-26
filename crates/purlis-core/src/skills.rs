@@ -1526,12 +1526,33 @@ pub fn route_of(
 /// **Which copy of the skill a chat started as `skill`, a name as its harness gave it, is of**,
 /// and the workspace the chat works in (SK-13): what a run's start carries, so a chat is shown
 /// the runs of its own copies alone. The copy is the one the chat's set holds by that name
-/// ([`purlis_skills::by_name`]), with the built-in skills purlis ships beside this binary; `None`
-/// for a name the set does not hold, such as a harness's own skill.
+/// ([`purlis_skills::by_name`]), worked out on the route of the chat's `harness` (Claude Code's
+/// where it names none), with the built-in skills purlis ships beside this binary; `None` for a
+/// name the set does not hold, such as a harness's own skill.
 pub fn whose(
     plane: &Path,
     workspace: Option<&str>,
     persona: Option<&str>,
+    harness: Option<Harness>,
+    skill: &str,
+) -> runs::Whose {
+    whose_with(
+        built_in_here().as_deref(),
+        plane,
+        workspace,
+        persona,
+        harness,
+        skill,
+    )
+}
+
+/// [`whose`], with the built-in skills in `built_in`.
+fn whose_with(
+    built_in: Option<&Path>,
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    harness: Option<Harness>,
     skill: &str,
 ) -> runs::Whose {
     // A skill started in purlis's own plugin (`purlis:secrets`) is the built-in copy, whether
@@ -1545,31 +1566,15 @@ pub fn whose(
             local: false,
         })
     } else {
-        let built_in = built_in_here();
-        let set = of_a_chat(
-            built_in.as_deref(),
-            plane,
-            workspace,
-            persona,
-            Route::Plugin,
-        );
-        purlis_skills::by_name(&set, skill)
-            .map(|effective| runs::Level {
-                origin: effective.origin,
-                local: effective.local,
-            })
-            .or_else(|| {
-                // opencode's name for a built-in skill, `purlis-<name>`, where the set holds no
-                // skill of that whole name (opencode leaves a plane one of it out).
-                let bare = skill.strip_prefix(BUILT_IN_OWN_PREFIX)?;
-                set.effective
-                    .iter()
-                    .any(|e| e.origin == Origin::BuiltIn && e.skill.name == bare)
-                    .then_some(runs::Level {
-                        origin: Origin::BuiltIn,
-                        local: false,
-                    })
-            })
+        // On the chat's own route: on opencode's the set holds a built-in skill as
+        // `purlis-<name>` and leaves a plane skill of that name out, so the name is purlis's
+        // there and nowhere else (a plane or clone skill named so elsewhere is its own).
+        let route = harness.map_or(Route::Plugin, Harness::skills);
+        let set = of_a_chat(built_in, plane, workspace, persona, route);
+        purlis_skills::by_name(&set, skill).map(|effective| runs::Level {
+            origin: effective.origin,
+            local: effective.local,
+        })
     };
     runs::Whose {
         workspace: workspace.map(str::to_owned),
@@ -1784,7 +1789,7 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Ve
                 .find(|l| l.name == found.id && l.origin == found.origin && l.folder == folder)
                 .map(|l| l.reason.to_string());
             // One purlis did not read is never linted or badged (SK-44): its description says why.
-            let (compat, lint) = if left_out.is_none() && found.unread.is_none() {
+            let (compat, mut lint) = if left_out.is_none() && found.unread.is_none() {
                 (
                     badges(
                         (&found.root, &found.skill.path),
@@ -1796,6 +1801,20 @@ fn outside_rows(harness: &HarnessInTheStudio, plane: &Path, known: &Known) -> Ve
             } else {
                 (Vec::new(), Vec::new())
             };
+            // A copy with the name of one of purlis's own skills there, which the harness loads
+            // beside purlis's under the one name ([`Outcome::EitherOne`]).
+            let either = harness.set.clashes.iter().any(|clash| {
+                clash.outcome == Outcome::EitherOne
+                    && clash.name == found.id
+                    && clash.outside == found.origin
+            });
+            if either {
+                lint.push(format!(
+                    "purlis's own skill goes by this name in {}, which loads both under it, so a \
+                     chat may use either one: rename this one",
+                    harness.harness.title()
+                ));
+            }
             StudioRow {
                 name: found.id.clone(),
                 origin: found.origin,

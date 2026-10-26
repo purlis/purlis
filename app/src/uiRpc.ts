@@ -3388,7 +3388,12 @@ export type ClashOutcome =
 /**  Both copies load. */
 "both-load" | 
 /**  The repo's narrower copy is the one the chat gets; the plane's is left out. */
-"repo-wins";
+"repo-wins" | 
+/**
+ *  Both load under one name, and the chat may use either: a copy named as one of purlis's
+ *  own skills where the program reads every skill by its bare name.
+ */
+"either-one";
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
 export type CloseHanded = {

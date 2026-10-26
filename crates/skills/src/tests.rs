@@ -1392,7 +1392,7 @@ fn on_the_config_route_a_repo_or_harness_skill_of_a_built_in_skills_bare_name_is
 }
 
 #[test]
-fn on_the_config_route_a_built_in_skills_own_name_is_kept_for_it_from_every_level() {
+fn on_the_config_route_a_built_in_skills_own_name_is_kept_from_the_plane_and_a_clash_elsewhere() {
     let plane = Plane::new();
     let built_in = plane.root.join("../plugin/skills");
     skill(&built_in, "secrets", &whole("secrets"));
@@ -1408,22 +1408,52 @@ fn on_the_config_route_a_built_in_skills_own_name_is_kept_for_it_from_every_leve
         ],
     );
 
+    // opencode reads the repo's and the person's copies itself, beside purlis's, under the one
+    // name: both stay in the set, and each is a clash in which the chat may use either.
     assert_eq!(
         effective(&got),
         [
             ("purlis-deploy", Origin::Project, false),
             ("purlis-secrets", Origin::BuiltIn, false),
+            ("purlis-secrets", Origin::Repo, false),
+            ("purlis-secrets", Origin::Harness, false),
         ],
         "a `purlis-` name no built-in skill takes is the plane's to use"
     );
-    let kept = "purlis's own skill goes by this name in this program, and the name is kept for \
-                it: rename this skill";
+    let clashes: Vec<(&str, Origin, Origin, Outcome)> = got
+        .clashes
+        .iter()
+        .map(|c| (c.name.as_str(), c.plane.origin, c.outside, c.outcome))
+        .collect();
+    assert_eq!(
+        clashes,
+        [
+            (
+                "purlis-secrets",
+                Origin::BuiltIn,
+                Origin::Repo,
+                Outcome::EitherOne
+            ),
+            (
+                "purlis-secrets",
+                Origin::BuiltIn,
+                Origin::Harness,
+                Outcome::EitherOne
+            ),
+        ]
+    );
+    // The plane's copy is purlis's to leave out, and is.
     assert_eq!(
         left_out(&got),
         [
-            ("purlis-secrets", Origin::Project, false, kept.to_owned()),
-            ("purlis-secrets", Origin::Harness, false, kept.to_owned()),
-            ("purlis-secrets", Origin::Repo, false, kept.to_owned()),
+            (
+                "purlis-secrets",
+                Origin::Project,
+                false,
+                "purlis's own skill goes by this name in this program, so this skill never \
+                 loads: rename it"
+                    .to_owned()
+            ),
             (
                 "secrets",
                 Origin::Project,
@@ -1431,7 +1461,7 @@ fn on_the_config_route_a_built_in_skills_own_name_is_kept_for_it_from_every_leve
                 "a built-in skill has this name, and a built-in skill is never replaced".to_owned()
             ),
         ],
-        "one reason for every level; the bare name stays the built-in skill's, as on every route"
+        "the bare name stays the built-in skill's, as on every route"
     );
 
     // Elsewhere a plane skill may be named so: Claude Code knows it as `skills:purlis-secrets`.

@@ -335,9 +335,10 @@ pub enum Reason {
     /// A harness or repo skill named as one of purlis's built-in skills, which never loses to
     /// any other copy (SK-6): the chat is handed purlis's.
     HiddenByBuiltIn,
-    /// A plane, harness or repo skill with the name one of purlis's own skills takes on a route
-    /// that names them their own (`purlis-<name>`, or `purlis-skill-index` for the index skill,
-    /// [`Route::names_built_ins_its_own`]): the name is kept for purlis's.
+    /// A plane skill with the name one of purlis's own skills takes on a route that names them
+    /// their own (`purlis-<name>`, or `purlis-skill-index` for the index skill,
+    /// [`Route::names_built_ins_its_own`]): the name is kept for purlis's. A harness or repo copy
+    /// of it, which purlis cannot leave out, is a [`Clash`] ([`Outcome::EitherOne`]).
     BuiltInsOwnName,
     /// A plane skill a repo copy could hide, where purlis could not list a skills folder of the
     /// chat's clone whole ([`Unread::Crowded`], SK-44): left out, since purlis cannot tell whether
@@ -447,8 +448,8 @@ impl std::fmt::Display for Reason {
             Self::OffForTheHarness => f.write_str("turned off for this project's chats"),
             Self::HiddenByBuiltIn => f.write_str("hidden by purlis's built-in skill of this name"),
             Self::BuiltInsOwnName => f.write_str(
-                "purlis's own skill goes by this name in this program, and the name is kept for \
-                 it: rename this skill",
+                "purlis's own skill goes by this name in this program, so this skill never \
+                 loads: rename it",
             ),
             Self::RepoUnread { repo } => write!(
                 f,
@@ -641,6 +642,10 @@ pub enum Outcome {
     /// The repo's copy is the narrower one and purlis left its own out, so the chat gets one
     /// copy of the name (decision 51): where purlis builds what the harness is handed.
     RepoWins,
+    /// Both load under one name, and the chat may use either: a copy named as one of purlis's
+    /// own skills on a route that names them their own (`purlis-<name>`), which the harness
+    /// reads beside purlis's and keeps whichever it read last (opencode 1.18.33, measured).
+    EitherOne,
 }
 
 impl SkillSet {
@@ -750,26 +755,46 @@ impl SkillSet {
                 .parent()
                 .map(Path::to_path_buf)
                 .unwrap_or_default();
+            // A copy with the name of one of purlis's own skills on a route that names them their
+            // own (`purlis-<name>`, `purlis-skill-index`): the harness loads it beside purlis's,
+            // under the one name, and keeps whichever it read last, so the chat may use either.
+            // purlis can leave neither out, since a switch by that name reaches its own too.
+            let own_name = route.names_built_ins_its_own()
+                && !one.off
+                && (one.id == route.built_in_name(router::INDEX)
+                    || handed.is_some_and(|at| {
+                        let e = &self.effective[at];
+                        e.origin == Origin::BuiltIn && e.route.names_built_ins_its_own()
+                    }));
+            if own_name {
+                self.clashes.push(Clash {
+                    name: one.id.clone(),
+                    plane: At {
+                        origin: Origin::BuiltIn,
+                        local: false,
+                    },
+                    outside: one.origin,
+                    owner: one.owner.clone(),
+                    outcome: Outcome::EitherOne,
+                });
+                self.effective.push(Effective {
+                    root: one.root,
+                    skill: Skill {
+                        name: one.id,
+                        ..one.skill
+                    },
+                    route: Route::Own,
+                    origin: one.origin,
+                    local: false,
+                    deprecated: None,
+                });
+                continue;
+            }
             // The index skill's name is purlis's on every route, whether or not a router hands
             // one to this chat (SK-15): where the harness can leave its own copy out by that name
             // and keep purlis's, it is asked to ([`Route::off_by_name_spares_handed`]). On the
             // config route purlis's is `purlis-skill-index`, so a copy named `skill-index` loads
             // beside it as a skill of its own.
-            // On a route that names purlis's own skills theirs, the index is `purlis-skill-index`
-            // there, and a copy of that name is kept from it as a built-in skill's is.
-            if route.names_built_ins_its_own()
-                && one.id == route.built_in_name(router::INDEX)
-                && !one.off
-            {
-                self.left_out.push(LeftOut {
-                    name: one.id,
-                    origin: one.origin,
-                    local: false,
-                    folder,
-                    reason: Reason::BuiltInsOwnName,
-                });
-                continue;
-            }
             if one.id == router::INDEX && !one.off && route.off_by_name_spares_handed() {
                 self.left_out.push(LeftOut {
                     name: one.id,
@@ -782,22 +807,13 @@ impl SkillSet {
             }
             // A built-in skill never loses to any other copy: purlis's is the one handed, and
             // the other is listed as hidden by it, whatever the route.
-            if let Some(built_in) = handed
-                .map(|at| &self.effective[at])
-                .filter(|e| e.origin == Origin::BuiltIn)
-            {
-                // Matched by the name of its own its route gives it, or by its bare name.
-                let reason = if built_in.route.names_built_ins_its_own() {
-                    Reason::BuiltInsOwnName
-                } else {
-                    Reason::HiddenByBuiltIn
-                };
+            if handed.is_some_and(|at| self.effective[at].origin == Origin::BuiltIn) {
                 self.left_out.push(LeftOut {
                     name: one.id,
                     origin: one.origin,
                     local: false,
                     folder,
-                    reason,
+                    reason: Reason::HiddenByBuiltIn,
                 });
                 continue;
             }

@@ -1702,3 +1702,56 @@ fn the_studio_lists_under_each_harness_the_skills_a_repo_leaves_out_of_its_chats
         "the plane's own rows are a chat's in no clone"
     );
 }
+
+#[test]
+fn a_run_of_purlis_secrets_is_the_built_in_skill_s_on_opencode_and_a_project_skill_s_elsewhere() {
+    // On opencode purlis's `secrets` goes by `purlis-secrets` and a plane skill of that name is
+    // left out, so the run is purlis's; on Claude Code and Codex a plane skill may be named so,
+    // and a run of it is that skill's, never the built-in one's.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let built_in = tmp.path().join("bundle/skills");
+    let write = |dir: PathBuf, name: &str| {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n"),
+        )
+        .unwrap();
+    };
+    write(built_in.join("secrets"), "secrets");
+    write(plane.join("skills/purlis-secrets"), "purlis-secrets");
+    let level = |harness: Harness, skill: &str| {
+        whose_with(Some(&built_in), &plane, None, None, Some(harness), skill)
+            .level
+            .map(|level| level.origin)
+    };
+
+    assert_eq!(
+        level(Harness::Opencode, "purlis-secrets"),
+        Some(Origin::BuiltIn)
+    );
+    for harness in [Harness::ClaudeCode, Harness::Codex] {
+        assert_eq!(
+            level(harness, "purlis-secrets"),
+            Some(Origin::Project),
+            "{harness:?}"
+        );
+        assert_eq!(
+            level(harness, "secrets"),
+            Some(Origin::BuiltIn),
+            "{harness:?}"
+        );
+    }
+
+    // A clone's own `purlis-secrets` on Claude Code or Codex, with no plane skill of that name,
+    // is no copy purlis knows: never counted as the built-in one.
+    std::fs::remove_dir_all(plane.join("skills/purlis-secrets")).unwrap();
+    for harness in [Harness::ClaudeCode, Harness::Codex] {
+        assert_eq!(level(harness, "purlis-secrets"), None, "{harness:?}");
+    }
+    assert_eq!(
+        level(Harness::Opencode, "purlis-secrets"),
+        Some(Origin::BuiltIn)
+    );
+}
