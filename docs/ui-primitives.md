@@ -745,6 +745,12 @@ item families (`purlis/tooltip-family`, an error). A frame's `title` is its name
   one was just open. A row's tooltip stands by the pointer or the row's words, not the whole row,
   and an anchored tooltip (a row's, a menu row's) keeps its width: it takes the side with room for
   all of it, and stands under its anchor where neither side has (#3328, `ui/tooltip/side.ts`).
+- **A strip's tooltips stand below it** (#3361): a strip is a row of targets, and a tooltip at a
+  target's end would sit on the row, over the next. A target inside an element marked
+  `TIPS_BELOW` (`data-tips="below"`; the chat strip's row) has its tooltip below it, or above
+  where the window has no room, at the same 10 px. The strip says so, never a call site, and it
+  is read from where the target stands in the DOM (`placementFor`), so a menu or a popover opened
+  from the strip, portalled out of it, keeps R166's placement.
 - **WCAG 1.4.13**: Esc takes it down and leaves the focus where it was (dismissible). **The first
   Esc is the tooltip's alone**: heard first on the window's capture phase while it is up, it reaches no
   dialog, menu, palette or terminal, and the next Esc is theirs. The pointer can move onto a tooltip it

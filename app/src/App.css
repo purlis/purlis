@@ -423,7 +423,11 @@ body {
    dress it, which is how the two would come to look different again. */
 .strip-doing {
   display: flex;
-  align-items: stretch;
+  /* On the row's whole height, its marks centred in it: on a strip whose tabs stand on its
+     floor (the chat strip's, `align-items: flex-end`), the `+` is centred on the tabs' line,
+     not set down on the floor beside them (#3361). */
+  align-self: stretch;
+  align-items: center;
   flex: none;
   gap: var(--space-2);
   padding-inline: var(--space-2);
