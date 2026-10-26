@@ -98,7 +98,7 @@ describe("a vault's tab", function () {
       timeoutMsg: "the new vault's tab never said it was empty",
     });
     expect(await $(`${TABS} [role="tab"][aria-selected="true"]`).getText()).toBe(VAULT);
-    expect(await tab.$("h2").getText()).toContain("System keychain · 0 secrets");
+    expect(await tab.$(".view-head-says").getText()).toBe("System keychain · 0 secrets");
   });
 
   it("adds a secret, and the value is nowhere in the page once it is written", async () => {
@@ -106,7 +106,7 @@ describe("a vault's tab", function () {
     await add("DB_URL", `${VALUE}-db`);
 
     expect(await secretNames()).toEqual(["API_TOKEN", "DB_URL"]);
-    expect(await $(TAB).$("h2").getText()).toContain("2 secrets");
+    expect(await $(TAB).$(".view-head-says").getText()).toContain("2 secrets");
     const page = await browser.execute(() => {
       const fields = [...document.querySelectorAll("input")].map((field) => field.value);
       return `${document.documentElement.outerHTML}\n${fields.join("\n")}`;

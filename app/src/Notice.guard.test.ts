@@ -520,6 +520,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "being read again after the branch moved, which goes when the new one comes",
   },
   "editor/ToYourEditor.tsx": { count: 1, why: "the piece files' read refusal, inside the editor" },
+  "keys/ShortcutsView.tsx": {
+    count: 1,
+    why: "a filter that matches no shortcut says so where the cheat sheet's list was (#2921)",
+  },
   "references.tsx": {
     count: 1,
     why: "the reference picker saying it found no chat, inside its menu",
@@ -560,8 +564,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "Settings' read refusal, inside its tab (NO-7, #1232)",
   },
   "settings/components.tsx": {
-    count: 3,
-    why: "the settings set's filter count, a row's refusal and a range's value: inline, per field",
+    count: 2,
+    why: "the settings set's filter count and a row's refusal: inline, per field",
   },
   "settings/themeGallery.tsx": {
     count: 3,

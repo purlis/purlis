@@ -35,7 +35,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { Group, Panel, type Layout } from "react-resizable-panels";
-import { Separator } from "../shownSeparator";
+import { Separator } from "../ui/panel/Separator";
 import { FileText, LoaderCircle, Pause, Play } from "lucide-react";
 import { EmptyState } from "../ui/empty-state/EmptyState";
 import { ExternalLink } from "../ReleaseNotes";
@@ -545,7 +545,8 @@ export function PieceFileTab({
   return (
     <div className="piece-file">
       <header className="piece-files-head" {...editorToolbar}>
-        <ToolbarFile path={path} />
+        {/* The tab is the file's name: the path alone, quiet (#3147). */}
+        <ToolbarFile path={path} named={false} />
         <span className="piece-files-actions">
           <SourceToggle path={path} read={read} source={source} onSource={setSource} />
           {ofABranch && <ToYourEditor plane={plane} cut={cut} path={path} line={at.line} />}

@@ -49,17 +49,29 @@ fn a_chat_is_handed_every_built_in_skill_by_its_harness_route() {
     let plugin = crate::harness::testing::bundled_plugin();
     let kit = Kit {
         skills: None,
+        laid_out: None,
         binary: Path::new("/bin/purlis"),
         plugin: Some(&plugin),
         persona: None,
     };
-    for harness in [Harness::ClaudeCode, Harness::Codex, Harness::Opencode] {
+    for (harness, secrets) in [
+        (Harness::ClaudeCode, "secrets"),
+        (Harness::Codex, "secrets"),
+        // opencode knows it by a name no other skill it reads takes.
+        (Harness::Opencode, "purlis-secrets"),
+    ] {
         let set = for_chat(kit, harness);
 
         assert!(
-            set.effective.iter().any(|e| e.skill.name == "secrets"),
+            set.effective.iter().any(|e| e.skill.name == secrets),
             "{harness:?}"
         );
+        if harness == Harness::Opencode {
+            assert!(
+                !set.effective.iter().any(|e| e.skill.name == "secrets"),
+                "no bare `secrets` from purlis"
+            );
+        }
         assert!(
             set.effective
                 .iter()
@@ -863,6 +875,21 @@ fn use_skill_offers_exactly_the_chats_set_and_a_manual_only_one_is_free_on_every
         assert_eq!(elsewhere.spent.skills, 3, "{harness:?} leaves release out");
         assert_eq!(elsewhere.spent.manual, 1);
     }
+    // opencode offers, lists and types the built-in skill by the name it knows it by.
+    let opencode = for_use_skill(&Running {
+        harness: Harness::Opencode,
+        ..running(root, &bundle, None)
+    });
+    assert_eq!(
+        offered_names(&opencode),
+        ["deploy", "purlis-handoff", "release", "review"]
+    );
+    assert_eq!(opencode.offered[1].known_as, "purlis-handoff");
+    assert_eq!(
+        opencode.typed("purlis-handoff", &[]).unwrap().text,
+        "/purlis-handoff"
+    );
+    assert!(opencode.typed("handoff", &[]).is_err(), "no bare `handoff`");
 
     // In the workspace: its own skill and the granted one, never one it was not granted.
     let in_smart_ide = for_use_skill(&running(root, &bundle, Some("smart-ide")));
@@ -907,16 +934,16 @@ fn use_skill_types_a_skill_of_the_set_in_its_harnesss_syntax_and_holds_the_run_i
         });
         let typing = chat.typed("review", &values).unwrap();
         assert_eq!(typing.text, text, "{harness:?}");
-        assert_eq!(typing.held.skill, known_as, "{harness:?}");
-        assert_eq!(typing.held.confirmed, confirmed, "{harness:?}");
-        assert_eq!(typing.held.workspace.as_deref(), Some("smart-ide"));
-        assert_eq!(
-            typing.held.level.map(|level| level.origin),
-            Some(Origin::Project)
-        );
+        let Start::Held(held) = typing.start else {
+            panic!("a listed skill's run is held")
+        };
+        assert_eq!(held.skill, known_as, "{harness:?}");
+        assert_eq!(held.confirmed, confirmed, "{harness:?}");
+        assert_eq!(held.workspace.as_deref(), Some("smart-ide"));
+        assert_eq!(held.level.map(|level| level.origin), Some(Origin::Project));
         // What a prompt holding the text is marked with.
         let sent = crate::skillspan::PromptMarks::of(&format!("{text} and more"));
-        assert!(sent.holds(typing.held.text), "{harness:?}");
+        assert!(sent.holds(held.text), "{harness:?}");
         let refused = chat.typed("deploy", &[]).unwrap_err();
         assert!(
             refused.contains("not one of this chat's skills"),
@@ -992,7 +1019,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
 
     let set = in_the_studio(None, &plane, None, None);
     let harnesses =
-        harnesses_in_the_studio(&set, &plane, None, &[], &env, &Known::of(&plane, None));
+        harnesses_in_the_studio(&set, &plane, None, &[], &[], &env, &Known::of(&plane, None));
 
     let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);
@@ -1093,7 +1120,7 @@ fn a_briefed_chat_in_a_clone_is_told_the_repos_copy_of_a_name_and_not_the_projec
 }
 
 #[test]
-fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_or_opencode() {
+fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_and_is_another_on_opencode() {
     // SK-6 (#2769): a clone's `secrets` must not take purlis's own away from a chat.
     let tmp = tempfile::tempdir().unwrap();
     let plane = tmp.path().join("plane");
@@ -1113,38 +1140,57 @@ fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_or_opencode()
     }
     let repo = repo_skills_of_chat(Harness::Codex, &plane, "alpha", &clone);
     assert_eq!(repo.len(), 1, "{repo:?}");
-    for route in [Route::Briefing, Route::Config] {
-        let set = ask(
+    let set_on = |route| {
+        ask(
             Some(&built_in),
             Some(PlaneSkills {
                 plane: &plane,
                 workspace: Some("alpha"),
-                linked: None,
                 repo: &repo,
             }),
             None,
             route,
             None,
-        );
-        assert_eq!(set.built_in_dir(), Some(built_in.as_path()), "{route:?}");
-        let handed: Vec<(&str, Origin)> = set
-            .effective
+            None,
+        )
+    };
+    let handed = |set: &SkillSet| -> Vec<(String, Origin)> {
+        set.effective
             .iter()
-            .map(|e| (e.skill.name.as_str(), e.origin))
-            .collect();
-        assert_eq!(
-            handed,
-            [("secrets", Origin::BuiltIn), ("secrets", Origin::Repo)],
-            "{route:?}: Codex and opencode read the repo's copy themselves (SK-37)"
-        );
-        assert_eq!(set.from_the_plane().count(), 0, "{route:?}");
-        assert_eq!(set.beside_a_built_in().count(), 1, "{route:?}");
-    }
+            .map(|e| (e.skill.name.clone(), e.origin))
+            .collect()
+    };
+
+    let codex = set_on(Route::Briefing);
+    assert_eq!(codex.built_in_dir(), Some(built_in.as_path()));
+    assert_eq!(
+        handed(&codex),
+        [
+            ("secrets".to_owned(), Origin::BuiltIn),
+            ("secrets".to_owned(), Origin::Repo),
+        ],
+        "Codex reads the repo's copy itself, beside purlis's (SK-37)"
+    );
+    assert_eq!(codex.from_the_plane().count(), 0);
+    assert_eq!(codex.beside_a_built_in().count(), 1);
+
+    // opencode knows purlis's as `purlis-secrets`, so the clone's `.agents/skills/secrets` is
+    // another skill beside it, by a name of its own.
+    let opencode = set_on(Route::Config);
+    assert_eq!(
+        handed(&opencode),
+        [
+            ("purlis-secrets".to_owned(), Origin::BuiltIn),
+            ("secrets".to_owned(), Origin::Repo),
+        ]
+    );
+    assert!(opencode.left_out.is_empty(), "{:?}", opencode.left_out);
 }
 
-/// A plane whose workspace `alpha` has the clone `api`, which brings its own `secrets` in each
-/// folder Codex and opencode read, beside a bundle with purlis's built-in `secrets` (SK-37). Its
-/// temporary folder, the plane, the clone, and the bundle's skills.
+/// A plane whose workspace `alpha` has the clone `api`, which brings its own `secrets` and
+/// `purlis-secrets` in `.agents/skills`, a folder Codex and opencode read, beside a bundle with
+/// purlis's built-in `secrets` (SK-37): Codex knows purlis's by the bare name, and opencode as
+/// `purlis-secrets`. Its temporary folder, the plane, the clone, and the bundle's skills.
 fn a_clone_with_a_secrets_skill_of_its_own() -> (tempfile::TempDir, PathBuf, PathBuf, PathBuf) {
     let tmp = tempfile::tempdir().unwrap();
     let plane = tmp.path().join("plane");
@@ -1153,15 +1199,16 @@ fn a_clone_with_a_secrets_skill_of_its_own() -> (tempfile::TempDir, PathBuf, Pat
     let clone = plane.join("workspaces/alpha/api");
     std::fs::create_dir_all(clone.join(".git")).unwrap();
     let built_in = tmp.path().join("bundle/skills");
-    for (dir, says) in [
-        (built_in.clone(), "purlis's"),
-        (clone.join(".agents/skills"), "repo's"),
+    for (dir, name, says) in [
+        (built_in.clone(), "secrets", "purlis's"),
+        (clone.join(".agents/skills"), "secrets", "repo's"),
+        (clone.join(".agents/skills"), "purlis-secrets", "repo's"),
     ] {
-        std::fs::create_dir_all(dir.join("secrets")).unwrap();
+        std::fs::create_dir_all(dir.join(name)).unwrap();
         std::fs::write(
-            dir.join("secrets/SKILL.md"),
+            dir.join(name).join("SKILL.md"),
             format!(
-                "---\nname: secrets\ndescription: Reads the {says} secrets from a vault.\n---\n"
+                "---\nname: {name}\ndescription: Reads the {says} secrets from a vault.\n---\n"
             ),
         )
         .unwrap();
@@ -1171,8 +1218,9 @@ fn a_clone_with_a_secrets_skill_of_its_own() -> (tempfile::TempDir, PathBuf, Pat
 
 #[test]
 fn a_chat_in_a_clone_with_a_skill_named_like_a_built_in_one_is_told_at_its_start() {
-    // SK-37 (#3027): Codex and opencode load the clone's `secrets` beside purlis's, and the
-    // model may pick the repo's. purlis cannot stop that, so the chat's tab says so.
+    // SK-37 (#3027): Codex loads the clone's `secrets` beside purlis's, and opencode the clone's
+    // `purlis-secrets` beside purlis's of that name, and the model may pick the repo's. purlis
+    // cannot stop that, so the chat's tab says so.
     let (tmp, plane, clone, built_in) = a_clone_with_a_secrets_skill_of_its_own();
     let env = crate::harness_plugin::Env {
         chat: &[],
@@ -1193,9 +1241,8 @@ fn a_chat_in_a_clone_with_a_skill_named_like_a_built_in_one_is_told_at_its_start
         .unwrap_or_default()
     };
 
-    for harness in [Harness::Codex, Harness::Opencode] {
-        assert_eq!(said(harness, &clone), ["secrets"], "{harness:?}");
-    }
+    assert_eq!(said(Harness::Codex, &clone), ["secrets"]);
+    assert_eq!(said(Harness::Opencode, &clone), ["purlis-secrets"]);
     assert_eq!(
         said(Harness::ClaudeCode, &clone),
         Vec::<String>::new(),
@@ -1261,9 +1308,10 @@ fn on_claude_code_a_repos_claude_skills_secrets_is_said_beside_purliss_own() {
 }
 
 #[test]
-fn the_studio_marks_a_repo_skill_named_like_a_built_in_one_on_codex_and_opencode() {
+fn the_studio_marks_a_repo_skill_named_as_each_program_knows_a_built_in_one() {
     // SK-37 (#3027): the repo's row is no longer said hidden, as the program loads it; its lint
     // says the name is a built-in one's, and the pair is a clash the built-in's row is marked by.
+    // Codex knows purlis's `secrets` by that name, and opencode as `purlis-secrets`.
     let (tmp, plane, _clone, built_in) = a_clone_with_a_secrets_skill_of_its_own();
     let env = crate::harness_plugin::Env {
         chat: &[],
@@ -1273,36 +1321,48 @@ fn the_studio_marks_a_repo_skill_named_like_a_built_in_one_on_codex_and_opencode
 
     let list = studio_list(Some(&built_in), &plane, Some("alpha"), None, &env);
 
-    for harness in [Harness::Codex, Harness::Opencode] {
+    for (harness, taken, other, outcome) in [
+        (
+            Harness::Codex,
+            "secrets",
+            "purlis-secrets",
+            Outcome::BothLoad,
+        ),
+        (
+            Harness::Opencode,
+            "purlis-secrets",
+            "secrets",
+            Outcome::EitherOne,
+        ),
+    ] {
         let one = list
             .harnesses
             .iter()
             .find(|one| one.harness == harness)
             .unwrap_or_else(|| panic!("{harness:?} listed"));
-        let row = one
-            .rows
-            .iter()
-            .find(|row| row.name == "secrets" && row.origin == Origin::Repo)
-            .unwrap_or_else(|| panic!("{harness:?}: {:?}", one.rows));
-        assert_eq!(row.left_out, None, "{harness:?}");
+        let row = |name: &str| {
+            one.rows
+                .iter()
+                .find(|row| row.name == name && row.origin == Origin::Repo)
+                .unwrap_or_else(|| panic!("{harness:?}: {:?}", one.rows))
+        };
+        assert_eq!(row(taken).left_out, None, "{harness:?}");
+        assert_eq!(row(other).left_out, None, "{harness:?}");
+        assert_eq!(row(other).lint, Vec::<String>::new(), "{harness:?}");
         assert_eq!(
-            row.lint,
+            row(taken).lint,
             [
-                "it has the name of one of purlis's built-in skills, so a chat gets purlis's too, \
-              and may use either"
+                "it has the name of one of purlis's built-in skills, so a chat gets purlis's too \
+                 and may use either: rename it"
             ],
             "{harness:?}"
         );
-        let clashes: Vec<(&str, Origin, Origin)> = one
+        let clashes: Vec<(&str, Origin, Outcome)> = one
             .set
             .beside_a_built_in()
-            .map(|clash| (clash.name.as_str(), clash.plane.origin, clash.outside))
+            .map(|clash| (clash.name.as_str(), clash.outside, clash.outcome))
             .collect();
-        assert_eq!(
-            clashes,
-            [("secrets", Origin::BuiltIn, Origin::Repo)],
-            "{harness:?}"
-        );
+        assert_eq!(clashes, [(taken, Origin::Repo, outcome)], "{harness:?}");
     }
     assert!(
         list.rows
@@ -1623,7 +1683,7 @@ fn a_repo_skills_folder_purlis_could_not_list_leaves_the_plane_skills_out_of_a_c
     let sets = tmp.path().join("sets");
     let lay_out = |repo: &[OutsideSkill]| {
         lay_out_for_chat(
-            &plane,
+            Some(&plane),
             Some("alpha"),
             None,
             None,
@@ -1833,5 +1893,58 @@ fn the_studio_lists_under_each_harness_the_skills_a_repo_leaves_out_of_its_chats
             .filter(|row| row.name == "ship")
             .all(|row| row.left_out.is_none()),
         "the plane's own rows are a chat's in no clone"
+    );
+}
+
+#[test]
+fn a_run_of_purlis_secrets_is_the_built_in_skill_s_on_opencode_and_a_project_skill_s_elsewhere() {
+    // On opencode purlis's `secrets` goes by `purlis-secrets` and a plane skill of that name is
+    // left out, so the run is purlis's; on Claude Code and Codex a plane skill may be named so,
+    // and a run of it is that skill's, never the built-in one's.
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    let built_in = tmp.path().join("bundle/skills");
+    let write = |dir: PathBuf, name: &str| {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n"),
+        )
+        .unwrap();
+    };
+    write(built_in.join("secrets"), "secrets");
+    write(plane.join("skills/purlis-secrets"), "purlis-secrets");
+    let level = |harness: Harness, skill: &str| {
+        whose_with(Some(&built_in), &plane, None, None, Some(harness), skill)
+            .level
+            .map(|level| level.origin)
+    };
+
+    assert_eq!(
+        level(Harness::Opencode, "purlis-secrets"),
+        Some(Origin::BuiltIn)
+    );
+    for harness in [Harness::ClaudeCode, Harness::Codex] {
+        assert_eq!(
+            level(harness, "purlis-secrets"),
+            Some(Origin::Project),
+            "{harness:?}"
+        );
+        assert_eq!(
+            level(harness, "secrets"),
+            Some(Origin::BuiltIn),
+            "{harness:?}"
+        );
+    }
+
+    // A clone's own `purlis-secrets` on Claude Code or Codex, with no plane skill of that name,
+    // is no copy purlis knows: never counted as the built-in one.
+    std::fs::remove_dir_all(plane.join("skills/purlis-secrets")).unwrap();
+    for harness in [Harness::ClaudeCode, Harness::Codex] {
+        assert_eq!(level(harness, "purlis-secrets"), None, "{harness:?}");
+    }
+    assert_eq!(
+        level(Harness::Opencode, "purlis-secrets"),
+        Some(Origin::BuiltIn)
     );
 }

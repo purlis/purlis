@@ -20,6 +20,8 @@ import {
 import { drawnWith } from "./cascade.testkit";
 import { complaints } from "./theme/complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme/theme";
+import { roleOf, wordsOf } from "./a11y.testkit";
+import { selectNamed } from "./ui/select/select.testkit";
 
 /**
  * **The component set, drawn as one gallery** (DS-3 #626, line 2).
@@ -251,7 +253,7 @@ describe("the gallery", () => {
     expect(screen.getByRole("textbox", { name: "Hosts" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Size" })).toBeInTheDocument();
     expect(screen.getByRole("radiogroup", { name: "Letter" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Shell" })).toBeInTheDocument();
+    expect(selectNamed("Shell")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Push after saving" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Play a sound" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Repos" })).toBeInTheDocument();
@@ -307,12 +309,8 @@ describe("the gallery by keyboard", () => {
       await user.tab();
       const at = document.activeElement;
       if (at === null || at === document.body) break;
-      const name =
-        at.getAttribute("aria-label") ??
-        (at.id ? document.querySelector(`label[for="${at.id}"]`)?.textContent : null) ??
-        at.textContent ??
-        "";
-      stops.push(`${at.getAttribute("role") ?? at.tagName.toLowerCase()} ${name.trim()}`);
+      const name = wordsOf(at);
+      stops.push(`${roleOf(at)} ${name.trim()}`);
     }
     return stops;
   }
@@ -340,18 +338,19 @@ describe("the gallery by keyboard", () => {
       "button Reset name",
       "button Undo",
       "textarea Hosts",
-      "input Size",
+      "slider Size",
       // A radio group is one stop, on its pick; Gamma is out of reach.
       "radio Alpha",
-      // The select is Radix's: a combobox that opens its list (#1860).
-      "combobox Shell",
+      // The select is the select family's: a button that opens its list (#2906), named by what
+      // it holds, then its own name.
+      "button Alpha Shell",
       "checkbox Push after saving",
       "switch Play a sound",
       "checkbox Alpha",
       "checkbox Beta",
       // The chips are one stop, whichever is ticked: a native box, named by the chip that
       // wraps it, which this reading of a stop's name does not follow.
-      "input ",
+      "checkbox needs you",
       "button Save",
       "button Delete",
       ...notice("inbox"),
@@ -397,14 +396,16 @@ describe("the gallery by keyboard", () => {
     // A row's reset and Undo, on Space and on Enter.
     expect(await doing(() => press("button", "Reset name", " "))).toContain("reset");
     expect(await doing(() => press("button", "Undo", "{Enter}"))).toContain("undo");
-    // A select opens on Enter, and an arrow and Enter pick past the option out of reach.
-    expect(
-      await doing(async () => {
-        await press("combobox", "Shell", "{Enter}");
-        await screen.findByRole("listbox");
-        await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-      }),
-    ).toContain("select=b");
+    // A select opens on Enter; the arrows reach the option out of reach, which says why and
+    // picks nothing on Enter (D-2906-11), and an arrow back and Enter pick.
+    const picked = await doing(async () => {
+      selectNamed("Shell").focus();
+      await user.keyboard("{Enter}");
+      await screen.findByRole("listbox");
+      await user.keyboard("{ArrowDown}{ArrowDown}{Enter}{ArrowUp}{Enter}");
+    });
+    expect(picked).toContain("select=b");
+    expect(picked).not.toContain("select=c");
     // A toggle, a switch and a box of a few, on Space.
     expect(await doing(() => press("checkbox", "Push after saving", " "))).toContain("toggle=true");
     expect(await doing(() => press("switch", "Play a sound", " "))).toEqual(["switch=true"]);

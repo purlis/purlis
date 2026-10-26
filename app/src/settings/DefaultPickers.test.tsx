@@ -15,7 +15,7 @@ import type {
   SettingsRefusal,
   SettingsWhich,
 } from "../bindings";
-import { offeredIn, pickIn } from "../primitives/select.testkit";
+import { offeredIn, pickIn, selectNamed } from "../ui/select/select.testkit";
 
 /**
  * **The default persona, workspace and harness are pickers with "New…"** (ST-1, #1225; the
@@ -176,7 +176,7 @@ afterEach(() => {
 
 const nav = () => screen.getByRole("navigation", { name: "Groups" });
 const open = (name: string) => userEvent.click(within(nav()).getByRole("button", { name }));
-const picker = (label: string) => screen.getByRole("combobox", { name: label });
+const picker = (label: string) => selectNamed(label);
 const offered = (label: string) => offeredIn(picker(label));
 const rowOf = (label: string) => picker(label).closest(".ui-setting-row") as HTMLElement;
 

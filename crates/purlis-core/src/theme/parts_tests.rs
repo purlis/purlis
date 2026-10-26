@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use super::parts::{self, Prop, STATES};
+use super::parts::{self, Prop};
 use super::*;
 
 /// A theme over Purlis Classic that sets `parts`.
@@ -72,7 +72,7 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
         sheet,
         concat!(
             "@layer parts {\n",
-            "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }\n",
+            "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }\n",
             "  :where([data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]) { --purlis-part-height: calc(var(--size-control) + var(--space-2)); }\n",
             "  :where([data-scope=\"button\"][data-part=\"root\"]) { border-radius: 9999px; }\n}\n",
         )
@@ -83,13 +83,20 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
 fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917), and
     // what keeps it as it drew when the family defaults took Purlis's (#3177): its rail's 9px
-    // corners, its title bar's 5px chips and its update pill's primary words. Nothing it draws
+    // corners, its title bar's 5px chips and its update pill's primary words; and its resize
+    // handles' accent line (#3143). Nothing it draws
     // falls back.
     for theme in built_ins() {
         assert!(
-            theme.parts.keys().all(
-                |key| ["tabs", "activity", "rail", "titlebar", "status-item"].contains(&key.family)
-            ),
+            theme.parts.keys().all(|key| [
+                "tabs",
+                "activity",
+                "rail",
+                "titlebar",
+                "status-item",
+                "panel-separator",
+            ]
+            .contains(&key.family)),
             "{} names parts beyond what keeps it as it drew",
             theme.name
         );
@@ -344,7 +351,7 @@ fn a_corner_is_clamped_to_half_the_parts_height_as_it_is_drawn() {
         "{sheet}"
     );
     // The small and the large button are clamped to their own height.
-    assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(var(--size-chrome), var(--space-7)); }"));
+    assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"sm\"]) { --purlis-part-height: max(24px, var(--size-chrome), var(--space-7)); }"));
     assert!(sheet.contains(":where([data-scope=\"button\"][data-part=\"root\"][data-size=\"lg\"]) { --purlis-part-height: calc(var(--size-control) + var(--space-2)); }"));
     let four = sheet_of(json!({ "button.root.corner-radius": ["full", 0, "radius.md", 4] }));
     assert!(four.contains(&format!(
@@ -412,7 +419,7 @@ fn a_control_stays_a_target_and_its_words_fit_in_both_densities() {
 fn a_size_inside_a_state_is_refused_with_a_sentence_that_says_why() {
     let root = parts::family("button").unwrap().parts[0].properties;
     for property in root.iter().filter(|one| !one.in_state()) {
-        for state in STATES {
+        for state in parts::family("button").unwrap().states {
             let key = format!("button.root.{}.{}", state.name(), property.name());
             let value = match property {
                 Prop::Padding => json!(4),
@@ -725,6 +732,44 @@ fn a_border_that_is_a_parts_only_edge_contrasts_3_to_1() {
 }
 
 #[test]
+fn the_quiet_ghost_is_a_variant_of_the_next_manifest_held_to_its_words_floor() {
+    // #3214: additive, so a theme written against the released manifest still reads.
+    let quiet = parts::MANIFEST[0]
+        .variants
+        .iter()
+        .find(|one| one.name == "quiet")
+        .expect("the quiet ghost");
+    assert_eq!(quiet.since, parts::NEXT);
+    // Its default: no box, quiet words; under the pointer, the ghost's hover fill.
+    let held = parts::defaults_json("quiet");
+    assert_eq!(held["fill"], "transparent");
+    assert_eq!(held["text"], "text.quiet");
+    assert_eq!(held["border"], "transparent");
+    assert_eq!(held["hover"], "surface.hover");
+    // A theme's own quiet look is measured: words it changes that still clear the floor on
+    // every ground a button stands on raise nothing. (A rule equal to the default is not
+    // measured here; the built-in themes' quiet tier is held by `check::PAIRS`, which
+    // `every_built_in_still_clears_the_check` runs.)
+    let clean = load(&with_parts(
+        json!({ "button.root.quiet.text": "text.primary" }),
+    ));
+    assert!(
+        parts::fallen(clean.theme.first()).is_empty(),
+        "{:?}",
+        parts::fallen(clean.theme.first())
+    );
+    // And a theme that takes its words under the quiet tier's floor is told so.
+    let faded = load(&with_parts(
+        json!({ "button.root.quiet.text": "surface.hover" }),
+    ));
+    let fallen = parts::fallen(faded.theme.first());
+    assert!(
+        fallen.iter().any(|one| one.part == "button.root.quiet"),
+        "{fallen:?}"
+    );
+}
+
+#[test]
 fn a_disabled_control_is_not_held_to_the_floors() {
     let loaded = load(&with_parts(
         json!({ "button.root.disabled.text": "surface.base" }),
@@ -806,9 +851,11 @@ fn the_buttons_family_default_is_what_button_css_draws() {
             "text": token(first("color", &[own, base])),
             "border": token(declared(own, "border-color").unwrap_or(base_border)),
             "hover": token(first("background-color", &[own_hover, own, base_hover])),
+            // The words under the pointer: the quiet ghost's come up to the primary (#3214).
+            "hover_text": token(first("color", &[own_hover, own, base])),
         });
         let held = parts::defaults_json(variant);
-        for key in ["fill", "text", "border", "hover"] {
+        for key in ["fill", "text", "border", "hover", "hover_text"] {
             assert_eq!(held[key], drawn[key], "{variant}'s {key}");
         }
     }
@@ -1038,8 +1085,14 @@ fn the_list_family_default_is_what_its_stylesheet_draws() {
 fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     let manifest = parts::manifest_json();
     assert_eq!(manifest["version"], parts::VERSION);
+    // A refused box (#3110) is the one state added since the first version.
     for one in manifest["states"].as_array().unwrap() {
-        assert_eq!(one["since"], 1, "{one}");
+        let since = if one["name"] == "invalid" {
+            parts::NEXT
+        } else {
+            1
+        };
+        assert_eq!(one["since"], since, "{one}");
     }
     // The tab family's layout options came in version 8 (#2914).
     for one in manifest["properties"].as_array().unwrap() {
@@ -1070,7 +1123,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     assert_eq!(
         states,
         [
-            "hover", "pressed", "selected", "focused", "disabled", "open"
+            "hover", "pressed", "selected", "focused", "disabled", "open", "invalid"
         ]
     );
     let properties: Vec<(&str, bool)> = manifest["properties"]
@@ -1242,9 +1295,12 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             "label",
             "description",
             "trail",
-            "header"
+            "header",
+            "shortcut"
         ]
     );
+    // The key at a row's end (#2921), the next release's.
+    assert_eq!(list["parts"][7]["since"], parts::NEXT);
     // A textarea is as tall as its lines: no height to set.
     assert!(
         !family("textarea")["parts"][0]["properties"]
@@ -1262,7 +1318,8 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
         .iter()
         .map(|one| one["name"].as_str().unwrap())
         .collect();
-    assert_eq!(parts, ["root", "detail"]);
+    assert_eq!(parts, ["root", "detail", "shortcut"]);
+    assert_eq!(tooltip["parts"][2]["since"], parts::NEXT);
 }
 
 #[test]
@@ -2004,6 +2061,101 @@ fn the_field_families_default_is_what_field_css_draws() {
             "the field's {part}"
         );
     }
+}
+
+#[test]
+fn the_select_families_default_is_what_select_css_draws() {
+    let css = include_str!("../../../../app/src/ui/select/select.css");
+    let token = |var: &str| -> String {
+        var.strip_prefix("var(--")
+            .and_then(|it| it.strip_suffix(')'))
+            .map(|name| {
+                vocabulary::TOKENS
+                    .iter()
+                    .find(|token| token.replace('.', "-") == name)
+                    .unwrap_or_else(|| panic!("--{name} is not a token"))
+                    .to_string()
+            })
+            .unwrap_or_else(|| var.to_owned())
+    };
+    let boxes = rule(
+        css,
+        "[data-scope=\"select\"][data-part=\"root\"],\n[data-scope=\"combobox\"][data-part=\"root\"]",
+    );
+    for family in ["select", "combobox"] {
+        let held = parts::look_json(family, "");
+        assert_eq!(
+            held["fill"],
+            token(declared(boxes, "background-color").unwrap()),
+            "{family}"
+        );
+        assert_eq!(
+            held["text"],
+            token(declared(boxes, "color").unwrap()),
+            "{family}"
+        );
+        let border = declared(boxes, "border").and_then(|it| it.split_whitespace().last());
+        assert_eq!(held["border"], token(border.unwrap()), "{family}");
+        // The box a select draws is the text input's (`field.css`), so the two are one look.
+        assert_eq!(held, parts::look_json("text-input", ""), "{family}");
+    }
+    // R64: the chevron and the placeholder in the quiet tier, as the engine holds them.
+    let chevrons = rule(
+        css,
+        "[data-scope=\"select\"][data-part=\"chevron\"],\n[data-scope=\"combobox\"][data-part=\"chevron\"]",
+    );
+    assert_eq!(token(declared(chevrons, "color").unwrap()), "text.quiet");
+    let placeholder = rule(css, "[data-scope=\"select\"][data-part=\"placeholder\"]");
+    assert_eq!(token(declared(placeholder, "color").unwrap()), "text.quiet");
+    let manifest = parts::manifest_json();
+    let words = |name: &str| {
+        manifest["families"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|one| one["name"] == name)
+            .unwrap_or_else(|| panic!("no {name}"))
+            .clone()
+    };
+    let select = words("select");
+    assert_eq!(select["since"], parts::NEXT);
+    assert_eq!(select["focused"], "[data-focus-visible]");
+    assert_eq!(words("combobox")["focused"], "[data-focus-within]");
+}
+
+#[test]
+fn a_select_and_a_combobox_take_the_text_inputs_keys_and_hold_their_floors() {
+    // A width but 0: a box that can be refused keeps its edge (#3110).
+    let loaded = load(&with_parts(json!({
+        "select.root.border-width": 2,
+        "select.root.fill": "surface.raised",
+        "select.chevron.text": "text.muted",
+        "select.placeholder.text": "text.secondary",
+        "combobox.root.corner-radius": "full",
+        "select.root.open.border-colour": "accent.base",
+    })));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    assert!(said(&loaded).is_empty(), "{:?}", said(&loaded));
+    let drawn = parts::stylesheet(loaded.theme.first());
+    assert!(
+        drawn.contains("[data-scope=\"select\"][data-part=\"root\"][data-open]"),
+        "{drawn}"
+    );
+    assert!(
+        drawn.contains("[data-scope=\"select\"][data-part=\"root\"] [data-scope=\"select\"][data-part=\"chevron\"]"),
+        "{drawn}"
+    );
+    // A state a select's button never takes is no part.
+    let pressed = load(&with_parts(
+        json!({ "select.root.pressed.fill": "accent.surface" }),
+    ));
+    assert!(
+        said(&pressed)
+            .iter()
+            .any(|one| one.contains("parts.select.root.pressed.fill is not a component part")),
+        "{:?}",
+        said(&pressed)
+    );
 }
 
 #[test]

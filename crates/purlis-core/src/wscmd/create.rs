@@ -43,7 +43,7 @@ pub fn create(request: &Request, say: Sink) -> u8 {
     let rows = match ensure::ensure(request.root, request.name, request.now, &author) {
         Ok(rows) => rows,
         Err(why) => {
-            say(Say::Fail(why));
+            say(Say::Fail(why.into()));
             return 1;
         }
     };
@@ -66,11 +66,14 @@ pub fn create(request: &Request, say: Sink) -> u8 {
         failed.push(format!("the project's .gitignore ({why})"));
     }
     if !failed.is_empty() {
-        say(Say::Fail(format!(
-            "workspace '{name}' is not ready: purlis could not write {} in workspaces/{name}/. \
+        say(Say::Fail(
+            format!(
+                "workspace '{name}' is not ready: purlis could not write {} in workspaces/{name}/. \
              `purlis workspace reinit {name}` repairs what it can, and names what is in the way",
-            failed.join(", ")
-        )));
+                failed.join(", ")
+            )
+            .into(),
+        ));
         return 1;
     }
 
@@ -83,34 +86,37 @@ pub fn create(request: &Request, say: Sink) -> u8 {
     } else {
         "LOCAL — private (nothing committed); `purlis workspace live` to share"
     };
-    say(Say::Done(format!(
-        "Workspace '{name}' ready ({mode}) → workspaces/{name}/"
-    )));
+    say(Say::Done(
+        format!("Workspace '{name}' ready ({mode}) → workspaces/{name}/").into(),
+    ));
     if request.vision.is_some() {
-        say(Say::Info(format!(
-            "Vision recorded → workspaces/{name}/workspace.md"
-        )));
+        say(Say::Info(
+            format!("Vision recorded → workspaces/{name}/workspace.md").into(),
+        ));
     } else {
-        say(Say::Info(format!(
-            "⬢ No vision yet — ask the developer what this workspace is for, then record it: \
+        say(Say::Info(
+            format!(
+                "⬢ No vision yet — ask the developer what this workspace is for, then record it: \
              purlis workspace vision \"<the goal>\"  (it seeds workspaces/{name}/workspace.md, \
              the living charter a fork inherits)."
-        )));
+            )
+            .into(),
+        ));
     }
 
     if request.use_it {
         let before = wscmd::select::is_locked(request.root, request.ids);
         match wscmd::select::set_active(request.root, name, request.ids, request.force) {
             wscmd::select::Scope::Unwritten => {
-                say(Say::Fail(wscmd::select::unwritten_msg(name)));
-                say(Say::Info(format!(
-                    "Workspace '{name}' was created; it is not selected."
-                )));
+                say(Say::Fail(wscmd::select::unwritten_msg(name).into()));
+                say(Say::Info(
+                    format!("Workspace '{name}' was created; it is not selected.").into(),
+                ));
                 return 1;
             }
             wscmd::select::Scope::Locked => {
                 let held = before.unwrap_or_else(|| "?".to_string());
-                say(Say::Fail(wscmd::select::locked_msg(name, &held)));
+                say(Say::Fail(wscmd::select::locked_msg(name, &held).into()));
                 // charter says a SHORTER sentence — "Workspace 'x' was created." — when the
                 // lock is a chat's own LAUNCH lock, because inside a chat the refusal above
                 // has already named how to work there and "start a new session, or --force"
@@ -140,10 +146,13 @@ pub fn create(request: &Request, say: Sink) -> u8 {
                 // true there. Closing it by reading the frame is ruled out by ADR 0032; the
                 // cost is recorded there, with what an operator on a frame-driven plane
                 // actually sees, and it is that ADR's to reopen rather than this command's.
-                say(Say::Info(format!(
-                    "Workspace '{name}' was created; start a new session to use it, or re-run \
+                say(Say::Info(
+                    format!(
+                        "Workspace '{name}' was created; start a new session to use it, or re-run \
                      with --force."
-                )));
+                    )
+                    .into(),
+                ));
                 return 2;
             }
             scope => {
@@ -176,9 +185,12 @@ pub fn create(request: &Request, say: Sink) -> u8 {
         );
     }
     if !request.use_it {
-        say(Say::Info(format!(
-            "Select it with: purlis workspace use {name}  (or --workspace {name} per command)"
-        )));
+        say(Say::Info(
+            format!(
+                "Select it with: purlis workspace use {name}  (or --workspace {name} per command)"
+            )
+            .into(),
+        ));
     }
     0
 }

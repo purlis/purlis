@@ -13,7 +13,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { AT_THE_ROOT, asPersona, inWorkspace } from "./skillStudio";
-import { pickIn } from "./primitives/select.testkit";
+import { pickIn } from "./ui/select/select.testkit";
 import { levelFrom, PROJECT } from "./skillChanges";
 
 afterEach(() => {
@@ -36,6 +36,8 @@ const deploy = {
   folder: "skills/deploy",
   compat: [],
   lint: [],
+  hidden: [],
+  pinned: false,
   written: "deploy",
   named: false,
   unchecked: null,
@@ -157,6 +159,8 @@ describe("the Skill studio's changes", () => {
       folder: "workspaces/ops/skills/triage",
       compat: [],
       lint: [],
+      hidden: [],
+      pinned: false,
     };
     const asked = core([triage], "ops", {
       skill_move_needs_grant: (args) => (args.to as { at: string }).at === "project",

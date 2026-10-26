@@ -12,29 +12,24 @@ const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
 
 /**
  * **The families a raw `<button>` may still belong to** (#2904, D-2904-9): the tabs and strips,
- * the list, tree and table rows, the menu rows, the segmented control, the activity items, the
+ * the list, tree and table rows, the menu rows, the activity items, the
  * title bar's workspace chips, the cards and the settings nav. Each by
  * the role its button says, or by its family's class. The status items and the title bar's status
- * pills have moved (#2913). A menu's rows are the menu family's since #2909, and no button says
+ * pills have moved (#2913), and so have the choices (#2907). A menu's rows are the menu family's since #2909, and no button says
  * their role.
  */
 const OTHER_FAMILIES = {
-  roles: ["tab", "switch", "radio", "checkbox", "treeitem", "row", "link"],
+  roles: ["tab", "treeitem", "row", "link"],
   classes: [
-    // Rows of a list, a tree or a table, a segment.
+    // Rows of a list, a tree or a table.
     "ui-row",
     "ui-tree-row",
-    "ui-segmented-item",
     "vault-secret",
     // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
     "closer",
-    "show-more",
-    "ends-a-chat",
-    "bare",
     "crumb",
     "tab-tasks-hand",
     "tab-tasks-counts",
-    "tasks-menu-place",
     // The title bar's workspace chips, and a needs-you mark on a row.
     "needs-you-mark",
     "plane-root",
@@ -85,12 +80,14 @@ export default tseslint.config(
       "purlis/button-family": ["error", { otherFamilies: OTHER_FAMILIES }],
       // A box a person types in is the field family's, since #2905.
       "purlis/field-family": "error",
-      "purlis/select-family": "warn",
-      "purlis/choice-family": "warn",
+      // A select and a box with suggestions are the select and combobox families', since #2906.
+      "purlis/select-family": "error",
+      // A checkbox, a radio, a switch, a segmented control, a slider: the choice families (#2907).
+      "purlis/choice-family": "error",
       // The menu, context menu and popover families have moved (#2909).
       "purlis/menu-family": "error",
       "purlis/dialog-family": "error",
-      "purlis/tooltip-family": ["error", { handsOn: ["Select"] }],
+      "purlis/tooltip-family": "error",
       "purlis/panel-family": "error",
       "purlis/panel-section-family": "error",
       "purlis/empty-state-family": "error",
@@ -102,15 +99,8 @@ export default tseslint.config(
       // A tablist is the tabs family's, on React Aria, since #3042.
       "purlis/tabs-family": "error",
       "purlis/titlebar-family": "error",
+      "purlis/panel-separator-family": "error",
     },
-  },
-  // **The old field wrapper's last wearers** (#3129): a settings row's select and its slider,
-  // which the select (#2906, PR #3107) and choice (#2907, PR #3109) families take off it.
-  // Whichever of #3107, #3109 and #3208 lands last deletes this block and the dead `.ui-field`
-  // rules in `App.css`; nothing else may wear `ui-field`.
-  {
-    files: ["src/settings/components.tsx"],
-    rules: { "purlis/field-family": "off" },
   },
   // **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs
   // family (#3042): the workspace strip (#2916), the activity bars (#2917), the project rail's
@@ -124,10 +114,5 @@ export default tseslint.config(
       "src/StripTablist.tsx",
     ],
     rules: { "purlis/tabs-family": "off" },
-  },
-  // The select's list is drawn in the old menu classes until the select family moves (#2906).
-  {
-    files: ["src/primitives/Select.tsx"],
-    rules: { "purlis/menu-family": "off" },
   },
 );

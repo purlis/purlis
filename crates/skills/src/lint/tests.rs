@@ -20,6 +20,7 @@ fn lints<'a>(
         namespace: "skills",
         plane,
         built_in,
+        known_as: built_in,
         has: &has,
     }
 }
@@ -262,7 +263,7 @@ fn a_repo_or_harness_skill_named_like_a_built_in_one_warns_and_a_skill_purlis_ha
 
     for origin in [crate::Origin::Repo, crate::Origin::Harness] {
         let line = "it has the name of one of purlis's built-in skills, so a chat gets purlis's \
-                    too, and may use either";
+                    too and may use either: rename it";
         assert_eq!(
             said(origin, None),
             [(Severity::Warns, line.to_owned(), Some(line.to_owned()))],
@@ -277,4 +278,42 @@ fn a_repo_or_harness_skill_named_like_a_built_in_one_warns_and_a_skill_purlis_ha
         [],
         "figma:secrets is known by its plugin's name, never as purlis's secrets"
     );
+}
+
+#[test]
+fn on_a_route_that_names_built_in_skills_their_own_only_that_name_warns() {
+    // SK-37 (#3027): opencode knows purlis's `secrets` as `purlis-secrets`, and its index skill
+    // as `purlis-skill-index`, so a repo's bare `secrets` is another skill there.
+    let plane = std::collections::HashSet::new();
+    let built_in: std::collections::HashSet<String> = ["secrets".to_owned()].into();
+    let warned = |route: crate::Route, name: &str| {
+        let known_as = route.built_in_names(built_in.iter().map(String::as_str));
+        let text = format!(
+            "---\nname: {name}\ndescription: Reads the repo's secrets from a vault.\n---\n"
+        );
+        BuiltInLints {
+            namespace: "skills",
+            plane: &plane,
+            built_in: &built_in,
+            known_as: &known_as,
+            has: &has,
+        }
+        .findings(&SkillFiles {
+            name,
+            text: &text,
+            others: &[],
+            origin: crate::Origin::Repo,
+            plugin: None,
+        })
+        .iter()
+        .any(|one| one.lint == Lint::BuiltInName)
+    };
+
+    assert!(warned(crate::Route::Config, "purlis-secrets"));
+    assert!(warned(crate::Route::Config, "purlis-skill-index"));
+    assert!(!warned(crate::Route::Config, "secrets"));
+    for route in [crate::Route::Plugin, crate::Route::Briefing] {
+        assert!(warned(route, "secrets"), "{route:?}");
+        assert!(!warned(route, "purlis-secrets"), "{route:?}");
+    }
 }

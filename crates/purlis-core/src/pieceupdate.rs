@@ -88,7 +88,7 @@ pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnM
         }
     });
     ran.unwrap_or_else(|why| {
-        say(Say::Fail(why));
+        say(Say::Fail(why.into()));
         1
     })
 }
@@ -103,7 +103,7 @@ pub fn push(piece: &Piece, lease: bool, reach: &Reach, say: &mut dyn FnMut(Say))
         pushed(piece, &here, lease, reach, say)
     });
     ran.unwrap_or_else(|why| {
-        say(Say::Fail(why));
+        say(Say::Fail(why.into()));
         1
     })
 }
@@ -206,12 +206,15 @@ fn stopped_said(piece: &Piece, here: &Here, git_said: &str, say: &mut dyn FnMut(
                 "the rebase of {repo} · {name} stopped{files}. Resolve them in the folder, then \
                  `purlis worktree update --continue`; or `purlis worktree update --abort` puts \
                  the branch back where it was"
-            )));
+            ).into()));
         }
-        _ => say(Say::Fail(format!(
-            "git did not rebase {repo} · {name}: {}",
-            first_line(git_said)
-        ))),
+        _ => say(Say::Fail(
+            format!(
+                "git did not rebase {repo} · {name}: {}",
+                first_line(git_said)
+            )
+            .into(),
+        )),
     }
     1
 }
@@ -263,7 +266,7 @@ fn start(
     }
     let fresh = worktree::fresh::bring_up(&here.clone, &base).map_err(|e| e.to_string())?;
     for note in fresh.notes {
-        say(Say::Warn(note));
+        say(Say::Warn(note.into()));
     }
     // The base, or its remote-tracking branch where the base is behind it and checked out.
     let onto = fresh.instead.clone().unwrap_or_else(|| name::as_ref(&base));
@@ -280,7 +283,9 @@ fn start(
     )
     .map_err(|e| e.to_string())?;
     if there.ok() {
-        say(Say::Done(format!("{repo} · {name_} is already on {base}")));
+        say(Say::Done(
+            format!("{repo} · {name_} is already on {base}").into(),
+        ));
         return Ok(0);
     }
     if let Some(chat_dir) = reach.sandboxed_at {
@@ -334,9 +339,9 @@ fn start(
         (None, Some(up)) => format!(" (as {up} has it)"),
         (None, None) => String::new(),
     };
-    say(Say::Done(format!(
-        "{repo} · {name_} is rebased onto {base}{moved}"
-    )));
+    say(Say::Done(
+        format!("{repo} · {name_} is rebased onto {base}{moved}").into(),
+    ));
     Ok(0)
 }
 
@@ -413,7 +418,7 @@ fn go_on(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, Str
         return Ok(stopped_said(piece, here, &went.err, say));
     }
     finish(here, &record)?;
-    say(Say::Done(format!("{repo} · {name_} is rebased")));
+    say(Say::Done(format!("{repo} · {name_} is rebased").into()));
     Ok(0)
 }
 
@@ -596,9 +601,9 @@ fn abort(piece: &Piece, here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, Str
             first_line(&back.err)
         ));
     }
-    say(Say::Done(format!(
-        "{repo} · {name_} is back where it was before the update"
-    )));
+    say(Say::Done(
+        format!("{repo} · {name_} is back where it was before the update").into(),
+    ));
     Ok(0)
 }
 
@@ -694,8 +699,8 @@ fn pushed(
             first_line(&sent.err)
         ));
     }
-    say(Say::Done(format!(
-        "{repo} · {name_}: {branch} pushed to {remote}"
-    )));
+    say(Say::Done(
+        format!("{repo} · {name_}: {branch} pushed to {remote}").into(),
+    ));
     Ok(0)
 }

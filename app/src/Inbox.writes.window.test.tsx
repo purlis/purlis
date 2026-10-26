@@ -87,7 +87,7 @@ describe("an edit's change in the Inbox (#1146)", () => {
   });
 
   it("counts no Allow pressed as the change is drawn, and one pressed once it was read", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.useFakeTimers({ toFake: ["Date", "performance"] });
     // A window that has drawn no change yet: the merge view's chunk is still to load.
     vi.resetModules();
     const { Inbox: Fresh } = await import("./Inbox");
@@ -111,14 +111,14 @@ describe("an edit's change in the Inbox (#1146)", () => {
       Fresh,
     );
     // Long after the row was drawn, the change arrives, and the Allow under it with it.
-    act(() => vi.setSystemTime(Date.now() + SETTLE_MS + 1));
+    act(() => vi.advanceTimersByTime(SETTLE_MS + 1));
     const allow = await screen.findByRole("button", { name: "Allow" }, { timeout: 5000 });
 
     await userEvent.click(allow);
     expect(screen.getByText(MOVED_JUST_NOW)).toBeTruthy();
     expect(calls).not.toContain("answer_ask");
 
-    act(() => vi.setSystemTime(Date.now() + SETTLE_MS + 1));
+    act(() => vi.advanceTimersByTime(SETTLE_MS + 1));
     await userEvent.click(allow);
     await vi.waitFor(() => expect(calls).toContain("answer_ask"));
   });
@@ -184,7 +184,7 @@ describe("a proposed change in the Inbox (#1975)", () => {
   ];
 
   it("counts no Apply pressed as the change is drawn, and one pressed once it was read", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.useFakeTimers({ toFake: ["Date", "performance"] });
     // A window that has drawn no change yet: the merge view's chunk is still to load.
     vi.resetModules();
     const { Inbox: Fresh } = await import("./Inbox");
@@ -210,13 +210,13 @@ describe("a proposed change in the Inbox (#1975)", () => {
       calls,
       Fresh,
     );
-    act(() => vi.setSystemTime(Date.now() + SETTLE_MS + 1));
+    act(() => vi.advanceTimersByTime(SETTLE_MS + 1));
     const apply = await screen.findByRole("button", { name: "Apply" }, { timeout: 5000 });
     await userEvent.click(apply);
     expect(screen.getByText(MOVED_JUST_NOW)).toBeTruthy();
     expect(calls).not.toContain("apply_proposed_change");
 
-    act(() => vi.setSystemTime(Date.now() + SETTLE_MS + 1));
+    act(() => vi.advanceTimersByTime(SETTLE_MS + 1));
     await userEvent.click(apply);
     await vi.waitFor(() => expect(calls).toContain("apply_proposed_change"));
   });

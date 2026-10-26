@@ -192,6 +192,12 @@ mod options_tests;
 #[cfg(test)]
 mod parts_activity_tests;
 #[cfg(test)]
+mod parts_choice_tests;
+#[cfg(test)]
+mod parts_select_tests;
+#[cfg(test)]
+mod parts_separator_tests;
+#[cfg(test)]
 mod parts_shell_tests;
 #[cfg(test)]
 mod parts_tabs_tests;

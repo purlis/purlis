@@ -12,7 +12,9 @@
  * - **A swipe** is a sideways wheel over the title bar (two fingers on a trackpad, or Shift and
  *   the wheel). It steps exactly one pin per gesture: once its travel passes {@link SWIPE_TRAVEL}
  *   it steps, and every further event of that gesture, the trackpad's momentum included, is
- *   ignored until the wheel has been quiet for {@link SWIPE_QUIET} (R112).
+ *   ignored (R112). A gesture ends when the wheel has been quiet for {@link SWIPE_QUIET}, when it
+ *   turns the other way, or when it speeds up again after its momentum has faded: the next
+ *   stroke, started before the last one's tail was over (#3327).
  * - **The workspace popover's key** is ⌥⌘P on a Mac and Ctrl+Alt+Shift+P elsewhere (the operator's
  *   ruling of 2026-10-24, amending R106: ⌘P stays the palette's finder of files and projects).
  * - **A pin's key** is ⌘1–⌘9 on a Mac and Ctrl+1–9 elsewhere (R111). Off a Mac a chat keeps a
@@ -27,6 +29,29 @@ export const SWIPE_TRAVEL = 60;
 
 /** How long the wheel is quiet before a swipe has ended, in ms (R112). */
 export const SWIPE_QUIET = 220;
+
+/**
+ * **When a momentum tail has faded enough to tell a new stroke from it** (#3327): its events are
+ * at most this share of the gesture's fastest. Until then a stroke started in it is folded into
+ * the gesture, as nothing in a wheel event says which events are momentum.
+ */
+export const SWIPE_FADED = 0.5;
+
+/**
+ * **How much faster than the faded tail a new stroke is** (#3327): at least this many times the
+ * tail's slowest event, and {@link SWIPE_RISE_PX} more, so a tail's rounding (a 4 then a 5) is
+ * never a stroke.
+ */
+export const SWIPE_RISE = 2;
+
+/**
+ * The least a new stroke is faster than the faded tail, in px a frame, and the least a turn the
+ * other way travels to end a gesture, in px (#3327).
+ */
+export const SWIPE_RISE_PX = 4;
+
+/** One frame of a trackpad's wheel, in ms: what a speed is counted per (#3327). */
+export const SWIPE_FRAME = 16;
 
 /** A step: to the next pin, or to the previous one. */
 export type Step = 1 | -1;
@@ -74,20 +99,64 @@ export function sideways(wheel: Wheel): number | undefined {
 
 /**
  * **One swipe at a time** (R112): fed each sideways wheel event with when it came, it answers
- * the one step the gesture takes, once, and nothing more until the wheel has been quiet.
+ * the one step the gesture takes, once, and nothing more until that gesture has ended.
+ *
+ * **A trackpad's momentum keeps the wheel going for a second or more** after the fingers lift,
+ * an event a frame, each a little slower than the last. Ending a gesture on a quiet alone folded
+ * every stroke started in that tail into the gesture before, so a second swipe did nothing
+ * (#3327). A gesture also ends when the wheel turns the other way by {@link SWIPE_RISE_PX} or
+ * more, which momentum never does, or when it speeds up again once its tail has faded to
+ * {@link SWIPE_FADED} of its fastest, which momentum never does either: that is fingers moving
+ * again. Speeds are px a frame, so an event WebKit merged from several frames is no faster.
  */
 export class Swipe {
   private travel = 0;
   private stepped = false;
   private last = Number.NEGATIVE_INFINITY;
+  /** Which way the gesture goes: 1, -1, or 0 before its first event. */
+  private way = 0;
+  /** The gesture's fastest event, in px a frame. */
+  private fastest = 0;
+  /** The slowest event since {@link fastest}, in px a frame: where its tail has got to. */
+  private slowest = Number.POSITIVE_INFINITY;
+  /** The last event's speed the way the gesture goes, in px a frame. */
+  private previous = 0;
 
   /** A sideways event of `dx` px at `at` ms: the step it takes, if this is the one. */
   feed(dx: number, at: number): Step | undefined {
-    if (at - this.last > SWIPE_QUIET) {
+    const size = Math.abs(dx);
+    const way = Math.sign(dx);
+    const quiet = at - this.last > SWIPE_QUIET;
+    // **Speed, not size** (#3327): WebKit merges the wheel events of a busy page into one, their
+    // travel summed, and a switch is when the page is busy. A merged tail event is no faster.
+    const speed = quiet ? size : size / Math.max(1, (at - this.last) / SWIPE_FRAME);
+    // A reversal ends the gesture only when it carries real travel, not a tail's one-pixel jitter.
+    const turned = this.way !== 0 && way !== this.way && size >= SWIPE_RISE_PX;
+    const again =
+      this.stepped &&
+      this.slowest <= this.fastest * SWIPE_FADED &&
+      speed >= this.slowest * SWIPE_RISE &&
+      speed >= this.slowest + SWIPE_RISE_PX;
+    if (quiet || turned || again) {
       this.travel = 0;
       this.stepped = false;
+      this.fastest = 0;
+      this.previous = 0;
+      this.way = way;
     }
     this.last = at;
+    // Jitter the other way is no part of the tail's speed: it would read as the tail fading. And
+    // the tail has faded to a speed only once two events in a row show it: one event read slow,
+    // late from a busy page and never merged, is not a fade the next event could rise from.
+    // The opening event after a quiet has no gap to read a speed from: it may be several frames
+    // merged as the page was busy when the swipe began, so it sets no speed (#3327).
+    if (way === this.way && !quiet) {
+      if (speed > this.fastest) {
+        this.fastest = speed;
+        this.slowest = speed;
+      } else this.slowest = Math.min(this.slowest, Math.max(speed, this.previous));
+      this.previous = speed;
+    }
     if (this.stepped) return undefined;
     this.travel += dx;
     if (Math.abs(this.travel) <= SWIPE_TRAVEL) return undefined;

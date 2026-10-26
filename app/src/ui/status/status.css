@@ -30,6 +30,13 @@ footer[data-scope="status-bar"] {
   border-block-start: var(--panel-border-width) solid var(--border-subtle);
 }
 
+/* **Focus mode** (#2921, `keys/focusMode.ts`): the window's status bar goes with the rail, the
+   bars and the panels, the work alone. Here, in the family's own layer, since the rule above
+   draws it. */
+.window[data-focus-mode] footer[data-scope="status-bar"] {
+  display: none;
+}
+
 /* It clips what goes off its end; its padding is the room a focused item's ring takes inside the
    clip, given back by its margin so nothing moves. */
 [data-scope="status-bar"][data-part="start"] {

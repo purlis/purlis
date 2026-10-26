@@ -73,7 +73,8 @@ async function levelBecomes(want: string): Promise<void> {
       saw = await browser.execute(
         (selector: string) =>
           document
-            .querySelector(`${selector} [role="radio"][aria-checked="true"]`)
+            .querySelector(`${selector} input[type="radio"]:checked`)
+            ?.closest("label")
             ?.textContent?.trim() ?? "",
         LEVEL,
       );

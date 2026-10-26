@@ -67,10 +67,10 @@ mod whereworking;
 pub(crate) fn speak(line: purlis_core::repocmd::Say) {
     use purlis_core::repocmd::Say;
     match line {
-        Say::Info(text) => voice::info(&text),
-        Say::Done(text) => voice::ok(&text),
-        Say::Warn(text) => voice::warn(&text),
-        Say::Fail(text) => voice::err(&text),
+        Say::Info(text) => voice::info(text),
+        Say::Done(text) => voice::ok(text),
+        Say::Warn(text) => voice::warn(text),
+        Say::Fail(text) => voice::err(text),
         // `raise SystemExit(message)`, which prints the message as it is — on stderr, where
         // every other mark goes.
         Say::Plain(text) => eprintln!("{text}"),
@@ -106,6 +106,23 @@ enum Command {
         /// runner's own pin.
         #[arg(long)]
         pair: bool,
+        /// With --pair, on a cluster runner: pair with the link key the runner's pod made as it
+        /// started, at FILE, rather than make one (#2056).
+        #[arg(long, requires = "pair", value_name = "FILE", hide = true)]
+        key_made_at_start: Option<std::path::PathBuf>,
+        /// On a cluster runner's pod, as it starts and before anything else runs there: make
+        /// the runner's link key at FILE and write its public half to --publish (#2056).
+        #[arg(
+            long,
+            conflicts_with = "pair",
+            requires = "publish",
+            value_name = "FILE",
+            hide = true
+        )]
+        make_key: Option<std::path::PathBuf>,
+        /// With --make-key: where the public half is written, for the cluster to show.
+        #[arg(long, requires = "make_key", value_name = "FILE", hide = true)]
+        publish: Option<std::path::PathBuf>,
     },
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
@@ -729,10 +746,10 @@ fn say_lines(said: &[purlis_core::scaffold::Say]) {
     use purlis_core::scaffold::Say;
     for line in said {
         match line {
-            Say::Info(text) => voice::info(text),
-            Say::Ok(text) => voice::ok(text),
-            Say::Warn(text) => voice::warn(text),
-            Say::Err(text) => voice::err(text),
+            Say::Info(text) => voice::info(text.clone()),
+            Say::Ok(text) => voice::ok(text.clone()),
+            Say::Warn(text) => voice::warn(text.clone()),
+            Say::Err(text) => voice::err(text.clone()),
         }
     }
 }
@@ -766,14 +783,14 @@ fn stop_every_agent() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(not_kept) if not_kept.journaled => {
-            voice::warn(&format!(
+            voice::warn(format!(
                 "The stop is kept, but not as it should be: {not_kept}. A running app still \
                  hears it; re-arm from its title bar."
             ));
             ExitCode::FAILURE
         }
         Err(not_kept) => {
-            voice::err(&format!("Agents were NOT stopped: {not_kept}."));
+            voice::err(format!("Agents were NOT stopped: {not_kept}."));
             voice::info("Use Stop all on the purlis app's title bar instead.");
             ExitCode::FAILURE
         }
@@ -870,11 +887,11 @@ fn serve() -> ExitCode {
 
 /// `purlis bridge`: a runner's pipe to its host's link socket, or its pairing.
 #[cfg(unix)]
-fn bridge(pair: bool) -> ExitCode {
-    match bridge::run(pair) {
+fn bridge(asked: bridge::Asked) -> ExitCode {
+    match bridge::run(asked) {
         Ok(code) => ExitCode::from(code),
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             ExitCode::FAILURE
         }
     }
@@ -882,7 +899,7 @@ fn bridge(pair: bool) -> ExitCode {
 
 /// `purlis bridge`: a runner's pipe, on macOS and Linux only.
 #[cfg(not(unix))]
-fn bridge(_pair: bool) -> ExitCode {
+fn bridge() -> ExitCode {
     voice::err("a runner's bridge runs on macOS and Linux only");
     ExitCode::FAILURE
 }
@@ -942,7 +959,7 @@ fn kept_in_the_data_home(hosting: purlis_host::Hosting) -> purlis_host::Hosting 
     };
     // A data home inside a work tree or a project keeps nothing (ADR 0075 §6).
     if let Some(why) = purlis_core::datahome::refusal(&data) {
-        voice::err(&format!("this host keeps no projects of its own: {why}"));
+        voice::err(format!("this host keeps no projects of its own: {why}"));
         return hosting;
     }
     hosting.keeping_projects_in(data.join(purlis_core::datahome::PROJECTS))
@@ -2383,15 +2400,15 @@ fn gl_refresh(ws: &str, detach: bool, now: Option<&str>) -> ExitCode {
     // refresh will not fetch for, and the row it feeds will stay empty until somebody is told
     // why.
     for (name, why) in &found.refused {
-        voice::warn(&format!("{name} is not refreshed — {why}"));
+        voice::warn(format!("{name} is not refreshed — {why}"));
     }
     let trees = found.trees;
     if trees.is_empty() {
-        voice::info(&format!("No repos in workspace '{ws}'."));
+        voice::info(format!("No repos in workspace '{ws}'."));
         return ExitCode::SUCCESS;
     }
     let cache = glrefresh::refresh(&root, &trees, stamp);
-    voice::ok(&format!(
+    voice::ok(format!(
         "Refreshed forge state for {} tree(s) in '{ws}'.",
         trees.len()
     ));
@@ -2424,7 +2441,7 @@ fn gl_refresh(ws: &str, detach: bool, now: Option<&str>) -> ExitCode {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
-            voice::info(&format!("  {name}: {}", bits.join(" · ")));
+            voice::info(format!("  {name}: {}", bits.join(" · ")));
         }
     }
     ExitCode::SUCCESS
@@ -2773,7 +2790,7 @@ fn repo_command(command: &Command) -> Option<ExitCode> {
             let cfg = match purlis_core::forge::load_config(&root) {
                 Ok(cfg) => cfg,
                 Err(why) => {
-                    eprintln!("{}", Say::Plain(why));
+                    eprintln!("{}", Say::Plain(why.into()));
                     return Some(ExitCode::FAILURE);
                 }
             };
@@ -2997,7 +3014,7 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                 && let Some(note) =
                     purlis_core::skills::levels::vouch_if_made(&root, &owner, was_there)
             {
-                say(purlis_core::repocmd::Say::Info(note));
+                say(purlis_core::repocmd::Say::Info(note.into()));
             }
             if code == 0 {
                 heard.push(ExtensionEvent::WorkspaceCreated {
@@ -3287,7 +3304,7 @@ fn run(command: Command) -> Result<u8, String> {
             let chosen =
                 purlis_core::active::workspace(&here.asking(None, here.workspace_env.as_deref()));
             println!("{}", chosen.name);
-            voice::info(&format!(
+            voice::info(format!(
                 "via {}",
                 purlis_core::active::workspace_source(&here.ids, chosen.rung)
             ));
@@ -3388,7 +3405,7 @@ fn run(command: Command) -> Result<u8, String> {
                     }
                     brokered::Named::Here => {}
                     brokered::Named::Refused(why) => {
-                        voice::err(&why);
+                        voice::err(why.to_string());
                         return Ok(1);
                     }
                 }
@@ -3402,7 +3419,7 @@ fn run(command: Command) -> Result<u8, String> {
             match text.as_deref().filter(|t| !t.is_empty()) {
                 Some(text) => {
                     ws.set_vision(text).map_err(|e| e.to_string())?;
-                    voice::ok(&format!(
+                    voice::ok(format!(
                         "Vision set for '{0}' → workspaces/{0}/workspace.md",
                         ws.name()
                     ));
@@ -3535,7 +3552,7 @@ fn run(command: Command) -> Result<u8, String> {
                     brokered::Named::Own => true,
                     brokered::Named::Here => false,
                     brokered::Named::Refused(why) => {
-                        voice::err(&why);
+                        voice::err(why.to_string());
                         return Ok(1);
                     }
                 }
@@ -3601,7 +3618,7 @@ fn todo(
             let (open, unread) = purlis_core::memstore::read_entries(root, &dir);
             voice::unread(root, &unread);
             if open.is_empty() {
-                voice::info(&format!(
+                voice::info(format!(
                     "No open todos in '{name}'. Record one: purlis ws todo \"<what>\""
                 ));
                 return 0;
@@ -3633,7 +3650,7 @@ fn todo(
         // leave the one it meant to close open.
         [verb] if verb == "promote" => {
             voice::err("`todo promote` needs the slug of the todo to promote.");
-            voice::info(&format!("  The slug is the first column: {see}"));
+            voice::info(format!("  The slug is the first column: {see}"));
             voice::info(
                 "  To record a todo actually called \"promote\", capitalise it or add a word: \
                  purlis ws todo \"Promote …\"",
@@ -3641,17 +3658,17 @@ fn todo(
             1
         }
         [verb] if verb == "done" || verb == "forget" => {
-            voice::err(&format!(
+            voice::err(format!(
                 "`todo {verb}` needs the slug of the todo to close."
             ));
-            voice::info(&format!("  The slug is the first column: {see}"));
+            voice::info(format!("  The slug is the first column: {see}"));
             let capital: String = verb
                 .chars()
                 .take(1)
                 .flat_map(char::to_uppercase)
                 .chain(verb.chars().skip(1))
                 .collect();
-            voice::info(&format!(
+            voice::info(format!(
                 "  To record a todo actually called \"{verb}\", capitalise it or add a word: \
                  purlis ws todo \"{capital} …\""
             ));
@@ -3666,12 +3683,12 @@ fn todo(
                     0
                 }
                 Err(refused @ purlis_core::workspaces::RecordRefused::AlreadyListed(_)) => {
-                    voice::err(&refused.to_string());
-                    voice::info(&format!("  See it: {see}"));
+                    voice::err(refused.to_string());
+                    voice::info(format!("  See it: {see}"));
                     1
                 }
                 Err(refused) => {
-                    voice::err(&refused.to_string());
+                    voice::err(refused.to_string());
                     1
                 }
             }
@@ -3688,7 +3705,7 @@ fn todo(
 
 /// What `ws todo "<text>"` says once the todo is recorded in workspace `name`, at `path`.
 fn said_todo_recorded(plane: &Plane, name: &str, path: &str) {
-    voice::ok(&format!(
+    voice::ok(format!(
         "Todo recorded in '{name}' → workspaces/{name}/todos/{}",
         std::path::Path::new(path)
             .file_name()
@@ -3696,7 +3713,7 @@ fn said_todo_recorded(plane: &Plane, name: &str, path: &str) {
             .to_string_lossy()
     ));
     if !plane.is_live(name) {
-        voice::info(&format!(
+        voice::info(format!(
             "  '{name}' is LOCAL (private) — todos stay on disk, not committed."
         ));
     }
@@ -3733,20 +3750,20 @@ fn promote_todo(
     let root = plane.root();
     let slug = purlis_core::memstore::py_strip(slug);
     if !purlis_core::contain::segment_ok(slug) {
-        voice::err(&purlis_core::repocmd::clone::not_a_segment(slug));
+        voice::err(purlis_core::repocmd::clone::not_a_segment(slug).to_string());
         return 1;
     }
     let target = match promote::target(root, ws.name(), repo) {
         Ok(target) => target,
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             return 1;
         }
     };
     let device = match purlis_core::machine::this_device_id() {
         Ok(device) => device,
         Err(why) => {
-            voice::err(&format!(
+            voice::err(format!(
                 "this device has no id, so the work link log has no file to write: {why}"
             ));
             return 1;
@@ -3763,7 +3780,7 @@ fn promote_todo(
                 Some(label) => format!(", labelled {label}"),
                 None => ", with no workspace label".to_string(),
             };
-            voice::info(&format!(
+            voice::info(format!(
                 "Opening an issue in {} ({} at {}, {}) with the todo's title and text{label}.",
                 target.name,
                 target.path(),
@@ -3771,7 +3788,7 @@ fn promote_todo(
                 about.visibility.readers()
             ));
         }
-        Step::Created(item) => voice::info(&format!("  Opened {} — {}", item.key, item.url)),
+        Step::Created(item) => voice::info(format!("  Opened {} — {}", item.key, item.url)),
     };
     match promote::promote(
         ws,
@@ -3786,7 +3803,7 @@ fn promote_todo(
         Ok(done) => {
             // The close is `ws todo done`'s, so it says what `done` says about the journal.
             memory::said_remembered(plane, ws.name(), &done.journal, false);
-            voice::ok(&format!(
+            voice::ok(format!(
                 "Promoted '{}' in '{}' to {} — the todo is closed, and its work links now reach \
                  the issue.",
                 done.title,
@@ -3796,7 +3813,7 @@ fn promote_todo(
             0
         }
         Err(why) => {
-            voice::err(&why);
+            voice::err(why.to_string());
             1
         }
     }
@@ -4245,8 +4262,31 @@ fn main() -> ExitCode {
         return serve();
     }
     // Needs no project: a runner's bridge to its own host, or its pairing (ADR 0078 §2, §3).
-    if let Command::Bridge { pair } = &cli.command {
-        return bridge(*pair);
+    if let Command::Bridge {
+        pair,
+        key_made_at_start,
+        make_key,
+        publish,
+    } = &cli.command
+    {
+        #[cfg(not(unix))]
+        {
+            let _ = (pair, key_made_at_start, make_key, publish);
+            return bridge();
+        }
+        #[cfg(unix)]
+        let asked = match (make_key, publish) {
+            (Some(handoff), Some(published)) => bridge::Asked::MakeKey {
+                handoff: handoff.clone(),
+                published: published.clone(),
+            },
+            _ if *pair => bridge::Asked::Pair {
+                key_made_at_start: key_made_at_start.clone(),
+            },
+            _ => bridge::Asked::Pipe,
+        };
+        #[cfg(unix)]
+        return bridge(asked);
     }
     // Needs no project: the app that started the chat answers it, from its own record (#1450).
     if let Command::Persona(memory::PersonaCommand::Where { now }) = &cli.command {
@@ -4311,7 +4351,7 @@ fn main() -> ExitCode {
         return match mcp::serve() {
             Ok(code) => ExitCode::from(code),
             Err(why) => {
-                voice::err(&why);
+                voice::err(why.to_string());
                 ExitCode::FAILURE
             }
         };

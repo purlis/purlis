@@ -249,6 +249,9 @@ pub const PAIRS: &[Pair] = &[
     p("danger.base", "surface.overlay", TEXT),
     p("danger.base", "surface.base", TEXT),
     p("danger.base", "surface.raised", TEXT),
+    // A refused box's edge (a field's, a select's, a combobox's, #3110) is the danger colour on
+    // the box's own sunken ground: a mark, so 3:1.
+    p("danger.base", "surface.sunken", 3.0),
     // Trouble said in `danger.text` words on the ground around it, not only on its own surface:
     // a dialog, a strip, the window and a pane.
     p("danger.text", "surface.overlay", TEXT),
@@ -275,6 +278,10 @@ pub const PAIRS: &[Pair] = &[
     p("state.unreadable", "surface.raised", TEXT),
     p("accent.base", "surface.base", 3.0),
     p("focus.ring", "surface.base", 3.0),
+    // A resize handle's grip with the keyboard on it (#3143), on the window's frame a gutter
+    // shows and on a panel Purlis floats.
+    p("focus.ring", "surface.deep", 3.0),
+    p("focus.ring", "surface.raised", 3.0),
     // The three strips are three shades (charter-app#193): a tab that is not the one you are on
     // is muted text on its strip, and the one you are on is primary text on `layer.selected`.
     p("text.muted", "layer.project", 4.5),
@@ -369,9 +376,19 @@ pub const PAIRS: &[Pair] = &[
     p("text.primary", "wash.warning", 4.5).over("surface.deep"),
     // - Its hand, a mark in the needs-you colour on the same wash: 3:1.
     p("needs-you.base", "wash.warning", 3.0).over("surface.deep"),
-    // A title-bar chip's waiting count (#2916, R101): its digits in amber on the amber wash, a
-    // count held as the rail's badge is (3:1).
-    p("state.waiting", "wash.warning", 3.0).over("surface.deep"),
+    // **A state's colour drawn as a part's words is held as words** (#3041): wherever a family
+    // of the component parts manifest draws a state's colour as its words, at rest or under the
+    // pointer, it is held at the window's text size on the part's fill, not at the 3:1 a mark
+    // takes (`parts/state_words_tests.rs` keeps this list whole).
+    // - A title-bar chip's waiting count (#2916, R101): its digits in amber on the amber wash,
+    //   over the title bar, and over the card's fill while the chip is lit.
+    p("state.waiting", "wash.warning", TEXT).over("surface.deep"),
+    p("state.waiting", "wash.warning", TEXT).over("surface.overlay"),
+    // - The rail's waiting badge (R79): its digits in amber on the overlay's pill.
+    p("state.waiting", "surface.overlay", TEXT),
+    // - The warning-soft button: amber words on the control, and under the pointer.
+    p("state.waiting", "control.base", TEXT),
+    p("state.waiting", "control.hover", TEXT),
     // - A chosen activity button: its icon in the accent's words on the accent's wash, laid on
     //   the window and the frame (#3177), held as words are, the icon being all it says.
     p("accent.text", "accent.wash", TEXT).over("surface.base"),
@@ -729,6 +746,9 @@ pub const PAIRS: &[Pair] = &[
     // ground, at rest and under the pointer: the edge is a control's outline, held to 3:1.
     p("accent.base", "control.base", 3.0),
     p("accent.base", "control.hover", 3.0),
+    // A ticked box, a picked radio and a switch that is on (#2907): the tick, the dot and the
+    // thumb in the window's colour on the accent's fill, a mark held to 3:1.
+    p("surface.base", "accent.base", 3.0),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.

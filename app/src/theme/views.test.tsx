@@ -68,7 +68,7 @@ import type { ViewRef } from "../tabs";
 import { complaints } from "./complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme";
 import { forgetGroups } from "../settings/links";
-import { pickIn } from "../primitives/select.testkit";
+import { findSelectNamed, pickIn } from "../ui/select/select.testkit";
 
 afterEach(() => {
   cleanup();
@@ -962,6 +962,8 @@ const ORDINARY: Answers = {
         folder: "skills/deploy",
         compat: [],
         lint: [],
+        hidden: [],
+        pinned: false,
         owner: null,
         switch: null,
       },
@@ -983,6 +985,8 @@ const ORDINARY: Answers = {
         folder: "skills/half",
         compat: [],
         lint: [],
+        hidden: [],
+        pinned: false,
         owner: null,
         switch: null,
       },
@@ -1029,6 +1033,8 @@ const ORDINARY: Answers = {
             folder: "workspaces/alpha/api/.claude/skills/deploy",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
             owner: { kind: "repo", name: "api" },
             switch: { kind: "alone" },
           },
@@ -1044,6 +1050,8 @@ const ORDINARY: Answers = {
             folder: "/cache/figma/skills/frame",
             compat: [],
             lint: [],
+            hidden: [],
+            pinned: false,
             owner: { kind: "plugin", name: "figma" },
             switch: {
               kind: "not",
@@ -1236,10 +1244,7 @@ const STATES: State[] = [
     drawn: /Tidied\./,
     then: async () => {
       // It opens narrowed to the strip's workspace (#1510); the rows are elsewhere.
-      await pickIn(
-        await screen.findByRole("combobox", { name: "Filter by workspace" }),
-        "Every workspace",
-      );
+      await pickIn(await findSelectNamed("Filter by workspace"), "Every workspace");
       await userEvent.click(
         await screen.findByRole("button", {
           name: "Show the brief and report of tidy the notes",

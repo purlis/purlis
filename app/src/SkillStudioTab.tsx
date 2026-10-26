@@ -33,7 +33,7 @@ import { SkillRowActions } from "./SkillRowActions";
 import { SkillDrafts } from "./SkillDrafts";
 import { askSkillChat, useSkillDrafts } from "./skillDraftAsks";
 import { SkillSources } from "./SkillSources";
-import { Select } from "./primitives/Select";
+import { Select } from "./ui/select/Select";
 import { Field, SettingRow } from "./settings/components";
 import {
   grantChoices,
@@ -498,7 +498,7 @@ export function SkillStudioTab({
   );
   const restorable = deleted.length > 0 && (
     <section className="skill-deleted" aria-label="Deleted skills">
-      <h3>Deleted skills</h3>
+      <h2>Deleted skills</h2>
       <ul>
         {deleted.map((one) => (
           <li key={one.id} data-testid={`deleted-${one.name}`}>
@@ -654,7 +654,14 @@ export function SkillStudioTab({
                     )}
                   </td>
                   <td>
-                    {skill.on ? (skill.unchecked ?? "On") : `Left out: ${skill.left_out ?? ""}`}
+                    {skill.on
+                      ? (skill.unchecked ??
+                        (skill.hidden.length > 0
+                          ? `On, ${skill.hidden[0].hidden.said} (on ${skill.hidden.map((one) => one.title).join(", ")})`
+                          : skill.pinned
+                            ? "On, pinned"
+                            : "On"))
+                      : `Left out: ${skill.left_out ?? ""}`}
                     {skill.on && skill.level === "built-in" && (
                       <span className="honest">
                         {" "}
@@ -1036,7 +1043,7 @@ function NewSkill({
         options={templates.map((one) => ({
           value: templateKey(one.id),
           label: one.label,
-          title: one.about,
+          tooltip: one.about,
         }))}
         // One of the offered ids, or the blank template where the list does not name it.
         onValueChange={(to) =>
@@ -1184,7 +1191,7 @@ function LevelPicker({
       aria-label={label}
       value={picker.value}
       placeholder={now === undefined ? "Move to…" : undefined}
-      disabled={disabled}
+      isDisabled={disabled}
       options={picker.options}
       onValueChange={(to) => {
         const level = picker.chosen(to);
@@ -1213,7 +1220,7 @@ function GrantPicker({
     <Select
       aria-label={label}
       value={picker.value}
-      disabled={disabled}
+      isDisabled={disabled}
       options={picker.options}
       onValueChange={(to) => {
         const grant = picker.chosen(to);

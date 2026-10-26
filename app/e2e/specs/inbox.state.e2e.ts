@@ -3,6 +3,7 @@
 
 import { browser, expect, $ } from "@wdio/globals";
 import { rmSync, writeFileSync } from "node:fs";
+import { pressGrant } from "../acting.js";
 import { endEveryChat, pressAndStart } from "../opening.js";
 import { ASKED_COMMAND, ASKS_A_PERMISSION, INBOX_ALLOWED } from "../harness.js";
 
@@ -82,8 +83,9 @@ describe("the Inbox", () => {
           return part ? Number.parseInt(getComputedStyle(part).fontWeight, 10) : 0;
         };
         return {
-          picked: group?.querySelector('[aria-checked="true"]')?.getAttribute("aria-label") ?? "",
-          scopes: group?.querySelectorAll('[role="radio"]').length ?? 0,
+          picked:
+            group?.querySelector('input[type="radio"]:checked')?.getAttribute("aria-label") ?? "",
+          scopes: group?.querySelectorAll('input[type="radio"]').length ?? 0,
           // How far the switch runs past the view's right edge (≤ 0 when inside).
           past:
             group && view
@@ -109,8 +111,7 @@ describe("the Inbox", () => {
 
     // An Allow waits for its row to settle (`SETTLE_MS`, 1.5 s, #1695): the person reads the
     // ask before allowing it, or the press allows nothing.
-    await browser.pause(2_000);
-    await (await ask.$("button=Allow")).click();
+    await pressGrant(await ask.$("button=Allow"));
 
     // The hook printed the window's decision, and the harness went on past it.
     await browser.waitUntil(

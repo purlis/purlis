@@ -237,18 +237,22 @@ fn plan(
     say: &mut dyn FnMut(Say),
 ) -> Result<Plan, ()> {
     let Some(clone) = crate::repos::clone_at(plane, ws, repo) else {
-        say(Say::Fail(format!(
-            "{}: not a repo in workspace '{ws}', so it is not pushed.",
-            named(repo)
-        )));
-        say(Say::Info(format!(
-            "Clone it first: purlis clone {} -w {ws}",
-            named(repo)
-        )));
+        say(Say::Fail(
+            format!(
+                "{}: not a repo in workspace '{ws}', so it is not pushed.",
+                named(repo)
+            )
+            .into(),
+        ));
+        say(Say::Info(
+            format!("Clone it first: purlis clone {} -w {ws}", named(repo)).into(),
+        ));
         return Err(());
     };
     let fail = |say: &mut dyn FnMut(Say), why: String| -> Result<Plan, ()> {
-        say(Say::Fail(format!("{}: {}", named(repo), shown::line(&why))));
+        say(Say::Fail(
+            format!("{}: {}", named(repo), shown::line(&why)).into(),
+        ));
         Err(())
     };
     let on = match Repo::of_clone(plane, &clone.path) {
@@ -542,11 +546,12 @@ fn planned(
     }
     let record = load(plane, ws, slug, say)?;
     if record.members.is_empty() {
-        say(Say::Fail(format!("change {} has no members.", named(slug))));
-        say(Say::Info(format!(
-            "Add one: purlis change add {} <repo>",
-            named(slug)
-        )));
+        say(Say::Fail(
+            format!("change {} has no members.", named(slug)).into(),
+        ));
+        say(Say::Info(
+            format!("Add one: purlis change add {} <repo>", named(slug)).into(),
+        ));
         return Err(REFUSED);
     }
     let mut failed = 0usize;
@@ -593,11 +598,14 @@ fn pushing(
         let now: Vec<Destination> = plans.iter().map(Destination::from).collect();
         let changed = changed_since(confirmed, &now);
         if !changed.is_empty() {
-            say(Say::Fail(format!(
-                "what purlis would push is not what you confirmed: {}. Nothing was pushed. \
+            say(Say::Fail(
+                format!(
+                    "what purlis would push is not what you confirmed: {}. Nothing was pushed. \
                  Look at it again and confirm what it says now.",
-                changed.join("; ")
-            )));
+                    changed.join("; ")
+                )
+                .into(),
+            ));
             return REFUSED;
         }
         if now.is_empty() {
@@ -610,11 +618,14 @@ fn pushing(
     let names: Vec<String> = plans.iter().map(|p| shown::line(&p.repo)).collect();
     let w = tui::column("", names.iter().map(String::as_str), 0, None);
     if !plans.is_empty() {
-        say(Say::Info(format!(
-            "Pushing {} of {}. Nothing is committed and nothing is forced:",
-            counted(plans.len(), "member", "members"),
-            named(slug)
-        )));
+        say(Say::Info(
+            format!(
+                "Pushing {} of {}. Nothing is committed and nothing is forced:",
+                counted(plans.len(), "member", "members"),
+                named(slug)
+            )
+            .into(),
+        ));
     }
     for (p, name) in plans.iter().zip(&names) {
         let into = p.base.as_deref().map_or_else(String::new, |b| {
@@ -641,11 +652,14 @@ fn pushing(
         let found = match backend.by_head(&caller, &p.on.path, &p.branch) {
             Ok(found) => found,
             Err(why) => {
-                say(Say::Fail(format!(
-                    "{}: pushed, but purlis could not ask for its request: {}",
-                    named(&p.repo),
-                    shown::line(&why.to_string())
-                )));
+                say(Say::Fail(
+                    format!(
+                        "{}: pushed, but purlis could not ask for its request: {}",
+                        named(&p.repo),
+                        shown::line(&why.to_string())
+                    )
+                    .into(),
+                ));
                 failed += 1;
                 continue;
             }
@@ -663,13 +677,16 @@ fn pushing(
             ),
             None => {
                 let Some(base) = p.base.as_deref() else {
-                    say(Say::Fail(format!(
-                        "{}: pushed, but purlis does not know its default branch, so it \
+                    say(Say::Fail(
+                        format!(
+                            "{}: pushed, but purlis does not know its default branch, so it \
                          cannot say where a request goes. Run: git -C {} remote set-head \
                          origin --auto",
-                        named(&p.repo),
-                        shown::line(&p.clone.display().to_string())
-                    )));
+                            named(&p.repo),
+                            shown::line(&p.clone.display().to_string())
+                        )
+                        .into(),
+                    ));
                     failed += 1;
                     continue;
                 };
@@ -684,24 +701,30 @@ fn pushing(
                 ) {
                     Ok(opened) => (opened.pr, "opened", None),
                     Err(why) => {
-                        say(Say::Fail(format!(
-                            "{}: pushed, but its request into {} was not opened: {}",
-                            named(&p.repo),
-                            shown::line(base),
-                            shown::line(&why.to_string())
-                        )));
+                        say(Say::Fail(
+                            format!(
+                                "{}: pushed, but its request into {} was not opened: {}",
+                                named(&p.repo),
+                                shown::line(base),
+                                shown::line(&why.to_string())
+                            )
+                            .into(),
+                        ));
                         failed += 1;
                         continue;
                     }
                 }
             }
         };
-        say(Say::Done(format!(
-            "{named_row}  {verb} → {sigil}{}{}  {}",
-            pr.number,
-            standing.unwrap_or_default(),
-            shown::line(&pr.url)
-        )));
+        say(Say::Done(
+            format!(
+                "{named_row}  {verb} → {sigil}{}{}  {}",
+                pr.number,
+                standing.unwrap_or_default(),
+                shown::line(&pr.url)
+            )
+            .into(),
+        ));
         let at = Reached {
             number: pr.number,
             path: p.on.path.clone(),
@@ -721,24 +744,30 @@ fn pushing(
         let body = match backend.body(&caller, path, pr) {
             Ok(body) => body,
             Err(why) => {
-                say(Say::Fail(format!(
-                    "{}: {sigil}{}'s description could not be read: {}",
-                    named(repo),
-                    pr.number,
-                    shown::line(&why.to_string())
-                )));
+                say(Say::Fail(
+                    format!(
+                        "{}: {sigil}{}'s description could not be read: {}",
+                        named(repo),
+                        pr.number,
+                        shown::line(&why.to_string())
+                    )
+                    .into(),
+                ));
                 failed += 1;
                 continue;
             }
         };
         let Some(spliced) = splice(&body, &block) else {
-            say(Say::Fail(format!(
-                "{}: {sigil}{}'s description has no single purlis block outside a code \
+            say(Say::Fail(
+                format!(
+                    "{}: {sigil}{}'s description has no single purlis block outside a code \
                  fence, so purlis left it as it is. purlis writes only between its own \
                  markers.",
-                named(repo),
-                pr.number
-            )));
+                    named(repo),
+                    pr.number
+                )
+                .into(),
+            ));
             failed += 1;
             continue;
         };
@@ -749,27 +778,36 @@ fn pushing(
         match backend.set_body(&caller, path, pr, &spliced) {
             Ok(()) => written += 1,
             Err(why) => {
-                say(Say::Fail(format!(
-                    "{}: {sigil}{}'s cross-link block was not written: {}",
-                    named(repo),
-                    pr.number,
-                    shown::line(&why.to_string())
-                )));
+                say(Say::Fail(
+                    format!(
+                        "{}: {sigil}{}'s cross-link block was not written: {}",
+                        named(repo),
+                        pr.number,
+                        shown::line(&why.to_string())
+                    )
+                    .into(),
+                ));
                 failed += 1;
             }
         }
     }
     if written > 0 {
-        say(Say::Done(format!(
-            "cross-link block written into {}",
-            counted(written, "request description", "request descriptions")
-        )));
+        say(Say::Done(
+            format!(
+                "cross-link block written into {}",
+                counted(written, "request description", "request descriptions")
+            )
+            .into(),
+        ));
     }
     if current > 0 {
-        say(Say::Info(format!(
-            "cross-link block already current in {}",
-            counted(current, "request description", "request descriptions")
-        )));
+        say(Say::Info(
+            format!(
+                "cross-link block already current in {}",
+                counted(current, "request description", "request descriptions")
+            )
+            .into(),
+        ));
     }
     // 1 when any member was not pushed, opened or written, as the Python charter answered:
     // a script reads "not everything it was asked to do happened" from one code. Exit 2 stays
@@ -787,10 +825,9 @@ fn pushed(p: &Plan, say: &mut dyn FnMut(Say)) -> bool {
     let run = match git::run_network(&p.clone, Some(&helper), &args) {
         Ok(run) => run,
         Err(unavailable) => {
-            say(Say::Fail(format!(
-                "{}: not pushed: {unavailable}",
-                named(&p.repo)
-            )));
+            say(Say::Fail(
+                format!("{}: not pushed: {unavailable}", named(&p.repo)).into(),
+            ));
             return false;
         }
     };
@@ -805,11 +842,9 @@ fn pushed(p: &Plan, say: &mut dyn FnMut(Say)) -> bool {
             .rev()
             .find(|l| !l.trim().is_empty() && !l.trim_start().starts_with("hint:"))
             .unwrap_or("git said nothing");
-        say(Say::Fail(format!(
-            "{}: not pushed: {}",
-            named(&p.repo),
-            shown::line(last)
-        )));
+        say(Say::Fail(
+            format!("{}: not pushed: {}", named(&p.repo), shown::line(last)).into(),
+        ));
         return false;
     }
     // Kept in step, so the repo's own view of its remote matches what the remote now holds.
@@ -820,11 +855,14 @@ fn pushed(p: &Plan, say: &mut dyn FnMut(Say)) -> bool {
         git::READ,
     );
     if !moved.is_ok_and(|run| run.ok()) {
-        say(Say::Warn(format!(
-            "{}: pushed, but {} was not moved to it. `git fetch` in the repo corrects it.",
-            named(&p.repo),
-            shown::line(&tracking)
-        )));
+        say(Say::Warn(
+            format!(
+                "{}: pushed, but {} was not moved to it. `git fetch` in the repo corrects it.",
+                named(&p.repo),
+                shown::line(&tracking)
+            )
+            .into(),
+        ));
     }
     true
 }

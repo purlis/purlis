@@ -4,24 +4,28 @@
 // **The story baselines** (#2901, `docs/component-stories.md`): the pictures each story is
 // compared with, drawn only in the pinned Playwright image of `.github/workflows/stories.yml`.
 //
-//   node tools/story-baselines.mjs check <index>    every baseline is one that image drew, of a
+//   node tools/story-baselines.mjs check <index> [<report> ...]
+//                                                   every baseline is one that image drew, of a
 //                                                   story the index has, in a pictured cell of
-//                                                   the matrix (the stories job)
-//   node tools/story-baselines.mjs gather <index> <out>
-//                                                   copy the baseline of every story the index
-//                                                   has to <out>, under its path in `app/` (the
-//                                                   labelled job, after drawing)
+//                                                   the matrix, that takes a picture (the
+//                                                   stories job, after the stories ran)
+//   node tools/story-baselines.mjs gather <index> <out> [<report> ...]
+//                                                   copy the baseline of every such story to
+//                                                   <out>, under its path in `app/` (the
+//                                                   stories job, after drawing them again)
 //   node tools/story-baselines.mjs take <drawn> <app>
 //                                                   write what `gather` copied into <app> and
 //                                                   delete every other baseline there (the
 //                                                   labelled job's commit, run from a trusted
-//                                                   checkout against the pull request's)
+//                                                   checkout against the pull request's, and
+//                                                   `tools/story-baselines-pull.mjs`)
 //
 // <index> is Storybook's own index of the stories, which `storybook index` writes. A story is
 // live when the index has it with the `test` tag, the stories the Vitest addon runs, and a
 // picture of it is taken in each cell of the matrix `app/.storybook/pictured.json` names
-// (`app/.storybook/matrix.ts`); every other baseline is obsolete, and `check` fails on it,
-// naming its story and cell.
+// (`app/.storybook/matrix.ts`), unless it takes none (`parameters.screenshot: false`), which
+// only a run says: each <report> is one browser's, written by `tools/story-failures.mjs`'s
+// reporter. Every other baseline is obsolete, and `check` fails on it, naming its story and cell.
 //
 // A baseline is
 // `app/src/<dir>/__screenshots__/<name>.stories.tsx/<story id>_<cell>-<browser>-linux.png`, where
@@ -82,6 +86,19 @@ export function picturedCells(app) {
   );
 }
 
+/** The pictures `stories` are drawn as: story file path in `app/` (with `/`), to the picture
+ *  name of each of its stories, one in each of `cells`. */
+function picturesOf(stories, cells) {
+  const pictures = new Map();
+  for (const { file, id } of stories) {
+    const path = String(file).replace(/^\.\//, "");
+    if (!pictures.has(path)) pictures.set(path, new Set());
+    for (const cell of cells)
+      pictures.get(path).add(`${pictureName(String(id))}_${cell}`);
+  }
+  return pictures;
+}
+
 /** The pictures each story file's live stories are drawn as: story file path in `app/` (with
  *  `/`), to the picture names of its stories that run as tests, one in each of `cells`. */
 export function liveStories(index, cells) {
@@ -94,15 +111,33 @@ export function liveStories(index, cells) {
     throw new Error(
       "not a story index: expected the JSON `storybook index` writes",
     );
-  const live = new Map();
-  for (const entry of Object.values(index.entries)) {
-    if (entry?.type !== "story" || !entry.tags?.includes(TESTED)) continue;
-    const file = String(entry.importPath).replace(/^\.\//, "");
-    if (!live.has(file)) live.set(file, new Set());
-    for (const cell of cells)
-      live.get(file).add(`${pictureName(String(entry.id))}_${cell}`);
-  }
-  return live;
+  return picturesOf(
+    Object.values(index.entries)
+      .filter(
+        (entry) => entry?.type === "story" && entry.tags?.includes(TESTED),
+      )
+      .map((entry) => ({ file: entry.importPath, id: entry.id })),
+    cells,
+  );
+}
+
+/**
+ * The stories that ran and take no picture (`parameters.screenshot: false`), from the reports
+ * `tools/story-failures.mjs`'s reporter wrote of a run with pictures on: each `{ file, id }`. A
+ * story's parameters are in no index, so only a run says which: `screenshots.setup.ts` marks
+ * each story it takes no picture of.
+ */
+export function unpicturedIn(reports) {
+  return reports.flatMap((report) => {
+    if (!Array.isArray(report?.unpictured))
+      throw new Error(
+        "not a stories report: expected the JSON tools/story-failures.mjs's reporter writes",
+      );
+    return report.unpictured.map(({ file, id }) => ({
+      file: String(file),
+      id: String(id),
+    }));
+  });
 }
 
 /** A baseline's story file, and the picture name of its story in its cell. */
@@ -187,15 +222,21 @@ function confined(root, path) {
   }
 }
 
-/** What is wrong with the baselines in `app`, one line each, against Storybook's `index` and
- *  the pictured `cells`. */
-export function problems(app, index, cells = picturedCells(app)) {
+/** What is wrong with the baselines in `app`, one line each, against Storybook's `index`, the
+ *  pictured `cells` and the stories a run took no picture of (`unpicturedIn`). */
+export function problems(
+  app,
+  index,
+  cells = picturedCells(app),
+  unpictured = [],
+) {
   const live = liveStories(index, cells);
+  const off = picturesOf(unpictured, cells);
   return baselinesIn(app).flatMap((path) => {
     if (!BASELINE.test(path))
       return [
         `${path}: not a baseline the pinned image draws (<story id>_<theme>_<appearance>-<chromium|webkit>-linux.png); ` +
-          "baselines are drawn only by the update-baselines label (docs/component-stories.md)",
+          "baselines are drawn only by a pull request's stories run, and taken by the update-baselines label or tools/story-baselines-pull.mjs (docs/component-stories.md)",
       ];
     const { file, story } = storyOf(path);
     if (!existsSync(join(app, file)))
@@ -205,20 +246,39 @@ export function problems(app, index, cells = picturedCells(app)) {
     if (!live.get(file)?.has(story))
       return [
         `${path}: no story ${story} in ${file} runs as a test in a pictured cell, so the baseline is obsolete; ` +
-          "the update-baselines label deletes it, or delete it with the story (docs/component-stories.md)",
+          "taking the stories run's baselines deletes it, or delete it with the story (docs/component-stories.md)",
+      ];
+    if (off.get(file)?.has(story))
+      return [
+        `${path}: story ${story} in ${file} takes no picture (screenshot: false), so the baseline is obsolete; ` +
+          "taking the stories run's baselines deletes it, or delete it in the same change (docs/component-stories.md)",
       ];
     return [];
   });
 }
 
-/** Copies the baseline of every live story in `app` to `out`, under the same path, and says
- *  which: an obsolete one is left out, so `take` deletes it. */
-export function gather(app, index, out, cells = picturedCells(app)) {
+/** Copies the baseline of every live story in `app` that takes a picture to `out`, under the
+ *  same path, and says which: an obsolete one is left out, so `take` deletes it. Refuses an
+ *  index with no live story. */
+export function gather(
+  app,
+  index,
+  out,
+  cells = picturedCells(app),
+  unpictured = [],
+) {
   const live = liveStories(index, cells);
+  // Gathering nothing deletes every baseline, so that takes a live story to say so: an index
+  // with none (a broken stories glob or indexer) is refused, never read as "delete them all".
+  if ([...live.values()].every((pictures) => pictures.size === 0))
+    throw new Error(
+      "the story index has no story that runs as a test in a pictured cell, so no baseline was gathered",
+    );
+  const off = picturesOf(unpictured, cells);
   const all = baselinesIn(app).filter((path) => {
     if (!BASELINE.test(path)) return false;
     const { file, story } = storyOf(path);
-    return live.get(file)?.has(story) ?? false;
+    return (live.get(file)?.has(story) ?? false) && !off.get(file)?.has(story);
   });
   for (const path of all) {
     mkdirSync(dirname(join(out, path)), { recursive: true });
@@ -298,25 +358,50 @@ export function take(drawn, app, within = LIMITS) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const app = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
-  const [command, dir, into] = process.argv.slice(2);
-  const indexAt = (path) => JSON.parse(readFileSync(resolve(path), "utf8"));
-  if (command === "check" && dir) {
-    const found = problems(app, indexAt(dir));
+  const [command, ...given] = process.argv.slice(2);
+  const json = (path) => JSON.parse(readFileSync(resolve(path), "utf8"));
+  // Each report a browser's run wrote; one it did not write says nothing of its stories, and the
+  // run that failed to write it has failed on its own.
+  const unpictured = (paths) =>
+    unpicturedIn(
+      paths.flatMap((path) => {
+        if (existsSync(resolve(path))) return [json(path)];
+        console.error(
+          `::warning::${path}: no stories report, so its run's stories are not checked for screenshot: false`,
+        );
+        return [];
+      }),
+    );
+  if (command === "check" && given.length >= 1) {
+    const [index, ...reports] = given;
+    const found = problems(
+      app,
+      json(index),
+      picturedCells(app),
+      unpictured(reports),
+    );
     for (const line of found) console.error(`::error::${line}`);
     if (found.length > 0) process.exit(1);
     console.log(
-      `${baselinesIn(app).length} baselines, each drawn by the pinned image of a live story`,
+      `${baselinesIn(app).length} baselines, each drawn by the pinned image of a live story that takes a picture`,
     );
-  } else if (command === "gather" && dir && into) {
-    for (const path of gather(app, indexAt(dir), resolve(into)))
+  } else if (command === "gather" && given.length >= 2) {
+    const [index, out, ...reports] = given;
+    for (const path of gather(
+      app,
+      json(index),
+      resolve(out),
+      picturedCells(app),
+      unpictured(reports),
+    ))
       console.log(path);
-  } else if (command === "take" && dir && into) {
-    const { taken, removed } = take(resolve(dir), resolve(into));
+  } else if (command === "take" && given.length === 2) {
+    const { taken, removed } = take(resolve(given[0]), resolve(given[1]));
     for (const path of taken) console.log(`drawn: ${path}`);
     for (const path of removed) console.log(`deleted: ${path}`);
   } else {
     console.error(
-      "usage: story-baselines.mjs check <index> | gather <index> <out> | take <drawn> <app>",
+      "usage: story-baselines.mjs check <index> [<report> ...] | gather <index> <out> [<report> ...] | take <drawn> <app>",
     );
     process.exit(2);
   }

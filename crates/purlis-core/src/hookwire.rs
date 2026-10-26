@@ -215,8 +215,14 @@ impl Report {
                 // One bit of the prompt, and only on the event that carries one: whether the
                 // person typed `/smart-close` (#1332). The prompt never leaves the hook.
                 smart_close: event == Event::UserPromptSubmit
-                    && field("prompt")
-                        .is_some_and(|prompt| crate::state::smart_close_typed(&prompt)),
+                    && field("prompt").is_some_and(|prompt| {
+                        crate::state::smart_close_typed(
+                            &prompt,
+                            chat_harness(env)
+                                .as_deref()
+                                .and_then(crate::harness::Harness::of_registry_or_kind),
+                        )
+                    }),
                 unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
                 // Only a `Stop` of the chat's own can end its turn, so only there is it asked.
                 helpers_at_work: event == Event::Stop
@@ -4812,6 +4818,29 @@ mod tests {
     }
 
     #[test]
+    fn opencode_s_own_name_for_smart_close_is_heard_in_an_opencode_chat_alone() {
+        // opencode knows purlis's built-in skills as `purlis-<name>`; nowhere else is that name
+        // purlis's, so a skill named so in another chat is its own.
+        let heard = |harness: Option<&str>| {
+            let mut pairs = vec![(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")];
+            pairs.extend(harness.map(|harness| (HARNESS_ENV, harness)));
+            let env = env_of(&pairs);
+            Report::read(
+                Event::UserPromptSubmit,
+                &prompt_payload("/purlis-smart-close"),
+                &env,
+            )
+            .expect("a report")
+            .detail
+            .smart_close
+        };
+        assert!(heard(Some("opencode")));
+        assert!(!heard(Some("claude")));
+        assert!(!heard(Some("codex")));
+        assert!(!heard(None));
+    }
+
+    #[test]
     fn a_typed_smart_close_is_one_bit_of_the_prompt_and_the_prompt_goes_nowhere() {
         let env = env_of(&[(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")]);
         for typed in [
@@ -5418,7 +5447,7 @@ mod tests {
             Box::new(move |_, _| {
                 std::thread::sleep(slow);
                 Answer::Said {
-                    lines: vec![crate::repocmd::Say::Done("cloned".to_owned())],
+                    lines: vec![crate::repocmd::Say::Done("cloned".to_owned().into())],
                     code: 0,
                 }
             }),
@@ -5463,11 +5492,11 @@ mod tests {
         use crate::repocmd::Say;
         let said = Answer::Said {
             lines: vec![
-                Say::Info("workspace: alpha  (via --workspace)".to_owned()),
-                Say::Done("widget → workspaces/alpha/widget".to_owned()),
-                Say::Warn("w".to_owned()),
-                Say::Fail("f".to_owned()),
-                Say::Plain("p".to_owned()),
+                Say::Info("workspace: alpha  (via --workspace)".to_owned().into()),
+                Say::Done("widget → workspaces/alpha/widget".to_owned().into()),
+                Say::Warn("w".to_owned().into()),
+                Say::Fail("f".to_owned().into()),
+                Say::Plain("p".to_owned().into()),
                 Say::Out("o".to_owned()),
             ],
             code: 2,

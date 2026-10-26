@@ -284,7 +284,7 @@ export function FirstTaskTab({
         const labelId = `${groupId}-${run}`;
         return (
           <section className="first-task-run" key={run} aria-labelledby={labelId}>
-            <h3 id={labelId}>{ORDINAL[run]}</h3>
+            <h2 id={labelId}>{ORDINAL[run]}</h2>
             {run === 2 && (
               <p className="came-back">
                 Start it once the first chat has finished. It starts knowing what the first one

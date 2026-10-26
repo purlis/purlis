@@ -115,6 +115,7 @@ import { Button } from "./ui/button/Button";
 import { IconButton } from "./ui/button/Button";
 import { SidebarIcon } from "./ui/rail/Rail";
 import { ProjectRail } from "./ProjectRail";
+import { FOCUS_BACK, FOCUS_MODE, useFocusMode } from "./keys/focusMode";
 import { unsavedOf } from "./SavingView";
 import { useRailMode } from "./railMode";
 
@@ -244,6 +245,9 @@ function App() {
   /** Whether the extension list is up. The window's, not a project's: an extension is machine
    *  state, so it is the same list whichever project is in front. */
   const [extensions, setExtensions] = useState(false);
+  /** Focus mode (#2921, N32): the work alone, held for this launch and written nowhere. */
+  const focusMode = useFocusMode();
+  const toggleFocusMode = focusMode.toggle;
   /**
    * The last ask for a project's Settings tab at the Project level (SE-19, #1213; the retired
    * Project settings page before it, charter-app#252): which project, and a count so
@@ -939,6 +943,7 @@ function App() {
         setCreating(true);
       },
       showExtensions: () => setExtensions(true),
+      toggleFocusMode,
       installCli,
       selectProject: (plane: string) => setShowing({ at: "plane", plane }),
       switchProject: () => setSwitcherAsk((was) => was + 1),
@@ -965,7 +970,7 @@ function App() {
       },
       quit: () => void commands.askToQuit().catch(() => undefined),
     }),
-    [closeProject, moveProject, pinProject],
+    [closeProject, moveProject, pinProject, toggleFocusMode],
   );
 
   /**
@@ -1485,6 +1490,7 @@ function App() {
       pinBrowser: async () => nowhere(),
       handBrowser: async () => nowhere(),
       stopBrowser: async () => nowhere(),
+      openBrowserTimeline: () => undefined,
       pinTab: async () => nowhere(),
       pinWorkspace: async () => nowhere(),
       pinProject: windowDoes.pinProject,
@@ -2091,7 +2097,13 @@ function App() {
   );
 
   return (
-    <main className="window">
+    <main
+      className="window"
+      {...{
+        [FOCUS_MODE]: focusMode.on ? "" : undefined,
+        [FOCUS_BACK]: focusMode.back ? "" : undefined,
+      }}
+    >
       {/* The window's own title bar (ADR 0054): on macOS it IS the title bar — the system's
           traffic lights float over it — and on every other platform it is the window's first
           row under the system's own bar. `TitleBar.tsx` argues the shape and the drag region.
@@ -2361,6 +2373,7 @@ function App() {
               settingsAsked={settingsAsk?.plane === plane ? settingsAsk.at : undefined}
               savingAsked={savingAsk?.plane === plane ? savingAsk.at : undefined}
               licencesAsked={licencesAsk?.plane === plane ? licencesAsk.at : undefined}
+              focusMode={focusMode.on}
               settingsTabAsked={settingsTabAsk?.plane === plane ? settingsTabAsk.at : undefined}
               settingsLinkAsked={settingsLinkAsk?.plane === plane ? settingsLinkAsk : undefined}
               yourSettingsAsked={yourSettingsAsk?.plane === plane ? yourSettingsAsk.at : undefined}

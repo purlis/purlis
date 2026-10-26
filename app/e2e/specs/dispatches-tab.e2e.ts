@@ -66,8 +66,8 @@ const MADE = [TODAY_ALPHA, TODAY_BETA, EARLIER_ALPHA];
 
 const TAB = "Dispatches";
 const PANE = '[data-testid="view-pane-charter-dispatches-"]';
-const BY_WORKSPACE = `${PANE} [role="combobox"][aria-label="Filter by workspace"]`;
-const BY_DATE = `${PANE} [role="combobox"][aria-label="Filter by date"]`;
+const BY_WORKSPACE = `${PANE} [data-scope="select"][data-part="root"][aria-label="Filter by workspace"]`;
+const BY_DATE = `${PANE} [data-scope="select"][data-part="root"][aria-label="Filter by date"]`;
 
 /** An ended task's record, as the app writes one (`dispatchrecord::Record`, version 1). */
 function recordOf(made: Made): string {
@@ -128,10 +128,10 @@ describe("the Dispatches tab's past tasks", function () {
     for (const made of MADE) writeFileSync(join(store, `${made.id}.json`), recordOf(made));
 
     // Opened from alpha's strip, by the Sessions view's heading button: on the line heading
-    // its half of the Panel (#1738), or on the panel's own heading where it is drawn elsewhere.
+    // its half of the Panel (#1738), or on a sidebar's head where it is moved to one (#3330).
     await focusWorkspace("alpha");
     await showView("Sessions");
-    await press(':is(.half-head, [data-testid="panel-sessions"])', "Open dispatches");
+    await press(":is(.half-head, .side-head)", "Open dispatches");
     await untilInFront(TAB);
     await $(BY_WORKSPACE).waitForExist({ timeout: 20_000 });
   });

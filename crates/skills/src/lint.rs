@@ -144,7 +144,7 @@ impl Finding {
                 }
             ),
             Lint::BuiltInName => "it has the name of one of purlis's built-in skills, so a chat \
-                                  gets purlis's too, and may use either"
+                                  gets purlis's too and may use either: rename it"
                 .to_owned(),
             Lint::Said { by, says } => format!("{by}: {says}"),
             Lint::Missing { tool, place } => format!(
@@ -195,6 +195,9 @@ pub struct BuiltInLints<'a> {
     pub plane: &'a std::collections::HashSet<String>,
     /// The names of the built-in skills.
     pub built_in: &'a std::collections::HashSet<String>,
+    /// The names the program a skill from outside the plane is read by knows purlis's own
+    /// skills by ([`crate::Route::built_in_names`]): what such a skill named so loads beside.
+    pub known_as: &'a std::collections::HashSet<String>,
     /// Whether this machine has the program named, on its `PATH` or at the path given.
     pub has: &'a (dyn Fn(&str) -> bool + 'a),
 }
@@ -205,6 +208,7 @@ impl std::fmt::Debug for BuiltInLints<'_> {
             .field("namespace", &self.namespace)
             .field("plane", &self.plane)
             .field("built_in", &self.built_in)
+            .field("known_as", &self.known_as)
             .finish_non_exhaustive()
     }
 }
@@ -224,7 +228,7 @@ impl SkillLint for BuiltInLints<'_> {
             return out;
         }
         out.extend(short_description(skill.text));
-        out.extend(built_in_name(skill, self.built_in));
+        out.extend(built_in_name(skill, self.known_as));
         out.extend(keys(skill));
         out.extend(references(skill, self));
         out.extend(tools_missing(skill, self.has));
@@ -251,14 +255,15 @@ fn short_description(text: &str) -> Option<Finding> {
     (length < FEWEST_DESCRIPTION).then(|| warns(Lint::ShortDescription(length)))
 }
 
-/// A skill purlis does not hand, named like a built-in one: its program reads it beside
-/// purlis's, which no copy replaces and purlis never turns off ([`crate::SkillSet::with_outside`]).
-/// A plugin's skill is known by its plugin's name too, so it never takes a built-in's name.
+/// A skill purlis does not hand, named as its program knows one of purlis's own skills
+/// (`known_as`): it reads it beside purlis's, which no copy replaces and purlis never turns off
+/// ([`crate::SkillSet::with_outside`]). A plugin's skill is known by its plugin's name too, so
+/// it never takes one of those names.
 fn built_in_name(
     skill: &SkillFiles<'_>,
-    built_in: &std::collections::HashSet<String>,
+    known_as: &std::collections::HashSet<String>,
 ) -> Option<Finding> {
-    (!skill.origin.handed() && skill.plugin.is_none() && built_in.contains(skill.name))
+    (!skill.origin.handed() && skill.plugin.is_none() && known_as.contains(skill.name))
         .then(|| warns(Lint::BuiltInName))
 }
 

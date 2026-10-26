@@ -54,7 +54,8 @@
   `.claude/skills` into its `skills/`, shared with every workspace as before. It rewrites the old
   `charter:<skill>` names to `purlis:<skill>`, but never inside quoted code or an image name. It
   all goes in one commit that `git revert` undoes. It checks first that every chat keeps its
-  skills, and changes nothing if one would lose one. From then on every chat in the project gets
+  skills, and changes nothing if one would lose one or if two skills or folders differ only in
+  case, which a disk that ignores case reads as one. From then on every chat in the project gets
   those skills, the Skill studio switched on or off, and Codex chats get them too. Clones stop
   getting a copy of `.claude/skills`. Your clones lose their copies at once and a teammate's the
   next time a chat starts there, while a copy someone edited is kept and named. It says what it
@@ -93,6 +94,15 @@
   commit reaches everyone in the project, and a teammate on an older purlis opens it read-only
   until they update.
 
+- **A large library stays reachable without flooding a chat** (Skill studio preview, #2778).
+  Once a chat's skills are past purlis's skill budget, it is handed the skills you pinned,
+  purlis's own and one index skill that names every other skill in a line, and it loads any of
+  them by name when a request needs it. Below the budget nothing changes. Pin a skill for a
+  workspace's chats or a persona's with `purlis skill pin <name> -w <workspace>` or
+  `-p <persona>`, and the router never hides it. The Skill studio and `purlis skill list` say
+  which skills are pinned and why any other is hidden, and _Use skill…_ marks the hidden ones,
+  says how many are in the index skill, and still starts them for you.
+
 ### Fixed
 
 - **A skill source of more than 50 000 files is always refused whole** (Skill studio preview).
@@ -115,7 +125,7 @@
   now names each skill it starts without because of its repo, and why. The Skill studio and
   `purlis skill list` list them under each program.
 - **A repo skill named like a built-in one is said, not hidden** (Skill studio preview, #3027).
-  A clone's own `secrets` skill is loaded by Codex and opencode beside purlis's built-in
+  A clone's own `secrets` skill is loaded by Claude Code and Codex beside purlis's built-in
   `secrets`, and a chat may use the repo's. The Skill studio used to call the repo's copy
   hidden. It now marks the built-in skill with the clash, the repo's row warns that its name
   is a built-in one's, and a chat started in that repo says so on its tab.

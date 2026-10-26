@@ -63,6 +63,8 @@ pub struct RoutedSessions {
     on_pools: OnPools,
     to_a_pool: ToAPool,
     shared: Arc<Shared>,
+    /// The pool every start runs on, whatever it is ([`Self::every_start_on`]).
+    every_start_on: Option<String>,
 }
 
 /// What every pool's chats share with the router: what is told to each as it is made.
@@ -103,6 +105,85 @@ impl RoutedSessions {
             on_pools,
             to_a_pool,
             shared: Arc::default(),
+            every_start_on: None,
+        }
+    }
+
+    /// **The project at `root`'s chats, each on the host its workspace runs them on** (#2046):
+    /// `here`, or the runner of the pool `config`'s store names for its workspace, reached through
+    /// a link the window's host relays to it.
+    pub(crate) fn of_the_project(
+        here: Box<dyn SessionHost>,
+        connection: &Arc<crate::hostedsessions::Connection>,
+        config: &Path,
+        root: &Path,
+    ) -> RoutedSessions {
+        let (config, plane) = (config.to_path_buf(), root.to_path_buf());
+        let runs_on: RunsOn = {
+            let (config, plane) = (config.clone(), plane.clone());
+            Arc::new(move |workspace| purlis_core::pools::runs_on(&config, &plane, Some(workspace)))
+        };
+        let on_pools: OnPools = {
+            let (config, plane) = (config.clone(), plane.clone());
+            Arc::new(move || purlis_core::pools::workspaces_on_pools(&config, &plane))
+        };
+        let to_a_pool: ToAPool = {
+            let (connection, plane) = (Arc::clone(connection), plane.clone());
+            Arc::new(move |pool| {
+                purlis_core::runners::runner_for(&config, pool).map_err(|why| format!("{why}."))?;
+                Ok(
+                    Box::new(crate::hostedsessions::HostedSessions::on_a_pools_runner(
+                        connection.relaying_to(pool),
+                        &plane,
+                    )) as Box<dyn SessionHost>,
+                )
+            })
+        };
+        RoutedSessions::new(root, here, runs_on, on_pools, to_a_pool)
+    }
+
+    /// [`Self::of_the_project`], every start on the runner of `pool`, a shell's too, and every
+    /// harness chat whatever its workspace: the behaviour suite's Docker pool target (#2045),
+    /// which holds each behaviour to the runner's host. The app runs a shell where its window
+    /// composed it, and a harness chat where its workspace's chats run.
+    #[cfg(test)]
+    pub(crate) fn every_start_on(mut self, pool: &str) -> Self {
+        self.every_start_on = Some(pool.to_owned());
+        self
+    }
+
+    /// Starts a chat on the runner of `pool` with `start`, given the number this machine's
+    /// host dealt it (or `wanted`): this machine's host holds the project and keeps its board
+    /// first, and the chat is known as the pool's before it starts, so its first hook line is
+    /// heard from there alone. A runner that starts it under another number has it closed.
+    fn on_a_pool<T: Numbered>(
+        &self,
+        pool: &str,
+        wanted: Option<u32>,
+        start: impl FnOnce(&dyn SessionHost, u32) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let host = self.pool(pool)?;
+        self.here.hold_here();
+        let number = wanted
+            .filter(|wanted| *wanted > 0)
+            .unwrap_or_else(|| self.here.deal());
+        self.shared.dealt.fetch_max(number, Ordering::Relaxed);
+        lock(&self.shared.chats).insert(number, pool.to_owned());
+        match start(host.as_ref(), number) {
+            Ok(started) if started.number() == number => Ok(started),
+            Ok(started) => {
+                lock(&self.shared.chats).remove(&number);
+                let _ = host.close(started.number());
+                Err(format!(
+                    "the runner of pool {pool} started the chat as chat {}, not as chat \
+                     {number}, which this project dealt it, so it was closed",
+                    started.number()
+                ))
+            }
+            Err(why) => {
+                lock(&self.shared.chats).remove(&number);
+                Err(why)
+            }
         }
     }
 
@@ -125,6 +206,9 @@ impl RoutedSessions {
 
     /// The pool `workspace` runs its chats on, where it runs them on one.
     fn route(&self, workspace: Option<&str>) -> Result<Option<String>, String> {
+        if let Some(pool) = &self.every_start_on {
+            return Ok(Some(pool.clone()));
+        }
         match workspace {
             Some(workspace) => (self.runs_on)(workspace),
             None => Ok(None),
@@ -190,6 +274,23 @@ fn fetch_back_all(shared: &Arc<Shared>, on_pools: &OnPools, to_a_pool: &ToAPool)
     failed
 }
 
+/// What a start on a pool answers, by the number its chat was started as.
+trait Numbered {
+    fn number(&self) -> u32;
+}
+
+impl Numbered for u32 {
+    fn number(&self) -> u32 {
+        *self
+    }
+}
+
+impl Numbered for Composed {
+    fn number(&self) -> u32 {
+        self.number
+    }
+}
+
 impl SessionHost for RoutedSessions {
     /// On this machine: a start the window composed (a shell, or a program that is no harness
     /// a runner composes) runs where the window composed it.
@@ -199,7 +300,12 @@ impl SessionHost for RoutedSessions {
         opening: &Opening,
         announce: &dyn Fn(u32),
     ) -> Result<u32, String> {
-        self.here.open(wanted, opening, announce)
+        match &self.every_start_on {
+            Some(pool) => self.on_a_pool(pool, wanted, |host, number| {
+                host.open(Some(number), opening, announce)
+            }),
+            None => self.here.open(wanted, opening, announce),
+        }
     }
 
     fn open_named(
@@ -212,32 +318,9 @@ impl SessionHost for RoutedSessions {
         let Some(pool) = self.route(named.workspace.as_deref())? else {
             return self.here.open_named(wanted, named, hearing, announce);
         };
-        let host = self.pool(&pool)?;
-        // This machine's host holds the project, and keeps its board, before a chat starts
-        // beside it on a runner; and it deals the chat's number.
-        self.here.hold_here();
-        let number = wanted
-            .filter(|wanted| *wanted > 0)
-            .unwrap_or_else(|| self.here.deal());
-        self.shared.dealt.fetch_max(number, Ordering::Relaxed);
-        // Its pool is known before it starts, so its first hook line is heard from there alone.
-        lock(&self.shared.chats).insert(number, pool.clone());
-        match host.open_named(Some(number), named, hearing, announce) {
-            Ok(composed) if composed.number == number => Ok(composed),
-            Ok(composed) => {
-                lock(&self.shared.chats).remove(&number);
-                let _ = host.close(composed.number);
-                Err(format!(
-                    "the runner of pool {pool} started the chat as chat {}, not as chat \
-                     {number}, which this project dealt it, so it was closed",
-                    composed.number
-                ))
-            }
-            Err(why) => {
-                lock(&self.shared.chats).remove(&number);
-                Err(why)
-            }
-        }
+        self.on_a_pool(&pool, wanted, |host, number| {
+            host.open_named(Some(number), named, hearing, announce)
+        })
     }
 
     fn composes_its_harness_chats(&self) -> bool {

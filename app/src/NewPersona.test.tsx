@@ -6,7 +6,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { userEvent } from "@testing-library/user-event";
 import { NewPersona } from "./NewPersona";
-import { offeredIn, pickIn } from "./primitives/select.testkit";
+import { offeredIn, pickIn, selectNamed } from "./ui/select/select.testkit";
 
 afterEach(() => {
   cleanup();
@@ -63,7 +63,7 @@ describe("the new-persona dialog", () => {
     await userEvent.type(within(dialog).getByLabelText("Name"), "qa");
     await userEvent.type(within(dialog).getByLabelText("Role"), "QA Engineer");
     // A pick of the project's personas, so a typo is refused before the core sees it (#1719).
-    const inherits = within(dialog).getByRole("combobox", { name: "Inherits from" });
+    const inherits = selectNamed("Inherits from", dialog);
     await waitFor(async () => expect(await offeredIn(inherits)).toContain("steward"));
     await pickIn(inherits, "steward");
     // A parent carries a routing line of its own, so none is required with one.

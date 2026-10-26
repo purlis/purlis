@@ -96,6 +96,13 @@ struct Model {
     drag_told_when_asked: bool,
     /// The word of the engine's own drag, held until the test asks for it.
     held_drag: Option<Event>,
+    /// How long a read of a frame's whole tree takes, where it takes long: as on a large page
+    /// (#3043). A call that waits less than that fails as the connection's does, and the read
+    /// it asked for runs on.
+    ax_takes: Option<Duration>,
+    /// The element that has the focus of each session's document, where a test says it apart
+    /// from `focused_backend` (#3043): `None` where that document does not have the focus.
+    focused_on: HashMap<String, Option<i64>>,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -228,6 +235,15 @@ impl Engine {
             return Ok(None);
         }
         Err(Self::no_context())
+    }
+
+    /// The element that has the focus of `session`'s document, where it has the focus.
+    fn focused_on(&self, session: Option<&str>) -> Option<i64> {
+        let model = super::lock(&self.model);
+        match session.and_then(|session| model.focused_on.get(session)) {
+            Some(focused) => *focused,
+            None => model.focused_backend,
+        }
     }
 
     fn on(
@@ -437,7 +453,7 @@ impl Engine {
                 Ok(json!({"result":{"type":"string","value":lie}}))
             }
             "Runtime.evaluate" if p["expression"] == FOCUSED_HERE => {
-                Ok(match super::lock(&self.model).focused_backend {
+                Ok(match self.focused_on(on) {
                     Some(_) => {
                         json!({"result":{"type":"object","subtype":"node","objectId":"FOCUSED"}})
                     }
@@ -445,7 +461,7 @@ impl Engine {
                 })
             }
             "DOM.describeNode" if p["objectId"] == "FOCUSED" => {
-                let backend = super::lock(&self.model).focused_backend;
+                let backend = self.focused_on(on);
                 Ok(
                     json!({"node":{"nodeId":0,"backendNodeId":backend,"nodeType":1,"nodeName":"INPUT"}}),
                 )
@@ -586,7 +602,7 @@ impl DevTools for Stand {
         method: &str,
         params: Value,
         session: Option<&str>,
-        _timeout: Duration,
+        timeout: Duration,
     ) -> Result<Value, CallError> {
         let sent = Sent {
             method: method.to_owned(),
@@ -597,7 +613,18 @@ impl DevTools for Stand {
         let hooked = super::lock(&self.0.hook)
             .as_mut()
             .and_then(|h| h(&sent, &self.0));
-        hooked.unwrap_or_else(|| self.0.answer(&sent))
+        let answer = hooked.unwrap_or_else(|| self.0.answer(&sent));
+        // The tree as it was when the read began, given when the read ends.
+        let takes = super::lock(&self.0.model).ax_takes;
+        if method == "Accessibility.getFullAXTree"
+            && let Some(takes) = takes
+        {
+            std::thread::sleep(takes.min(timeout));
+            if takes > timeout {
+                return Err(CallError::TimedOut);
+            }
+        }
+        answer
     }
 
     /// As the connection holds an answer to a bound: past it, the call fails, alone (#2694).
@@ -707,6 +734,8 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             drag_data: json!({"items":[{"mimeType":"text/plain","data":"card"}],"dragOperationsMask":1}),
             drag_told_when_asked: false,
             held_drag: None,
+            ax_takes: None,
+            focused_on: HashMap::new(),
         }),
         hook: Mutex::new(None),
         dropped: Mutex::new(0),

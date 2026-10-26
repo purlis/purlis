@@ -37,6 +37,7 @@ use crate::inventory;
 use crate::manifest::Ownership;
 use crate::pyrepr::repr_str;
 use crate::repos;
+use crate::tui::Markup;
 use crate::workspaces::Plane;
 use crate::worktree::confine::{self, Outside};
 use crate::worktree::git;
@@ -83,7 +84,7 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
     let doc = match inventory::load(root, &group) {
         Ok(doc) => doc,
         Err(why) => {
-            say(Say::Fail(why));
+            say(Say::Fail(why.into()));
             return 1;
         }
     };
@@ -102,10 +103,13 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
     for name in request.repos {
         match inventory::find(&all, name) {
             Some(record) => targets.push(record.clone()),
-            None => say(Say::Warn(format!(
-                "Unknown repo (not in inventory): {name} — check the name (`purlis status`) or \
+            None => say(Say::Warn(
+                format!(
+                    "Unknown repo (not in inventory): {name} — check the name (`purlis status`) or \
                  `purlis discover` if it's new to the group."
-            ))),
+                )
+                .into(),
+            )),
         }
     }
     if targets.is_empty() {
@@ -122,7 +126,7 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
     let ws_dir = match workspace_dir(request, say) {
         Ok(dir) => dir,
         Err(why) => {
-            say(Say::Fail(why));
+            say(Say::Fail(why.into()));
             return 1;
         }
     };
@@ -134,11 +138,14 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
     wire(root, ws, &mut |_| {});
 
     if targets.len() > 1 {
-        say(Say::Info(format!(
-            "Cloning {} into '{ws}', {} at a time …",
-            counted(targets.len(), "repo", "repos"),
-            WORKERS.min(targets.len())
-        )));
+        say(Say::Info(
+            format!(
+                "Cloning {} into '{ws}', {} at a time …",
+                counted(targets.len(), "repo", "repos"),
+                WORKERS.min(targets.len())
+            )
+            .into(),
+        ));
     }
     let outcomes = clone_all(root, ws, &ws_dir, &targets, request.hosts);
 
@@ -156,11 +163,13 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
                     Some(other) => py_str(other),
                     None => "None".into(),
                 };
-                say(Say::Fail(format!("{quoted}: not cloned — {why}.")));
+                say(Say::Fail(format!("{quoted}: not cloned — {why}.").into()));
                 continue;
             }
             Outcome::Exists(dest) => {
-                say(Say::Info(format!("{name}: already cloned in '{ws}'")));
+                say(Say::Info(
+                    format!("{name}: already cloned in '{ws}'").into(),
+                ));
                 dest
             }
             Outcome::Cloned {
@@ -174,20 +183,29 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
                     format!("{name} ({branch})")
                 };
                 let rel = dest.strip_prefix(root).unwrap_or(&dest);
-                say(Say::Done(format!(
-                    "{name} → {} ({shown} via {}, HTTPS)",
-                    rel.display(),
-                    forge.kind.cli()
-                )));
+                say(Say::Done(
+                    format!(
+                        "{name} → {} ({shown} via {}, HTTPS)",
+                        rel.display(),
+                        forge.kind.cli()
+                    )
+                    .into(),
+                ));
                 dest
             }
             Outcome::Failed { forge, said } => {
                 failures += 1;
                 let cli = forge.kind.cli();
-                say(Say::Fail(format!(
+                // What git said is its own lines, each escaped: a line end in it starts a line of
+                // git's, never one that reads as purlis's.
+                let head = format!(
                     "{name}: clone failed — no access, network, or {cli} isn't authed (`{cli} \
-                     auth status`). Skipping.\n{said}"
-                )));
+                     auth status`). Skipping."
+                );
+                say(Say::Fail(Markup::lines([
+                    head.into(),
+                    Markup::lines_of(&said),
+                ])));
                 continue;
             }
         };
@@ -203,7 +221,7 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
                 .display()
                 .to_string();
             for note in super::unread::filter_notes(&dest, &name, &at) {
-                say(Say::Warn(note));
+                say(Say::Warn(note.into()));
             }
         }
         hint_docs(&dest, &name, say);
@@ -246,10 +264,13 @@ fn workspace_dir(request: &Request, say: Sink) -> Result<PathBuf, String> {
         Err(Outside::NoWorkspace { .. }) => {
             crate::wscmd::ensure::ensure(root, ws, request.now, request.author)?;
             let dir = confine::workspace_dir(root, ws).map_err(|why| why.to_string())?;
-            say(Say::Info(format!(
-                "Made workspace '{ws}' to clone into → workspaces/{ws}/ (LOCAL — private; \
+            say(Say::Info(
+                format!(
+                    "Made workspace '{ws}' to clone into → workspaces/{ws}/ (LOCAL — private; \
                  `purlis workspace live` to share)"
-            )));
+                )
+                .into(),
+            ));
             Ok(dir)
         }
         Err(other) => Err(other.to_string()),
@@ -522,9 +543,9 @@ fn failure(run: &git::Run, dest: &Path) -> String {
 fn hint_docs(dest: &Path, name: &str, say: Sink) {
     for file in ["CLAUDE.md", "AGENTS.md", "README.md"] {
         if dest.join(file).exists() {
-            say(Say::Info(format!(
-                "  ↳ {name} ships its own {file} — read it before working there."
-            )));
+            say(Say::Info(
+                format!("  ↳ {name} ships its own {file} — read it before working there.").into(),
+            ));
             return;
         }
     }
@@ -541,11 +562,15 @@ fn wire(root: &Path, ws: &str, say: Sink) {
         let wired = guest::wire(root, &repo.path);
         let label = &repo.name;
         if let Hidden::Blocked(..) = wired.hidden {
-            say(Say::Warn(format!("{label}: {}", wired.refusal(&repo.path))));
+            say(Say::Warn(
+                format!("{label}: {}", wired.refusal(&repo.path)).into(),
+            ));
             continue;
         }
         if wired.rows.iter().any(|r| r.status == Status::Blocked) {
-            say(Say::Warn(format!("{label}: {}", wired.refusal(&repo.path))));
+            say(Say::Warn(
+                format!("{label}: {}", wired.refusal(&repo.path)).into(),
+            ));
             continue;
         }
         let wrote = wired
@@ -555,12 +580,15 @@ fn wire(root: &Path, ws: &str, say: Sink) {
             .count();
         if wrote > 0 {
             // The files, and the exclude block that hides them: Python counts both.
-            say(Say::Info(format!(
-                "{label}: purlis's layer written ({}) and hidden in that repo's \
+            say(Say::Info(
+                format!(
+                    "{label}: purlis's layer written ({}) and hidden in that repo's \
                  .git/info/exclude — `git status` there is unaffected, and nothing purlis wrote \
                  can be committed.",
-                counted(wrote + 1, "file", "files")
-            )));
+                    counted(wrote + 1, "file", "files")
+                )
+                .into(),
+            ));
         }
     }
 }
@@ -580,9 +608,9 @@ fn record_membership(request: &Request, members: &[String], say: Sink) {
     let _held = match ws.manifest_lock() {
         Ok(held) => held,
         Err(why) => {
-            say(Say::Warn(format!(
-                "{why}, so it does not record what was just cloned."
-            )));
+            say(Say::Warn(
+                format!("{why}, so it does not record what was just cloned.").into(),
+            ));
             return;
         }
     };
@@ -607,12 +635,15 @@ fn record_membership(request: &Request, members: &[String], say: Sink) {
     match owner {
         Ownership::Charter => {}
         Ownership::Operator => {
-            say(Say::Warn(format!(
-                "workspaces/{0}/workspace.json was not written by purlis — left untouched, so \
+            say(Say::Warn(
+                format!(
+                    "workspaces/{0}/workspace.json was not written by purlis — left untouched, so \
                  it does not record what was just cloned. `purlis workspace snapshot {0}` \
                  rewrites it deliberately.",
-                request.ws
-            )));
+                    request.ws
+                )
+                .into(),
+            ));
             return;
         }
         Ownership::Absent => return,

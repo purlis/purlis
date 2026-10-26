@@ -396,6 +396,8 @@ export const commands = {
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
 	chatBrowsers: __WINDOW_ONLY_RESULT,
+	chatBrowserTimeline: __WINDOW_ONLY_RESULT,
+	chatBrowserTimelineShot: __WINDOW_ONLY_RESULT,
 	pinChatBrowser: __WINDOW_ONLY_RESULT,
 	browsersAtQuit: __WINDOW_ONLY_RESULT,
 	putAwayBrowsersAtQuit: __WINDOW_ONLY_RESULT,
@@ -2921,6 +2923,16 @@ export type BrowsersListed = {
 	plane: PlaneId,
 };
 
+/**
+ *  **What is still past a chat's budget** once its router hid all it may (SK-15): the core's
+ *  `StillOver`.
+ */
+export type BudgetStillOver = 
+/**  purlis's own skills and the ones the chat's program and repos bring, which no router hides. */
+"not-hideable" | 
+/**  Those fit, and the pinned skills on top of them do not. */
+"pins";
+
 /**  Which part of a chat's skill budget its set warns of: at four fifths of it or past it. */
 export type BudgetWarns = "skills" | "chars" | "both";
 
@@ -3248,6 +3260,11 @@ export type ChatSkill = {
 	arguments: string[],
 	/**  What to pass it, in one line, where it says: the one box of a skill that names none. */
 	hint: string | null,
+	/**
+	 *  Why the router hid it from the chat's list, where it did (SK-15): Use skill… then asks
+	 *  the chat to load it.
+	 */
+	hidden: SkillHidden | null,
 };
 
 /**
@@ -3378,7 +3395,12 @@ export type ClashOutcome =
 /**  Both copies load. */
 "both-load" | 
 /**  The repo's narrower copy is the one the chat gets; the plane's is left out. */
-"repo-wins";
+"repo-wins" | 
+/**
+ *  Both load under one name, and the chat may use either: a copy named as one of purlis's
+ *  own skills where the program reads every skill by its bare name.
+ */
+"either-one";
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
 export type CloseHanded = {
@@ -9235,6 +9257,13 @@ export type SkillBudget = {
 	most_chars: number,
 	/**  What the chat warns of, or null below four fifths of both. */
 	warns: BudgetWarns | null,
+	/**  Skills the router hid behind the index skill, its set being over the budget (SK-15). */
+	hidden: number,
+	/**
+	 *  What is still past the budget with all the router may hide hidden, where something is:
+	 *  all of it is then listed (ADR 0102 §4).
+	 */
+	still_over: BudgetStillOver | null,
 };
 
 /**
@@ -9357,6 +9386,27 @@ export type SkillGrant =
 /**  The workspaces named. */
 { to: "only"; workspaces: string[] };
 
+/**  **A skill a router hid** from a chat's list (SK-15): which router, why, and the core's line. */
+export type SkillHidden = {
+	router: SkillRouter,
+	why: SkillHiddenWhy,
+	/**  The line a person is shown. */
+	said: string,
+};
+
+/**  A skill a router hid on one harness's chats (SK-15). */
+export type SkillHiddenOn = {
+	harness: HarnessKind,
+	/**  The harness, as a person reads its name. */
+	title: string,
+	hidden: SkillHidden,
+};
+
+/**  Why a router hid a skill: the core's `HiddenWhy`. */
+export type SkillHiddenWhy = 
+/**  The chat's skills are past its budget, and this one is not pinned. */
+"over-budget";
+
 /**
  *  A level of the project's, as the studio names one: the project's root, a workspace's or a
  *  persona's (SK-32, #3003), shared or kept on this machine (`local`).
@@ -9406,6 +9456,11 @@ export type SkillPanel = {
  *  extension adds, by its id and the panel's.
  */
 export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+
+/**  A skill router (SK-15, ADR 0102): the core's `Router`. */
+export type SkillRouter = 
+/**  purlis's own. */
+"built-in";
 
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {
@@ -9995,6 +10050,13 @@ export type StudioSkill = {
 	 *  chat, and what else is worth knowing. Empty for the plane's and the built-in skills.
 	 */
 	lint: string[],
+	/**
+	 *  Each harness whose chats a router hid it from the list of, and why (SK-15), each by its
+	 *  own budget: the chat still has it, through the index skill. Empty where every one lists it.
+	 */
+	hidden: SkillHiddenOn[],
+	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
+	pinned: boolean,
 };
 
 /**
@@ -10408,6 +10470,39 @@ export type ThisMachine = {
 	/**  Why this machine keeps no store at all, or null when it does. */
 	forgetful: string | null,
 };
+
+/**  Who drove a browser at a moment of its chat's timeline (#2017). */
+export type TimelineBy = "agent" | "person" | "purlis";
+
+/**  One moment of a chat's browser timeline, as the window draws it (#2017). */
+export type TimelineMoment = {
+	/**  When, in seconds since 1970. */
+	at: number,
+	/**  Which of the chat's browsers (`b1`). */
+	browser: string,
+	by: TimelineBy,
+	/**  What was done, in words that hold nothing typed. */
+	did: string,
+	/**  The page it left: its scheme, host, port and path. */
+	page: string | null,
+	/**  Its screenshot's number, to read with [`chat_browser_timeline_shot`]. */
+	shot: number | null,
+	unkept: TimelineUnkept | null,
+};
+
+/**  **A chat whose browser timeline moved** (#2017): a tab of it reads it again. */
+export type TimelineMoved = {
+	plane: PlaneId,
+	/**  The chat's id. */
+	chat: string,
+};
+
+/**
+ *  Why a moment of a chat's browser timeline keeps no screenshot it had (#2017): let go to keep
+ *  within the timeline's bounds, too large to keep, or answered while the person or purlis
+ *  drove the browser.
+ */
+export type TimelineUnkept = "bound" | "too_large" | "driven";
 
 /**  What the operating system has already spent of the window's own title bar. */
 export type TitleBarRoom = {

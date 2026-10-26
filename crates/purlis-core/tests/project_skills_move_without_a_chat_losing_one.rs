@@ -328,6 +328,112 @@ fn a_skill_a_chat_would_lose_is_refused_before_anything_moves() {
 }
 
 #[test]
+fn a_clash_in_case_alone_is_refused_before_anything_moves() {
+    purlis_core::unsteered!();
+    let write = |f: &support::Fixture, rel: &str, text: &str| {
+        let at = f.plane.join(rel);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, text).unwrap();
+    };
+
+    // A folder the project's skills already hold in another case: one folder where case is
+    // ignored, whatever this disk does.
+    let f = project();
+    write(
+        &f,
+        "skills/Review/SKILL.md",
+        "---\nname: critique\ndescription: Mine.\n---\n",
+    );
+    f.commit(&f.plane, "a project skill");
+    let head_was = head(&f.plane);
+    let why = refused(apply(&f.plane));
+    assert!(
+        why.contains("the project's skills already hold Review, so the skill folder review"),
+        "{why}"
+    );
+    assert_eq!(head(&f.plane), head_was);
+    assert_eq!(f.status(&f.plane), "");
+
+    // Two folders whose skills' names differ only in case name one skill.
+    let f = project();
+    write(
+        &f,
+        ".claude/skills/deploy-again/SKILL.md",
+        "---\nname: Deploy\ndescription: Mine.\n---\n",
+    );
+    f.commit(&f.plane, "a second deploy");
+    let why = refused(apply(&f.plane));
+    assert!(
+        why.contains("its skill Deploy: the skill folder deploy names the same skill"),
+        "{why}"
+    );
+    assert!(!f.plane.join("skills").exists());
+
+    // A folder named as another moved folder's grant file, in another case: refused before the
+    // move, never rolled back after it.
+    let f = project();
+    write(
+        &f,
+        ".claude/skills/Deploy.toml/SKILL.md",
+        "---\nname: deploy-settings\ndescription: Mine.\n---\n",
+    );
+    f.commit(&f.plane, "a folder named as a grant");
+    let why = refused(apply(&f.plane));
+    assert!(
+        why.contains(
+            "the skill folder Deploy.toml has the name of the skill folder deploy's grant"
+        ),
+        "{why}"
+    );
+    assert!(!f.plane.join("skills").exists());
+    assert_eq!(f.status(&f.plane), "");
+
+    // Two folders differing only in case, which only a disk that keeps case can hold.
+    let f = project();
+    write(
+        &f,
+        ".claude/skills/Review/SKILL.md",
+        "---\nname: critique\ndescription: Mine.\n---\n",
+    );
+    let folders = std::fs::read_dir(f.plane.join(".claude/skills"))
+        .unwrap()
+        .count();
+    if folders == 3 {
+        f.commit(&f.plane, "a second review");
+        let why = refused(apply(&f.plane));
+        assert!(
+            why.contains("the skill folders Review and review differ only in case"),
+            "{why}"
+        );
+        assert!(!f.plane.join("skills").exists());
+    }
+}
+
+#[test]
+fn a_clone_is_refreshed_without_waiting_on_the_planes_claim_or_lock() {
+    purlis_core::unsteered!();
+    // A guard against an unbounded wait: a lock taken twice in one process never lets go.
+    let f = project();
+    // What the fix holds while it moves and commits: the plane's claim and its rewrite lock. A
+    // second take of either from the same process waits (the lock for as long as it is held).
+    let _claim = purlis_core::planegit::Claim::of(&f.plane).expect("nothing holds the plane");
+    let _held = purlis_core::rewrite::Lock::on(&f.plane);
+    let (done, wired) = std::sync::mpsc::channel();
+    let (plane, clone) = (f.plane.clone(), f.clone.clone());
+    std::thread::spawn(move || {
+        guest::wire(&plane, &clone);
+        let _ = done.send(());
+    });
+
+    assert!(
+        wired
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .is_ok(),
+        "guest::wire waited on the plane's claim or its lock"
+    );
+}
+
+#[test]
 fn what_a_move_cannot_carry_is_refused() {
     purlis_core::unsteered!();
     // An untracked file beside the committed ones.

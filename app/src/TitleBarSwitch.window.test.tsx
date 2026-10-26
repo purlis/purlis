@@ -10,6 +10,7 @@ import App from "./App";
 import { onAMac } from "./tabKeys";
 import { forgetRailMode, RAIL_MODE } from "./railMode";
 import { forgetTheSlide } from "./railSlide";
+import { FRAME, MOMENTUM, played, STROKE, type Traced } from "./swipeTraces.testkit";
 
 /**
  * **The project in front and its workspaces in the title bar** (#2916, spec #2897 R90–R115), on
@@ -358,6 +359,18 @@ describe("⌘1–⌘9 (R111)", () => {
   });
 });
 
+/**
+ * **A trace's wheel events over `on`, each stamped with its own time**, so a gesture's length
+ * is the trace's and never how long the test took between two of its events (#3195).
+ */
+function replay(on: Element, trace: readonly Traced[]) {
+  for (const { dx, at } of trace) {
+    const wheel = new WheelEvent("wheel", { deltaX: dx, deltaY: 0, bubbles: true });
+    Object.defineProperty(wheel, "timeStamp", { value: at });
+    fireEvent(on, wheel);
+  }
+}
+
 describe("a sideways swipe over the title bar (R112)", () => {
   /** One gesture: `count` wheel events of `dx` each, over `on`. */
   const swipe = (on: Element, dx: number, count = 6) => {
@@ -370,11 +383,18 @@ describe("a sideways swipe over the title bar (R112)", () => {
     await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
     // Once the bar has drawn its ⌄, every pin it swipes to is the project's to go to.
     await screen.findByRole("button", { name: "All workspaces" });
-    swipe(bar(), 40);
+    const [stroke, momentum] = [
+      played([STROKE], 1000),
+      played([MOMENTUM], 1000 + STROKE.length * FRAME),
+    ];
+    replay(bar(), stroke);
     await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*"]), { timeout: 5000 });
-    // The rest of the same gesture steps nothing more.
-    swipe(bar(), 40);
-    expect(chips()).toEqual(["alpha", "gamma*"]);
+    // The rest of the same gesture steps nothing more, however long the wait before it was.
+    replay(bar(), momentum);
+    // A second stroke, the fingers down again just after the tail, steps once more (#3327).
+    replay(bar(), played([STROKE], momentum[momentum.length - 1].at + FRAME * 3));
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]), { timeout: 5000 });
+    expect(slid.calls.map(({ step }) => step)).toEqual([1, 1]);
   });
 
   it("is the title bar's only: anywhere else a sideways scroll is what is under it", async () => {
@@ -400,7 +420,7 @@ describe("a workspace switch slides the workspace in (R114)", () => {
     // The activity bars are outside what slides.
     expect(parts?.querySelector('[role="tablist"][aria-label="Attention"]') ?? null).toBeNull();
     // A swipe round the end of the pins slides on, the way it went, not back.
-    for (let n = 0; n < 6; n++) fireEvent.wheel(bar(), { deltaX: 40, deltaY: 0 });
+    replay(bar(), played([[...STROKE, ...MOMENTUM]], 1000));
     await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
     await waitFor(() => expect(slid.calls).toHaveLength(2));
     expect(slid.calls[1].step).toBe(1);

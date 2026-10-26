@@ -15,6 +15,7 @@
  * This module and everything it imports is its own chunk, loaded when the first file or diff
  * opens (`Views.tsx`), so a window that never opens one carries none of it (ADR 0086 row M2).
  */
+import { EDITOR_HOLDER } from "../keys/contexts";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { MergeView } from "@codemirror/merge";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
@@ -25,7 +26,8 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { FindBar } from "../FindBar";
-import { onAMac } from "../tabKeys";
+import { opensFindInAFile } from "../keys/findKeys";
+import { isKey } from "../keys/registry";
 import { finderOver, findable } from "./find";
 import { changesOf, type GitHunk } from "./hunks";
 import { grammarFor } from "./languages";
@@ -47,16 +49,8 @@ function reading(language: Compartment, name: string): Extension[] {
   ];
 }
 
-/**
- * **Whether this key opens the find bar on a file: `⌘F` on a Mac, `Ctrl+F` everywhere else**
- * (#946). Not a chat's chord (`SessionPane.opensFind`): a file is read, not typed into, so no
- * shell is owed `Ctrl+F`, and it is the key every editor finds with.
- */
-export function opensFindInAFile(event: KeyboardEvent, mac: boolean = onAMac()): boolean {
-  if (event.key !== "f" && event.key !== "F") return false;
-  if (event.altKey || event.shiftKey) return false;
-  return mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-}
+/** The find bar's key on a file, read by the key registry too (#2921): `keys/findKeys.ts`. */
+export { opensFindInAFile };
 
 /**
  * The find bar of a light editor over `views` (#946, #1088): the key that opens it, and the bar
@@ -69,7 +63,7 @@ export function useFindIn(views: { current: readonly EditorView[] }, label: stri
   // Made once: it reads the views when a find runs, never while drawing.
   const [finder] = useState(() => finderOver(() => views.current));
   const onKeyDown = (event: KeyboardEvent) => {
-    if (!opensFindInAFile(event)) return;
+    if (!isKey(event.nativeEvent, "file.find")) return;
     event.preventDefault();
     event.stopPropagation();
     setOpen(true);
@@ -172,6 +166,8 @@ export function LightEditor({
     <>
       <div
         ref={host}
+        // The key registry's mark for "an editor has the keyboard here" (#2921).
+        {...{ [EDITOR_HOLDER]: "" }}
         className="light-editor"
         data-testid="light-editor"
         onKeyDown={find.onKeyDown}
@@ -229,6 +225,8 @@ export function MergeViewer({
     <>
       <div
         ref={host}
+        // The key registry's mark for "an editor has the keyboard here" (#2921).
+        {...{ [EDITOR_HOLDER]: "" }}
         role="group"
         aria-label={label ?? `What changed in ${path}`}
         className="light-editor merge"

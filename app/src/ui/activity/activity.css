@@ -6,10 +6,11 @@
    side's bar lays its items out. Keyed on the wrapper's attributes alone; `purlis_core::theme::
    parts` holds a copy of the items' colours.
 
-   **Two corners, two variants.** The left bar is tabs across the top of the side panel: 32 by 30,
-   the top group, a gap, then the bottom group at the row's end, over a rule (R116). The right bar
-   is a 44px column of 36px icons: the top group, a gap, then the bottom group (R117). A state
-   changes a colour, never a size, so no item and no neighbour moves when one is chosen.
+   **Both corners are columns** (#3144): a 44px column of 36px icons, the top group, a gap, then
+   the bottom group at its foot (R117), the left one beside the project rail and the right one at
+   the window's edge. The `tab` variant (32 by 30 tabs across a side panel's top, over a rule,
+   R116) is still the family's, for a theme that names it, though no bar of the window draws it.
+   A state changes a colour, never a size, so no item and no neighbour moves when one is chosen.
 
    In the `components` layer (`styles.css`), above `App.css`. */
 
@@ -23,14 +24,21 @@
   box-sizing: border-box;
 }
 
-/* The left bar: one row across the side panel's top, the side panel's own ground under it. */
+/* The `tab` variant: one row across a side panel's top, the side panel's own ground under it. */
+/* **Focus mode** (#2921, `keys/focusMode.ts`): a side's column goes with the rail and the panels,
+   the work alone. Here, in the family's own layer, since the family's rule above draws it. */
+.window[data-focus-mode] .region-frame > [data-scope="activity-bar"][data-part="root"] {
+  display: none;
+}
+
 [data-scope="activity-bar"][data-part="root"][data-variant="tab"] {
   --activity-ground: var(--surface-raised);
   flex-direction: column;
   padding: calc(var(--space-4) + var(--space-1)) calc(var(--space-4) + var(--space-1)) 0;
 }
 
-/* The right bar: a column at the window's edge, on the window's frame. */
+/* A side's column, on the window's frame: the right bar at the window's edge, the left one beside
+   the project rail. */
 [data-scope="activity-bar"][data-part="root"][data-variant="bar"] {
   --activity-ground: var(--surface-deep);
   flex-direction: column;
@@ -142,8 +150,9 @@
 }
 
 /* The mark along a chosen item's edge: none by default; a theme paints it (Purlis Classic's
-   accent edge). Under the tab, beside the column's window edge. Always there, so painting it
-   moves nothing. */
+   accent edge). Under the tab; on the left column along its left edge, as the switcher
+   prototype draws Classic's (#3144); on the right bar along its outer edge, as #2917 drew it.
+   Always there, so painting it moves nothing. */
 [data-scope="activity"][data-part="indicator"] {
   position: absolute;
   background-color: transparent;
@@ -158,6 +167,12 @@
 [data-variant="bar"] > [data-scope="activity"][data-part="indicator"] {
   inset: 0 0 0 auto;
   inline-size: 2px;
+}
+
+[data-scope="activity-bar"][data-side="left"]
+  [data-variant="bar"]
+  > [data-scope="activity"][data-part="indicator"] {
+  inset: 0 auto 0 0;
 }
 
 /* **The count at its top right** (R119): 15px, strong at the words' floor, on the hover fill, ringed in the

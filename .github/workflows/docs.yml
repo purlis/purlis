@@ -21,6 +21,10 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The merge queue's run, so `docs (build, links, reachable)` reports for the group a pull
+  # request joins; the deploy job stays manual.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 concurrency:

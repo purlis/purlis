@@ -1,0 +1,51 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# The names the studio probe's network tests look up, in the runner's hosts file, so neither the
+# tests nor the proxy they go through waits on outside DNS while they run (#3261). Those tests
+# fail on CI, never skip, when a name does not resolve, so a runner whose resolver dropped a
+# lookup used to fail them though the confinement held.
+#
+# - `ten.studio-probe.test` and `cgnat.studio-probe.test`: declared names that resolve to a
+#   private and a carrier-grade NAT address, which the proxy must refuse. `.test` is reserved
+#   (RFC 6761), so only this file answers them.
+# - `example.com`: the tunnel test needs a real TLS server, and the proxy reaches nothing local,
+#   so it goes out. Its IPv4 addresses are looked up once here, a few tries apart, and pinned,
+#   so a lookup dropped later in the job changes nothing. A runner that cannot look it up at all
+#   gets a warning here and no pin, and the tunnel test fails saying it did not resolve: one red
+#   test, not a job with none of its tests run.
+#
+# The names are written out in `crates/studio-probe/tests/a_studio_extension_is_confined.rs` and
+# the probe's `purlis-extension.json`; a change to one is a change to all three.
+name: Studio probe names
+description: Writes the names the studio probe's network tests look up into the runner's hosts file.
+runs:
+  using: composite
+  steps:
+    # A persistent runner would keep every run's lines, stale addresses among them.
+    - if: runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        set -euo pipefail
+        pinned=""
+        for try in 1 2 3 4 5; do
+          pinned=$(python3 -c 'import socket; print(" ".join(sorted({a[4][0] for a in socket.getaddrinfo("example.com", 443, socket.AF_INET, socket.SOCK_STREAM)})))' 2>/dev/null || true)
+          [ -n "$pinned" ] && break
+          echo "example.com did not resolve (try $try of 5); trying again"
+          sleep 3
+        done
+        if [ -z "$pinned" ]; then
+          echo "::warning title=Studio probe names::example.com did not resolve in 5 tries, so it is not pinned: the runner's DNS is down, not the confinement"
+        fi
+        {
+          echo "# The studio probe's names (.github/actions/studio-probe-names)"
+          echo "10.0.0.1 ten.studio-probe.test"
+          echo "100.64.0.1 cgnat.studio-probe.test"
+          for address in $pinned; do echo "$address example.com"; done
+        } | sudo tee -a /etc/hosts >/dev/null
+        # macOS answers lookups from mDNSResponder's cache; told to drop it, it reads the file.
+        if [ "$(uname)" = Darwin ]; then
+          sudo dscacheutil -flushcache
+          sudo killall -HUP mDNSResponder
+        fi
+        echo "::notice title=Studio probe names::the private names written; example.com pinned to ${pinned:-nothing}"

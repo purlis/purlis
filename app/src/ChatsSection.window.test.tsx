@@ -1539,8 +1539,8 @@ const scopeSwitch = () => screen.getByRole("radiogroup", { name: "Show the chats
 const scopeOn = () =>
   within(scopeSwitch())
     .getAllByRole("radio")
-    .filter((one) => one.getAttribute("aria-checked") === "true")
-    .map((one) => one.textContent);
+    .filter((one) => (one as HTMLInputElement).checked)
+    .map((one) => one.closest("label")?.textContent);
 const pickScope = (name: "This tab" | "Workspace" | "All") =>
   userEvent.click(within(scopeSwitch()).getByRole("radio", { name }));
 
@@ -1912,6 +1912,20 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     expect(row(tree, "steward 1").getAttribute("aria-expanded")).toBe("false");
     // Folding is all the press did: the chat in front is the one that was.
     expect(frontTab()).toEqual(["steward 1"]);
+  });
+
+  it("fills its sticky head with the panel's own fill, not the window's (#3331)", async () => {
+    core([chat(1, "alpha")]);
+    render(<App />);
+    await section();
+
+    const head = screen.getByTestId("chats-section").querySelector(".chats-head") as HTMLElement;
+    expect(drawnWith(head, "background")).toBe("var(--panel-fill, var(--surface-base))");
+    // The panel it sits in says its fill to what it holds; a theme's `panel.root.fill` writes
+    // the same property (`purlis_core::theme::parts`).
+    const panel = head.closest('[data-scope="panel"][data-part="root"]') as HTMLElement;
+    expect(panel).not.toBeNull();
+    expect(cascadeOf("ui/panel/panel.css")(panel, "--panel-fill")).toBe("var(--surface-base)");
   });
 
   it("keeps no empty line under the filter: its notes stand on the title's line", async () => {

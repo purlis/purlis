@@ -463,8 +463,9 @@ which creates the machine)
 **Bridge**:
 `purlis bridge`, the program a connector runs on a runner: a pipe from its standard input and
 output to that runner's session host, which ends the link's handshake itself. Its one other act
-is a runner's pairing, once, with `--pair`. It belongs to **Project**, with the connector it
-serves (ADR 0078 §2, as amended 2026-10-17).
+is a runner's pairing, once, with `--pair`; on a cluster runner, also making the runner's link
+key as its pod starts, with `--make-key`, which its pairing then takes. It belongs to
+**Project**, with the connector it serves (ADR 0078 §2, as amended 2026-10-17 and 2026-10-26).
 _Avoid_: agent, relay (that is the desktop host's relay, or later the hosted relay), proxy
 
 **Link**:
@@ -513,7 +514,9 @@ _Avoid_: claimed (of a piece: that is the piece log's word), lease, reservation,
 
 **Cluster operator**:
 purlis's controller inside a cluster: it turns claims into runners, counts them per person,
-starts and stops pools, and says which runner a claim was given. In a sentence the app shows,
+starts and stops pools, and says which runner a claim was given, vouching with its own signing
+key for the link key each runner made as it started (ADR 0078, amended 2026-10-26). In a
+sentence the app shows,
 "purlis in your cluster".
 _Avoid_: operator (unqualified, where the person could be meant), controller, manager, master
 
@@ -686,6 +689,13 @@ The typed tools a chat's agent drives its browsers with, the same on every harne
 one asks the person what its browser may reach: this project's sites and its dev servers, also
 the open web, or off; for this chat, or **Always for this persona**.
 _Avoid_: browser automation, Playwright, DevTools (that is the **engine**'s)
+
+**Browser timeline**:
+A chat's record of what its agent did in its browsers, oldest to newest, with the screenshots its
+**browser tools** returned, and where the person or purlis drove instead, which has no screenshot.
+Kept on this device, bounded, and removed when the chat closes; it holds nothing the agent was
+not given. Proof of the work.
+_Avoid_: recording, history, log (that is the event log's), video
 
 **Declared browser** (of a persona):
 What a persona says its chats' browser usually reaches, in its sandbox section
@@ -1717,7 +1727,9 @@ _Avoid_: context budget (for this), skill limit
 Picking one of a chat's skills, from the palette, the chat's tab menu or the Skills chip on its
 pane, and having it typed into the chat in its harness's syntax, with the arguments the skill
 declares, for the person to send. It lists exactly that chat's skill set, manual-only skills
-included, and its run starts when that prompt is sent (#2775).
+included, and its run starts when that prompt is sent (#2775). A skill the skill router hid
+behind the index skill is typed as a request to load it with `skill_load`, and its run starts
+with that load (#2778).
 _Avoid_: skill picker (for the act), run skill, invoke
 
 **Index skill**:

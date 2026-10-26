@@ -92,9 +92,9 @@ describe("the window's keyboard reach", () => {
       const regions: [string, string][] = [
         ["title bar", ".title-bar"],
         ["chats", '[data-strip="Tabs"]'],
-        // The left side panel (#1673): its tabs across its top (#2917, N36), then its open view;
-        // its other views are hidden, and not stops.
-        ["navigation", ".slot-left"],
+        // The left side's open view (#1673): its other views are hidden, and not stops. Its icons
+        // are the left column's, beside the rail (#3144), outside every region.
+        ["navigation", '.region-views[data-region="navigation"] .region-view:not([hidden])'],
         ["panes", ".panes"],
         // The right side's open view (#1678): its others are hidden, and not stops.
         ["attention", '.region-views[data-region="aside"] .region-view:not([hidden])'],
@@ -139,7 +139,7 @@ describe("the window's keyboard reach", () => {
       const controlsFirst =
         terminal > 0 &&
         terminal === inFrame.length - 1 &&
-        inFrame.slice(0, terminal).every((el) => el.closest(".pane-corner, .pane-top") !== null) &&
+        inFrame.slice(0, terminal).every((el) => el.closest(".pane-top, .pane-head") !== null) &&
         inFrame.some((el) => el.closest(".pane-doing") !== null);
       return { tabbed, laidOut, controlsFirst };
     });

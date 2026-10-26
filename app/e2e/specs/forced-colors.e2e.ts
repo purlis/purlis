@@ -88,8 +88,19 @@ describe("forced colours", () => {
     for (const query of found.queries)
       expect(query).toEqual({ text: "(forced-colors: active)", known: true, active: false });
     const lower = (value: string | undefined) => (value ?? "").toLowerCase();
-    const focus = found.rules.find((rule) => rule.selector.includes(":focus-visible"));
+    // The window's focus rule: the one that draws the ring, not a resize handle's grip (#3143).
+    const focus = found.rules.find(
+      (rule) => rule.selector.includes(":focus-visible") && rule.style["outline-color"],
+    );
     expect(lower(focus?.style["outline-color"])).toBe("highlight");
+    // A resize handle's grip: the words' colour under the pointer, the highlight while it is
+    // dragged or has the keyboard.
+    const grip = (state: string) =>
+      found.rules.find(
+        (rule) => rule.selector.includes('[data-part="grip"]') && rule.selector.includes(state),
+      );
+    expect(lower(grip('[data-separator="hover"]')?.style["background-color"])).toBe("canvastext");
+    expect(lower(grip('[data-separator="active"]')?.style["background-color"])).toBe("highlight");
     const tab = found.rules.find((rule) =>
       rule.selector.includes('[role="tab"][aria-selected="true"]'),
     );
@@ -140,8 +151,8 @@ describe("forced colours", () => {
         '<span data-p="running" class="state-running"></span>',
         '<span data-p="waiting" class="state-waiting"></span>',
         '<span data-p="failed" class="state-failed"></span>',
-        '<button data-p="switch-on" type="button" role="switch" aria-checked="true" class="ui-switch" data-state="checked"><span data-p="thumb-on" class="ui-switch-thumb" data-state="checked"></span></button>',
-        '<button data-p="switch-off" type="button" role="switch" aria-checked="false" class="ui-switch" data-state="unchecked"><span data-p="thumb-off" class="ui-switch-thumb" data-state="unchecked"></span></button>',
+        '<label data-scope="switch" data-part="root" data-selected="true"><span data-p="switch-on" data-scope="switch" data-part="track"><span data-p="thumb-on" data-scope="switch" data-part="thumb"></span></span></label>',
+        '<label data-scope="switch" data-part="root"><span data-p="switch-off" data-scope="switch" data-part="track"><span data-p="thumb-off" data-scope="switch" data-part="thumb"></span></span></label>',
         '<div data-p="dialog" role="dialog" aria-label="probe">dialog</div>',
         '<div data-p="alertdialog" role="alertdialog" aria-label="probe">alert</div>',
       ].join("");
@@ -272,12 +283,15 @@ describe("forced colours", () => {
     expect(drawn.after.waiting?.shadow).toContain(sys.CanvasText);
     // A switch: on is filled in Highlight with its thumb in HighlightText; off has a CanvasText
     // thumb.
-    expect(at("switch-on", "background", "border")).toEqual({
-      background: sys.Highlight,
-      border: sys.Highlight,
-    });
+    expect(at("switch-on", "background")).toEqual({ background: sys.Highlight });
     expect(drawn.after["thumb-on"]?.background).toBe(sys.HighlightText);
     expect(drawn.after["thumb-off"]?.background).toBe(sys.CanvasText);
+    // Its track is outlined in the text's colour, on or off, so the pill keeps its shape.
+    expect(at("switch-off", "outlineStyle", "outlineWidth", "outlineColor")).toEqual({
+      outlineStyle: "solid",
+      outlineWidth: "1px",
+      outlineColor: sys.CanvasText,
+    });
     // What is opened over the window: outlined, in place of its shadow.
     for (const dialog of ["dialog", "alertdialog"])
       expect({ [dialog]: at(dialog, "outlineStyle", "outlineWidth", "outlineColor") }).toEqual({

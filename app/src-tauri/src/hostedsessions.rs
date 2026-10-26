@@ -114,42 +114,16 @@ pub fn chats_in_the_host(
             let here = Box::new(HostedSessions::new(Arc::clone(&connection), root))
                 as Box<dyn SessionHost>;
             match &pools_in {
-                Some(config) => Box::new(routed(here, &connection, config, root)),
+                Some(config) => Box::new(crate::routedsessions::RoutedSessions::of_the_project(
+                    here,
+                    &connection,
+                    config,
+                    root,
+                )),
                 None => here,
             }
         }))
         .hearing_hooks_through_the_host()
-}
-
-/// **The project at `root`'s chats, each on the host its workspace runs them on** (#2046):
-/// `here`, or the runner of the pool `config`'s store names for its workspace, reached through
-/// a link the window's host relays to it.
-pub(crate) fn routed(
-    here: Box<dyn SessionHost>,
-    connection: &Arc<Connection>,
-    config: &Path,
-    root: &Path,
-) -> crate::routedsessions::RoutedSessions {
-    let (config, plane) = (config.to_path_buf(), root.to_path_buf());
-    let runs_on: crate::routedsessions::RunsOn = {
-        let (config, plane) = (config.clone(), plane.clone());
-        Arc::new(move |workspace| purlis_core::pools::runs_on(&config, &plane, Some(workspace)))
-    };
-    let on_pools: crate::routedsessions::OnPools = {
-        let (config, plane) = (config.clone(), plane.clone());
-        Arc::new(move || purlis_core::pools::workspaces_on_pools(&config, &plane))
-    };
-    let to_a_pool: crate::routedsessions::ToAPool = {
-        let (connection, plane) = (Arc::clone(connection), plane.clone());
-        Arc::new(move |pool| {
-            purlis_core::runners::runner_for(&config, pool).map_err(|why| format!("{why}."))?;
-            Ok(Box::new(HostedSessions::on_a_pools_runner(
-                connection.relaying_to(pool),
-                &plane,
-            )) as Box<dyn SessionHost>)
-        })
-    };
-    crate::routedsessions::RoutedSessions::new(root, here, runs_on, on_pools, to_a_pool)
 }
 
 /// Why a chat whose profile hands it credentials is not started in the session host (#2036).

@@ -408,7 +408,8 @@ pub(super) const RAIL: Family = Family {
     words: &[("badge", "state.waiting")],
     corner_most: None,
     around: &[],
-    fills: &[],
+    // The badge's pill, the overlay's surface (`rail.css`): its digits are read on it (#3041).
+    fills: &[("badge", "surface.overlay")],
 };
 
 /// **A rail button's colours as `app/src/ui/rail/rail.css` draws them.** A project's are its own
@@ -513,7 +514,8 @@ pub(super) const TITLEBAR: Family = Family {
     words: &[("count", "state.waiting")],
     corner_most: None,
     around: &[],
-    fills: &[],
+    // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
+    fills: &[("count", "wash.warning")],
 };
 
 /// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box

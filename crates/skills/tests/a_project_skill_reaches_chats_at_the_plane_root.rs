@@ -78,9 +78,14 @@ fn a_project_skill_reaches_a_chat_at_the_plane_root_on_every_route() {
     for route in [Route::Plugin, Route::Config, Route::Briefing] {
         let set = set_in(&here, None, route);
 
+        // The config route names the built-in skill its own (opencode's route).
+        let secrets = route.built_in_name("secrets");
         assert_eq!(
             effective(&set),
-            [("deploy", Origin::Project), ("secrets", Origin::BuiltIn)]
+            [
+                ("deploy", Origin::Project),
+                (secrets.as_str(), Origin::BuiltIn)
+            ]
         );
         let deploy = &set.effective[0];
         assert_eq!(deploy.route, route);
@@ -121,7 +126,8 @@ fn a_project_skill_with_a_built_in_skills_name_is_left_out_and_the_built_in_one_
 
     let set = set_in(&here, None, Route::Config);
 
-    assert_eq!(effective(&set), [("handoff", Origin::BuiltIn)]);
+    // On the config route it goes by `purlis-handoff`, and its bare name is still kept for it.
+    assert_eq!(effective(&set), [("purlis-handoff", Origin::BuiltIn)]);
     assert_eq!(
         set.effective[0].skill.path,
         here.built_in.join("handoff/SKILL.md")

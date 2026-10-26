@@ -7,8 +7,9 @@
  * draws an activity item's look itself (`purlis/activity-family` in `eslint.config.js`).
  *
  * - **An item is drawn by its parts.** Its root carries `data-scope="activity"`,
- *   `data-part="item"` and its `data-variant`: `tab` (the left bar's 32×30 tabs across the top of
- *   the side panel) or `bar` (the right bar's 36px column). Its mark, its count and the mark along
+ *   `data-part="item"` and its `data-variant`: `bar` (a side's 36px column, both corners' since
+ *   #3144) or `tab` (32×30 tabs across a side panel's top, which no bar of the window draws now
+ *   but a theme may still name). Its mark, its count and the mark along
  *   its edge while it is chosen are the `icon`, `count` and `indicator` parts. `activity.css`
  *   draws the defaults, and a theme's parts reach the same attributes (ADR 0103).
  * - **Its states are marked as React Aria marks a button's**: `data-hovered` under a pointer that
@@ -45,6 +46,8 @@ export interface ActivityItemProps extends Omit<
   /** **What its tooltip says under its name** (`ui/tooltip`): what a press does. An icon-only
    *  button's tooltip is its name first. */
   tip?: string;
+  /** The key that does what a press does, after the tooltip's words (#2921). */
+  shortcut?: string;
   /** `data-*` attributes reach the element as they are. */
   [data: `data-${string}`]: string | number | boolean | undefined;
 }
@@ -60,6 +63,7 @@ export function ActivityItem({
   icon,
   count,
   tip,
+  shortcut,
   onPointerEnter,
   onPointerLeave,
   onPointerDown,
@@ -122,7 +126,13 @@ export function ActivityItem({
       <span data-scope="activity" data-part="indicator" aria-hidden="true" />
     </button>
   );
-  return tip === undefined ? item : <Tooltip tip={tip}>{item}</Tooltip>;
+  return tip === undefined ? (
+    item
+  ) : (
+    <Tooltip tip={tip} shortcut={shortcut}>
+      {item}
+    </Tooltip>
+  );
 }
 
 /** Whether the browser draws `element`'s focus as the keyboard's (`:focus-visible`). An engine
@@ -185,9 +195,9 @@ export function ActivityGroup({
 }
 
 /**
- * **A side's bar**: its items in their order, the top group, the gap, then the bottom group. The
- * left bar (`tab`) is drawn across the side panel's top over its rule; the right one (`bar`) is
- * the column at the window's edge.
+ * **A side's bar**: its items in their order, the top group, the gap, then the bottom group. A
+ * `bar` is a column (the left one beside the project rail, the right one at the window's edge,
+ * #3144); a `tab` row is drawn across a side panel's top over its rule.
  */
 export function ActivityBarFrame({
   variant,

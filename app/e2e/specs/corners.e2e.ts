@@ -4,8 +4,8 @@
 import { $, browser, expect } from "@wdio/globals";
 
 /**
- * **The four corners, in the real window** (#2917, spec #2897 R116–R128, N36): the left bar is
- * tabs across the top of the side panel, the right bar a 44px column; a top icon switches its
+ * **The four corners, in the real window** (#2917, spec #2897 R116–R128; #3144): the left bar is
+ * a 44px column beside the project rail, as the right bar is at the window's edge; a top icon switches its
  * side's panel and a bottom one opens its half of the bottom panel; only the part that opened
  * moves, and closing has no motion. Measured where jsdom lays nothing out: the boxes, the
  * animations the page is running, and that nothing beside a chosen icon moves.
@@ -81,18 +81,22 @@ describe("the four corners", function () {
     await $(ATTENTION).waitForExist({ timeout: 30_000 });
   });
 
-  it("draws the left bar as 32×30 tabs across the side panel's top, its bottom group at the end", async () => {
+  it("draws the left bar as a 44px column of 36px icons beside the side panel, its bottom group at the foot", async () => {
+    const column = await boxOf(".activity-column[data-side='left']");
     const chats = await boxOf(tab(NAVIGATION, "Chats"));
-    const changes = await boxOf('.slot-left [role="tab"][aria-label="Changes"]');
-    const side = await boxOf(".slot-left");
-    expect(chats).not.toBeNull();
-    expect(chats?.width).toBe(32);
-    expect(chats?.height).toBe(30);
-    // One row, inside the side panel, Changes at its end.
-    expect(changes?.top).toBe(chats?.top);
-    expect((changes?.left ?? 0) + (changes?.width ?? 0)).toBeGreaterThan(
-      (side?.left ?? 0) + (side?.width ?? 0) - 24,
+    const changes = await boxOf(
+      '.activity-column[data-side="left"] [role="tab"][aria-label="Changes"]',
     );
+    const side = await boxOf(".slot-left");
+    expect(column?.width).toBe(44);
+    expect(chats?.width).toBe(36);
+    expect(chats?.height).toBe(36);
+    // One column, before the side panel, Changes at its foot (#3144).
+    expect(changes?.left).toBe(chats?.left);
+    expect(changes?.top ?? 0).toBeGreaterThan((column?.top ?? 0) + (column?.height ?? 0) / 2);
+    expect((column?.left ?? 0) + (column?.width ?? 0)).toBeLessThanOrEqual((side?.left ?? 0) + 1);
+    // Nothing of the bar is inside the side panel.
+    expect(await $(".slot-left [data-scope='activity-bar']").isExisting()).toBe(false);
   });
 
   it("draws the right bar as a 44px column of 36px icons", async () => {
@@ -103,15 +107,24 @@ describe("the four corners", function () {
     expect(inbox?.height).toBe(36);
   });
 
-  it("switches the side view, and a press of the open one leaves it out", async () => {
+  it("switches the side view, and a press of the open one puts the side away (#3329)", async () => {
+    const selected = async (view: string) =>
+      (await $(tab(NAVIGATION, view)).getAttribute("aria-selected")) === "true";
     await press(tab(NAVIGATION, "Explorer"));
-    await browser.waitUntil(
-      async () => (await $(tab(NAVIGATION, "Explorer")).getAttribute("aria-selected")) === "true",
-      { timeout: 10_000, timeoutMsg: "Explorer never opened" },
-    );
+    await browser.waitUntil(() => selected("Explorer"), {
+      timeout: 10_000,
+      timeoutMsg: "Explorer never opened",
+    });
     await press(tab(NAVIGATION, "Explorer"));
-    expect(await $(tab(NAVIGATION, "Explorer")).getAttribute("aria-selected")).toBe("true");
+    await browser.waitUntil(async () => !(await selected("Explorer")), {
+      timeout: 10_000,
+      timeoutMsg: "a second press of Explorer did not put the side away",
+    });
     await press(tab(NAVIGATION, "Chats"));
+    await browser.waitUntil(() => selected("Chats"), {
+      timeout: 10_000,
+      timeoutMsg: "the side did not come back on Chats",
+    });
   });
 
   it("brings the right panel in only when it opens, and takes it away with no motion", async () => {

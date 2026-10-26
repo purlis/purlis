@@ -11,7 +11,7 @@ import {
   type RefObject,
 } from "react";
 import { Group, Panel } from "react-resizable-panels";
-import { Separator } from "./shownSeparator";
+import { Separator } from "./ui/panel/Separator";
 import {
   type ChatBlocked,
   type HarnessGlance,
@@ -37,6 +37,7 @@ import { NONE_RESTORING } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
 import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
+import { paneBand } from "./noticeSettle";
 import { type Blocks } from "./sandboxBlocks";
 import { ChatGauge, useChatUsage } from "./ChatGauge";
 import { SkillsChip } from "./UseSkill";
@@ -63,7 +64,7 @@ import {
   type StartNotes,
   ChatNotices,
 } from "./ChatNotices";
-import { Tooltip } from "./ui/tooltip/Tooltip";
+import { IconButton } from "./ui/button/Button";
 
 /**
  * **The panes of the tab in front** (#1035, split out of `PlaneView.tsx`): the split layout
@@ -124,6 +125,7 @@ export function paneMenuOf(offerFor: (id: string) => Offer | undefined): Catalog
  */
 export function PaneFrame({
   plane,
+  pane,
   session,
   crumbs,
   ending,
@@ -141,6 +143,8 @@ export function PaneFrame({
   children,
 }: {
   plane: PlaneId;
+  /** The pane it draws, by its number in the tabs: its band is remembered by it (#3167). */
+  pane?: number;
   session: number;
   /** Whether the keyboard is in this pane: a split says which of its panes has it (#2914). */
   focused?: boolean;
@@ -199,7 +203,13 @@ export function PaneFrame({
           read and tabbed to (#1647); a terminal keeps Tab for its shell, so a control written
           after it is one Tab never reaches (charter-app#189). */}
       <div className="pane-top">
-        <PaneNotices notices={notices} asked={asked} others={others} onShowChat={onShowChat} />
+        <PaneNotices
+          band={pane === undefined ? undefined : paneBand(plane, pane)}
+          notices={notices}
+          asked={asked}
+          others={others}
+          onShowChat={onShowChat}
+        />
         <PaneHead doing={doing}>
           <div className="pane-chips">
             {/* **Which chat this is, while the tab shows a task** (#1486): first in the line, and
@@ -327,11 +337,14 @@ export type HiddenChat = {
  * those acts on its own chat: the Notice is that chat's, drawn here.
  */
 export function PaneNotices({
+  band,
   notices,
   asked,
   others,
   onShowChat,
 }: {
+  /** The pane the band is (`paneBand`), whichever component draws it (#3167). */
+  band?: string;
   notices: ReactNode;
   /** The questions for several of the pane's tasks at once (#1508): after the shown chat's
    *  own, before each other chat's, since each waits for the person. */
@@ -340,7 +353,7 @@ export function PaneNotices({
   onShowChat: (session: number) => void;
 }) {
   return (
-    <NoticePaneRow>
+    <NoticePaneRow band={band}>
       {notices}
       {asked}
       {others.map((other) => (
@@ -528,24 +541,30 @@ export function LayoutPanes({
   if (layout.kind === "pane") {
     const content = layout.content;
     if (content.kind === "view") {
-      // **A view in a pane, with the pane's own corner** — split and close are the same rows a
-      // chat's pane has, so a view can be split to start a chat beside it and closed from where
-      // it is. Clicking anywhere in it focuses it, which is what a terminal's click does.
+      // **A view in a pane, with the pane's own actions** (#3147): split and close are the same
+      // rows a chat's pane has, drawn by the same `PaneHead` and `PaneActions` in the same place,
+      // the pane's top right, so a view can be split to start a chat beside it and closed from
+      // where it is. The view carries no title of its own: its tab is its name, and the content
+      // panel is that tab's panel (`tabPanelOf`). Clicking anywhere in it focuses it, which is
+      // what a terminal's click does.
       return (
         <div
-          className="pane-frame"
+          className="pane-frame pane-viewed"
           data-focused={layout.pane === focused || undefined}
           onPointerDown={() => onFocus(layout.pane)}
         >
-          {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. */}
-          <div className="pane-corner at-end">
-            <PaneDoing
-              pane={layout.pane}
-              offerFor={offerFor}
-              closeOf={closeOf}
-              onPaneDoes={onPaneDoes}
-            />
-          </div>
+          {/* Before the view, for `PaneFrame`'s reason: the tab order is the document's. Over
+              the view's first row, which keeps the room it takes (`paneFrame.css`). */}
+          <PaneHead
+            doing={
+              <PaneActions
+                pane={layout.pane}
+                offerFor={offerFor}
+                closeOf={closeOf}
+                onPaneDoes={onPaneDoes}
+              />
+            }
+          />
           <div
             className={layout.pane === focused ? "pane view focused" : "pane view"}
             onFocus={() => onFocus(layout.pane)}
@@ -640,6 +659,7 @@ export function LayoutPanes({
           {/* As `PaneFrame` draws them: the band and the header, above what the pane shows. */}
           <div className="pane-top">
             <PaneNotices
+              band={paneBand(plane, layout.pane)}
               notices={null}
               asked={asked[layout.pane]}
               others={hidden}
@@ -688,6 +708,7 @@ export function LayoutPanes({
     return (
       <PaneFrame
         plane={plane}
+        pane={layout.pane}
         session={content.session}
         focused={layout.pane === focused}
         crumbs={path}
@@ -773,7 +794,7 @@ export function LayoutPanes({
          * A split has exactly two children and they never swap, so the side IS the identity.
          */
         <Fragment key={side}>
-          {side === 1 && <Separator aria-label="Resize the split" />}
+          {side === 1 && <Separator className="pane-split" aria-label="Resize the split" />}
           <Panel>
             <LayoutPanes
               plane={plane}
@@ -890,27 +911,22 @@ export function PaneDoing({
         if (!offer) return null;
         const Mark = markOf(offer);
         return (
-          <Tooltip
+          // The quiet ghost (#3214): a pane's corner marks, quiet until the pointer is on one.
+          <IconButton
             key={id}
-            tip={offer.reason || (offer.note ? `${offer.title} — ${offer.note}` : offer.title)}
-          >
-            <button
-              className={
-                offer.id === "pane.close" && !closesOnly(offer.does) ? "ends-a-chat" : undefined
-              }
-              // A task's minimise, as its own tab draws it (#1489): never the close's look.
-              data-minimise={offer.does.verb === "sendBack" ? "" : undefined}
-              // WebKit leaves a `<button>` out of the tab sequence unless this is written down
-              // (`docs/ui-primitives.md`). Only the focused pane's are drawn (`App.css`), so only
-              // they are stops: a hidden control is not one.
-              tabIndex={0}
-              disabled={!offer.available}
-              aria-label={offer.title}
-              onClick={() => onPaneDoes(pane, offer)}
-            >
-              {Mark && <Mark />}
-            </button>
-          </Tooltip>
+            variant="quiet"
+            size="sm"
+            icon={Mark ? <Mark /> : null}
+            aria-label={offer.title}
+            tooltip={offer.reason || offer.note || undefined}
+            className={
+              offer.id === "pane.close" && !closesOnly(offer.does) ? "ends-a-chat" : undefined
+            }
+            // A task's minimise, as its own tab draws it (#1489): never the close's look.
+            data-minimise={offer.does.verb === "sendBack" ? "" : undefined}
+            isDisabled={!offer.available}
+            onPress={() => onPaneDoes(pane, offer)}
+          />
         );
       })}
     </div>

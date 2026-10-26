@@ -189,10 +189,6 @@ export type Definition = {
    *  than a share of the window: the right panel's 300px (R124, #2917). A drag keeps a share
    *  ({@link size}'s unit) from then on. */
   length?: string;
-  /** **Its own tabs never put it away** (R121, #2917): the side panel's tabs are across its own
-   *  top, so a press of the open view does nothing, where any other bar's puts its region away.
-   *  Its key (⌘B) and the palette still do. */
-  stays?: true;
   /** The views it switches between with an activity bar, in the bar's order. A region without
    *  them draws its content alone. */
   views?: readonly OwnViewId[];
@@ -224,8 +220,6 @@ export const CATALOGUE: Record<RegionId, Definition> = {
     // Search since #1676. Changes, which holds what the bottom region drew (B-7), was here
     // too until it moved to the Panel's left half (#1739, P-2).
     views: ["chats", "explorer", "search"],
-    // Its bar is tabs across its own top (N36, R116), so pressing the open one leaves it out.
-    stays: true,
   },
   // The right is "for you" (ADR 0038 as amended 2026-10-10, B-13): what is asking for you,
   // each a view, opening on the Inbox, first on its bar (P-2, #1738); the extensions' panels
@@ -757,8 +751,6 @@ export function picked(
   const region = regionOf(view, arrangement);
   const was = arrangement.find((one) => one.id === region);
   if (was !== undefined && !was.collapsed && openView(was, panels) === view) {
-    // The side panel's own tabs never put it away (R121): the press is nothing.
-    if (CATALOGUE[region].stays === true) return arrangement;
     return arrangement.map((one) => (one.id === region ? { ...one, collapsed: true } : one));
   }
   return showing(arrangement, view);
@@ -1346,14 +1338,15 @@ export function startingSize(side: SlotId, placed: Placement[]): number {
   return shownIn(placed).length === 0 ? 0 : slotSize(side, placed);
 }
 
-/** The right bar's width beside the row of regions (`ui/activity`, R117). */
-const RIGHT_BAR = 44;
+/** A side's bar beside the row of regions (`ui/activity`, R117): the right one at the window's
+ *  edge, the left one beside the project rail (#3144), each this wide at every width. */
+const BAR = 44;
 
 /**
  * **The width the row of regions has**, which a side's share is of: the window less the project
- * rail where it is drawn (`ui/rail`, #2915), the right bar and the gutter at each end of the row
- * (`App.css`, `.regions`). The gutter is the theme's and the rail's width is as drawn, both read
- * from the document.
+ * rail where it is drawn (`ui/rail`, #2915), the two bars, the gutter at each end of the row
+ * (`App.css`, `.regions`) and the gutter and a half between the rail and the left bar (#3144). The gutter is
+ * the theme's and the rail's width is as drawn, both read from the document.
  */
 export function rowWidth(window: number = globalThis.innerWidth ?? 0): number {
   if (window <= 0) return 0;
@@ -1367,10 +1360,11 @@ export function rowWidth(window: number = globalThis.innerWidth ?? 0): number {
       document.querySelector('[data-scope="rail"][data-part="slot"]')?.getBoundingClientRect()
         .width ?? 0;
   } catch {
-    // No document to read: the row is the window less the bar.
+    // No document to read: the row is the window less the bars.
   }
-  const edges = 2 * (Number.isFinite(gutter) ? gutter : 0) + (Number.isFinite(rail) ? rail : 0);
-  return Math.max(0, window - RIGHT_BAR - edges);
+  // Two at the row's ends, and one and a half between the rail and the left bar (D-3144-13).
+  const edges = 3.5 * (Number.isFinite(gutter) ? gutter : 0) + (Number.isFinite(rail) ? rail : 0);
+  return Math.max(0, window - 2 * BAR - edges);
 }
 
 /** The least window height the bottom row starts at its R126 share in, and its share below
