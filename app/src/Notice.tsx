@@ -16,7 +16,7 @@ import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { PersonaMark } from "./PersonaMark";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
-import { X } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, X } from "lucide-react";
 import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 
 /**
@@ -77,6 +77,11 @@ export type NoticeAction = {
    *  §6). Only the look: its place, its words, its name and the keyboard's order are the
    *  Notice's as they were. */
   allows?: boolean;
+  /** The one way on a card Notice leads with (#3344): drawn as the filled primary. */
+  primary?: boolean;
+  /** A card Notice's disclosure (its Details, #3344): a ghost button led by a chevron that
+   *  points down while what it opens is open. Needs `opens`. */
+  disclosure?: boolean;
 };
 
 type Ways = {
@@ -91,9 +96,6 @@ type Ways = {
   /** What Dismiss does, where it is more than putting the line away: said as its tooltip
    *  (qw386). */
   dismissSays?: string;
-  /** Dismiss drawn as a × icon button, named and tipped "Dismiss": a line that closes rather
-   *  than is answered, as an action's result (#3344). */
-  closes?: boolean;
 };
 
 /** At least one way out, said in the type: a Notice with none does not compile. */
@@ -118,6 +120,17 @@ export type NoticeProps = WayOut & {
   /** What a way out opened (a fix's form, #1250): drawn right after the line, outside its live
    *  region, and moved with it by the Inbox's list. */
   under?: ReactNode;
+  /**
+   * **A card Notice's title** (#3344, the sidebar-views prototype's Q3 A): given, the Notice is
+   * drawn as a card, its mark (a check, or an alert in the trouble tone) at the start, its title
+   * with × at the top right, its sentence (`children`) under the title, its ways on a row of
+   * their own under that, and what a way out opened inside the card. Only the title and the
+   * sentence are the live region, so opening Details reads nothing out again.
+   */
+  title?: ReactNode;
+  /** **Not a live region** (#3344): a copy of a Notice another one already announced, as a
+   *  result kept under Results is of the result's notice. */
+  quiet?: boolean;
 };
 
 /**
@@ -140,8 +153,18 @@ export const NoticeOf = createContext<{
 } | null>(null);
 
 export function Notice(props: NoticeProps) {
-  const { cause, tone = "news", at = "inbox", label, persona, children, under } = props;
-  const { fixes, link, copy, onDismiss, dismissSays, closes } = props as Ways;
+  const {
+    cause,
+    tone = "news",
+    at = "inbox",
+    label,
+    persona,
+    children,
+    under,
+    title,
+    quiet,
+  } = props;
+  const { fixes, link, copy, onDismiss, dismissSays } = props as Ways;
   const list = useContext(Listed);
   const provided = useContext(NoticeOf);
   // A granting way out waits for the list it is drawn in to say it has settled (#1695).
@@ -170,6 +193,17 @@ export function Notice(props: NoticeProps) {
   ]
     .filter(Boolean)
     .join(" ");
+  if (title !== undefined)
+    return (
+      <NoticeCard
+        {...{ cause, tone, label, title, quiet, under, fixes, link, onDismiss, dismissSays }}
+        stacked={stacked}
+        host={host}
+        mayAct={mayAct}
+      >
+        {children}
+      </NoticeCard>
+    );
   const line = (
     <ButtonRow
       size="sm"
@@ -229,18 +263,7 @@ export function Notice(props: NoticeProps) {
           Copy command
         </Button>
       )}
-      {onDismiss && closes === true && (
-        <IconButton
-          size="sm"
-          variant="ghost"
-          aria-label="Dismiss"
-          tooltip={dismissSays}
-          onPress={onDismiss}
-          className="notice-dismiss"
-          icon={<X aria-hidden="true" />}
-        />
-      )}
-      {onDismiss && closes !== true && (
+      {onDismiss && (
         <Button
           size="sm"
           variant="ghost"
@@ -281,6 +304,130 @@ export function Notice(props: NoticeProps) {
         {opened}
       </>
     );
+  return stacked ? createPortal(drawn, host) : drawn;
+}
+
+/**
+ * **A Notice drawn as a card** (#3344, the sidebar-views prototype's Q3 A): the mark at the
+ * start; the title, with × at the top right; the sentence under the title; the ways on a row of
+ * their own, the primary filled and a disclosure a ghost led by its chevron; and what a way out
+ * opened, inside the card. The title and the sentence are the live region, unless `quiet`.
+ */
+function NoticeCard({
+  cause,
+  tone,
+  label,
+  title,
+  quiet,
+  under,
+  fixes,
+  link,
+  onDismiss,
+  dismissSays,
+  stacked,
+  host,
+  mayAct,
+  children,
+}: {
+  cause: string;
+  tone: "news" | "trouble";
+  label?: string;
+  title: ReactNode;
+  quiet?: boolean;
+  under?: ReactNode;
+  fixes?: readonly NoticeAction[];
+  link?: NoticeAction;
+  onDismiss?: () => void;
+  dismissSays?: string;
+  stacked: boolean;
+  host: HTMLElement;
+  mayAct: (target: Element) => boolean;
+  children: ReactNode;
+}) {
+  const Mark = tone === "trouble" ? CircleAlert : CircleCheck;
+  const drawn = (
+    <div
+      className={clsx(
+        "notice notice-card",
+        !stacked && "ui-inline-surface",
+        tone === "trouble" && "notice-trouble",
+        !stacked && tone === "trouble" && "ui-inline-surface-trouble",
+      )}
+      data-cause={cause}
+    >
+      <span className="notice-card-mark" data-tone={tone} aria-hidden="true">
+        <Mark />
+      </span>
+      <div
+        className="notice-card-says"
+        role={quiet === true ? undefined : "status"}
+        aria-label={label}
+      >
+        <strong className="notice-card-title">{title}</strong>
+        <span className="notice-says">{children}</span>
+      </div>
+      {onDismiss && (
+        <IconButton
+          size="sm"
+          variant="ghost"
+          aria-label="Dismiss"
+          tooltip={dismissSays}
+          onPress={onDismiss}
+          className="notice-dismiss notice-card-close"
+          icon={<X aria-hidden="true" />}
+        />
+      )}
+      {(fixes !== undefined || link !== undefined) && (
+        <ButtonRow size="sm" className="notice-card-ways">
+          {fixes?.map((fix) => (
+            <Button
+              key={fix.label}
+              size="sm"
+              variant={
+                fix.allows === true
+                  ? "grants"
+                  : fix.primary === true
+                    ? "primary"
+                    : fix.disclosure === true
+                      ? "ghost"
+                      : "secondary"
+              }
+              icon={
+                fix.disclosure === true ? (
+                  fix.opens?.open === true ? (
+                    <ChevronDown aria-hidden="true" />
+                  ) : (
+                    <ChevronRight aria-hidden="true" />
+                  )
+                ) : undefined
+              }
+              className="notice-fix"
+              aria-expanded={fix.opens?.open}
+              aria-controls={fix.opens?.open ? fix.opens.id : undefined}
+              aria-disabled={fix.busy || fix.off !== undefined || undefined}
+              aria-busy={fix.busy || undefined}
+              tooltip={fix.off}
+              onPress={
+                fix.busy || fix.off !== undefined
+                  ? undefined
+                  : (press) => {
+                      if (mayAct(press.target)) fix.onPress();
+                    }
+              }
+            >
+              {fix.label}
+            </Button>
+          ))}
+          {link && (
+            <Button size="sm" onPress={link.onPress} className="notice-link">
+              {link.label}
+            </Button>
+          )}
+        </ButtonRow>
+      )}
+      {under !== undefined && <div className="notice-card-under">{under}</div>}
+    </div>
+  );
   return stacked ? createPortal(drawn, host) : drawn;
 }
 

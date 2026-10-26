@@ -93,6 +93,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". Add a Docker pool's refusal (#2679), in the core's words, under the form it refused; " +
       "the form, kept as it was typed, and Add pool are the way on",
   },
+  "AddVision.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "AnswerQuestion.tsx": {
     count: 2,
     why:

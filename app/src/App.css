@@ -3808,9 +3808,9 @@ body {
 }
 
 /* **What an action answered** (`ActionResultNotice.tsx`, #3344, the sidebar-views prototype's
-   Q3 A): a notice at the top of the content, at most 640px wide, its title in the primary words
-   and its one sentence in the muted tier under it; what the core said, behind Details, in mono
-   on the code ground. The same notice is listed under Results in the Inbox's Notices. */
+   Q3 A): a card Notice at the top of the content, at most 640px wide; what the core said, behind
+   Details, in mono on the code ground inside it. The same notice is listed under Results in the
+   Inbox's Notices, where the list's row is its box. */
 .action-result {
   max-inline-size: 640px;
   margin: var(--space-3) var(--space-5) 0;
@@ -3821,20 +3821,8 @@ body {
   display: contents;
 }
 
-.action-result-title {
-  display: block;
-  color: var(--text-primary);
-  font-weight: var(--font-weight-medium);
-}
-
-.action-result-says {
-  display: block;
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-}
-
 .action-result-details {
-  margin: var(--space-3) 0 0;
+  margin: 0;
   padding: var(--space-4) var(--space-5);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
@@ -3844,6 +3832,60 @@ body {
   line-height: var(--line-height-body);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* **A card Notice** (`Notice.tsx` `NoticeCard`, #3344): its mark, its title with × at the top
+   right, its sentence, its ways on a row of their own, and what a way out opened, inside. */
+.notice-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-2) calc(var(--space-4) + var(--space-1));
+  align-items: start;
+  padding: calc(var(--space-4) + var(--space-1)) var(--space-4)
+    calc(var(--space-4) + var(--space-1)) var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.notice-card-mark {
+  display: inline-grid;
+  margin-block-start: 1px;
+  color: var(--state-success);
+}
+
+.notice-card-mark[data-tone="trouble"] {
+  color: var(--danger-text);
+}
+
+.notice-card-mark svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.notice-card-says {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+
+.notice-card-title {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.notice-card .notice-says {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.notice-card-ways {
+  grid-column: 2;
+  margin-block-start: var(--space-3);
+}
+
+.notice-card-under {
+  grid-column: 2 / 4;
+  margin-block-start: var(--space-3);
 }
 
 /* **A refusal's way to its setting** (`SaidLink.tsx`, #1201): beside the last action's words, on

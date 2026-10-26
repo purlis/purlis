@@ -14,9 +14,11 @@ const MADE_WITH_VISION = [
   "Vision recorded → workspaces/docs/workspace.md",
 ];
 
+const WAYS = { onOpen: () => undefined, onAddVision: () => undefined };
+
 describe("a workspace made (#3344)", () => {
   it("says it in the app's own words, a title and one plain sentence", () => {
-    const said = workspaceMade("git-ci-cd", MADE_LIVE, { onOpen: () => undefined });
+    const said = workspaceMade("git-ci-cd", MADE_LIVE, WAYS);
     expect(said.title).toBe("Workspace git-ci-cd is ready");
     expect(said.words).toBe("It has no vision yet. Add one so its chats know what it is for.");
     expect(said.refused).toBe(false);
@@ -24,27 +26,40 @@ describe("a workspace made (#3344)", () => {
   });
 
   it("says nothing of a vision once one was recorded", () => {
-    const said = workspaceMade("docs", MADE_WITH_VISION, { onOpen: () => undefined });
+    const said = workspaceMade("docs", MADE_WITH_VISION, WAYS);
     expect(said.words).toBe("Its vision is recorded in its workspace.md.");
   });
 
   it("keeps the core's lines in its details, but never a line written for an agent", () => {
-    const said = workspaceMade("git-ci-cd", MADE_LIVE, { onOpen: () => undefined });
+    const said = workspaceMade("git-ci-cd", MADE_LIVE, WAYS);
     expect(said.details).toBe(MADE_LIVE[0]);
     expect(said.details).not.toMatch(/ask the developer/);
   });
 
-  it("offers to open the workspace", () => {
+  it("offers to open the workspace, first and filled, and to add the vision it lacks", () => {
     let opened = 0;
-    const said = workspaceMade("git-ci-cd", MADE_LIVE, { onOpen: () => (opened += 1) });
-    expect(said.ways?.map((way) => way.label)).toEqual(["Open git-ci-cd"]);
+    let asked = 0;
+    const said = workspaceMade("git-ci-cd", MADE_LIVE, {
+      onOpen: () => (opened += 1),
+      onAddVision: () => (asked += 1),
+    });
+    expect(said.ways?.map((way) => [way.label, way.primary === true])).toEqual([
+      ["Open git-ci-cd", true],
+      ["Add a vision", false],
+    ]);
     said.ways?.[0].onPress();
-    expect(opened).toBe(1);
+    said.ways?.[1].onPress();
+    expect([opened, asked]).toEqual([1, 1]);
+  });
+
+  it("offers no vision to add where one was recorded", () => {
+    const said = workspaceMade("docs", MADE_WITH_VISION, WAYS);
+    expect(said.ways?.map((way) => way.label)).toEqual(["Open docs"]);
   });
 
   it("adds why the pin was refused to its sentence", () => {
     const said = workspaceMade("git-ci-cd", MADE_LIVE, {
-      onOpen: () => undefined,
+      ...WAYS,
       pinRefused: "The pin store is read-only.",
     });
     expect(said.words).toBe(
@@ -68,6 +83,21 @@ describe("what any result says", () => {
       title: "T",
       says: "S.",
       details: "D",
+    });
+  });
+
+  it("never shows a line the core wrote for an agent, whatever result it came with", () => {
+    const said = {
+      from: "workspace.rename",
+      refused: false,
+      words:
+        "✓ Renamed workspace 'a' to 'b'. ⬢ Tell the developer to ask the developer what it is for.",
+      details: "✓ Renamed\n⬢ ask the developer what it is for",
+    };
+    expect(resultOf(said)).toEqual({
+      title: "✓ Renamed workspace 'a' to 'b'.",
+      says: undefined,
+      details: "✓ Renamed",
     });
   });
 

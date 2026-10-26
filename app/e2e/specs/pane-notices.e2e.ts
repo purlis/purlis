@@ -487,6 +487,15 @@ describe("a Notice in a pane", () => {
     await untilShows(0, READY);
     await pressAndStart("Split right");
     await untilShows(1, READY);
+    // What an earlier action answered stands at the top of the content until it is closed
+    // (#3344), and takes the panes' height with it: closed, as a person reading a pane would,
+    // so each case measures the pane the window gives.
+    await browser.execute(() => {
+      for (const close of document.querySelectorAll<HTMLElement>(
+        '.window-work > .action-result button[aria-label="Dismiss"]',
+      ))
+        close.click();
+    });
   });
 
   afterEach(async () => {

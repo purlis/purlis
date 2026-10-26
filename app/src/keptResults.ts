@@ -8,9 +8,10 @@ import type { Said } from "./actions";
 export const KEPT_RESULTS = 20;
 
 /** **A line about something still under way**, not a result: that the core has not answered a
- *  command yet (`answer.late.*`), which goes when the answer comes. It is never kept. */
+ *  command yet (`answer.late.*`), which goes when the answer comes, or a `progress` line
+ *  ("Cloning 2 repo(s)…") that the result replaces. It is never kept. */
 function passing(said: Said): boolean {
-  return said.from.startsWith("answer.late.");
+  return said.progress === true || said.from.startsWith("answer.late.");
 }
 
 /** A result the window keeps (#3344): what was said, where, and its place in the order. */
@@ -39,14 +40,17 @@ export function resultsFor(kept: readonly KeptResult[], plane: string | undefine
 
 /** Keeps each new `said`, worked out during the render as `useLatestSaid` does. */
 export function useKeptResults(said: Said | undefined, plane: string | undefined) {
-  const [kept, setKept] = useState<{ list: readonly KeptResult[]; next: number }>(() => ({
-    list: keep([], said, plane, 0),
-    next: 1,
-  }));
+  // `last` is the answer last kept: each is kept once, when it is first seen, so one put away
+  // here is not kept again while it is still the newest thing said (#3344's review).
+  const [kept, setKept] = useState<{
+    list: readonly KeptResult[];
+    next: number;
+    last: Said | undefined;
+  }>(() => ({ list: keep([], said, plane, 0), next: 1, last: said }));
   let list = kept.list;
-  if (said !== undefined && !passing(said) && !list.some((one) => one.said === said)) {
+  if (said !== kept.last) {
     list = keep(list, said, plane, kept.next);
-    setKept({ list, next: kept.next + 1 });
+    setKept({ list, next: kept.next + 1, last: said });
   }
   const drop = (id: number) =>
     setKept((was) => ({ ...was, list: was.list.filter((one) => one.id !== id) }));

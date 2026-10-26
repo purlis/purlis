@@ -147,8 +147,9 @@ export const READ_AGAIN = "workspace.readagain";
 export type Ran =
   { ok: true; said?: string } | { ok: false; refused: string; settings?: SettingsWay };
 
-/** A way on from what an action answered (#3344): "Open git-ci-cd". */
-export type SaidWay = { label: string; onPress: () => void };
+/** A way on from what an action answered (#3344): "Open git-ci-cd", the filled primary where
+ *  `primary`, or "Add a vision". */
+export type SaidWay = { label: string; onPress: () => void; primary?: boolean };
 
 /**
  * **What the window says about the last action** — the closable notice at the top of the
@@ -168,6 +169,9 @@ export type Said = {
   title?: string;
   details?: string;
   ways?: readonly SaidWay[];
+  /** A line about work still under way ("Cloning 2 repo(s)…"), which the next line replaces:
+   *  said, but not kept under Results. */
+  progress?: boolean;
 };
 
 /** What the window says of a row's answer: nothing for a quiet success. */

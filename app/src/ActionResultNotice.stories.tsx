@@ -8,7 +8,7 @@
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 import { ActionResultNotice } from "./ActionResultNotice";
 import { workspaceMade } from "./actionResult";
 
@@ -20,7 +20,10 @@ const LINES = [
 function Result() {
   const [said, setSaid] = useState("Nothing pressed");
   const [closed, setClosed] = useState(false);
-  const made = workspaceMade("git-ci-cd", LINES, { onOpen: () => setSaid("Opened git-ci-cd") });
+  const made = workspaceMade("git-ci-cd", LINES, {
+    onOpen: () => setSaid("Opened git-ci-cd"),
+    onAddVision: () => setSaid("Asked for a vision"),
+  });
   return (
     <div
       className="window-work"
@@ -55,6 +58,10 @@ export const WorkspaceMade: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Details" }));
     await expect(canvas.getByText(/ready \(LIVE/)).toBeVisible();
     await expect(canvas.queryByText(/ask the developer/)).toBeNull();
+    // Said once: the title and the sentence are the live region, Details is not in it.
+    await expect(canvas.getByRole("status")).not.toHaveTextContent(/ready \(LIVE/);
+    await userEvent.click(canvas.getByRole("button", { name: "Add a vision" }));
+    await expect(canvas.getByTestId("said")).toHaveTextContent("Asked for a vision");
     await userEvent.click(canvas.getByRole("button", { name: "Open git-ci-cd" }));
     await expect(canvas.getByTestId("said")).toHaveTextContent("Opened git-ci-cd");
   },
@@ -63,8 +70,7 @@ export const WorkspaceMade: Story = {
 /** × and Esc close it. */
 export const Closes: Story = {
   play: async ({ canvas, userEvent }) => {
-    const notice = canvas.getByRole("status");
-    within(notice).getByRole("button", { name: "Open git-ci-cd" }).focus();
+    canvas.getByRole("button", { name: "Open git-ci-cd" }).focus();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(canvas.getByTestId("said")).toHaveTextContent("Closed"));
   },

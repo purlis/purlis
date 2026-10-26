@@ -18,7 +18,7 @@ import App from "./App";
 import { forgetRepoClones } from "./repoClones";
 import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
 import { chipName, workspaceChips } from "./test-strips";
-import { findResult } from "./actionResult.testkit";
+import { findResult, theResult } from "./actionResult.testkit";
 
 /**
  * **A refusal that names a setting links to it** (#1201, SE-22): the window's line under the
@@ -106,8 +106,8 @@ describe("a refusal's way to its setting (#1201)", () => {
       const words = await findResult(/Could not clone api into gamma/);
       expect(words).toHaveTextContent("Retry from the workspace's settings.");
       // A closable notice in the trouble tone, said once as a polite status (#3344).
-      const said = words.closest<HTMLElement>('[role="status"]');
-      if (said === null) throw new Error("the clone's failure is not said as a status");
+      expect(words.closest('[role="status"]')).not.toBeNull();
+      const said = theResult();
       await userEvent.click(
         within(said).getByRole("button", { name: "Open gamma's repo settings" }),
       );

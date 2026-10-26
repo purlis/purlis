@@ -18,7 +18,7 @@ import { forgetThisLaunch } from "./regions";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
 import { showTheExplorer, stripNamed } from "./test-strips";
 import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
-import { findResult } from "./actionResult.testkit";
+import { findResult, theResult } from "./actionResult.testkit";
 
 /**
  * **A file or folder row's actions, against the whole window** (FM-10, #1113): each row of its
@@ -234,8 +234,8 @@ describe("a file or folder row's actions (FM-10)", () => {
       await fromTheMenu("README.md", "Open in your editor");
       const words = await findResult("Choose your editor in Settings first.");
       // A closable notice in the trouble tone, said once as a polite status (#3344).
-      const said = words.closest<HTMLElement>('[role="status"]');
-      if (said === null) throw new Error("the refusal is not said as a status");
+      expect(words.closest('[role="status"]')).not.toBeNull();
+      const said = theResult();
       await userEvent.click(within(said).getByRole("button", { name: "Choose your editor" }));
 
       expect(links).toEqual([
