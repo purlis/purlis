@@ -2104,6 +2104,17 @@ body {
   min-height: 0;
 }
 
+/* **The opener's page scrolls as one** (#3325). The welcome, a door's page (`DoorPage.tsx`) and
+   the guided steps are drawn in `.panes` here, and their own `overflow: auto` never had a height
+   to scroll in: they grew to their content, and what was below the window's edge (Create a
+   project's Open a repo…) was cut off with no scrollbar. `.panes` is the room under the bar, a
+   stretched item of `.body`'s row, so it is the one scroller, the window's width: the wheel
+   works beside the reading column too, and the window's lines above the page scroll with it.
+   `welcome.e2e.ts` measures it at a short window. */
+.body > .panes:has(> :is(.welcome, .onboarding)) {
+  overflow-y: auto;
+}
+
 /* **The regions** (ADR 0038). A column of two: a row of the left side, the panes and the
    right-hand side, and the **Panel** under the three, the row's whole width (#1737). Every
    boundary is a `[data-separator]`, which is the same handle the pane splits use. */
@@ -7384,6 +7395,45 @@ nav.piece-files-head {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+/* **A chat's browser timeline** (#2017): its moments, the newest first, each with the
+   screenshot the agent took where one is kept, drawn at the pane's width at most. */
+.browser-timeline {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  list-style: none;
+}
+
+.browser-timeline-moment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-block-end: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.browser-timeline-said,
+.browser-timeline-page,
+.browser-timeline-unkept {
+  margin: 0;
+}
+
+.browser-timeline-page {
+  overflow-wrap: anywhere;
+}
+
+.browser-timeline-shot {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border-subtle);
 }
 
 /* **Where the page is, and on which device** (#2024): purlis's own words, first in the bar
