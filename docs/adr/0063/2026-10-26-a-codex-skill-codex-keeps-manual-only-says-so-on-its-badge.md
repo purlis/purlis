@@ -23,9 +23,17 @@ Its frontmatter's `disable-model-invocation` does nothing there.
   (`handed::flag_at`, the frontmatter's reader): an anchor, an alias, a tag, a key set twice in
   any mapping, more than one document, or anything but a plain `false` at that key reads as
   not manual-only. Codex reads the whole file with serde and ignores all of it where it does not
-  parse, so the badge claims manual-only only where Codex surely reads it so. What remains: a
-  file purlis reads that Codex refuses for a mistyped value under another key (`interface`,
-  `dependencies`) still badges as manual-only; nothing widens a chat by it.
+  parse, so the badge claims manual-only only where Codex surely reads it so. A key is compared
+  by its text, however it is quoted, so `policy` and `"policy"` in one mapping are a key set
+  twice.
+- **What remains, one way:** a file purlis reads that Codex refuses for a value of the wrong type
+  under another key (`interface`, `dependencies`, or `policy.products`, whose values are a list
+  of Codex's own product names) still badges as manual-only, while Codex lists the skill.
+  Nothing widens a chat by it.
+- **And the other way, on purpose:** a sidecar Codex reads but purlis refuses, such as a link
+  (which purlis never follows) or a capitalised `False` (serde reads it, the strict
+  reader does not), badges as automatic while Codex keeps the skill manual-only. The badge then
+  says less than Codex does, never more.
 - The badge says **"Runs only when asked for by name."** wherever a harness keeps a skill out of
   its model's choice itself: by Codex's sidecar, and by `disable-model-invocation` on Claude Code,
   which reads that key. A skill purlis hands by its translation keeps the line it had ("Carried

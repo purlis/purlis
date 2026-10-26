@@ -364,16 +364,28 @@ pub fn flag_at(yaml: &str, keys: &[&str]) -> Option<bool> {
 }
 
 /// Whether no mapping in `node` sets one key twice: a reader that refuses such a file, as a
-/// harness's may, would read none of it. Each mapping's keys are checked in one pass.
+/// harness's may, would read none of it. A scalar key is compared by its text alone, however it
+/// is quoted, so `policy` and `"policy"` are one key. Each mapping's keys are checked in one
+/// pass.
 fn keys_once(node: &Node) -> bool {
+    /// What a key is compared by: a scalar's text, or a whole list or mapping.
+    #[derive(PartialEq, Eq, Hash)]
+    enum Key<'a> {
+        Text(&'a str),
+        Whole(&'a Node),
+    }
     match node {
         Node::Scalar { .. } => true,
         Node::Seq(items) => items.iter().all(keys_once),
         Node::Map(pairs) => {
             let mut seen = std::collections::HashSet::with_capacity(pairs.len());
-            pairs
-                .iter()
-                .all(|(key, value)| seen.insert(key) && keys_once(key) && keys_once(value))
+            pairs.iter().all(|(key, value)| {
+                let compared = match key {
+                    Node::Scalar { text, .. } => Key::Text(text),
+                    whole => Key::Whole(whole),
+                };
+                seen.insert(compared) && keys_once(key) && keys_once(value)
+            })
         }
     }
 }

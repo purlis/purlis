@@ -273,6 +273,10 @@ fn a_flag_in_a_yaml_file_is_read_only_where_the_file_says_it_plainly() {
             "a key set twice anywhere",
             "interface:\n  icon: a\n  icon: b\npolicy:\n  allow_implicit_invocation: false\n",
         ),
+        (
+            "a key set twice, once quoted",
+            "policy:\n  allow_implicit_invocation: false\n\"policy\":\n  allow_implicit_invocation: true\n",
+        ),
         ("not YAML", "policy: [\n"),
         (
             "two documents",
