@@ -11,7 +11,7 @@ import type { ProfileRow } from "./bindings";
  * The operator's ruling (V69, PR #949): a surface other than the picker may record a profile
  * approval only with the picker's exact sentence — *charter has not run this profile before*, or
  * *as it now stands* when the command changed since it was approved — with the command in
- * `<code>`, which `.ui-choice-says .meta .where` keeps undimmed, and the row's `.needs-approval` mark.
+ * `<code>`, which `.profile-meta code.where` keeps undimmed, and the row's `.needs-approval` mark.
  */
 export function ApprovalSentence({
   row,
@@ -48,7 +48,7 @@ export function ProfileMeta({
   children?: ReactNode;
 }) {
   return (
-    <span className="meta" id={id}>
+    <span className="meta profile-meta" id={id}>
       <span className="what">{row.kind}</span>
       {/* Already contained by the core: a profile is a file a chat can write, and a control
           byte in a command must never redraw this row. */}

@@ -13,6 +13,7 @@ import StoryFailures, {
   annotations,
   cellOf,
   gateOf,
+  placeOf,
   REPORT,
   reportPath,
 } from "./story-failures.mjs";
@@ -259,11 +260,15 @@ test("the reporter keeps each failed story's message apart from its stack", () =
         file: "src/Probe.stories.tsx",
         story: "Probe Steps",
         errors: [
-          { message: FAILED.keyboard.message, stack: FAILED.keyboard.webkit },
+          {
+            message: FAILED.keyboard.message,
+            stack: FAILED.keyboard.webkit,
+            frames: [],
+          },
         ],
       },
     ],
-    errors: [{ message: "outside", stack: "s" }],
+    errors: [{ message: "outside", stack: "s", frames: [] }],
     unpictured: [],
   });
   assert.deepEqual(annotations(report, "webkit"), [
@@ -387,4 +392,117 @@ test("the reporter names each story that takes no picture, once", () => {
     { file: "src/Probe.stories.tsx", id: "probe--moving" },
     { file: "src/Probe.stories.tsx", id: "probe--other" },
   ]);
+});
+
+const ROOT = "/__w/purlis/purlis";
+
+/** The frames Vitest maps a keyboard failure's stack back to, in each engine's shape. */
+const MAPPED = [
+  {
+    file: `${ROOT}/app/node_modules/@vitest/expect/dist/index.js`,
+    line: 1,
+    column: 1,
+  },
+  { file: `${ROOT}/app/src/stories.testkit.ts`, line: 40, column: 3 },
+  { file: `${ROOT}/app/src/Probe.stories.tsx`, line: 47, column: 11 },
+  { file: `${ROOT}/app/src/Other.stories.tsx`, line: 3, column: 1 },
+];
+
+test("a failed story's annotation names its story file and the line it failed at", () => {
+  const [one] = annotations(
+    reportOf("Probe Steps", {
+      message: FAILED.keyboard.message,
+      stack: FAILED.keyboard.webkit,
+      frames: MAPPED,
+    }),
+    "webkit",
+    ROOT,
+  );
+  assert.equal(
+    one,
+    `::error file=app/src/Probe.stories.tsx,line=47,title=Probe Steps in webkit::src/Probe.stories.tsx: keyboard: ${WHY.keyboard}`,
+  );
+});
+
+test("a frame is placed whether Vitest gives it as a path, a served URL or a file URL", () => {
+  for (const file of [
+    `${ROOT}/app/src/Probe.stories.tsx`,
+    `http://localhost:63315${ROOT}/app/src/Probe.stories.tsx?import`,
+    `http://localhost:63315/@fs${ROOT}/app/src/Probe.stories.tsx`,
+    `file://${ROOT}/app/src/Probe.stories.tsx`,
+  ])
+    assert.deepEqual(
+      placeOf({ frames: [{ file, line: 9.0, column: 2 }] }, ROOT),
+      { file: "app/src/Probe.stories.tsx", line: 9 },
+      file,
+    );
+});
+
+test("a failure with no frame in a story file inside the repository keeps its annotation", () => {
+  for (const frames of [
+    undefined,
+    [],
+    [
+      {
+        file: `${ROOT}/app/.storybook/screenshots.setup.ts`,
+        line: 31,
+        column: 5,
+      },
+    ],
+    [{ file: "/elsewhere/src/Probe.stories.tsx", line: 4, column: 1 }],
+    [{ file: `${ROOT}/app/src/Probe.stories.tsx`, line: 0, column: 0 }],
+  ]) {
+    assert.equal(placeOf({ frames }, ROOT), undefined);
+    const [one] = annotations(
+      reportOf("A", { message: "the probe would not draw", stack: "", frames }),
+      "chromium",
+      ROOT,
+    );
+    assert.match(one, /^::error title=A in chromium::/);
+  }
+});
+
+test("the reporter keeps the frames Vitest mapped back to their sources", () => {
+  const to = join(
+    mkdtempSync(join(tmpdir(), "story-failures-")),
+    "report.json",
+  );
+  const failedTest = {
+    fullName: "Probe > Steps",
+    result: () => ({
+      errors: [
+        {
+          message: "m",
+          stack: "s",
+          stacks: [
+            { method: "play", file: MAPPED[2].file, line: 47, column: 11 },
+          ],
+        },
+      ],
+    }),
+  };
+  reporting(to, (reporter) =>
+    reporter.onTestRunEnd([moduleOf({ tests: [failedTest] })], [], "failed"),
+  );
+  const report = JSON.parse(readFileSync(to, "utf8"));
+  assert.deepEqual(report.failures[0].errors[0].frames, [MAPPED[2]]);
+});
+
+test("the failed story's own file is placed before another story file's frame", () => {
+  const frames = [
+    { file: `${ROOT}/app/src/Other.stories.tsx`, line: 3, column: 1 },
+    { file: `${ROOT}/app/src/Probe.stories.tsx`, line: 47, column: 11 },
+  ];
+  assert.deepEqual(placeOf({ frames }, ROOT, "src/Probe.stories.tsx"), {
+    file: "app/src/Probe.stories.tsx",
+    line: 47,
+  });
+  assert.deepEqual(placeOf({ frames }, ROOT, "src/Gone.stories.tsx"), {
+    file: "app/src/Other.stories.tsx",
+    line: 3,
+  });
+  assert.deepEqual(placeOf({ frames }, ROOT), {
+    file: "app/src/Other.stories.tsx",
+    line: 3,
+  });
 });

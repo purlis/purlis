@@ -1539,8 +1539,8 @@ const scopeSwitch = () => screen.getByRole("radiogroup", { name: "Show the chats
 const scopeOn = () =>
   within(scopeSwitch())
     .getAllByRole("radio")
-    .filter((one) => one.getAttribute("aria-checked") === "true")
-    .map((one) => one.textContent);
+    .filter((one) => (one as HTMLInputElement).checked)
+    .map((one) => one.closest("label")?.textContent);
 const pickScope = (name: "This tab" | "Workspace" | "All") =>
   userEvent.click(within(scopeSwitch()).getByRole("radio", { name }));
 

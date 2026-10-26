@@ -90,9 +90,9 @@ describe("a persona's mark, in any colour", function () {
     // The rest of the definition is as it was: its name and its body are still there.
     expect(readFileSync(file, "utf8")).toContain(`name: ${PERSONA}`);
     // Drawn as the colour picked, and held in the box, ready to change.
-    const swatch = await $(`${PICKER} [role="radio"][aria-label="${COLOUR}"]`);
+    const swatch = await $(`${PICKER} input[type="radio"][aria-label="${COLOUR}"]`);
     await swatch.waitForExist({ timeout: 20_000 });
-    await browser.waitUntil(async () => (await swatch.getAttribute("aria-checked")) === "true", {
+    await browser.waitUntil(async () => swatch.isSelected(), {
       timeout: 10_000,
       timeoutMsg: `${COLOUR} is not the colour the picker shows as picked`,
     });

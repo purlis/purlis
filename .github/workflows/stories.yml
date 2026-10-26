@@ -89,8 +89,9 @@ jobs:
           node ../tools/story-baselines.mjs check "$RUNNER_TEMP/stories-index.json" \
             "$RUNNER_TEMP/stories-chromium.json" "$RUNNER_TEMP/stories-webkit.json"
       # One annotation per story that failed, the same in both browsers: its browser, its gate,
-      # the first line of why and the axe rules it broke. The reporter's own annotations name a
-      # line, and a failure axe raises after the story has none.
+      # the first line of why and the axe rules it broke, put on the story file's line it failed
+      # at (`GITHUB_WORKSPACE` is the root its path is relative to); a failure axe raises after
+      # the story has no such line, and is on the check alone.
       - name: The stories that failed, named
         if: failure()
         run: |
