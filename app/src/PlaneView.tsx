@@ -9476,6 +9476,8 @@ export const PlaneView = memo(function PlaneView({
             <StartChat
               options={picking.options}
               repo={pickingInRepo}
+              // Where it starts, by name (R8): the workspace in front, else the project.
+              place={ofWorkspace ?? projectName(plane)}
               starting={starting}
               prefer={"prefer" in picking.where ? picking.where.prefer : undefined}
               trouble={pickerTrouble}

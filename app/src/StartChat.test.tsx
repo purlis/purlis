@@ -59,26 +59,27 @@ function show(over: Partial<StartOptions> = {}, repo?: string) {
   return { onStart, onApprove, onCancel, user: userEvent.setup() };
 }
 
+/** The line under the picked persona's name, at the top of the details (R23). */
+const whoLine = () => screen.getByTestId("start-chat-who").querySelector("p")?.textContent;
+
 describe("a persona's one-line description (#1460)", () => {
-  it("is said on its row, before the row's other facts", () => {
-    show({
+  it("is said under the picked persona's name, after that it is the project's default (R23)", async () => {
+    const { user } = show({
       personas: ["steward", "release", "ops"],
       persona_descriptions: { steward: "Scopes the work", ops: "Keeps the lights on" },
     });
 
-    expect(screen.getByRole("radio", { name: /^steward/ })).toHaveAccessibleDescription(
-      "Scopes the work · project default",
-    );
-    expect(screen.getByRole("radio", { name: /^ops/ })).toHaveAccessibleDescription(
-      "Keeps the lights on",
-    );
-    expect(screen.getByRole("radio", { name: /^release/ })).not.toHaveAccessibleDescription();
+    expect(whoLine()).toBe("Project default · Scopes the work");
+    await user.click(screen.getByRole("option", { name: "ops" }));
+    expect(whoLine()).toBe("Keeps the lights on");
+    await user.click(screen.getByRole("option", { name: "release" }));
+    expect(whoLine()).toBe("Persona of this project");
   });
 
   it("is nothing for an answer that carries none", () => {
     show({ persona_descriptions: undefined });
 
-    expect(screen.getByRole("radio", { name: /^release/ })).not.toHaveAccessibleDescription();
+    expect(whoLine()).toBe("Project default");
   });
 });
 
@@ -147,26 +148,26 @@ describe("a persona's own profile (#1445)", () => {
     const { onStart, user } = show(TWO);
     expect(screen.getByRole("radio", { name: /^claude/ })).toBeChecked();
 
-    await user.click(screen.getByRole("radio", { name: /^release/ }));
+    await user.click(screen.getByRole("option", { name: "release" }));
 
     expect(screen.getByRole("radio", { name: /^codex/ })).toBeChecked();
     await user.click(screen.getByRole("button", { name: "Start" }));
     expect(onStart).toHaveBeenCalledWith("codex", "release", false, null, false, null);
   });
 
-  it("says which profile is a persona's own on its row", () => {
-    show(TWO);
+  it("says which profile is a persona's own under its name", async () => {
+    const { user } = show(TWO);
 
-    expect(screen.getByRole("radio", { name: /^release/ })).toHaveAccessibleDescription(
-      "its profile is codex",
-    );
-    expect(screen.getByRole("radio", { name: /^ops/ })).not.toHaveAccessibleDescription();
+    await user.click(screen.getByRole("option", { name: "release" }));
+    expect(whoLine()).toBe("its profile is codex");
+    await user.click(screen.getByRole("option", { name: "ops" }));
+    expect(whoLine()).toBe("Persona of this project");
   });
 
   it("leaves the harness the person's to change after a persona is picked", async () => {
     const { onStart, user } = show(TWO);
 
-    await user.click(screen.getByRole("radio", { name: /^release/ }));
+    await user.click(screen.getByRole("option", { name: "release" }));
     await user.click(screen.getByRole("radio", { name: /^work/ }));
     await user.click(screen.getByRole("button", { name: "Start" }));
 
@@ -184,7 +185,7 @@ describe("a persona's own profile (#1445)", () => {
     const { onStart, user } = show(TWO);
 
     await user.click(screen.getByRole("radio", { name: /^work/ }));
-    await user.click(screen.getByRole("radio", { name: /^release/ }));
+    await user.click(screen.getByRole("option", { name: "release" }));
 
     expect(screen.getByRole("radio", { name: /^work/ })).toBeChecked();
     await user.click(screen.getByRole("button", { name: "Start" }));
@@ -195,7 +196,7 @@ describe("a persona's own profile (#1445)", () => {
     const { user } = show(TWO);
 
     await user.click(screen.getByRole("radio", { name: /^work/ }));
-    await user.click(screen.getByRole("radio", { name: /^ops/ }));
+    await user.click(screen.getByRole("option", { name: "ops" }));
 
     expect(screen.getByRole("radio", { name: /^work/ })).toBeChecked();
   });
@@ -204,9 +205,9 @@ describe("a persona's own profile (#1445)", () => {
     // Persona with a profile, then one without: codex must not be left over from `release`.
     const { onStart, user } = show(TWO);
 
-    await user.click(screen.getByRole("radio", { name: /^release/ }));
+    await user.click(screen.getByRole("option", { name: "release" }));
     expect(screen.getByRole("radio", { name: /^codex/ })).toBeChecked();
-    await user.click(screen.getByRole("radio", { name: /^ops/ }));
+    await user.click(screen.getByRole("option", { name: "ops" }));
 
     expect(screen.getByRole("radio", { name: /^claude/ })).toBeChecked();
     await user.click(screen.getByRole("button", { name: "Start" }));
@@ -216,8 +217,8 @@ describe("a persona's own profile (#1445)", () => {
   it("goes back to the default when no persona is picked after one with a profile", async () => {
     const { user } = show(TWO);
 
-    await user.click(screen.getByRole("radio", { name: /^release/ }));
-    await user.click(screen.getByRole("radio", { name: "None" }));
+    await user.click(screen.getByRole("option", { name: "release" }));
+    await user.click(screen.getByRole("option", { name: "No persona" }));
 
     expect(screen.getByRole("radio", { name: /^claude/ })).toBeChecked();
   });
@@ -234,7 +235,7 @@ describe("a persona's own profile (#1445)", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("radio", { name: /^release/ }));
+    await userEvent.click(screen.getByRole("option", { name: "release" }));
 
     expect(screen.getByRole("radio", { name: /^claude/ })).toBeChecked();
   });
@@ -242,7 +243,7 @@ describe("a persona's own profile (#1445)", () => {
   it("moves nowhere for a profile the picker has no row for", async () => {
     const { user } = show({ ...TWO, persona_profiles: { release: "gone" } });
 
-    await user.click(screen.getByRole("radio", { name: /^release/ }));
+    await user.click(screen.getByRole("option", { name: "release" }));
 
     expect(screen.getByRole("radio", { name: /^claude/ })).toBeChecked();
   });
@@ -274,15 +275,23 @@ describe("a chat that starts in a repo (GL-1)", () => {
     expect(screen.queryByRole("checkbox", { name: /new branch/ })).not.toBeInTheDocument();
   });
 
-  it("draws its form from the settings set, every control a row", () => {
-    // DS-3d (#1176): the picker's harness, persona, boxes and fields are the settings set's
-    // rows, not the dialogs' own `choices` and `asks`.
+  it("draws two panes, the persona list beside the details, in a wide dialog at a fixed height (#2918)", () => {
+    // Prototype B of #2798: the list on the left, the harness cards, the name and the boxes on
+    // the right, each drawn by its family (`ui/list`, `ui/choice`, `ui/field`).
     show({}, "api");
 
     const dialog = screen.getByRole("dialog");
-    expect(dialog.querySelectorAll(".ui-setting-row")).toHaveLength(5);
-    expect(screen.getByRole("radiogroup", { name: "Harness" })).toBeInTheDocument();
-    expect(screen.getByRole("radiogroup", { name: "Persona" })).toBeInTheDocument();
+    expect(dialog).toHaveAttribute("data-size", "wide");
+    expect(dialog).toHaveAttribute("data-fixed-height");
+    expect(dialog.style.getPropertyValue("--dialog-height")).toBe("620px");
+    const [left, right] = [...dialog.querySelectorAll(".start-chat-panes > *")];
+    expect(left).toContainElement(screen.getByRole("listbox", { name: "Persona" }));
+    expect(right).toContainElement(screen.getByRole("radiogroup", { name: "Harness" }));
+    expect(right).toContainElement(screen.getByRole("textbox", { name: "Name" }));
+    expect(right).toContainElement(screen.getByRole("checkbox", { name: /purlis's footer/ }));
+    // Harness cards with no radio circle (R24).
+    expect(dialog.querySelectorAll('[data-scope="option-card"][data-part="root"]')).toHaveLength(1);
+    expect(dialog.querySelector('[data-scope="radio"]')).toBeNull();
   });
 
   /** The dialog's last row of buttons, and the names of the buttons in it, in order. */
@@ -459,7 +468,7 @@ describe("the picker a chat starts from", () => {
   it("starts on the profile and the persona that were picked", async () => {
     const { onStart, user } = show();
 
-    await user.click(screen.getByRole("radio", { name: /release/ }));
+    await user.click(screen.getByRole("option", { name: "release" }));
     await user.click(screen.getByRole("button", { name: "Start" }));
 
     expect(onStart).toHaveBeenCalledWith("claude", "release", false, null, false, null);
@@ -476,7 +485,7 @@ describe("the picker a chat starts from", () => {
   it("can start a chat that adopts no persona at all", async () => {
     const { onStart, user } = show();
 
-    await user.click(screen.getByRole("radio", { name: "None" }));
+    await user.click(screen.getByRole("option", { name: "No persona" }));
     await user.click(screen.getByRole("button", { name: "Start" }));
 
     expect(onStart).toHaveBeenCalledWith("claude", null, false, null, false, null);
@@ -596,13 +605,16 @@ describe("the picker a chat starts from", () => {
     );
   });
 
-  it("says why charter blanks it, rather than leaving the box to be guessed at", () => {
+  it("says what the footer adds, rather than leaving the box to be guessed at (R31)", () => {
     // The panels repeat most of it, and it says something about THIS chat that they say
-    // only for the focused one. An operator deciding this is owed both halves on screen.
+    // only for the focused one.
     show();
 
-    expect(screen.getByText(/panels already draw the project/)).toBeInTheDocument();
-    expect(screen.getByText(/This chat only/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Draw purlis's footer in this chat" }),
+    ).toHaveAccessibleDescription(
+      "The footer names the chat's workspace, which the panels name only for the focused chat.",
+    );
   });
 
   it("carries the footer choice through the approval, which is where a pick gets dropped", async () => {
@@ -818,7 +830,10 @@ describe("the picker a chat starts from", () => {
     // legitimately have nothing to list here. The picker still starts a chat.
     const { onStart, user } = show({ personas: [], persona: null });
 
-    expect(screen.getByRole("radio", { name: "None" })).toBeChecked();
+    expect(screen.getByRole("option", { name: "No persona" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
 
     return user.click(screen.getByRole("button", { name: "Start" })).then(() => {
       expect(onStart).toHaveBeenCalledWith("claude", null, false, null, false, null);
@@ -1453,5 +1468,191 @@ describe("a profile its harness says is not signed in (#2035)", () => {
     );
 
     expect(screen.queryByRole("button", { name: "Go to the Inbox" })).toBeNull();
+  });
+});
+
+describe("prototype B: the persona list beside the details (#2918)", () => {
+  const MANY = [
+    "steward",
+    "devops",
+    "domain-authority-master",
+    "elastic-logs-master",
+    "keycloak-master",
+    "nestjs-developer",
+    "security-reviewer",
+    "ui-designer",
+    "support-triage",
+  ];
+  const many = (over: Partial<StartOptions> = {}) => show({ personas: MANY, ...over });
+  const filter = () => screen.getByRole("searchbox", { name: "Filter personas" });
+  const named = (row: HTMLElement) => row.querySelector('[data-part="label"]')?.textContent;
+  const chosen = () =>
+    screen
+      .getAllByRole("option")
+      .filter((row) => row.getAttribute("aria-selected") === "true")
+      .map(named);
+
+  it("names where it starts and where its profiles come from (R8)", () => {
+    render(
+      <StartChat
+        options={options()}
+        place="smart-ide"
+        onStart={vi.fn()}
+        onApprove={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("dialog")).toHaveAccessibleDescription(
+      "In smart-ide · purlis's built-in profiles",
+    );
+  });
+
+  it("filters a long list, its total in the placeholder (R11, R164)", () => {
+    many();
+
+    expect(filter()).toHaveAttribute("placeholder", `Filter ${MANY.length} personas`);
+  });
+
+  it("draws no filter over a short list", () => {
+    show();
+
+    expect(screen.queryByRole("searchbox")).toBeNull();
+  });
+
+  it("matches a case-insensitive part of the name, and hands the pick to the first match (R12, R13)", async () => {
+    const { onStart, user } = many();
+
+    await user.type(filter(), "MASTER");
+
+    expect(screen.getAllByRole("option").map(named)).toEqual([
+      "domain-authority-master",
+      "elastic-logs-master",
+      "keycloak-master",
+    ]);
+    expect(chosen()).toEqual(["domain-authority-master"]);
+    await user.click(screen.getByRole("button", { name: "Start" }));
+    expect(onStart).toHaveBeenCalledWith(
+      "claude",
+      "domain-authority-master",
+      false,
+      null,
+      false,
+      null,
+    );
+  });
+
+  it("says so when no persona matches (R15)", async () => {
+    const { user } = many();
+
+    await user.type(filter(), "zzz");
+
+    expect(screen.getByText("No persona is called “zzz”.")).toBeInTheDocument();
+    // React Aria draws a list's empty state in an option of its own, which holds no persona.
+    expect(screen.queryAllByRole("option").filter((row) => row.hasAttribute("data-key"))).toEqual(
+      [],
+    );
+  });
+
+  it("moves the pick with ↑ and ↓ from the filter, stopping at the ends (R16)", async () => {
+    const { user } = many();
+    await user.click(filter());
+
+    await user.keyboard("{ArrowUp}");
+    expect(chosen()).toEqual(["steward"]);
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(chosen()).toEqual(["domain-authority-master"]);
+    await user.type(filter(), "ui-");
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(chosen()).toEqual(["ui-designer"]);
+    expect(filter()).toHaveFocus();
+  });
+
+  it("starts on ⏎ in the filter (R17), but never approves a command on it", async () => {
+    const { onStart, user } = many();
+    await user.type(filter(), "keycloak{Enter}");
+    expect(onStart).toHaveBeenCalledWith("claude", "keycloak-master", false, null, false, null);
+    cleanup();
+
+    const approving = many({
+      profiles: [{ ...ONE.profiles[0], name: "claude", shown: "claude --x", approval: "new" }],
+    });
+    await approving.user.type(filter(), "keycloak{Enter}");
+    expect(approving.onApprove).not.toHaveBeenCalled();
+    expect(approving.onStart).not.toHaveBeenCalled();
+  });
+
+  it("chips the project's default persona (R20)", () => {
+    many();
+
+    expect(screen.getByRole("option", { name: "steward" })).toHaveTextContent("project default");
+    expect(screen.getByRole("option", { name: "devops" })).not.toHaveTextContent("project default");
+  });
+
+  it("keeps the harness, the name and the footer box across a change of persona (R32)", async () => {
+    const { onStart, user } = show({
+      profiles: [ONE.profiles[0], { ...ONE.profiles[0], name: "work", is_default: false }],
+    });
+
+    await user.click(screen.getByRole("radio", { name: "work" }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "billing");
+    await user.click(screen.getByRole("checkbox", { name: /purlis's footer/ }));
+    await user.click(screen.getByRole("option", { name: "release" }));
+    await user.click(screen.getByRole("button", { name: "Start" }));
+
+    expect(onStart).toHaveBeenCalledWith("work", "release", true, "billing", false, null);
+  });
+
+  it("names the persona and the harness in the footer, with no icon beside an approval (R33, #2922)", () => {
+    show();
+    const summary = screen.getByTestId("start-chat-summary");
+    // The icon is the harness's monogram here (`C`), drawn before its name.
+    expect(summary).toHaveTextContent(/^steward on C?claude$/);
+    expect(summary.querySelector(".harness-icon")).not.toBeNull();
+    cleanup();
+
+    show({
+      profiles: [{ ...ONE.profiles[0], name: "claude", shown: "claude --x", approval: "new" }],
+    });
+    const asking = screen.getByTestId("start-chat-summary");
+    expect(asking).toHaveTextContent("steward on claude");
+    expect(asking.querySelector(".harness-icon")).toBeNull();
+  });
+
+  it("puts the persona's own placeholder in the Name field (R30)", async () => {
+    const { user } = show();
+    const name = screen.getByRole("textbox", { name: "Name" });
+
+    expect(name.getAttribute("placeholder")).toMatch(/^steward\b/);
+    await user.click(screen.getByRole("option", { name: "release" }));
+    expect(name.getAttribute("placeholder")).toMatch(/^release\b/);
+  });
+});
+
+describe("a pick in the persona list starts nothing; ⏎ on it does (R17)", () => {
+  it("picks on a click, and starts on ⏎ from the list", async () => {
+    const { onStart, user } = show();
+
+    await user.click(screen.getByRole("option", { name: "release" }));
+    expect(onStart).not.toHaveBeenCalled();
+    expect(screen.getByRole("option", { name: "release" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await user.keyboard("{ArrowUp}");
+    expect(onStart).not.toHaveBeenCalled();
+    await user.keyboard("{Enter}");
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, null, false, null);
+  });
+
+  it("starts on ⏎ on a harness card, and never from the Name field", async () => {
+    const { onStart, user } = show();
+
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "x{Enter}");
+    expect(onStart).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("radio", { name: "claude" }));
+    await user.keyboard("{Enter}");
+    expect(onStart).toHaveBeenCalledWith("claude", "steward", false, "x", false, null);
   });
 });

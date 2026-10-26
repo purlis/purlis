@@ -249,11 +249,12 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     expect(await reachableByKeyboard()).toEqual([
       'button "Cancel"',
       'button "Start"',
+      // The persona list, left of the details (#2918): one stop, the persona picked.
+      'option "steward"',
       'radio "claude"',
-      'radio "steward"',
-      'checkbox "Draw purlis\'s footer in this chat"',
       // The Name field (charter-app#254): an `<input>`, which every engine puts in the sequence.
       'input "Name"',
+      'checkbox "Draw purlis\'s footer in this chat"',
       'summary "1 refused"',
     ]);
   });
@@ -269,10 +270,10 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     expect(await reachableByKeyboard({ shift: true })).toEqual([
       'button "Cancel"',
       'summary "1 refused"',
-      'input "Name"',
       'checkbox "Draw purlis\'s footer in this chat"',
-      'radio "steward"',
+      'input "Name"',
       'radio "claude"',
+      'option "steward"',
       'button "Start"',
     ]);
   });
@@ -302,10 +303,10 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     expect(await reachableByKeyboard()).toEqual([
       'button "Cancel"',
       'button "Approve and start"',
+      'option "No persona"',
       'radio "claude"',
-      'radio "None"',
-      'checkbox "Draw purlis\'s footer in this chat"',
       'input "Name"',
+      'checkbox "Draw purlis\'s footer in this chat"',
     ]);
   });
 
@@ -865,6 +866,6 @@ describe("what a keyboard reaches in the window's modal surfaces", () => {
     await tab();
 
     expect(document.activeElement).not.toBe(document.body);
-    await waitFor(() => expect(screen.getByRole("radio", { name: "claude" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("option", { name: "steward" })).toHaveFocus());
   });
 });
