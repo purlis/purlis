@@ -174,31 +174,13 @@ pub fn drawn(text: &str) -> String {
     text.replace("\r\n", &format!("{CARRIAGE_RETURN_DRAWN}\n"))
 }
 
-/// Whether `text` holds a character a file's view draws as nothing or elsewhere
-/// ([`drawn_otherwise_in_a_file`]), but the carriage return of a line that ends in CRLF, which
-/// the window draws as a mark ([`drawn`]).
+/// Whether `text` holds a character a file's view draws as nothing or elsewhere: purlis's one
+/// rule ([`purlis_unicode::hides`], D-1301) with a text's tabs and newlines kept, which leaves
+/// a joiner doing its job (a family emoji, a Persian word) as text, but the carriage return of
+/// a line that ends in CRLF, which the window draws as a mark ([`drawn`]). The line and
+/// paragraph separators stay hidden: an editor may break a line on them.
 fn holds_what_a_file_s_view_draws_otherwise(text: &str) -> bool {
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\r' && chars.peek() == Some(&'\n') {
-            continue;
-        }
-        if drawn_otherwise_in_a_file(c) {
-            return true;
-        }
-    }
-    false
-}
-
-/// Whether a file's text draws `c` as nothing or elsewhere: what [`purlis_unicode::invisible`]
-/// says, but
-/// a tab and a newline, which a file's view draws as they are; and the line and paragraph
-/// separators, which an editor may break a line on.
-fn drawn_otherwise_in_a_file(c: char) -> bool {
-    match c {
-        '\t' | '\n' => false,
-        c => purlis_unicode::invisible(c),
-    }
+    purlis_unicode::hides(&text.replace("\r\n", "\n"), purlis_unicode::Breaks::Kept)
 }
 
 /// Whether `text` holds a credential shape, read whole and a line at a time, or a value this

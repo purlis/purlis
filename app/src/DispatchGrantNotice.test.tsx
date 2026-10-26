@@ -477,7 +477,7 @@ describe("the dispatch grant Notice", () => {
       "dispatch-also",
       "block-report ui-inline-surface",
     ]);
-    expect(boxes).toHaveClass("ui-choice-checks");
+    expect(boxes).toHaveAttribute("data-scope", "checkbox-group");
     expect(boxes.parentElement).toHaveClass("dispatch-also");
     expect(access).toHaveClass("dispatch-works-with");
     expect(access.parentElement).toHaveClass("dispatch-also");

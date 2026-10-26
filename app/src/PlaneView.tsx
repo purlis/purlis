@@ -491,6 +491,7 @@ import {
   withNote,
 } from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
+import { forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 
 /** Any C0 or C1 control character, or DEL: what a line typed and left unrun must not hold. */
 // eslint-disable-next-line no-control-regex
@@ -729,6 +730,21 @@ export const PlaneView = memo(function PlaneView({
   shellAsked?: { typed: string; at: number };
 }) {
   const [tabs, setTabs] = useState<Tabs>(noTabs);
+  // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
+  // used again, so one gone from every tab is gone for good.
+  const panesDrawn = useRef<{ plane: string; panes: ReadonlySet<number> }>(undefined);
+  useEffect(() => {
+    const panes = new Set(tabs.order.flatMap((id) => contentsOf(tabs, id).map((one) => one.pane)));
+    const was = panesDrawn.current;
+    if (was !== undefined) {
+      for (const pane of was.panes) {
+        if (was.plane !== plane || !panes.has(pane)) forgetPaneBand(paneBand(was.plane, pane));
+      }
+    }
+    panesDrawn.current = { plane, panes };
+  }, [plane, tabs]);
+  // The project leaves the window: every one of its panes is gone for good.
+  useEffect(() => () => forgetPaneBands(plane), [plane]);
   /**
    * **The breadcrumb each pane last drew for the task it shows**, by tab, pane and chat
    * (#1486). A pane never shows a task without its breadcrumb, and a task that has ended has

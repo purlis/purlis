@@ -20,7 +20,8 @@
 //!   is spelled with, read as text (ruling D-1301). Which characters are emoji is the UCD's
 //!   answer too ([`tables::EXTENDED_PICTOGRAPHIC`], #3219). Everything else the table names
 //!   is hidden.
-//! - **How it is shown**: [`marked`], each hidden character as `⟦U+XXXX⟧`.
+//! - **How it is shown**: [`marked`], each hidden character as `⟦U+XXXX⟧`, or [`unhidden`],
+//!   each dropped, where a text is only drawn.
 //!
 //! The crate also holds the other generated tables ([`tables`]): one generator writes one
 //! file, so every table is of one Unicode version.
@@ -128,6 +129,17 @@ pub fn marked(text: &str, breaks: Breaks) -> String {
         }
     }
     out
+}
+
+/// **`text` without what a reader would not see there**: each character [`hidden`] names
+/// dropped, and the rest as itself. For a text that is only ever shown, never judged or read
+/// back (a label a window draws), where a mark would be noise; anything a program or the model
+/// reads is [`marked`] instead.
+pub fn unhidden(text: &str, breaks: Breaks) -> String {
+    flagged(text, breaks)
+        .into_iter()
+        .filter_map(|(ch, hidden)| (!hidden).then_some(ch))
+        .collect()
 }
 
 /// Each character of `text`, with whether it is hidden there ([`hidden`]).

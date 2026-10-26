@@ -83,8 +83,8 @@ const shape = () =>
 const scopeOn = () =>
   within(screen.getByRole("radiogroup", { name: "Show the chats of" }))
     .getAllByRole("radio")
-    .filter((one) => one.getAttribute("aria-checked") === "true")
-    .map((one) => one.textContent);
+    .filter((one) => (one as HTMLInputElement).checked)
+    .map((one) => one.closest("label")?.textContent);
 const thisTab = () => userEvent.click(screen.getByRole("radio", { name: "This tab" }));
 
 beforeEach(forgetThisLaunch);
