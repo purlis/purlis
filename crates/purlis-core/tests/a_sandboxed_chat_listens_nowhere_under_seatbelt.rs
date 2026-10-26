@@ -29,10 +29,12 @@ print "yes\n";
 
 /// Whether this process can apply a profile at all: not where it is already sandboxed.
 fn can_apply() -> bool {
-    std::process::Command::new(SANDBOX_EXEC)
-        .args(["-p", "(version 1)(allow default)", "/usr/bin/true"])
-        .status()
-        .is_ok_and(|status| status.success())
+    purlis_core::forklock::status(std::process::Command::new(SANDBOX_EXEC).args([
+        "-p",
+        "(version 1)(allow default)",
+        "/usr/bin/true",
+    ]))
+    .is_ok_and(|status| status.success())
 }
 
 /// A port nothing listens on now.
@@ -47,7 +49,11 @@ fn free_port() -> u16 {
 fn a_wrapped_chat_binds_no_port_and_listens_nowhere() {
     purlis_core::unsteered!();
     if !can_apply() {
-        eprintln!("skipped: this process is already sandboxed, so no second profile applies");
+        use std::io::Write;
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
         return;
     }
     let cwd = tempfile::tempdir().expect("a folder");
@@ -63,22 +69,23 @@ fn a_wrapped_chat_binds_no_port_and_listens_nowhere() {
     .expect("a profile");
     let port = free_port();
     let tried = |family: &str, kind: &str, address: &str, mode: &str| -> String {
-        let out = std::process::Command::new(SANDBOX_EXEC)
-            .args([
-                "-p",
-                &profile,
-                "/usr/bin/perl",
-                "-e",
-                TRY,
-                family,
-                kind,
-                address,
-            ])
-            .arg(port.to_string())
-            .arg(mode)
-            .current_dir(cwd.path())
-            .output()
-            .expect("it runs");
+        let out = purlis_core::forklock::output(
+            std::process::Command::new(SANDBOX_EXEC)
+                .args([
+                    "-p",
+                    &profile,
+                    "/usr/bin/perl",
+                    "-e",
+                    TRY,
+                    family,
+                    kind,
+                    address,
+                ])
+                .arg(port.to_string())
+                .arg(mode)
+                .current_dir(cwd.path()),
+        )
+        .expect("it runs");
         String::from_utf8_lossy(&out.stdout).trim().to_owned()
     };
     assert_eq!(tried("4", "stream", "127.0.0.1", "serve"), "bind");
