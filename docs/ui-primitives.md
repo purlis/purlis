@@ -651,8 +651,8 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
-| Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel (`ui/panel/Panel.tsx`) | `root` | `side`, `content`, `bottom` |
-| Panel section | `PanelSection`, `PanelSectionHead`, `PanelSectionTitle` (`ui/panel/Panel.tsx`) | `root`, `head`, `title` | `default` |
+| Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel; `PanelTitle`, the title of the view it shows (`ui/panel/Panel.tsx`) | `root`, `title` | `side`, `content`, `bottom` |
+| Panel section | `PanelSection` (with `view` and `top`), `PanelSectionHead`, `PanelSectionTitle`, `InPanelTop` (`ui/panel/Panel.tsx`) | `root`, `head`, `title`, `top` | `default` |
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
@@ -674,6 +674,15 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   under the pointer, the muted tier while dragged and `focus.ring` with the keyboard on it, in
   place of the window's ring; Purlis Classic keeps its accent line through its theme's parts.
   Forced colours draw the grip in `CanvasText` and `Highlight`, and the ring comes back.
+- **A sidebar view is a section with a top** (`view`, #3340, the sidebar-views prototype's
+  Q1 A): ONE scroll, its region's. Its `top` (the heading line with its actions, then the field,
+  then tabs and chips) is held at the top on the panel's own fill, `--panel-fill`, which a
+  theme's `panel.root.fill` writes beside the ground; each group's name is held under the top
+  while its group is in sight, in 11px capitals in the quiet tier with its count at its end; its
+  rows are 30px. Its title, whether the region's head or its own heading line, is the panel's
+  `title` part (`PanelTitle`): 13px and strong in the primary tier, in its own case. A list puts its search field in the top with
+  `InPanelTop`, and draws it where it stands outside a view. Memory, Todos and Sessions are
+  drawn on it, in a half of the Panel or in either sidebar.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right

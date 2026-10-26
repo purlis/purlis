@@ -24,6 +24,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Button } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { List, ListRow, ListRowSection, type RowMenu } from "./ui/list/List";
+import { InPanelTop, useInPanelView } from "./ui/panel/Panel";
 import { RowBelow, RowDescription, RowLabel, RowLead, RowTrail } from "./ui/list/Row";
 
 /**
@@ -123,6 +124,9 @@ export function PanelList({
   testid,
   offerFor,
   titleOnly = false,
+  search = "beyond-a-page",
+  dateAtEnd = false,
+  markless = false,
 }: {
   rows: readonly PanelRow[];
   /** What to say when there are none — the panel's own sentence, not a shared default. */
@@ -165,9 +169,22 @@ export function PanelList({
    * pane's width and keeps its notes on the line.
    */
   titleOnly?: boolean;
+  /**
+   * When the search box is drawn: once there is more than a page (the operator's rule for a
+   * list), or from the first row, as a sidebar view draws it in its top (#3340). In a view the
+   * box is in the view's top either way ({@link InPanelTop}), held there while the rows scroll.
+   */
+  search?: "beyond-a-page" | "always";
+  /** Each row's date, short and quiet at its end, as the prototype's Q1 A draws a memory's or a
+   *  session's (`.rm`, #3340): the day for an earlier one, the time for today's. */
+  dateAtEnd?: boolean;
+  /** No mark before a row's words, where every row's would be the same one (#3340). */
+  markless?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(page);
+  /** In a view each day's name says how many rows it holds (the prototype's Q1 A, #3340). */
+  const inView = useInPanelView();
 
   /**
    * **The search is over what the row says and what its body says** (ADR 0065 Q11): a memory
@@ -196,7 +213,7 @@ export function PanelList({
   // **Once there is more than a page**, which is the operator's own rule. Against the whole
   // list and never the filtered one: a box that vanished when a search narrowed the list to
   // eight rows would take away the control being used.
-  const searchable = rows.length > page;
+  const searchable = search === "always" || rows.length > page;
   // The rows are ONE Tab stop, and Up and Down move along them (charter-app#189): the list
   // family's (`ui/list`, #2911), which comes back in on the row last left. An extension's row
   // actions are in their row, and ← and → reach them (charter-app#341).
@@ -215,6 +232,8 @@ export function PanelList({
         menu={menuOf?.(row)}
         refused={besideRow?.(row)}
         titleOnly={titleOnly}
+        date={dateAtEnd && row.note !== null ? shortDate(row.note, now) : undefined}
+        markless={markless}
       />
     );
   }
@@ -249,21 +268,24 @@ export function PanelList({
   return (
     <div className="panel-list" data-testid={testid}>
       {searchable && (
-        <TextField
-          className="panel-search"
-          type="search"
-          icon={<Search aria-hidden="true" />}
-          keepsFocus={`panel-search:${label}`}
-          value={query}
-          aria-label={`Search ${label}`}
-          placeholder={`Search ${rows.length}`}
-          onChange={(to) => {
-            setQuery(to);
-            // Back to one page: a search that kept a grown limit would show forty matches
-            // for one word and then twelve for the next, which reads as rows going missing.
-            setLimit(page);
-          }}
-        />
+        <InPanelTop>
+          <TextField
+            className="panel-search"
+            type="search"
+            icon={<Search aria-hidden="true" />}
+            keepsFocus={`panel-search:${label}`}
+            value={query}
+            aria-label={`Search ${label}`}
+            // In a view the box says what it searches, as the prototype's does (#3340).
+            placeholder={inView ? `Search ${label.toLowerCase()}` : `Search ${rows.length}`}
+            onChange={(to) => {
+              setQuery(to);
+              // Back to one page: a search that kept a grown limit would show forty matches
+              // for one word and then twelve for the next, which reads as rows going missing.
+              setLimit(page);
+            }}
+          />
+        </InPanelTop>
       )}
 
       {matching.length === 0 ? (
@@ -277,7 +299,13 @@ export function PanelList({
             : /* One scroll for the whole list and one Tab stop across its days: Down walks from
                  the last row of Today to the first of Yesterday. */
               days.map(({ day, items }) => (
-                <ListRowSection key={day} id={day} title={day} named>
+                <ListRowSection
+                  key={day}
+                  id={day}
+                  title={day}
+                  named
+                  count={inView ? items.length : undefined}
+                >
                   {items.map(drawRow)}
                 </ListRowSection>
               ))}
@@ -301,6 +329,21 @@ export function PanelList({
 }
 
 const noteOf = (row: PanelRow) => row.note;
+
+/**
+ * **A row's date, short** (#3340, the prototype's `.rm`): `HH:MM` for a stamp of today, `MM-DD`
+ * for an earlier day, and the note as it is when it is no date.
+ */
+export function shortDate(note: string, now: Date): string {
+  const stamp = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/.exec(note);
+  if (stamp === null) return note;
+  const [, year, month, day, hour, minute] = stamp;
+  const today =
+    Number(year) === now.getFullYear() &&
+    Number(month) === now.getMonth() + 1 &&
+    Number(day) === now.getDate();
+  return today && hour !== undefined ? `${hour}:${minute}` : `${month}-${day}`;
+}
 
 /**
  * A panel's sentence with each `` `…` `` span drawn in code font (#1156): the core writes a
@@ -339,9 +382,15 @@ function Row({
   menu,
   refused,
   titleOnly,
+  date,
+  markless = false,
 }: {
   row: PanelRow;
   titleOnly: boolean;
+  /** Its date, short, at its end: {@link PanelList}'s `dateAtEnd`. */
+  date?: string;
+  /** No mark before its words: {@link PanelList}'s `markless`. */
+  markless?: boolean;
   open: boolean;
   onOpen: (opening: boolean) => void;
   detail: ReactNode;
@@ -420,13 +469,15 @@ function Row({
       menu={menu}
       tip={hover ?? whole}
     >
-      <RowLead>
-        {persona ? (
-          <PersonaMark persona={persona} className="node-icon" />
-        ) : (
-          <Mark className="node-icon" />
-        )}
-      </RowLead>
+      {!markless && (
+        <RowLead>
+          {persona ? (
+            <PersonaMark persona={persona} className="node-icon" />
+          ) : (
+            <Mark className="node-icon" />
+          )}
+        </RowLead>
+      )}
       <RowLabel
         className={clsx("row-text ui-text-body", row.tone === "default" && "ui-text-strong")}
       >
@@ -435,8 +486,11 @@ function Row({
       {row.note !== null && !titleOnly && (
         <RowDescription className="row-note ui-text-meta">{` · ${row.note}`}</RowDescription>
       )}
-      {(row.tone === "default" || (onAct !== undefined && row.actions.length > 0)) && (
+      {(date !== undefined ||
+        row.tone === "default" ||
+        (onAct !== undefined && row.actions.length > 0)) && (
         <RowTrail className="row-actions">
+          {date !== undefined && <span className="row-date ui-text-meta">{date}</span>}
           {row.tone === "default" && <Star className="node-icon" />}
           {/* **The extension's own actions, at the row's end** (charter-app#341): pressing the
               row opens its card, and pressing an action asks the extension's program — two

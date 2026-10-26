@@ -741,7 +741,7 @@ describe("the Panel", () => {
   it("heads each half with one line: its title, its actions and its chevron side by side", async () => {
     for (const side of ["left", "right"]) {
       const head = await boxOf(`${HALF(side)} .half-head`);
-      const title = await boxOf(`${HALF(side)} .half-head [data-part="title"]`);
+      const title = await boxOf(`${HALF(side)} .half-head > h2`);
       const chevron = await boxOf(`${HALF(side)} .half-head ${AWAY(side)}`);
       if (head === null || title === null || chevron === null)
         throw new Error(`no line to measure on the ${side} half`);
@@ -763,24 +763,23 @@ describe("the Panel", () => {
     expect(plus.bottom).toBeLessThanOrEqual(line.bottom + 1);
   });
 
-  it("draws each half's title as the section label and its words as a body (#1920)", async () => {
-    // The text roles, as the window draws them: a label is 11/14 of the window's text and a
-    // body 13/14, whatever that text is set to. A range, never a pixel.
+  it("draws each half's title as a view's title, and its words as a body (#1920, #3340)", async () => {
+    // The text roles, as the window draws them: a view's title is a strong body (the
+    // sidebar-views prototype's Q1 A), 13/14 of the window's text, and so are its words,
+    // whatever that text is set to. A range, never a pixel.
     const drawn = (await browser.execute(() => {
       const px = (one: Element | null) =>
         one === null ? Number.NaN : Number.parseFloat(getComputedStyle(one).fontSize);
       return {
         text: px(document.documentElement),
-        titles: [...document.querySelectorAll('.panel-half .half-head [data-part="title"]')].map(
-          px,
-        ),
+        titles: [...document.querySelectorAll(".panel-half .half-head > h2")].map(px),
         memory: px(document.querySelector('.panel-half .panels[data-view="memory"]')),
         repos: px(document.querySelector(".panel-half .explorer")),
       };
     })) as { text: number; titles: number[]; memory: number; repos: number };
     expect(drawn.titles).toHaveLength(2);
     for (const title of drawn.titles)
-      expect(Math.abs(title - (drawn.text * 11) / 14)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(title - (drawn.text * 13) / 14)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(drawn.memory - (drawn.text * 13) / 14)).toBeLessThanOrEqual(0.5);
     expect(Math.abs(drawn.repos - (drawn.text * 13) / 14)).toBeLessThanOrEqual(0.5);
   });

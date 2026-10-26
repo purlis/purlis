@@ -36,12 +36,20 @@ pub(super) const PANEL: Family = Family {
     name: "panel",
     description: "A region of the window: a side panel, the content, a half of the bottom panel.",
     since: 4,
-    parts: &[Part {
-        name: "root",
-        since: 4,
-        description: "The panel's surface: its fill, edge, corners and shadow.",
-        properties: PANEL_ROOT,
-    }],
+    parts: &[
+        Part {
+            name: "root",
+            since: 4,
+            description: "The panel's surface: its fill, edge, corners and shadow.",
+            properties: PANEL_ROOT,
+        },
+        Part {
+            name: "title",
+            since: super::NEXT,
+            description: "The title of the view it shows, on its head: the view's one heading.",
+            properties: WORDS,
+        },
+    ],
     variants: &[
         Variant {
             name: "side",
@@ -115,6 +123,14 @@ pub(super) const PANEL_SECTION: Family = Family {
             since: 4,
             description: "Its title.",
             properties: WORDS,
+        },
+        Part {
+            name: "top",
+            since: super::NEXT,
+            description: "A view's top, held in place while its rows scroll: its heading line \
+                          where it draws one, then its field, then its tabs and chips, on the \
+                          panel's fill. A section with a top is a view.",
+            properties: ROOM,
         },
     ],
     variants: &[Variant {

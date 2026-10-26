@@ -59,14 +59,14 @@ fn the_window_s_families_are_in_the_manifest_at_version_3() {
     assert_eq!(
         of("panel"),
         (
-            vec!["root".into()],
+            vec!["root".into(), "title".into()],
             vec!["side".into(), "content".into(), "bottom".into()]
         )
     );
     assert_eq!(
         of("panel-section"),
         (
-            vec!["root".into(), "head".into(), "title".into()],
+            vec!["root".into(), "head".into(), "title".into(), "top".into()],
             vec!["default".into()]
         )
     );
@@ -175,14 +175,14 @@ fn a_section_s_title_and_an_empty_state_s_headline_are_reached_inside_their_root
 fn a_key_a_family_does_not_have_is_said_and_left_out() {
     let loaded = load(&with_parts(json!({
         "panel.root.height": 30,
-        "panel.title.text": "text.primary",
+        "panel.handle.text": "text.primary",
         "status-item.count.font-size": 12,
     })));
     assert!(!loaded.refused, "{:?}", said(&loaded));
     let notes = said(&loaded);
     for key in [
         "panel.root.height",
-        "panel.title.text",
+        "panel.handle.text",
         "status-item.count.font-size",
     ] {
         assert!(
@@ -312,6 +312,11 @@ fn token(value: &str) -> String {
 fn the_panel_s_and_the_section_s_defaults_are_what_panel_css_draws() {
     let css = css_of(include_str!("../../../../app/src/ui/panel/panel.css"));
     let root = rule(&css, "[data-scope=\"panel\"][data-part=\"root\"]");
+    // The fill is said again as `--panel-fill`, which a view's top is drawn on (#3340).
+    assert_eq!(
+        declared(root, "--panel-fill"),
+        declared(root, "background-color")
+    );
     for variant in ["side", "content", "bottom"] {
         let held = parts::look_json("panel", variant);
         assert_eq!(
@@ -325,6 +330,12 @@ fn the_panel_s_and_the_section_s_defaults_are_what_panel_css_draws() {
             "{variant}"
         );
     }
+    // A view's title, the panel's own part (#3340), in the panel's words' colour.
+    let view_title = rule(&css, "[data-scope=\"panel\"][data-part=\"title\"]");
+    assert_eq!(
+        parts::look_json("panel", "side")["text"],
+        token(declared(view_title, "color").unwrap())
+    );
     let title = rule(&css, "[data-scope=\"panel-section\"][data-part=\"title\"]");
     let held = parts::look_json("panel-section", "default");
     assert_eq!(held["text"], token(declared(title, "color").unwrap()));

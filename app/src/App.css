@@ -2345,11 +2345,9 @@ body {
     calc(var(--space-5) + var(--space-1));
 }
 
+/* Its words are a strong body (`ui-text-body ui-text-strong`, #1920): 13px in the primary tier. */
 .side-title {
   margin: 0;
-  color: var(--text-primary);
-  font-size: var(--font-size-md);
-  font-weight: var(--font-weight-strong);
 }
 
 /* The project after the workspace on Chats' title (R123): its own words, quiet and not
@@ -4031,6 +4029,18 @@ body {
 .panels > section + section {
   border-top: var(--separator-width) solid var(--separator-fill, var(--layer-divider));
 }
+/* **A view is its region's one scroll** (#3340): no room around it, so its top is held flush with
+   the region's edge, and its own sentences (a refusal, the plane being read) keep their room. */
+.panels.panels-view {
+  padding: 0;
+}
+.panels.panels-view > section {
+  margin-inline: 0;
+  padding: 0;
+}
+.panels.panels-view > :not(section) {
+  margin: var(--space-4) calc(var(--space-4) + var(--space-1));
+}
 .panels ul {
   list-style: none;
   margin: 0;
@@ -4923,6 +4933,14 @@ body {
   overflow-y: auto;
 }
 
+/* **In a view the region is the one scroll** (#3340, the operator's 2026-10-26 pass): the rows are
+   not a second scroller with a cap, and the search box and the heading stay put because the
+   view's top holds them, not because the list scrolls under them. */
+.panels-view .panel-rows {
+  max-height: none;
+  overflow: visible;
+}
+
 /* **A panel's row is the list family's** (`ui/list`, #2911): one line and never three, its words
    cut with an ellipsis by the family and to a line's characters by `PanelList.shorten`, which is
    the half a jsdom test can see. Its own words and weight are the list's, and not `pointer`: a row
@@ -4931,6 +4949,13 @@ body {
 .panel-row .row-note {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
+}
+
+/* A view's row's date at its end (#3340, the prototype's `.rm`): short, quiet, in figures of one
+   width. */
+.panel-row .row-date {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .panel-row .node-icon {
@@ -4954,6 +4979,11 @@ body {
 /* The box is the field family's (#2905), the list's width. */
 .panel-search {
   margin: var(--space-2) 0;
+}
+
+/* In a view's top the top's own gap parts its lines. */
+[data-part="top"] .panel-search {
+  margin: 0;
 }
 
 /* Load-more: a row of the list (`.ui-row`) rather than a button beside it, so the list ends with

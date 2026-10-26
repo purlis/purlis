@@ -52,6 +52,8 @@ const PORTALS = [
   "RegionFrame.tsx",
   // A dialog's answers drawn from inside its body, into its own footer (`DialogAnswers`).
   "ui/dialog/Dialog.tsx",
+  // A list's field, into the top of the view it is in (`InPanelTop`, #3340).
+  "ui/panel/Panel.tsx",
 ];
 
 const sources = sourceFiles(isView).map((file) => ({
