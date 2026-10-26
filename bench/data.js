@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793004662499,
+  "lastUpdate": 1793006194614,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -25326,6 +25326,48 @@ window.BENCHMARK_DATA = {
             "value": 104.01350199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.367, 103.078, 104.014, 104.297, 107.574 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "32ca99118f51f773e58edeb964e34533f61ee563",
+          "message": "Select and combobox: an invalid state (#3322)\n\n* Select and combobox: an invalid state (#3110)\n\nSelect and ComboBox take isInvalid: the box is marked aria-invalid and\ndata-invalid, and the words that say why are its description\n(aria-describedby). select.css draws the danger colour on the box's edge,\ninside the box as the text input's, colour only.\n\nThe parts manifest gains an `invalid` state (since NEXT, keyed on\n[data-invalid]) that only the select and combobox families name; the button\nand the dialog keep the six states they had. A theme's invalid look whose edge\nfalls under 3:1 on the box's fill draws the family default, on any fill, and\nthe token floors hold danger.base on surface.sunken at 3:1. Refused stories\nfor both, in every theme of the matrix.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Select and combobox: no theme erases the refused edge (#3110)\n\nReview of #3322 (B1): the refused edge could be erased with no fallback, by a\ntransparent invalid border, a border-width of 0 at rest, or a rest or hover\nedge that reaches the refused box. A box that can be refused now keeps its\nedge (border-width 0 is refused on its root, as on an answer that grants), and\nin every set of states holding invalid an edge that is transparent or drawn\nalike to the same states' edge without invalid falls back to the refused\ndefault, written after the theme's rules. Tests for each, on both families.\n\nRefusedSuggestions holds the box's size too; the ADR amendment records the\noperator's ruling on the key shape.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-26T12:51:17+04:00",
+          "tree_id": "06f0b09e3317a4dfe72d79447dde9be5acf60f69",
+          "url": "https://github.com/purlis/purlis/commit/32ca99118f51f773e58edeb964e34533f61ee563"
+        },
+        "date": 1793006191603,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4679835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.461, 0.466, 0.468, 0.481, 0.483 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.319474999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.278, 16.309, 16.319, 16.506, 16.704 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.284907,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.912, 101.816, 102.285, 102.567, 102.825 ms"
           }
         ]
       }
