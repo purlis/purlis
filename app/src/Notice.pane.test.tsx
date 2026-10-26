@@ -503,7 +503,7 @@ describe("a granting Notice on a pane that just moved (#1695, train 54's review)
       return DOMRect.fromRect({ x: 0, y: top, width: 100, height: 30 });
     });
     let clock = 1_000_000;
-    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
       const allowed: string[] = [];
       let away: () => void = () => undefined;
@@ -560,7 +560,7 @@ describe("a granting Notice on a pane that just moved (#1695, train 54's review)
     });
     const offset = vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockReturnValue(4);
     let clock = 1_000_000;
-    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
       const allowed: string[] = [];
       let keep: () => void = () => undefined;
@@ -670,7 +670,7 @@ describe("a granting answer on a pane that moved while its line stood still (#31
       ),
     );
     let clock = 1_000_000;
-    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
       const top = line.getBoundingClientRect().top;
       wide = false;
@@ -699,7 +699,7 @@ describe("a granting answer on a pane that moved while its line stood still (#31
       () => 116 - band.top,
     );
     let clock = 1_000_000;
-    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
       await userEvent.click(screen.getByRole("button", { name: "Allow forge" }));
       expect(allowed).toEqual(["forge"]);
@@ -749,7 +749,7 @@ describe("a granting answer on a pane that moved while its line stood still (#31
       ),
     );
     let clock = 1_000_000;
-    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     const aFrame = () => act(() => new Promise((done) => setTimeout(done, 50)));
     try {
       // Whatever the first drawing asked to read again is read first.
@@ -793,7 +793,7 @@ describe("a granting answer on a pane that moved while its line stood still (#31
       );
     }
     let clock = 1_000_000;
-    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
       render(<Pane />);
       act(() => ask());
@@ -881,7 +881,7 @@ describe("a granting Notice that arrives in a pane's band (#3167, D-3167-5)", ()
 
   it("holds a consent drawn in the same render that took away a warning that stood long", async () => {
     let clock = 1_000_000;
-    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
       const allowed: string[] = [];
       const { rerender } = render(<Band shown="warning" allowed={allowed} />);
@@ -898,7 +898,7 @@ describe("a granting Notice that arrives in a pane's band (#3167, D-3167-5)", ()
 
   it("holds a consent drawn just after a warning that stood long was put away", async () => {
     let clock = 1_000_000;
-    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
       const allowed: string[] = [];
       const { rerender } = render(<Band shown="warning" allowed={allowed} />);
@@ -920,7 +920,7 @@ describe("a granting Notice that arrives in a pane's band (#3167, D-3167-5)", ()
 
   it("holds its Allow when it arrives beside another Notice, or where one just left", async () => {
     let clock = 1_000_000;
-    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
     try {
       const allowed: string[] = [];
       const { rerender } = render(<Band shown="warning" allowed={allowed} />);
@@ -1031,7 +1031,7 @@ describe("a pane's band drawn anew, by another component (#3167, D-3167-6)", () 
   let spy: { mockRestore: () => void } | undefined;
   const timed = () => {
     clock.now = 1_000_000;
-    spy = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+    spy = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
   };
   afterEach(() => spy?.mockRestore());
 
@@ -1175,7 +1175,7 @@ describe("a look-alike grant drawn in the place of one that stood (#3167, D-3167
   const timedAndStill = () => {
     clock.now = 1_000_000;
     spies = [
-      vi.spyOn(Date, "now").mockImplementation(() => clock.now),
+      vi.spyOn(performance, "now").mockImplementation(() => clock.now),
       vi
         .spyOn(Element.prototype, "getBoundingClientRect")
         .mockImplementation(() => DOMRect.fromRect({ x: 12, y: 24, width: 90, height: 24 })),
@@ -1289,5 +1289,83 @@ describe("a look-alike grant drawn in the place of one that stood (#3167, D-3167
     );
     await userEvent.click(screen.getByRole("button", { name: "Allow for this chat" }));
     expect(allowed).toEqual(["~/proj/out"]);
+  });
+});
+
+describe("a hold measured on a clock that only goes forward (#3227)", () => {
+  const HOUR = 3_600_000;
+  /** A consent that moves up under the pointer, as the warning above it goes; the wall clock and
+   *  the monotonic one each driven by the test. */
+  function aMovedConsent() {
+    const rect = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const box = this.closest(".pane-notices > *");
+      const top = box === null ? 0 : [...(box.parentElement?.children ?? [])].indexOf(box) * 40;
+      return DOMRect.fromRect({ x: 0, y: top, width: 100, height: 30 });
+    });
+    const clocks = { wall: 1_800_000_000_000, mono: 50_000 };
+    const wall = vi.spyOn(Date, "now").mockImplementation(() => clocks.wall);
+    const mono = vi.spyOn(performance, "now").mockImplementation(() => clocks.mono);
+    const allowed: string[] = [];
+    let away: () => void = () => undefined;
+    function Pane() {
+      const [first, setFirst] = useState(true);
+      away = () => setFirst(false);
+      return (
+        <NoticePaneRow>
+          {first && (
+            <Notice cause="skills-missing:7" at="pane" label="Skills" onDismiss={() => undefined}>
+              A skill is missing.
+            </Notice>
+          )}
+          <Notice
+            cause="vault-refused:7:forge"
+            at="pane"
+            tone="trouble"
+            label="Vault"
+            fixes={[{ label: "Allow forge", onPress: () => allowed.push("forge"), allows: true }]}
+          >
+            purlis did not open vault forge.
+          </Notice>
+        </NoticePaneRow>
+      );
+    }
+    render(<Pane />);
+    // Stood long, then moved up under the pointer.
+    clocks.wall += 10_000;
+    clocks.mono += 10_000;
+    act(() => away());
+    const allow = () => screen.getByRole("button", { name: "Allow forge" });
+    const restore = () => [rect, wall, mono].forEach((spy) => spy.mockRestore());
+    return { clocks, allowed, allow, restore };
+  }
+
+  it("lets the press through once the settle time has passed, though the wall clock went back", async () => {
+    const { clocks, allowed, allow, restore } = aMovedConsent();
+    try {
+      clocks.wall -= HOUR;
+      await userEvent.click(allow());
+      expect(allowed).toEqual([]);
+      clocks.wall += 2000;
+      clocks.mono += 2000;
+      await userEvent.click(allow());
+      expect(allowed).toEqual(["forge"]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("still holds the press when the wall clock jumped forward", async () => {
+    const { clocks, allowed, allow, restore } = aMovedConsent();
+    try {
+      clocks.wall += HOUR;
+      clocks.mono += 100;
+      await userEvent.click(allow());
+      expect(allowed).toEqual([]);
+      expect(screen.getByText(NOTICE_MOVED_JUST_NOW)).toBeTruthy();
+    } finally {
+      restore();
+    }
   });
 });

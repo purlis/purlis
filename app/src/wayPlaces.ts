@@ -177,7 +177,7 @@ function look(watch: Watch) {
   if (root === null) return;
   const pass: Pass = new Map();
   pass.named = new Set();
-  const at = Date.now();
+  const at = performance.now();
   for (const way of watch.ways(root)) place(watch, way, pass, at);
   // What the root no longer draws is no longer remembered: the memory holds what stands now.
   const kept = watch.remembered?.();
@@ -310,8 +310,8 @@ export function useWayPlaces<T extends Element>(
   const movedAt = (way?: Element): number => {
     look(watch);
     if (way !== undefined) {
-      if (!watch.places.has(way)) place(watch, way, new Map(), Date.now());
-      return watch.places.get(way)?.at ?? Date.now();
+      if (!watch.places.has(way)) place(watch, way, new Map(), performance.now());
+      return watch.places.get(way)?.at ?? performance.now();
     }
     const root = at.current;
     let last = -Infinity;

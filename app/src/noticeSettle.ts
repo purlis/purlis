@@ -8,6 +8,10 @@ import { useWayPlaces, type WayPlace } from "./wayPlaces";
  * How long after a question formed, or after the tasks it lists changed, a press on it does
  * nothing: a guard against a press aimed at what was there before. It only blunts a misclick;
  * what binds an answer to what was shown is the core's check of each task's block (D-1508-9).
+ *
+ * **Every hold is measured on `performance.now()`** (#3227), a clock that only goes forward: a
+ * step of the wall clock (a time sync, the person setting it) neither keeps a Notice held until
+ * the clock catches up nor lets a press through early.
  */
 export const SETTLE_MS = 1500;
 
@@ -134,7 +138,7 @@ export function useNoticeSettle<T extends HTMLElement>(
       firstRead.current = false;
       const kept = memory();
       const all = [...root.querySelectorAll("[data-cause]")];
-      const now = Date.now();
+      const now = performance.now();
       // **Drawn where another Notice stood** (#3167): the last read found one here, however
       // long it had stood, or the band went empty within the settle time, so a pointer may be
       // aimed at what this one now covers.
@@ -182,7 +186,7 @@ export function useNoticeSettle<T extends HTMLElement>(
     // grants variant (a way out with `allows`) is the one rule, and the causes above add the
     // answers that grant without it.
     if (!waits(way, cause)) return true;
-    if (Date.now() - movedAt(way) < SETTLE_MS) {
+    if (performance.now() - movedAt(way) < SETTLE_MS) {
       setSaid(NOTICE_MOVED_JUST_NOW);
       return false;
     }
