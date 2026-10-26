@@ -97,12 +97,16 @@ describe("the left corner (#3144, R121–R123)", () => {
     expect(within(slot("left")).getByRole("tabpanel", { name: "Search" })).toBeInTheDocument();
   });
 
-  it("switches the view, and a press of the open one does nothing", async () => {
+  it("switches the view, and a press of the open one closes the side panel (R121, #3329)", async () => {
     render(<Window from={DEFAULT_ARRANGEMENT} />);
 
     await userEvent.click(tabIn("Navigation", "Explorer"));
     expect(screen.getByRole("tabpanel", { name: "Explorer" })).toBeInTheDocument();
     expect(tabIn("Navigation", "Explorer")).toHaveAttribute("data-selected", "true");
+
+    await userEvent.click(tabIn("Navigation", "Explorer"));
+    expect(screen.queryByRole("tabpanel", { name: "Explorer" })).toBeNull();
+    expect(tabIn("Navigation", "Explorer")).not.toHaveAttribute("data-selected");
 
     await userEvent.click(tabIn("Navigation", "Explorer"));
     expect(screen.getByRole("tabpanel", { name: "Explorer" })).toBeInTheDocument();

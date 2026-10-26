@@ -6,23 +6,20 @@
 // and its digest. A tag can be pushed again; a digest names one image for good, so a baseline is
 // compared in the very image it was drawn in.
 //
-//   node tools/story-image.mjs     every Playwright image `stories.yml` and
-//                                  `stories-baselines.yml` run in is
+//   node tools/story-image.mjs     every Playwright image `stories.yml` runs in is
 //                                  `mcr.microsoft.com/playwright:v<locked>-noble@sha256:<digest>`,
 //                                  with one digest for all of them
 //
-// When the lockfile's Playwright moves, both workflows move to the new version's tag and its
-// digest, which `docker buildx imagetools inspect mcr.microsoft.com/playwright:v<version>-noble`
-// prints.
+// `stories.yml` both compares the pictures and draws the baselines a pull request takes, in one
+// job (`stories-baselines.yml` draws nothing). When the lockfile's Playwright moves, its image
+// moves to the new version's tag and its digest, which
+// `docker buildx imagetools inspect mcr.microsoft.com/playwright:v<version>-noble` prints.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The workflows whose jobs draw and compare the pictures. */
-export const WORKFLOWS = [
-  ".github/workflows/stories.yml",
-  ".github/workflows/stories-baselines.yml",
-];
+export const WORKFLOWS = [".github/workflows/stories.yml"];
 
 /** A job's `image:` that names Playwright's image, with what follows it. */
 const USE =

@@ -296,8 +296,10 @@ describe("the activity bar of a region with views (#1673)", () => {
     // Its own column, outside the side panel.
     expect(slot("left").contains(bar())).toBe(false);
     expect(bar().closest(".activity-column")).toHaveAttribute("data-side", "left");
-    // The open view's tab names the view: pressing it again does nothing (R121).
-    expect(tipOf(within(bar()).getByRole("tab", { name: "Chats" }))).toEqual("Chats");
+    // The open view's tab says a press puts the side away (R121 as amended, #3329).
+    expect(tipOf(within(bar()).getByRole("tab", { name: "Chats" }))).toEqual(
+      "ChatsPut the Navigation region away",
+    );
   });
 
   it("selects the open view's tab and shows that view alone, the other mounted and hidden", () => {
