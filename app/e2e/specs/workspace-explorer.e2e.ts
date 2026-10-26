@@ -1243,8 +1243,13 @@ describe("the explorer", () => {
     try {
       await pressOnly("New tab");
       await harnessRowsDrawn();
+      // The harness's option card (#2907): its radio, clicked as the driver's pointerless click
+      // reaches it (React Aria takes a virtual press on the input, not on its label).
       const label = await $("label*=touching");
-      await (await $(`[id="${await label.getAttribute("for")}"]`)).click();
+      await browser.execute(
+        (el: HTMLElement) => el.querySelector("input")?.click(),
+        label as unknown as HTMLElement,
+      );
       await $("button=Approve and start").waitForExist({ timeout: 20_000 });
       await browser.execute(() =>
         [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
@@ -1741,10 +1746,13 @@ async function startARawPromptChat(plane: string): Promise<void> {
   const before = (await rawPromptChats(plane)).length;
   await pressOnly("New tab");
   await harnessRowsDrawn();
-  // The row's own radio, by the label tied to it: the label's words also hold the harness
-  // card's chip, and a click on its middle can land there.
+  // The row's own option card (#2907): its radio, clicked as the driver's pointerless click
+  // reaches it (React Aria takes a virtual press on the input, not on its label).
   const label = await $(`label*=${RAW_PROMPT}`);
-  await (await $(`[id="${await label.getAttribute("for")}"]`)).click();
+  await browser.execute(
+    (el: HTMLElement) => el.querySelector("input")?.click(),
+    label as unknown as HTMLElement,
+  );
   // Its first run asks to approve the command, a later one only starts. Pressed from the
   // document: the card the row draws makes the picker taller than WebDriver counts as on screen.
   await browser.waitUntil(

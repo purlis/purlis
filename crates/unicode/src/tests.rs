@@ -221,6 +221,17 @@ fn a_bidi_control_is_known_from_the_generated_table() {
     }
 }
 
+#[test]
+fn unhidden_drops_what_hidden_names_and_keeps_a_joiner_doing_its_job() {
+    let persian = "\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645}";
+    assert_eq!(unhidden(persian, Breaks::Marked), persian);
+    let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+    assert_eq!(unhidden(family, Breaks::Marked), family);
+    assert_eq!(unhidden("a\u{200D}b\u{202E}c", Breaks::Marked), "abc");
+    assert_eq!(unhidden("a\n\tb", Breaks::Kept), "a\n\tb");
+    assert_eq!(unhidden("a\n\tb", Breaks::Marked), "ab");
+}
+
 /// #3219: a presentation selector after any Extended_Pictographic character is the emoji's
 /// own, not only after the pictographic blocks a hand-written range named.
 #[test]

@@ -300,7 +300,7 @@ describe("Ask a persona from a chat's tab", () => {
     expect(
       within(places)
         .getAllByRole("radio")
-        .map((radio) => radio.getAttribute("aria-checked")),
+        .map((radio) => String((radio as HTMLInputElement).checked)),
     ).toEqual(["true", "false", "false"]);
     expect(dialog).not.toHaveTextContent(/worktree/i);
 
