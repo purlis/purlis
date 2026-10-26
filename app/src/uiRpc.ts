@@ -396,6 +396,7 @@ export const commands = {
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
 	chatBrowsers: __WINDOW_ONLY_RESULT,
+	browsersTakenBack: __WINDOW_ONLY_RESULT,
 	pinChatBrowser: __WINDOW_ONLY_RESULT,
 	browsersAtQuit: __WINDOW_ONLY_RESULT,
 	putAwayBrowsersAtQuit: __WINDOW_ONLY_RESULT,

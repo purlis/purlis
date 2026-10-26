@@ -119,3 +119,42 @@ export function useChatBrowsers(plane: string): {
     ? { browsers: held.browsers, kept: held.kept, read: held.read }
     : { browsers: NO_BROWSERS, kept: NONE_KEPT, read: false };
 }
+
+/**
+ * **The person's own browsers a crash of the window left running** (#2025): the core takes them
+ * back as the project's chats come back, and each is handed to `open` once, for a view tab of its
+ * own, as the project opens and each time the core says browsers came or went. A chat's browsers
+ * come back with their chats, under them in the Chats list ({@link useChatBrowsers}).
+ */
+export function useBrowsersTakenBack(plane: string, open: (program: string) => void): void {
+  useEffect(() => {
+    let gone = false;
+    let stop: (() => void) | undefined;
+    const take = () => {
+      void commands
+        .browsersTakenBack(plane)
+        .then((answer) => {
+          if (gone || answer.status === "error") return;
+          for (const program of answer.data) open(program);
+        })
+        // A window whose core cannot say opens none.
+        .catch(() => undefined);
+    };
+    take();
+    void (async () => {
+      try {
+        const unlisten = await listen<BrowsersListed>(LISTED, (event) => {
+          if (!gone && event.payload.plane === plane) take();
+        });
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane, open]);
+}

@@ -551,6 +551,14 @@ impl crate::chatbrowsers::Driver for Acting {
     fn driven(&self) -> Result<Vec<String>, String> {
         self.browsers.driven()
     }
+
+    fn note(&self, program: &str, note: &crate::chatbrowsers::Note) {
+        self.browsers.note(program, note);
+    }
+
+    fn taken_back(&self, root: &Path, program: &str) {
+        self.browsers.taken_back(root, program);
+    }
 }
 
 impl Drop for Window {

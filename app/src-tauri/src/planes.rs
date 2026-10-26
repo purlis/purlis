@@ -884,6 +884,9 @@ impl Held {
         // What the session host still runs of this project from before this window and no
         // chat put back reattached ends now, so nothing runs with no tab (#2006).
         self.chats.close_what_was_not_reattached();
+        // And its browsers, each with its chat, pinned past it, or as the person's own; what
+        // nothing takes back ends too (#2025).
+        crate::chatbrowsers::take_back(self);
         if wanted > 0 {
             tracing::info!(
                 "purlis: plane {}, {back} of {wanted} chats back",
@@ -4189,6 +4192,7 @@ impl Planes {
             vault_refusals: crate::vaultroute::Refusals::default(),
             removal_asks: crate::removalasks::Asked::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
+                .noting(self.browser_driver.clone())
                 .telling(Arc::clone(&browsers_listed))
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
             browser_driver: self.browser_driver.clone(),

@@ -308,7 +308,7 @@ import {
   openBrowserBeside,
 } from "./browsers";
 import { sendToDriven } from "./browserDriving";
-import { programsOf, useChatBrowsers } from "./chatBrowsers";
+import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import type { BrowserShown } from "./ChatBrowsersShown";
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
@@ -3665,6 +3665,13 @@ export const PlaneView = memo(function PlaneView({
     kept: keptBrowsers,
     read: chatBrowsersRead,
   } = useChatBrowsers(plane);
+  /** The person's own browsers a crash of the window left running, each back in a view tab of
+   *  its own (#2025). */
+  const showTakenBack = useCallback(
+    (program: string) => showView(browserView(program), BROWSER_TITLE),
+    [showView],
+  );
+  useBrowsersTakenBack(plane, showTakenBack);
   /** Their programs: a tab showing one closes only its view, since it ends with its chat, and
    *  one pinned past its chat ends only when the person stops it (#2022). */
   const chatPrograms = useMemo(

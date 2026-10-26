@@ -57,6 +57,8 @@ struct Hosted {
     holds_from: Mutex<Option<u32>>,
     /// How many closes wait now.
     waiting: Mutex<u32>,
+    /// The note the window last kept of each browser in the host, by program (#2025).
+    notes: Mutex<std::collections::HashMap<String, super::Note>>,
 }
 
 impl Hosted {
@@ -207,6 +209,13 @@ impl Driver for Hosted {
             return Err("the session host did not answer in time".into());
         }
         Ok(self.host_drives.lock().unwrap().clone())
+    }
+
+    fn note(&self, program: &str, note: &super::Note) {
+        self.notes
+            .lock()
+            .unwrap()
+            .insert(program.to_owned(), note.clone());
     }
 }
 
@@ -2714,3 +2723,5 @@ fn two_logins_at_once_in_one_browser_hold_its_purlis_mark_until_both_have_answer
     browsers.purlis_drives("program-1", false);
     assert_eq!(driver(&browsers), None);
 }
+
+mod taken_back;

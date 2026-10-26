@@ -21,7 +21,7 @@
 //! to its own host (#2623), 1.32's browser budget the host holds every client to (#2611), 1.33's
 //! window relayed by its host to a pool's runner (#2679), 1.34's code over the link and project
 //! held where a runner keeps it (#2046), 1.36's refusal of a browser whose engine cannot make
-//! its sandbox (#2899), and 1.37's browser engine's first download (#2207). 1.35 adds no frame of the control lane: its
+//! its sandbox (#2899), 1.37's browser engine's first download (#2207), and 1.42's window taking its browsers back with the note it keeps of each (#2025). 1.35 adds no frame of the control lane: its
 //! origin frame is a browser view's bytes, held by `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs`
 //! (#2300). Each must read back as it was recorded, by this
 //! build and so by every later one, which is what lets a client and a host one version apart

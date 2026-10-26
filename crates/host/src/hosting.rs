@@ -792,6 +792,8 @@ struct Hosted {
     stopping: Arc<Mutex<Option<Stopped>>>,
     /// How its run is sandboxed, as this host applied it (#2636).
     sandbox: session::RunSandbox,
+    /// The window's note of it (1.42, #2025): its own words, kept for it and never read here.
+    note: Option<serde_json::Value>,
 }
 
 /// Says the host's act `by` is ending a program, keeping the highest where another is already.
@@ -1515,6 +1517,7 @@ impl Hosting {
         // A stop written elsewhere since the last look is heard before anything starts (#2190).
         self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
+        a_note_that_fits(start.note.as_ref())?;
         let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),
@@ -1735,6 +1738,7 @@ impl Hosting {
                 exit: None,
                 stopping: Arc::clone(&stopping),
                 sandbox: sandbox.clone(),
+                note: start.note.clone(),
             },
         );
         // Written down before the start is answered, so a host killed from here on leaves it
@@ -1833,6 +1837,7 @@ impl Hosting {
         // Nothing starts while the kill switch is thrown (ADR 0071), a browser included.
         self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
+        a_note_that_fits(start.note.as_ref())?;
         // Read before the lock: it may read this machine's store.
         let budget = self.inner.browsers.budget();
         let (program, at, place, download) = {
@@ -1930,6 +1935,7 @@ impl Hosting {
                 // An engine the host starts outside every chat's sandbox, its reach its own
                 // proxy's: no chat's run.
                 sandbox: session::RunSandbox::Off,
+                note: start.note.clone(),
             },
         );
         drop(state);
@@ -2050,11 +2056,28 @@ impl Hosting {
         }))
     }
 
+    /// **`note` is the window's note of `program` from now on** (1.42, #2025): kept, never read,
+    /// and answered with the program to a window that comes back. One past its bound is refused
+    /// and the one before is kept.
+    fn note_program(&self, program: &str, note: serde_json::Value) -> Result<Answer, Refusal> {
+        a_note_that_fits(Some(&note))?;
+        let mut state = self.state();
+        let hosted = state
+            .programs
+            .get_mut(program)
+            .ok_or_else(|| no_such_program(program))?;
+        hosted.note = Some(note);
+        Ok(Answer::Done)
+    }
+
     /// Every harness and shell `project` still has, running or ended, at the place the link
     /// `peer` came on holds it, which it must (#2006): what a window that comes back takes back,
     /// each with the place of the confinement it runs in. Each confinement it answers is named to
-    /// that link (#2444), which may act on it and hear it from then on.
+    /// that link (#2444), which may act on it and hear it from then on. Its browsers too, to a
+    /// link of 1.42 or later (#2025), each with who drives it; and each program with the note
+    /// the window keeps of it here.
     fn programs_of(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
+        let knows_browsers = peer.version() >= session::TAKES_BROWSERS_BACK;
         let mut state = self.state();
         let at = held_by(&state, project, link_of(peer))
             .cloned()
@@ -2062,7 +2085,9 @@ impl Hosting {
         let mut programs: Vec<HeldProgram> = state
             .programs
             .iter()
-            .filter(|(_, hosted)| hosted.at == at && hosted.kind != ProgramKind::Browser)
+            .filter(|(_, hosted)| {
+                hosted.at == at && (knows_browsers || hosted.kind != ProgramKind::Browser)
+            })
             .map(|(id, hosted)| HeldProgram {
                 program: id.clone(),
                 kind: hosted.kind,
@@ -2086,9 +2111,11 @@ impl Hosting {
                 sandbox: Some(hosted.sandbox.clone()),
                 cols: hosted.size.columns,
                 rows: hosted.size.rows,
+                driver: hosted.running.driver().filter(|_| knows_browsers),
+                note: hosted.note.clone().filter(|_| knows_browsers),
             })
             .collect();
-        programs.sort_by_key(|program| program.number);
+        programs.sort_by(|a, b| (a.number, &a.program).cmp(&(b.number, &b.program)));
         // Each confinement answered is named to the window taking its chat back (#2444).
         for confined in programs
             .iter()
@@ -3056,6 +3083,8 @@ impl session::Host for Hosting {
             Command::LogIn { program, login } => self.log_in(&program, login).await,
             Command::ProgramsOf { project } => self.programs_of(&project, peer),
             // Only the window's link reaches this: the grants refuse every other.
+            Command::NoteProgram { program, note } => self.note_program(&program, note),
+            // Only the window's link reaches this: the grants refuse every other.
             Command::Quit => Ok(self.quit().await),
             // The person's own (#2014): each may wait on the engine (a take-over on an act's
             // last input, a key on a read of the page), so off the runtime.
@@ -3218,6 +3247,25 @@ fn a_plain_name(id: &str) -> bool {
         && id
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// **A note the host keeps for the window, where one is, fits its bound** (1.42, #2025): one past
+/// [`session::NOTE_MOST`] bytes is refused [`session::TOO_LARGE`].
+fn a_note_that_fits(note: Option<&serde_json::Value>) -> Result<(), Refusal> {
+    let Some(note) = note else {
+        return Ok(());
+    };
+    let bytes = serde_json::to_vec(note).map_or(usize::MAX, |bytes| bytes.len());
+    if bytes > session::NOTE_MOST {
+        return Err(Refusal {
+            code: session::TOO_LARGE.into(),
+            why: format!(
+                "a program's note is at most {} bytes, and this one is {bytes}",
+                session::NOTE_MOST
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn no_such_program(program: &str) -> Refusal {

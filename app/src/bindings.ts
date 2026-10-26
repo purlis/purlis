@@ -722,6 +722,12 @@ export const commands = {
 	 */
 	chatBrowsers: (plane: PlaneId) => typedError<ChatBrowser[], string>(__TAURI_INVOKE("chat_browsers", { plane })),
 	/**
+	 *  **The person's own browsers of project `plane` a crash of the window left running**
+	 *  (#2025), taken back as it came back: the window opens a view tab of each, once. Read again
+	 *  on [`LISTED`]. The window's alone (`ui::WINDOW_ONLY`), as watching is.
+	 */
+	browsersTakenBack: (plane: PlaneId) => typedError<string[], string>(__TAURI_INVOKE("browsers_taken_back", { plane })),
+	/**
 	 *  **The person pins chat `session`'s browser `program`, or unpins it** (#2022): pinned, it
 	 *  outlives its chat. The window's alone (`ui::WINDOW_ONLY`).
 	 */

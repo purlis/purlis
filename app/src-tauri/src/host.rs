@@ -464,6 +464,14 @@ pub trait SessionHost: Send + Sync {
     /// Every chat this plane left running in the host that nothing reattached is closed
     /// (#2006): what a put back that settled leaves no tab for, so nothing runs unseen.
     fn close_what_was_not_reattached(&self) {}
+
+    /// **The browsers this plane left in the host from before this window** (#2025), running
+    /// or ended, each answered once: what the put back takes back with their chats
+    /// (`crate::chatbrowsers::take_back`). A host in the window's own process outlives no window,
+    /// and one before 1.42 answers no browser, so either has none.
+    fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
+        Vec::new()
+    }
 }
 
 /// One chat as the board has it, read under one hold so the three agree.

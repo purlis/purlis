@@ -1281,6 +1281,25 @@ jobs:
         run: xvfb-run -a npm run e2e:upgrade
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # A browser view tab drawing a real engine's frames and taking a click (#2025, spec #2008's
+      # one window end-to-end test). Its own run, because its host downloads the pinned engine
+      # on its first browser. On Linux the engine makes its sandbox only where an AppArmor
+      # profile names it (#2835): the `.deb`'s profile is installed, and AppArmor told the
+      # temporary folder holds homes, as the `rust` job does.
+      - name: The pinned engine may make its sandbox, as the .deb sets it up
+        if: runner.os == 'Linux' && matrix.extras
+        run: |
+          echo '@{HOMEDIRS}+=/tmp/' | sudo tee /etc/apparmor.d/tunables/home.d/purlis-ci >/dev/null
+          sudo install -m 0644 crates/purlis-core/src/browsers/purlis-engine.apparmor /etc/apparmor.d/purlis-engine
+          sudo apparmor_parser -r -T -W /etc/apparmor.d/purlis-engine
+      - name: A browser view tab draws frames and takes a click
+        run: npm run e2e:browser
+        if: runner.os == 'macOS' && matrix.extras
+        working-directory: app
+      - name: A browser view tab draws frames and takes a click
+        run: xvfb-run -a npm run e2e:browser
+        if: runner.os == 'Linux' && matrix.extras
+        working-directory: app
       # The app ended and started again, which no scenario spec can do: WebdriverIO's service
       # keeps one app process for a whole run, so a spec that quits takes the run with it.
       - name: Reopening what was open, across a real relaunch

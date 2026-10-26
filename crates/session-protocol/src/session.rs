@@ -237,10 +237,28 @@ use crate::view::{Limits, Views};
 /// where that is known), a few times a second at most, and `cancel_engine_download` stops it,
 /// keeping nothing of it. The window's alone ([`crate::grants::Power::Browser`]): a host pushes
 /// it only to a link of 1.37 or later that may start a browser.
+///
+/// 1.42 added a window taking its browsers back after a crash (#2025): `programs_of` answers a
+/// held project's browsers too, each with who drives it (`driver`) and the note the window keeps
+/// of it in the host (`note`), which a browser's start may carry and `note_program` replaces. A
+/// note is the window's own, which the host keeps for it and never reads, at most [`NOTE_MOST`]
+/// bytes. The window's alone ([`crate::grants::Power::Reattach`]). A host before 1.42 answers
+/// no browser, and a window that comes back to it ends them as nothing takes them back.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 37,
+    minor: 42,
 };
+
+/// The version that first answers a held project's browsers to `programs_of` and keeps a note
+/// of each program for the window (#2025).
+pub const TAKES_BROWSERS_BACK: Version = Version {
+    major: 1,
+    minor: 42,
+};
+
+/// The most bytes a program's note is, as JSON (1.42, #2025): a note past it is refused
+/// [`TOO_LARGE`], and the one before is kept.
+pub const NOTE_MOST: usize = 16 * 1024;
 
 /// The version that first knows a browser engine's download (#2207): no link before it is
 /// pushed [`Pushed::EngineDownload`].
@@ -635,6 +653,15 @@ pub enum Command {
     /// so. Answered [`Answer::Done`], also where nothing is downloading for it. The window's
     /// alone ([`crate::grants::Power::Browser`]).
     CancelEngineDownload { program: String },
+    /// The window's note of `program` is `note` from now on (1.42, #2025): what `programs_of`
+    /// answers with the program to a window that comes back. The host keeps it and never reads
+    /// it. Answered [`Answer::Done`]; refused [`TOO_LARGE`] past [`NOTE_MOST`] bytes, keeping
+    /// the one before, and [`NO_SUCH_CHAT`] for a program the host does not hold. The window's
+    /// alone ([`crate::grants::Power::Reattach`]).
+    NoteProgram {
+        program: String,
+        note: serde_json::Value,
+    },
 }
 
 /// One ref of a repository and the commit it is at (1.34): what `take_code` names and `code`
@@ -882,6 +909,12 @@ pub struct StartProgram {
     /// window's alone ([`crate::grants::Power::LogIn`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kept: Option<crate::browsing::KeptLogin>,
+    /// What the window keeps of the program in its host (1.42, #2025): its own words, which the
+    /// host never reads and answers back with the program to `programs_of`, at most
+    /// [`NOTE_MOST`] bytes. Taken from a link that may take programs back alone
+    /// ([`crate::grants::Power::Reattach`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<serde_json::Value>,
 }
 
 impl StartProgram {
@@ -907,6 +940,7 @@ impl StartProgram {
             confinement: None,
             alone: Vec::new(),
             kept: None,
+            note: None,
         }
     }
 }
@@ -1074,9 +1108,10 @@ pub enum Answer {
 pub struct HeldProgram {
     /// Its id in the host.
     pub program: String,
-    /// What kind of program it is: a harness or a shell.
+    /// What kind of program it is: a harness or a shell, or a browser to a link of 1.42 or
+    /// later (#2025).
     pub kind: ProgramKind,
-    /// Its number in its project.
+    /// Its number in its project; a browser has none, and is `0`.
     pub number: u32,
     /// Its process, while it runs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1098,9 +1133,16 @@ pub struct HeldProgram {
     /// whose window takes the run as sandboxed and offers it a restart.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox: Option<RunSandbox>,
-    /// The size its terminal is now.
+    /// The size its terminal is now; a browser's pages', in CSS pixels.
     pub cols: u16,
     pub rows: u16,
+    /// Who drives it, where it is a browser (1.42, #2025): the lease the host holds, so a window
+    /// that comes back draws it as it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driver: Option<crate::browsing::Driver>,
+    /// The note the window last kept of it in the host (1.42, #2025), where it kept one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<serde_json::Value>,
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
@@ -1385,6 +1427,7 @@ wire_words!(Command {
     TakeCode => "take_code",
     GiveCode => "give_code",
     CancelEngineDownload => "cancel_engine_download",
+    NoteProgram => "note_program",
 });
 
 impl Command {
@@ -1427,7 +1470,7 @@ impl Command {
             | Command::SizeBrowser { .. }
             | Command::CancelEngineDownload { .. } => Power::Browser,
             Command::LogIn { .. } => Power::LogIn,
-            Command::ProgramsOf { .. } => Power::Reattach,
+            Command::ProgramsOf { .. } | Command::NoteProgram { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
@@ -1919,7 +1962,9 @@ impl Lane {
             | Command::Answer { chat: program, .. }
             | Command::Stop { chat: program }
             | Command::Close { program }
-            | Command::Readiness { program } => Some(Lane::Program(program.clone())),
+            | Command::Readiness { program }
+            // A note follows what the window did to the program before it.
+            | Command::NoteProgram { program, .. } => Some(Lane::Program(program.clone())),
             // A confinement's own commands keep their order: an Allow, then what it holds.
             Command::Confine(confine) => Some(Lane::Confinement(confine.confinement.clone())),
             Command::LetGoOfConfinement { confinement }
@@ -2057,6 +2102,16 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
                 "a browser opens from kept logins from purlis's window only, and this link is \
                  `{scope}`"
             ),
+        });
+    }
+    // A note kept for the window is the window's alone, as taking programs back is (1.42).
+    if let Command::StartProgram(start) = command
+        && start.note.is_some()
+        && !scope.may(Power::Reattach)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!("a program's note is kept for purlis's window only, and this link is `{scope}`"),
         });
     }
     if a_browser && !scope.may(Power::Browser) {
@@ -2462,6 +2517,19 @@ impl Client {
             Answer::Dealt { number } => Ok(number),
             other => Err(unexpected(&other)),
         }
+    }
+
+    /// Keeps `note` as the window's note of `program` in the host (1.42, #2025).
+    pub async fn note_program(
+        &self,
+        program: &str,
+        note: serde_json::Value,
+    ) -> Result<(), CallError> {
+        self.done(Command::NoteProgram {
+            program: program.into(),
+            note,
+        })
+        .await
     }
 
     /// Every program `project` still has, running or ended, as a window that comes back takes

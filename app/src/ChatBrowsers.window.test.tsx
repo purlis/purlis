@@ -87,6 +87,7 @@ function core(browsers: ChatBrowser[]) {
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open;
     if (cmd === "chat_browsers") return browsers;
+    if (cmd === "browsers_taken_back") return takenBack.splice(0, takenBack.length);
     if (cmd === "watch_browser") {
       view += 1;
       views.set(`${String(a.program)} ${String(a.role)}`, a.frames as Channel<BrowserFrame>);
@@ -192,6 +193,8 @@ const B9: ChatBrowser = {
 
 /** Where the project's browsers were at the last quit, as the core says (#2022). */
 let atQuit: string[] = [];
+/** The person's own browsers a crash of the window left running, until the window asks (#2025). */
+let takenBack: string[] = [];
 
 const tabNames = () =>
   within(stripNamed("Tabs"))
@@ -209,6 +212,7 @@ async function fromThePalette(row: string) {
 
 beforeEach(() => {
   atQuit = [];
+  takenBack = [];
   globalThis.localStorage.clear();
   forgetThisLaunch();
   painted.length = 0;
@@ -704,5 +708,40 @@ describe("where a chat's browser's page is (#2300)", () => {
     );
     host.page("B7", "focused", null);
     await waitFor(() => expect(chip.textContent).toMatch(/^On this (Mac|computer)$/));
+  });
+});
+
+describe("the person's own browser after a crash of the window (#2025)", () => {
+  it("comes back in a view tab of its own, drawn from its next frame", async () => {
+    takenBack = ["B5"];
+    const host = core([]);
+    await opened();
+
+    await waitFor(() => expect(tabNames()).toContain("Browser"));
+    await waitFor(() =>
+      expect(host.asked("watch_browser")).toContainEqual(
+        expect.objectContaining({ program: "B5", role: "focused" }),
+      ),
+    );
+    await act(async () => {
+      host.frame("B5", "focused", "/9j/");
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(painted.length).toBeGreaterThan(0));
+  });
+
+  it("comes back once a project's put back settles, when the core says browsers came", async () => {
+    const host = core([]);
+    await opened();
+    await chatsTree();
+    expect(tabNames()).not.toContain("Browser");
+
+    takenBack.push("B6");
+    host.listed([]);
+
+    await waitFor(() => expect(tabNames()).toContain("Browser"));
+    expect(host.asked("watch_browser")).toContainEqual(
+      expect.objectContaining({ program: "B6", role: "focused" }),
+    );
   });
 });

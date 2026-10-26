@@ -1568,6 +1568,9 @@ pub struct HostedSessions {
     /// Each program the host still had for this project as the window held it, from before
     /// this window, that nothing has reattached yet, by its number (#2006).
     left: Arc<Mutex<HashMap<u32, HeldProgram>>>,
+    /// Each browser the host still had for this project as the window held it, from before
+    /// this window, until the put back takes them (#2025).
+    browsers_left: Arc<Mutex<Vec<HeldProgram>>>,
     /// Why the board the host kept could not be taken as the window held the project, where it
     /// could not (#2006).
     untaken: Arc<Mutex<Option<String>>>,
@@ -1620,6 +1623,7 @@ impl HostedSessions {
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
             lost: Arc::default(),
             left: Arc::default(),
+            browsers_left: Arc::default(),
             untaken: Arc::default(),
             reconnecting,
             on_a_runner: false,
@@ -1686,6 +1690,7 @@ impl HostedSessions {
             relayed: Arc::clone(&self.relayed),
             opened: Arc::clone(&self.opened),
             left: Arc::clone(&self.left),
+            browsers_left: Arc::clone(&self.browsers_left),
             untaken: Arc::clone(&self.untaken),
             root: self.root.clone(),
             reconnects: Arc::clone(&self.reconnects),
@@ -1832,6 +1837,7 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
         relayed,
         opened,
         left,
+        browsers_left,
         untaken,
         root,
         reconnects,
@@ -1911,11 +1917,16 @@ fn held_on(holding: &Holding) -> Result<(Arc<HostLink>, String), String> {
             project: project.clone(),
         }) {
             Ok(Answer::Programs(programs)) => {
-                *lock(left) = programs
+                // Its browsers, from a host of 1.42 or later (#2025), taken back with their
+                // chats once the put back has settled.
+                let (browsers, chats): (Vec<HeldProgram>, Vec<HeldProgram>) = programs
                     .into_iter()
-                    .filter(|program| program.kind != ProgramKind::Browser)
+                    .partition(|program| program.kind == ProgramKind::Browser);
+                *lock(left) = chats
+                    .into_iter()
                     .map(|program| (program.number, program))
                     .collect();
+                *lock(browsers_left) = browsers;
             }
             Ok(other) => {
                 tracing::warn!("purlis: the session host answered its programs with {other:?}");
@@ -1953,6 +1964,7 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
         relayed,
         opened,
         left,
+        browsers_left,
         untaken,
         root,
         reconnects,
@@ -1987,6 +1999,7 @@ fn holds_again(holding: &Holding, on: u64, project: &str) -> NotHeld {
             relayed: Arc::clone(&relayed),
             opened: Arc::clone(&opened),
             left: Arc::clone(&left),
+            browsers_left: Arc::clone(&browsers_left),
             untaken: Arc::clone(&untaken),
             root: root.clone(),
             reconnects: Arc::clone(&reconnects),
@@ -2032,6 +2045,7 @@ struct Holding {
     relayed: Arc<Mutex<Option<Arc<Relayed>>>>,
     opened: Arc<AtomicU32>,
     left: Arc<Mutex<HashMap<u32, HeldProgram>>>,
+    browsers_left: Arc<Mutex<Vec<HeldProgram>>>,
     /// Why the board the host kept could not be taken, where it could not (#2006).
     untaken: Arc<Mutex<Option<String>>>,
     root: PathBuf,
@@ -2807,6 +2821,13 @@ impl SessionHost for HostedSessions {
     fn ran_in(&self, number: u32) -> Option<purlis_session_protocol::session::RunSandbox> {
         self.link().ok()?;
         lock(&self.left).get(&number)?.sandbox.clone()
+    }
+
+    fn browsers_left(&self) -> Vec<HeldProgram> {
+        if self.link().is_err() {
+            return Vec::new();
+        }
+        std::mem::take(&mut *lock(&self.browsers_left))
     }
 
     fn close_what_was_not_reattached(&self) {

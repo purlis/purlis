@@ -150,3 +150,6 @@
 {"pushed":{"engine_download":{"program":"01J9ZQ8000000000000000000D","done":52428800,"total":158334976}}}
 {"pushed":{"engine_download":{"program":"01J9ZQ8000000000000000000D","done":1048576}}}
 {"call":{"id":150,"command":"cancel_engine_download","program":"01J9ZQ8000000000000000000D"}}
+{"call":{"id":151,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"browser","note":{"chat":3,"name":"b1"}}}
+{"call":{"id":152,"command":"note_program","program":"01J9ZQ8000000000000000000D","note":{"chat":3,"name":"b1","pinned":true}}}
+{"reply":{"re":153,"ok":{"programs":[{"program":"01J9ZQ8000000000000000000D","kind":"browser","number":0,"process":4343,"sandbox":"off","cols":1280,"rows":800,"driver":"person","note":{"chat":3,"name":"b1","pinned":true}}]}}}

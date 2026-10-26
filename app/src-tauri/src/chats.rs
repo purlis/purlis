@@ -5163,6 +5163,13 @@ impl Chats {
         self.sessions.close_what_was_not_reattached();
     }
 
+    /// **The browsers the session host still runs, or ran, in this project from before this
+    /// window** (#2025), each once: what the project's put back takes back with their chats, or
+    /// ends.
+    pub(crate) fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
+        self.sessions.browsers_left()
+    }
+
     /// The second half of putting a record back: **starts** what
     /// [`Self::begin_put_back`] registered, a few at a time, the chat in front first, and
     /// answers once every one has been tried, with the ones that started.

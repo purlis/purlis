@@ -119,6 +119,18 @@ pub trait Driver: Send + Sync + 'static {
     /// a take-over, or purlis's while it performs a login. The host's own word, which no idle
     /// stop goes against.
     fn driven(&self) -> Result<Vec<String>, String>;
+    /// **Keeps `note` as the window's note of browser `program` in its host** (#2025): what a
+    /// window that comes back after a crash takes it back by ([`Note`]). Sent in the order
+    /// given, never waited on: a host that has none keeps nothing, and the browser is then one
+    /// nothing takes back.
+    fn note(&self, program: &str, note: &Note) {
+        let _ = (program, note);
+    }
+    /// **Browser `program`, left in the host by a window before this one, is this window's
+    /// again** in the project at `root` (#2025): its end is told as for one it started.
+    fn taken_back(&self, root: &Path, program: &str) {
+        let _ = (root, program);
+    }
 }
 
 /// How many of a chat's browsers were ended, and how many could not be yet: those are kept, and
@@ -314,6 +326,11 @@ pub struct ChatBrowsers {
     /// The sites each browser the person opened asked about (#2176), by its program, until
     /// they answer or its next address: what their Allow may name.
     theirs: Mutex<HashMap<String, Vec<Site>>>,
+    /// Where each browser's note is kept (#2025): the session host the browsers run in.
+    noting: Option<Arc<dyn Driver>>,
+    /// The person's own browsers a window before this one opened, taken back after its crash,
+    /// until the window opens a view tab of each (#2025).
+    theirs_back: Mutex<Vec<String>>,
 }
 
 /// **A login a browser holds** (#2022): the persona whose login purlis performed in it, or
@@ -322,7 +339,7 @@ pub struct ChatBrowsers {
 /// A browser holding one goes only to a chat that may log in with that same login now, the
 /// identity compared whole (#2699; spec #2008: a kept login needs the Allow of the login that
 /// made it).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HeldLogin {
     pub persona: Option<String>,
     pub login: String,
@@ -387,6 +404,8 @@ impl Default for ChatBrowsers {
             listing: Arc::default(),
             told: None,
             theirs: Mutex::default(),
+            noting: None,
+            theirs_back: Mutex::default(),
         }
     }
 }
@@ -695,12 +714,19 @@ impl ChatBrowsers {
             self.relisted();
         }
         if by_the_person {
-            let mut typed = self
-                .person_typed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if !typed.iter().any(|one| one == program) {
-                typed.push(program.to_owned());
+            let newly = {
+                let mut typed = self
+                    .person_typed
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                let newly = !typed.iter().any(|one| one == program);
+                if newly {
+                    typed.push(program.to_owned());
+                }
+                newly
+            };
+            if newly {
+                self.note(program);
             }
         }
         self.touched(program, now);
@@ -936,6 +962,7 @@ impl ChatBrowsers {
         }
         drop(chats);
         self.relisted();
+        self.note(program);
         Ok(())
     }
 
@@ -1100,6 +1127,7 @@ impl ChatBrowsers {
             chat.handed.push(name.clone());
         }
         self.relisted();
+        self.note(program);
         Ok(name)
     }
 
@@ -1794,6 +1822,10 @@ impl ChatBrowsers {
         if !kept.is_empty() {
             self.relisted();
         }
+        // Each kept is noted as the person's now, by what its chat was called (#2025).
+        for one in &kept {
+            self.note(&one.program);
+        }
         if !programs.is_empty() {
             self.relisted();
         }
@@ -1991,9 +2023,12 @@ impl ChatBrowsers {
             let name = format!("b{}", chat.next);
             chat.next += 1;
             chat.used.insert(program.clone(), now);
-            chat.browsers.push((name.clone(), program));
+            chat.browsers.push((name.clone(), program.clone()));
             self.relisted();
             chat.current = Some(name.clone());
+            // Kept in the host as it starts, so a crash of the window from here on leaves it
+            // to be taken back with its chat (#2025).
+            self.noted_in(browse.chat, chat, &program);
             Ok(name)
         };
         let act = match &browse.asked {
@@ -2142,6 +2177,8 @@ impl ChatBrowsers {
                         identity,
                     },
                 );
+                // And noted so, before it is tried (#2025).
+                self.note(&program);
                 // Its row says purlis drives it while it logs in (#2300).
                 self.purlis_drives(&program, true);
                 let logged_in = driver.log_in(&program, login).map(|mut browsed| {
@@ -2558,6 +2595,18 @@ pub async fn chat_browsers(
     plane: crate::planes::PlaneId,
 ) -> Result<Vec<ChatBrowser>, String> {
     Ok(planes.held(&plane)?.browsers().listed())
+}
+
+/// **The person's own browsers of project `plane` a crash of the window left running**
+/// (#2025), taken back as it came back: the window opens a view tab of each, once. Read again
+/// on [`LISTED`]. The window's alone (`ui::WINDOW_ONLY`), as watching is.
+#[tauri::command]
+#[specta::specta]
+pub async fn browsers_taken_back(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+) -> Result<Vec<String>, String> {
+    Ok(planes.held(&plane)?.browsers().take_theirs_back())
 }
 
 const WAITS_NO_MORE: &str = "Nothing is asking for a browser for that chat any more.";
@@ -3433,6 +3482,11 @@ pub fn person_drove(projects: &[Arc<crate::planes::Held>], program: &str, drivin
 fn no_such(name: &str) -> String {
     format!("this chat has no browser {name}: leave `browser` out to use the one it used last")
 }
+
+mod takenback;
+pub use takenback::{Note, TakenBack, take_back};
+#[cfg(test)]
+pub(crate) use takenback::take_back_from;
 
 #[cfg(test)]
 mod tests;
