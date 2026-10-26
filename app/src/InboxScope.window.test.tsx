@@ -123,8 +123,12 @@ describe("the scope switch", () => {
   it("is the one segmented switch the Chats view draws", () => {
     draw(ASKS, strip("alpha"));
     const group = screen.getByRole("radiogroup", { name: "Show what needs you in" });
-    expect(group.className).toBe("ui-levels ui-levels-small");
-    expect(scopes().getAllByRole("radio")[0].className).toBe("ui-level");
+    expect(group).toHaveAttribute("data-scope", "segmented-control");
+    expect(group).toHaveAttribute("data-size", "sm");
+    expect(scopes().getAllByRole("radio")[0].closest("label")).toHaveAttribute(
+      "data-scope",
+      "segment",
+    );
   });
 
   it("offers only the scopes the window can list, and no switch for one", () => {

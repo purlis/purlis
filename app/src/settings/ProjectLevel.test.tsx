@@ -336,7 +336,7 @@ describe("the Project level", () => {
 
     await userEvent.click(screen.getByRole("radio", { name: "Project" }));
 
-    expect(screen.getByRole("radio", { name: "Project" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "Project" })).toBeChecked();
     expect(await within(nav()).findByRole("button", { name: "General" })).toBeInTheDocument();
   });
 

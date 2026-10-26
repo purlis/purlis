@@ -23,6 +23,7 @@ import { RelaunchAsk } from "./RelaunchAsk";
 import { StartChat } from "./StartChat";
 import { PinItem, UpdateItem } from "./Updates";
 import { sequenceIn } from "./tabSequence";
+import { roleOf, wordsOf } from "./a11y.testkit";
 
 /**
  * **What a keyboard can reach in each of the window's modal surfaces — one file, because the
@@ -142,12 +143,8 @@ async function tab({ shift = false } = {}) {
 
 /** How a control reads to whoever is looking for it: its role, and the words it goes by. */
 function said(el: Element): string {
-  const role = el.getAttribute("role") ?? el.tagName.toLowerCase();
-  const aria = el.getAttribute("aria-label");
-  const by = el.getAttribute("aria-labelledby");
-  const labelled = by ? document.getElementById(by)?.textContent : undefined;
-  const labelFor = el.id ? document.querySelector(`label[for="${el.id}"]`)?.textContent : undefined;
-  const named = aria ?? labelled ?? labelFor ?? el.textContent ?? "";
+  const role = roleOf(el);
+  const named = wordsOf(el);
   return `${role} "${named.trim()}"`;
 }
 

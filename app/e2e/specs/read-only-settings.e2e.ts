@@ -203,9 +203,13 @@ describe("Settings › Project in a read-only project", function () {
     await browser.waitUntil(
       async () =>
         browser.execute((selector: string) => {
-          const radios = [...document.querySelectorAll<HTMLElement>(`${selector} [role="radio"]`)];
-          const project = radios.find((one) => one.textContent?.trim() === "Project");
-          if (project?.getAttribute("aria-checked") === "true") return true;
+          const radios = [
+            ...document.querySelectorAll<HTMLElement>(`${selector} input[type="radio"]`),
+          ];
+          const project = radios.find(
+            (one) => one.closest("label")?.textContent?.trim() === "Project",
+          );
+          if ((project as HTMLInputElement | undefined)?.checked === true) return true;
           project?.click();
           return false;
         }, LEVEL),

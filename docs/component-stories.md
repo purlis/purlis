@@ -139,7 +139,10 @@ text draws the same each time.
 titled `<story> in <browser>, <cell>`: its file, the gate it failed (`renders`, `keyboard`,
 `accessibility` or `screenshot`), the first line of why, and the axe rules it broke. It says the
 same in WebKit as in Chromium: `tools/story-failures.mjs` is the Vitest reporter that keeps each
-error's message, and the script that turns the reports into annotations. An error in a story
+error's message, and the script that turns the reports into annotations. The annotation is put
+on the story file's line the story failed at, the first frame of its error in a story file, so it
+shows on the pull request's diff; a failure with no such frame, axe's or the screenshot gate's,
+is on the check alone. An error in a story
 file or a suite outside any one story is an annotation of its own, and a run that fails without
 naming anything says so.
 
