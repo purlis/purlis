@@ -356,3 +356,85 @@ fn a_plane_and_no_plane_do_not_share_one_socket() {
 
     assert_ne!(socket_for(Some(&deep)).socket, socket_for(None).socket);
 }
+
+/// The device the logs here are written for.
+const DEVICE: &str = "01J9ZZDEVICE0000000000000";
+
+/// An event log in `dir`, as a host opens it the first time it is needed.
+fn a_log_in(dir: &Path) -> EventLog {
+    use crate::eventlog::{ArgsKey, Log};
+    let dir = dir.to_path_buf();
+    EventLog::opening(move || {
+        Ok(Recorder::new(
+            Log::open(&dir, DEVICE)?,
+            ArgsKey::open(&dir)?,
+        ))
+    })
+}
+
+/// Chat `number` of the project at `root` began run `run` in `log`, as a runner begins the run
+/// of a chat it composes (ADR 0078, amended 2026-10-18).
+fn a_run_begun(log: &EventLog, root: &Path, number: u32, run: &str) {
+    use crate::eventlog::{Attributes, Began};
+    log.write(Entry::Begin {
+        plane: root.to_path_buf(),
+        number,
+        chat: "01K6W0RKER000000000000000B".into(),
+        run: run.into(),
+        cause: Began::Start,
+        attributes: Attributes::default(),
+        held: false,
+        trust: None,
+    })
+    .expect("the run begins");
+}
+
+/// Each `hook.stop` in the log in `dir`, by the run it is of.
+fn stops_in(dir: &Path) -> Vec<Option<String>> {
+    crate::eventlog::read(dir)
+        .expect("the log reads")
+        .into_iter()
+        .filter(|event| event.kind == "hook.stop")
+        .map(|event| event.run)
+        .collect()
+}
+
+#[test]
+fn a_hook_line_the_window_sends_back_by_its_own_path_is_recorded_under_the_hosts_project() {
+    // A pool's runner holds the project at `<data>/projects/<id>`, and the window names it by
+    // its own path on the desktop (#3304): the line is this channel's project's all the same.
+    let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let log = a_log_in(data.path());
+    let run = "01K6W0RKRUN00000000000000B";
+    a_run_begun(&log, project.path(), 1, run);
+    let record = hook_lines_recorded(log, project.path());
+
+    record(Entry::Report {
+        plane: PathBuf::from("/Users/o/plane"),
+        report: a_report(1, crate::state::Event::Stop),
+        followed: crate::eventlog::Followed::No,
+        begun: None,
+    })
+    .expect("it is recorded");
+
+    assert_eq!(stops_in(data.path()), vec![Some(run.to_owned())]);
+}
+
+#[test]
+fn only_a_hook_line_is_recorded_through_what_the_window_sends_back() {
+    // A line's reply records that line, and no other write the window could ask of the log.
+    let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let record = hook_lines_recorded(a_log_in(data.path()), project.path());
+
+    let refused = record(Entry::Begun {
+        plane: project.path().to_path_buf(),
+        number: 1,
+    });
+
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(
+        crate::eventlog::read(data.path())
+            .expect("the log reads")
+            .is_empty()
+    );
+}

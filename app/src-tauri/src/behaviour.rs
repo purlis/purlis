@@ -107,6 +107,54 @@ impl Target {
             None => purlis_core::process::alive(pid),
         }
     }
+
+    /// Every event in the event log of the machine the target's chats run on: on a pool's
+    /// target, the runner's own, which its host alone writes (ADR 0078 §7); elsewhere,
+    /// [`Target::log`].
+    fn events_where_its_chats_run(&self) -> Vec<purlis_core::eventlog::Event> {
+        match &self.runner {
+            Some(runner) => {
+                let (_copy, log) = runner.copied(&runner.log()).expect("the runner's log");
+                purlis_core::eventlog::read(&log).expect("the runner's log reads")
+            }
+            None => purlis_core::eventlog::read(&self.log).expect("the log reads"),
+        }
+    }
+
+    /// Whether the event log of the machine the target's chats run on is held by its one
+    /// writer, so no second one is let in.
+    fn its_log_has_its_writer(&self) -> bool {
+        match &self.runner {
+            Some(runner) => {
+                runner.holds_the_lock(&format!("{}/{}", runner.log(), purlis_core::eventlog::LOCK))
+            }
+            None => purlis_core::eventlog::Log::open(&self.log, DEVICE).is_err(),
+        }
+    }
+
+    /// Whether chat `id`'s hook spool holds a line, on the machine it runs on: beside the
+    /// project as that machine holds it, which a runner does in `<data>/projects/<id>` (#2046).
+    fn spool_holds_lines_of(&self, id: u32) -> bool {
+        let spool_beside = |root: &Path| {
+            purlis_core::hookwire::spool::dir_for(&crate::hooks::socket_for(Some(root)).socket)
+        };
+        match &self.runner {
+            Some(runner) => {
+                let project = purlis_core::scaffold::planefile::id_to_hold_by(&self.root)
+                    .expect("the project's id");
+                let root = runner
+                    .path(&format!("\"$HOME\"/.local/share/*/projects/{project}"))
+                    .expect("the runner holds the project");
+                let spool = spool_beside(Path::new(&root));
+                runner
+                    .copied(&spool.to_string_lossy())
+                    .is_some_and(|(_copy, spool)| {
+                        purlis_core::hookwire::spool::holds_lines(&spool, id)
+                    })
+            }
+            None => purlis_core::hookwire::spool::holds_lines(&spool_beside(&self.root), id),
+        }
+    }
 }
 
 /// A project, its manifest written, and where it is.
@@ -502,6 +550,75 @@ impl OnTheRunner {
             .expect("given");
         let out = child.wait_with_output().expect("it ends");
         assert!(out.status.success(), "{script}: {out:?}");
+    }
+
+    /// The one path in the runner's container that `pattern` names, the shell's globs and
+    /// `$HOME` read there: `None` where it names none.
+    fn path(&self, pattern: &str) -> Option<String> {
+        let out = purlis_core::forklock::output(
+            std::process::Command::new(self.docker.program()).args([
+                "exec",
+                self.container.as_str(),
+                "sh",
+                "-c",
+                &format!("ls -d {pattern}"),
+            ]),
+        )
+        .expect("docker runs");
+        let said = String::from_utf8_lossy(&out.stdout);
+        let mut paths = said.lines().filter(|line| !line.is_empty());
+        let path = paths.next()?.to_owned();
+        assert!(paths.next().is_none(), "{pattern} names one path: {said}");
+        out.status.success().then_some(path)
+    }
+
+    /// A copy, on this machine, of what is at `path` in the runner's container: `None` where
+    /// nothing is there.
+    fn copied(&self, path: &str) -> Option<(tempfile::TempDir, PathBuf)> {
+        let into = tempfile::tempdir().expect("a folder to copy it into");
+        let at = into.path().join("copied");
+        let out = purlis_core::forklock::output(
+            std::process::Command::new(self.docker.program())
+                .arg("cp")
+                .arg(format!("{}:{path}", self.container))
+                .arg(&at),
+        )
+        .expect("docker runs");
+        out.status.success().then_some((into, at))
+    }
+
+    /// Where the runner's host keeps its event log: its device's folder in its data home.
+    fn log(&self) -> String {
+        self.path(&format!(
+            "\"$HOME\"/.local/share/*/{}/*",
+            purlis_core::eventlog::EVENTS
+        ))
+        .expect("the runner's host keeps an event log")
+    }
+
+    /// Whether the lock `lock` in the runner's container is held by a process of its own.
+    fn holds_the_lock(&self, lock: &str) -> bool {
+        // `flock` says a lock it could not take with an exit code of its own, told apart from
+        // one with no `flock` or no file to lock.
+        const HELD: i32 = 75;
+        let out = purlis_core::forklock::output(
+            std::process::Command::new(self.docker.program()).args([
+                "exec",
+                self.container.as_str(),
+                "flock",
+                "--nonblock",
+                "--conflict-exit-code",
+                &HELD.to_string(),
+                lock,
+                "true",
+            ]),
+        )
+        .expect("docker runs");
+        assert!(
+            out.status.success() || out.status.code() == Some(HELD),
+            "the lock could not be tried: {out:?}"
+        );
+        out.status.code() == Some(HELD)
     }
 
     /// Whether the process `pid` of the runner's container is there.
@@ -2885,7 +3002,9 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
 
 /// **The event log has one writer** (#2003): what a chat's hook says is written once, by the
 /// window where the chat runs in the window and by the host where it runs there, and while
-/// chats run in the host the window holds no log of its own.
+/// chats run in the host the window holds no log of its own. On a pool's runner, the runner's
+/// host writes it in the runner's own log, under the project as the runner holds it, and this
+/// machine's log holds none of it (ADR 0078 §7, #3304).
 fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Target) {
     let id = a_chat_on_the_board(
         target,
@@ -2896,26 +3015,32 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
     );
     Pane::on(target, id).shows("reported.");
     let stops = || {
-        purlis_core::eventlog::read(&target.log)
-            .expect("the log reads")
+        target
+            .events_where_its_chats_run()
             .iter()
             .filter(|event| event.kind == "hook.stop")
             .count()
     };
     until("the hook's line is in the event log", || stops() >= 1);
     // The hook was told its line was taken, so it spooled no copy that could be recorded later.
-    let spool =
-        purlis_core::hookwire::spool::dir_for(&crate::hooks::socket_for(Some(&target.root)).socket);
     assert!(
-        !purlis_core::hookwire::spool::holds_lines(&spool, id),
+        !target.spool_holds_lines_of(id),
         "no copy of the line waits to be drained"
     );
 
     assert_eq!(stops(), 1, "one line, written once");
     assert!(
-        purlis_core::eventlog::Log::open(&target.log, DEVICE).is_err(),
+        target.its_log_has_its_writer(),
         "its one writer holds it, and no second is let in"
     );
+    if target.runner.is_some() {
+        // The desktop never copies a runner's events into its own.
+        let here = purlis_core::eventlog::read(&target.log).expect("this machine's log reads");
+        assert!(
+            !here.iter().any(|event| event.kind == "hook.stop"),
+            "{here:?}"
+        );
+    }
     target.sessions.close(id).expect("it closes");
 }
 
@@ -3114,7 +3239,8 @@ on_every_target!(
     a_program_reading_a_line_is_not_yet_ready_to_be_typed_at_key_by_key,
     a_chat_starts_with_the_path_and_variables_the_window_gives_it,
     a_chat_whose_turn_ends_needs_you_on_every_harness,
-    a_permission_ask_is_answered_from_the_window_on_every_harness;
+    a_permission_ask_is_answered_from_the_window_on_every_harness,
+    the_event_log_has_one_writer_and_each_hook_line_is_written_once;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
     not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
@@ -3123,8 +3249,6 @@ on_every_target!(
     not yet through a link ("where a project whose chats run on a runner is saved is not decided, #3312"):
     a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
     exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped;
-    not yet in a Docker pool ("a pool runner chat's hook line is recorded in no event log, #3304"):
-    the_event_log_has_one_writer_and_each_hook_line_is_written_once;
     not yet in a Docker pool ("the behaviour reaches the chat's machine from this one: its proxy, a service or a rival hook listener, which on a pool's runner are in its container, #3288"):
     a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
