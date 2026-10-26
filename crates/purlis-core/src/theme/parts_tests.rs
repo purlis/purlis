@@ -2214,6 +2214,27 @@ fn untinted_parts(parts: Value) -> Value {
 }
 
 #[test]
+fn a_grey_primary_edge_falls_back_where_a_yellow_workspace_greys_allows_edge() {
+    // #3130: in a yellow or an orange workspace Allow's accent edge gives way to the waiting
+    // amber, near a grey. A primary a theme edges in grey under the pointer is then drawn as
+    // Allow is there, so it falls back; untinted, it is drawn as written.
+    let parts = json!({
+        "button.root.primary.hover.fill": "control.hover",
+        "button.root.primary.hover.border-colour": "text.secondary",
+    });
+    let tinted = fallen_parts(&with_parts(parts.clone()));
+    assert!(
+        tinted.contains(&"button.root.primary.hover".to_owned()),
+        "{tinted:?}"
+    );
+    let untinted = fallen_parts(&untinted_parts(parts));
+    assert!(
+        !untinted.contains(&"button.root.primary.hover".to_owned()),
+        "{untinted:?}"
+    );
+}
+
+#[test]
 fn the_primary_never_takes_allows_look_in_two_states_at_once() {
     // The look two states draw at once, as the stylesheet resolves it, is held like one state's.
     for later in ["pressed", "focused", "open"] {

@@ -163,11 +163,9 @@ describe("a tint", () => {
       // grey, which has no hue to keep.
       const own = hueOf(accent);
       if (accent === theme.values["accent.base"] || own === undefined) continue;
-      // Within a few degrees: the hex is rounded to eight bits a channel.
-      // Within a few more where the tint gave less colour to keep it apart, eight bits a channel
-      // turning a quiet colour's hue further.
-      const within = accent === tintHex(theme.values["accent.base"], hue) ? 6 : 25;
-      expect(apart(own, hue), `${colour}: ${accent}`).toBeLessThan(within);
+      // Within a few degrees: the hex is rounded to eight bits a channel, and a held colour keeps
+      // its hue as it gives up colour (Classic dark's orange and yellow are within 3°).
+      expect(apart(own, hue), `${colour}: ${accent}`).toBeLessThan(6);
     }
   });
 
@@ -403,6 +401,16 @@ describe("the consent floors under every tint (#2526)", () => {
         distance: 0.1,
         alone: false,
       });
+  });
+
+  it("draws Purlis Classic light's yellow workspace as the core does", () => {
+    // #3130: the accent gives way alone to the waiting amber, near a grey, while the primary's
+    // fill keeps the yellow (`purlis_classic_s_tints_are_these`), so the window's sum and the
+    // core's cannot drift apart.
+    const light = classicAppearances().find((one) => one.id === "light")?.theme as Theme;
+    const tint = tinted(light, "yellow");
+    expect(tint.values["accent.base"]).toBe("#5e5d5e");
+    expect(tint.values["accent.fill"]).toBe("#f1edda");
   });
 
   it("is handed a rule keeping the accent and its edges apart from waiting, held alone", () => {
