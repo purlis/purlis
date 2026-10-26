@@ -245,7 +245,7 @@ describe("a row's menu", () => {
     expect(items[0]).toHaveTextContent(/^Use in this chat$/);
     expect(items[1]).toHaveTextContent(/^Turn off in ops$/);
     // Explorer shows a workspace's repos, so the row says where its folder is shown.
-    expect(items[2]).toHaveTextContent(/^Show in Explorer/);
+    expect(items[2]).toHaveTextContent(/^Show in the Explorer view/);
     expect(items[2]).toHaveAttribute("aria-disabled", "true");
     expect(items[2]).toHaveTextContent(/at the project's root/);
     await userEvent.click(within(menu).getByRole("menuitem", { name: "Use in this chat" }));
@@ -307,7 +307,7 @@ describe("a row's menu", () => {
 
     fireEvent.contextMenu(rowOf("deploy"));
     const menu = await screen.findByRole("menu", { name: "deploy" });
-    await userEvent.click(within(menu).getByRole("menuitem", { name: "Show in Explorer" }));
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Show in the Explorer view" }));
     expect(hands.onShowInExplorer).toHaveBeenCalledWith("skills/deploy");
   });
 });

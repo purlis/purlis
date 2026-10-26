@@ -252,7 +252,7 @@ describe("a row's menu", () => {
     expect(chat.map((one) => one.title)).toEqual([
       "Use in this chat",
       "Turn off in ops",
-      "Show in Explorer",
+      "Show in the Explorer view",
     ]);
     const none = menuRowsOf(row(skill("deploy")), { workspace: "ops", chat: false });
     expect(none.map((one) => one.act)).toEqual(["turn", "explorer"]);
