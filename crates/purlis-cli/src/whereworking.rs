@@ -102,7 +102,7 @@ pub fn run(now: Option<&str>) -> ExitCode {
             ExitCode::SUCCESS
         }
         Asked::Refused(why) => {
-            crate::voice::err(&format!("purlis persona where: {why}"));
+            crate::voice::err(format!("purlis persona where: {why}"));
             ExitCode::FAILURE
         }
         Asked::Unanswered(why) => {

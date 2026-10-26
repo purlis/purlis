@@ -117,40 +117,49 @@ pub(crate) fn remove_unless_running(
     say: Sink,
 ) -> Removal {
     let Some(dir) = wscmd::workspace_dir(root, name) else {
-        say(Say::Fail(format!(
-            "invalid workspace name '{}' (use letters, digits, '.', '_', '-'; must not start \
+        say(Say::Fail(
+            format!(
+                "invalid workspace name '{}' (use letters, digits, '.', '_', '-'; must not start \
              with a dot)",
-            crate::personas::one_line(name)
-        )));
+                crate::personas::one_line(name)
+            )
+            .into(),
+        ));
         return Removal::just(1);
     };
     if !wscmd::workspace_dir_exists(root, name) {
-        say(Say::Fail(format!("no workspace '{name}'")));
+        say(Say::Fail(format!("no workspace '{name}'").into()));
         return Removal::just(1);
     }
     // Before the guard and before anything is read below it: a `workspaces/<ws>` that is a
     // link out of the plane is a directory this command would delete somewhere else
     // entirely. Python's `shutil.rmtree` on a symlink raises; this refuses with a sentence.
     if let Err(why) = crate::contain::no_link_on_the_way(root, &dir) {
-        say(Say::Fail(format!(
-            "'{name}' does not resolve to a directory inside this plane, so nothing was \
+        say(Say::Fail(
+            format!(
+                "'{name}' does not resolve to a directory inside this plane, so nothing was \
              removed ({why})."
-        )));
+            )
+            .into(),
+        ));
         return Removal::just(1);
     }
     if !running.is_empty() {
-        say(Say::Fail(still_running(name, running)));
+        say(Say::Fail(still_running(name, running).into()));
         return Removal::just(1);
     }
 
     let risky = wscmd::work_at_risk(root, name);
     if !risky.is_empty() && !force {
         let joined: Vec<String> = risky.iter().map(ToString::to_string).collect();
-        say(Say::Fail(format!(
-            "Refusing to remove '{name}' — this would discard work: {}. Push/commit first, \
+        say(Say::Fail(
+            format!(
+                "Refusing to remove '{name}' — this would discard work: {}. Push/commit first, \
              or pass --force.",
-            joined.join("; ")
-        )));
+                joined.join("; ")
+            )
+            .into(),
+        ));
         // The sentence and the list are made from one reading, here, and handed back together.
         // A caller that wanted to name what was refused over and read the guard again would be
         // naming a second, later answer — which is charter-app#182 with the clock the other
@@ -169,11 +178,14 @@ pub(crate) fn remove_unless_running(
         && let Ok(todos) = ws.todos()
         && !todos.is_empty()
     {
-        say(Say::Warn(format!(
-            "Discarding {} with '{name}' — nothing else holds {}.",
-            counted(todos.len(), "open todo", "open todos"),
-            plural(todos.len(), "it", "them")
-        )));
+        say(Say::Warn(
+            format!(
+                "Discarding {} with '{name}' — nothing else holds {}.",
+                counted(todos.len(), "open todo", "open todos"),
+                plural(todos.len(), "it", "them")
+            )
+            .into(),
+        ));
     }
 
     // charter#870 and #998: purlis's lines in a repository kept elsewhere, before the delete
@@ -185,10 +197,13 @@ pub(crate) fn remove_unless_running(
     let held = linked_worktrees(&dir);
 
     if let Err(why) = std::fs::remove_dir_all(&dir) {
-        say(Say::Fail(format!(
-            "could not remove '{name}' ({}) — some of it may still be there.",
-            crate::rewrite::os_words(&why)
-        )));
+        say(Say::Fail(
+            format!(
+                "could not remove '{name}' ({}) — some of it may still be there.",
+                crate::rewrite::os_words(&why)
+            )
+            .into(),
+        ));
         return Removal::just(1);
     }
     for tree in &held {
@@ -203,13 +218,13 @@ pub(crate) fn remove_unless_running(
     for said in dispatches_left_behind(root, name) {
         say(said);
     }
-    say(Say::Done(format!(
-        "Removed workspace '{name}' and its clones."
-    )));
+    say(Say::Done(
+        format!("Removed workspace '{name}' and its clones.").into(),
+    ));
     if left > 0 {
-        say(Say::Info(crate::dispatchwithin::left_behind_said(
-            left, name, None,
-        )));
+        say(Say::Info(
+            crate::dispatchwithin::left_behind_said(left, name, None).into(),
+        ));
     }
     Removal::just(0)
 }
@@ -306,21 +321,27 @@ fn forget(ws: &str, held: &Held) -> Option<Say> {
     let (recorded, main) = match held {
         Held::Tree { recorded, main } => (recorded, main),
         Held::Unchecked { folder } => {
-            return Some(Say::Warn(format!(
-                "'{ws}/{}' linked to a git directory purlis could not confirm, so its \
+            return Some(Say::Warn(
+                format!(
+                    "'{ws}/{}' linked to a git directory purlis could not confirm, so its \
                  repository may still list it as a worktree; `git worktree prune` in that \
                  repository clears the record.",
-                crate::personas::one_line(folder)
-            )));
+                    crate::personas::one_line(folder)
+                )
+                .into(),
+            ));
         }
     };
     let prune = format!("git -C {} worktree prune", main.display());
     // Something at that place again is a folder git would delete, not a record it drops.
     if std::fs::symlink_metadata(recorded).is_ok() {
-        return Some(Say::Warn(format!(
-            "Something is at {recorded} again, so purlis left git's record of that worktree \
+        return Some(Say::Warn(
+            format!(
+                "Something is at {recorded} again, so purlis left git's record of that worktree \
              alone; once the place is clear, `{prune}` clears it."
-        )));
+            )
+            .into(),
+        ));
     }
     let ran = crate::worktree::git::run(
         main,
@@ -329,13 +350,19 @@ fn forget(ws: &str, held: &Held) -> Option<Say> {
     );
     match ran {
         Ok(run) if run.ok() => None,
-        Ok(run) => Some(Say::Warn(format!(
-            "git still lists {recorded} as a worktree ({}); `{prune}` clears it.",
-            crate::personas::one_line(run.err.trim())
-        ))),
-        Err(why) => Some(Say::Warn(format!(
-            "git did not run to clear its record of {recorded} ({why}); `{prune}` clears it."
-        ))),
+        Ok(run) => Some(Say::Warn(
+            format!(
+                "git still lists {recorded} as a worktree ({}); `{prune}` clears it.",
+                crate::personas::one_line(run.err.trim())
+            )
+            .into(),
+        )),
+        Err(why) => Some(Say::Warn(
+            format!(
+                "git did not run to clear its record of {recorded} ({why}); `{prune}` clears it."
+            )
+            .into(),
+        )),
     }
 }
 
@@ -361,13 +388,16 @@ fn still_running(name: &str, running: &[String]) -> String {
 fn dispatches_left_behind(root: &Path, ws: &str) -> Vec<Say> {
     match crate::dispatchrecord::workspace_removed(root, ws) {
         Ok(left) if left.records == 0 => Vec::new(),
-        Ok(left) => vec![Say::Info(left_behind_said(ws, left))],
-        Err(why) => vec![Say::Warn(format!(
-            "purlis could not read the project's dispatch records here ({}), so what tasks \
+        Ok(left) => vec![Say::Info(left_behind_said(ws, left).into())],
+        Err(why) => vec![Say::Warn(
+            format!(
+                "purlis could not read the project's dispatch records here ({}), so what tasks \
              that worked in '{ws}' and their asking chats said to each other stays until it \
              expires, 30 days after each task ended.",
-            crate::rewrite::os_words(&why)
-        ))],
+                crate::rewrite::os_words(&why)
+            )
+            .into(),
+        )],
     }
 }
 
@@ -410,28 +440,37 @@ fn withdrawn_said(ws: &str, done: &crate::guest::Withdrawal) -> Say {
     use crate::guest::Withdrawn;
     let (tree, exclude) = (done.tree.display(), done.exclude.display());
     let left = |why: &str| {
-        Say::Warn(format!(
-            "{tree} is a checkout whose git directory is outside '{ws}', so removing the \
+        Say::Warn(
+            format!(
+                "{tree} is a checkout whose git directory is outside '{ws}', so removing the \
              workspace leaves purlis's generated-layer block in {exclude} — it will name paths \
              that no longer exist. {why} Delete the block between `{}` and `{}` in that file.",
-            crate::guest::EXCLUDE_BEGIN,
-            crate::guest::EXCLUDE_END,
-        ))
+                crate::guest::EXCLUDE_BEGIN,
+                crate::guest::EXCLUDE_END,
+            )
+            .into(),
+        )
     };
     match &done.did {
-        Withdrawn::Cleared => Say::Info(format!(
-            "Removed purlis's generated-layer block from {exclude}, which {tree} read from \
+        Withdrawn::Cleared => Say::Info(
+            format!(
+                "Removed purlis's generated-layer block from {exclude}, which {tree} read from \
              outside '{ws}'."
-        )),
-        Withdrawn::Narrowed(kept) => Say::Info(format!(
-            "Took the lines only '{ws}' needed out of purlis's generated-layer block in \
+            )
+            .into(),
+        ),
+        Withdrawn::Narrowed(kept) => Say::Info(
+            format!(
+                "Took the lines only '{ws}' needed out of purlis's generated-layer block in \
              {exclude}; {kept} {} for another checkout purlis wires there.",
-            if *kept == 1 {
-                "line stays"
-            } else {
-                "lines stay"
-            }
-        )),
+                if *kept == 1 {
+                    "line stays"
+                } else {
+                    "lines stay"
+                }
+            )
+            .into(),
+        ),
         Withdrawn::Kept(why) => left(&format!(
             "purlis left it whole because it could not account for every line in it ({}).",
             why.join("; ")

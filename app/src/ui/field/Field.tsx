@@ -36,6 +36,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -386,23 +387,74 @@ function joined<T>(...refs: (Ref<T> | undefined)[]): RefCallback<T> {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * **The room for why a value is refused** (N26): a field that can be refused (it has `validate`,
- * or an `error` prop, set or not) keeps one line under its box whether or not it says anything,
- * so a refusal that comes or goes moves nothing around it. Empty, it is hidden from a screen
- * reader; the words that land in it are an alert, as every refusal in the window is. A long one
- * is cut short on screen and read whole as the box's description.
+ * **The room for why a value is refused** (N26, #3033): a field that can be refused (it has
+ * `validate`, or an `error` prop, set or not) keeps one line under its box whether or not it says
+ * anything, so a refusal that comes or goes moves nothing around it.
+ *
+ * - **Heard when it lands.** The line is an assertive live region from the start, empty and in the
+ *   accessibility tree: a live region that is already there when its words arrive is announced by
+ *   VoiceOver on WebKit, where one unhidden and filled at once may not be. While it says something
+ *   it is an alert, as every refusal in the window is, and it describes the box
+ *   (`aria-describedby`) in full; empty, it is no alert, so a screen reader's list of alerts and a
+ *   query for one find only what is said.
+ * - **Read whole by sight.** A refusal too long for its line (the core's words in a settings
+ *   row) is cut short at rest; while the field holds the keyboard, or the pointer is on the line,
+ *   the whole of it is drawn over what follows, from where the line starts, so nothing moves, and
+ *   brought into sight when its scroll container would cut it (a dialog's last field). That copy
+ *   is for the eye alone (`aria-hidden`), and it sits **beside the live line, never in it**: the
+ *   line changes only when its words do, so a resize that cuts them short, or lets them fit, makes
+ *   a screen reader say nothing again. It is the error part too, so a theme's words reach it. Shown
+ *   for the keyboard alone, the pointer goes through it to what it covers. An input error is the
+ *   one kind of such content WCAG 1.4.13 does not ask to be dismissable.
  */
 function ErrorLine({ id, said }: { id: string; said: string | undefined }) {
+  const words = useRef<HTMLSpanElement>(null);
+  const room = useRef<HTMLDivElement>(null);
+  const whole = useRef<HTMLSpanElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const line = words.current;
+    if (line === null) {
+      setClipped(false);
+      return;
+    }
+    // Measured at rest, on the one line, which never changes how it is drawn: the whole copy is
+    // another element, so showing it never makes the line look as if it fits.
+    const measure = () => setClipped(line.scrollWidth > line.clientWidth);
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(line);
+    return () => watch.disconnect();
+  }, [said]);
+  // Shown for the keyboard, the whole copy is brought into sight: the field taking the keyboard,
+  // or a refusal cut short while it has it.
+  useLayoutEffect(() => {
+    const field = room.current?.parentElement;
+    if (!field || !clipped) return;
+    const inSight = () => whole.current?.scrollIntoView?.({ block: "nearest" });
+    if (field.matches(":focus-within")) inSight();
+    field.addEventListener("focusin", inSight);
+    return () => field.removeEventListener("focusin", inSight);
+  }, [clipped]);
+  const shown = said !== undefined && clipped;
   return (
-    <p
-      data-scope="field"
-      data-part="error"
-      id={id}
-      role="alert"
-      aria-hidden={said === undefined ? "true" : undefined}
-    >
-      {said}
-    </p>
+    <div data-error-room="" data-clipped={shown ? "" : undefined} ref={room}>
+      <p
+        data-scope="field"
+        data-part="error"
+        id={id}
+        role={said !== undefined ? "alert" : undefined}
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        {said !== undefined && <span ref={words}>{said}</span>}
+      </p>
+      {shown && (
+        <span data-scope="field" data-part="error" data-whole="" aria-hidden="true" ref={whole}>
+          {said}
+        </span>
+      )}
+    </div>
   );
 }
 

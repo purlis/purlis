@@ -69,6 +69,15 @@ pub(crate) fn command_of(key: &str) -> Option<&'static str> {
         .map(|(_, command)| *command)
 }
 
+/// Whether `key` only modifies another key and moves no focus (Shift, Control, Alt, AltGr,
+/// Meta, Caps Lock, Fn): one pressed keeps a read of the page made for a key before it (#3043).
+pub(crate) fn is_modifier(key: &str) -> bool {
+    [
+        "Shift", "Control", "Alt", "AltGraph", "Meta", "CapsLock", "Fn",
+    ]
+    .contains(&key)
+}
+
 struct Key {
     key: String,
     code: String,
