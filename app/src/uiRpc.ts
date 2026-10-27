@@ -7816,7 +7816,7 @@ export type ProjectNotHeld = {
 	root: string,
 	/**  What the window calls it: its folder's name. */
 	name: string,
-	/**  What the runner said, as plain text, at most [`MOST_SAID`] characters. */
+	/**  What the runner said, as plain text, at most what the one sanitiser keeps (`crate::devices::MOST_SHOWN`, then `…`). */
 	why: string,
 	/**
 	 *  The pools its workspaces run their chats on, as this machine keeps them: the row the
