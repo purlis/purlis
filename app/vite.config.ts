@@ -146,6 +146,12 @@ export default defineConfig(async () => ({
           name: "unit",
           environment: "jsdom",
           setupFiles: ["./src/test-setup.ts"],
+          // **The budget a test is given, not a wait for anything** (with `test-setup.ts`'s
+          // `asyncUtilTimeout`). A test that draws the whole window (`render(<App />)`, every
+          // `*.window.test.tsx`) takes 1–3 s on an idle machine and past Vitest's default 5 s on
+          // a runner whose cores are all busy with the other workers; one shared budget here
+          // stands in for each file raising its own.
+          testTimeout: 20_000,
         },
       },
       // Loaded only when Vitest reads this file: `vite dev` and `vite build` never load
