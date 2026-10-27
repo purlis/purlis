@@ -65,6 +65,23 @@ export const PREVIEWED_VIEWS: readonly OwnViewId[] = ["skills"];
 /** No view behind a preview is on: what a window draws while every preview is off. */
 export const NO_PREVIEWS: readonly OwnViewId[] = [];
 
+/**
+ * **The views behind a preview drawn now** (#3266, #3308): each while its preview is on (`on`).
+ * Until the window has heard whether it is (`on` `undefined`, the first frames of a launch), a
+ * view a region was left on (`picked`) is held there, drawn empty, so a side left on Skills does
+ * not show its first view for a moment and then come back; every other one waits unseen, so no
+ * icon shows for a moment where the preview is off.
+ */
+export function previewsDrawn(
+  on: boolean | undefined,
+  picked: readonly (string | undefined)[],
+): readonly OwnViewId[] {
+  if (on !== undefined) return on ? PREVIEWED_VIEWS : NO_PREVIEWS;
+  const held = PREVIEWED_VIEWS.filter((view) => picked.includes(view));
+  if (held.length === 0) return NO_PREVIEWS;
+  return held.length === PREVIEWED_VIEWS.length ? PREVIEWED_VIEWS : held;
+}
+
 /** **Whether `view` is drawn only while it is present now**: an extension's panel while it is
  *  contributed, a view behind a preview while that preview is on. */
 export const drawnOnlyPresent = (view: string): boolean =>
