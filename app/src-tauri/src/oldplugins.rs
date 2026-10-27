@@ -11,10 +11,11 @@
 //!   costs a project switch no read of its own) says which files hold them, until the person
 //!   answers it once: **Remove** or **Dismiss**. The answer is kept in this machine's state for
 //!   the project, where no chat writes, so the Ask never comes back for it.
-//! - **Remove is an edit the person approves** ([`remove_old_harness_plugins`]): each of the
-//!   project's two files that holds them gets a proposed change that takes the table out, held
-//!   as purlis's own ([`crate::proposals::BY_PURLIS`]) and drawn, shown whole and applied as a
-//!   chat's proposal is. Nothing is written until the person presses Apply on it.
+//! - **Remove is an edit the person approves** ([`remove_old_harness_plugins`]): each file that
+//!   holds them, the project's two and each workspace's manifest (#3486), gets a proposed change
+//!   that takes the table out, held as purlis's own ([`crate::proposals::BY_PURLIS`]) and drawn,
+//!   shown whole and applied as a chat's proposal is. Nothing is written until the person
+//!   presses Apply on it, and a manifest is then written by its own writer, keeping its stamp.
 
 use std::path::{Path, PathBuf};
 
@@ -31,7 +32,7 @@ pub struct OldHarnessPlugins {
     pub said: String,
     /// The files that hold them, relative to the project.
     pub files: Vec<String>,
-    /// Whether Remove has a change to propose: one of the project's own two files holds them.
+    /// Whether Remove has a change to propose: a file that holds them can be made without them.
     pub removable: bool,
 }
 
@@ -54,7 +55,7 @@ pub fn notice_of(root: &Path) -> Option<OldHarnessPlugins> {
     Some(OldHarnessPlugins {
         said: old::said(&found),
         files: found.iter().map(|one| one.file.clone()).collect(),
-        removable: found.iter().any(|one| one.which.is_some()),
+        removable: found.iter().any(|one| one.removed(root).is_ok()),
     })
 }
 
@@ -77,20 +78,18 @@ pub struct HeldRemoval {
     pub file: String,
 }
 
-/// **Remove**'s work in the project at `root`: a proposed change per file of its own two that
-/// holds the keys, held in `proposals` at `now` as purlis's, in file order. The Ask is
-/// answered only once a change is held, so it never goes with nothing to apply.
+/// **Remove**'s work in the project at `root`: a proposed change per file that holds the keys
+/// (its own two, then each workspace's manifest), held in `proposals` at `now` as purlis's, in
+/// file order. The Ask is answered only once a change is held, so it never goes with nothing to
+/// apply.
 pub fn removal_held(
     root: &Path,
     proposals: &Proposals,
     now: u64,
 ) -> Result<Vec<HeldRemoval>, String> {
     let mut held = Vec::new();
-    for one in old::found(root)
-        .into_iter()
-        .filter(|one| one.which.is_some())
-    {
-        let content = old::removed(&one.text)?;
+    for one in old::found(root) {
+        let content = one.removed(root)?;
         let base = base_of(Some(one.text.as_bytes()));
         if let Some(id) = proposals.note(BY_PURLIS, &one.file, base, Change::Whole { content }, now)
         {

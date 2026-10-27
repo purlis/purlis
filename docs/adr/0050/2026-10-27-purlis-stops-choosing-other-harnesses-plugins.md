@@ -47,9 +47,11 @@ names each file holding them and that each harness decides. Its **Remove** holds
 change for each of the project's two files (the change purlis itself proposes, judged by
 `proposed::proposable_by_purlis` and drawn and applied as a chat's proposal is, #1975): nothing is
 written until the person presses Apply. **Dismiss** keeps the ask away. Either answer is kept
-in the project's own state folder on this machine. A workspace's `settings.harness_plugins` is
-named in the ask and taken out with that workspace's Edit as JSON, since its manifest has a
-writer of its own.
+in the project's own state folder on this machine. A workspace's `settings.harness_plugins` gets
+a proposed change of its own too (#3486), worked out as a form's save would write the manifest
+without the key and, on Apply, written by the manifest's own writer
+(`settings::workspace::save_text`) under its lock, pinned to the manifest as it was read. So a
+manifest purlis wrote keeps its stamp and one a hand wrote stays the hand's, as after a form save.
 
 ## What this amends
 

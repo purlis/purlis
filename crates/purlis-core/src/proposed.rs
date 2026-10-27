@@ -130,23 +130,84 @@ pub fn proposable(root: &Path, path: &Path) -> Result<PathBuf, String> {
 
 /// **Whether `path` is a file purlis itself may propose a change to** (#3467), for the person
 /// to apply as a chat's proposal is applied: one of the project's two settings files at its
-/// root, as the project spells them, there, and no link. What a chat may propose
-/// ([`proposable`]) is not widened by it: no chat's proposal is judged here.
+/// root, as the project spells them, or a workspace's manifest (#3486), there, and no link from
+/// the root down. What a chat may propose ([`proposable`]) is not widened by it: no chat's
+/// proposal is judged here.
 pub fn proposable_by_purlis(root: &Path, path: &Path) -> Result<PathBuf, String> {
     let rel = relative_to(root, path).ok_or_else(|| not_proposable(path))?;
-    let ours = [
+    let settings = [
         crate::settings::Which::Shared,
         crate::settings::Which::Local,
     ]
     .into_iter()
     .any(|which| rel == Path::new(which.file_at(root)));
-    if !ours {
+    let manifest = manifest_of(&rel).is_some_and(|workspace| {
+        crate::workspaces::Plane::open(root)
+            .workspaces()
+            .is_ok_and(|names| names.contains(&workspace))
+    });
+    if !settings && !manifest {
         return Err(not_proposable(path));
     }
-    match std::fs::symlink_metadata(root.join(&rel)) {
+    let mut at = root.to_path_buf();
+    for part in rel.components() {
+        at.push(part);
+        match std::fs::symlink_metadata(&at) {
+            Ok(meta) if !meta.file_type().is_symlink() => {}
+            _ => return Err(not_proposable(path)),
+        }
+    }
+    match std::fs::symlink_metadata(&at) {
         Ok(meta) if meta.file_type().is_file() => Ok(rel),
         _ => Err(not_proposable(path)),
     }
+}
+
+/// The workspace whose manifest `rel` names by its words, `workspaces/<ws>/workspace.json`, or
+/// none.
+fn manifest_of(rel: &Path) -> Option<String> {
+    let parts: Vec<&str> = rel
+        .components()
+        .map(|part| match part {
+            Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    match parts.as_slice() {
+        ["workspaces", workspace, name]
+            if *name == crate::settings::workspace::FILE && !workspace.starts_with('.') =>
+        {
+            Some((*workspace).to_owned())
+        }
+        _ => None,
+    }
+}
+
+/// **Writes purlis's own change to `rel`** ([`proposable_by_purlis`]) as `after`, only while
+/// the file is still what `base` says, `before` being the text that base was read from: a
+/// workspace's manifest by its own writer ([`crate::settings::workspace::save_text`], #3486),
+/// under its lock and its stamp rule, so a manifest purlis wrote stays purlis's; any other file
+/// as [`write_pinned`] writes a chat's. Nothing is written otherwise.
+pub fn write_by_purlis(
+    root: &Path,
+    rel: &Path,
+    base: Option<&str>,
+    before: Option<&str>,
+    after: &str,
+) -> Result<(), NotMade> {
+    let Some(workspace) = manifest_of(rel) else {
+        return write_pinned(root, rel, base, after);
+    };
+    if base.is_none() || base_of(before.map(str::as_bytes)).as_deref() != base {
+        return Err(NotMade::Unprepared);
+    }
+    crate::settings::workspace::save_text(root, &workspace, before, after).map_err(|_| {
+        // The writer says why in words; whether it is because the file moved is read here.
+        match read_pinned(root, rel) {
+            Ok(now) if base_of(now.as_deref()).as_deref() != base => NotMade::Stale,
+            _ => NotMade::Unprepared,
+        }
+    })
 }
 
 /// What a proposal to a file in a persona or a workspace that is not there is refused with.

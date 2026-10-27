@@ -484,3 +484,67 @@ fn purlis_proposes_to_no_settings_file_that_is_a_link() {
     std::os::unix::fs::symlink(&elsewhere, root.join("charter.local.toml")).expect("link");
     assert!(proposable_by_purlis(&root, &root.join("charter.local.toml")).is_err());
 }
+
+/// #3486: a workspace's manifest, where the workspace and its manifest are there.
+#[test]
+fn purlis_proposes_to_a_workspaces_manifest_that_is_there() {
+    let (_dir, root) = project();
+    let manifest = "workspaces/alpha/workspace.json";
+    assert!(
+        proposable_by_purlis(&root, &root.join(manifest)).is_err(),
+        "not there yet"
+    );
+    std::fs::write(root.join(manifest), "{}\n").expect("its manifest");
+    assert_eq!(
+        proposable_by_purlis(&root, &root.join(manifest)).as_deref(),
+        Ok(Path::new(manifest))
+    );
+    for no in [
+        "workspaces/beta/workspace.json",
+        "workspaces/alpha/repo/workspace.json",
+        "workspaces/.hidden/workspace.json",
+        "workspaces/alpha/purlis.toml",
+    ] {
+        assert!(proposable_by_purlis(&root, &root.join(no)).is_err(), "{no}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn purlis_proposes_to_no_manifest_in_a_workspace_that_is_a_link() {
+    let (dir, root) = project();
+    let elsewhere = dir.path().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).expect("elsewhere");
+    std::fs::write(elsewhere.join("workspace.json"), "{}\n").expect("a manifest");
+    std::os::unix::fs::symlink(&elsewhere, root.join("workspaces/gamma")).expect("link");
+    assert!(
+        proposable_by_purlis(&root, &root.join("workspaces/gamma/workspace.json")).is_err()
+    );
+}
+
+/// #3486: purlis's change to a workspace's manifest is written by the manifest's own writer,
+/// only while it is what the change was worked out against.
+#[test]
+fn purlis_writes_a_workspaces_manifest_through_its_own_writer_and_only_unchanged() {
+    let (_dir, root) = project();
+    let rel = Path::new("workspaces/alpha/workspace.json");
+    let before = "{\"name\": \"alpha\", \"settings\": {\"x\": 1}}";
+    std::fs::write(root.join(rel), before).expect("its manifest");
+    let after = "{\n  \"name\": \"alpha\"\n}\n";
+    let base = base_of(Some(before.as_bytes()));
+    assert_eq!(
+        write_by_purlis(&root, rel, base.as_deref(), Some(before), after),
+        Ok(())
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join(rel)).expect("read"),
+        after,
+        "a hand's manifest is written as shown"
+    );
+    let base = base_of(Some(after.as_bytes()));
+    std::fs::write(root.join(rel), "{\"name\": \"alpha\", \"moved\": 1}").expect("moved");
+    assert_eq!(
+        write_by_purlis(&root, rel, base.as_deref(), Some(after), "{}\n"),
+        Err(NotMade::Stale)
+    );
+}
