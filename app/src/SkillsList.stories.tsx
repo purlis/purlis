@@ -10,6 +10,7 @@
  * (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { SkillPinsRefused } from "./bindings";
 import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { expectFocusInSight, pictureNow, untilFocused, untilSettled } from "./stories.testkit";
@@ -56,7 +57,16 @@ const OPS: ListedSkill[] = [
 }));
 
 /** The view with what was last done on it said under it, and a way out after it. */
-function Skills({ starts = false, rows = OPS }: { starts?: boolean; rows?: ListedSkill[] }) {
+function Skills({
+  starts = false,
+  rows = OPS,
+  pinsRefused = null,
+}: {
+  starts?: boolean;
+  rows?: ListedSkill[];
+  /** Why ops's chats read none of its pins, where they read none (#3432). */
+  pinsRefused?: SkillPinsRefused | null;
+}) {
   const [said, setSaid] = useState("Nothing done");
   const [only, setOnly] = useState(false);
   const filter = useListFilter(rows, (row) => row.skill.name);
@@ -83,7 +93,7 @@ function Skills({ starts = false, rows = OPS }: { starts?: boolean; rows?: Liste
         menuOf={(row) => () => (
           <SkillMenu
             row={row}
-            at={{ workspace: "ops", chat: true }}
+            at={{ workspace: "ops", chat: true, explorer: "ops", pinsRefused }}
             busy={false}
             onAct={(what) => setSaid(`Chose ${what}`)}
           />
@@ -160,8 +170,9 @@ export const ByLevel: Story = {
     );
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
-    expectFocusInSight();
+    // The focus comes back once the menu has gone, which WebKit can take a frame longer for.
     await untilFocused(() => off, "Skills: Escape gives the keyboard back to the row");
+    expectFocusInSight();
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "After the view" }),
@@ -177,7 +188,8 @@ export const ByLevel: Story = {
  * studio, Enter opens it on its first start, Enter starts one and closes it.
  *
  * The picture is of the menu open on its first start (#3414): taken once the menu has arrived,
- * its fade and its placement done, of the page, as the menu is drawn past the view's edge.
+ * its fade and its placement done, of the page, as a menu is drawn over the view. It opens from
+ * the button's end, so it stays inside the view's width (#3308).
  */
 export const NoSkillsOfItsOwn: Story = {
   parameters: { screenshot: "page" },
@@ -199,6 +211,41 @@ export const NoSkillsOfItsOwn: Story = {
     await pictureNow();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Started draft"));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
+  },
+};
+
+/**
+ * **A pin no chat reads** (#3432): ops's pins are more than 64, so its chats read none of them.
+ * The pinned row's menu offers Unpin, and says under it that the pin is not used, and the core's
+ * why. The picture is of that menu, open and settled.
+ */
+export const APinNoChatReads: Story = {
+  parameters: { screenshot: "page" },
+  render: () => (
+    <Skills
+      pinsRefused={{
+        by: { at: "workspace", name: "ops" },
+        why: "the list holds more than 64 pins",
+        bad: null,
+        file: "workspaces/ops/skills.pins",
+      }}
+    />
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Skills" });
+    const pinned = within(list).getByRole("row", { name: /release-notes/ });
+    pinned.focus();
+    await untilFocused(() => pinned, "Skills: the pinned row has the keyboard");
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu", { name: "release-notes" });
+    const unpin = within(menu).getByRole("menuitem", { name: "Unpin from this workspace" });
+    expect(unpin).toHaveAccessibleDescription(
+      "Pinned, not used: the list holds more than 64 pins.",
+    );
+    await untilSettled(menu);
+    await pictureNow();
+    await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
   },
 };

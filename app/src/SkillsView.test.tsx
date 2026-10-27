@@ -19,10 +19,12 @@ import { skill, studio } from "./skillsListing.testkit";
 import { inWorkspace, skillStudioView } from "./skillStudio";
 import { skillView } from "./skillRuns";
 import { SKILL_CHAT, type SkillChatAsk } from "./skillDraftAsks";
+import { SKILLS_VIEW } from "./skillsViewPrefs";
 
 afterEach(() => {
   cleanup();
   clearMocks();
+  SKILLS_VIEW.forget();
 });
 
 const REVIEWER = {
@@ -365,6 +367,32 @@ describe("a row's menu", () => {
     );
   });
 
+  it("says a pin this workspace's chats read none of is not used, and the core's why (#3432)", async () => {
+    core(() =>
+      studio([skill("deploy", { pinned: true, pinned_by: [{ at: "workspace", name: "ops" }] })], {
+        pins_refused: {
+          by: { at: "workspace", name: "ops" },
+          why: "the list holds more than 64 pins",
+          bad: null,
+          file: "workspaces/ops/skills.pins",
+        },
+      }),
+    );
+    view();
+    await list();
+    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
+
+    fireEvent.contextMenu(rowOf("deploy"));
+    const menu = await screen.findByRole("menu", { name: "deploy" });
+    const unpin = within(menu).getByRole("menuitem", { name: "Unpin from this workspace" });
+    // Said under the row, and as its description, not only on hover.
+    expect(unpin).toHaveTextContent("Pinned, not used: the list holds more than 64 pins.");
+    expect(unpin).toHaveAccessibleDescription(
+      "Pinned, not used: the list holds more than 64 pins.",
+    );
+    expect(unpin).not.toHaveAttribute("aria-disabled", "true");
+  });
+
   it("says the core's refusal where a pin is refused", async () => {
     const asked: Asked[] = [];
     mockIPC((cmd, args) => {
@@ -411,7 +439,45 @@ describe("a row's menu", () => {
     await userEvent.click(
       within(menu).getByRole("menuitem", { name: "Show in the Explorer view" }),
     );
-    expect(hands.onShowInExplorer).toHaveBeenCalledWith("skills/deploy");
+    expect(hands.onShowInExplorer).toHaveBeenCalledWith({ repo: "", folder: "skills/deploy" });
+  });
+
+  it("shows a repo skill in its clone, in the workspace (#3308)", async () => {
+    core(() =>
+      studio([skill("deploy")], {
+        harnesses: [
+          {
+            harness: "claude",
+            title: "Claude Code",
+            unsupported: null,
+            only_off: null,
+            trouble: null,
+            plugins: [],
+            skills: [
+              skill("lint-rs", {
+                level: "repo",
+                folder: "workspaces/ops/svc/.claude/skills/lint-rs",
+                owner: { kind: "repo", name: "svc" },
+              }),
+            ],
+            repo_left_out: [],
+          },
+        ],
+      }),
+    );
+    const hands = view();
+    await list();
+    await waitFor(() => expect(rowOf("lint-rs")).toBeInTheDocument());
+
+    fireEvent.contextMenu(rowOf("lint-rs"));
+    const menu = await screen.findByRole("menu", { name: "lint-rs" });
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: "Show in the Explorer view" }),
+    );
+    expect(hands.onShowInExplorer).toHaveBeenCalledWith({
+      repo: "svc",
+      folder: ".claude/skills/lint-rs",
+    });
   });
 });
 
@@ -500,7 +566,8 @@ describe("Only this chat's", () => {
     expect(use).toHaveTextContent("The chat in front does not get it.");
     await userEvent.keyboard("{Escape}");
 
-    // Kept for the window: drawn again, the switch is still on.
+    // Kept for the window, in its layout file (#3308): drawn again, the switch is still on.
+    expect(SKILLS_VIEW.written()).toEqual({ onlyThisChat: true });
     cleanup();
     view({ chat: CHAT });
     expect(await screen.findByRole("button", { name: "Only this chat's" })).toHaveAttribute(

@@ -286,11 +286,14 @@ export function Explorer({
    *  workspace's tab is selected on the strip. */
   onGoToWorkspace?: (workspace: string) => void;
   /**
-   * **A folder of the project's own files to bring into view** (#3266, the Skills view's Show in
-   * Explorer), at the plane root: each time `asked` moves, the folders above it are opened and
-   * the keyboard lands on its row once it is drawn. Elsewhere Explorer draws no plane files.
+   * **A folder to bring into view** (#3266, #3308, the Skills view's Show in Explorer): one of
+   * the project's own files (`repo` `""`), at the plane root, or one inside a clone (`repo`) of
+   * the workspace shown, by its path in the clone. Each time `asked` moves, the folders above it
+   * are opened and the keyboard lands on its row once it is drawn; in a workspace whose *Files*
+   * are of another branch, the workspace itself is picked first, which lists every clone's own.
+   * A folder of the other kind waits until Explorer is where it is.
    */
-  reveal?: { folder: string; asked: number };
+  reveal?: { repo: string; folder: string; asked: number };
   /**
    * **Search contents** (#3343): the Search view, opened on the filter's scope — `branch`, the
    * selected repo's own folder or the picked branch (`at`), or `workspace`, all its repos — with
@@ -573,35 +576,94 @@ export function Explorer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cockpitKey, workspace]);
 
-  // **Show in Explorer** (#3266): on each ask, the folders above the one asked for are opened
-  // (as React has state follow a prop, while drawing), then its row is given the keyboard as soon
-  // as it is drawn: a folder is read as it opens.
+  // **Show in Explorer** (#3266, #3308): on each ask, the folders above the one asked for are
+  // opened (as React has state follow a prop, while drawing), then its row is given the keyboard
+  // as soon as it is drawn: a folder is read as it opens. A clone's folder is asked of a
+  // workspace, a project's own of the plane root.
   const [revealSeen, setRevealSeen] = useState(reveal?.asked);
-  const [revealing, setRevealing] = useState<string>();
+  const [revealing, setRevealing] = useState<{ row: string; repo: string; workspace: string }>();
   /** The ask whose row has had the keyboard: each ask lands once. */
   const revealed = useRef(reveal?.asked);
-  if (reveal !== undefined && atRoot && reveal.asked !== revealSeen) {
+  /** The ask Files was moved to the workspace itself for: once each, so a row the ask never
+   *  reaches (filtered out, gone) never holds the person's next pick back. */
+  const movedFor = useRef(reveal?.asked);
+  const revealHere =
+    reveal !== undefined &&
+    filesWorkspace !== undefined &&
+    has("files") &&
+    (reveal.repo === "") === atRoot;
+  if (reveal !== undefined && revealHere && reveal.asked !== revealSeen) {
     setRevealSeen(reveal.asked);
     const parts = reveal.folder.split("/").filter((part) => part !== "");
-    const top = { repo: PLANE_ROOT.repo, piece: PLANE_ROOT.piece };
-    const above = parts.slice(0, -1).map((_, at) => parts.slice(0, at + 1).join("/"));
+    const top = atRoot
+      ? { repo: PLANE_ROOT.repo, piece: PLANE_ROOT.piece }
+      : { repo: reveal.repo, piece: null };
+    // A clone's own folder is one of several tops in a workspace, each closed until opened.
+    const above = [
+      ...(atRoot ? [] : [""]),
+      ...parts.slice(0, -1).map((_, at) => parts.slice(0, at + 1).join("/")),
+    ];
     setExpanded((was) => {
       const now = new Set(was);
-      for (const folder of above) now.add(fileFold(PLANE_ROOT.workspace, { ...top, folder }));
+      for (const folder of above) now.add(fileFold(filesWorkspace, { ...top, folder }));
       return now;
     });
-    setRevealing(fileRow({ ...top, folder: parts.join("/") }));
+    setRevealing({
+      row: fileRow({ ...top, folder: parts.join("/") }),
+      repo: top.repo,
+      workspace: filesWorkspace,
+    });
   }
   useEffect(() => {
     const wanted = revealing;
     if (wanted === undefined || revealed.current === revealSeen) return;
-    const row = [...(navRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])].find(
-      (el) => el.dataset.row === wanted,
-    );
-    if (row === undefined) return;
-    revealed.current = revealSeen;
-    row.scrollIntoView?.({ block: "nearest" });
-    row.focus();
+    // An ask of another workspace's (or the root's) folder, left behind by a switch, lapses.
+    if (wanted.workspace !== filesWorkspace) {
+      revealed.current = revealSeen;
+      return;
+    }
+    // A folded *Files* section draws none of its rows: it is opened first.
+    if (closed.has("files")) {
+      setSectionOpen("files", true, plane);
+      return;
+    }
+    // *Files* of another branch than the clone's own folder: the workspace itself lists it.
+    if (
+      !atRoot &&
+      filesTop !== undefined &&
+      (filesTop.repo !== wanted.repo || filesTop.piece !== null)
+    ) {
+      if (movedFor.current === revealSeen) {
+        // Moved once already, and the person went elsewhere: the ask is theirs to drop.
+        revealed.current = revealSeen;
+        return;
+      }
+      movedFor.current = revealSeen;
+      if (cockpit !== undefined) onFocus?.(undefined);
+      else onPick(undefined);
+      return;
+    }
+    const nav = navRef.current;
+    if (nav === null) return;
+    /** Gives the row the keyboard once it is drawn: whether it was. */
+    const land = (): boolean => {
+      const row = [...nav.querySelectorAll<HTMLElement>("[data-row]")].find(
+        (el) => el.dataset.row === wanted.row,
+      );
+      if (row === undefined) return false;
+      revealed.current = revealSeen;
+      row.scrollIntoView?.({ block: "nearest" });
+      row.focus();
+      return true;
+    };
+    if (land()) return;
+    // The tree family draws a folder's rows in a commit of its own, after this view's, once
+    // the folder is read: the row is waited for in the DOM, not on this view's next draw.
+    const drawn = new MutationObserver(() => {
+      if (land()) drawn.disconnect();
+    });
+    drawn.observe(nav, { childList: true, subtree: true });
+    return () => drawn.disconnect();
   });
 
   // ⌘⇧F in the files view searches the filter's scope with its words (#3343): what the link
