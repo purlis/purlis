@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { READ_BY_CODE, SCOPES, ciToolsOf, scopesOf, scopesOfPath } from "./ci-scope.mjs";
+import { READ_BY_CODE, SCOPES, ciToolsOf, namedIn, scopesOf, scopesOfPath } from "./ci-scope.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CI_TOOLS = new Set(["coldstart-linux.sh", "ci-scope.mjs", "no-orphans.sh"]);
@@ -150,6 +150,19 @@ test("a tool is CI's when a file outside tools/ and the docs names it, or such a
   };
   const ci = ciToolsOf(Object.keys(files), (p) => files[p]);
   assert.deepEqual([...ci].sort(), ["no-orphans.sh", "notices.mjs", "orphan-report.mjs"]);
+});
+
+test("a tool's name is matched as text, whole, whatever characters it holds", () => {
+  assert.ok(namedIn('node "$(dirname "$0")/bench.mjs"', "bench.mjs"));
+  assert.ok(!namedIn("tools/stress-bench.mjs", "bench.mjs"));
+  assert.ok(!namedIn("tools/bench.mjs2", "bench.mjs"));
+  assert.ok(!namedIn("benchXmjs", "bench.mjs"), "a dot is a dot, not any character");
+  for (const name of ["a+b.mjs", "c(1).sh", "d\\e.py", "f[g].mjs", "h$.mjs", "i*.mjs"]) {
+    assert.ok(namedIn(`run tools/${name} now`, name), name);
+    assert.ok(!namedIn(`run tools/x${name} now`, name), `x${name}`);
+  }
+  assert.ok(!namedIn("a+bbbb.mjs", "a+b.mjs"));
+  assert.ok(!namedIn("c1.sh", "c(1).sh"));
 });
 
 // The rules held to this repository, so a new reader of a doc or a new tool CI runs fails here
