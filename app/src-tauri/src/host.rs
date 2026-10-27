@@ -677,9 +677,16 @@ pub(crate) mod pretend {
         /// How it records the run of each chat it composes from now on, where a test said
         /// ([`Pretend::records_composed_runs_as`], #2692): in `seatbelt` otherwise.
         composed_ran: Mutex<Option<Option<purlis_session_protocol::session::RunSandbox>>>,
+        /// The chats it says run on a pool's runner, and the pool ([`Pretend::runs_on_pool`]).
+        pools: Mutex<Vec<(u32, String)>>,
     }
 
     impl Pretend {
+        /// Says chat `id` runs on `pool`'s runner from now on (#2047), as a router does.
+        pub fn runs_on_pool(&self, id: u32, pool: &str) {
+            lock(&self.seen.pools).push((id, pool.to_owned()));
+        }
+
         /// Runs its chats on a runner from now on, which composes each harness chat (#2446).
         pub fn on_a_runner(&self) {
             self.seen.on_a_runner.store(true, Ordering::SeqCst);
@@ -961,6 +968,12 @@ pub(crate) mod pretend {
         }
         fn composes_its_harness_chats(&self) -> bool {
             self.seen.on_a_runner.load(Ordering::SeqCst)
+        }
+        fn pool_of(&self, id: u32) -> Option<String> {
+            lock(&self.seen.pools)
+                .iter()
+                .find(|(chat, _)| *chat == id)
+                .map(|(_, pool)| pool.clone())
         }
         fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {
             self.here(id)?;

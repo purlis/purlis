@@ -817,6 +817,7 @@ fn lost(set: &SkillSet, folder: &Path, name: &str) -> Option<String> {
     match left.map(|left| &left.reason) {
         Some(Reason::TurnedOff) => None,
         Some(Reason::NameTaken { by, .. }) if *by != Origin::BuiltIn => None,
+        Some(Reason::HiddenByRepo { .. }) => None,
         Some(reason) => Some(reason.to_string()),
         None => Some("it is not in the chat's skills".to_owned()),
     }

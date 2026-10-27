@@ -103,23 +103,23 @@ describe("a chat's missing skills", () => {
             level: "workspace",
             local: false,
             label: "workspace",
-            why: "hidden by the repo skill of this name",
+            why: "the repo api has its own copy, which loads in its place",
           },
           {
             name: "ship",
             level: "workspace",
             local: false,
             label: "workspace",
-            why: "purlis could not read the skills folder of web whole, so a copy of this skill may be there, and a chat in that repo would get that one",
+            why: "purlis could not read the skills folder of web whole, so it is left out in case the repo has its own",
           },
         ],
         beside_a_built_in: [],
       }),
     ).toBe(
       "This chat started without 2 skills because of the repo it works in: " +
-        "review (workspace), hidden by the repo skill of this name; " +
-        "ship (workspace), purlis could not read the skills folder of web whole, so a copy of " +
-        "this skill may be there, and a chat in that repo would get that one.",
+        "review (workspace), the repo api has its own copy, which loads in its place; " +
+        "ship (workspace), purlis could not read the skills folder of web whole, so it is left " +
+        "out in case the repo has its own.",
     );
   });
 

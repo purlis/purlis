@@ -175,9 +175,9 @@ export function SkillsList({
 }
 
 /**
- * **A row's menu** (the amendment's (b)): Use in this chat, the switch and Show in Explorer,
- * drawn as every menu is (`Menus.Groups`), each that cannot run saying why. While a change is on
- * its way the switch waits.
+ * **A row's menu** (the amendment's (b)): Use in this chat, the switch, Pin to this workspace and
+ * Show in Explorer, drawn as every menu is (`Menus.Groups`), each that cannot run saying why.
+ * While a change is on its way the switch and the pin wait.
  */
 export function SkillMenu({
   row,
@@ -193,7 +193,7 @@ export function SkillMenu({
   const rows = menuRowsOf(row, at);
   const group: GroupDrawn = {
     entries: rows.map((one) => {
-      const waits = busy && one.act === "turn";
+      const waits = busy && (one.act === "turn" || one.act === "pin");
       const available = one.available && !waits;
       return {
         kind: "row",

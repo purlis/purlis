@@ -186,7 +186,7 @@ describe("Settings › Project › Dispatch", () => {
       "May run at once",
       "Tokens per session",
       "Minutes per task",
-      "",
+      "Actions",
     ]);
     expect(within(table).getByRole("rowheader", { name: "Project" })).toBeInTheDocument();
     expect(screen.getByLabelText("Running per chat for the project")).toHaveValue("4");
@@ -212,9 +212,10 @@ describe("Settings › Project › Dispatch", () => {
     render(<Page />);
 
     const table = await screen.findByRole("table", { name: "Dispatch limits" });
-    // The shared table's stacking form, in the room it measures (`primitives/collections.css`).
-    expect(table).toHaveClass("ui-table", "ui-table-stacks");
-    expect(table.closest(".ui-table-room")).not.toBeNull();
+    // The table family's stacking form, in the frame it measures (`ui/table/table.css`).
+    expect(table).toHaveAttribute("data-scope", "table");
+    expect(table).toHaveAttribute("data-stacks");
+    expect(table.closest('[data-part="frame"][data-stacks]')).not.toBeNull();
     // Each box's cell carries its column's whole words, which the stacked form shows above it.
     const cellOf = (name: string) => screen.getByLabelText(name).closest("td") as HTMLElement;
     expect(cellOf("Depth for the project")).toHaveAttribute("data-heading", "Depth");
@@ -230,8 +231,8 @@ describe("Settings › Project › Dispatch", () => {
     // is not drawn at all.
     const project = within(table).getByRole("rowheader", { name: "Project" }).closest("tr");
     expect(
-      [...(project as HTMLElement).querySelectorAll("td[data-heading]")].filter(
-        (cell) => cell.childElementCount === 0,
+      [...(project as HTMLElement).querySelectorAll("td[data-heading]")].filter((cell) =>
+        cell.hasAttribute("data-empty"),
       ),
     ).toHaveLength(2);
   });
@@ -1021,7 +1022,7 @@ describe("the limits table's look (DS-9, #1841)", () => {
   it("is the shared table, its headings each on one line", async () => {
     const table = await drawn();
 
-    expect(table).toHaveClass("ui-table");
+    expect(table).toHaveAttribute("data-scope", "table");
     for (const heading of within(table).getAllByRole("columnheader"))
       expect(drawnWith(heading, "white-space")).toBe("nowrap");
   });
@@ -1091,14 +1092,14 @@ describe("the limits table's look (DS-9, #1841)", () => {
     const actions = within(table).getByRole("button", {
       name: "Remove the override for the persona devops",
     }).parentElement as HTMLElement;
-    expect(actions).toHaveClass("ui-cell-actions");
+    expect(actions).toHaveAttribute("data-actions");
   });
 
-  it("sizes nothing of its own: its cells take the shared table's padding and alignment", async () => {
+  it("sizes nothing of its own: its cells take the table family's padding and alignment", async () => {
     const table = await drawn();
     const cell = screen.getByLabelText("Depth for the persona devops").closest("td") as HTMLElement;
 
-    expect(drawnWith(cell, "padding-inline")).toBe("var(--ui-cell-pad-inline)");
+    expect(drawnWith(cell, "padding-inline")).toBe("var(--space-5)");
     expect(drawnWith(cell, "vertical-align")).toBe("middle");
     expect(drawnWith(table, "margin")).toBeUndefined();
   });

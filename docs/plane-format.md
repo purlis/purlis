@@ -343,6 +343,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`<state>/skill-grades/<YYYY-MM>.jsonl`](#stateskill-gradesyyyy-mmjsonl)
+  - [`<state>/grades-under-way/<grade>.json`](#stategrades-under-waygradejson)
   - [`skill-tries/<id>/`](#skill-triesid)
   - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
   - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
@@ -1399,7 +1400,10 @@ outside the project and removes it when the flow ends, so it adds none of them (
   exactly those files.
 - **Read by:** `purlis-skills`' `skill_set` (`crates/skills/src/lib.rs`), the one place a
   chat's skills are worked out, for every chat purlis starts and for `purlis skill list` and
-  `show` and the Skill studio. A project skill is in the set of a chat at the plane root; a chat
+  `show` and the Skill studio. Where a repo or a harness has a skill of a name purlis hands, the
+  studio and `purlis skill list` mark purlis's copy with the same line (SK-46), such as "the repo
+  api has a skill of this name too, and a chat there gets both", and `--json` lists each under the
+  row's `clashes`. A project skill is in the set of a chat at the plane root; a chat
   in a workspace gets it only through its grant, and is otherwise told "not granted to this
   workspace". A workspace that turns a granted skill off (`settings.skills.off` in its
   [`workspace.json`](#workspaceswsworkspacejson--the-committed-manifest)) is told "turned off in this workspace". A
@@ -1452,15 +1456,18 @@ ADR 0101 §5). The one folder inside a skill's folder purlis reads beyond `SKILL
 level, in skill-creator's own shapes so its tools read them too. **Written by** the person (and,
 with SK-17, a chat's draft); **read by** `purlis_skills::grade::fixtures_of`, for the Skill
 studio's Grade and `purlis skill grade`, through the skill's folder held open and never through a
-link, each file at most 256 KiB, parsed as JSON and taken key by key; a file that is not whole is
-refused whole with the sentence saying where, and a key not below is left out. A grade's chat is
-handed the skill without this folder. Results never go here: they go to the
-[eval record](#personas_gradesyyyy-mmdevicejsonl). **experimental** behind the `skill-studio` flag.
+link, each file at most 256 KiB, parsed as JSON and taken key by key; a file that is not whole,
+or one with an object that names a key twice (#3275), is refused whole with the sentence saying
+where, and a key not below is left out. A grade's chat is handed the skill without this folder.
+Results never go here: they go to the [eval record](#personas_gradesyyyy-mmdevicejsonl).
+**experimental** behind the `skill-studio` flag. **Tier:** Plane — committed with the skill's
+folder at a shared level, so it travels with the skill; a `skills.local/` copy's are this
+machine's alone, as the rest of that copy is.
 
 | File | Shape | Meaning |
 |---|---|---|
 | `evals/triggers.json` | a list of `{"query": <text>, "should_trigger": <bool>}`, at most 100, no query twice, each query 1 byte to 8 KiB | the **trigger tests**: a query the skill should start on, or a near miss it should leave alone. A grade sends each query as a chat's first message; one a harness would read as its own flag is left out and named in the plan |
-| `evals/evals.json` | `{"skill_name": <the skill's name>, "evals": [{"id": <int>, "prompt": <text>, "expected_output": <text>, "files": [<path in the skill's folder>], "expectations": [<text>]}]}`, at most 100 evals, ids unique; `assertions` is read as another name for `expectations`, and an eval with both is refused | the **outcome evals**. Read and counted now; graded by a later version (#2779's follow-up). `files` are plain paths inside the skill's folder, at most 16; each expectation at most 2 KiB, at most 32 |
+| `evals/evals.json` | `{"skill_name": <the skill's name>, "evals": [{"id": <int>, "prompt": <text>, "expected_output": <text>, "files": [<path in the skill's folder>], "expectations": [<text>]}]}`, at most 100 evals, ids unique; `assertions` is read as another name for `expectations`, and an eval with both is refused | the **outcome evals**. Read and counted now; graded by a later version (#3235). `files` are plain paths inside the skill's folder, at most 16, each at most 512 bytes with no control character; each expectation at most 2 KiB, at most 32 |
 
 ### `skills.local/` — the project's local skills
 
@@ -3720,7 +3727,10 @@ An end row, never a pass or a fail:
 - **Format:** JSON Lines, append-only, one row per **grade** (SK-16, #2779,
   [ADR 0105](adr/0105-a-grade-is-real-chats-purlis-runs-cost-first-scored-by-skill-runs-and-recorded-against-the-skills-version.md) §5): the **eval record**.
 - **Status:** **experimental**, behind the `skill-studio` flag; written by the app when a grade
-  ends, whole or stopped, and read by the Skill studio's Grades panel, a skill's history and
+  ends, whole or stopped, or at the project's next start for a grade purlis stopped under before
+  it was scored (`report.ended` `interrupted`, no chat scored, #3353,
+  [`<state>/grades-under-way/`](#stategrades-under-waygradejson)), and read by the Skill studio's
+  Grades panel (one copy's grades: the copy the skill's tab shows, #3353), a skill's history and
   `purlis skill grade`.
 - **Tier:** Plane — committed, beside the skill log, so a teammate sees a skill's grades on the
   version they pulled.
@@ -3741,7 +3751,11 @@ An end row, never a pass or a fail:
   16 MiB, each line at most 1 MiB; a line that
   is not a row, a row of a newer `v`, and a row that says more than purlis writes (a commit that
   is no whole hex id, a harness, profile or id that is no plain name, a stamp that is no time)
-  is skipped. At most 200 grades of a skill are answered, newest first
+  or whose spend and report do not hold together (a cost below nothing; a grader that is no plain
+  name; a test triggered more often than it ran, run more often than the grade's `runs`, with a
+  rate that is not the two's share or a pass where nothing ran, or a chat that is no plain id; an
+  arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
+  reason that holds a control character or passes 2 KiB, #3353) is skipped. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::grades_of`).
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
@@ -7183,6 +7197,20 @@ rewritten.
   beside the committed record by `grades::grades_of`, held to the same limits.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state — this machine's own; nothing rebuilds it.
+- **Git:** gitignored, under the state directory.
+
+### `<state>/grades-under-way/<grade>.json`
+- **Format:** one JSON object per grade running on this machine (#3353): `pid`, the process that
+  runs it; `local`, whether its copy is this machine's alone; and `graded`, its eval record row as
+  it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
+  nothing spent). Written `0600` through no link when a grade starts
+  (`grades::underway::began`) and removed when it ends (`grades::underway::ended`). At the
+  project's next start, each file whose process no longer runs is recorded as it is, interrupted,
+  and removed (`grades::underway::interrupted`): so a crash, a fault or a quit never leaves a grade
+  running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
+  sound row is removed unrecorded.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state, transient — it lasts as long as its grade.
 - **Git:** gitignored, under the state directory.
 
 ### `skill-tries/<id>/`

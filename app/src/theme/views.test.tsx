@@ -1004,6 +1004,7 @@ const ORDINARY: Answers = {
         outside: "repo",
         owner: { kind: "repo", name: "api" },
         outcome: "both-load",
+        said: "the repo api has a skill of this name too, and a chat there gets both",
       },
     ],
     harnesses: [

@@ -9,6 +9,7 @@ import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { ImportCliLogin } from "../ImportCliLogin";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
+import { Badge } from "../ui/badge/Badge";
 
 /**
  * **You › Accounts** (#1814, ADR 0077 §6): this machine's forge accounts, each with Sign out;
@@ -179,7 +180,7 @@ const forgeAccounts: LiveSetting = {
                   <li key={account.id} className="ui-machine-entry">
                     <span className="ui-machine-name">{account.login}</span>
                     <span className="ui-machine-path">{account.host}</span>
-                    <span className="ui-setting-badge">{note(account)}</span>
+                    <Badge variant="accent">{note(account)}</Badge>
                     <Button
                       size="sm"
                       aria-label={`Sign out of ${account.login} on ${account.host}`}

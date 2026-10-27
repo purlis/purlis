@@ -10,7 +10,7 @@ import { ask, inFront, openFromTheStrip, PROJECTS } from "../switching.js";
 /**
  * **Settings' tables keep each heading on one line, whole, in the real WebView** (DS-9, #1841;
  * spec #1832's seam 3), and stack into a form only where Settings is narrow (#1859, #1865). Both
- * Dispatch tables wear the shared `.ui-table`: a heading never wraps,
+ * Dispatch tables are the table family's `ControlTable` (`ui/table`, #2911): a heading never wraps,
  * and a long one is shortened (its whole words in its tooltip), so at the default window width no
  * heading is cut either.
  *
@@ -28,7 +28,7 @@ const TABS = '[data-strip="Tabs"]';
 const LEVEL = '[role="radiogroup"][aria-label="Level"]';
 const GROUPS = 'nav[aria-label="Groups"]';
 const LIMITS = 'table[aria-label="Dispatch limits"]';
-const GRANTS = "table.dispatch-table";
+const GRANTS = ".dispatch-table > table";
 
 /** This spec's project: the fixture with a second persona, `steward`, granted `devops`. */
 const mine = (() => {
@@ -60,10 +60,16 @@ async function headingsOf(table: string): Promise<Heading[] | null> {
     const drawn = document.querySelector(selector);
     if (drawn === null) return null;
     return [...drawn.querySelectorAll<HTMLElement>("thead th")].map((th) => {
-      const range = document.createRange();
-      range.selectNodeContents(th);
-      // A line box per distinct top among the words' boxes, a pixel or two of rounding apart.
-      const tops = [...range.getClientRects()]
+      // A line box per distinct top among the words' boxes, a pixel or two of rounding apart. The
+      // rule under a column's name (the table family's `rule` part) is no words.
+      const tops = [...th.childNodes]
+        .filter((node) => !(node instanceof Element && node.matches('[data-part="rule"]')))
+        .flatMap((node) => {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          if (node.nodeType === Node.TEXT_NODE) range.selectNode(node);
+          return [...range.getClientRects()];
+        })
         .filter((one) => one.width > 0)
         .map((one) => one.top)
         .sort((a, b) => a - b);
@@ -146,7 +152,7 @@ async function putAwayAgain(pressed: string[]): Promise<void> {
 async function roomOf(table: string) {
   return browser.execute((selector: string) => {
     const drawn = document.querySelector(selector);
-    const room = drawn?.closest(".ui-table-room");
+    const room = drawn?.closest('[data-part="frame"][data-stacks]');
     const head = drawn?.querySelector("thead");
     if (!drawn || !room || !head) return null;
     const box = (el: Element) => {

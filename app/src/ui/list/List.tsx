@@ -395,6 +395,7 @@ export function ListRow<T extends object>({
 export function ListRowSection<T extends object>({
   title,
   named = false,
+  count,
   className,
   children,
   "aria-label": label,
@@ -403,6 +404,9 @@ export function ListRowSection<T extends object>({
   title?: ReactNode;
   /** The name is data (a file's, a day's), drawn as it is written; else purlis's own label. */
   named?: boolean;
+  /** How many rows the group holds, at the end of its name (#3340): seen, and not part of the
+   *  name a screen reader is told, which is the group's name alone. */
+  count?: number;
   className?: string;
   children: ReactNode;
   "aria-label"?: string;
@@ -418,7 +422,16 @@ export function ListRowSection<T extends object>({
     >
       {title !== undefined && (
         <AriaGridListHeader data-scope="list" data-part="header" data-named={named || undefined}>
-          {title}
+          {count === undefined ? (
+            title
+          ) : (
+            <>
+              <span>{title}</span>
+              <span data-count="" aria-hidden="true">
+                {count}
+              </span>
+            </>
+          )}
         </AriaGridListHeader>
       )}
       {children}

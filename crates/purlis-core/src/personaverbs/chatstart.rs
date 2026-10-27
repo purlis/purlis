@@ -115,6 +115,25 @@ pub fn servers(root: &Path, state: &Path, persona: &str, binary: &Path) -> Serve
 /// server that takes no credential is started as written, so `args` it writes in the shape of
 /// a `secret exec` line are its own words, never an approval.
 pub fn approved_lines(root: &Path, state: &Path, persona: &str) -> Vec<Vec<String>> {
+    approved_servers(root, state, persona)
+        .into_iter()
+        .map(|server| server.words)
+        .collect()
+}
+
+/// A credentialed server of a persona this machine approved, as its brokered run is asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Approved {
+    /// Its `secret exec` words ([`approved_lines`]).
+    pub words: Vec<String>,
+    /// The names of the variables its approved entry sets (`env`): what its run starts with,
+    /// beside the few every brokered run does (#2047).
+    pub env: Vec<String>,
+}
+
+/// **Each credentialed server of `persona` this machine approved** ([`approved_lines`]), with
+/// the names of the variables its approved entry sets.
+pub fn approved_servers(root: &Path, state: &Path, persona: &str) -> Vec<Approved> {
     let (declared, _) = mcp::declared(root, persona);
     let vault = super::resolve(root, persona).and_then(|r| r.get("vault").map(str::to_owned));
     let approved = mcp::approved(state, persona);
@@ -132,9 +151,14 @@ pub fn approved_lines(root: &Path, state: &Path, persona: &str) -> Vec<Vec<Strin
                 .iter()
                 .map(|word| word.as_str().map(str::to_owned))
                 .collect::<Option<_>>()?;
+            let env = entry
+                .get("env")
+                .and_then(Value::as_object)
+                .map(|env| env.keys().cloned().collect())
+                .unwrap_or_default();
             (words.first().map(String::as_str) == Some("secret")
                 && words.get(1).map(String::as_str) == Some("exec"))
-            .then_some(words)
+            .then_some(Approved { words, env })
         })
         .collect()
 }

@@ -7,6 +7,7 @@ import { themeOptionsInForce } from "../Extensions";
 import { onDrawn } from "../theme/theme";
 import { Choice, type Badge, type RowIds } from "./components";
 import { Tooltip } from "../ui/tooltip/Tooltip";
+import { Badge as LevelBadge } from "../ui/badge/Badge";
 
 /**
  * **A theme's options** (#2325), as Settings › Theme shows them (#2331): each option, the value
@@ -66,9 +67,9 @@ export function optionBadge(option: WindowOption): Badge {
 function OptionBadge({ badge }: { badge: Badge }) {
   return (
     <Tooltip tip={badge.says}>
-      <span className="ui-setting-badge" aria-description={badge.says}>
+      <LevelBadge variant="accent" aria-description={badge.says}>
         {badge.label}
-      </span>
+      </LevelBadge>
     </Tooltip>
   );
 }

@@ -41,6 +41,7 @@ export function sameRun(one: OpenRun | undefined, other: OpenRun | undefined): b
       other !== undefined &&
       one.id === other.id &&
       one.skill === other.skill &&
+      one.name === other.name &&
       one.tool_calls === other.tool_calls)
   );
 }
@@ -183,13 +184,4 @@ export function skillOfView(view: ViewRef): { name: string; run?: string } {
 /** Whether `view` is a skill's tab. */
 export function isSkillTab(view: ViewRef): boolean {
   return view.from === null && view.view === SKILL_VIEW && view.key !== "";
-}
-
-/**
- * The name a skill's tab is opened for, from the name a run was started by: a harness may say a
- * skill with its plugin's namespace (`purlis:secrets`), and the skill is `secrets`.
- */
-export function skillOfRun(used: string): string {
-  const at = used.indexOf(":");
-  return at === -1 ? used : used.slice(at + 1);
 }

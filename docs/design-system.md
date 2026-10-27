@@ -673,7 +673,7 @@ path in a sentence.
 
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
 gives, the theme the window is handed as it is created, and the theme specimen, is drawn by
-`draw`, which holds five floors for any theme from any source. `draw` takes an appearance with
+`draw`, which holds these floors for any theme from any source. `draw` takes an appearance with
 its theme options' values already layered on it, so the floors hold in every combination of
 appearance and option values, and no option value can bring a consent surface below its floor:
 
@@ -692,6 +692,11 @@ appearance and option values, and no option value can bring a consent surface be
   is a `danger.*` token;
 - **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart
   in OKLab, five times the least difference a person can see, as the theme writes them;
+- **waiting is distinguishable from the accent** (#3130): `state.waiting` and `accent.base` at
+  least 0.1 apart in OKLab, as the theme writes them and in every workspace tint, so the waiting
+  edge of an ask or a Notice never reads as a chosen or primary mark. The tint gives the accent
+  less colour at a hue that would bring it near the waiting amber (a yellow or an orange
+  workspace);
 - **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
   token or `needs-you.base`, the title bar's needs-you hand on its hovered `control.hover`
   included.
@@ -701,7 +706,8 @@ workspace palette colour. When a theme breaks one, purlis draws Purlis Classic's
 appearance for the `danger.*`, `needs-you.*` and `state.*` tokens of each pair that fails, and
 for the pair's other token when Classic's colour still fails on it. A floor between tokens none
 of which is a consent token (Allow apart from Keep blocked, an answer's words on its button) is
-held by drawing Classic's values for each of them. The rest of the theme draws
+held by drawing Classic's values for each of them; waiting too near the accent is held by
+drawing Classic's waiting colour. The rest of the theme draws
 as written, and one Notice in the Inbox names the theme and the floors it breaks.
 
 **The window only applies.** It is handed a resolved theme, every token's final value and the
@@ -1515,6 +1521,7 @@ are no geometry token: they are the window's own family and its one monospace fa
 | `--window-gutter`       | 0px                                                          |
 | `--panel-corner-radius` | 0px                                                          |
 | `--panel-border-width`  | 1px                                                          |
+| `--separator-width`    | 1px                                                          |
 | `--focus-ring-width`    | 2px                                                          |
 | `--focus-ring-offset`   | 2px                                                          |
 | `--focus-ring-inset`    | -2px                                                         |
@@ -1562,6 +1569,7 @@ engine's (`purlis_core::theme::geometry::STEPS`), which the published schema car
 | `window.gutter` | `--window-gutter` | 0 to 16 px | 0 | 0 |
 | `panel.corner-radius` | `--panel-corner-radius` | 0 to 24 px | 0 | 0 |
 | `panel.border-width` | `--panel-border-width` | 0 to 2 px | 1 | 1 |
+| `separator.width` | `--separator-width` | 0 to 2 px | 1 | 1 |
 | `focus-ring.width` | `--focus-ring-width` | 1 to 4 px | 2 | 2 |
 | `focus-ring.offset` | `--focus-ring-offset` | 0 to 4 px | 2 | 2 |
 | `focus-ring.inset` | `--focus-ring-inset` | -4 to 0 px | -2 | -2 |
@@ -1687,7 +1695,7 @@ the focus rings, #2867):
   button is the button family's `Button`, a segment the choice family's), an `<input>` or
   `<textarea>` (none: a box is the field family's `TextField` or `TextArea`, a checkbox or a
   radio the choice family's), a `<select>` (none: the select family's `Select`), a `<table>`
-  (`ui-table`), and a Radix menu's content and rows (none: the menu family's). **It holds two
+  (none: the table family's `Table` or `ControlTable`, #2911), and a Radix menu's content and rows (none: the menu family's). **It holds two
   heights too** (#2449): a `height`, `min-height`, `block-size` or `min-block-size` set on a
   control is `--size-control`, and one set on a strip or a pane header is `--size-chrome`. A
   control is `--size-chrome` only as the small form: a control whose selector puts it inside a

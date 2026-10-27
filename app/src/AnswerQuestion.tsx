@@ -4,6 +4,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { commands, type PlaneId } from "./bindings";
 import { Button } from "./ui/button/Button";
+import { Card } from "./ui/card/Card";
 import { Form, TextArea } from "./ui/field/Field";
 
 /** What the form says when it is sent with nothing in it. The core says the same of blanks. */
@@ -57,41 +58,44 @@ export function AnswerQuestion(props: AnswerProps & { onCancel: () => void }) {
   if (asked === undefined) return <ReadingTheQuestion />;
   if (asked === null) {
     return (
-      <div className="answer-question" data-testid="answer-question">
+      <Card className="answer-question" data-testid="answer-question">
         <NoQuestion task={task} refused={refused} />
         <div className="answer-actions">
           <Button size="sm" onPress={onCancel}>
             Close
           </Button>
         </div>
-      </div>
+      </Card>
     );
   }
   return (
-    <Form
-      className="answer-question"
-      data-testid="answer-question"
-      aria-label={`Answer ${task}'s question`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-    >
-      <AnswerBox answering={answering} />
-      <div className="answer-actions">
-        <Button size="sm" type="submit" isDisabled={sending || shut !== undefined}>
-          Send
-        </Button>
-        <Button size="sm" onPress={onCancel}>
-          {shut === undefined ? "Cancel" : "Close"}
-        </Button>
-        {shut === undefined && (
-          <span className="answer-how" id={`${ids}-how`}>
-            {answerHowSaid(task)}
-          </span>
-        )}
-      </div>
-    </Form>
+    <Card className="answer-question">
+      <Form
+        className="answer-form"
+        // The form is what is named and what a test finds: the card only stands it off the line.
+        data-testid="answer-question"
+        aria-label={`Answer ${task}'s question`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <AnswerBox answering={answering} />
+        <div className="answer-actions">
+          <Button size="sm" type="submit" isDisabled={sending || shut !== undefined}>
+            Send
+          </Button>
+          <Button size="sm" onPress={onCancel}>
+            {shut === undefined ? "Cancel" : "Close"}
+          </Button>
+          {shut === undefined && (
+            <span className="answer-how" id={`${ids}-how`}>
+              {answerHowSaid(task)}
+            </span>
+          )}
+        </div>
+      </Form>
+    </Card>
   );
 }
 
@@ -207,7 +211,7 @@ export type Answering = ReturnType<typeof useAnswerQuestion>;
 /** The form while the question is read. */
 export function ReadingTheQuestion() {
   return (
-    <p className="answer-question pending" aria-busy="true">
+    <p className="answer-pending" aria-busy="true">
       Reading the question…
     </p>
   );

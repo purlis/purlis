@@ -509,7 +509,11 @@ describe("what a chat can make its line read as (#1493)", () => {
 
     const shown = line();
     expect(shown?.querySelector("button, a, [role]")).toBeNull();
-    expect(shown?.closest('[role="alert"], [role="status"], .notice')).toBeNull();
+    expect(
+      shown?.closest(
+        '[role="alert"], [role="status"], [data-scope=notice][data-part=root] > [data-scope=button-row]',
+      ),
+    ).toBeNull();
   });
 });
 
