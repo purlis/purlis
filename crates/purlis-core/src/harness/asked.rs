@@ -1164,6 +1164,16 @@ mod tests {
     }
 
     #[test]
+    fn a_summary_keeps_a_space_the_one_rule_hides_where_it_stood() {
+        // SK-51 (#3202): a no-break, an en or an ideographic space is not a space a reader can
+        // tell from one, so the line keeps it for the window to mark, never a plain space in
+        // its place. Only the layout's own white space is collapsed.
+        let summary = Summary::of("git\u{00A0}commit \u{2002}-m\u{3000}x\n\t\u{2028}\u{0B} y");
+
+        assert_eq!(summary.as_str(), "git\u{00A0}commit \u{2002}-m\u{3000}x y");
+    }
+
+    #[test]
     fn a_hook_that_leaves_no_room_below_its_timeout_is_answered_in_the_pane() {
         let hook = json!({ "tool_name": "Bash", "tool_input": { "command": "ls" } });
 

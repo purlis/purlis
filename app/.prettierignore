@@ -13,3 +13,6 @@ e2e/fixtures
 # crate's `storythemes` test.
 .storybook/built-in-themes.json
 .storybook/at-creation.json
+
+# The core's answers for the window's one rule, written by the app crate's `unicoderule` test.
+src/invisible.cases.json

@@ -853,7 +853,7 @@ describe("the repo's agent instructions", () => {
     );
 
     const pane = await screen.findByRole("region", { name: "Memory from the repo · widget" });
-    expect(await within(pane).findByText("U+200B", { selector: "mark" })).toBeInTheDocument();
+    expect(await within(pane).findByText("⟦U+200B⟧", { selector: "mark" })).toBeInTheDocument();
     expect(within(pane).getByText(/holds an invisible character/)).toBeInTheDocument();
     const box = within(pane).getByRole("checkbox", { name: "widget/CLAUDE.md" });
     expect(box).not.toBeChecked();

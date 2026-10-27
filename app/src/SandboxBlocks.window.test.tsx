@@ -1202,7 +1202,7 @@ describe("a block's Notice is drawn from the ask the registry lists (#1695)", ()
     await act(() => emit("chat-moved", WAITING));
     await act(() => emit("chat-sandbox-blocked", sly));
     const notice = await screen.findByRole("status", { name: "Sandbox block" });
-    const drawn = within(notice.parentElement ?? notice).getAllByText("/w/gpj.\\u202eexe\\u200b");
+    const drawn = within(notice.parentElement ?? notice).getAllByText("/w/gpj.⟦U+202E⟧exe⟦U+200B⟧");
     expect(drawn.length).toBeGreaterThan(0);
     expect(document.body.textContent).not.toMatch(/[\u200B\u202E]/);
     await settled();
