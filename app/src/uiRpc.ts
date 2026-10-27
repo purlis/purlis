@@ -10136,6 +10136,14 @@ export type StartOptions = {
 	 *  the picker says so rather than looking empty or broken.
 	 */
 	declares_none: boolean,
+	/**
+	 *  The number the next chat started in this plane would take (#3376, audit R30): the Name
+	 *  field's placeholder says `steward 10` by it. One past the highest this plane has dealt,
+	 *  read as the picker opens, so a chat started elsewhere meanwhile can take it first: it
+	 *  is what the field suggests, never what the core deals. Always sent; optional in the
+	 *  window's type so a picker drawn from an older answer says the number in words.
+	 */
+	next_number?: number | null,
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */
