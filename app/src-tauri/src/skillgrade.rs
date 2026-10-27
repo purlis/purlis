@@ -165,10 +165,9 @@ fn chats_on(
         ..Default::default()
     };
     let ready = grades::ready_to_grade(&start, root);
-    let priced = ready.as_ref().map_or_else(
-        |_| grades::price::of_model(None),
-        grades::priced,
-    );
+    let priced = ready
+        .as_ref()
+        .map_or_else(|_| grades::price::of_model(None), grades::priced);
     let checked = ready.map(|ready| {
         ready
             .sandbox
@@ -517,6 +516,7 @@ pub(crate) async fn skill_grade_start(
                         held: &held,
                         snapshot: &copy.snapshot,
                         cost_left: limits.cost_usd,
+                        unpriced_at: limits.unpriced_usd_per_million,
                         skill: &skill,
                         profile: &profile,
                         stop: &stop,
@@ -637,6 +637,10 @@ struct InChats<'a> {
     snapshot: &'a purlis_core::skills::verbs::drafts::Snapshot,
     /// What the grade may still cost, where its chats say: a chat that passes it is ended.
     cost_left: Option<f64>,
+    /// What a chat that says its tokens and no cost is counted at against [`Self::cost_left`],
+    /// in dollars a million: the grade's own `Limits::unpriced_usd_per_million`, as the runner
+    /// counts it.
+    unpriced_at: Option<f64>,
     skill: &'a str,
     profile: &'a str,
     stop: &'a AtomicBool,
@@ -658,16 +662,22 @@ impl Chats for InChats<'_> {
         if let Some(tokens) = ran.tokens {
             *self.spent.tokens.get_or_insert(0) += tokens;
         }
-        match (ran.cost_usd, ran.tokens) {
+        // As the runner counts it: a cost no reader could hold is no cost.
+        match (
+            ran.cost_usd.filter(|cost| cost.is_finite() && *cost >= 0.0),
+            ran.tokens,
+        ) {
             (Some(cost), _) => {
                 *self.spent.cost_usd.get_or_insert(0.0) += cost;
                 self.cost_left = self.cost_left.map(|left| left - cost);
             }
             // Tokens said and no cost: counted at the dearest price, as the runner counts them.
             (None, Some(tokens)) => {
-                self.cost_left = self.cost_left.map(|left| {
-                    left - tokens as f64 * grades::price::DEAREST_USD_PER_MILLION / 1_000_000.0
-                });
+                if let Some(at) = self.unpriced_at {
+                    self.cost_left = self
+                        .cost_left
+                        .map(|left| left - tokens as f64 * at / 1_000_000.0);
+                }
             }
             (None, None) => {}
         }

@@ -338,18 +338,20 @@ impl HarnessAdapter for ClaudeCode {
             .map(|flag| prompts_off_by(&flag))
     }
 
-    /// Claude Code's own order: the last `--model` in the command, then `ANTHROPIC_MODEL`, then
-    /// `model` in the person's Claude Code settings; `None` where none says, and Claude Code
-    /// picks.
+    /// Claude Code's own order: the last `--model` in the command, then `ANTHROPIC_MODEL`; a
+    /// family alias read through the variable that remaps it ([`remapped`]). `None` where
+    /// neither says, and Claude Code picks: a `model` in its settings is not read, as the
+    /// project's outranks the person's and both reach the chat, so the limit is priced at the
+    /// dearest rather than at a model that may not run.
     fn grade_model(
         &self,
         command: &[String],
         env: &crate::harness_plugin::Env<'_>,
     ) -> Option<String> {
-        model_flag_in(command)
+        let model = model_flag_in(command)
             .or_else(|| env.var(MODEL_VARIABLE))
-            .or_else(|| model_in_settings(env))
-            .filter(|model| !model.trim().is_empty())
+            .filter(|model| !model.trim().is_empty())?;
+        remapped(&model, env)
     }
 
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
@@ -770,23 +772,25 @@ fn model_flag_in(command: &[String]) -> Option<String> {
                     .or_else(|| command.get(at + 1).filter(|next| !is_flag(next)).cloned())
             })
         })
-        .last()
+        .next_back()
         .flatten()
 }
 
-/// `model` in the person's Claude Code settings, where they read and say one.
-fn model_in_settings(env: &crate::harness_plugin::Env<'_>) -> Option<String> {
-    let file = env.dir("CLAUDE_CONFIG_DIR", ".claude")?.join("settings.json");
-    let meta = std::fs::metadata(&file).ok()?;
-    if !meta.is_file() || meta.len() > MOST_SETTINGS_BYTES as u64 {
-        return None;
+/// **`model` as Claude Code runs it**: a family alias it remaps through
+/// `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` is the model that variable names, and `opusplan`, which
+/// runs both Opus and Sonnet, is none where either is remapped (the limit then prices at the
+/// dearest). Any other model is itself.
+fn remapped(model: &str, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+    let family = |name: &str| env.var(&format!("ANTHROPIC_DEFAULT_{name}_MODEL"));
+    let alias = model.trim().to_ascii_lowercase();
+    let alias = alias.split('[').next().unwrap_or_default();
+    match alias {
+        "opus" | "sonnet" | "haiku" => {
+            Some(family(&alias.to_ascii_uppercase()).unwrap_or_else(|| model.to_owned()))
+        }
+        "opusplan" if family("OPUS").is_some() || family("SONNET").is_some() => None,
+        _ => Some(model.to_owned()),
     }
-    let text = std::fs::read_to_string(&file).ok()?;
-    serde_json::from_str::<serde_json::Value>(&text)
-        .ok()?
-        .get("model")?
-        .as_str()
-        .map(str::to_owned)
 }
 
 /// The flag Claude Code starts a chat on a model by, and the variable it reads after it.

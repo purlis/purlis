@@ -3769,8 +3769,8 @@ An end row, never a pass or a fail:
   name; a test triggered more often than it ran, run more often than the grade's `runs`, with a
   rate that is not the two's share or a pass where nothing ran, or a chat that is no plain id; an
   arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
-  reason that holds a control character or passes 2 KiB, #3353; a price below nothing or above
-  the dearest known, a model that is no plain id, or an `over-limit` end with no limit, #3469) is
+  reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
+  1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469) is
   skipped. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::grades_of`).
 - **Git:** committed. Nothing commits it by itself: the next save does.

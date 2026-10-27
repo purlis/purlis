@@ -223,7 +223,7 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
             .all(amount)
         && report.priced.as_ref().is_none_or(|priced| {
             amount(priced.usd_per_million)
-                && priced.usd_per_million <= price::DEAREST_USD_PER_MILLION
+                && priced.usd_per_million <= price::MOST_READ_USD_PER_MILLION
                 && priced.model.as_deref().is_none_or(price::model_id)
         })
         && (report.ended != grade::GradeEnd::OverLimit || report.cost_cap_usd.is_some())
@@ -585,9 +585,12 @@ pub fn priced(ready: &crate::start::Ready) -> grade::Priced {
     let command: Vec<String> = std::iter::once(ready.program.clone())
         .chain(ready.command.iter().cloned())
         .collect();
-    let model = ready.harness.map(crate::harness::Harness::adapter).and_then(|adapter| {
-        adapter.grade_model(&command, &crate::harness_plugin::Env::of(&ready.env))
-    });
+    let model = ready
+        .harness
+        .map(crate::harness::Harness::adapter)
+        .and_then(|adapter| {
+            adapter.grade_model(&command, &crate::harness_plugin::Env::of(&ready.env))
+        });
     price::of_model(model.as_deref())
 }
 

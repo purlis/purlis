@@ -32,7 +32,10 @@ fn a_snapshot_a_context_window_and_the_case_are_read_past() {
             "{id}"
         );
     }
-    assert_eq!(of_model(Some("claude-opus-4-20250514")).usd_per_million, 75.0);
+    assert_eq!(
+        of_model(Some("claude-opus-4-20250514")).usd_per_million,
+        75.0
+    );
     assert_eq!(of_model(Some("sonnet[1m]")).usd_per_million, 22.5);
 }
 

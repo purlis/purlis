@@ -71,7 +71,7 @@ describe("Grade, cost first", () => {
     expect(cost.textContent).toContain("has not been graded here before");
     expect(cost.textContent).toContain("its account pays for them");
     expect(cost.textContent).toContain(
-      "It stops once its chats have spent 200,000 tokens, the default cap, or cost $15.00, its tokens at the dearest known price of $75.00 a million tokens, as the profile names no model.",
+      "It stops once its chats have spent 200,000 tokens, the default cap, or cost $15.00, its tokens at the dearest known price of $75.00 a million tokens, as no model is named for its chats.",
     );
     expect(screen.getAllByTestId("skill-grade-test")[1].textContent).toContain(
       "holds a character no reader would see",
@@ -202,7 +202,7 @@ describe("a grade's dollar limit (#3469)", () => {
       ),
     ).toBe("$3.00, its tokens at claude-sonnet-4-6's $15.00 a million tokens");
     expect(limitSaid(plan())).toBe(
-      "$15.00, its tokens at the dearest known price of $75.00 a million tokens, as the profile names no model",
+      "$15.00, its tokens at the dearest known price of $75.00 a million tokens, as no model is named for its chats",
     );
     expect(
       limitSaid(plan({ priced: { usd_per_million: 75, of_the_model: false, model: "opus-9" } })),

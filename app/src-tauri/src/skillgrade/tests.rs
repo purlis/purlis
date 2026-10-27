@@ -123,7 +123,11 @@ fn the_plan_says_the_limit_at_the_price_of_the_model_its_chats_run_on() {
         ),
     );
     // 50,000 tokens at $15 a million.
-    assert!((plan.cost_cap_usd - 0.75).abs() < 1e-9, "{}", plan.cost_cap_usd);
+    assert!(
+        (plan.cost_cap_usd - 0.75).abs() < 1e-9,
+        "{}",
+        plan.cost_cap_usd
+    );
     assert_eq!(
         plan.priced,
         GradePrice {

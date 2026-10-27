@@ -72,7 +72,7 @@ export function limitSaid(plan: SkillGradePlan): string {
     return `${limit}, its tokens at ${plan.priced.model ?? "its model"}'s ${price}`;
   const why =
     plan.priced.model === null
-      ? "as the profile names no model"
+      ? "as no model is named for its chats"
       : `as ${plan.priced.model}'s price is not known`;
   return `${limit}, its tokens at the dearest known price of ${price}, ${why}`;
 }

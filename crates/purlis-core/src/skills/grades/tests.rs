@@ -556,9 +556,9 @@ fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
         ("a counted cost below nothing", |row| {
             row.report.counted_usd = Some(-1.0);
         }),
-        ("a price above the dearest", |row| {
+        ("a price past any model's", |row| {
             row.report.priced = Some(grade::Priced {
-                usd_per_million: 750.0,
+                usd_per_million: 7_500.0,
                 from: grade::PricedFrom::Model,
                 model: None,
             });

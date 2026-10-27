@@ -58,6 +58,11 @@ pub const PRICES: &[(&str, f64)] = &[
 /// a million: Claude Opus 4 and 4.1's output, the most of [`PRICES`].
 pub const DEAREST_USD_PER_MILLION: f64 = 75.0;
 
+/// **The most a row read back may say a token cost**, in dollars a million: well past
+/// [`DEAREST_USD_PER_MILLION`], so a row a newer purlis priced at a dearer model it knows is
+/// still read, and a row that says more is not.
+pub const MOST_READ_USD_PER_MILLION: f64 = 1_000.0;
+
 /// **The price a grade on `model` is limited at** ([`PRICES`]), or the dearest where `model` is
 /// not said or not priced. An id is read without the case it is written in, a context window
 /// Claude Code names after it (`[1m]`) or the date of its snapshot (`-20250805`).
