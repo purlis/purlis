@@ -272,6 +272,9 @@ impl<'a> Linter<'a> {
         if let Some(refused) = definition_refusal(root, name) {
             issues.push(Issue::error(format!("persona.md: {refused}")));
         }
+        if let Some(unread) = frontmatter_refusal(root, name) {
+            issues.push(Issue::error(format!("persona.md: {unread}")));
+        }
         for used in crate::personagrant::uses_of(root, name) {
             issues.extend(self.reference_problem("uses", &used));
         }
@@ -522,6 +525,19 @@ pub fn key_issues(root: &Path, name: &str) -> Vec<String> {
     issues
 }
 
+/// Why the definition's frontmatter reads as none though the file opens like one (#3460): its
+/// first line is no `---` line, or no later `---` line closes it ([`purlis_skills::fence`]).
+/// Every key then reads as none, its `skills:` and `pinned-skills:` included, so it is an error.
+fn frontmatter_refusal(root: &Path, name: &str) -> Option<String> {
+    let text = crate::personas::load_text(root, name)?;
+    (text.starts_with("---") && purlis_skills::fence::Fence::find(&text).is_none()).then(|| {
+        "its frontmatter is not one purlis reads, so none of its keys reach purlis (its role, \
+         skills, pinned skills and profile read as none). A frontmatter opens on a first line \
+         that is only `---` and ends at the next line that is only `---`: add that closing line"
+            .to_owned()
+    })
+}
+
 /// `persona.definition_refusal`: the definition, or its directory, resolves out of the plane.
 fn definition_refusal(root: &Path, name: &str) -> Option<String> {
     let path = crate::personas::def_path(root, name);
@@ -706,16 +722,10 @@ fn skill_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
 /// A `SKILL.md`'s name (its `name:`, else its directory's) and whether a model may invoke it.
 fn read_skill(file: &Path) -> Option<(String, bool)> {
     let text = std::fs::read_to_string(file).ok()?;
-    let mut lines = text.lines();
-    if lines.next().map(str::trim) != Some("---") {
-        return None;
-    }
+    let fence = purlis_skills::fence::Fence::find(&text)?;
     let mut name: Option<String> = None;
     let mut human_only = false;
-    for line in lines {
-        if line.trim() == "---" {
-            break;
-        }
+    for line in fence.line_texts() {
         if let Some(value) = line.strip_prefix("name:") {
             name = Some(value.trim().trim_matches(['"', '\'']).to_string());
         } else if let Some(value) = line.strip_prefix("disable-model-invocation:") {

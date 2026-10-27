@@ -167,3 +167,10 @@ fn lines_split_as_python_splits_them_with_their_spans() {
     assert_eq!(lines("a\n").len(), 1);
     assert_eq!(lines("").len(), 0);
 }
+
+#[test]
+fn an_unclosed_frontmatter_is_refused_not_written_over() {
+    let refused = with_keys("---\nname: n\n", &[("icon", Some("star"))]).unwrap_err();
+    assert_eq!(refused, Unwritten::Unclosed("icon".to_owned()));
+    assert!(refused.to_string().contains("no `---` line closes"), "{refused}");
+}

@@ -161,6 +161,9 @@ fn entry_of(line: &str) -> Option<(&str, &str)> {
 pub enum Unwritten {
     /// The text has no frontmatter to hold the line.
     NoFrontmatter(String),
+    /// The text opens a frontmatter that no `---` line closes ([`unclosed`]): it reads as all
+    /// body, and a frontmatter added above it would make the person's keys body for good.
+    Unclosed(String),
     /// The value cannot be one line that reads back as itself.
     Value { key: String, value: String },
     /// What would be written does not read back as asked. A defect in this writer, said rather
@@ -173,6 +176,11 @@ impl std::fmt::Display for Unwritten {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoFrontmatter(key) => write!(f, "has no frontmatter to hold a `{key}:` line"),
+            Self::Unclosed(key) => write!(
+                f,
+                "opens a frontmatter that no `---` line closes, so it has none to hold a \
+                 `{key}:` line (end it with a line that is only `---`)"
+            ),
             Self::Value { key, value } => write!(
                 f,
                 "cannot hold `{key}: {}` as one line that reads back the same: a frontmatter \
@@ -205,8 +213,12 @@ pub fn holds(value: &str) -> bool {
 /// read back as itself is refused, so what purlis writes is what it reads.
 pub fn with_keys(text: &str, keys: &[(&str, Option<&str>)]) -> Result<String, Unwritten> {
     let Some(fence) = Fence::find(text) else {
-        let key = keys.first().map_or("", |(key, _)| key);
-        return Err(Unwritten::NoFrontmatter(key.to_owned()));
+        let key = keys.first().map_or("", |(key, _)| key).to_owned();
+        return Err(if unclosed(text) {
+            Unwritten::Unclosed(key)
+        } else {
+            Unwritten::NoFrontmatter(key)
+        });
     };
     for (key, value) in keys {
         debug_assert!(entry_of(&format!("{key}:")).map(|(k, _)| k) == Some(*key));
