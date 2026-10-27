@@ -36,6 +36,7 @@ fn every_push() -> Vec<Pushed> {
             project: "01J9PRJCT00000000000000000".into(),
             heard: 1,
             line: serde_json::Value::Null,
+            pathless: true,
         },
         Pushed::Sandbox {
             confinement: "01J9CNFNMNT0000000000000000".into(),
