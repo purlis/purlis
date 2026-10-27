@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793095371226,
+  "lastUpdate": 1793097336602,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26670,6 +26670,48 @@ window.BENCHMARK_DATA = {
             "value": 101.71972249999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.123, 101.718, 101.720, 101.920, 102.833 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "737e495548828d3b78c64d1ca7f6e8237d15cafa",
+          "message": "Projects test: the kept-drawn test has the room-keeping test's 15 s (#3422) (#3497)\n\nTen projects brought to the front, each a render of the whole window, ran just over\nthe default five seconds on a loaded runner and turned main red twice.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T09:54:25Z",
+          "tree_id": "ca16e578f1f615569d2fedba3c749bcb466f9ebf",
+          "url": "https://github.com/purlis/purlis/commit/737e495548828d3b78c64d1ca7f6e8237d15cafa"
+        },
+        "date": 1793097333344,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.296103,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.266, 0.278, 0.296, 0.300, 0.309 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.634363999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.619, 16.619, 16.634, 16.645, 16.662 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.58015449999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.140, 101.351, 101.580, 101.902, 102.902 ms"
           }
         ]
       }
