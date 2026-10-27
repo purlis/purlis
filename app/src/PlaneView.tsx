@@ -413,7 +413,7 @@ import type {
 } from "./bindings";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
-import { useSkillStudioOn } from "./skillStudio";
+import { skillStudioTitle, skillStudioView, useSkillStudioOn } from "./skillStudio";
 import { SkillRunsHere, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
@@ -7062,6 +7062,8 @@ export const PlaneView = memo(function PlaneView({
   );
   /** The focused workspace's open todos, the same way: one close and one forget row each. */
   const todos = workspaceState.panels?.todos;
+  /** And its done ones (ADR 0106): one Reopen and one Delete row each. */
+  const doneTodos = workspaceState.panels?.done_todos;
   /** What the plane, its workspaces and its personas are offered to curate (ADR 0061), read
    *  again when those change and when the plane changes on disk. */
   const subjects = useMemo(
@@ -7106,6 +7108,7 @@ export const PlaneView = memo(function PlaneView({
             personas,
             vaults: vaultNames,
             todos,
+            doneTodos,
             browsers: browsersOffered,
             plane,
             projects,
@@ -7203,6 +7206,7 @@ export const PlaneView = memo(function PlaneView({
       tabs,
       vaultNames,
       todos,
+      doneTodos,
       browsersOffered,
       views,
       extensionCommands,
@@ -9400,6 +9404,10 @@ export const PlaneView = memo(function PlaneView({
               busy={usingSkill.busy}
               onUse={(skill, values) => void sendUseSkill(skill, values)}
               onCancel={() => setUsingSkill(undefined)}
+              onOpenStudio={(scope) => {
+                setUsingSkill(undefined);
+                showView(skillStudioView(scope), skillStudioTitle(scope));
+              }}
             />
           )}
 
@@ -9847,7 +9855,7 @@ function StatusLineHere({
 const FOR_THE_GIT_SIDE = sameFor(GIT_SIDE);
 const LINE_READS: readonly PanelsField[] = [...GIT_SIDE, "todos", "todos_refused"];
 const FOR_THE_LINE = sameFor(LINE_READS);
-const WINDOW_READS: readonly PanelsField[] = [...LINE_READS, "personas", "persona"];
+const WINDOW_READS: readonly PanelsField[] = [...LINE_READS, "done_todos", "personas", "persona"];
 const forTheWindowsFields = sameFor(WINDOW_READS);
 function forTheWindow(a: WorkspaceState, b: WorkspaceState): boolean {
   return (

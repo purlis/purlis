@@ -31,8 +31,8 @@
    "ReadonlyRootfs": true,
    "Runtime": "runc",
    "SecurityOpt": [
-    "seccomp=unconfined",
-    "no-new-privileges"
+    "no-new-privileges",
+    "seccomp=unconfined"
    ],
    "Tmpfs": {
     "/tmp": "rw,nosuid,nodev,noexec,size=1024m"

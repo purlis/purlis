@@ -114,7 +114,7 @@ describe("every control an editor tab draws has a name", () => {
   it("in a branch's tree", async () => {
     core();
     const { container } = render(<BranchTree plane={PLANE} place={CUT} onPick={() => undefined} />);
-    await screen.findByRole("treeitem", { name: "README.md" });
+    await screen.findByRole("row", { name: "README.md" });
 
     held(container, "a branch's tree");
   });
@@ -124,9 +124,9 @@ describe("every control an editor tab draws has a name", () => {
     const { container } = render(
       <PieceFilesTab plane={PLANE} cut={CUT} onOpenView={() => undefined} />,
     );
-    const tree = await screen.findByRole("tree", { name: "Files of fix-it" });
-    await userEvent.click(await within(tree).findByRole("treeitem", { name: "src" }));
-    await userEvent.click(await within(tree).findByRole("treeitem", { name: "lib.rs" }));
+    const tree = await screen.findByRole("treegrid", { name: "Files of fix-it" });
+    await userEvent.click(await within(tree).findByRole("row", { name: "src" }));
+    await userEvent.click(await within(tree).findByRole("row", { name: "lib.rs" }));
     await waitFor(() => expect(screen.getByTestId("light-editor")).toBeInTheDocument());
 
     held(container, "a branch's files");

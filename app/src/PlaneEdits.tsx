@@ -21,6 +21,8 @@ export type PlaneEditing = Pick<
   | "removePersona"
   | "closeTodo"
   | "forgetTodo"
+  | "reopenTodo"
+  | "forgetDoneTodo"
 >;
 
 /**
@@ -229,6 +231,15 @@ export function usePlaneEdits({
       todoGone(workspace, slug, commands.todoForget(plane, workspace, slug)),
     [plane, todoGone],
   );
+  /** A done todo reopened or deleted: its tab, if one is open, reads it again on the change. */
+  const reopenTodo = useCallback(
+    (workspace: string, slug: string) => todoWrite(commands.todoReopen(plane, workspace, slug)),
+    [plane, todoWrite],
+  );
+  const forgetDoneTodo = useCallback(
+    (workspace: string, slug: string) => todoWrite(commands.todoForgetDone(plane, workspace, slug)),
+    [plane, todoWrite],
+  );
   const addTodo = useCallback(
     async (workspace: string, text: string) => {
       const ran = await todoWrite(commands.todoAdd(plane, workspace, text));
@@ -246,6 +257,8 @@ export function usePlaneEdits({
       removePersona,
       closeTodo,
       forgetTodo,
+      reopenTodo,
+      forgetDoneTodo,
     }),
     [
       removeVault,
@@ -255,6 +268,8 @@ export function usePlaneEdits({
       removePersona,
       closeTodo,
       forgetTodo,
+      reopenTodo,
+      forgetDoneTodo,
     ],
   );
 

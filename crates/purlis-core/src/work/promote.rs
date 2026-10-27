@@ -299,7 +299,8 @@ pub fn journal_line(title: &str, to: &TrackerKey) -> String {
     format!("Promoted todo: {title} → {to}")
 }
 
-/// Close todo `stem` as `ws todo done` does, the journal saying where it went.
+/// Close todo `stem`, the journal saying where it went. Deleted, not kept as done as
+/// `ws todo done` keeps one (ADR 0106): the issue it went to is where it is tracked now.
 fn close(
     ws: &Workspace,
     stem: &str,

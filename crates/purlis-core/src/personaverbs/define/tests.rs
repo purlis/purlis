@@ -618,3 +618,25 @@ fn create_refuses_the_reserved_name_charter_and_writes_nothing() {
     );
     assert!(!plane.path("personas/charter").exists());
 }
+
+/// #3287: the header lines name what a persona's file says — its name, role, chain, vault,
+/// tools and scripts — with every hidden character marked. The charter below them is a
+/// document and is printed byte for byte.
+#[test]
+fn show_marks_a_hidden_character_in_what_it_names_and_keeps_the_charter_whole_3287() {
+    let plane = Plane::fixture("daily");
+    plane.write(
+        "personas/qa/persona.md",
+        "---\nname: qa\nrole: QA \u{1b}[8mEngineer\nvault: q\u{202e}a\n---\n\n# QA\u{200b}\n",
+    );
+    let (rc, heard) = show_on(&plane, "qa");
+    assert_eq!(rc, 0, "{}", heard.err);
+    assert!(
+        heard.out.starts_with(
+            "qa — QA ⟦U+001B⟧[8mEngineer\nvault:   q⟦U+202E⟧a  (not set up (local))\n"
+        ),
+        "{}",
+        heard.out
+    );
+    assert!(heard.out.ends_with("\n\n# QA\u{200b}\n"), "{:?}", heard.out);
+}

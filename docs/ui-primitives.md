@@ -365,9 +365,9 @@ under a tree's row (`.ui-row.ui-tree-row`), which the tree family takes next.
 ### Tree row
 
 **A tree is the tree family's** since #2911: [The tree family](#the-tree-family) below draws the
-Changes view. The trees still drawn by hand (a branch's files, the Explorer's three trees, the
-Chats list) keep the shared tree row below until each moves; `purlis/tree-family` is off for
-those files alone.
+Changes view, every file tree (a file tab's, the Explorer's *Files* and a branch's cockpit) and
+the Explorer's *Repos and branches*. The Chats list, still drawn by hand, keeps the shared tree
+row below until it moves (#3198); `purlis/tree-family` is off for its files alone.
 
 ```html
 <ul class="ui-tree" role="tree">
@@ -1005,9 +1005,9 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
 
 | Member | What it is |
 | --- | --- |
-| `Tree` | **A tree**: rows that may hold rows under them. `expandedKeys` and `onExpandedChange` say which are open (a folder is read when it opens); `selectionMode` lets rows be chosen; `onAction` runs one; `twist` puts the twist before a row's words (`"lead"`, the default, R129) or at its end (`"trail"`, #2799 rule 1); `fixed` is a tree that never folds (the Changes view): every row open, no twist, nothing to press |
-| `TreeRow` | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says; `hasChildItems` for a folder not read yet; `menu` and `tip` as a list's row |
-| `TreeLine` | **A line that is not a row to act on**, in its place among the rows: "Reading…", why a folder could not be read, "12 more not shown". In the quiet tier; the keyboard reads it |
+| `Tree` | **A tree**: rows that may hold rows under them. `expandedKeys` and `onExpandedChange` say which are open (a folder is read when it opens); `selectionMode` lets rows be chosen where a press chooses (a file tab's file, `toggle`, so the arrows never open a file); `onAction` runs one; `twist` puts the twist before a row's words (`"lead"`, the default, R129) or at its end (`"trail"`, #2799 rule 1); `fixed` is a tree that never folds (the Changes view): every row open, no twist, nothing to press; `draggable` drags a row out with what it `carries`, by the pointer and by its drag button; `choosesMany` says its owner chooses several rows at once (#1151's picks); `onRowKey` takes a key before the tree does (Shift and the arrows picking); `stopAt` is the row the tree's one Tab stop is on until the keyboard has been in (the place the next chat starts, the file a tab shows) |
+| `TreeRow` | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says (a file's name, then its marks' words); `hasChildItems` for a folder not read yet (it holds a row that is never drawn until the owner's arrive); `menu` and `tip` as a list's row; `unavailable` for a row that keeps the keyboard to say why it cannot run (a file purlis will not open); `chosen` for a row its owner chooses while a press still runs it; `carries` what a drag of it carries; `onPressStart` to hear a press's modifier keys before its action runs; `current` for the current one of its kind (`aria-current`, drawn as chosen: where the next chat starts); `alwaysOpen` for a row whose rows never fold (a workspace's own) |
+| `TreeLine` | **A line that is not a row to act on**, in its place among the rows: "Reading…", why a folder could not be read, "12 more not shown", a path the branch names and does not read. In the quiet tier; the arrows read it, and it holds nothing to press, drag or pick |
 | `TreeSection` | A group of rows under its name (`header`) |
 
 - **The keys are the WAI-ARIA tree's**: one Tab stop, the row last focused (the tree itself until

@@ -689,7 +689,16 @@ fn upkeep(
             guard(root, &ws.dir().join("todos"), None)?;
             guard_store(root, &Scope::Workspace(ws.name().to_owned()))?;
             crate::wscmd::todo::finish_promotes(&plane, &ws, now, &mut say);
-            let code = crate::wscmd::todo::close(&plane, &ws, *how, slug, now, &mut say);
+            // A chat's: its `forget` reaches the open todos only (ADR 0106).
+            let code = crate::wscmd::todo::close_as(
+                &plane,
+                &ws,
+                *how,
+                slug,
+                now,
+                crate::wscmd::todo::Asker::Chat,
+                &mut say,
+            );
             let owner = ws.name().to_owned();
             let store = format!("workspaces/{owner}/todos");
             (code, code == 0, (owner, store))

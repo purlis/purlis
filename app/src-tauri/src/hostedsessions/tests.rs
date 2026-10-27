@@ -611,6 +611,8 @@ fn a_start_the_host_numbers_otherwise_fails_and_is_closed() {
 struct HooksHeard {
     relaying: Arc<Mutex<Option<Arc<purlis_core::hookwire::relay::Relaying>>>>,
     issued: Arc<Mutex<Vec<u32>>>,
+    /// Each reply the window sent to a line the host handed on, as it came over the link.
+    replies: Arc<Mutex<Vec<serde_json::Value>>>,
     /// The project's board, kept as the window's binary keeps it in the host (#2194).
     board: purlis_core::hookchannel::KeptBoard,
 }
@@ -631,14 +633,17 @@ impl purlis_host::Hear for HooksHeard {
     fn open(
         &self,
         _project: &str,
-        _path: &std::path::Path,
+        path: &std::path::Path,
         hand_on: purlis_host::HandOn,
     ) -> Result<Option<Arc<dyn purlis_host::Channel>>, String> {
         let relaying = purlis_core::hookwire::relay::Relaying::new(self.board.handing_on(hand_on));
+        // As the host's own channel is told where it holds the project (#3400).
+        relaying.of_project_at(path);
         *self.relaying.lock().unwrap() = Some(Arc::clone(&relaying));
         Ok(Some(Arc::new(StandInChannel {
             relaying,
             issued: Arc::clone(&self.issued),
+            replies: Arc::clone(&self.replies),
             board: self.board.clone(),
         })))
     }
@@ -647,6 +652,7 @@ impl purlis_host::Hear for HooksHeard {
 struct StandInChannel {
     relaying: Arc<purlis_core::hookwire::relay::Relaying>,
     issued: Arc<Mutex<Vec<u32>>>,
+    replies: Arc<Mutex<Vec<serde_json::Value>>>,
     board: purlis_core::hookchannel::KeptBoard,
 }
 
@@ -666,6 +672,7 @@ impl purlis_host::Channel for StandInChannel {
     fn forget(&self, _number: u32) {}
 
     fn replied(&self, id: u64, reply: serde_json::Value) {
+        self.replies.lock().unwrap().push(reply.clone());
         self.relaying
             .replied(id, serde_json::from_value(reply).expect("a reply"));
     }
@@ -820,6 +827,29 @@ fn a_report_the_host_hears_moves_the_windows_board_and_its_needs_you() {
     let last = moved.last().expect("the window is told");
     assert_eq!((last.session, last.needs_you), (id, true));
     assert_eq!(last.queue, [id]);
+}
+
+#[test]
+fn a_hook_lines_record_goes_back_naming_no_path_to_a_host_that_said_it_uses_none() {
+    // The host's push of the line says it records it under the project as it holds it (1.40,
+    // #3400): the record the window's hearing sends back with its reply names no project path.
+    let heard = heard_in_the_window();
+    let id = heard.a_chat();
+
+    let taken = (heard.channel.hearing().each)(reported(id, purlis_core::state::Event::Stop));
+
+    assert!(taken.is_ok(), "{taken:?}");
+    let replies = heard.channel.replies.lock().unwrap().clone();
+    let records: Vec<String> = replies
+        .iter()
+        .filter(|reply| reply.get("line").is_some() || reply.get("record").is_some())
+        .map(serde_json::Value::to_string)
+        .collect();
+    assert_eq!(records.len(), 1, "{replies:?}");
+    assert!(records[0].starts_with(r#"{"line":"#), "{}", records[0]);
+    assert!(!records[0].contains("plane"), "{}", records[0]);
+    let root = heard.hosted.root.display().to_string();
+    assert!(!records[0].contains(&root), "{}", records[0]);
 }
 
 #[test]

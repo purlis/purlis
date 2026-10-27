@@ -36,6 +36,7 @@ const PANELS: PanelsModel = {
   refused: [],
   todos: [],
   todos_refused: null,
+  done_todos: [],
   personas: [],
   persona: "steward",
   sessions: [],
@@ -111,15 +112,15 @@ async function draw(onPress: (offer: Offer) => void = () => {}) {
       />
     </ChatsHere.Provider>,
   );
-  await within(tree()).findByRole("treeitem", { name: /a\.txt/ });
+  await within(tree()).findByRole("row", { name: /a\.txt/ });
   return { onOpenFile, onAddToChat };
 }
 
-const tree = () => screen.getByRole("tree", { name: /^Files of / });
-const item = (name: string) => within(tree()).getByRole("treeitem", { name: new RegExp(name) });
+const tree = () => screen.getByRole("treegrid", { name: /^Files of / });
+const item = (name: string) => within(tree()).getByRole("row", { name: new RegExp(name) });
 const picked = () =>
   within(tree())
-    .getAllByRole("treeitem")
+    .getAllByRole("row")
     .filter((one) => one.getAttribute("aria-selected") === "true")
     .map((one) => one.textContent?.trim());
 /** What the live count says (#1151): the one status the picks have. */
@@ -174,6 +175,7 @@ describe("picking several rows of a branch's files (#1151)", () => {
     expect(item("c.txt")).toHaveFocus();
     // Read out as it changes, to a screen reader only.
     expect(said()).toBe("3 picked");
+    // One Esc: a file's path tooltip is the pointer's alone, so none is up to take it.
     await userEvent.keyboard("{Escape}");
     expect(picked()).toEqual([]);
     expect(said()).toBe("");

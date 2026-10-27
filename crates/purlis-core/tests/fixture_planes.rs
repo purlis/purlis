@@ -300,7 +300,7 @@ fn a_todo_is_written_and_indexed_the_way_python_writes_one() {
 }
 
 #[test]
-fn closing_a_todo_deletes_it_and_leaves_its_trace_in_the_journal() {
+fn closing_a_todo_marks_it_done_and_leaves_its_trace_in_the_journal() {
     purlis_core::unsteered!();
     let (_tmp, plane) = temp_plane();
     let ws = plane.workspace("alpha").unwrap();
@@ -309,7 +309,17 @@ fn closing_a_todo_deletes_it_and_leaves_its_trace_in_the_journal() {
 
     ws.close_todo(&slug, pinned()).unwrap();
 
-    assert_eq!(ws.todos().unwrap(), vec![], "the todo file is gone");
+    assert_eq!(ws.todos().unwrap(), vec![], "it is not open any more");
+    let done = ws.done_todos().unwrap();
+    assert_eq!(done.len(), 1, "a done todo stays (ADR 0106)");
+    assert_eq!(done[0].slug, slug);
+    assert_eq!(done[0].title, "Write the migration");
+    assert!(
+        ws.dir()
+            .join("todos/archive")
+            .join(format!("{slug}.md"))
+            .is_file()
+    );
     assert_eq!(
         std::fs::read_to_string(ws.dir().join("todos/MEMORY.md")).unwrap(),
         "# Todos — workspace `alpha`\n\nOne line per todo; each links a file holding one thing this task still means to do.\nOpen or done — and done removes it, leaving its trace in the journal instead.\n",

@@ -254,9 +254,14 @@ use crate::view::{Limits, Views};
 /// identity (`identity`). The window's alone ([`crate::grants::Power::Reattach`]). A host of an
 /// earlier minor answers no browser, and a window that comes back to it ends them as nothing
 /// takes them back.
+///
+/// 1.40 added a host saying it records a hook line under the project as it holds it (#3400):
+/// each `heard` it pushes says so (`pathless`), and the window's reply to that line names no
+/// project path, which such a host never used. A host before 1.40 says nothing of it, and is
+/// sent the path as before.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 39,
+    minor: 40,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -1353,6 +1358,10 @@ pub enum Pushed {
         project: String,
         heard: u64,
         line: serde_json::Value,
+        /// The host records the line under the project as it holds it, so the reply's record
+        /// of it names no project path (1.40, #3400). A host before 1.40 never says it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pathless: bool,
     },
     /// What a confinement's proxy did (1.4). Pushed only to a link that may confine
     /// ([`crate::grants::Power::Confine`]) and that the host named the confinement to (#2444):

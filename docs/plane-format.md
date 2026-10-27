@@ -1366,7 +1366,8 @@ outside the project and removes it when the flow ends, so it adds none of them (
   by ADR 0098, built by #2324: a theme folder needs no approval. Format 2's vocabulary only
   grows: the Figma pass added the colour tokens `border.control`, `accent.wash`, `accent.text`,
   `accent.fill`, `accent.fill-hover`, `accent.fill-edge` and `accent.fill-text`, and the
-  geometry token `radius.control` (operator ruling 2026-10-25, #3177, #3113). A theme folder
+  geometry token `radius.control` (operator ruling 2026-10-25, #3177, #3113), then
+  `accent.wash-hover`, the chosen title-bar chip under the pointer (#3345). A theme folder
   written before them draws as it did: each follows the token that drew its part before
   (`crates/purlis-core/docs/themes.md`, "Tokens added after themes existed").
 
@@ -2012,8 +2013,9 @@ excepted), and for a secret-shaped value, named by its kind.
     (`charter/memstore.py:132`); `kind` is `"persistent"` for workspace memories (the
     default, `charter/memstore.py:102`). The text is `.strip()`ed; empty raises.
   - Closed todos: `ws todo done <slug>` writes a memory whose text is
-    `f"Closed todo: {title}"` before deleting the todo
-    (`charter/commands_workspace.py:1516`–`1517`), so its filename is
+    `f"Closed todo: {title}"` before moving the todo to `todos/archive/`
+    (`charter/commands_workspace.py:1516`–`1517`; the move is
+    [ADR 0106](adr/0106-a-done-todo-is-kept-and-can-be-reopened.md)), so its filename is
     `<stamp>-closed-todo-<slug-of-the-title>.md`.
   - `memory/archive/<name>.md` holds retired memories, moved by `memstore.archive`
     (`charter/memstore.py:510`, `charter/memstore.py:524`); it is out of every listing
@@ -2114,7 +2116,9 @@ file `memstore.write` could have written in its new store.
 - **Tier:** Plane when LIVE, Clone state when LOCAL
 - **Written by:** `todos.scaffold` (`charter/todos.py:73`), `todos.add`
   (`charter/todos.py:93`); commands `purlis ws todo "<text>"`
-  (`charter/commands_workspace.py:1462`), `ws todo done|forget <slug>` (deletes —
+  (`charter/commands_workspace.py:1462`), `ws todo done <slug>` (moves it to
+  `todos/archive/`, [ADR 0106](adr/0106-a-done-todo-is-kept-and-can-be-reopened.md)),
+  `ws todo reopen <slug>` (moves it back), `ws todo forget <slug>` (deletes, open or done —
   `charter/commands_workspace.py:1519`), `fork` (directory copy,
   `charter/commands_workspace.py:1702`).
 - **Read by:** `todos.open_todos` (`charter/todos.py:219`), `todos.count_open`
@@ -2128,8 +2132,12 @@ file `memstore.write` could have written in its new store.
   `memstore.write(..., timestamped=True, index=True)`), so a todo file is
   `<YYYYMMDD-HHMMSS>-<slug>.md` holding `# <title>`, `_<YYYY-MM-DD HH:MM> · persistent_`,
   the body. The index header is at `charter/todos.py:31`. **There is no state field**:
-  closing deletes the file and its index line (ADR 0004/0006,
-  `charter/commands_workspace.py:1469`). The slug a caller closes by is the file stem, and
+  an open todo is a file directly in `todos/`, listed in its index; closing one as done moves
+  the file, unchanged, into `todos/archive/` and drops its index line, and reopening moves it
+  back and appends the line again ([ADR 0106](adr/0106-a-done-todo-is-kept-and-can-be-reopened.md),
+  amending ADR 0004/0006, which deleted it). A done todo whose name is taken there is numbered
+  `-2`, then `-2-3`, as an archived memory is. Every count and listing of open todos reads only
+  the `*.md` files directly in `todos/`. The slug a caller closes by is the file stem, and
   it must be one path segment (`charter/commands_workspace.py:1498`). Ordering is the
   filename's second resolution (whole seconds, ties broken alphabetically,
   `charter/todos.py:93`, `charter/memstore.py:119`). Age comes from the in-body `_YYYY-MM-DD` stamp, falling back
