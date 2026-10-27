@@ -11,7 +11,8 @@ on:
   # the pull request on top. It runs every job a pull request runs, and is gated as one: the jobs
   # that compare a change with main (`bench`, the cold start, the scoped macOS and Docker jobs)
   # treat a merge group as a pull request and measure it against the group's base
-  # (`.github/actions/change-base`). No job is filtered by path, so every required check reports.
+  # (`.github/actions/change-base`). A merge group is never scoped by what it changes
+  # (`tools/ci-scope.mjs`): every job a pull request could run, it runs.
   merge_group:
     types: [checks_requested]
   # Nightly, for the evidence-only jobs below, which nothing else runs (V70). The gating jobs
@@ -39,19 +40,21 @@ on:
 # **A pull request's heavy jobs run by what it changes (#3505).** The `changes` job sorts the
 # change into scopes (`tools/ci-scope.mjs`, the one place that says which paths need which jobs):
 # a pull request that changes only docs, agent skills or a tool a person runs by hand needs no
-# Rust, app, scenario or web build. No job is filtered by path and no required check is skipped
-# by `if:`: a job that carries a required check's name always runs, and skips its expensive steps
-# when its scope is untouched, as `parity` does; a job behind one of the `*-checks` jobs is skipped
-# whole, and its `*-checks` job passes only when the scope says it had nothing to run. A merge
-# group, a push to main and a nightly run every scope. When `changes` itself fails, every scope's
-# output is empty and every job runs (`!= 'false'`), so a fault there runs more, never less.
+# Rust, app, scenario or web build. No workflow has a `paths:` filter, and no job that carries a
+# required check's name is skipped by `if:`: such a job always runs, and skips its expensive steps
+# when its scope is untouched, as `parity` does. The jobs behind a `*-checks` job (`rust`, `lint`,
+# `scenario`, `scenario-linux`) are skipped by scope, and their `*-checks` job passes only when
+# the scope says there was nothing to run. The whole-tree guards, Rust tests that read every file
+# of the repository, run on every change (`recorded`). A merge group, a push to main and a nightly
+# run every scope. When `changes` itself fails, every scope's output is empty and every job runs
+# (`!= 'false'`), so a fault there runs more, never less.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
   group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
   # Superseding a PR's run is right: only the newest push is a claim about that branch.
   # Superseding a run on `main` is NOT: every merge's run is the record for that commit, and
-  # `main` is protected by eight required checks. Cancelling it leaves the commit with no
+  # `main` is protected by nine required checks. Cancelling it leaves the commit with no
   # verified result at all — measured on 2026-09-20, three merges in a row cancelled the
   # previous merge's run, so three commits on a protected branch were never checked.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -870,9 +873,10 @@ jobs:
   # image breaking upstream must not stop that. Nightly only (V70).
   app-evidence:
     name: app builds (${{ matrix.os }}${{ matrix.evidence && ', evidence only' || '' }})
-    # `changes` for the steps it shares with `app`; a nightly runs every scope.
+    # `changes` for the steps it shares with `app`; a nightly runs every scope, and a `changes`
+    # that fails runs it all the same.
     needs: changes
-    if: github.event_name == 'schedule'
+    if: ${{ !cancelled() && github.event_name == 'schedule' }}
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -1162,13 +1166,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Nothing Rust reads has changed
         if: needs.changes.outputs.rust == 'false'
-        run: echo "::notice::nothing Rust reads has changed; the recorded behaviour is not replayed"
+        run: echo "::notice::nothing Rust reads has changed; the recorded behaviour is not replayed, and only the whole-tree guards run"
+      # On every change: the whole-tree guards below need the toolchain when nothing else does.
       - uses: ./.github/actions/rust-toolchain
-        if: needs.changes.outputs.rust != 'false'
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: needs.changes.outputs.rust != 'false'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # **The whole-tree guards** (`WHOLE_TREE_GUARDS` in `tools/ci-scope.mjs`): Rust tests that
+      # read every file of the repository, docs and tools included, so a change that leaves Rust
+      # out of scope can still fail them (a new tool with no licence header). The `rust` job runs
+      # them with the rest of the suite; when it is skipped, they run here, alone.
+      - name: The whole-tree guards, as Rust is out of scope
+        if: needs.changes.outputs.rust == 'false'
+        run: >-
+          cargo test --locked -p purlis-core
+          --test every_first_party_source_file_carries_its_licence_header
+          --test no_tracked_file_is_one_a_sandboxed_chat_may_not_write
       - name: The plane writes, hooks, status line and doctor, as recorded
         if: needs.changes.outputs.rust != 'false'
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
@@ -1571,7 +1584,7 @@ jobs:
     # been compiled on Windows, so this job exists to find out what is true rather than to
     # pass.
     #
-    # **Not a gate, and not one of the eight required checks.** The same reasoning `fifty
+    # **Not a gate, and not one of the nine required checks.** The same reasoning `fifty
     # tabs` gives in `stress.yml`, and more of it: a required check on a platform with no
     # port would block every merge in the repo — including the ports that would make it
     # green. It reports, and it is allowed to fail. It runs nightly, not on a pull

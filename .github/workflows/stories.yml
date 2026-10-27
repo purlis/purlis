@@ -63,7 +63,8 @@ jobs:
 
   # Not a required check, so it is skipped whole when nothing it draws has changed: a docs-, skills-
   # or tools-only pull request pulls no Playwright image. A push to main and a run by hand run it;
-  # a `changes` that fails runs it too.
+  # a `changes` that fails runs it too. This workflow has no merge-group run, so a scope rule that
+  # skips a story wrongly first shows on main's push run, not in the queue.
   stories:
     name: stories (Chromium and WebKit, axe, keyboard, screenshots)
     needs: changes

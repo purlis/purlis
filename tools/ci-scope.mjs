@@ -24,11 +24,19 @@
 //    scope. So is a doc that code reads (`READ_BY_CODE`): it is compiled into a build or a test
 //    holds it.
 // 2. `docs/`, `site/`, `changes/` and a Markdown file at the root: the docs alone.
-// 3. A file under `tools/` that CI runs (`ciTools`): every scope. Any other file there, a tool a
-//    person runs by hand or a tool's test: the tools' tests alone.
+// 3. A file under `tools/` that CI runs (`ciTools`): every scope. So is a file deleted from
+//    `tools/` (a rename is a deletion and an addition): what named it may name it still, and a
+//    deleted file can no longer be read for what it names. Any other file there, a tool a person
+//    runs by hand or a tool's test: the tools' tests alone.
 // 4. `app/e2e/`: the web checks (its type check and lint) and the scenario specs.
 // 5. Anything else: every scope. An unknown path runs everything, so a path this file has never
 //    heard of costs time, never a check.
+//
+// **The whole-tree guards run on every change** (`WHOLE_TREE_GUARDS`): Rust tests that read every
+// file of the repository, so a change to docs or tools can fail them (a source file with no
+// licence header, a file a sandboxed chat may not write). When `rust` is out of scope, the
+// `recorded` job runs these alone. `ci-scope.test.mjs` finds each test that walks from the
+// repository's root and fails until it is listed here or named as walking only code.
 //
 // **Only a pull request is scoped.** A merge group, a push to main, a nightly and a run by hand
 // run every scope: the merge group is the last check before main, and it measures the pull
@@ -73,6 +81,13 @@ export const READ_BY_CODE = [
   "docs/adr/0076-a-run-moves-only-by-a-named-cause-and-a-chats-state-is-read-from-its-runs.md",
 ];
 
+// The Rust tests that read every file of the repository: `ci.yml`'s `recorded` job runs each one
+// when `rust` is out of scope, so no change skips them.
+export const WHOLE_TREE_GUARDS = [
+  { crate: "purlis-core", test: "every_first_party_source_file_carries_its_licence_header" },
+  { crate: "purlis-core", test: "no_tracked_file_is_one_a_sandboxed_chat_may_not_write" },
+];
+
 const readByCode = (path) =>
   READ_BY_CODE.some((doc) => (doc.endsWith("/") ? path.startsWith(doc) : path === doc));
 
@@ -97,13 +112,14 @@ export function scopesOfPath(path, ciToolNames) {
 }
 
 // The scopes a change needs: the union of its paths', and every scope for an event that is not a
-// pull request or a change of no paths.
-export function scopesOf({ event, paths, ciToolNames }) {
+// pull request or a change of no paths. `deleted` is the paths the change deletes.
+export function scopesOf({ event, paths, ciToolNames, deleted = new Set() }) {
   if (event !== "pull_request" || paths.length === 0) return { scopes: ALL, why: [] };
   const scopes = new Set();
   const why = [];
   for (const path of paths) {
-    const needs = scopesOfPath(path, ciToolNames);
+    const needs =
+      path.startsWith("tools/") && deleted.has(path) ? ALL : scopesOfPath(path, ciToolNames);
     if (needs === ALL) why.push(path);
     for (const scope of needs) scopes.add(scope);
   }
@@ -161,12 +177,18 @@ function main([event, base]) {
   try {
     let paths = [];
     let ciToolNames = new Set();
+    const deleted = new Set();
     if (event === "pull_request") {
       const git = (...args) =>
         execFileSync("git", args, { encoding: "utf8", maxBuffer: 1 << 28 }).split("\n");
       // `--no-renames`, so a rename is both of its paths: moving a file out of `crates/` is a
       // change to `crates/`.
-      paths = git("diff", "--name-only", "--no-renames", base, "HEAD").filter(Boolean);
+      for (const line of git("diff", "--name-status", "--no-renames", base, "HEAD")) {
+        const [status, path] = line.split("\t");
+        if (!path) continue;
+        paths.push(path);
+        if (status === "D") deleted.add(path);
+      }
       const files = git("ls-files").filter(Boolean);
       ciToolNames = ciToolsOf(files, (p) => {
         try {
@@ -176,7 +198,7 @@ function main([event, base]) {
         }
       });
     }
-    result = scopesOf({ event, paths, ciToolNames });
+    result = scopesOf({ event, paths, ciToolNames, deleted });
     console.log(paths.join("\n"));
   } catch (error) {
     console.log(`::warning::the change could not be read, so every job runs: ${error.message}`);

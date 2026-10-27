@@ -9,7 +9,15 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { READ_BY_CODE, SCOPES, ciToolsOf, namedIn, scopesOf, scopesOfPath } from "./ci-scope.mjs";
+import {
+  READ_BY_CODE,
+  SCOPES,
+  WHOLE_TREE_GUARDS,
+  ciToolsOf,
+  namedIn,
+  scopesOf,
+  scopesOfPath,
+} from "./ci-scope.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CI_TOOLS = new Set(["coldstart-linux.sh", "ci-scope.mjs", "no-orphans.sh"]);
@@ -152,6 +160,32 @@ test("a tool is CI's when a file outside tools/ and the docs names it, or such a
   assert.deepEqual([...ci].sort(), ["no-orphans.sh", "notices.mjs", "orphan-report.mjs"]);
 });
 
+test("a tool deleted or renamed runs everything, though nothing tracked names it now", () => {
+  // The change deletes `tools/npm-licences.mjs` while `ci.yml`, untouched, still runs it: the file
+  // is gone from `git ls-files`, so the search for CI's tools cannot find it.
+  const files = {
+    ".github/workflows/ci.yml": "run: node ../tools/npm-licences.mjs",
+    "tools/land.mjs": "",
+  };
+  const ciToolNames = ciToolsOf(Object.keys(files), (p) => files[p] ?? "");
+  assert.ok(!ciToolNames.has("npm-licences.mjs"));
+  const paths = ["tools/npm-licences.mjs"];
+  const deleted = new Set(paths);
+  const scopes = scopesOf({ event: "pull_request", paths, ciToolNames, deleted }).scopes;
+  assert.deepEqual([...scopes].sort(), all);
+  // A rename is a deletion and an addition (`--no-renames`).
+  const renamed = scopesOf({
+    event: "pull_request",
+    paths: ["tools/land.mjs", "tools/landing.mjs"],
+    ciToolNames,
+    deleted: new Set(["tools/land.mjs"]),
+  }).scopes;
+  assert.deepEqual([...renamed].sort(), all);
+  // A hand-run tool edited, not deleted, stays narrow.
+  const edited = scopesOf({ event: "pull_request", paths: ["tools/land.mjs"], ciToolNames });
+  assert.deepEqual([...edited.scopes], ["tools"]);
+});
+
 test("a tool's name is matched as text, whole, whatever characters it holds", () => {
   assert.ok(namedIn('node "$(dirname "$0")/bench.mjs"', "bench.mjs"));
   assert.ok(!namedIn("tools/stress-bench.mjs", "bench.mjs"));
@@ -234,4 +268,59 @@ test("every doc the code reads by a relative path runs everything", () => {
     );
   }
   assert.ok(READ_BY_CODE.length > 0);
+});
+
+// A test that walks the repository from its root reads files of every scope: it is either a
+// whole-tree guard, which `recorded` runs on every change, or it is named here as walking only
+// code (whose changes run every scope).
+const WALK_ONLY_CODE = {
+  "app/src-tauri/src/savefix/tests.rs": "crates/ and app/src-tauri/ sources",
+  "app/src-tauri/src/tests.rs": "reads LICENSE and NOTICE, which run everything",
+  "crates/purlis-core/src/doctor/shadowed/tests.rs": "a plane's docs/; purlis's own is exempt",
+  "crates/purlis-core/tests/every_deferral_names_its_ticket.rs": "crates/, app/src-tauri, app/src",
+  "crates/purlis-core/tests/four_unsafe_blocks.rs": "crates/ and app/src-tauri/ Rust",
+  "crates/purlis-core/tests/only_the_updater_and_report_name_charters_own_address.rs":
+    "shipped Rust",
+  "crates/purlis-core/tests/the_local_layer_has_one_reader.rs": "crates/ and app/src-tauri/ Rust",
+  "app/src/theme/consentToggles.test.ts": "app/src/",
+  "app/src/theme/geometry.test.ts": "app/src/",
+  "app/src/theme/grounds.test.ts": "app/src/",
+  "app/src/ui/field/refusingFields.guard.test.ts": "app/src/",
+  "app/src/ui/menu/submenuRows.guard.test.ts": "app/src/",
+  "app/e2e/harness.ts": "the built app in target/",
+  "app/.storybook/handed.plugin.ts": "crates/purlis-core/src/theme/built-in/",
+};
+
+test("a test that walks the repository from its root is a whole-tree guard or walks code", () => {
+  const rootward = [
+    String.raw`CARGO_MANIFEST_DIR"\)\)?\.join\("\.\./\.\."\)`,
+    String.raw`process\.cwd\(\), *"\.\."`,
+    String.raw`URL\("\.\./\.\.`,
+  ].join("|");
+  const rooted = git("grep", "-l", "-E", rootward, "--", "crates", "app", "tests", ":!*.md");
+  const walkers = rooted.filter((p) => /read_dir|"ls-files"|readdirSync/.test(read(p)));
+  const guards = new Set(
+    WHOLE_TREE_GUARDS.map(({ crate, test }) => `crates/${crate}/tests/${test}.rs`),
+  );
+  for (const path of guards) assert.ok(walkers.includes(path), `${path} is found as a walker`);
+  for (const path of walkers) {
+    assert.ok(
+      guards.has(path) || path in WALK_ONLY_CODE,
+      `${path} walks the repository from its root: add it to WHOLE_TREE_GUARDS in ` +
+        "tools/ci-scope.mjs if it reads docs, tools or other files outside code, else to " +
+        "WALK_ONLY_CODE here",
+    );
+  }
+});
+
+test("the recorded job runs every whole-tree guard when Rust is out of scope", () => {
+  const ci = read(".github/workflows/ci.yml");
+  const step = ci.slice(ci.indexOf("- name: The whole-tree guards"));
+  assert.ok(step.length < ci.length, "ci.yml has the step");
+  const run = step.slice(0, step.indexOf("\n      - "));
+  assert.match(run, /needs\.changes\.outputs\.rust == 'false'/);
+  for (const { crate, test: name } of WHOLE_TREE_GUARDS) {
+    assert.ok(run.includes(`-p ${crate}`), crate);
+    assert.ok(run.includes(`--test ${name}`), name);
+  }
 });
