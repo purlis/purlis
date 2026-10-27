@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793101404138,
+  "lastUpdate": 1793104832782,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26754,6 +26754,48 @@ window.BENCHMARK_DATA = {
             "value": 103.98294700000001,
             "unit": "ms",
             "extra": "median of 5 runs: 103.341, 103.558, 103.983, 104.577, 104.898 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "120c341ba9fabc5e1932d69e90bfad35d2209772",
+          "message": "Unit tests: one shared wait and budget for whole-window tests (main red) (#3506)\n\n* StartChatHere window test: wait for the light editor's chunk, not 1s\n\nOn a loaded runner the press on README.md opens its file tab, but the\ntab says \"Opening the light editor…\" past Testing Library's 1s while\nCodeMirror's chunk (Views.tsx's lazy PieceFileTab) is imported cold, so\n\"Start a chat here on README.md\" is not found yet. The preview's button\nis now waited for as long as a chunk can take (5s, as the merge view's\ntests wait), and the file's two tests get 20s, as other whole-window\nflows do. The product is unchanged: the row, its name and the press are\nas #3194 left them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Unit tests: one shared wait and budget for whole-window tests\n\nThe whole-window tests (render(<App />), the *.window.test.tsx files)\ntake 1-3 s on an idle machine. On a runner whose cores are all busy\nwith the other workers they go past Vitest's 5 s budget (FourRegions,\nProjects, TabChip.window, StartChatHere) and past Testing Library's 1 s\nwait, for example while a light editor tab imports its lazy chunk\n(StartChatHere). Eleven files already raised asyncUtilTimeout to 5 s\nand two raised testTimeout to 15 s on their own.\n\nNow the setup gives every unit test a 5 s asyncUtilTimeout and the\nunit project a 20 s testTimeout, each documented where it is set. The\nper-file wait StartChatHere had in this branch is dropped: the shared\none covers it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Cockpit window test: Esc from the README row once it is drawn\n\nThe Esc test focused the cockpit tree's first [data-row] with an\noptional chain. If the branch's files had not been read yet, focus()\nsilently did nothing, the Esc landed on the page, and the cockpit never\nstepped back: \"expected { workspace: 'alpha', … } to be null\" at :147.\nThis also failed in merge-queue runs for #3438 and #3392, which do not\ncontain the shared timeouts. The test now waits for the README.md row,\ngives it the keyboard, checks that it has focus, and then presses Esc.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T12:05:16Z",
+          "tree_id": "4d2079639c30ddca629331e7af1fcf85c170b945",
+          "url": "https://github.com/purlis/purlis/commit/120c341ba9fabc5e1932d69e90bfad35d2209772"
+        },
+        "date": 1793104828947,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6949575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.692, 0.695, 0.705, 0.711 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4750625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.433, 16.434, 16.475, 16.572, 16.687 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.15456449999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.421, 101.614, 102.155, 102.191, 103.670 ms"
           }
         ]
       }
