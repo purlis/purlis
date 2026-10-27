@@ -262,6 +262,12 @@ pub trait Running: Send + Sync + 'static {
     fn view_size(&self) -> Option<(u16, u16)> {
         None
     }
+    /// The size a view of `kind` is drawn at: DevTools' own for theirs (#2028), and
+    /// [`Running::view_size`] for every other.
+    fn view_size_of(&self, kind: ViewKind) -> Option<(u16, u16)> {
+        let _ = kind;
+        self.view_size()
+    }
     /// Ends it and everything it started, keeping its last screen; returns once it is gone.
     fn stop(&self);
     /// Its process, while it runs.
@@ -325,6 +331,16 @@ pub trait Running: Send + Sync + 'static {
     /// Who drives it, where it is a browser (#2014).
     fn driver(&self) -> Option<Driver> {
         None
+    }
+    /// The person opens its DevTools (#2028): refused for every program that is not a browser.
+    fn inspect(&self, width: u16, height: u16) -> Result<(), Refusal> {
+        let _ = (width, height);
+        Err(not_a_browser())
+    }
+    /// One event of the person's into its open DevTools (#2028).
+    fn inspector_input(&self, input: &Input) -> Result<(), Refusal> {
+        let _ = input;
+        Err(not_a_browser())
     }
 }
 
@@ -670,10 +686,12 @@ fn browser_acted_on(command: &Command) -> Option<&str> {
         | Command::HandBack { program }
         | Command::BrowserInput { program, .. }
         | Command::SizeBrowser { program, .. }
+        | Command::Inspect { program, .. }
+        | Command::InspectorInput { program, .. }
         | Command::CancelEngineDownload { program } => Some(program),
         Command::AttachView {
             program,
-            kind: ViewKind::Browser,
+            kind: ViewKind::Browser | ViewKind::Inspector,
             ..
         } => Some(program),
         _ => None,
@@ -2288,7 +2306,7 @@ impl Hosting {
                     code: session::MALFORMED.into(),
                     why: format!("program {program} has no view of that kind"),
                 })?;
-            let size = match hosted.running.view_size() {
+            let size = match hosted.running.view_size_of(kind) {
                 Some((columns, rows)) => Size { columns, rows },
                 None => hosted.size,
             };
@@ -3452,6 +3470,24 @@ impl session::Host for Hosting {
             } => {
                 self.driving(&program, move |running| {
                     running.size_browser(width, height).map(|()| Answer::Done)
+                })
+                .await
+            }
+            // The person's DevTools (#2028): the window's alone, on its own host, as the grants
+            // say; each may wait on the engine, so off the runtime.
+            Command::Inspect {
+                program,
+                width,
+                height,
+            } => {
+                self.driving(&program, move |running| {
+                    running.inspect(width, height).map(|()| Answer::Done)
+                })
+                .await
+            }
+            Command::InspectorInput { program, input } => {
+                self.driving(&program, move |running| {
+                    running.inspector_input(&input).map(|()| Answer::Done)
                 })
                 .await
             }
