@@ -250,17 +250,31 @@ fn a_denial_that_is_not_of_a_file_is_never_sorted_as_a_folder() {
 }
 
 #[test]
-fn listening_on_a_port_is_not_a_connection_to_a_host() {
-    // A refused bind or accept names this machine's own port: no host to allow.
-    for line in [
-        "node(5) deny(1) network-bind *:3000",
-        "node(5) deny(1) network-bind localhost:3000",
-        "nc(6) deny(1) network-inbound *:8080",
+fn listening_on_a_port_is_a_port_of_this_mac_to_listen_on_and_never_a_host() {
+    // A refused bind or accept names this machine's own port (#2019): never a host to allow,
+    // a port to listen on, whichever interface the server asked for.
+    for (line, port) in [
+        ("node(5) deny(1) network-bind *:3000", "3000"),
+        ("node(5) deny(1) network-bind localhost:3000", "3000"),
+        ("nc(6) deny(1) network-inbound *:8080", "8080"),
     ] {
         let (block, target) = Denial::of_line(line).unwrap().block(&place());
         assert_eq!(
             (block.operation, block.kind),
-            (Operation::Other, Kind::System),
+            (Operation::Listen, Kind::LocalService),
+            "{line}"
+        );
+        assert_eq!(target.as_deref(), Some(port), "{line}");
+    }
+    // Another machine's address, or no port: nothing to allow.
+    for line in [
+        "node(5) deny(1) network-bind 192.168.1.5:3000",
+        "node(5) deny(1) network-bind localhost:0",
+    ] {
+        let (block, target) = Denial::of_line(line).unwrap().block(&place());
+        assert_eq!(
+            (block.operation, block.kind),
+            (Operation::Listen, Kind::System),
             "{line}"
         );
         assert_eq!(target, None, "{line}");

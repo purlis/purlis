@@ -339,7 +339,28 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     }
     // Each service on this Mac a person allowed this chat (qw384): connect to that one loopback
     // port, which a Go client reaches directly, never through the proxy.
-    for port in &widened.ports {
+    // A port given for a listen grant alone is connected to only once its door opens
+    // ([`served`]).
+    for port in widened
+        .ports
+        .iter()
+        .filter(|port| !widened.listen_only.contains(port))
+    {
+        own.after.push(super::localport::seatbelt_rule(*port));
+    }
+    Ok(())
+}
+
+/// Lets a wrapped chat serve on each of `ports` (#2019): on its own socket for each in `folder`,
+/// the folder purlis made for the chat, behind the door on that port
+/// ([`super::localport::serve_rules`]). The chat reaches the door on each as a service on this
+/// Mac: a port given for a listen grant alone is connected to here, where its door opened, and
+/// never in [`widen`].
+pub fn served(own: &mut Own, folder: &Path, ports: &[u16]) -> Result<(), &'static str> {
+    for port in ports {
+        own.after.extend(super::localport::serve_rules(
+            &super::localport::serve_socket(folder, *port),
+        )?);
         own.after.push(super::localport::seatbelt_rule(*port));
     }
     Ok(())
@@ -915,5 +936,5 @@ pub fn env(proxy: &str, tmp: &Path) -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
-#[path = "seatbelt_tests.rs"]
+#[path = "seatbelt/tests.rs"]
 mod tests;

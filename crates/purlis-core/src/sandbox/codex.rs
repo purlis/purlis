@@ -607,12 +607,37 @@ pub fn profile(
     proxy_ports: &[u16],
     hook_socket: Option<&Path>,
 ) -> Result<String, &'static str> {
+    profile_serving(wrap, cwd, tmp, proxy_ports, hook_socket, None)
+}
+
+/// [`profile`], serving on each port of `served` on its socket in that folder (#2019,
+/// [`seatbelt::served`]): the doors its confinement opened.
+pub fn profile_serving(
+    wrap: &Wrap,
+    cwd: &Path,
+    tmp: &Path,
+    proxy_ports: &[u16],
+    hook_socket: Option<&Path>,
+    served: Option<(&Path, &[u16])>,
+) -> Result<String, &'static str> {
+    let mut own = own(wrap)?;
+    if let Some((folder, ports)) = served {
+        seatbelt::served(&mut own, folder, ports)?;
+    }
+    // At the floor too: its denials hold the folder the sockets are in, and every port of this
+    // machine, so its own socket and its door are given back after them.
     if wrap.level == super::Level::Floor {
-        return floor_profile(wrap, proxy_ports, hook_socket);
+        return seatbelt::floor_profile(
+            &wrap.denied_here(),
+            &wrap.held,
+            &own,
+            proxy_ports,
+            hook_socket,
+        );
     }
     seatbelt::profile(
         &wrap.denied_here(),
-        &own(wrap)?,
+        &own,
         cwd,
         tmp,
         proxy_ports,

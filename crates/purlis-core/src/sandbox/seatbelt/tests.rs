@@ -223,7 +223,7 @@ fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_wrapped_chat_s_to_
 /// one the core generates, word for word, so the measurement is of the rules that ship.
 #[test]
 fn the_case_measurement_applies_the_rules_purlis_writes() {
-    let script = include_str!("../../../../tools/seatbelt-case.sh");
+    let script = include_str!("../../../../../tools/seatbelt-case.sh");
     let generated: Vec<String> = crate::sandbox::seatbelt::vaults_everywhere_rules()
         .expect("rules")
         .into_iter()

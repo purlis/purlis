@@ -50,7 +50,9 @@ fn ask(
 }
 
 fn covered() -> Requested {
-    Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("devops"))
+    Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+        "devops",
+    )))
 }
 
 fn held(asked: &Requested) -> bool {

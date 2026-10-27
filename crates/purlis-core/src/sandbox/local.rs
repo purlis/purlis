@@ -228,6 +228,9 @@ struct OnDisk {
     /// its one port.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     ports_mine: Vec<u16>,
+    /// The ports of this Mac's loopback you let every chat of this project listen on (#2019).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    listens_mine: Vec<u16>,
     /// What the project's committed file declared it expects (`[sandbox] expects`) when this
     /// machine last asked the person about it and was answered, each as the file writes it;
     /// absent before the first answer. **An answer, never a grant**: it only stops the same
@@ -1177,6 +1180,32 @@ pub fn revoke_port(root: &Path, port: u16) -> io::Result<()> {
         held.ports_mine.retain(|one| *one != port);
         held.granted
             .retain(|made| !(made.what == "port" && made.target == target));
+    })
+}
+
+/// The ports of this Mac's loopback you let every chat of the project at `root` listen on
+/// (#2019). [`super::Compiled::granted`] judges each again before a start compiles it in.
+pub fn granted_listens(root: &Path) -> Vec<u16> {
+    read(root).listens_mine
+}
+
+/// Lets every chat of the project at `root` listen on `port` of this Mac's loopback: a block's
+/// Notice, never a chat. `port` is one [`super::localport::port`] took.
+pub fn grant_listen(root: &Path, port: u16) -> io::Result<()> {
+    change(root, |held| {
+        if !held.listens_mine.contains(&port) {
+            held.listens_mine.push(port);
+        }
+    })
+}
+
+/// Takes `port` off what you let every chat listen on: Settings' Remove.
+pub fn revoke_listen(root: &Path, port: u16) -> io::Result<()> {
+    let target = port.to_string();
+    change(root, |held| {
+        held.listens_mine.retain(|one| *one != port);
+        held.granted
+            .retain(|made| !(made.what == "listen" && made.target == target));
     })
 }
 
@@ -2723,5 +2752,5 @@ pub fn count(root: &Path, started: Started) -> io::Result<()> {
 }
 
 #[cfg(test)]
-#[path = "local_tests.rs"]
+#[path = "local/tests.rs"]
 mod tests;
