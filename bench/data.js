@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793141615534,
+  "lastUpdate": 1793143824211,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27384,6 +27384,48 @@ window.BENCHMARK_DATA = {
             "value": 101.280754,
             "unit": "ms",
             "extra": "median of 5 runs: 100.394, 100.757, 101.281, 101.329, 103.563 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bdf9101392981c15255d044b76929c196bc32d85",
+          "message": "ci: the app as it ships on macOS is app's own leg again, not scenario part 1's (#3573)\n\n* ci: the app as it ships on macOS is app's own leg again, not scenario part 1's\n\nOn main's run of 2026-10-27 the macOS scenario part 1 took 35 minutes,\nthe longest job: it built the app as it ships (npx tauri build, ~8 min),\nthen the e2e build and its specs, one after another. It sat there to\nhold one macOS runner fewer, when the free plan's five macOS jobs made a\nmain run wait 26 minutes (2026-10-12). Since the move to Enterprise\nrunners (2026-10-13), 699 macOS jobs started with a median wait of 2 s\nand none over a minute.\n\napp gains a macos-latest leg (expect 26), which posts the required\napp builds (macos-latest) check itself; scenario part 1 runs app: false;\napp-macos-checks goes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* ci: drop the scenario job's app-as-it-ships steps and its app/expect keys\n\nReview of #3573: with no scenario leg setting app: true, the four\nif: matrix.app steps and the app and expect matrix keys could never run\nagain (and the scenario copy of What this runner is was macOS-only).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T22:47:28Z",
+          "tree_id": "a522e747a3ee5974b7475de2cb01f3cd4567360f",
+          "url": "https://github.com/purlis/purlis/commit/bdf9101392981c15255d044b76929c196bc32d85"
+        },
+        "date": 1793143818274,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3374595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.324, 0.325, 0.337, 0.339, 0.357 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3479885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.278, 16.282, 16.348, 16.463, 17.017 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7195775,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.575, 101.653, 101.720, 102.201, 102.788 ms"
           }
         ]
       }
