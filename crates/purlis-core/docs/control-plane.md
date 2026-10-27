@@ -428,8 +428,9 @@ machine that pulls it. So purlis reads profiles only from `charter.local.toml`, 
 `charter.toml`'s `[harness]` keeps `default`; any other key there is ignored, as it always
 was. A `default` in the local file wins over the committed one.
 
-**The local file carries `[harness]`, `[extensions]`, `[theme]`, `[harness_plugins]`,
-`[plane]` and `[repos]`, and nothing else.** Any other section in it is refused by name. An
+**The local file carries `[harness]`, `[extensions]`, `[theme]`, `[harness_skills]`,
+`[plane]` and `[repos]`, and nothing else.** Any other section in it is refused by name, except
+an old `[harness_plugins]`, which nothing reads since #3467 and one Notice says so of. An
 ignored file that could override `[[forge]]` — whose hosts steer the one-credential guard —
 would change plane policy with no trace in git. And the file is read only while git would not
 carry it: if git tracks it or would commit it, purlis reads nothing in it, and

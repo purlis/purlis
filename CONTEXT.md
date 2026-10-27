@@ -1623,16 +1623,24 @@ harness binary"* means standing in (ADR 0073).
 _Avoid_: wrap (for a stand-in, a shim or an adapter)
 
 **Harness plugin**:
-A Claude Code, Codex or opencode plugin, chosen per project. "Plugin" on its own always means
-this, never a purlis extension. purlis's own is one too: the Claude Code plugin the app
-bundles, named `purlis` (`purlis@inline`, skills `purlis:<skill>`, MCP tools
-`mcp__purlis__<tool>`), always on in the chats the app starts. Its ids from before the rename
-(`charter@inline`, `charter-app@inline`, `charter@charter-app`) are always off there, and so
-is the Python charter's `charter@charter`. `purlis plugin install` puts a copy of it,
-`purlis@purlis-app`, in front of the chats the operator starts outside the app (ADR 0057). For opencode, purlis's own is the **opencode
-shim**, a script the app loads into each opencode chat it starts, and whose guard-only variant
-`purlis plugin install` writes into opencode's plugin directory (ADR 0058).
-_Avoid_: extension (for this); "purlis plugin" for anything but purlis's own
+A harness's own bundle: a Claude Code, Codex or opencode plugin, which can carry skills, hooks,
+MCP servers, subagents, LSP servers and code that runs in the harness. The harness decides which
+of its plugins load; purlis does not turn one on or off for a project (#3467, ADR 0050 as amended
+2026-10-27). The Skill studio shows the skills one brings, read-only, naming the plugin as their
+source. "Plugin" on its own always means a harness's, never a purlis extension.
+_Avoid_: extension (for this); "plugin skill" (it is a **harness skill** from a plugin)
+
+**purlis's plugin**:
+The bundle purlis installs into each harness so a chat carries its hooks, the Bash guard, its
+built-in skills and its MCP tools: for Claude Code the plugin the app bundles, named `purlis`
+(`purlis@inline` by `--plugin-dir`, skills `purlis:<skill>`, MCP tools `mcp__purlis__<tool>`);
+for Codex the `-c hooks.*` flags from the same registry; for opencode the **opencode shim**, a
+script the app loads into each opencode chat it starts (ADR 0058). In a Claude Code chat it is
+pinned on, and the ids it had before the rename (`charter@inline`, `charter-app@inline`,
+`charter@charter-app`) and the Python charter's `charter@charter` are pinned off: the only
+plugin ids purlis ever writes. `purlis plugin install` puts a copy, `purlis@purlis-app` and the
+shim's guard-only variant, in front of the chats the operator starts outside the app (ADR 0057).
+_Avoid_: "purlis plugin" for any other harness plugin
 
 **Skill**:
 A folder in the open SKILL.md format: instructions with a name and a description, and optionally
@@ -1667,7 +1675,8 @@ stays behind its flag.
 
 **Harness skill**:
 A skill a harness brings on its own, from the person's harness folders or from a harness plugin.
-purlis lists it and can turn it on or off for a project, but never edits it.
+purlis lists it and never edits it. One from the person's folders can be turned off for a
+project; one a plugin brings is shown read-only, since it comes and goes with its plugin (#3467).
 _Avoid_: external skill, plugin skill
 
 **Repo skill**:
