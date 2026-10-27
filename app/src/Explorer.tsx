@@ -554,13 +554,27 @@ export function Explorer({
       else onPick(undefined);
       return;
     }
-    const row = [...(navRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])].find(
-      (el) => el.dataset.row === wanted.row,
-    );
-    if (row === undefined) return;
-    revealed.current = revealSeen;
-    row.scrollIntoView?.({ block: "nearest" });
-    row.focus();
+    const nav = navRef.current;
+    if (nav === null) return;
+    /** Gives the row the keyboard once it is drawn: whether it was. */
+    const land = (): boolean => {
+      const row = [...nav.querySelectorAll<HTMLElement>("[data-row]")].find(
+        (el) => el.dataset.row === wanted.row,
+      );
+      if (row === undefined) return false;
+      revealed.current = revealSeen;
+      row.scrollIntoView?.({ block: "nearest" });
+      row.focus();
+      return true;
+    };
+    if (land()) return;
+    // The tree family draws a folder's rows in a commit of its own, after this view's, once
+    // the folder is read: the row is waited for in the DOM, not on this view's next draw.
+    const drawn = new MutationObserver(() => {
+      if (land()) drawn.disconnect();
+    });
+    drawn.observe(nav, { childList: true, subtree: true });
+    return () => drawn.disconnect();
   });
 
   /** Steps back out of the cockpit to the whole workspace. */
