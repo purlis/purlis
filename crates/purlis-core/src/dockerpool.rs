@@ -417,7 +417,9 @@ impl Runner {
         let mut all = vec!["run".to_owned(), "--detach".to_owned()];
         all.extend(args);
         all.push(self.image.as_str().to_owned());
+        // It suspends itself a day without a link from its desktop, keeping its home (#2051).
         all.push("serve".to_owned());
+        all.push("--suspends-unlinked".to_owned());
         all
     }
 }
@@ -516,6 +518,22 @@ pub fn check_on(
     inspected: &serde_json::Value,
     made: &Made,
     engine: Engine,
+) -> Result<Seccomp, Refused> {
+    checked_on(inspected, made, engine, true)
+}
+
+/// Whether `inspected`, what `docker inspect <container>` printed, says the container runs.
+pub fn is_running(inspected: &serde_json::Value) -> bool {
+    inspected.pointer("/0/State/Running") == Some(&serde_json::Value::Bool(true))
+}
+
+/// [`check_on`], the container's running held to it only where `running` says so: a suspended
+/// runner is checked as it was made before it is started again (#2051).
+fn checked_on(
+    inspected: &serde_json::Value,
+    made: &Made,
+    engine: Engine,
+    running: bool,
 ) -> Result<Seccomp, Refused> {
     let not = |what: &str| {
         refused(format!(
@@ -813,7 +831,7 @@ pub fn check_on(
     if !only_its_home {
         return Err(not("holds a folder that is not its own home's volume"));
     }
-    if !truth("/State/Running")? {
+    if running && !truth("/State/Running")? {
         return Err(not("is not running"));
     }
     Ok(seccomp)
@@ -1201,6 +1219,9 @@ pub struct Docker {
     /// Where each run's copy of Docker's settings is made: `<data>/docker-settings`, unless
     /// another folder is named (a test's).
     settings_in: Option<std::path::PathBuf>,
+    /// How long each run may take, where a caller holds it to a time ([`Docker::within`]); none
+    /// for a run that takes as long as it takes (a pull, a make).
+    within: Option<std::time::Duration>,
 }
 
 pub mod settings;
@@ -1245,7 +1266,17 @@ impl Docker {
         Docker {
             program: program.into(),
             settings_in: None,
+            within: None,
         }
+    }
+
+    /// **This `docker`, each of its runs held to `within`** (#2052): a run still going when it is
+    /// up is ended and refused, so a wedged engine holds up nothing that asks it. For what only
+    /// reads (an inspect, a version); a pull or a make takes as long as it takes.
+    #[must_use]
+    pub fn within(mut self, within: std::time::Duration) -> Docker {
+        self.within = Some(within);
+        self
     }
 
     /// This `docker`, with each run's copy of Docker's settings made in `folder`.
@@ -1433,7 +1464,8 @@ impl Docker {
         }
         command.args(args);
         let first = || args.first().map(String::as_str).unwrap_or_default();
-        let ran = crate::boundedrun::run(&mut command, input, most, MOST_SAID).map_err(|why| {
+        let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, self.within)
+            .map_err(|why| {
             use crate::boundedrun::Unanswered;
             refused(match why {
                 Unanswered::NotStarted(why) => {
@@ -1682,6 +1714,42 @@ impl Docker {
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
         check_volume(&inspected, made)?;
         Ok(seccomp)
+    }
+
+    /// **Whether `made`'s container runs** (#2051): one a runner suspended stopped itself.
+    pub fn running(&self, made: &Made) -> Result<bool, Refused> {
+        let inspected = self.json(
+            &["container", "inspect", made.container.as_str()],
+            "docker container inspect",
+        )?;
+        Ok(is_running(&inspected))
+    }
+
+    /// **[`Docker::check`], a suspended runner started again first** (#2051): a runner left a
+    /// day without a link stops its own container, keeping its home volume; the next link to it
+    /// starts that container again, once it is checked as it was made, and checks it whole once
+    /// it runs. A container that runs is only checked.
+    pub fn resumed(&self, made: &Made) -> Result<(), Refused> {
+        let engine = self.check_daemon()?;
+        let inspected = self.json(
+            &["container", "inspect", made.container.as_str()],
+            "docker container inspect",
+        )?;
+        if is_running(&inspected) {
+            return self.check(made);
+        }
+        checked_on(&inspected, made, engine, false)?;
+        let id = made.container.as_str().to_owned();
+        self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED)?;
+        // Started here and not as it was made once it runs: it is stopped again, and not linked.
+        self.check(made).inspect_err(|_| {
+            if let Err(why) = self.run(&["stop".to_owned(), id], None, MOST_INSPECTED) {
+                tracing::warn!(
+                    "purlis: a runner's container started again and refused its check was not \
+                     stopped: {why}"
+                );
+            }
+        })
     }
 
     /// Pair `made`'s runner with `desktop`, once its container passes the check: the runner's

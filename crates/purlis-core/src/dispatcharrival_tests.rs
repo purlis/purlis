@@ -505,6 +505,8 @@ fn where_git_cannot_be_run_nothing_stored_changes_and_nothing_is_in_force_for_th
 #[test]
 fn a_drop_that_could_not_be_written_leaves_nothing_in_force() {
     use std::os::unix::fs::PermissionsExt as _;
+    // Its own: the folder it makes read-only is where every other test here keeps its grants.
+    let _home = local::OwnConfigHome::new();
     let dir = project(ONE);
     let root = dir.path();
     accepted_at_a(root);

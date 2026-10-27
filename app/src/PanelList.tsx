@@ -146,6 +146,9 @@ export function PanelList({
   search = "beyond-a-page",
   dateAtEnd = false,
   markless = false,
+  trailOf,
+  stateOf,
+  searchWord = "Search",
 }: {
   rows: readonly PanelRow[];
   /** What to say when there are none — the panel's own sentence, not a shared default. */
@@ -206,6 +209,15 @@ export function PanelList({
   dateAtEnd?: boolean;
   /** No mark before a row's words, where every row's would be the same one (#3340). */
   markless?: boolean;
+  /** What a row says, short and quiet, at its end, where it is no date: a vault's count
+   *  (#3341, the prototype's `.rm`). The whole note stays the row's hover. */
+  trailOf?: (row: PanelRow) => string | undefined;
+  /** What stands at a row's end about its state, drawn by the panel: a persona's chats at work
+   *  or asking (#3341). */
+  stateOf?: (row: PanelRow) => ReactNode;
+  /** The box's verb: "Search" a store of things written, "Filter" a list of things named
+   *  (personas, vaults), as the prototype's Q1 A says them (#3341). */
+  searchWord?: "Search" | "Filter";
 }) {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(page);
@@ -275,8 +287,9 @@ export function PanelList({
         refused={besideRow?.(row)}
         check={checkOf?.(row)}
         titleOnly={titleOnly}
-        date={dateAtEnd && row.note !== null ? shortDate(row.note, now) : undefined}
+        date={dateAtEnd && row.note !== null ? shortDate(row.note, now) : trailOf?.(row)}
         markless={markless}
+        state={stateOf?.(row)}
       />
     );
   }
@@ -318,9 +331,11 @@ export function PanelList({
             icon={<Search aria-hidden="true" />}
             keepsFocus={`panel-search:${label}`}
             value={query}
-            aria-label={`Search ${label}`}
+            aria-label={`${searchWord} ${label}`}
             // In a view the box says what it searches, as the prototype's does (#3340).
-            placeholder={inView ? `Search ${label.toLowerCase()}` : `Search ${rows.length}`}
+            placeholder={
+              inView ? `${searchWord} ${label.toLowerCase()}` : `${searchWord} ${rows.length}`
+            }
             onChange={(to) => {
               setQuery(to);
               // Back to one page: a search that kept a grown limit would show forty matches
@@ -443,6 +458,7 @@ function Row({
   titleOnly,
   date,
   markless = false,
+  state,
 }: {
   row: PanelRow;
   titleOnly: boolean;
@@ -450,6 +466,8 @@ function Row({
   date?: string;
   /** No mark before its words: {@link PanelList}'s `markless`. */
   markless?: boolean;
+  /** Its state's mark at its end: {@link PanelList}'s `stateOf`. */
+  state?: ReactNode;
   open: boolean;
   onOpen: (opening: boolean) => void;
   detail: ReactNode;
@@ -550,7 +568,8 @@ function Row({
               data-testid={`row-check-${row.key}`}
             />
           ) : persona ? (
-            <PersonaMark persona={persona} className="node-icon" />
+            // The row's words are the persona's name: its tooltip would say it again (WCAG 2.5.3).
+            <PersonaMark persona={persona} className="node-icon" named />
           ) : (
             <Mark className="node-icon" />
           )}
@@ -565,10 +584,12 @@ function Row({
         <RowDescription className="row-note ui-text-meta">{` · ${row.note}`}</RowDescription>
       )}
       {(date !== undefined ||
+        state !== undefined ||
         row.tone === "default" ||
         (onAct !== undefined && row.actions.length > 0)) && (
         <RowTrail className="row-actions">
           {date !== undefined && <span className="row-date ui-text-meta">{date}</span>}
+          {state}
           {row.tone === "default" && <Star className="node-icon" />}
           {/* **The extension's own actions, at the row's end** (charter-app#341): pressing the
               row opens its card, and pressing an action asks the extension's program — two

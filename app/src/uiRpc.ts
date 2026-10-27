@@ -411,6 +411,8 @@ export const commands = {
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
+	removeOldHarnessPlugins: __WINDOW_ONLY_RESULT,
+	dismissOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	putAwayMcpFailure: __WINDOW_ONLY_RESULT,
@@ -432,6 +434,12 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**
+	 *  **Each runner of `plane`'s chats, for the away summary** (#2051): of `sessions`, the chats
+	 *  that run on each pool's runner, and the branches each runner has, as this machine last
+	 *  fetched them. A pool none of them runs on and no workspace names is not said.
+	 */
+	runnersAway: (plane: PlaneId, sessions: number[]) => typedError<RunnerAway[], string>(__TAURI_INVOKE("runners_away", { plane, sessions })),
 	/**  Whether the session host is failing, and what the window says of it. */
 	sessionHostFailing: () => __TAURI_INVOKE<{
 	/**  How many unexpected exits tripped the breaker. */
@@ -801,6 +809,13 @@ export const commands = {
 	agentsStopped: () => __TAURI_INVOKE<boolean>("agents_stopped"),
 	stopEveryAgent: __WINDOW_ONLY_RESULT,
 	rearmAgents: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **The runners the re-arm re-arms beside this machine** (#2051, ADR 0071 as amended: *"The
+	 *  window's re-arm lists the runners it will re-arm"*): what the session host's stop stopped,
+	 *  read from the host as the title bar draws a stopped switch. None where chats do not run in a
+	 *  host, or it cannot say.
+	 */
+	runnersARearmReaches: () => typedError<string[], string>(__TAURI_INVOKE("runners_a_rearm_reaches")),
 	/**  Hides the window, which is what its close button does. Every session keeps running. */
 	hideWindow: () => __TAURI_INVOKE<void>("hide_window"),
 	/**  Whether the window is on screen. The scenario tests ask; nothing in the UI does. */
@@ -1400,6 +1415,8 @@ export const commands = {
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
+	devices: __WINDOW_ONLY_RESULT,
+	deviceRunner: __WINDOW_ONLY_RESULT,
 	projectsNotHeld: __WINDOW_ONLY_RESULT,
 	chatsRunOn: __WINDOW_ONLY_RESULT,
 	applyRunnerWrite: __WINDOW_ONLY_RESULT,
@@ -1790,14 +1807,6 @@ export const commands = {
 	 */
 	extensionFacts: (plane: PlaneId, workspace: string | null) => typedError<ExtensionFacts, string>(__TAURI_INVOKE("extension_facts", { plane, workspace })),
 	/**
-	 *  Every harness charter knows, with what it has installed on this machine and what this
-	 *  project has each plugin at — in `workspace`, when one is named, with that workspace's
-	 *  settings as the layer between Shared and Local (charter-app#282): what Settings shows at the
-	 *  Workspace level. Read from the harness's own files, never written; asked when the tab opens and
-	 *  after it saves.
-	 */
-	projectHarnessPlugins: (plane: PlaneId, workspace: string | null) => typedError<HarnessPlugins[], string>(__TAURI_INVOKE("project_harness_plugins", { plane, workspace })),
-	/**
 	 *  This project's theme, with every theme it may pick — in `workspace`, when one is named, whose
 	 *  `workspace.json` is a layer too (charter-app#281): what Settings shows at the Workspace level. It takes a survey, as
 	 *  [`project_extensions`] does, so a pick the extension no longer contributes is said here.
@@ -2068,7 +2077,7 @@ export const SKILL_STUDIO_IN = "skills.studio:" as const;
 
 export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
 
-export const UNICODE_RULE = {"invisible":[[0,31],[127,160],[173,173],[847,847],[1536,1541],[1564,1564],[1757,1757],[1807,1807],[2192,2193],[2274,2274],[4447,4448],[5760,5760],[6068,6069],[6155,6159],[8192,8207],[8232,8239],[8287,8303],[12288,12288],[12644,12644],[65024,65039],[65279,65279],[65440,65440],[65520,65531],[69821,69821],[69837,69837],[78896,78911],[113824,113827],[119155,119162],[917504,921599]],"extended_pictographic":[[169,169],[174,174],[8252,8252],[8265,8265],[8482,8482],[8505,8505],[8596,8601],[8617,8618],[8986,8987],[9000,9000],[9096,9096],[9167,9167],[9193,9203],[9208,9210],[9410,9410],[9642,9643],[9654,9654],[9664,9664],[9723,9726],[9728,9733],[9735,9746],[9748,9861],[9872,9989],[9992,10002],[10004,10004],[10006,10006],[10013,10013],[10017,10017],[10024,10024],[10035,10036],[10052,10052],[10055,10055],[10060,10060],[10062,10062],[10067,10069],[10071,10071],[10083,10087],[10133,10135],[10145,10145],[10160,10160],[10175,10175],[10548,10549],[11013,11015],[11035,11036],[11088,11088],[11093,11093],[12336,12336],[12349,12349],[12951,12951],[12953,12953],[126976,127231],[127245,127247],[127279,127279],[127340,127345],[127358,127359],[127374,127374],[127377,127386],[127405,127461],[127489,127503],[127514,127514],[127535,127535],[127538,127546],[127548,127551],[127561,127994],[128000,128317],[128326,128591],[128640,128767],[128884,128895],[128981,129023],[129036,129039],[129096,129103],[129114,129119],[129160,129167],[129198,129279],[129292,129338],[129340,129349],[129351,129791],[130048,131069]],"emoji_modifier":[[127995,127999]],"emoji_sequences":[[35,65039,8419],[42,65039,8419],[48,65039,8419],[49,65039,8419],[50,65039,8419],[51,65039,8419],[52,65039,8419],[53,65039,8419],[54,65039,8419],[55,65039,8419],[56,65039,8419],[57,65039,8419],[127988,917607,917602,917605,917614,917607,917631],[127988,917607,917602,917619,917603,917620,917631],[127988,917607,917602,917623,917612,917619,917631]]} as const;
+export const UNICODE_RULE = {"invisible":[[0,31],[127,160],[173,173],[847,847],[1536,1541],[1564,1564],[1757,1757],[1807,1807],[2192,2193],[2274,2274],[4447,4448],[5760,5760],[6068,6069],[6155,6159],[8192,8207],[8232,8239],[8287,8303],[12288,12288],[12644,12644],[65024,65039],[65279,65279],[65440,65440],[65520,65531],[69821,69821],[69837,69837],[78896,78911],[113824,113827],[119155,119162],[917504,921599]],"extended_pictographic":[[169,169],[174,174],[8252,8252],[8265,8265],[8482,8482],[8505,8505],[8596,8601],[8617,8618],[8986,8987],[9000,9000],[9096,9096],[9167,9167],[9193,9203],[9208,9210],[9410,9410],[9642,9643],[9654,9654],[9664,9664],[9723,9726],[9728,9733],[9735,9746],[9748,9861],[9872,9989],[9992,10002],[10004,10004],[10006,10006],[10013,10013],[10017,10017],[10024,10024],[10035,10036],[10052,10052],[10055,10055],[10060,10060],[10062,10062],[10067,10069],[10071,10071],[10083,10087],[10133,10135],[10145,10145],[10160,10160],[10175,10175],[10548,10549],[11013,11015],[11035,11036],[11088,11088],[11093,11093],[12336,12336],[12349,12349],[12951,12951],[12953,12953],[126976,127231],[127245,127247],[127279,127279],[127340,127345],[127358,127359],[127374,127374],[127377,127386],[127405,127461],[127489,127503],[127514,127514],[127535,127535],[127538,127546],[127548,127551],[127561,127994],[128000,128317],[128326,128591],[128640,128767],[128884,128895],[128981,129023],[129036,129039],[129096,129103],[129114,129119],[129160,129167],[129198,129279],[129292,129338],[129340,129349],[129351,129791],[130048,131069]],"emoji_modifier":[[127995,127999]],"emoji_sequences":[[35,65039,8419],[42,65039,8419],[48,65039,8419],[49,65039,8419],[50,65039,8419],[51,65039,8419],[52,65039,8419],[53,65039,8419],[54,65039,8419],[55,65039,8419],[56,65039,8419],[57,65039,8419],[127988,917607,917602,917605,917614,917607,917631],[127988,917607,917602,917619,917603,917620,917631],[127988,917607,917602,917623,917612,917619,917631]],"brahmic_letter":[[2304,2363],[2365,2380],[2382,2384],[2389,2403],[2417,2435],[2437,2444],[2447,2448],[2451,2472],[2474,2480],[2482,2482],[2486,2489],[2493,2500],[2503,2504],[2507,2508],[2510,2510],[2519,2519],[2524,2525],[2527,2531],[2544,2545],[2556,2556],[2561,2563],[2565,2570],[2575,2576],[2579,2600],[2602,2608],[2610,2611],[2613,2614],[2616,2617],[2622,2626],[2631,2632],[2635,2636],[2641,2641],[2649,2652],[2654,2654],[2672,2677],[2689,2691],[2693,2701],[2703,2705],[2707,2728],[2730,2736],[2738,2739],[2741,2745],[2749,2757],[2759,2761],[2763,2764],[2768,2768],[2784,2787],[2809,2812],[2817,2819],[2821,2828],[2831,2832],[2835,2856],[2858,2864],[2866,2867],[2869,2873],[2877,2884],[2887,2888],[2891,2892],[2902,2903],[2908,2909],[2911,2915],[2929,2929],[2946,2947],[2949,2954],[2958,2960],[2962,2965],[2969,2970],[2972,2972],[2974,2975],[2979,2980],[2984,2986],[2990,3001],[3006,3010],[3014,3016],[3018,3020],[3024,3024],[3031,3031],[3072,3084],[3086,3088],[3090,3112],[3114,3129],[3133,3140],[3142,3144],[3146,3148],[3157,3158],[3160,3162],[3165,3165],[3168,3171],[3200,3203],[3205,3212],[3214,3216],[3218,3240],[3242,3251],[3253,3257],[3261,3268],[3270,3272],[3274,3276],[3285,3286],[3293,3294],[3296,3299],[3313,3315],[3328,3340],[3342,3344],[3346,3386],[3389,3396],[3398,3400],[3402,3404],[3406,3406],[3412,3415],[3423,3427],[3450,3455]],"arabic_letter":[[1552,1562],[1568,1623],[1625,1631],[1646,1747],[1749,1756],[1761,1768],[1773,1775],[1786,1788],[1791,1791],[1872,1919],[2208,2249],[2260,2271],[2275,2281],[2288,2303],[64336,64433],[64467,64829],[64848,64911],[64914,64967],[65008,65019],[65136,65140],[65142,65276]],"virama":[[2381,2381],[2509,2509],[2637,2637],[2765,2765],[2893,2893],[3021,3021],[3149,3149],[3277,3277],[3387,3388],[3405,3405]],"line_break":[[10,13],[133,133],[8232,8233]],"blank":[[160,160],[5760,5760],[8192,8202],[8239,8239],[8287,8287],[12288,12288]]} as const;
 
 /* Types */
 /**  What charter says about itself. */
@@ -2381,6 +2390,11 @@ export type AnswerPath =
  */
 { via: "sandbox-only" } | 
 /**
+ *  `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
+ *  file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
+ */
+{ via: "old-harness-plugins" } | 
+/**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
  */
@@ -2549,6 +2563,11 @@ export type AskSource =
  *  making one and running Codex's own sign-in in it.
  */
 "sandbox-only" | 
+/**
+ *  A project that still holds the old `[harness_plugins]` keys purlis no longer reads
+ *  (#3467): said once, answered by Remove, which proposes the edit, or Dismiss.
+ */
+"old-harness-plugins" | 
 /**  A chat's first browser call, asking what its browser may reach (#2013). */
 "browser" | 
 /**
@@ -2701,6 +2720,12 @@ export type BlockOffer =
  *  the person types.
  */
 "port" | 
+/**
+ *  Allow listening on one port of this Mac's loopback (#2019): [`ChatBlocked::route`] says
+ *  what allowing it means. [`ChatBlocked::target`] is null where the refusal named no port,
+ *  which the person types.
+ */
+"listen" | 
 /**  Never granted, and there is a way that works: [`ChatBlocked::route`] says it. */
 "brokered" | 
 /**
@@ -2869,6 +2894,14 @@ export type BranchStatus = {
 	base: string | null,
 };
 
+/**  One clone's branches on a runner, as this machine last fetched them (#2046). */
+export type BranchesOfAClone = {
+	workspace: string,
+	/**  The clone's folder name in the workspace. */
+	repo: string,
+	branches: RunnerBranch[],
+};
+
 /**  Which task's brief is asked for. */
 export type BriefOf = 
 /**  A task whose chat is open, by that chat's number in this project. */
@@ -2940,6 +2973,32 @@ export type BrowserLimitsShown = {
 	on_this_device: BrowserLimitShown,
 	/**  `0` is never. */
 	idle_minutes: BrowserLimitShown,
+};
+
+/**  A browser on a device, as its row names it. */
+export type BrowserOnADevice = {
+	plane: PlaneId,
+	/**  The chat it is of. */
+	session: number,
+	/**  Its program in the session host that runs it: what a runner names it by. */
+	program: string,
+	/**  What the chat calls it: `b1`. */
+	name: string,
+	/**  What its chat is called. */
+	chat: string,
+};
+
+/**  A browser on a pool this machine no longer keeps. */
+export type BrowserOnAPoolNotKept = {
+	plane: PlaneId,
+	/**  The chat it is of. */
+	session: number,
+	/**  What the chat calls it: `b1`. */
+	name: string,
+	/**  What its chat is called. */
+	chat: string,
+	/**  The pool its chat runs it on. */
+	pool: string,
 };
 
 /**
@@ -3266,6 +3325,12 @@ export type ChatDoing = {
 	doing: Doing | null,
 };
 
+/**  A chat the window has open, by its plane and its session. */
+export type ChatHeld = {
+	plane: PlaneId,
+	session: number,
+};
+
 /**  **A chat's Network view** (#1662): what it can reach now and what it was refused. */
 export type ChatNetwork = {
 	/**  Whether the chat is open in this app. A closed one has nothing to say. */
@@ -3293,6 +3358,22 @@ export type ChatNetwork = {
 	 *  where nothing says so.
 	 */
 	local_ports?: string | null,
+};
+
+/**  A chat on a device, as its row names it. */
+export type ChatOnADevice = {
+	plane: PlaneId,
+	session: number,
+	name: string,
+};
+
+/**  A chat on a pool this machine no longer keeps. */
+export type ChatOnAPoolNotKept = {
+	plane: PlaneId,
+	session: number,
+	name: string,
+	/**  The pool its chat was started on, as the router kept it. */
+	pool: string,
 };
 
 /**
@@ -3357,6 +3438,11 @@ export type ChatSkills = {
 	skills: ChatSkill[],
 	/**  Its budget, where it is known. */
 	budget: SkillBudget | null,
+	/**
+	 *  The clones of its workspace it works in, by name, whose repo skills its harness reads
+	 *  (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
+	 */
+	repos: string[],
 };
 
 /**  One step of one chat's stop, as the window is told it. */
@@ -3599,6 +3685,24 @@ export type DeletesCutShort = {
 	settled: string[],
 	/**  Neither finished nor put back: tried again the next time the studio opens. */
 	unsettled: string[],
+};
+
+/**
+ *  **What the Devices view draws first** (#2052): this machine's version, where everything the
+ *  window has open runs, and each pool's limits.
+ */
+export type DevicesShown = {
+	/**  This machine's version. */
+	version: string,
+	/**  Where everything the window has open runs. */
+	placement: Placement,
+	pools: PoolRequests[],
+	/**
+	 *  Whether this machine's Docker pools are shown to be the person's own (D-2050-4): their
+	 *  engine is a local socket on this machine. Only then does the use table name them as the
+	 *  person's.
+	 */
+	owned: boolean,
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */
@@ -5239,6 +5343,11 @@ export type GrantWhat =
 /**  A service on this Mac, by its one loopback port (qw384): this machine's alone. */
 "port" | 
 /**
+ *  A port of this Mac's loopback to listen on (#2019): this machine's alone, and a named
+ *  local port of the chat's browser.
+ */
+"listen" | 
+/**
  *  Always for a persona's browser (#2241): what every chat as the persona may have its
  *  browser reach in this project on this machine. Allowed from a chat's browser Ask
  *  (`allow_chat_browser`), never from a block's Allow.
@@ -5403,64 +5512,6 @@ export type HarnessIconRow = {
 /**  A harness, as the window and the core name one to each other: a profile's `kind`. */
 export type HarnessKind = "claude" | "opencode" | "codex";
 
-/**  One plugin, in one project. */
-export type HarnessPlugin = {
-	/**  The harness's own id for it. */
-	id: string,
-	name: string,
-	/**  Where charter found it installed; empty when this machine has not installed it. */
-	origin: string,
-	/**  `on`, `off` or `not-set`. */
-	state: string,
-	/**  `default`, `shared`, `workspace` or `local`: which layer decided `state`. */
-	source: string,
-	installed: boolean,
-	/**
-	 *  Why charter fixes it whatever a file says, in the core's words ("<id> is always on: …"),
-	 *  or none for a plugin a project may choose. No control is drawn for a fixed one.
-	 */
-	pinned: string | null,
-	/**  Each value a file set that charter did not use, and why. */
-	ignored: ProjectExtensionIgnored[],
-};
-
-/**  One harness's plugins in one project. */
-export type HarnessPlugins = {
-	/**
-	 *  The plane's word for the harness (`claude`, `opencode`, `codex`): the key under
-	 *  `[harness_plugins]`.
-	 */
-	harness: string,
-	/**  What a person calls it. */
-	title: string,
-	/**
-	 *  "plugins for <harness> are not supported yet — <why>", or none where charter applies
-	 *  a project's choice to the chats it starts.
-	 */
-	unsupported: string | null,
-	/**
-	 *  "<harness> is handed a plugin only to turn it off — <why>" (SK-6, #2769), where a chat
-	 *  can be handed a plugin turned off and not one turned on: Codex's.
-	 */
-	only_off: string | null,
-	/**
-	 *  Where charter read what it has installed: the file or directory, as this app's own
-	 *  environment names it. A profile that points the harness elsewhere is listed against its
-	 *  own directory when its chat starts.
-	 */
-	record: string | null,
-	/**  Why the harness's own record of what it installed could not be read, if it could not. */
-	trouble: string | null,
-	plugins: HarnessPlugin[],
-	/**
-	 *  The ignore check's sentence while git would carry `charter.local.toml` and it names a
-	 *  plugin of this harness — the one the Settings tab says at the Project level — so this
-	 *  group says why a plugin set there is not applied (charter-app#319). The core's
-	 *  `Choices::local_left_out`, asked for this harness.
-	 */
-	local_left_out: string | null,
-};
-
 /**  One harness, as the first-run screen lists it. */
 export type HarnessRow = {
 	/**  The word the plane calls it by (`claude`, `codex`, `opencode`). */
@@ -5490,6 +5541,12 @@ export type HarnessRow = {
 export type HarnessSetupFound = {
 	harnesses: HarnessRow[],
 	local_models: LocalModelRow[],
+};
+
+/**  One change Remove held: its proposal's id, and the file it changes. */
+export type HeldRemoval = {
+	id: number,
+	file: string,
 };
 
 /**
@@ -5805,6 +5862,22 @@ export type LevelWaiting = {
 export type LineRange = {
 	first: number,
 	last: number,
+};
+
+/**
+ *  The lines an action runs over, as a row draws them under its line (#3502). An action whose
+ *  line holds several is never offered Allow (`hooked::shown_in_full`): its line is not what
+ *  would run.
+ */
+export type LinesShown = {
+	/**  How many lines it runs over. */
+	count: number,
+	/**
+	 *  **Each line, as [`Shown::says`] has it**: joined by a space, they are that line,
+	 *  character for character, masked and cut as it is. Empty where they could not be shown
+	 *  that way; the row then says only the count.
+	 */
+	shown: string[],
 };
 
 /**  One repo the person can get. */
@@ -6227,6 +6300,19 @@ export type NotASkill = {
 };
 
 /**
+ *  What a runner holds, set against what the window has open: the chats and browsers of its own
+ *  pool it holds, which its row lists by what the runner says rather than where the window
+ *  started them, and how many it holds the window has not open.
+ */
+export type NotOpenHere = {
+	open: ChatHeld[],
+	/**  The browsers, by their programs. */
+	browsers_open: string[],
+	chats: number,
+	browsers: number,
+};
+
+/**
  *  A chat a launch could not start, as the window lists it (NO-3): by its id, which Retry now
  *  and Forget name it by, with its name and why.
  */
@@ -6343,6 +6429,12 @@ export type OfferedSource = {
 export type OlderSandbox = {
 	/**  The chats, by session, lowest first. */
 	chats: OnOlderSandbox[],
+};
+
+/**  What runs on one device, of what the window has open. */
+export type OnADevice = {
+	chats: ChatOnADevice[],
+	browsers: BrowserOnADevice[],
 };
 
 /**  One chat still running under an older sandbox ([`OlderSandbox`]). */
@@ -7168,6 +7260,17 @@ export type Pins = {
 	certain: boolean,
 };
 
+/**
+ *  Where everything the window has open runs: this machine, each runner, and what is on a pool
+ *  no longer kept.
+ */
+export type Placement = {
+	here: OnADevice,
+	runners: RunnerOnTheList[],
+	unkept: ChatOnAPoolNotKept[],
+	unkept_browsers: BrowserOnAPoolNotKept[],
+};
+
 /**  A plain-file vault, and whether this machine may move it. */
 export type PlainFileVault = {
 	name: string,
@@ -7413,11 +7516,6 @@ export type PlaneUpdated = {
 	skills: boolean,
 };
 
-/**  What the project has a harness's plugin at. */
-export type PluginState = "on" | "off" | 
-/**  No layer names it: the harness decides, from its own settings. */
-"not-set";
-
 /**  A pool as the person typed it: each limit left empty takes the default. */
 export type PoolAdding = {
 	name: string,
@@ -7446,7 +7544,21 @@ export type PoolLink =
 /**  It answered with another key: it is refused, and the window offers to remove it. */
 { state: "key_changed" } | 
 /**  It did not answer, and why. */
-{ state: "down"; why: string };
+{ state: "down"; why: string } | 
+/**
+ *  It suspended itself, a day without a link (#2051): its container is stopped, its home
+ *  kept, and the window's next chat there starts it again. A check never wakes it.
+ */
+{ state: "suspended" };
+
+/**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */
+export type PoolRequests = {
+	pool: string,
+	/**  What one runner of it is held to. */
+	limits: PoolLimitsShown,
+	/**  Its CPUs in thousandths, to be added up. */
+	millicpus: number,
+};
 
 /**  One pool, as its row draws it. */
 export type PoolRow = {
@@ -7683,7 +7795,7 @@ export type ProjectNotHeld = {
 	root: string,
 	/**  What the window calls it: its folder's name. */
 	name: string,
-	/**  What the runner said, as plain text, at most [`MOST_SAID`] characters. */
+	/**  What the runner said, as plain text, at most what the one sanitiser keeps (`crate::devices::MOST_SHOWN`, then `…`). */
 	why: string,
 	/**
 	 *  The pools its workspaces run their chats on, as this machine keeps them: the row the
@@ -8548,6 +8660,24 @@ export type RunEnd =
 /**  An end a newer purlis wrote. */
 "unknown";
 
+/**  How a run ended, as the runner's log says it: any other word is not held. */
+export type RunEnded = "completed" | "failed" | "stopped";
+
+/**  One run of a chat that ended on a runner, as the runner recorded it (#3393). */
+export type RunEndedOnARunner = {
+	/**  The chat, by its number in the plane. */
+	chat: number,
+	/**  How it ended. */
+	ended: RunEnded,
+	/**
+	 *  When the runner wrote it, in seconds since 1970: the window says it in the person's time
+	 *  zone.
+	 */
+	at: number,
+	/**  The device that wrote it: the runner's. */
+	device: string,
+};
+
 /**  What started a skill run, as the Runs panel draws it. */
 export type RunStart = 
 /**  The chat's own Skill tool. */
@@ -8567,6 +8697,49 @@ export type RunStart =
 /**  A start a newer purlis wrote. */
 "unknown";
 
+/**  **How one runner is**, as its row says it once asked (#2052). */
+export type RunnerAsked = {
+	/**
+	 *  Whether its container runs. A suspended runner is told by this alone: nothing links to
+	 *  it, so its `link` is none.
+	 */
+	standing: RunnerStanding,
+	/**
+	 *  What a link to it said; none where nothing linked to it (one suspended, or whose
+	 *  container could not be read).
+	 */
+	link: PoolLink | null,
+	/**  The version it runs, where it answered. */
+	version: string | null,
+	/**
+	 *  When it last answered this window, in seconds since 1970 (good to 2106); none if it has
+	 *  not since the app started.
+	 */
+	contacted: number | null,
+	/**  What it holds, set against what the window has open. */
+	holds: NotOpenHere,
+};
+
+/**  One runner of a project, as the away summary reads it. */
+export type RunnerAway = {
+	/**  The pool whose runner it is. */
+	pool: string,
+	/**  Of the chats asked about, those that run on it, by their number in the plane. */
+	chats: number[],
+	/**
+	 *  Its branches, as this machine last fetched them, by the clone of a workspace that runs on
+	 *  it.
+	 */
+	branches: BranchesOfAClone[],
+	/**  How the window reads what it records now (#3393). */
+	log: RunnerLogRead,
+	/**
+	 *  The runs of this project's chats that ended there, as it recorded them, oldest first:
+	 *  what the window read since it linked.
+	 */
+	ended: RunEndedOnARunner[],
+};
+
 /**  One branch of a pool's runner, as this machine last fetched it (#2046). */
 export type RunnerBranch = {
 	pool: string,
@@ -8577,6 +8750,41 @@ export type RunnerBranch = {
 	 */
 	ahead: number,
 };
+
+/**  How the window reads what a runner records (#3393). */
+export type RunnerLogRead = 
+/**  Over the link, which is up. */
+"read" | 
+/**  Over the link, which is down: what happened there since is not known yet. */
+"link_down" | 
+/**  Some of it was not kept for the window: what it says is not all that happened. */
+"partly" | 
+/**  Not at all: no link to it is open, or the runner is from a purlis before 1.41. */
+"not_read";
+
+/**  One runner, as its row lists it before it is asked how it is. */
+export type RunnerOnTheList = {
+	pool: string,
+	runner: string,
+	/**
+	 *  It was replaced by a runner of this machine's version: it keeps its chats until they
+	 *  end, then purlis removes it (#2749).
+	 */
+	draining: boolean,
+	on: OnADevice,
+};
+
+/**  Whether a runner's container runs (#2051). */
+export type RunnerStanding = { state: "running" } | 
+/**  Its container stopped, its home kept: it starts again as a chat next needs it. */
+{ state: "suspended" } | 
+/**  Its container could not be read, and why, as Docker said it ([`shown_safely`]). */
+{ state: "unknown"; why: string } | 
+/**
+ *  It was not answered within the time an ask of it waits ([`WAITS_AT_MOST`]): how it is
+ *  is not known.
+ */
+{ state: "unanswered" };
 
 /**
  *  **A held write whole, as its own tab draws it**: what it would do with every text whole, and
@@ -9352,6 +9560,11 @@ export type Shown = {
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */
 	writes?: WritesShown | null,
+	/**
+	 *  **The lines a permission's action runs over** (#3502), where its line puts several on
+	 *  one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
+	 */
+	lines?: LinesShown | null,
 };
 
 /**
@@ -10082,6 +10295,14 @@ export type StartOptions = {
 	 *  the picker says so rather than looking empty or broken.
 	 */
 	declares_none: boolean,
+	/**
+	 *  The number the next chat started in this plane would take (#3376, audit R30): the Name
+	 *  field's placeholder says `steward 10` by it. One past the highest this plane has dealt,
+	 *  read as the picker opens, so a chat started elsewhere meanwhile can take it first: it
+	 *  is what the field suggests, never what the core deals. Always sent; optional in the
+	 *  window's type so a picker drawn from an older answer says the number in words.
+	 */
+	next_number?: number | null,
 };
 
 /**  A chat that started: its session, and the name it was given as charter holds it. */
@@ -10219,19 +10440,15 @@ export type StudioFirst = {
 	unmoved: StudioUnmoved | null,
 };
 
-/**  One harness in the studio (SK-6): its plugins and the skills it finds itself. */
+/**
+ *  One harness in the studio (SK-6): the skills it finds itself. Its plugins are its own to turn
+ *  on or off (#3467): a plugin's skills are among these, read-only, each naming its plugin.
+ */
 export type StudioHarness = {
 	/**  Which harness it is, which a switch names. */
 	harness: HarnessKind,
 	title: string,
-	/**  Why its plugins cannot be chosen for one chat, where they cannot: no plugin switch. */
-	unsupported: string | null,
-	/**  Why a plugin can only be turned off, where that is all it can be. */
-	only_off: string | null,
-	/**  Why its own record of what it installed could not be read, if it could not. */
-	trouble: string | null,
-	plugins: StudioPlugin[],
-	/**  The skills it finds itself, read only, each by the name it knows it by. */
+	/**  The skills it finds itself, each by the name it knows it by. */
 	skills: StudioSkill[],
 	/**
 	 *  The project's skills a repo of the workspace leaves out of its chats in that clone, each
@@ -10245,20 +10462,6 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
-};
-
-/**  One of a harness's plugins in the studio (SK-6). */
-export type StudioPlugin = {
-	/**  The harness's own id for it, which the switch names. */
-	id: string,
-	name: string,
-	/**  Where purlis found it installed; empty where this machine has not installed it. */
-	origin: string,
-	installed: boolean,
-	/**  What the project has it at, in the chats the studio shows. */
-	state: PluginState,
-	/**  Why purlis fixes it whatever the project says, or `None`: no switch is drawn for it. */
-	pinned: string | null,
 };
 
 /**
@@ -10386,13 +10589,6 @@ export type StudioSkill = {
 	 */
 	pinned_by: SkillPinner[],
 };
-
-/**
- *  What the studio's switch turns on or off for a harness: the core's `Switched`, spelled for
- *  the window. purlis-core keeps no UI typing crate (CLAUDE.md), so the window's copy of the type
- *  lives here and turns into the core's in one place.
- */
-export type StudioSwitched = "plugin" | "skill";
 
 /**  The project's skills still to move into the studio's. */
 export type StudioUnmoved = {

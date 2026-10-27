@@ -21,8 +21,8 @@ use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{
-    Deprecated, Grant, Lifecycle, Outcome, StudioList, StudioRow, Switch, Template, TemplateId,
-    clash_said, history, lifecycle,
+    Clash, Deprecated, Grant, HarnessInTheStudio, Lifecycle, Outcome, StudioList, StudioRow,
+    Switch, Template, TemplateId, clash_said, history, lifecycle,
 };
 use serde_json::{Value, json};
 
@@ -470,7 +470,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "title": one.harness.title(),
                             "skills": one.rows.iter().map(|row| outside_json(one.harness, row))
                                 .collect::<Vec<_>>(),
-                            "repo_left_out": one.repo_left_out.iter().map(row_json)
+                            "repo_left_out": one.repo_left_out.iter()
+                                .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
                         })).collect::<Vec<_>>(),
                     })
@@ -508,15 +509,19 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             // A harness's own copies follow the plane's, harness by harness, as the studio lists
             // them (SK-34).
             let list = list_for(workspace.as_deref(), persona.as_deref());
-            let copies: Vec<(Option<Harness>, &StudioRow)> = list
+            let copies: Vec<(CopyOf, &StudioRow)> = list
                 .rows
                 .iter()
-                .map(|row| (None, row))
+                .map(|row| (CopyOf::Plane, row))
                 .chain(list.harnesses.iter().flat_map(|one| {
                     one.rows
                         .iter()
-                        .chain(&one.repo_left_out)
-                        .map(|row| (Some(one.harness), row))
+                        .map(move |row| (CopyOf::Outside(one), row))
+                        .chain(
+                            one.repo_left_out
+                                .iter()
+                                .map(move |row| (CopyOf::LeftOut(one), row)),
+                        )
                 }))
                 .filter(|(_, row)| row.name == name)
                 .collect();
@@ -529,18 +534,23 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             if json {
                 let shown: Vec<Value> = copies
                     .iter()
-                    .map(|(harness, row)| match harness {
-                        Some(harness) => outside_json(*harness, row),
-                        None => plane_json(&list, row),
+                    .map(|(copy, row)| match copy {
+                        CopyOf::Plane => plane_json(&list, row),
+                        CopyOf::Outside(one) => outside_json(one.harness, row),
+                        CopyOf::LeftOut(one) => {
+                            left_out_json(one, row, outside_json(one.harness, row))
+                        }
                     })
                     .collect();
                 println!("{}", json!({ "copies": shown }));
             } else {
                 let shown: Vec<String> = copies
                     .iter()
-                    .map(|(harness, row)| match harness {
-                        Some(_) => detail(*harness, row, &[]),
-                        None => detail(None, row, &clashes_said(&list, row)),
+                    .map(|(copy, row)| match copy {
+                        CopyOf::Plane => detail(None, row, &clashes_said(&list, row)),
+                        CopyOf::Outside(one) | CopyOf::LeftOut(one) => {
+                            detail(Some(one.harness), row, &[])
+                        }
                     })
                     .collect();
                 print!("{}", shown.join("\n"));
@@ -1802,27 +1812,48 @@ fn row_json(row: &StudioRow) -> Value {
     })
 }
 
+/// Whose list a copy `show` prints is from: the plane's, the skills a harness finds itself, or
+/// the plane's a repo leaves out of that harness's chats in it.
+enum CopyOf<'a> {
+    Plane,
+    Outside(&'a HarnessInTheStudio),
+    LeftOut(&'a HarnessInTheStudio),
+}
+
 /// A plane or built-in row as JSON: [`row_json`]'s, with each skill from outside the plane that
 /// has its name (SK-46, #3149), as the studio marks it.
 fn plane_json(list: &StudioList, row: &StudioRow) -> Value {
     let mut shown = row_json(row);
     shown["clashes"] = list
         .clashes_of(row)
-        .map(|(harness, clash)| {
-            json!({
-                "harness": harness.name(),
-                "outside": clash.outside.level(),
-                "owner": clash.owner,
-                "outcome": match clash.outcome {
-                    Outcome::BothLoad => "both-load",
-                    Outcome::RepoWins => "repo-wins",
-                    Outcome::EitherOne => "either-one",
-                },
-                "said": clash_said(harness, clash),
-            })
-        })
+        .map(|(harness, clash)| clash_json(harness, clash))
         .collect();
     shown
+}
+
+/// `shown`, a plane row a repo leaves out of `one`'s chats in it, with the clash that left it
+/// out (#3461): the repo's copy that won, as a row purlis hands says each of its clashes.
+fn left_out_json(one: &HarnessInTheStudio, row: &StudioRow, mut shown: Value) -> Value {
+    shown["clashes"] = one
+        .clashes_of_left_out(row)
+        .map(|clash| clash_json(one.harness, clash))
+        .collect();
+    shown
+}
+
+/// One clash on `harness` as JSON, with what the studio says of it.
+fn clash_json(harness: Harness, clash: &Clash) -> Value {
+    json!({
+        "harness": harness.name(),
+        "outside": clash.outside.level(),
+        "owner": clash.owner,
+        "outcome": match clash.outcome {
+            Outcome::BothLoad => "both-load",
+            Outcome::RepoWins => "repo-wins",
+            Outcome::EitherOne => "either-one",
+        },
+        "said": clash_said(harness, clash),
+    })
 }
 
 /// What the studio says of each clash of a plane or built-in row (SK-46, #3149), harness by

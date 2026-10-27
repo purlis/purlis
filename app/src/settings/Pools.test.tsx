@@ -185,6 +185,17 @@ describe("You › This machine › Pools", () => {
     await waitFor(() => expect(within(nav).queryByRole("button", { name: "Pools" })).toBeNull());
   });
 
+  it("says a suspended runner is suspended, not that it would not link (#2051)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "suspended" };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("suspended");
+    expect(group).not.toHaveTextContent(/not linked/);
+  });
+
   it("says nothing of a runner of this machine's version", async () => {
     pools = [a_pool("builds")];
     render(<App />);

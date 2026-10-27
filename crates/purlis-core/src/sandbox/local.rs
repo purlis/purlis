@@ -47,6 +47,38 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// **A config home of the test's own**, for as long as this value lives (#3507): for a test that
+/// changes the one its binary's tests share in a way another would trip over, such as making a
+/// folder of it read-only. `cargo test` runs a binary's tests on threads of one process, so
+/// they all reach the same folder at once; nextest gives each test a process of its own, which
+/// is why the `rust` job never saw it and the nightly `fedora` job did. Set on this thread, as
+/// [`TEST_CONFIG_HOME`] is: the code a test drives here reads its config home on the test's
+/// own thread.
+#[cfg(test)]
+pub(crate) struct OwnConfigHome {
+    /// Kept for its drop: the folder goes with the value.
+    _home: tempfile::TempDir,
+    /// The thread's config home before this one, put back when this one goes.
+    was: Option<PathBuf>,
+}
+
+#[cfg(test)]
+impl OwnConfigHome {
+    pub(crate) fn new() -> Self {
+        let home = tempfile::tempdir().expect("a config home of the test's own");
+        let was = TEST_CONFIG_HOME.with(|at| at.replace(Some(home.path().to_path_buf())));
+        Self { _home: home, was }
+    }
+}
+
+#[cfg(test)]
+impl Drop for OwnConfigHome {
+    fn drop(&mut self) {
+        let was = self.was.take();
+        TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = was);
+    }
+}
+
 /// The config home this machine's files go under: the person's, or, in a fenced build (the
 /// app's tests, e2e) whose fence it is outside, one of the build's own in the temporary folder.
 fn config_home() -> Option<PathBuf> {
@@ -196,6 +228,9 @@ struct OnDisk {
     /// its one port.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     ports_mine: Vec<u16>,
+    /// The ports of this Mac's loopback you let every chat of this project listen on (#2019).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    listens_mine: Vec<u16>,
     /// What the project's committed file declared it expects (`[sandbox] expects`) when this
     /// machine last asked the person about it and was answered, each as the file writes it;
     /// absent before the first answer. **An answer, never a grant**: it only stops the same
@@ -1145,6 +1180,32 @@ pub fn revoke_port(root: &Path, port: u16) -> io::Result<()> {
         held.ports_mine.retain(|one| *one != port);
         held.granted
             .retain(|made| !(made.what == "port" && made.target == target));
+    })
+}
+
+/// The ports of this Mac's loopback you let every chat of the project at `root` listen on
+/// (#2019). [`super::Compiled::granted`] judges each again before a start compiles it in.
+pub fn granted_listens(root: &Path) -> Vec<u16> {
+    read(root).listens_mine
+}
+
+/// Lets every chat of the project at `root` listen on `port` of this Mac's loopback: a block's
+/// Notice, never a chat. `port` is one [`super::localport::port`] took.
+pub fn grant_listen(root: &Path, port: u16) -> io::Result<()> {
+    change(root, |held| {
+        if !held.listens_mine.contains(&port) {
+            held.listens_mine.push(port);
+        }
+    })
+}
+
+/// Takes `port` off what you let every chat listen on: Settings' Remove.
+pub fn revoke_listen(root: &Path, port: u16) -> io::Result<()> {
+    let target = port.to_string();
+    change(root, |held| {
+        held.listens_mine.retain(|one| *one != port);
+        held.granted
+            .retain(|made| !(made.what == "listen" && made.target == target));
     })
 }
 
@@ -2691,5 +2752,5 @@ pub fn count(root: &Path, started: Started) -> io::Result<()> {
 }
 
 #[cfg(test)]
-#[path = "local_tests.rs"]
+#[path = "local/tests.rs"]
 mod tests;

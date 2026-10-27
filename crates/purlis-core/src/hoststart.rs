@@ -195,7 +195,7 @@ fn laid_out_on(
 /// **Where a chat's plane skills come from, read once at its start** (#3234): what arms it
 /// ([`Arming::skills`]) and what its tab's Notice says it starts without ([`skills_not_here`])
 /// are both worked out from this one value, so the two never disagree.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ChatSkills {
     /// Whether the plane's skills reach the chat: the Skill studio's flag, once the project
     /// requires them (`skills::reach_chats`, #2784).
@@ -432,13 +432,16 @@ pub fn compose_ready(
             tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
         }
     }
-    let skills = ChatSkills::read(
-        crate::skills::reach_chats_here(root),
-        root,
-        ready.harness,
-        Some(&cwd),
-        persona.as_deref(),
-    );
+    // Read once `armed` has checked the start is not refused (#3461).
+    let skills = std::cell::LazyCell::new(|| {
+        ChatSkills::read(
+            crate::skills::reach_chats_here(root),
+            root,
+            ready.harness,
+            Some(&cwd),
+            persona.as_deref(),
+        )
+    });
     let armed = armed(&Arming {
         root,
         kit,
@@ -840,8 +843,13 @@ pub struct Arming<'a> {
     /// starts (the review of #3229).
     pub graded: bool,
     /// Where its plane skills come from, read once at its start ([`ChatSkills::read`], #3234):
-    /// what its tab's Notice is worked out from too.
-    pub skills: &'a ChatSkills,
+    /// what its tab's Notice is worked out from too. Read the first time it is looked at, which
+    /// [`armed`] does only once the checks that need nothing of it have passed (#3461): a start
+    /// they refuse (a sandbox for another harness, a grade's mismatch, no binary for a sandbox)
+    /// reads none of the chat's skill folders, its clone's included. The one refusal after it,
+    /// a sandboxed chat whose harness cannot carry the arming, needs the arming built from it. A
+    /// [`std::cell::LazyCell`] over the read is what a start passes.
+    pub skills: &'a dyn std::ops::Deref<Target = ChatSkills>,
 }
 
 /// **What arms a chat's harness** for this session alone: the arguments and the variables its
@@ -860,11 +868,6 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         graded,
         skills,
     } = *arming;
-    // Read for this very chat: its persona, unless a Try it's, which has none (#3234).
-    debug_assert!(
-        skills.tried || skills.persona.as_deref() == persona,
-        "a chat is armed with the skills read for it"
-    );
     let not_carried = |then: &str| {
         crate::sandbox::under_policy(
             &crate::sandbox::policy::Locks::of(root),
@@ -906,6 +909,14 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             None => Ok((Vec::new(), Vec::new())),
         };
     };
+    // Every check that needs nothing of the chat's skills has passed: they are read from here
+    // on (#3461), as the arming below is built from them.
+    let skills: &ChatSkills = skills;
+    // Read for this very chat: its persona, unless a Try it's, which has none (#3234).
+    debug_assert!(
+        skills.tried || skills.persona.as_deref() == persona,
+        "a chat is armed with the skills read for it"
+    );
     // The plane's skills, where they reach the project's chats: while the Skill studio's flag is
     // on, and once the project requires them (`skills::reach_chats`, #2784): their
     // folder of links laid out here, by the host, as the git hooks are, so the adapter only

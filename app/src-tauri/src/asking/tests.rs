@@ -224,6 +224,96 @@ fn a_held_permission_prompt_is_an_ask_answered_on_its_own_hook() {
 }
 
 #[test]
+fn a_permission_holding_a_line_break_its_command_is_not_laid_out_with_shows_its_mark() {
+    // #3470: a next line, a vertical tab or a line separator in a command reaches the Inbox as
+    // its mark, so the window can say why only Deny is offered, as for a no-break space.
+    for (c, mark) in [
+        ('\u{85}', "⟦U+0085⟧"),
+        ('\u{0B}', "⟦U+000B⟧"),
+        ('\u{2028}', "⟦U+2028⟧"),
+    ] {
+        let asks = Asks::new();
+        let raised = asks
+            .raise("3", a_hook_ask(&format!("Run ls{c}rm")), Instant::now())
+            .raised;
+
+        let shown = permission(raised).expect("a chat of this project's");
+
+        assert_eq!(shown.says, format!("Run ls{mark}rm"));
+    }
+}
+
+/// A hook's ask to run `line`, its summary made from it as the hook makes it.
+fn a_command_ask(line: &str) -> Ask {
+    let action = purlis_core::harness::model::Action::Command {
+        line: line.to_owned(),
+    };
+    Ask {
+        summary: purlis_core::harness::model::Summary::of(&action.said()),
+        action,
+        ..a_hook_ask("")
+    }
+}
+
+#[test]
+fn a_permission_over_several_lines_carries_them_as_its_line_shows_them() {
+    // #3502: its line puts `ls` and `rm -rf x` on one. The row is given the lines, each as that
+    // line has it, a character it hides written as its mark there too.
+    let asks = Asks::new();
+    let raised = asks
+        .raise(
+            "3",
+            a_command_ask("ls\n  rm\u{200B} -rf x\r\n"),
+            Instant::now(),
+        )
+        .raised;
+
+    let shown = permission(raised).expect("a chat of this project's");
+
+    assert_eq!(shown.says, "Run a command: ls rm⟦U+200B⟧ -rf x");
+    let lines = shown.lines.expect("it runs over several lines");
+    assert_eq!(lines.count, 2);
+    assert_eq!(lines.shown, ["Run a command: ls", "rm⟦U+200B⟧ -rf x"]);
+    assert_eq!(lines.shown.join(" "), shown.says);
+}
+
+#[test]
+fn a_permission_on_one_line_not_a_command_or_not_said_from_it_carries_no_lines() {
+    let asks = Asks::new();
+    let one = asks
+        .raise("3", a_command_ask("ls -la"), Instant::now())
+        .raised;
+    let titled = asks
+        .raise(
+            "3",
+            Ask {
+                summary: purlis_core::harness::model::Summary::of("Run the build"),
+                ..a_command_ask("ls\nrm -rf x")
+            },
+            Instant::now(),
+        )
+        .raised;
+
+    let question = asks
+        .raise(
+            "3",
+            Ask {
+                action: purlis_core::harness::model::Action::Question {
+                    question: "Which?\nThis one".to_owned(),
+                },
+                summary: purlis_core::harness::model::Summary::of("Asks you: Which?\nThis one"),
+                ..a_hook_ask("")
+            },
+            Instant::now(),
+        )
+        .raised;
+
+    assert_eq!(permission(one).expect("a chat").lines, None);
+    assert_eq!(permission(question).expect("a chat").lines, None);
+    assert_eq!(permission(titled).expect("a chat").lines, None);
+}
+
+#[test]
 fn a_permission_prompt_s_answer_through_the_registry_closes_it_once() {
     // The path a permission ask names is the registry's own answer: the first one applies, and
     // the ask leaves the list the moment it does.
@@ -1811,4 +1901,33 @@ fn each_run_of_a_runner_chats_tool_asks_whether_its_values_may_be_sent_for_that_
         "{}",
         tools[1].says
     );
+}
+
+/// #3467: the old harness plugin keys are one Ask about no chat, with Remove only where the
+/// project's own files hold them, and no Allow.
+#[test]
+fn the_old_harness_plugin_keys_are_one_ask_of_no_chat() {
+    let old = crate::oldplugins::OldHarnessPlugins {
+        said: "purlis no longer turns other harnesses' plugins on or off".to_owned(),
+        files: vec!["charter.toml".to_owned()],
+        removable: true,
+    };
+    let shown = old_harness_plugins(&old);
+    assert_eq!(shown.session, 0);
+    assert_eq!(shown.source, AskSource::OldHarnessPlugins);
+    assert_eq!(shown.answer, AnswerPath::OldHarnessPlugins);
+    let ids: Vec<&str> = shown.options.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, [REMOVE_OLD_PLUGINS, DISMISS]);
+    assert!(shown.options.iter().all(|one| !one.allows));
+
+    let named_only = old_harness_plugins(&crate::oldplugins::OldHarnessPlugins {
+        removable: false,
+        ..old
+    });
+    let ids: Vec<&str> = named_only
+        .options
+        .iter()
+        .map(|one| one.id.as_str())
+        .collect();
+    assert_eq!(ids, [DISMISS]);
 }

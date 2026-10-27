@@ -55,7 +55,7 @@ type Asked = { cmd: string; args: Record<string, unknown> };
  *  `personas` and the chat in front's set `chat`, recording every ask. */
 function core(
   of: (workspace: string | null, persona: string | null) => Studio,
-  more: { personas?: PersonaSkills[]; chat?: ChatSkill[] } = {},
+  more: { personas?: PersonaSkills[]; chat?: ChatSkill[]; repos?: string[] } = {},
 ): Asked[] {
   const asked: Asked[] = [];
   mockIPC((cmd, args) => {
@@ -65,7 +65,13 @@ function core(
       return of(given.workspace as string | null, given.persona as string | null);
     if (cmd === "skill_persona_skills") return more.personas ?? [];
     if (cmd === "chat_skills")
-      return { on: true, known: true, skills: more.chat ?? [], budget: null };
+      return {
+        on: true,
+        known: true,
+        skills: more.chat ?? [],
+        budget: null,
+        repos: more.repos ?? [],
+      };
     if (cmd === "skills_deleted" || cmd === "skill_drafts" || cmd === "skill_sources") return [];
     if (cmd === "skill_sources_offered") return [];
     if (cmd === "skill_updates") return { offers: [], unconfirmed: [], unasked: [] };
@@ -534,10 +540,6 @@ describe("a row's menu", () => {
           {
             harness: "claude",
             title: "Claude Code",
-            unsupported: null,
-            only_off: null,
-            trouble: null,
-            plugins: [],
             skills: [
               skill("lint-rs", {
                 level: "repo",
@@ -666,10 +668,6 @@ describe("Only this chat's", () => {
     const program = (harness: "claude" | "codex", title: string, skills: StudioSkill[]) => ({
       harness,
       title,
-      unsupported: null,
-      only_off: null,
-      trouble: null,
-      plugins: [],
       skills,
       repo_left_out: [],
     });
@@ -690,7 +688,7 @@ describe("Only this chat's", () => {
           ],
         }),
       // What the core's chat_skills holds: the plane's and the built-in skills alone.
-      { chat: [given("deploy")] },
+      { chat: [given("deploy")], repos: ["svc"] },
     );
     view({ chat: { session: 7, workspace: "ops", persona: null, harness: "claude" } });
     const grid = await list();
@@ -708,6 +706,54 @@ describe("Only this chat's", () => {
       "true",
     );
     await userEvent.keyboard("{Escape}");
+    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
+  });
+
+  it("reads each program's and repo's skills for the chat's persona, and its clone's alone (#3462)", async () => {
+    const program = (skills: StudioSkill[]) => ({
+      harness: "claude" as const,
+      title: "Claude Code",
+      unsupported: null,
+      only_off: null,
+      trouble: null,
+      plugins: [],
+      skills,
+      repo_left_out: [],
+    });
+    const repo = (name: string, clone: string) =>
+      skill(name, { level: "repo", folder: "", owner: { kind: "repo", name: clone } });
+    const asked = core(
+      (_, persona) =>
+        studio([skill("deploy")], {
+          harnesses: [
+            program([
+              // The studio marks it for the reviewer's chats alone.
+              skill("pdf", {
+                level: "installed",
+                folder: "",
+                lint: persona === "reviewer" ? ["It asks to pre-approve Bash."] : [],
+              }),
+              repo("lint-rs", "svc"),
+              repo("fmt", "web"),
+            ]),
+          ],
+        }),
+      { chat: [given("deploy")], repos: ["svc"] },
+    );
+    view({ chat: CHAT });
+    const grid = await list();
+    await waitFor(() => expect(within(grid).getByText("fmt")).toBeInTheDocument());
+    expect(rowOf("pdf")).not.toHaveAttribute("data-mark");
+
+    await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
+
+    expect(asked).toContainEqual({
+      cmd: "skill_studio",
+      args: { plane: "p", workspace: "ops", persona: "reviewer" },
+    });
+    await waitFor(() => expect(within(grid).queryByText("fmt")).toBeNull());
+    expect(rowOf("lint-rs")).toBeInTheDocument();
+    expect(rowOf("pdf")).toHaveAttribute("data-mark", "lint");
     await userEvent.click(screen.getByRole("button", { name: "Only this chat's" }));
   });
 

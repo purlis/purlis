@@ -30,6 +30,11 @@
  *   and not heard twice. **A disabled button with a hint keeps the focus** and says it is
  *   unavailable (`aria-disabled`), so the hint, which says why, is reached by the keyboard and
  *   the pointer alike, and nothing presses it.
+ * - **The key that presses it** (R33, #3377): `shortcut` draws the key after its words, in the
+ *   `shortcut` part, a `kbd` small and mono. It is drawn by the stylesheet from its `data-key`
+ *   and hidden from a screen reader, so the button's name and words stay its words alone; the
+ *   key is said by `aria-keyshortcuts`, which the caller gives. `shortcutOff` keeps its room,
+ *   undrawn, while the key does not press it, so a choice widens nothing (R163).
  */
 import {
   Children,
@@ -84,6 +89,10 @@ interface Drawn extends Native {
    * why it cannot be pressed now. On an icon button, a second line under its name.
    */
   tooltip?: Tip;
+  /** The key that presses it, as a hint after its words: the family's `shortcut` part (R33). */
+  shortcut?: string;
+  /** The hint's room is kept and nothing drawn in it: the key does not press it now. */
+  shortcutOff?: boolean;
   ref?: Ref<HTMLButtonElement>;
   /** `data-*` attributes reach the element as they are. */
   [data: `data-${string}`]: string | number | boolean | undefined;
@@ -181,6 +190,22 @@ function Icon({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * The key that presses a button, after its words (R33). Drawn from `data-key` by `button.css`,
+ * so it is never part of the button's words or name.
+ */
+function Shortcut({ keys, off }: { keys: string; off: boolean }) {
+  return (
+    <kbd
+      data-scope="button"
+      data-part="shortcut"
+      data-key={keys}
+      data-off={off ? "" : undefined}
+      aria-hidden="true"
+    />
+  );
+}
+
 /** The lock an answer that grants leads with (ADR 0097 §6): the cue that is not colour. */
 function GrantsLock() {
   return (
@@ -204,6 +229,8 @@ function useDrawn(
     style,
     ref,
     tooltip,
+    shortcut,
+    shortcutOff = false,
     ...rest
   } = props;
   const tip = usePressTip(props["aria-label"], tooltip, iconOnly, props.isDisabled === true);
@@ -217,6 +244,9 @@ function useDrawn(
       {variant === "grants" ? <GrantsLock /> : null}
       {icon !== undefined && icon !== null ? <Icon>{icon}</Icon> : null}
       {iconOnly ? null : labelled(children)}
+      {iconOnly || shortcut === undefined || shortcut === "" ? null : (
+        <Shortcut keys={shortcut} off={shortcutOff} />
+      )}
     </>
   );
   const drawn = {

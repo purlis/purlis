@@ -10,7 +10,7 @@
  * drawn beside a grant (`harnessIcon.guard.test.ts`).
  */
 import type { DialogAction } from "./ui/dialog/Dialog";
-import { submitKeyShortcut } from "./ui/field/submitKey";
+import { submitKeySaid, submitKeyShortcut } from "./ui/field/submitKey";
 
 /** What a start says, by itself and without the sandbox (#2918, R33). */
 export const START_WORD = "Start chat";
@@ -88,6 +88,10 @@ export function startAnswer({
     byReturn: false,
     byChord: chord,
     "aria-keyshortcuts": chord ? submitKeyShortcut() : undefined,
+    // The key, said inside the button (R33): its room is kept, undrawn, while the key does not
+    // press it, so turning to an approval or a start without the sandbox widens nothing (R163).
+    shortcut: submitKeySaid(),
+    shortcutOff: !chord,
     onPress,
   };
 }

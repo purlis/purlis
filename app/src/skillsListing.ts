@@ -268,6 +268,21 @@ export function personaRowsOf(personas: readonly PersonaSkills[]): ListedSkill[]
   );
 }
 
+/**
+ * **What the view lists from its two reads**: the studio's rows (`listedOf`), then every
+ * persona's own (`personaRowsOf`), where that read was not refused. A studio read for a chat's
+ * persona (Only this chat's, #3462) holds that persona's own too: they are listed once, as the
+ * persona's.
+ */
+export function viewRowsOf(
+  studio: Studio,
+  personas: readonly PersonaSkills[] | undefined,
+): ListedSkill[] {
+  const listed = listedOf(studio);
+  if (personas === undefined) return listed;
+  return [...listed.filter((row) => row.skill.level !== "persona"), ...personaRowsOf(personas)];
+}
+
 /** A skill of a chat's set the studio does not list, as a row: on, with what it does. */
 function rowOfChat(skill: ChatSkill): StudioSkill {
   return {
@@ -305,19 +320,22 @@ const PLANE_LEVELS: readonly string[] = ["built-in", "project", "workspace", "pe
  * **The rows narrowed to one chat** (Only this chat's): the plane's and the built-in skills by
  * the chat's real set (`chat_skills`, what Use skill… types from), each marked by whether the chat
  * has it, and another persona's own left out; the chat's own program's skills (`harness`) and
- * each repo's as the studio marks them, since the set holds neither; another program's not at
- * all. A skill of the set the rows do not hold is listed as the set says it.
+ * its clone's (`repos`, #3462) as the studio marks them for a chat as its persona, since the set
+ * holds neither; another program's and another clone's not at all, and no repo's for a chat in
+ * no clone. A skill of the set the rows do not hold is listed as the set says it.
  */
 export function narrowedTo(
   rows: readonly ListedSkill[],
   set: readonly ChatSkill[],
-  chat: { persona: string | null; harness: HarnessKind | undefined },
+  chat: { persona: string | null; harness: HarnessKind | undefined; repos: readonly string[] },
 ): ListedSkill[] {
   const givenOf = (skill: { name: string; level: string }) =>
     set.find((one) => one.name === skill.name && one.level === skill.level);
   const kept = rows.flatMap((row): ListedSkill[] => {
-    const { level } = row.skill;
+    const { level, owner } = row.skill;
     if (level === "installed") return row.harness === chat.harness ? [row] : [];
+    if (level === "repo")
+      return owner?.kind === "repo" && chat.repos.includes(owner.name) ? [row] : [];
     if (!PLANE_LEVELS.includes(level)) return [row];
     const given = givenOf(row.skill);
     const inChat = given !== undefined;

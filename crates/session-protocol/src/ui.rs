@@ -337,6 +337,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // And the change whole, for its own tab (PC-7): what the configuration file holds is the
     // person's to read, never a chat's through the UI's link.
     "proposed_change",
+    // Remove and Dismiss on the Notice of the old `[harness_plugins]` keys (#3467): Remove holds
+    // purlis's own proposed change for the person to apply, and the answer is the person's.
+    "remove_old_harness_plugins",
+    "dismiss_old_harness_plugins",
     // Dismiss on a chat's Notice that a persona's MCP server could not start (qw381): the
     // person's answer, which no chat gives for them.
     "put_away_mcp_failure",
@@ -690,6 +694,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // The Devices view (#2052): it reads this machine's runners and links to each, so only the
+    // person's own window asks it.
+    "devices",
+    "device_runner",
     // The projects a runner would not hold again (#2846): what this window was refused.
     "projects_not_held",
     // Where a workspace's chats run on this machine (#2046): a pool's runner gets the
@@ -909,6 +917,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "activity_chat",
     "adopt_layout",
     "agents_stopped",
+    // The runners a re-arm re-arms with this machine (#2051): a read, as whether it is stopped.
+    "runners_a_rearm_reaches",
     "alerts_everywhere",
     "arrange_workspace_pins",
     "ask_persona_offer",
@@ -1026,7 +1036,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "plane_sidebar",
     "planes_to_restore",
     "project_extensions",
-    "project_harness_plugins",
     "project_icons_drawn",
     "project_saving_in_force",
     "project_settings",
@@ -1044,6 +1053,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "repo_instructions",
     "resize_session",
     "reveal_branch_path",
+    // Where the chats the away summary counts run, and their runners' branches (#2051): a read.
+    "runners_away",
     "running_sessions",
     "sandbox_block_report",
     "sandbox_grants",

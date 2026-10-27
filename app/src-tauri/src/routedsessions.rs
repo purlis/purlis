@@ -569,6 +569,23 @@ impl SessionHost for RoutedSessions {
         lock(&self.shared.chats).get(&id).cloned()
     }
 
+    /// None for the project as a whole: each pool's is said by [`Self::runner_logs`] (#3393).
+    fn runner_log(&self) -> Option<crate::runnerlog::RunnerLogNow> {
+        None
+    }
+
+    /// Each pool's runner log this project's chats read (#3393).
+    fn runner_logs(&self) -> Vec<(String, crate::runnerlog::RunnerLogNow)> {
+        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
+            .iter()
+            .map(|(pool, host)| (pool.clone(), Arc::clone(host)))
+            .collect();
+        pools
+            .into_iter()
+            .filter_map(|(pool, host)| host.runner_log().map(|log| (pool, log)))
+            .collect()
+    }
+
     /// Asked of this machine's host, then of each pool a workspace of the project runs its
     /// chats on; one left running on a pool is kept as that pool's.
     /// Asked of this machine's host alone: a chat whose workspace is not known runs here.

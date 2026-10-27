@@ -27,6 +27,55 @@ use crate::state::run::{Cause, Exit, RunState, StopBy};
 
 use super::{EventLog, drain_while_running, socket_for};
 
+/// What a read of the log says where this machine has none open.
+const NO_LOG_TO_READ: &str = "this machine's event log could not be opened, so none of it is read";
+
+/// **A reader of this machine's event log from a cursor** (#3393): the core's
+/// [`crate::eventlog::Subscription`], each delivery as the session protocol pushes it.
+struct FromACursor(crate::eventlog::Subscription, String);
+
+impl purlis_host::ReadsLog for FromACursor {
+    fn read(&mut self) -> Result<Vec<session::Pushed>, String> {
+        let device = &self.1;
+        Ok(self
+            .0
+            .poll()
+            .map_err(|why| why.to_string())?
+            .into_iter()
+            .map(|delivery| match delivery {
+                crate::eventlog::Delivery::Event(event) => session::Pushed::Event(session::Event {
+                    v: event.v,
+                    device_id: event.device_id,
+                    seq: event.seq,
+                    ulid: event.ulid,
+                    chat: event.chat,
+                    run: event.run,
+                    parent_run: event.parent_run,
+                    kind: event.kind,
+                    body: event.body,
+                }),
+                crate::eventlog::Delivery::Missed { after, resumes_at } => {
+                    session::Pushed::Missed {
+                        device: device.clone(),
+                        after,
+                        resumes_at,
+                    }
+                }
+                // The log lost lines the reader had read: what it holds past the log's end is
+                // no longer in it, and it reads on from there.
+                crate::eventlog::Delivery::Ahead {
+                    cursor,
+                    log_ends_at,
+                } => session::Pushed::Missed {
+                    device: device.clone(),
+                    after: log_ends_at.min(cursor),
+                    resumes_at: log_ends_at.saturating_add(1),
+                },
+            })
+            .collect())
+    }
+}
+
 impl purlis_host::Record for EventLog {
     fn record(&self, entry: serde_json::Value) -> Result<(), String> {
         let entry: Entry = serde_json::from_value(entry).map_err(|why| {
@@ -55,6 +104,23 @@ impl purlis_host::Record for EventLog {
         if let Some(chat) = chat {
             crate::dispatchrecord::ended_unwatched(root, &chat, number, chrono::Utc::now());
         }
+    }
+
+    fn log_end(&self) -> Result<(String, u64), String> {
+        let log = self.recorder().ok_or_else(|| NO_LOG_TO_READ.to_owned())?;
+        Ok(log.lock().unwrap_or_else(PoisonError::into_inner).ends_at())
+    }
+
+    fn read_log(&self, after: u64) -> Result<Box<dyn purlis_host::ReadsLog>, String> {
+        let log = self.recorder().ok_or_else(|| NO_LOG_TO_READ.to_owned())?;
+        let (dir, device) = {
+            let log = log.lock().unwrap_or_else(PoisonError::into_inner);
+            (log.log_written_in().to_path_buf(), log.ends_at().0)
+        };
+        Ok(Box::new(FromACursor(
+            crate::eventlog::subscribe(&dir, after),
+            device,
+        )))
     }
 
     fn left_by_its_last_host(&self, left: &purlis_host::Started) {

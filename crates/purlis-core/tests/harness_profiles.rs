@@ -293,7 +293,7 @@ fn a_section_other_than_harness_in_the_local_file_is_refused_by_name() {
     assert_eq!(
         why(&set, "frame"),
         "[frame] in charter.local.toml is not read — that file carries [harness], \
-         [extensions], [theme], [harness_plugins], [plane], [repos], [chat_env], [sandbox] \
+         [extensions], [theme], [harness_skills], [plane], [repos], [chat_env], [sandbox] \
          hosts, [dispatch] limits, [[skill_sources]] and [skill_grades], and nothing else, because an ignored file must not change plane policy with no trace in git. \
          Put [frame] in charter.toml."
     );
@@ -341,8 +341,8 @@ fn a_chat_env_entry_that_is_not_a_name_is_refused_with_a_sentence() {
 #[test]
 fn harness_plugins_in_the_local_file_is_not_refused_by_the_profiles_loader() {
     purlis_core::unsteered!();
-    // charter-app#274 (ADR 0050): `[harness_plugins]` is this machine's choice among the
-    // plugins its harnesses have installed, read by `harness_plugin`, and not the loader's.
+    // charter-app#274, #3467: an old `[harness_plugins]` is read by nothing since #3467 and said
+    // once by its own Notice; the loader lets it through rather than refusing the file.
     let dir = plane("", "[harness_plugins.claude]\n\"figma@official\" = false\n");
 
     let set = profiles::derive(dir.path());

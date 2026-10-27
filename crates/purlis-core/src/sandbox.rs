@@ -1866,6 +1866,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         if let Some(folder) = crate::hostsocket::socket_for(runtime.as_deref()).parent() {
             deny(Class::HumanPowers, folder.to_path_buf(), Access::ReadWrite);
         }
+        // The folders chats' servers listen in (#2019): no chat writes there, so none takes
+        // another's socket, nor the folder a door carries to. A chat's own socket is given back
+        // after every class, by the rules that let it serve.
+        deny(
+            Class::Integrity,
+            door::root_in(runtime.as_deref()),
+            Access::Write,
+        );
     }
     // A vault's file is kept under the other names purlis finds for it in the project.
     let mut vaults: Vec<PathBuf> = Vec::new();
@@ -2487,6 +2495,30 @@ fn granted_hosts(
     )
 }
 
+/// **The ports of this Mac's loopback a chat in the project at `root` may listen on** (#2019):
+/// `chat`'s, then yours for this project on this machine, each at a scope `locks` leave open
+/// and with the layer that granted it. [`Widened::and_listens`] judges each again.
+fn granted_listens(
+    root: &Path,
+    chat: &grant::Grants,
+    locks: &policy::Locks,
+) -> Vec<(u16, reach::By)> {
+    let mut out: Vec<(u16, reach::By)> = chat
+        .listens
+        .iter()
+        .filter(|port| locks.keeps_scope(chat.level_of(&grant::What::Listen(**port))))
+        .map(|port| (*port, reach::By::Chat))
+        .collect();
+    if locks.keeps_scope(grant::Level::You) {
+        out.extend(
+            local::granted_listens(root)
+                .into_iter()
+                .map(|port| (port, reach::By::You)),
+        );
+    }
+    out
+}
+
 /// The folders a chat in the project at `root` may write besides its own: `chat`'s and the
 /// ones you let every chat write here, each judged again ([`grant::still_grantable`]); none
 /// where `locks` forbid write grants (#1343). The one place a chat's start and Settings' count
@@ -2546,6 +2578,7 @@ pub fn held_by_policy(root: &Path) -> Vec<HeldGrant> {
                 .filter_map(service),
         )
         .chain(local::granted_ports(root).into_iter().map(What::Port))
+        .chain(local::granted_listens(root).into_iter().map(What::Listen))
         .map(|what| (what, Level::You));
     let everywhere = local::sockets_everywhere()
         .into_iter()
@@ -2932,6 +2965,17 @@ pub struct Widened {
     /// port (qw384): its own grants and yours on this machine, never purlis's own
     /// ([`localport::still_ports`]).
     pub ports: Vec<u16>,
+    /// The ports of this Mac's loopback a person let this chat listen on (#2019): its own
+    /// grants and yours on this machine, never purlis's own, and none something on this Mac
+    /// listened on as the chat was compiled. Each is in [`Self::ports`] too, so the chat's
+    /// browser reaches the door as a named local port.
+    pub listens: Vec<u16>,
+    /// Those of [`Self::listens`] that are in [`Self::ports`] for a listen grant alone, and no
+    /// port grant: reached only where a door opens on them, and withdrawn where none does.
+    pub listen_only: Vec<u16>,
+    /// The ports a person let this chat listen on that something on this Mac already listened
+    /// on as it was compiled: neither served nor reached, and told so.
+    pub unserved: Vec<u16>,
 }
 
 impl Widened {
@@ -2951,7 +2995,47 @@ impl Widened {
             sockets: Vec::new(),
             services: Vec::new(),
             ports: Vec::new(),
+            listens: Vec::new(),
+            listen_only: Vec::new(),
+            unserved: Vec::new(),
         }
+    }
+
+    /// These widenings with the ports of this Mac's loopback at `listens` to listen on besides
+    /// (#2019), each one a port to connect to as well, for the door on it: none where `locks`
+    /// forbid ports, never a port purlis itself listens on, and none something on this Mac
+    /// listens on now ([`door::in_use`]), which is neither served nor reached
+    /// ([`Self::unserved`]).
+    #[must_use]
+    pub fn and_listens(mut self, listens: &[u16], locks: &policy::Locks) -> Self {
+        if locks.port_grants_refused().is_some() {
+            return self;
+        }
+        for port in localport::still_ports(listens) {
+            if self.listens.contains(&port) || self.unserved.contains(&port) {
+                continue;
+            }
+            if door::in_use(port) {
+                self.unserved.push(port);
+                continue;
+            }
+            self.listens.push(port);
+            if !self.ports.contains(&port) {
+                self.ports.push(port);
+                self.listen_only.push(port);
+            }
+        }
+        self
+    }
+
+    /// These widenings without the ports given for a listen grant alone (#2019): what a chat no
+    /// door ever opens for is given, so a listen grant never leaves it a plain connect.
+    #[must_use]
+    pub fn unserving(mut self) -> Self {
+        self.ports.retain(|port| !self.listen_only.contains(port));
+        self.listens.clear();
+        self.listen_only.clear();
+        self
     }
 
     /// These widenings with the services on this Mac at `ports` besides (qw384): none where
@@ -3153,6 +3237,12 @@ impl Compiled {
             &ports.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
             &locks,
         );
+        let listens = granted_listens(root, chat, &locks);
+        let widened = widened.and_listens(
+            &listens.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
+            &locks,
+        );
+        ports.extend(listens);
         let mut layered: Vec<(String, reach::By)> = Vec::new();
         for (port, by) in &ports {
             if widened.ports.contains(port) {
@@ -3329,6 +3419,14 @@ impl Compiled {
                 &ports.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
                 &locks,
             );
+        // Ports to listen on (#2019), at the scopes policy leaves open: each one a named local
+        // port of the chat's reach too, so its browser opens the server it started.
+        let listens = granted_listens(root, chat, &locks);
+        let widened = widened.and_listens(
+            &listens.iter().map(|(port, _)| *port).collect::<Vec<_>>(),
+            &locks,
+        );
+        ports.extend(listens);
         // The chat's proxy carries a client that does use it to exactly those ports of this
         // machine, at the layer that granted each.
         for (port, by) in &ports {
@@ -4081,6 +4179,18 @@ pub struct Confinement {
     /// A folder of the chat's own made for what it keeps ([`Self::keep_own`]) where it has
     /// neither of the two above: removed as this ends.
     kept: Option<tempfile::TempDir>,
+    /// Where the chat's servers listen and the doors to them (#2019), once
+    /// [`Self::serve`] opened them: held in the window's process wherever the proxy runs.
+    serving: Option<Serving>,
+}
+
+/// **Where a chat's servers listen, and the doors to them** (#2019, [`door`]).
+#[derive(Debug)]
+struct Serving {
+    /// The folder purlis made for this chat's sockets alone, `0700`.
+    folder: PathBuf,
+    /// A door for each port the chat serves on.
+    doors: Vec<door::Door>,
 }
 
 /// Where a chat's proxy runs.
@@ -4197,6 +4307,67 @@ pub trait HeldElsewhere: Send + Sync + std::fmt::Debug {
     fn board(&self) -> Option<std::sync::Arc<dyn Board>>;
 }
 
+/// `folder` and the folder it is in, each made `0700` by this process where it is not there,
+/// and refused where either is not a folder of this user's that no one else may write (#2019):
+/// no other user reaches a socket in it, or puts one there.
+fn own_folder(folder: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    let me = rustix::process::getuid().as_raw();
+    let parent = folder
+        .parent()
+        .ok_or_else(|| std::io::Error::other("a server's folder has no folder above it"))?;
+    for at in [parent, folder] {
+        match std::fs::DirBuilder::new().mode(0o700).create(at) {
+            Err(err) if err.kind() != std::io::ErrorKind::AlreadyExists => return Err(err),
+            _ => {}
+        }
+        let meta = std::fs::symlink_metadata(at)?;
+        if !meta.is_dir() || meta.uid() != me {
+            return Err(std::io::Error::other(format!(
+                "{} is not a folder of this user's",
+                at.display()
+            )));
+        }
+        if meta.permissions().mode() & 0o077 != 0 {
+            std::fs::set_permissions(at, std::fs::Permissions::from_mode(0o700))?;
+        }
+    }
+    Ok(())
+}
+
+/// Clears `path` for a server's socket: what was left there, a socket a server that ended left
+/// or anything else that is not a folder, is taken away (the folder is purlis's, and only the
+/// chat's own socket is ever made in it). A folder there is refused, and said.
+fn cleared(path: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() => Err(std::io::Error::other(format!(
+            "a folder is where its socket goes, {}",
+            path.display()
+        ))),
+        Ok(_) => std::fs::remove_file(path),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+/// The doors to `ports`, each to its socket in `folder` ([`Confinement::serve`]), and the ports
+/// something on this Mac listens on already, which get none.
+fn doors_to(folder: &Path, ports: &[u16]) -> std::io::Result<(Vec<door::Door>, Vec<u16>)> {
+    own_folder(folder)?;
+    let mut doors = Vec::new();
+    let mut unserved = Vec::new();
+    for port in ports {
+        let socket = localport::serve_socket(folder, *port);
+        cleared(&socket)?;
+        match door::Door::open(*port, &socket) {
+            Ok(door) => doors.push(door),
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => unserved.push(*port),
+            Err(err) => return Err(err),
+        }
+    }
+    Ok((doors, unserved))
+}
+
 /// **Where a confinement is**: its proxy's two ports, and the folders beside it. What the
 /// session host says of one it started (#1999).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4267,6 +4438,7 @@ impl Confinement {
             ssh,
             routed: None,
             kept: None,
+            serving: None,
         })
     }
 
@@ -4282,6 +4454,7 @@ impl Confinement {
             ssh: None,
             routed: None,
             kept: None,
+            serving: None,
         })
     }
 
@@ -4339,6 +4512,7 @@ impl Confinement {
             ssh: placed.ssh.map(tunnel::SshRoute::at),
             routed: placed.routed.map(Folder::Theirs),
             kept: None,
+            serving: None,
         }
     }
 
@@ -4452,6 +4626,49 @@ impl Confinement {
     /// The chat's own temp directory, which a proxy-only one has none of.
     pub fn tmp(&self) -> Option<&Path> {
         self.tmp.as_ref().map(Folder::path)
+    }
+
+    /// **Opens a door for each port `widened` lets the chat listen on, to its servers in
+    /// `folder`** (#2019): the folder purlis keeps for this chat's sockets, made `0700` where it
+    /// is not there, and whatever was left where a socket goes taken away ([`cleared`]). A port
+    /// something on this Mac listens on already gets no door ([`door::in_use`]): answered back,
+    /// so the chat is started without serving there and told why. **Every port given for a
+    /// listen grant alone that gets no door is withdrawn from the chat's proxy**, whatever kept
+    /// it shut, so the grant never leaves it a plain connect there. Once per confinement; a
+    /// second call opens nothing more.
+    pub fn serve(&mut self, folder: &Path, widened: &Widened) -> std::io::Result<Vec<u16>> {
+        if self.serving.is_some() || widened.listens.is_empty() {
+            return Ok(Vec::new());
+        }
+        let opened = doors_to(folder, &widened.listens);
+        let open: Vec<u16> = opened
+            .as_ref()
+            .map(|(doors, _)| doors.iter().map(door::Door::port).collect())
+            .unwrap_or_default();
+        for port in widened
+            .listen_only
+            .iter()
+            .filter(|port| !open.contains(port))
+        {
+            if let Err(why) = self.withdraw_port(*port) {
+                tracing::warn!("purlis: port {port} could not be withdrawn ({why})");
+            }
+        }
+        let (doors, unserved) = opened?;
+        self.serving = Some(Serving {
+            folder: folder.to_path_buf(),
+            doors,
+        });
+        Ok(unserved)
+    }
+
+    /// **Where this chat's servers listen, and the ports their doors are open on** (#2019):
+    /// what its profile lets it serve on. None before [`Self::serve`], or where it serves on
+    /// none.
+    pub fn served(&self) -> Option<(&Path, Vec<u16>)> {
+        let serving = self.serving.as_ref()?;
+        let ports: Vec<u16> = serving.doors.iter().map(door::Door::port).collect();
+        (!ports.is_empty()).then_some((serving.folder.as_path(), ports))
     }
 
     /// **`text` kept as `name` in this chat's own folder** (qw384b), for this chat alone and
@@ -5726,6 +5943,23 @@ pub(crate) fn applied_of(
         };
         &with_what_waits
     };
+    // No door opens for a Claude Code chat (#2019): a listen grant gives it nothing, neither in
+    // its own sandbox's settings nor through its proxy.
+    let unserving;
+    let compiled = if harness == Harness::ClaudeCode && !compiled.widened.listen_only.is_empty() {
+        let reach = compiled.reach.clone();
+        for port in &compiled.widened.listen_only {
+            reach.withdraw(*port);
+        }
+        unserving = Compiled {
+            widened: compiled.widened.clone().unserving(),
+            reach,
+            ..compiled.clone()
+        };
+        &unserving
+    } else {
+        compiled
+    };
     let (form, denied) = compile_checked(compile, compiled, root, machine)?;
     let mut held = denied.clone();
     if let Some(keychains) = seatbelt::keychains(machine.home.as_deref())
@@ -6530,6 +6764,7 @@ pub mod caches;
 pub mod claude;
 pub mod codex;
 pub mod confined;
+pub mod door;
 pub mod egress;
 pub mod grant;
 pub mod held;

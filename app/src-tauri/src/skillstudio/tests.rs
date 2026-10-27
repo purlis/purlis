@@ -318,21 +318,12 @@ fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_
                     name: "figma".to_owned()
                 }),
                 Some(&SkillSwitch::Not {
-                    why: "Claude Code turns a plugin's skill off only with the whole plugin, \
-                          figma"
+                    why: "it comes with the plugin figma, which Claude Code turns on or off \
+                          itself, so its skills are shown read-only"
                         .to_owned()
                 })
             ),
         ]
-    );
-    let figma_plugin = on_claude
-        .plugins
-        .iter()
-        .find(|p| p.id == "figma@official")
-        .expect("listed");
-    assert_eq!(
-        (figma_plugin.state, figma_plugin.pinned.is_none()),
-        (PluginState::NotSet, true)
     );
     assert_eq!(
         studio.clashes,
@@ -348,13 +339,6 @@ fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_
                    gets both"
                 .to_owned(),
         }]
-    );
-    let codex = &studio.harnesses[2];
-    assert_eq!(codex.unsupported, None);
-    assert!(codex.only_off.is_some(), "{:?}", codex.only_off);
-    assert!(
-        studio.harnesses[1].unsupported.is_some(),
-        "opencode's plugins"
     );
 }
 

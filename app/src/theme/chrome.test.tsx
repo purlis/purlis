@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
@@ -100,8 +100,6 @@ vi.mock("../SessionPane", () => ({
     </div>
   ),
 }));
-
-configure({ asyncUtilTimeout: 5_000 });
 
 const PLANE = "/home/dev/plane";
 const ALPHA = `${PLANE}/workspaces/alpha`;
@@ -664,6 +662,7 @@ const DIALOGS: Opened[] = [
               pins_together: null,
               warns: "both",
             },
+            repos: [],
           }}
           trouble="the chat is in the middle of a turn"
           busy={false}

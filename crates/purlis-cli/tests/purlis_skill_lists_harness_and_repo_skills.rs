@@ -268,7 +268,7 @@ fn a_plugins_skill_is_listed_as_the_plugins_and_show_says_it_goes_only_with_its_
     assert!(text.contains("  owner: figma\n"), "{text}");
     assert!(
         text.contains(
-            "  switch: Claude Code turns a plugin's skill off only with the whole plugin, figma\n"
+            "  switch: it comes with the plugin figma, which Claude Code turns on or off itself, so its skills are shown read-only\n"
         ),
         "{text}"
     );
@@ -559,5 +559,74 @@ fn skill_list_marks_a_project_skill_a_repo_has_a_copy_of_as_the_studio_does() {
         stdout(&show).contains(&format!("  also: {both}\n")),
         "{}",
         stdout(&show)
+    );
+}
+
+#[test]
+fn a_plane_copy_a_repo_hides_carries_its_clash_in_list_and_show_json() {
+    // #3461: the project's `deploy` is left out of Codex's chats in the clone `app`, whose own
+    // `deploy` wins there. The left-out row says whose copy won in data too, as purlis's own
+    // copy's row does, so `--json` never has to be read from the row's sentence.
+    let project = Project::new();
+    let root = project.at.join("plane");
+    std::fs::write(root.join("skills/deploy.toml"), "grant = \"all\"\n").unwrap();
+    write_skill(
+        &root.join("workspaces/alpha/app/.agents/skills"),
+        "deploy",
+        "The repo's deploy, for Codex and opencode.",
+    );
+
+    let list = project.run(&["skill", "list", "-w", "alpha", "--json"]);
+    let show = project.run(&["skill", "show", "deploy", "-w", "alpha", "--json"]);
+
+    let repo_wins = |row: &serde_json::Value, harness: &str| {
+        let clashes = row["clashes"]
+            .as_array()
+            .unwrap_or_else(|| panic!("clashes on the left-out row: {row}"));
+        assert_eq!(clashes.len(), 1, "{row}");
+        assert_eq!(clashes[0]["harness"], harness, "{row}");
+        assert_eq!(clashes[0]["outcome"], "repo-wins", "{row}");
+        assert_eq!(clashes[0]["outside"], "repo", "{row}");
+        assert_eq!(
+            clashes[0]["owner"],
+            serde_json::json!({"kind": "repo", "name": "app"}),
+            "{row}"
+        );
+    };
+    assert!(list.status.success(), "{}", stderr(&list));
+    let doc: serde_json::Value = serde_json::from_str(&stdout(&list)).unwrap();
+    for harness in ["codex", "opencode"] {
+        let one = doc["harnesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|one| one["harness"] == harness)
+            .unwrap_or_else(|| panic!("{harness} listed: {doc}"));
+        assert_eq!(one["repo_left_out"][0]["name"], "deploy", "{doc}");
+        repo_wins(&one["repo_left_out"][0], harness);
+    }
+
+    assert!(show.status.success(), "{}", stderr(&show));
+    let doc: serde_json::Value = serde_json::from_str(&stdout(&show)).unwrap();
+    let copies = doc["copies"].as_array().unwrap();
+    let hidden: Vec<&serde_json::Value> = copies
+        .iter()
+        .filter(|copy| copy["level"] == "project" && copy["on"] == false)
+        .collect();
+    assert_eq!(
+        hidden.len(),
+        2,
+        "one left-out copy on Codex and opencode: {doc}"
+    );
+    for copy in hidden {
+        repo_wins(copy, copy["harness"].as_str().unwrap());
+    }
+    // A copy the harness finds itself, the repo's own, is no plane copy and has no clashes.
+    assert!(
+        copies
+            .iter()
+            .filter(|copy| copy["level"] == "repo")
+            .all(|copy| copy.get("clashes").is_none()),
+        "{doc}"
     );
 }

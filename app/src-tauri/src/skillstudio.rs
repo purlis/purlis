@@ -304,45 +304,14 @@ impl From<purlis_core::skills::Switch> for SkillSwitch {
     }
 }
 
-/// What the project has a harness's plugin at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum PluginState {
-    On,
-    Off,
-    /// No layer names it: the harness decides, from its own settings.
-    NotSet,
-}
-
-/// One of a harness's plugins in the studio (SK-6).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct StudioPlugin {
-    /// The harness's own id for it, which the switch names.
-    pub id: String,
-    pub name: String,
-    /// Where purlis found it installed; empty where this machine has not installed it.
-    pub origin: String,
-    pub installed: bool,
-    /// What the project has it at, in the chats the studio shows.
-    pub state: PluginState,
-    /// Why purlis fixes it whatever the project says, or `None`: no switch is drawn for it.
-    pub pinned: Option<String>,
-}
-
-/// One harness in the studio (SK-6): its plugins and the skills it finds itself.
+/// One harness in the studio (SK-6): the skills it finds itself. Its plugins are its own to turn
+/// on or off (#3467): a plugin's skills are among these, read-only, each naming its plugin.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct StudioHarness {
     /// Which harness it is, which a switch names.
     pub harness: HarnessKind,
     pub title: String,
-    /// Why its plugins cannot be chosen for one chat, where they cannot: no plugin switch.
-    pub unsupported: Option<String>,
-    /// Why a plugin can only be turned off, where that is all it can be.
-    pub only_off: Option<String>,
-    /// Why its own record of what it installed could not be read, if it could not.
-    pub trouble: Option<String>,
-    pub plugins: Vec<StudioPlugin>,
-    /// The skills it finds itself, read only, each by the name it knows it by.
+    /// The skills it finds itself, each by the name it knows it by.
     pub skills: Vec<StudioSkill>,
     /// The project's skills a repo of the workspace leaves out of its chats in that clone, each
     /// with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
@@ -482,9 +451,9 @@ pub(crate) fn persona_skills(
     let off = workspace
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
-    purlis_core::skills::persona_rows(built_in, root, workspace)
+    purlis_core::skills::persona_rows(built_in, root)
         .into_iter()
-        .map(|(persona, rows)| {
+        .map(|purlis_core::skills::PersonaRows { persona, rows }| {
             let pinners = pinners_of(root, workspace, Some(&persona));
             PersonaSkills {
                 skills: rows
@@ -670,12 +639,11 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
 fn harnesses(
     all: &[purlis_core::skills::HarnessInTheStudio],
 ) -> (Vec<StudioHarness>, Vec<StudioClash>) {
-    use purlis_core::harness_plugin;
     let mut clashes: Vec<StudioClash> = Vec::new();
     let harnesses = all
         .iter()
         .map(|one| {
-            let adapter = one.group.adapter;
+            let adapter = one.harness.adapter().plugins();
             for clash in &one.set.clashes {
                 clashes.push(StudioClash {
                     name: clash.name.clone(),
@@ -695,27 +663,6 @@ fn harnesses(
             StudioHarness {
                 harness: one.harness.into(),
                 title: adapter.title().to_owned(),
-                unsupported: harness_plugin::not_supported(adapter),
-                only_off: harness_plugin::only_off(adapter),
-                trouble: one.group.trouble.clone(),
-                plugins: one
-                    .group
-                    .plugins
-                    .iter()
-                    .filter(|it| it.installed || it.pinned.is_some())
-                    .map(|it| StudioPlugin {
-                        id: it.id.clone(),
-                        name: it.name.clone(),
-                        origin: it.origin.clone(),
-                        installed: it.installed,
-                        state: match it.wanted {
-                            Some(true) => PluginState::On,
-                            Some(false) => PluginState::Off,
-                            None => PluginState::NotSet,
-                        },
-                        pinned: it.pinned.map(str::to_owned),
-                    })
-                    .collect(),
                 skills: one.rows.iter().cloned().map(outside_shown).collect(),
                 repo_left_out: one
                     .repo_left_out
@@ -1254,27 +1201,8 @@ pub(crate) async fn put_away_chat_skills_missing(
     Ok(())
 }
 
-/// What the studio's switch turns on or off for a harness: the core's `Switched`, spelled for
-/// the window. purlis-core keeps no UI typing crate (CLAUDE.md), so the window's copy of the type
-/// lives here and turns into the core's in one place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum StudioSwitched {
-    Plugin,
-    Skill,
-}
-
-impl From<StudioSwitched> for purlis_core::harness_plugin::Switched {
-    fn from(what: StudioSwitched) -> purlis_core::harness_plugin::Switched {
-        match what {
-            StudioSwitched::Plugin => purlis_core::harness_plugin::Switched::Plugin,
-            StudioSwitched::Skill => purlis_core::harness_plugin::Switched::Skill,
-        }
-    }
-}
-
-/// **Turns one of a harness's plugins or skills on or off** (SK-6, #2769) for the chats the
-/// studio shows: at the project's root on this machine alone (`charter.local.toml`), in a
+/// **Turns one of a harness's own skills on or off** (SK-6, #2769) for the chats the studio
+/// shows (a plugin's is the plugin's, and refused, #3467): at the project's root on this machine alone (`charter.local.toml`), in a
 /// workspace in its own settings, as `purlis_core::harness_plugin::switch_in_the_studio` writes
 /// it. A chat started after it is handed the change.
 #[tauri::command]
@@ -1284,7 +1212,6 @@ pub(crate) async fn skill_studio_switch(
     plane: crate::planes::PlaneId,
     workspace: Option<String>,
     harness: HarnessKind,
-    what: StudioSwitched,
     id: String,
     on: bool,
 ) -> Result<(), String> {
@@ -1302,7 +1229,6 @@ pub(crate) async fn skill_studio_switch(
             held.root(),
             workspace.as_deref(),
             harness.into(),
-            what.into(),
             &id,
             on,
             &built_in,

@@ -20,6 +20,7 @@ import {
   personaRowsOf,
   tipOf,
   turnOf,
+  viewRowsOf,
   type ListedSkill,
   type MenuAt,
 } from "./skillsListing";
@@ -121,6 +122,7 @@ describe("the hidden-by-the-router mark", () => {
     const [big, small] = narrowedTo(rows, [given("big"), { ...given("small"), hidden: HIDDEN }], {
       persona: null,
       harness: "claude",
+      repos: [],
     });
     expect(markOf(big)).toBeUndefined();
     expect(markOf(small)).toBe("hidden");
@@ -193,20 +195,12 @@ describe("the rows of a studio answer", () => {
         {
           harness: "claude",
           title: "Claude Code",
-          unsupported: null,
-          only_off: null,
-          trouble: null,
-          plugins: [],
           skills: [skill("pdf", { level: "installed", folder: "" }), repo],
           repo_left_out: [],
         },
         {
           harness: "codex",
           title: "Codex",
-          unsupported: null,
-          only_off: null,
-          trouble: null,
-          plugins: [],
           skills: [repo],
           repo_left_out: [],
         },
@@ -232,6 +226,20 @@ describe("the rows of a studio answer", () => {
       ["ops", "triage"],
     ]);
   });
+
+  it("list a persona's own once, as the persona's, where the studio was read for that persona (#3462)", () => {
+    const answer = studio([skill("deploy"), skill("review", { level: "persona" })]);
+    const personas = [{ persona: "reviewer", skills: [skill("review", { level: "persona" })] }];
+    expect(viewRowsOf(answer, personas).map((one) => [one.skill.name, one.persona])).toEqual([
+      ["deploy", undefined],
+      ["review", "reviewer"],
+    ]);
+    // Where every persona's own could not be read, the studio's are listed all the same.
+    expect(viewRowsOf(answer, undefined).map((one) => one.skill.name)).toEqual([
+      "deploy",
+      "review",
+    ]);
+  });
 });
 
 describe("the rows narrowed to one chat's real set", () => {
@@ -243,16 +251,17 @@ describe("the rows narrowed to one chat's real set", () => {
       harness: "claude",
     }),
     row(skill("plan", { level: "installed", folder: "" }), { program: "Codex", harness: "codex" }),
-    row(skill("lint-rs", { level: "repo", folder: "" })),
+    row(skill("lint-rs", { level: "repo", folder: "", owner: { kind: "repo", name: "svc" } })),
+    row(skill("fmt", { level: "repo", folder: "", owner: { kind: "repo", name: "web" } })),
     row(skill("review", { level: "persona" }), { persona: "reviewer" }),
     row(skill("triage", { level: "persona" }), { persona: "ops" }),
   ];
 
   // What `chat_skills` really holds: the plane's and the built-in skills, never a program's own
   // or a repo's (`skills::of_a_chat`).
-  const CLAUDE = { persona: "reviewer", harness: "claude" as const };
+  const CLAUDE = { persona: "reviewer", harness: "claude" as const, repos: ["svc"] };
 
-  it("marks the plane's skills by the chat's set, and keeps its program's own and each repo's as the studio marks them", () => {
+  it("marks the plane's skills by the chat's set, and keeps its program's own and its clone's as the studio marks them", () => {
     const set = [given("deploy"), given("review", "persona")];
     const narrowed = narrowedTo(rows, set, CLAUDE);
     expect(narrowed.map((one) => [one.skill.name, one.inChat])).toEqual([
@@ -285,6 +294,7 @@ describe("the rows narrowed to one chat's real set", () => {
     const narrowed = narrowedTo([], [given("extra", "workspace")], {
       persona: null,
       harness: "claude",
+      repos: [],
     });
     expect(narrowed).toEqual([
       expect.objectContaining({
@@ -299,10 +309,21 @@ describe("the rows narrowed to one chat's real set", () => {
     const narrowed = narrowedTo([row(skill("secrets", { level: "built-in" }))], set, {
       persona: null,
       harness: undefined,
+      repos: [],
     });
     expect(groupsOf(narrowed, { root: true, chat: true }).map((one) => one.title)).toEqual([
       "Built-in",
     ]);
+  });
+
+  it("lists the repo skills of the chat's own clone alone, and none for a chat in no clone (#3462)", () => {
+    const repoNames = (repos: string[]) =>
+      narrowedTo(rows, [], { ...CLAUDE, repos })
+        .filter((one) => one.skill.level === "repo")
+        .map((one) => one.skill.name);
+    expect(repoNames(["svc"])).toEqual(["lint-rs"]);
+    expect(repoNames(["web"])).toEqual(["fmt"]);
+    expect(repoNames([])).toEqual([]);
   });
 });
 

@@ -70,7 +70,7 @@ enum Why {
 const STILL_SPELLED: &[(&str, usize, Why)] = &[
     // Visible text: RN-11a (#1269).
     ("app/src/actions.ts", 1, Why::Prose),
-    ("app/src/settings/fileControls.ts", 10, Why::Prose),
+    ("app/src/settings/fileControls.ts", 8, Why::Prose),
     // The project's files' old names, which `namedIn` reads to say a sentence's file names as a
     // project not yet renamed calls its files.
     ("app/src/settings/project.ts", 2, Why::Compat),
