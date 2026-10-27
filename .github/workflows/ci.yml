@@ -408,16 +408,17 @@ jobs:
           fi
           exit "$status"
 
-  # The web checks in two parts, each running half of vitest's test files (`--shard`): after
-  # `rust` and `scenario` were split (#1712), vitest's 8 to 10 minutes made this the longest job
-  # a pull request waited on. Part 1 also runs the type check, lint and format check, part 2 the
+  # The web checks in four parts, each running a quarter of vitest's test files (`--shard`):
+  # after `rust` and `scenario` were split (#1712), vitest's 8 to 10 minutes made this the
+  # longest job a pull request waited on, and by 2026-10-27 each of two parts took 10 to 12
+  # minutes of vitest alone. Part 1 also runs the type check, lint and format check, part 2 the
   # licences and the tools' tests. `web-checks` carries the required check's name.
   web:
-    name: web (part ${{ matrix.part }} of 2)
+    name: web (part ${{ matrix.part }} of 4)
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -441,7 +442,7 @@ jobs:
         if: matrix.part == 1
       - run: npm run format:check
         if: matrix.part == 1
-      - run: npm test -- --shard=${{ matrix.part }}/2
+      - run: npm test -- --shard=${{ matrix.part }}/4
       # The tools' own tests (node:test), such as the cold-start gate's decision.
       - run: node --test "../tools/*.test.mjs"
         if: matrix.part == 2
@@ -452,7 +453,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: Every part passed
         env:
           RESULT: ${{ needs.web.result }}
         run: test "$RESULT" = success
