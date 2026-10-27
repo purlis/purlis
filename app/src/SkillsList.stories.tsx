@@ -186,13 +186,22 @@ export const ByLevel: Story = {
     );
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
-    // The focus comes back once the menu has gone, which WebKit can take a frame longer for.
+    // **The focus is checked once it has settled on the row** (#3449): in WebKit the menu row
+    // the keyboard was on goes with the menu, which leaves the focus on the page, and React
+    // Aria's focus scope gives it back to the row a frame later. Checked before that frame,
+    // nothing has the focus (run 40415737701).
     await untilFocused(() => off, "Skills: Escape gives the keyboard back to the row");
     expectFocusInSight();
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "After the view" }),
       "Skills: Tab leaves the tree",
+    );
+    // And once the row it left has taken its tooltip down: the page is at rest.
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), { timeout: 3_000 });
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "After the view" }),
+      "Skills: the keyboard stays after the view",
     );
     expectFocusInSight();
   },
