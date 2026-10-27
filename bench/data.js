@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793059189401,
+  "lastUpdate": 1793061354248,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26250,6 +26250,48 @@ window.BENCHMARK_DATA = {
             "value": 101.160421,
             "unit": "ms",
             "extra": "median of 5 runs: 100.465, 100.809, 101.160, 102.413, 103.338 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "493054f645b1e8c8bf174ef8bd3f2d032febcb8c",
+          "message": "Skills view: Pin to this workspace, the hidden-by-router mark, a steady New skill… story (#3280, #3414) (#3430)\n\n* SkillsList story: picture New skill…'s menu once it has settled (#3414)\n\nNo Skills Of Its Own took its picture after its play, as the menu it had\nopened was closing, so one run drew it and the next did not. It now takes\nthe picture during its play (pictureNow) of the page, the menu open on its\nfirst start, once the menu has settled: React Aria's data-entering gone, no\nanimation running, and its box the same on two frames (untilSettled, in\nstories.testkit). Then Enter starts a draft and the menu is waited out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills view: Pin to this workspace, and the hidden-by-the-router mark (#3280)\n\nA Skills view row's menu has Pin to this workspace, or Unpin from this\nworkspace while the title bar's workspace pins the skill. It goes through\nthe studio's own skill_pin (SK-15d), one commit, so there is one copy of\nthe pin. It says why it cannot run at the project's root, on a built-in\nskill, on a program's or a repo's, and on one the workspace's chats do not\nget (unless a pin of it is still written, which can always be undone).\n\nA skill a router hid behind the index skill is marked \"Hidden by the\nrouter\", after left out and before lint, with the core's line on hover and\nthe programs whose chats it is hidden from. Narrowed to the chat in front,\nthe mark is that chat's set's own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SkillsList story: check the focus after the menu closes; settle on the popover's own animations (#3414)\n\nReview of #3430: expectFocusInSight() again once the menu has gone, and\nuntilSettled waits on the popover's own animations, so a looping one\nelsewhere on the page cannot hold it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills view: one list of pinnable levels, no workspace pin on a persona's row (#3280)\n\nReview of #3430: PINNABLE lives in skillsListing.ts and the studio imports\nit; the switch and the pin share one Change type and one menu-row helper; a\npersona's own row says its Skill studio pins it; the chat's set is looked\nup once; each of the core's hidden lines names its own programs; the\nchangelog fragment is rewrapped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SkillsList stories: baselines from #3430's stories run\n\nNo Skills Of Its Own is now of the page with New skill…'s menu settled\n(#3414); By Level has a row the router hid (#3280).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <hrach@easydmarc.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T00:01:41Z",
+          "tree_id": "a849a82d091a9fd5a5b6ac2ad5924587c3b8cdc5",
+          "url": "https://github.com/purlis/purlis/commit/493054f645b1e8c8bf174ef8bd3f2d032febcb8c"
+        },
+        "date": 1793061350512,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5285440000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.507, 0.510, 0.529, 0.559, 0.569 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7472835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.269, 16.667, 16.747, 16.922, 17.084 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.551728,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.937, 103.441, 103.552, 103.791, 103.999 ms"
           }
         ]
       }
