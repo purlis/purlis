@@ -18,7 +18,7 @@ import {
 } from "./bindings";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
-import { clashSaid, SkillStudioHarnesses } from "./SkillStudioHarnesses";
+import { SkillStudioHarnesses } from "./SkillStudioHarnesses";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { SkillPinSwitch, SkillPinsRefusedLine } from "./SkillPins";
 import { Notice } from "./Notice";
@@ -676,6 +676,7 @@ export function SkillStudioTab({
                     {studio.clashes
                       .filter(
                         (clash) =>
+                          skill.on &&
                           clash.name === skill.name &&
                           clash.level === skill.level &&
                           clash.local === skill.local,
@@ -686,7 +687,7 @@ export function SkillStudioTab({
                           className="honest"
                           data-testid={`clash-${skill.name}`}
                         >
-                          {` Also: ${clashSaid(clash)}. `}
+                          {` Also: ${clash.said}. `}
                           {level !== null && (
                             <Button
                               size="sm"

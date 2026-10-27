@@ -363,6 +363,9 @@ pub struct StudioClash {
     pub outside: Level,
     pub owner: Owner,
     pub outcome: ClashOutcome,
+    /// What the row of the plane's copy says of it, in the core's words
+    /// (`purlis_core::skills::clash_said`, SK-46): the same line `purlis skill list` prints.
+    pub said: String,
 }
 
 /// What came of a clash.
@@ -686,6 +689,7 @@ fn harnesses(
                         purlis_core::skills::Outcome::RepoWins => ClashOutcome::RepoWins,
                         purlis_core::skills::Outcome::EitherOne => ClashOutcome::EitherOne,
                     },
+                    said: purlis_core::skills::clash_said(one.harness, clash),
                 });
             }
             StudioHarness {

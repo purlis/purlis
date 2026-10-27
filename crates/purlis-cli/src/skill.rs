@@ -21,7 +21,8 @@ use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{
-    Deprecated, Grant, Lifecycle, StudioRow, Switch, Template, TemplateId, history, lifecycle,
+    Deprecated, Grant, Lifecycle, Outcome, StudioList, StudioRow, Switch, Template, TemplateId,
+    clash_said, history, lifecycle,
 };
 use serde_json::{Value, json};
 
@@ -462,7 +463,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 println!(
                     "{}",
                     json!({
-                        "skills": list.rows.iter().map(row_json).collect::<Vec<_>>(),
+                        "skills": list.rows.iter().map(|row| plane_json(&list, row))
+                            .collect::<Vec<_>>(),
                         "harnesses": list.harnesses.iter().map(|one| json!({
                             "harness": one.harness.name(),
                             "title": one.harness.title(),
@@ -474,7 +476,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     })
                 );
             } else {
-                print!("{}", table(&list.rows));
+                print!("{}", table(&list.rows, &|row| clashes_said(&list, row)));
                 for one in &list.harnesses {
                     if !one.rows.is_empty() {
                         print!(
@@ -488,7 +490,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                         print!(
                             "\n{} chats in a repo here start without these:\n{}",
                             one.harness.title(),
-                            table(&one.repo_left_out)
+                            table(&one.repo_left_out, &|_| Vec::new())
                         );
                     }
                 }
@@ -529,14 +531,17 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     .iter()
                     .map(|(harness, row)| match harness {
                         Some(harness) => outside_json(*harness, row),
-                        None => row_json(row),
+                        None => plane_json(&list, row),
                     })
                     .collect();
                 println!("{}", json!({ "copies": shown }));
             } else {
                 let shown: Vec<String> = copies
                     .iter()
-                    .map(|(harness, row)| detail(*harness, row))
+                    .map(|(harness, row)| match harness {
+                        Some(_) => detail(*harness, row, &[]),
+                        None => detail(None, row, &clashes_said(&list, row)),
+                    })
                     .collect();
                 print!("{}", shown.join("\n"));
             }
@@ -1797,9 +1802,48 @@ fn row_json(row: &StudioRow) -> Value {
     })
 }
 
+/// A plane or built-in row as JSON: [`row_json`]'s, with each skill from outside the plane that
+/// has its name (SK-46, #3149), as the studio marks it.
+fn plane_json(list: &StudioList, row: &StudioRow) -> Value {
+    let mut shown = row_json(row);
+    shown["clashes"] = list
+        .clashes_of(row)
+        .map(|(harness, clash)| {
+            json!({
+                "harness": harness.name(),
+                "outside": clash.outside.level(),
+                "owner": clash.owner,
+                "outcome": match clash.outcome {
+                    Outcome::BothLoad => "both-load",
+                    Outcome::RepoWins => "repo-wins",
+                    Outcome::EitherOne => "either-one",
+                },
+                "said": clash_said(harness, clash),
+            })
+        })
+        .collect();
+    shown
+}
+
+/// What the studio says of each clash of a plane or built-in row (SK-46, #3149), harness by
+/// harness: the lines `list` and `show` add to it, each once (two harnesses on which both
+/// copies load say the same).
+fn clashes_said(list: &StudioList, row: &StudioRow) -> Vec<String> {
+    let mut said: Vec<String> = Vec::new();
+    for line in list
+        .clashes_of(row)
+        .map(|(harness, clash)| clash_said(harness, clash))
+    {
+        if !said.contains(&line) {
+            said.push(line);
+        }
+    }
+    said
+}
+
 /// One copy of a skill, as `show` prints it: one a harness finds itself with that harness,
-/// whose it is and how it can be left out.
-fn detail(harness: Option<Harness>, row: &StudioRow) -> String {
+/// whose it is and how it can be left out, and for purlis's copy each clash `also` says.
+fn detail(harness: Option<Harness>, row: &StudioRow, also: &[String]) -> String {
     let mut text = format!("{}\n  level: {}\n", esc(&row.name), level(row));
     if let Some(harness) = harness {
         text.push_str(&format!("  harness: {}\n", harness.title()));
@@ -1818,16 +1862,31 @@ fn detail(harness: Option<Harness>, row: &StudioRow) -> String {
         text.push_str(&format!("  grant: {}\n", esc(grant)));
     }
     text.push_str(&format!("  in this chat's skills: {}\n", esc(&state(row))));
+    for said in also {
+        text.push_str(&format!("  also: {}\n", esc(said)));
+    }
     text
 }
 
-fn table(rows: &[StudioRow]) -> String {
+/// The rows of a chat's skills, each with its state and, after it, each line `also` says of it
+/// (a clash, SK-46). A repo's names are the least trusted text here, so every cell is escaped.
+fn table(rows: &[StudioRow], also: &dyn Fn(&StudioRow) -> Vec<String>) -> String {
     if rows.is_empty() {
         return "No skills here yet. A project skill is a folder in skills/ at the plane root, \
                 holding its SKILL.md.\n"
             .to_owned();
     }
-    let states: Vec<String> = rows.iter().map(|row| esc(&state(row))).collect();
+    let states: Vec<String> = rows
+        .iter()
+        .map(|row| {
+            let mut said = state(row);
+            for one in also(row) {
+                said.push_str("; also: ");
+                said.push_str(&one);
+            }
+            esc(&said)
+        })
+        .collect();
     let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
     let name_w = voice::column(names.iter().copied().chain(["SKILL"]));
     let levels: Vec<String> = rows.iter().map(level).collect();
