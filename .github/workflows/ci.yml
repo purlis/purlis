@@ -358,14 +358,16 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: >-
           tools/no-orphans.sh --reap --
-          cargo nextest run --locked -p purlis-app --lib --profile ci --no-tests fail
+          cargo nextest run --locked -p purlis-app --lib --profile ci --retries 0 --no-tests fail
           -E 'test(/::in_a_docker_pool$/) | test(/^runnerlinks::tests::a_(window_reaches|project_reaches)_/)'
+      # `--retries 0` in both: the `ci` profile's retry is reported by `rust`'s annotate step,
+      # which this job has not, so a flake here fails as it did rather than pass unseen.
       # Run whatever the step above found, so each step's result is its own.
       - name: The pool's link and code over it, on Docker
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
           tools/no-orphans.sh --reap --
-          cargo nextest run --locked -p purlis-core --profile ci --no-tests fail
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test a_docker_pool_runner_is_linked_through_docker_exec
           --test code_crosses_to_a_docker_pools_runner_and_back
       - name: What the runners left, if a test failed

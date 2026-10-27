@@ -93,7 +93,9 @@ export function readFlaky(xml) {
       const match = new RegExp(`\\b${key}="([^"]*)"`).exec(attrs);
       return match ? unescape(match[1]) : "";
     };
-    const lines = unescape(attempts[0][1]).split("\n").map((line) => line.trimEnd());
+    // The attempt's own description, before the <system-out> and <system-err> nested after it.
+    const description = attempts[0][1].split("<")[0];
+    const lines = unescape(description).split("\n").map((line) => line.trimEnd());
     const at = lines.findIndex((line) => line.includes("panicked at"));
     const said = lines.slice(Math.max(at, 0), Math.max(at, 0) + FAILURE_LINES).filter((line) => line.trim() !== "");
     flaky.push({ binary: attr("classname"), name: attr("name"), retries: attempts.length, said: said.length > 0 ? said : ["failed"] });

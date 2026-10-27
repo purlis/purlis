@@ -244,8 +244,18 @@ const flakyReport = `<?xml version="1.0" encoding="UTF-8"?>
 <testsuites name="nextest-run" tests="2" failures="0" errors="0" time="5.0">
     <testsuite name="purlis-browser-engine::frames" tests="2" disabled="0" errors="0" failures="0">
         <testcase name="keys_reach_a_field" classname="purlis-browser-engine::frames" time="2.000">
-            <flakyFailure message="test failed" type="test failure">thread 'keys_reach_a_field' panicked at crates/browser-engine/tests/frames.rs:46:39:
-the field read &quot;ab&quot;, not &quot;abc&quot;</flakyFailure>
+            <flakyFailure timestamp="2026-10-27T10:00:00Z" time="1.200" message="test failed" type="test failure">thread &apos;keys_reach_a_field&apos; panicked at crates/browser-engine/tests/frames.rs:46:39:
+the field read &quot;ab&quot;, not &quot;abc&quot;
+                <system-out>
+running 1 test
+test keys_reach_a_field ... FAILED
+
+failures:
+</system-out>
+                <system-err>thread &apos;keys_reach_a_field&apos; panicked at crates/browser-engine/tests/frames.rs:46:39:
+the field read &quot;ab&quot;, not &quot;abc&quot;
+</system-err>
+            </flakyFailure>
         </testcase>
         <testcase name="steady" classname="purlis-browser-engine::frames" time="1.000">
         </testcase>
@@ -259,7 +269,10 @@ test("a test that passed only on its retry is read as flaky, and not as failed",
   assert.equal(flaky[0].binary, "purlis-browser-engine::frames");
   assert.equal(flaky[0].name, "keys_reach_a_field");
   assert.equal(flaky[0].retries, 1);
-  assert.match(flaky[0].said.join("\n"), /panicked at crates\/browser-engine\/tests\/frames\.rs:46:39/);
+  assert.deepEqual(flaky[0].said, [
+    "thread 'keys_reach_a_field' panicked at crates/browser-engine/tests/frames.rs:46:39:",
+    'the field read "ab", not "abc"',
+  ]);
 });
 
 test("each flaky test is a warning on the run, so a retry never hides it", () => {
