@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// #3514 demo: a tools-only change. Never merged.
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
