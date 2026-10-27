@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793127842590,
+  "lastUpdate": 1793140208400,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -16046,6 +16046,42 @@ window.BENCHMARK_DATA = {
             "value": 685.8,
             "unit": "MB",
             "extra": "median of 6 samples: 655.3, 680.2, 683, 688.7, 689.5, 776 MB; window 421.1 MB, session host 265.5 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "dd0da8362ec851239af08be7b815d89302cd1326",
+          "message": "Runners: the Devices view (#2052) (#3487)\n\n* Runners: the Devices view (#2052)\n\nThis machine and every runner it keeps, each with its chats and browsers,\nits version, how it is and when it last answered; then each pool's use per\nperson. A suspended runner is never woken to be asked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Devices: the contact time fits the window's numbers, and the bindings carry the view\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Devices: a read that failed is a Notice with Refresh; prettier\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Devices: asks a runner on #3473's link that never wakes it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Devices: drawn in every theme; a time reads as the locale says it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Devices: a runner whose link says suspended is drawn suspended\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Devices: text from runners and Docker is shown safely, a runner is believed about its own pool alone, and each is asked once at a time\n\n- Runner-sent and Docker text is sanitised before the window draws it,\n  and drawn apart from purlis's own words; a runner's own words for a\n  refused list are not shown.\n- A runner's word on what it holds moves only chats and browsers of its\n  own pool; browsers follow their runner as chats do.\n- A Refresh or a view opened again joins the ask of a runner in flight.\n- The use table names the person only for pools shown to be theirs.\n- Browsers on a pool no longer kept are listed with its chats.\n- One walk of the open projects serves both commands; chats_on counts\n  over the same list.\n- Copy: what to do when a container is not read; the Running cell;\n  a neutral badge.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Devices: every state drawn in every theme, the first row keeps the pane actions' room, and the palette row is tested\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* ADR 0089: the Runners view is Devices, as spec #2041 says\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* A bounded run may be held to a time, and a Docker that only reads may be too\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Devices: no ask of a runner waits for ever\n\n- A joined ask waits at most a minute, and the first ask always leaves\n  its answer and its place, a panic included.\n- Each Docker run an ask makes is held to a time.\n- The window waits on an ask at most a while, then says the runner does\n  not answer; Refresh stays offered and asks again what is not in flight.\n- What purlis could not ask is said in its own words.\n- Text shown from elsewhere hides more of an address's user and password.\n- Of two runners of one pool that say they hold a chat, the one the\n  window placed it on keeps it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Pools: text from Docker and runners is shown safely on every pool surface\n\nThe Pools settings, a project's not-held mark, the drain and a pool's\nremoval show what Docker or a runner said through the one sanitiser.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Devices: the reading and asking states in every theme; the ADR amendment quotes the spec alone\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Changelog: text from Docker and runners is shown safely\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Bindings: a not-held mark's words, as the one sanitiser keeps them\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T20:07:23Z",
+          "tree_id": "b219a23b8ce0eeef335dbe7d5a8705eedbc44675",
+          "url": "https://github.com/purlis/purlis/commit/dd0da8362ec851239af08be7b815d89302cd1326"
+        },
+        "date": 1793140204289,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1685.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1595.8, 1685.2, 1922 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 701.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 658.8, 675.4, 695.3, 708.3, 709.3, 780.8 MB; window 411.9 MB, session host 289.9 MB"
           }
         ]
       }
