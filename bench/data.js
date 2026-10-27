@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793119712456,
+  "lastUpdate": 1793124196787,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27006,6 +27006,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7605655,
             "unit": "ms",
             "extra": "median of 5 runs: 101.301, 101.399, 101.761, 101.781, 103.005 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4511e69170e17f4553894c2259bd49c791679aa0",
+          "message": "ui: Personas, Vaults, extension panels and Chats on the sidebar view frame (#3341, #3342) (#3392)\n\n* ui: Personas, Vaults and extension panels on the sidebar view frame (#3341)\n\nEvery panel of the right side is a view now: one scroll, its heading line and\nits filter held in its top, its rows 30px.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* ui: the Chats view on the sidebar view frame; the persona leads each row (#3342)\n\nThe Chats view is a view of the panel family: its title line with New chat,\nthen the filter, the scope switch and the chips, held at the top on the\npanel's fill; each workspace's name held under it; 30px rows. Each chat's row\nleads with the persona's mark in its colour, the chat's state a dot on its\ncorner (none when done), said as 'steward, needs you'.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* e2e: the Chats list's fixture is the view's markup on main's frame (#3342)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* ui: a tree's rows in a view are 30px, over the tree row's own height (#3342)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* ui: the review round for Personas, Vaults and Chats on the frame (#3341, #3342)\n\nA chat's badge keeps its state's own mark, about 10px, for the states that\nask or are at work, and none at rest; it is ringed in the row's own ground.\nPersona rows carry their chats' state mark; vault rows are their name and\ncount under their provider, with no shared mark; personas and vaults are\nfiltered. The Chats title line gains More with the catalogue's rows. One\nscroll margin for a view's list and tree rows. Stories: one row per chat\nstate, an extension's panel.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* copy: the Chats More menu's name in sentence case (#3342)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* ui: round-2 nits for Personas, Vaults and Chats on the frame (#3341, #3342)\n\nThe engine holds needs-you's mark on a Purlis panel's fill at 3:1, as the\nbadge draws it. A More row that is off says why under its words; a unit test\nopens More and runs a row. A story pictures a persona's state mark, and the\nPanels stories draw each view as wide as its half. ChatPersonaState's\nsummary says the badge as it is drawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* test: the cockpit's Esc is pressed on the row drawn now, until it steps back (#3392)\n\nThe Esc test held the README row it found, focused it and pressed Esc on\nwhatever had the keyboard. A tree drawn again while the window's reads land\ndrops that row from the page, and its focus with it, so the key landed on the\npage and nothing stepped back: \"expected { workspace: 'alpha', … } to be\nnull\" (merge-queue runs for #3392 and #3438, also after #3506). And the check\nafter it, the Repos and branches tree, is drawn by the Repos half throughout,\nso it never said the cockpit had stepped back. Each try now reads the row\nagain, gives it the keyboard and presses Esc on it, until the core is told the\nfocus is gone. The product is unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-27T15:55:51Z",
+          "tree_id": "496d216ac25d73103fe8b2ec3b21da92aa6d5576",
+          "url": "https://github.com/purlis/purlis/commit/4511e69170e17f4553894c2259bd49c791679aa0"
+        },
+        "date": 1793124191080,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6694225,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.669, 0.669, 0.678, 0.683 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.552656,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.489, 16.494, 16.553, 16.573, 16.581 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.3166865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.727, 102.032, 102.317, 102.549, 102.643 ms"
           }
         ]
       }
