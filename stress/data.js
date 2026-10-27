@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793061202282,
+  "lastUpdate": 1793069255056,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -15580,6 +15580,42 @@ window.BENCHMARK_DATA = {
             "value": 672.3,
             "unit": "MB",
             "extra": "median of 6 samples: 643.4, 657.2, 664.7, 680, 680.7, 765.1 MB; window 410.5 MB, session host 262.6 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e433321b5c7658e85b298b764cb3ba0d934c710a",
+          "message": "Brokered runs: only this machine's chats, and a tool's own environment (#2047) (#3419)\n\n* Brokered runs: serve only chats of this machine (#2047)\n\nA brokered run on this machine serves only chats of this machine. A\nsecret exec heard over a pool's link already goes the pool's way; one\nheard over this machine's link for a chat the router records on a pool\nis now refused here too, as a second guard beside the hook relay's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\n\n* Brokered runs: a tool runs with an environment of its own (#2047)\n\nA declared tool starts from only the chat's language, terminal, time zone,\nssh agent, certificate bundles and plain connection values, with HOME and\nXDG_* in the run's own temp folder. An approved server's line keeps the\nenvironment its entry gives it. A test shows the tool's run keeps no core\ndump, which the run's own limit gives it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\n\n* Brokered runs: an approved server starts from its own environment too (#2047)\n\nAn approved credentialed server's line starts from the same short list\nof the chat's variables a declared tool does, plus the names its approved\nentry sets, with a home of its own. The core-dump test no longer passes\nwhere the hard limit is already 0.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\n\n* Brokered runs: a test of the second pool guard (#2047)\n\nA pretend session host can say a chat runs on a pool's runner, so a\ntest shows a secret exec for such a chat over this machine's link is\nrefused. The pool-link and core-dump tests now say what of #3405 they\ncover.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T00:16:21Z",
+          "tree_id": "285edb32c0abf20f7ed3b5ea70c2a10d302e3119",
+          "url": "https://github.com/purlis/purlis/commit/e433321b5c7658e85b298b764cb3ba0d934c710a"
+        },
+        "date": 1793069251208,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1599,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1530.9, 1599, 1882 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 693.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 656.8, 681.6, 691.1, 696.3, 697, 771.8 MB; window 423.2 MB, session host 270.4 MB"
           }
         ]
       }
