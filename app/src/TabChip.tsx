@@ -62,7 +62,7 @@ import { askOf, tokensOfLine, tokensSaid, type UsedAsk, type UsedReader } from "
 import { property } from "./theme/theme";
 import { fitCountsOn } from "./wholeWays";
 import { Tooltip } from "./ui/tooltip/Tooltip";
-import { IconButton } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
 import { tabPart } from "./ui/tabs/Tabs";
 
 /** Each count's mark: its shape as it is drawn (`StateShown` draws the same four for a row). */
@@ -505,85 +505,92 @@ function Chip({
       {/* **A chat of this tab is waiting for you and is not on screen** (V100-37): the hand,
           and a press goes to the one that has waited longest. The tab stays there after. */}
       {needs.length > 0 && (
-        <button
-          type="button"
+        // The quiet ghost (#3264), the hand in the needs-you colour (`.needs-you-mark svg`).
+        <IconButton
+          variant="quiet"
+          size="sm"
+          icon={<Hand aria-hidden="true" />}
           className="tab-tasks-hand needs-you-mark"
           data-mark="needs-you"
           tabIndex={-1}
           aria-label={`${needsSaid(needs.map((chat) => chat.name))}. Go to ${needs[0].name}`}
-          onClick={() => onShow(needs[0].session)}
-        >
-          <Hand aria-hidden="true" />
-        </button>
+          onPress={() => onShow(needs[0].session)}
+        />
       )}
       {tasksIn(counts) > 0 && (
         <>
-          <button
-            type="button"
-            id={id}
-            ref={trigger}
-            className="tab-tasks-counts"
-            // Not a Tab stop, as a tab's `×` is not: the strip is one stop. The keyboard opens
-            // this menu with its key, with Down on the tab, or from the palette. No `title`: a
-            // tooltip would come up over the menu the same rest opened.
-            tabIndex={-1}
-            aria-label={said}
-            aria-haspopup="menu"
-            aria-expanded={open}
-            // The click toggles it, not the pointer going down: not every way of pressing a
-            // button sends a pointer event (`ShowMore` has the measurement).
-            onPointerDown={(event) => {
-              event.preventDefault();
-              notResting();
-              pressedFrom.current = document.activeElement;
-            }}
-            // A press that did not end in a click (a right press, one let go elsewhere) is
-            // over: where the keyboard was then says nothing of the next press.
-            onPointerUp={() => {
-              window.setTimeout(() => (pressedFrom.current = undefined));
-            }}
-            onPointerCancel={() => {
-              pressedFrom.current = undefined;
-            }}
-            onClick={() => {
-              const from = pressedFrom.current ?? document.activeElement;
-              pressedFrom.current = undefined;
-              notResting();
-              notLeaving();
-              if (dragging()) return;
-              if (open && by.current === "rest") {
-                // A press on a menu the rest opened keeps it, and gives it the keyboard.
-                by.current = "press";
-                setHow("press");
-                content.current?.focus({ preventScroll: true });
-              } else if (open) hide();
-              else show("press", from === trigger.current ? null : from);
-            }}
-            // Coming on arms nothing (see `TabTasks`): it is only where the pointer is.
-            onPointerEnter={(event) => {
-              notLeaving();
-              seenAt.current = { x: event.clientX, y: event.clientY };
-            }}
-            onPointerMove={moved}
-            onPointerLeave={leaveSoon}
-          >
-            {TASK_BUCKETS.filter((bucket) => counts[bucket] > 0).map((bucket) => {
-              const Mark = MARKS[bucket];
-              return (
-                <span
-                  key={bucket}
-                  className="count"
-                  data-count={bucket}
-                  aria-hidden="true"
-                  // A count on a tab, which a theme's `tabs.count.*` reaches (`ui/tabs`).
-                  {...tabPart("count")}
-                >
-                  <Mark style={{ color: `var(${property(TASK_BUCKET_DRAWN[bucket].token)})` }} />
-                  {counts[bucket]}
-                </span>
-              );
-            })}
-          </button>
+          {/* **The chip's pill** (#3264): the sunken ground the counts stand on, and the open
+              menu's, drawn here; the counts themselves are the button family's quiet ghost. */}
+          <span className="tab-tasks-pill">
+            <Button
+              variant="quiet"
+              size="sm"
+              id={id}
+              ref={trigger}
+              className="tab-tasks-counts"
+              // Not a Tab stop, as a tab's `×` is not: the strip is one stop. The keyboard opens
+              // this menu with its key, with Down on the tab, or from the palette. No `title`: a
+              // tooltip would come up over the menu the same rest opened.
+              tabIndex={-1}
+              aria-label={said}
+              aria-haspopup="menu"
+              aria-expanded={open}
+              // The click toggles it, not the pointer going down: not every way of pressing a
+              // button sends a pointer event (`ShowMore` has the measurement).
+              onPointerDown={(event) => {
+                event.preventDefault();
+                notResting();
+                pressedFrom.current = document.activeElement;
+              }}
+              // A press that did not end in a click (a right press, one let go elsewhere) is
+              // over: where the keyboard was then says nothing of the next press.
+              onPointerUp={() => {
+                window.setTimeout(() => (pressedFrom.current = undefined));
+              }}
+              onPointerCancel={() => {
+                pressedFrom.current = undefined;
+              }}
+              // A press by any pointer, or a screen reader's, which sends none.
+              onPress={() => {
+                const from = pressedFrom.current ?? document.activeElement;
+                pressedFrom.current = undefined;
+                notResting();
+                notLeaving();
+                if (dragging()) return;
+                if (open && by.current === "rest") {
+                  // A press on a menu the rest opened keeps it, and gives it the keyboard.
+                  by.current = "press";
+                  setHow("press");
+                  content.current?.focus({ preventScroll: true });
+                } else if (open) hide();
+                else show("press", from === trigger.current ? null : from);
+              }}
+              // Coming on arms nothing (see `TabTasks`): it is only where the pointer is.
+              onPointerEnter={(event) => {
+                notLeaving();
+                seenAt.current = { x: event.clientX, y: event.clientY };
+              }}
+              onPointerMove={moved}
+              onPointerLeave={leaveSoon}
+            >
+              {TASK_BUCKETS.filter((bucket) => counts[bucket] > 0).map((bucket) => {
+                const Mark = MARKS[bucket];
+                return (
+                  <span
+                    key={bucket}
+                    className="count"
+                    data-count={bucket}
+                    aria-hidden="true"
+                    // A count on a tab, which a theme's `tabs.count.*` reaches (`ui/tabs`).
+                    {...tabPart("count")}
+                  >
+                    <Mark style={{ color: `var(${property(TASK_BUCKET_DRAWN[bucket].token)})` }} />
+                    {counts[bucket]}
+                  </span>
+                );
+              })}
+            </Button>
+          </span>
           <AnchoredMenu
             triggerRef={trigger}
             isOpen={open}

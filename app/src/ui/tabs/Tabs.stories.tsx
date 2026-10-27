@@ -87,14 +87,16 @@ function DockedStrip({
               {marks && at === 0 && (
                 // A tab's task chip, as `SkillRunChip` draws it.
                 <span className="tab-tasks">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="tab-tasks-counts"
-                    tooltip="Using the skill review: 3 tool calls so far. Open its runs."
-                  >
-                    <span className="count">3</span>
-                  </Button>
+                  <span className="tab-tasks-pill">
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      className="tab-tasks-counts"
+                      tooltip="Using the skill review: 3 tool calls so far. Open its runs."
+                    >
+                      <span className="count">3</span>
+                    </Button>
+                  </span>
                 </span>
               )}
               <StripTab

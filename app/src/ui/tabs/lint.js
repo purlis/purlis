@@ -102,10 +102,7 @@ export const off = {
 export const rawButtons = {
   roles: ["tab"],
   classes: [
-    // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
+    // A tab's closer.
     "closer",
-    "crumb",
-    "tab-tasks-hand",
-    "tab-tasks-counts",
   ],
 };

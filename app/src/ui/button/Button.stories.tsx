@@ -103,6 +103,71 @@ export const Quiet: Story = {
   play: pressedByTheKeyboard,
 };
 /**
+ * **The quiet ghost inline** (#3264): a breadcrumb's crumbs, words in a line of words. In a line
+ * too narrow for them they cut to an ellipsis and keep the line's height; Tab reaches each, with
+ * its ring in sight, and Enter presses it.
+ */
+function InlineCrumbs() {
+  const [shown, show] = useState("deep");
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <nav
+        aria-label="Chat path"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          inlineSize: "9rem",
+          overflow: "hidden",
+          fontSize: "var(--font-size-xs)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {["steward 4 of the long name", "talk"].map((name) => (
+          <span key={name} style={{ display: "contents" }}>
+            <Button
+              variant="quiet"
+              size="sm"
+              inline
+              style={{ flex: "0 1 auto", minInlineSize: "1.5em" }}
+              onPress={() => show(name)}
+            >
+              {name}
+            </Button>
+            <span aria-hidden="true" style={{ whiteSpace: "pre" }}>
+              {" › "}
+            </span>
+          </span>
+        ))}
+        <span aria-current="page">deep</span>
+      </nav>
+      <p role="status" style={{ margin: 0 }}>
+        {`Showing ${shown}`}
+      </p>
+    </div>
+  );
+}
+
+export const QuietInline: Story = {
+  render: () => <InlineCrumbs />,
+  play: async ({ canvas, userEvent }) => {
+    const own = canvas.getByRole("button", { name: "steward 4 of the long name" });
+    const talk = canvas.getByRole("button", { name: "talk" });
+    // Cut, as a native button's words are: the box is narrower than what it says.
+    await expect(own.scrollWidth).toBeGreaterThan(own.clientWidth);
+    await expect(getComputedStyle(own).textOverflow).toBe("ellipsis");
+    // As tall as the line's words.
+    const word = canvas.getByText("deep").getBoundingClientRect().height;
+    await expect(Math.abs(own.getBoundingClientRect().height - word)).toBeLessThanOrEqual(1);
+    await userEvent.tab();
+    await expect(own).toHaveFocus();
+    expectFocusInSight();
+    await userEvent.tab();
+    await expect(talk).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Showing talk"));
+  },
+};
+/**
  * **The quiet ghost as the window draws it** (#3214): small icon marks in a pane's corner, split
  * and close, where the close that ends a chat takes the danger colour under the pointer
  * (`paneFrame.css`), and the split keeps the quiet hover.

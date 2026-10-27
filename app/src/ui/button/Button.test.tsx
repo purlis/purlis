@@ -301,6 +301,26 @@ describe("the family's look, from the tokens (button.css)", () => {
     heldToTheTokens(quiet);
   });
 
+  // #3264: a breadcrumb's crumb, words in a line of words.
+  it("draws an inline quiet button as the line's words, cut to an ellipsis, underlined under the pointer", () => {
+    render(
+      <Button variant="quiet" size="sm" inline>
+        steward 4
+      </Button>,
+    );
+    const crumb = screen.getByRole("button", { name: "steward 4" });
+    expect(crumb).toHaveAttribute("data-inline", "");
+    expect(drawnWith(crumb, "block-size")).toBe("auto");
+    expect(drawnWith(crumb, "padding")).toBe("0");
+    expect(drawnWith(crumb, "border-width")).toBe("0");
+    expect(drawnWith(crumb, "font-size")).toBe("inherit");
+    expect(drawnWith(crumb, "text-overflow")).toBe("ellipsis");
+    expect(drawnWith(crumb, "color")).toBe("var(--text-quiet)");
+    expect(drawnWith(crumb, "background", { hover: true })).toBe("transparent");
+    expect(drawnWith(crumb, "color", { hover: true })).toBe("var(--text-primary)");
+    expect(drawnWith(crumb, "text-decoration", { hover: true })).toBe("underline");
+  });
+
   it("draws a grant as plain as the secondary, edged in the accent (ADR 0097 §6)", () => {
     render(<Button variant="grants">Allow</Button>);
     const grant = screen.getByRole("button", { name: "Allow" });

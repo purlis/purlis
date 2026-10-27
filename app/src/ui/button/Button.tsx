@@ -19,7 +19,10 @@
  *   primary look.
  * - **Sizes**: `sm`, `md` (the default) and `lg`, which is only for the control beside a list's
  *   main filter field. A row of buttons takes one size (`ButtonRow`), so a mixed row cannot be
- *   built.
+ *   built. **`inline`** draws a button as words in a line of words, a breadcrumb's crumb (#3264):
+ *   as tall as the line, with no box padding, its words cut to an ellipsis where the line
+ *   squeezes it and underlined under the pointer and the keyboard, as a link's are. Words only:
+ *   an inline button is a box of words, and draws no icon beside them.
  * - **Behaviour is React Aria's**: press by pointer, Enter and Space, focus on press in WebKit,
  *   a visible focus ring only from the keyboard. Every button is in the tab sequence, which
  *   WebKit leaves a button out of without `tabIndex` (#190).
@@ -80,6 +83,12 @@ interface Drawn extends Native {
   variant?: ButtonVariant;
   /** Ignored inside a `ButtonRow`, whose size every button in it takes. */
   size?: ButtonSize;
+  /**
+   * **Words in a line of words** (#3264): as tall as the line, no box padding, cut to an
+   * ellipsis where the line squeezes it (a breadcrumb's crumb). A target inline in text is
+   * exempt from the target size (WCAG 2.5.8).
+   */
+  inline?: boolean;
   /** A place for the button in its view: margin, width, flex, order. Never a look. */
   className?: string;
   style?: CSSProperties;
@@ -224,6 +233,7 @@ function useDrawn(
   const {
     variant = "secondary",
     size: ownSize = "md",
+    inline = false,
     icon,
     children,
     className,
@@ -260,6 +270,7 @@ function useDrawn(
     "data-variant": variant,
     "data-size": size,
     "data-icon-only": iconOnly ? "" : undefined,
+    "data-inline": inline ? "" : undefined,
     // #190, #1700, #2908: `ui/pressable.tsx`.
     render: renderPressed(native, tip, own),
     children: content,
