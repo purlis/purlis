@@ -295,8 +295,9 @@ pub trait SessionHost: Send + Sync {
 
     /// **Moves `chat`'s work and conversation back from the runner of `pool`** (#2048), at its
     /// pause: each clone's work tree here taken over onto the runner's, and its conversation kept
-    /// in its profile's harness folder here.
-    fn move_out(&self, pool: &str, chat: &Moving) -> Result<(), String> {
+    /// in its profile's harness folder here. Answers what came back that the person is to look
+    /// at before a tool here runs it, by its path in the project.
+    fn move_out(&self, pool: &str, chat: &Moving) -> Result<Vec<String>, String> {
         let _ = (pool, chat);
         Err(MOVES_NO_CHAT.to_owned())
     }
@@ -954,9 +955,9 @@ pub(crate) mod pretend {
             lock(&self.seen.moved).push(("in", pool.to_owned(), chat.workspace.clone()));
             Ok(())
         }
-        fn move_out(&self, pool: &str, chat: &super::Moving) -> Result<(), String> {
+        fn move_out(&self, pool: &str, chat: &super::Moving) -> Result<Vec<String>, String> {
             lock(&self.seen.moved).push(("out", pool.to_owned(), chat.workspace.clone()));
-            Ok(())
+            Ok(Vec::new())
         }
         fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
             let now = self.seen.fetching.fetch_add(1, Ordering::SeqCst) + 1;

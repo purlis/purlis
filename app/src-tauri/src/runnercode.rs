@@ -243,13 +243,16 @@ pub(crate) fn move_workspace_to(
 /// chat moves here: the runner's branches into `refs/remotes/<pool>/*`, and this clone's work
 /// tree taken over onto the runner's, its branch, commits and uncommitted work, where it is
 /// still what both ends last agreed. The first clone that is not stops the move, in its words.
+/// Answers what came back that the person is to look at, by its path in the project
+/// ([`codelink::take_work_back`]).
 pub(crate) fn move_workspace_back(
     link: &HostLink,
     project: &str,
     root: &Path,
     workspace: &str,
     pool: &str,
-) -> Result<(), String> {
+) -> Result<Vec<String>, String> {
+    let mut watch = Vec::new();
     for rel in clones_of(root, workspace) {
         let repo = root.join(&rel);
         let leave_out = leave_out_of(root, &rel)?;
@@ -272,14 +275,17 @@ pub(crate) fn move_workspace_back(
                 )
                 .map_err(|why| why.to_string())
             });
-        if let Err(why) = moved {
-            return Err(format!(
-                "the work in {} did not come back from the runner: {why}",
-                shown(&rel)
-            ));
+        match moved {
+            Ok(came) => watch.extend(came.into_iter().map(|path| format!("{rel}/{path}"))),
+            Err(why) => {
+                return Err(format!(
+                    "the work in {} did not come back from the runner: {why}",
+                    shown(&rel)
+                ));
+            }
         }
     }
-    Ok(())
+    Ok(watch)
 }
 
 /// The repositories of `workspace` in the project at `root`, by their folders in it.

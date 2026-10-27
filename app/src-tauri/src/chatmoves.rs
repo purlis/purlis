@@ -230,6 +230,39 @@ impl Moves {
     }
 }
 
+/// **Whether a chat's work may come back from pool `pool`'s runner onto this machine's clones**
+/// (the person's ruling of 2026-10-27): only from a runner shown to be the person's own, by the
+/// one check browser logins and tools use (`read`, `poollogins::Bound::read`): until a pool can
+/// be marked as yours (#2561), a Docker pool on this machine's own engine. Refused otherwise, in
+/// a sentence that says why.
+pub(crate) fn brings_work_back(
+    pool: &str,
+    read: impl FnOnce() -> Result<purlis_core::poollogins::Bound, String>,
+) -> Result<(), String> {
+    read().map(|_| ()).map_err(|_| {
+        format!(
+            "This chat's work does not come back from pool {pool}: its runner is not known to be \
+             yours, and a runner's work comes onto this machine's clones only from a Docker pool \
+             on this machine's own engine, until a pool can be marked as yours."
+        )
+    })
+}
+
+/// **What a chat's tab says of what came back with it** (the person's ruling of 2026-10-27):
+/// every file a tool here runs or reads as its settings, every one a save would refuse, and
+/// every link, by its path in the project. None where nothing such came.
+pub(crate) fn came_back_said(from: Option<&str>, came: &[String]) -> Option<String> {
+    if came.is_empty() {
+        return None;
+    }
+    let from = from.map_or_else(|| "a runner".to_owned(), |pool| format!("pool {pool}"));
+    Some(format!(
+        "Its work came back from {from} with files a tool on this machine runs or reads, or \
+         links that may lead out of the project. Look at them before you run anything here: {}.",
+        came.join(", ")
+    ))
+}
+
 /// What a chat is, for its move: what its workspace, profile and conversation are, and where it
 /// runs now.
 struct Mover {
@@ -244,6 +277,8 @@ pub(crate) struct MoveNow {
     pub(crate) chat: Option<crate::OpenChat>,
     /// Why it did not move yet, in a sentence: it moves at a later pause.
     pub(crate) not_yet: Option<String>,
+    /// What its tab says after the move: what came back that the person is to look at.
+    pub(crate) notices: Vec<String>,
 }
 
 impl crate::planes::Held {
@@ -338,6 +373,12 @@ impl crate::planes::Held {
             .find()
             .map_err(|why| format!("This chat was not moved: {why}."))?;
         }
+        if let (Some(pool), None) = (&mover.from, &to) {
+            let config = self.chats().pools_in().ok_or_else(|| {
+                "This machine keeps no pool, so the chat was not moved.".to_owned()
+            })?;
+            brings_work_back(pool, || purlis_core::poollogins::Bound::read(&config, pool))?;
+        }
         let prepare: Box<dyn FnOnce() -> Result<(), String> + Send> = match &to {
             Some(pool) => {
                 // Weak: a project let go of meanwhile is prepared for no more.
@@ -401,17 +442,27 @@ impl crate::planes::Held {
             .pools_in()
             .ok_or_else(|| "This machine keeps no pool, so the chat was not moved.".to_owned())?;
         let sessions = self.chats().sessions();
-        match (&one.from, &one.to) {
-            (None, Some(pool)) => sessions.move_in(pool, &mover.chat)?,
-            (Some(pool), None) => sessions.move_out(pool, &mover.chat)?,
+        let came = match (&one.from, &one.to) {
+            (None, Some(pool)) => {
+                sessions.move_in(pool, &mover.chat)?;
+                Vec::new()
+            }
+            (Some(pool), None) => {
+                // Asked again at the switch: a pool may have changed since the move was asked.
+                brings_work_back(pool, || purlis_core::poollogins::Bound::read(&config, pool))?;
+                sessions.move_out(pool, &mover.chat)?
+            }
             _ => return Err("A chat moves between this machine and a pool's runner.".to_owned()),
-        }
+        };
         let runs_on = |place: &Place| {
             crate::dockerpools::run_chats_on(&config, self.root(), &mover.chat.workspace, place)
         };
         runs_on(&one.to)?;
         match self.chats().start_again_where_it_runs(session, size) {
             Ok(started) => {
+                if let Some(said) = came_back_said(one.from.as_deref(), &came) {
+                    self.chats().note_on_its_tab(started, said);
+                }
                 self.in_its_place_after_a_move(session, started);
                 Ok(started)
             }

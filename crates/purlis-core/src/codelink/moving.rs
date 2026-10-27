@@ -194,7 +194,7 @@ pub fn take_over(
     to_branch: &str,
     to_head: &str,
     to_snapshot: &str,
-) -> Result<(), Refused> {
+) -> Result<Vec<String>, Refused> {
     let to = format!("{HEADS}{to_branch}");
     carried(&to)?;
     if !an_oid(to_head) || !an_oid(to_snapshot) {
@@ -251,7 +251,83 @@ pub fn take_over(
             return Err(git_failed("move the branch with its work", &ran));
         }
     }
-    agree(repo, to_branch, to_snapshot, was.as_deref())
+    agree(repo, to_branch, to_snapshot, was.as_deref())?;
+    Ok(to_watch(repo, &from, &to_tree))
+}
+
+/// **Files a tool on this machine runs or reads as its settings**, by their place in a clone:
+/// what a person looks at before running anything where a chat's work came back from another
+/// machine (the person's ruling of 2026-10-27). Direnv's `.envrc`, the harnesses' own folders and
+/// settings (`.claude/`, `.codex/`, `.cursor/`, `.mcp.json`, `opencode.json`), editors' workspace
+/// settings (`.vscode/`, `.idea/`), git hook managers (`.husky/`, `lefthook.yml`,
+/// `.pre-commit-config.yaml`), dev containers, and the files a build runs: `package.json` (its
+/// scripts), `Makefile`, `justfile`, `Taskfile.yml`, `build.rs`.
+pub fn runs_here(path: &str) -> bool {
+    const FOLDERS: [&str; 8] = [
+        ".claude/",
+        ".codex/",
+        ".cursor/",
+        ".vscode/",
+        ".idea/",
+        ".husky/",
+        ".devcontainer/",
+        ".githooks/",
+    ];
+    const NAMES: [&str; 14] = [
+        ".envrc",
+        ".mcp.json",
+        "opencode.json",
+        "package.json",
+        "makefile",
+        "gnumakefile",
+        "justfile",
+        "taskfile.yml",
+        "taskfile.yaml",
+        "lefthook.yml",
+        ".pre-commit-config.yaml",
+        "build.rs",
+        ".npmrc",
+        ".tool-versions",
+    ];
+    let lower = path.to_ascii_lowercase();
+    let name = lower.rsplit('/').next().unwrap_or(&lower);
+    FOLDERS
+        .iter()
+        .any(|folder| lower.starts_with(folder) || lower.contains(&format!("/{folder}")))
+        || NAMES.contains(&name)
+}
+
+/// **What came onto `repo`'s work tree, moving it from tree `from` to tree `to`, that the person
+/// is to look at** (the person's ruling of 2026-10-27): every changed or new file a local tool
+/// runs ([`runs_here`]), every one a save to the forge refuses
+/// ([`crate::reposave::refused_as`]), and every link, which may lead out of the clone. By path.
+fn to_watch(repo: &Path, from: &str, to: &str) -> Vec<String> {
+    let Ok(changed) = run(
+        repo,
+        &["diff-tree", "-r", "-z", "--no-renames", "--diff-filter=AMT", "--raw", from, to],
+    ) else {
+        return Vec::new();
+    };
+    let mut watch = Vec::new();
+    let mut fields = changed.out.split('\0');
+    while let (Some(meta), Some(path)) = (fields.next(), fields.next()) {
+        if path.is_empty() {
+            continue;
+        }
+        // `:<old mode> <new mode> <old oid> <new oid> <status>`
+        let parts: Vec<&str> = meta.trim_start_matches(':').split(' ').collect();
+        let (mode, oid) = (parts.get(1).copied(), parts.get(3).copied());
+        let link = mode == Some("120000");
+        let refused = oid.is_some_and(|oid| {
+            run(repo, &["cat-file", "blob", oid])
+                .ok()
+                .is_some_and(|blob| crate::reposave::refused_as(path, &blob.out).is_some())
+        });
+        if link || refused || runs_here(path) {
+            watch.push(path.to_owned());
+        }
+    }
+    watch
 }
 
 /// Keeps `snapshot` as what both ends agreed of `branch`, and forgets what was agreed of `was`,
@@ -448,7 +524,7 @@ pub fn take_work_back(
     pool: &str,
     bundle: Option<&Path>,
     heads: &[Ref],
-) -> Result<(), Refused> {
+) -> Result<Vec<String>, Refused> {
     let snapshots: Vec<&Ref> = heads
         .iter()
         .filter(|one| one.name.starts_with(SNAPSHOTS))

@@ -95,8 +95,9 @@ impl World {
         Ok(held)
     }
 
-    /// The runner gives its work back and the desktop takes it, as Move here does.
-    fn move_here(&self) -> Result<(), Refused> {
+    /// The runner gives its work back and the desktop takes it, as Move here does: what came
+    /// that the person is to look at.
+    fn move_here(&self) -> Result<Vec<String>, Refused> {
         let into = self.scratch("back").join("work.bundle");
         let (heads, bundled) = give_work(&self.runner, &self.scratch("give"), &[], &into)?;
         let bundle = (bundled == Bundled::Wrote).then_some(into.as_path());
@@ -269,4 +270,78 @@ fn a_move_carries_one_branch_and_its_work_and_nothing_else() {
         "refs/heads/fix",
     );
     assert!(matches!(moved, Err(Refused::NotAllowed(_))), "{moved:?}");
+}
+
+#[test]
+fn work_coming_back_names_what_a_local_tool_runs_and_every_link() {
+    let world = World::new();
+    world.move_to_runner().unwrap();
+    std::fs::create_dir_all(world.runner.join(".claude")).unwrap();
+    std::fs::write(world.runner.join(".claude/settings.json"), "{}\n").unwrap();
+    std::fs::write(world.runner.join(".envrc"), "export A=1\n").unwrap();
+    std::fs::write(world.runner.join("package.json"), "{\"scripts\":{}}\n").unwrap();
+    std::fs::write(world.runner.join("src.rs"), "fn main() {}\n").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("/etc", world.runner.join("outside")).unwrap();
+
+    let mut watch = world.move_here().unwrap();
+    watch.sort();
+    let mut wanted = vec![".claude/settings.json", ".envrc", "package.json"];
+    if cfg!(unix) {
+        wanted.push("outside");
+    }
+    wanted.sort_unstable();
+    assert_eq!(watch, wanted, "named, and src.rs not");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_in_the_runners_work_never_writes_outside_the_clone() {
+    let world = World::new();
+    let outside = world.top.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    world.move_to_runner().unwrap();
+    // First the runner's work brings links: one to /etc, one to a folder outside the clone.
+    std::os::unix::fs::symlink("/etc", world.runner.join("x")).unwrap();
+    std::os::unix::fs::symlink(&outside, world.runner.join("y")).unwrap();
+    world.move_here().unwrap();
+    world.move_to_runner().unwrap();
+    // Then the links become folders, with files named as if through them.
+    for link in ["x", "y"] {
+        std::fs::remove_file(world.runner.join(link)).unwrap();
+        std::fs::create_dir_all(world.runner.join(link)).unwrap();
+    }
+    std::fs::write(world.runner.join("x/passwd"), "planted\n").unwrap();
+    std::fs::write(world.runner.join("y/planted"), "planted\n").unwrap();
+
+    let _ = world.move_here();
+    assert_eq!(
+        std::fs::read_dir(&outside).unwrap().count(),
+        0,
+        "nothing was written through the link"
+    );
+    assert!(
+        std::fs::read_to_string("/etc/passwd").map_or(true, |text| !text.contains("planted")),
+        "nothing reached /etc"
+    );
+}
+
+#[test]
+fn runs_here_names_what_a_local_tool_runs_or_reads_as_its_settings() {
+    for path in [
+        ".envrc",
+        ".mcp.json",
+        ".claude/settings.json",
+        "web/.vscode/tasks.json",
+        "package.json",
+        "web/package.json",
+        "Makefile",
+        ".husky/pre-commit",
+        "build.rs",
+    ] {
+        assert!(runs_here(path), "{path}");
+    }
+    for path in ["src/main.rs", "README.md", "docs/claude.md", "packages.txt"] {
+        assert!(!runs_here(path), "{path}");
+    }
 }

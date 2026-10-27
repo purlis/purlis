@@ -2282,10 +2282,12 @@ async fn move_chat_now(
             Some(started) => Ok(chatmoves::MoveNow {
                 chat: Some(drawn(&held, started)?),
                 not_yet: None,
+                notices: held.chats().start_notes(started),
             }),
             None => Ok(chatmoves::MoveNow {
                 chat: None,
                 not_yet: Some(chatmoves::NOT_AT_A_PAUSE.to_owned()),
+                notices: Vec::new(),
             }),
         }
     })

@@ -5,9 +5,10 @@ and starts one on the target device on the same conversation: the branch and unc
 travel as a snapshot ref over the link (ADR 0078's code path), the conversation as each harness
 declaration's export and resume (spec #2030), the profile's settings with it. Preparation happens
 in the background; the switch happens at the next pause between turns. A sandbox opt-out is asked
-again on the target. Browsers never move."*). What follows was **decided in implementation, to be
-confirmed** (D-2048-1 to D-2048-9 in the pull request). §7's code path stands, with these
-additions.
+again on the target. Browsers never move."*). Item 8 was **ruled by the person on 2026-10-27**;
+items 1 and 4's ref name were accepted by the dispatcher the same day; the rest was **decided in
+implementation, to be confirmed** (D-2048-1 to D-2048-11 in the pull request). §7's code path
+stands, with these additions.
 
 1. **A move is the workspace's.** A workspace's chats share its clones, so a chat moves with its
    workspace: the switch sets where the workspace's chats run (`chatsRunOn`, the setting the person
@@ -42,3 +43,17 @@ additions.
    runner (#2060 asks again there), and a chat moved here starts in the sandbox.
 7. **Browsers do not move.** A chat's browsers end with the run it leaves (a pinned one runs on
    where it is, as at any close), and its default browser starts fresh where it moved.
+8. **A runner chat's work comes onto this machine's clones only on three guards** (ruled by the
+   person on 2026-10-27). This amends §7's "the desktop takes only `refs/remotes/<pool>/*`" for
+   Move here alone; every other fetch still takes branches only.
+   - **Only from a runner shown to be the person's own**, by the one check browser logins and
+     tools use (ADR 0089, amended 2026-10-26, item 3): until a pool can be marked as yours
+     (#2561), a Docker pool on this machine's own engine. Any other pool's Move here is refused,
+     in a sentence saying why, as it is asked and again at the switch.
+   - **Nothing is written outside the clone**: git's own work-tree update writes no path through
+     a link, and a test holds it to that for a link to `/etc` and one to a folder outside the
+     clone.
+   - **The chat's tab names what came back that a tool here runs or reads as its settings**
+     (`.envrc`, `.mcp.json`, `.claude/`, `.vscode/`, `package.json`, `Makefile` and the like),
+     every file a save to the forge refuses (§7's rule), and every link, so the person looks at
+     them before running anything.

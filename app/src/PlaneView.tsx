@@ -5709,8 +5709,14 @@ export const PlaneView = memo(function PlaneView({
             if (done.status === "error")
               heardMove(plane, { session, to, stage: "failed", why: done.error });
             else if (done.data.chat !== null) {
+              const chat = done.data.chat;
               forgetMove(plane, session);
-              chatRestarted(session, done.data.chat);
+              chatRestarted(session, chat);
+              // What came back that a tool here runs, said on its tab (the person's ruling of
+              // 2026-10-27). `?? []`, as a start's notices are read.
+              const notes = done.data.notices ?? [];
+              if (notes.length > 0)
+                setStartNotes((was) => ({ ...was, [chat.session]: { notes, agentsMd: [] } }));
             }
           })
           .catch((err: unknown) =>

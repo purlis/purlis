@@ -577,7 +577,7 @@ impl SessionHost for RoutedSessions {
         self.pool(pool)?.move_in(pool, chat)
     }
 
-    fn move_out(&self, pool: &str, chat: &crate::host::Moving) -> Result<(), String> {
+    fn move_out(&self, pool: &str, chat: &crate::host::Moving) -> Result<Vec<String>, String> {
         self.pool(pool)?.move_out(pool, chat)
     }
 

@@ -119,3 +119,41 @@ fn a_move_put_away_while_it_was_prepared_is_not_brought_back_by_its_preparation(
     assert!(told.recv_timeout(Duration::from_millis(300)).is_err());
     assert_eq!(moves.due(7, true), Due::NotMoving);
 }
+
+fn bound() -> purlis_core::poollogins::Bound {
+    purlis_core::poollogins::Bound {
+        pool: "builds".into(),
+        definition: "d".into(),
+        image: "i".into(),
+        runner: "r".into(),
+        runner_key: "k".into(),
+        runner_image: "ri".into(),
+        engine: "this machine's Docker".into(),
+    }
+}
+
+#[test]
+fn work_comes_back_only_from_a_runner_shown_to_be_the_persons_own_and_says_why_not() {
+    assert_eq!(brings_work_back("builds", || Ok(bound())), Ok(()));
+    let refused = brings_work_back("far", || {
+        Err("Docker's engine here is tcp://10.0.0.4:2375, not a socket on this machine".into())
+    })
+    .expect_err("a pool not shown to be yours brings no work back");
+    assert!(refused.contains("pool far"), "{refused}");
+    assert!(refused.contains("not known to be yours"), "{refused}");
+}
+
+#[test]
+fn a_tab_names_what_came_back_that_a_local_tool_runs_and_nothing_when_none_did() {
+    assert_eq!(came_back_said(Some("builds"), &[]), None);
+    let said = came_back_said(
+        Some("builds"),
+        &["workspaces/app/web/.envrc".into(), "workspaces/app/web/package.json".into()],
+    )
+    .unwrap();
+    assert!(said.contains("pool builds"), "{said}");
+    assert!(
+        said.contains("workspaces/app/web/.envrc, workspaces/app/web/package.json"),
+        "{said}"
+    );
+}

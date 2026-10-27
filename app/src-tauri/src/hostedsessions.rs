@@ -2976,7 +2976,7 @@ impl SessionHost for HostedSessions {
             .map_err(|why| format!("its conversation did not move to the runner: {why}"))
     }
 
-    fn move_out(&self, pool: &str, chat: &crate::host::Moving) -> Result<(), String> {
+    fn move_out(&self, pool: &str, chat: &crate::host::Moving) -> Result<Vec<String>, String> {
         let (link, project) = self.moving_link()?;
         let scratch = tempfile::Builder::new()
             .prefix("purlis-conversation-")
@@ -2990,10 +2990,17 @@ impl SessionHost for HostedSessions {
         let shape = link
             .fetch_conversation(&project, &carried(chat, ""), &came)
             .map_err(|why| format!("its conversation did not come back: {why}"))?;
-        crate::runnercode::move_workspace_back(&link, &project, &self.root, &chat.workspace, pool)?;
+        let watch = crate::runnercode::move_workspace_back(
+            &link,
+            &project,
+            &self.root,
+            &chat.workspace,
+            pool,
+        )?;
         of_a_chat(&self.root, chat)
             .keep(&shape, &came)
-            .map_err(|why| format!("its conversation could not be kept here: {why}"))
+            .map_err(|why| format!("its conversation could not be kept here: {why}"))?;
+        Ok(watch)
     }
 
     /// Saved in the session host, where this project's chats run: the window starts no worker
