@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793126307860,
+  "lastUpdate": 1793128525282,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27090,6 +27090,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7033685,
             "unit": "ms",
             "extra": "median of 5 runs: 101.245, 101.583, 101.703, 102.415, 103.304 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d67a3f8f534db8810c2e5f9e8743658319ded790",
+          "message": "Browsers: an agent's read of a large page finishes in its call's limit, or says why (#3529)\n\n* Browsers: an agent's read of a large page finishes in its call's limit, or says why (#3277)\n\nA snapshot, find or wait waits for its page's tree at most page_reads_within (60 s), under the\nwindow's 85 s for an act. The read runs on past the call on a thread of its own, each frame\nwithin tree_reads_within, and the next call that reads the page waits on it. A call it outlives\nis answered PageReadTooLong in words, never Unknown, since a read acts on nothing.\n\nThe hand-back, and a press, read the pages the person typed into within key_reads_within in all.\nWhere a page's read does not come, the groups of boxes on it are found in the read the person's\nlast key into it was blanked from, and the log says so.\n\nThe read slot of #3043 moves to drive/browser/reading.rs, shared by both.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: review round for #3277, read threads are bounded\n\n- The hand-back, and a press, read the fields first, then the pages, every call by the 20 s\n  limit, the frames' owners included.\n- A call that acts forgets the kept read once it holds the acting lock.\n- Each read slot asks the engine for one whole-tree read at a time, holding at most\n  most_tree_read_bytes of its answers.\n- A wait uses only a read begun after it; a read under way is used within page_reads_within and\n  page_read_kept_for of its start.\n- A read that ended past its own limit says so (PageReadPastItsLimit).\n- Take-over, hand-back and login keep no read of the agent's.\n- The real-Chrome test reaches the in-words answer and bounds the hand-back by its reads' limit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T17:10:23Z",
+          "tree_id": "7b67f5f860bde259058aeda7ebf6d2cc82c919ac",
+          "url": "https://github.com/purlis/purlis/commit/d67a3f8f534db8810c2e5f9e8743658319ded790"
+        },
+        "date": 1793128521755,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.457631,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.446, 0.452, 0.458, 0.463, 0.465 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.183448,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.129, 16.171, 16.183, 16.193, 16.255 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7742155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.511, 101.025, 101.774, 102.322, 102.754 ms"
           }
         ]
       }
