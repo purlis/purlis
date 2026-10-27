@@ -550,6 +550,22 @@ describe("the picker a chat starts from", () => {
     );
   });
 
+  it("says the key that starts it inside Start chat, and keeps its room on an approval (R33)", () => {
+    show();
+    const start = screen.getByRole("button", { name: "Start chat" });
+    const hint = start.querySelector('[data-scope="button"][data-part="shortcut"]');
+    expect(hint).toHaveAttribute("data-key", MAC ? "⌘↩" : "Ctrl+Enter");
+    expect(hint).not.toHaveAttribute("data-off");
+    cleanup();
+
+    // An approval is never sent by the key: the hint's room is kept, and nothing drawn in it.
+    show({
+      profiles: [{ ...ONE.profiles[0], name: "claude", shown: "claude --x", approval: "new" }],
+    });
+    const approve = screen.getByRole("button", { name: "Approve and start" });
+    expect(approve.querySelector('[data-part="shortcut"]')).toHaveAttribute("data-off", "");
+  });
+
   it("never approves a command on ⌘⏎: a grant is a press of its own button (ADR 0097 §6)", () => {
     const { onStart, onApprove } = show({
       profiles: [{ ...ONE.profiles[0], name: "claude", shown: "claude --x", approval: "new" }],

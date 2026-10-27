@@ -77,7 +77,8 @@ const HEIGHT = 620;
  *   and its check (R24–R27, #2798 d3).
  * - **The name, the footer box** and, where they apply, the branch box and the sandbox.
  * - **The footer** says what Start will do, `steward on Claude Code` (R33), then Cancel and
- *   Start chat. It keeps the room of every word it can reach in this dialog (R163).
+ *   Start chat, with the key that starts it inside (⌘↩, the button family's `shortcut` part). It
+ *   keeps the room of every word it can reach in this dialog, and of the key (R163).
  *
  * **⏎ starts from the filter, a persona row or a harness card** (R17), as ⌘⏎ does from anywhere
  * (N26): never from the Name field, where Return is a stray key, and never an approval or a start

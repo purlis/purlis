@@ -461,7 +461,10 @@ own `min-width: max-content` beside the class.
   suggested as a grant).
 - **Drawn by its parts** (ADR 0103): the root carries `data-scope="button"`, `data-part="root"`,
   `data-variant` and `data-size`; its words are `data-part="label"`, its icon
-  `data-part="icon"`. `app/src/ui/button/button.css` draws the family default from those and
+  `data-part="icon"`, and the key that presses it, where it says one (`shortcut`, R33),
+  `data-part="shortcut"`: a `kbd` after the words, small and mono, drawn from its `data-key` and
+  hidden from a screen reader (`aria-keyshortcuts` says the key), its room kept and nothing drawn
+  while the key does not press it (`shortcutOff`). `app/src/ui/button/button.css` draws the family default from those and
   React Aria's state attributes (`data-hovered`, `data-pressed`, `data-selected`,
   `data-focus-visible`, `data-disabled`), and a theme's parts reach the same attributes. A state
   changes a colour, a ground or a ring, never a size.

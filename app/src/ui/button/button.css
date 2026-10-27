@@ -56,6 +56,26 @@
   flex: none;
 }
 
+/* **The key that presses it** (R33, #3377), after its words: small and mono, as the prototype's
+   hint, drawn from its `data-key` so the button's words and name are its words alone. It takes
+   the words' own colour rather than the quiet tier: on the primary fill the quiet words would
+   not hold their contrast. Off, its room is kept and nothing is seen, so the button does not
+   widen or narrow as a choice turns the key on or off (R163). */
+[data-scope="button"][data-part="shortcut"] {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-scope="button"][data-part="shortcut"]::before {
+  content: attr(data-key);
+}
+
+[data-scope="button"][data-part="shortcut"][data-off] {
+  visibility: hidden;
+}
+
 /* ---------------------------------------------------------------------------------------------
    Variants.
    --------------------------------------------------------------------------------------------- */
