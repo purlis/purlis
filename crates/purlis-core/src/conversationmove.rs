@@ -100,7 +100,7 @@ impl Folders {
 /// Why a conversation was not carried, in a sentence.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Refused {
-    /// The harness keeps its conversations in a way that does not move yet.
+    /// The harness keeps its conversations in a way that does not move yet (#3452).
     #[error("{0}")]
     DoesNotMove(String),
     /// There is no such conversation where its harness keeps it.
@@ -125,6 +125,7 @@ pub struct Found {
 }
 
 /// The one file `declaration` keeps a conversation in, or why its conversations do not move.
+/// Codex's and opencode's moves are #3452.
 fn one_file(declaration: &Declaration) -> Result<&str, Refused> {
     match &declaration.conversation {
         Some(Conversation::File {

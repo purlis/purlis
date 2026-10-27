@@ -928,6 +928,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_in_front",
     // A chat whose program ended with its session host (#2007): what its pane says.
     "chat_lost_with_the_host",
+    "chat_moves",
     "chat_network",
     "chat_order",
     "chat_skill_runs",
@@ -1003,6 +1004,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "opened_chats",
     "owed_restarts",
     "pending_asks",
+    "put_away_chat_move",
     "persona_chats_of",
     "persona_create",
     "persona_edit",

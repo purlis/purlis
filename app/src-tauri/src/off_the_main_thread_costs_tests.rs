@@ -407,6 +407,9 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "chat_skill_runs",
             "running_sessions",
             "owed_restarts",
+            // A project's chat moves, and putting one away (#2048): in memory.
+            "chat_moves",
+            "put_away_chat_move",
             "smart_closing",
             "task_ending",
             "all_tasks_ending",

@@ -219,7 +219,13 @@ fn a_clone_no_move_left_is_taken_over_only_with_nothing_uncommitted_and_nothing_
     let from = world.desktop.to_str().unwrap().to_owned();
     git(
         &world.runner,
-        &["fetch", "-q", &from, &format!("{base}:refs/heads/fix")],
+        &[
+            "fetch",
+            "-q",
+            "--update-head-ok",
+            &from,
+            &format!("{base}:refs/heads/fix"),
+        ],
     );
     git(&world.runner, &["reset", "-q", "--hard", "fix"]);
     world
