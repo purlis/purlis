@@ -189,6 +189,8 @@ pub struct ChatForSkills {
     pub start: purlis_core::hoststart::ChatSkills,
     /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
     pub salt: Option<purlis_core::skillspan::PromptSalt>,
+    /// Whether the plane's skills reached it at its start ([`Running::plane_skills`], #3445).
+    pub plane_skills: bool,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -405,6 +407,13 @@ struct Running {
     /// change to them: what [`Chats::skills_changed`] compares with the skills now. `None` for a
     /// chat that runs no harness.
     skills: Option<purlis_core::skills::Stamp>,
+    /// **Whether the plane's skills reached it at its start** (#3445): the Skill studio's flag
+    /// as this window read it once as the chat started (`purlis_core::skills::reach_chats_here`),
+    /// which its arming, its Notice, its stamp and Use skill… all take. Two cases it can only
+    /// approximate, as its stamp always has: a chat reattached from the session host (#2006)
+    /// takes the flag as read at its reattach, since nothing records its first start's; and a
+    /// runner's chat is armed by its runner (#2446), so this is this machine's word for it.
+    plane_skills: bool,
     /// **Where its plane skills came from, read once at its start** (#3234): what its restart's
     /// stamp and Use skill… route it from again, so neither reads its clone a second time and
     /// both see the set it was handed (#3245).
@@ -3311,13 +3320,16 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
+        // here, so its arming, its Notice, its stamp and Use skill… take the same word.
+        let plane_skills = purlis_core::skills::reach_chats_here(&self.project);
         // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
         // arms it below and what its tab's Notice says are both worked out from this.
         let skills = if on_the_runner {
             purlis_core::hoststart::ChatSkills::default()
         } else {
             purlis_core::hoststart::ChatSkills::read(
-                purlis_core::skills::reach_chats_here(&self.project),
+                plane_skills,
                 &self.project,
                 harness,
                 chat.cwd.as_deref(),
@@ -3824,7 +3836,7 @@ impl Chats {
                 persona: under.persona.as_deref(),
                 harness,
                 built_in: built_in_skills_here().as_deref(),
-                plane_skills: true,
+                plane_skills,
                 start: Some(&skills),
             })
         });
@@ -3850,6 +3862,7 @@ impl Chats {
                 grants_as: grants_persona_of(chat, &self.project),
                 skills: stamp,
                 skills_read: skills,
+                plane_skills,
             },
         );
         lock(&self.sizes).insert(session, size);
@@ -4769,6 +4782,7 @@ impl Chats {
             persona: running.persona().started_as,
             harness: running.harness,
             start: running.skills_read.clone(),
+            plane_skills: running.plane_skills,
             salt: running
                 .chat
                 .identity

@@ -1463,3 +1463,30 @@ fn a_skill_moved_into_a_personas_local_skills_keeps_loading_and_is_never_committ
     let tree = run(root, &["ls-tree", "-r", "--name-only", "HEAD"]).out;
     assert!(!tree.contains("skills.local"), "{tree}");
 }
+
+/// #3443: one place decides which copy of a name a skill's tab shows first: the levels in
+/// [`Level::every`]'s order, the project's before this machine's own, each with its folder.
+#[test]
+fn a_skills_copies_come_in_the_one_order_its_tab_shows_them() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    for folder in ["skills.local/deploy", "skills/deploy"] {
+        std::fs::create_dir_all(root.join(folder)).unwrap();
+        std::fs::write(
+            root.join(folder).join("SKILL.md"),
+            "---\nname: deploy\ndescription: Ships it.\n---\n",
+        )
+        .unwrap();
+    }
+
+    let copies: Vec<(Level, std::path::PathBuf)> = Level::copies_of(root, "deploy").collect();
+
+    let levels: Vec<&Level> = copies.iter().map(|(level, _)| level).collect();
+    assert_eq!(
+        levels,
+        [&Level::project(), &Level::project().local(true)],
+        "the project's copy first"
+    );
+    assert!(copies[0].1.ends_with("skills/deploy"));
+    assert!(Level::copies_of(root, "nothing").next().is_none());
+}
