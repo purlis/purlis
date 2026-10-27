@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793097336602,
+  "lastUpdate": 1793101404138,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26712,6 +26712,48 @@ window.BENCHMARK_DATA = {
             "value": 101.58015449999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.140, 101.351, 101.580, 101.902, 102.902 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0f4144ee4f23816d541f75da46b4a7f0d86eb6e4",
+          "message": "UI families: lint, theme-test and forced-colours lines live in each family's folder (#3387) (#3480)\n\n* UI families: lint, theme-test and forced-colours lines live in each family's folder (#3387)\n\nA family's lint rules are src/ui/<family>/lint.js (found by eslint.ui-rules.js,\nevery rule an error), tested beside it in lint.test.ts; its tiers and grounds\nentries are src/ui/<family>/theme.testkit.ts; its forced-colours rules are\nsrc/ui/<family>/forced-colors.css, imported through a new @forced marker before\nthe window's own sheet. cascade.testkit.ts reads the components layer from the\nbuilt styles.css, and ADR 0103 keeps no amendment index.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* UI families: raw buttons and forced expectations in each family folder (#3387 review)\n\nEach family lint.js exports rawButtons, gathered into the button rule options;\neach family theme.testkit.ts states what its forced sheet draws (forced), which\nforced-colors.test.ts gathers. Drops unmoved, fixes stale docs, keeps the docs\ndiff to the new section.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* UI families: refused-scope guard from the manifest, raw-button message, UNFAMILIED (#3387 review)\n\nforced-colors.test.ts requires every family the parts manifest gives the\ninvalid state (read from the generated docs table) to be reached by a family's\nrefused selector; the button rule's message names rawButtons; NO_FAMILYS is\nUNFAMILIED.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T10:45:02Z",
+          "tree_id": "32417e19c66d7c6ffd1ca37bade9f9a14c3a6784",
+          "url": "https://github.com/purlis/purlis/commit/0f4144ee4f23816d541f75da46b4a7f0d86eb6e4"
+        },
+        "date": 1793101401823,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.525608,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.501, 0.509, 0.526, 0.529, 0.532 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.8976265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.559, 16.831, 16.898, 16.979, 17.043 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.98294700000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.341, 103.558, 103.983, 104.577, 104.898 ms"
           }
         ]
       }
