@@ -51,10 +51,7 @@ fn connect() -> (Connection, Receiver<Event>, FakeEngine) {
 }
 
 /// A tap that hands each message it is given on to a channel.
-fn tap_sink() -> (
-    Arc<dyn Fn(Tapped) -> bool + Send + Sync>,
-    Receiver<Tapped>,
-) {
+fn tap_sink() -> (Arc<dyn Fn(Tapped) -> bool + Send + Sync>, Receiver<Tapped>) {
     let (to, from) = mpsc::channel();
     let to = Mutex::new(to);
     (
@@ -86,13 +83,22 @@ fn a_tapped_sessions_events_and_those_under_it_reach_the_tap_in_order_and_not_th
     assert_eq!(
         methods,
         vec![
-            ("Runtime.consoleAPICalled".to_owned(), Some("INSPECT".to_owned())),
-            ("Target.attachedToTarget".to_owned(), Some("INSPECT".to_owned())),
+            (
+                "Runtime.consoleAPICalled".to_owned(),
+                Some("INSPECT".to_owned())
+            ),
+            (
+                "Target.attachedToTarget".to_owned(),
+                Some("INSPECT".to_owned())
+            ),
             ("DOM.documentUpdated".to_owned(), Some("CHILD".to_owned())),
         ]
     );
     let driver = events.recv_timeout(Duration::from_secs(5)).unwrap();
-    assert_eq!(driver.method, "Page.loadEventFired", "the driver hears only its own session");
+    assert_eq!(
+        driver.method, "Page.loadEventFired",
+        "the driver hears only its own session"
+    );
     assert!(events.try_recv().is_err());
 }
 
@@ -109,7 +115,9 @@ fn an_answer_to_a_call_sent_on_the_tap_comes_back_under_the_taps_own_id_among_it
     assert_eq!(written["sessionId"], "INSPECT");
     assert_eq!(written["params"], json!({"depth": 1}));
     engine.send(json!({"id": written["id"], "result": {"root": {"nodeId": 1}}}));
-    engine.send(json!({"method": "DOM.setChildNodes", "params": {"parentId": 1}, "sessionId": "INSPECT"}));
+    engine.send(
+        json!({"method": "DOM.setChildNodes", "params": {"parentId": 1}, "sessionId": "INSPECT"}),
+    );
     match next(&tapped) {
         Tapped::Answer { id, outcome } => {
             assert_eq!(id, 7);

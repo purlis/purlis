@@ -37,6 +37,7 @@ use std::time::Duration;
 use base64::Engine as _;
 use serde_json::{Value, json};
 
+use super::super::tree::NodeKey;
 use super::takeover::{button_bit, key_event, metrics, mouse_event, typed};
 use super::{Browser, Inner, refusal};
 use crate::WebAddress;
@@ -44,7 +45,8 @@ use crate::cdp::{Tap, Tapped};
 use crate::drive::{Aim, Driver, MouseKind, PageId, Painted, PersonInput, Refusal, lock};
 
 /// The front end the engine ships, told that its connection is the stand-in's.
-pub const FRONT_END: &str = "devtools://devtools/bundled/devtools_app.html?ws=inspect.purlis.invalid/page";
+pub const FRONT_END: &str =
+    "devtools://devtools/bundled/devtools_app.html?ws=inspect.purlis.invalid/page";
 
 /// The binding the stand-in sends the front end's messages through.
 pub(crate) const BINDING: &str = "__purlisInspect";
@@ -54,6 +56,9 @@ pub const INSPECTOR_PAGE: &str = "devtools";
 
 /// The most messages that wait to be handed to the front end, or from it to the page.
 pub const MOST_QUEUED: usize = 8192;
+
+/// The roles of the fields a page's tree shows: what DevTools may have put a value into.
+const FIELD_ROLES: &[&str] = &["textbox", "searchbox", "combobox", "spinbutton"];
 
 /// The most bytes handed to the front end at once.
 const MOST_BATCH_BYTES: usize = 4 << 20;
@@ -126,7 +131,10 @@ pub(crate) fn not_offered(method: &str, params: &Value) -> bool {
         return true;
     }
     if method == "Page.navigate" {
-        let address = params.get("url").and_then(Value::as_str).unwrap_or_default();
+        let address = params
+            .get("url")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         return WebAddress::parse(address).is_err();
     }
     false
@@ -159,6 +167,9 @@ impl InspectEnded {
     }
 }
 
+/// Who is told once, as an Inspect ends.
+type Told = Box<dyn FnOnce(InspectEnded) + Send>;
+
 /// Where the front end's frames go.
 type Sink = Arc<dyn Fn(Painted) + Send + Sync>;
 
@@ -189,7 +200,7 @@ pub(crate) struct Inspection {
     shows: AtomicU64,
     ended: AtomicBool,
     behind: AtomicBool,
-    told: Mutex<Option<Box<dyn FnOnce(InspectEnded) + Send>>>,
+    told: Mutex<Option<Told>>,
     /// The methods the front end asked of the page, by name alone, the first
     /// [`MOST_HEARD`] of them.
     heard: Mutex<Vec<String>>,
@@ -285,15 +296,25 @@ impl Browser {
             .as_str()
             .map(str::to_owned)
             .ok_or_else(|| Refusal::Engine("no context was made for DevTools".into()))?;
-        lock(&self.inner.state).inspecting.contexts.insert(context.clone());
+        lock(&self.inner.state)
+            .inspecting
+            .contexts
+            .insert(context.clone());
         let opened = self.open_front_end(&context, &inspected, width, height, ended);
         if opened.is_err() {
-            let _ = devtools.call(
-                "Target.disposeBrowserContext",
-                json!({ "browserContextId": context }),
-                None,
-            );
-            lock(&self.inner.state).inspecting.contexts.remove(&context);
+            // Whatever of it opened goes: an Inspect is open whole or not at all.
+            if self.inspecting() {
+                self.inner.stop_inspecting(InspectEnded::Ended);
+            } else {
+                let _ = devtools.call(
+                    "Target.disposeBrowserContext",
+                    json!({ "browserContextId": context }),
+                    None,
+                );
+                let mut state = lock(&self.inner.state);
+                state.inspecting.contexts.remove(&context);
+                state.inspecting.front_ends.clear();
+            }
         }
         opened
     }
@@ -317,7 +338,10 @@ impl Browser {
             .as_str()
             .map(str::to_owned)
             .ok_or_else(|| Refusal::Engine("no page was made for DevTools".into()))?;
-        lock(&self.inner.state).inspecting.front_ends.insert(front_end.clone());
+        lock(&self.inner.state)
+            .inspecting
+            .front_ends
+            .insert(front_end.clone());
         let front_session = devtools
             .call(
                 "Target.attachToTarget",
@@ -332,8 +356,12 @@ impl Browser {
         devtools
             .call("Runtime.addBinding", json!({ "name": BINDING }), on)
             .map_err(refusal)?;
-        devtools.call("Runtime.enable", json!({}), on).map_err(refusal)?;
-        devtools.call("Page.enable", json!({}), on).map_err(refusal)?;
+        devtools
+            .call("Runtime.enable", json!({}), on)
+            .map_err(refusal)?;
+        devtools
+            .call("Page.enable", json!({}), on)
+            .map_err(refusal)?;
         devtools
             .call(
                 "Page.addScriptToEvaluateOnNewDocument",
@@ -359,7 +387,10 @@ impl Browser {
             json!({ "targetId": inspected, "flatten": true }),
             None,
         );
-        lock(&self.inner.state).inspecting.bridging.remove(inspected);
+        lock(&self.inner.state)
+            .inspecting
+            .bridging
+            .remove(inspected);
         let root = root.map_err(refusal)?["sessionId"]
             .as_str()
             .map(str::to_owned)
@@ -510,6 +541,41 @@ impl Browser {
             }
         }
         Ok(())
+    }
+
+    /// **Every field of the page the open DevTools inspect counts as one the person typed into**
+    /// (#2028): what DevTools put into it (from the console, say) is read from the field and kept
+    /// out at the hand-back, as what they type is. A page whose trees cannot be read keeps only
+    /// what was typed.
+    pub(super) fn devtools_touched_every_field(&self) {
+        let Some(open) = lock(&self.inner.inspection).clone() else {
+            return;
+        };
+        let Ok(trees) = self.trees_of(&open.inspected) else {
+            return;
+        };
+        let mut typing = lock(&self.typing);
+        typing.dirty.insert(open.inspected.clone());
+        for frame in &trees {
+            for node in frame.nodes.as_array().into_iter().flatten() {
+                let role = node
+                    .pointer("/role/value")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let Some(backend) = node.get("backendDOMNodeId").and_then(Value::as_i64) else {
+                    continue;
+                };
+                if FIELD_ROLES.contains(&role) {
+                    typing.touched.insert((
+                        open.inspected.clone(),
+                        NodeKey {
+                            frame: frame.id.clone(),
+                            backend,
+                        },
+                    ));
+                }
+            }
+        }
     }
 
     /// Ends the open DevTools, saying why: its context, and all it kept, thrown away.
@@ -727,9 +793,20 @@ mod tests {
         ] {
             assert!(!not_offered(method, &json!({})), "{method} is the page's");
         }
-        assert!(!not_offered("Page.navigate", &json!({ "url": "https://example.com/" })));
-        for address in ["file:///etc/passwd", "chrome://settings", "javascript:alert(1)", "devtools://devtools/bundled/devtools_app.html"] {
-            assert!(not_offered("Page.navigate", &json!({ "url": address })), "{address}");
+        assert!(!not_offered(
+            "Page.navigate",
+            &json!({ "url": "https://example.com/" })
+        ));
+        for address in [
+            "file:///etc/passwd",
+            "chrome://settings",
+            "javascript:alert(1)",
+            "devtools://devtools/bundled/devtools_app.html",
+        ] {
+            assert!(
+                not_offered("Page.navigate", &json!({ "url": address })),
+                "{address}"
+            );
         }
     }
 }

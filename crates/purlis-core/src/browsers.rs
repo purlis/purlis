@@ -1412,7 +1412,11 @@ impl Screen for EngineScreen {
     fn show_inspector(&self, frames: FrameSink) {
         self.with(|browser| {
             browser.show_inspector(Arc::new(move |painted: drive::Painted| {
-                frames(aim_of(&painted.aim), painted.address, Bytes::from(painted.jpeg));
+                frames(
+                    aim_of(&painted.aim),
+                    painted.address,
+                    Bytes::from(painted.jpeg),
+                );
             }));
         });
     }
@@ -1423,9 +1427,7 @@ impl Screen for EngineScreen {
 
     fn inspector_input(&self, input: &wire::Input) -> Result<(), NotTaken> {
         let browser = self.with(Arc::clone).ok_or(NotTaken::Ended)?;
-        browser
-            .inspector_input(&input_of(input))
-            .map_err(not_taken)
+        browser.inspector_input(&input_of(input)).map_err(not_taken)
     }
 
     /// Told once the engine has ended, however it ended, with how (#2745); at once when it was

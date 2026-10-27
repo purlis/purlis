@@ -685,6 +685,13 @@ The person's act of becoming a browser's driver: a click or a key in its view. *
 it: Done, or one fixed chord, and nothing else.
 _Avoid_: control, grab, interrupt
 
+**Inspect**:
+The person's act of opening the real DevTools of the page a browser they drive shows, in a view
+tab beside it. They are the engine's own, drawn as frames as the page is, speaking to that page
+alone through the session host; no chat reaches them, and they close as the person hands the
+browser back (#2028).
+_Avoid_: debugger, dev console, inspector (for the act)
+
 **The browser needs you**:
 An **Ask** whose source is a chat's browser: the agent, through `ask_operator` pointed at that
 browser, asks the person to do what a page needs of a human (a CAPTCHA, a second factor, a

@@ -318,6 +318,7 @@ import {
 import { sendToDriven } from "./browserDriving";
 import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
+import { onInspect, openInspector } from "./inspector";
 import type { BrowserShown } from "./ChatBrowsersShown";
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
@@ -3807,6 +3808,13 @@ export const PlaneView = memo(function PlaneView({
   );
   // Once the record's tabs are adopted, which lays the strip out afresh.
   useBrowsersTakenBack(plane, settled ? showTakenBack : undefined);
+
+  // A browser view's Inspect opens its DevTools beside it (#2028).
+  useEffect(
+    () =>
+      onInspect(plane, (program) => present((tabs, strip) => openInspector(tabs, program, strip))),
+    [plane, present],
+  );
   /** Their programs: a tab showing one closes only its view, since it ends with its chat, and
    *  one pinned past its chat ends only when the person stops it (#2022). */
   const chatPrograms = useMemo(

@@ -75,7 +75,8 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 pub use browser::{
-    Browser, FRONT_END, INSPECTOR_PAGE, InspectEnded, LOGIN_WAIT, LoginEnded, MOST_QUEUED, origin_of,
+    Browser, FRONT_END, INSPECTOR_PAGE, InspectEnded, LOGIN_WAIT, LoginEnded, MOST_QUEUED,
+    origin_of,
 };
 pub use screencast::QUALITY;
 

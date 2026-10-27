@@ -77,7 +77,6 @@ async fn a_browser(client: &Client, browsers: &StandInBrowsers) -> (String, Stan
     (program, browsers.started().last().unwrap().clone())
 }
 
-
 fn devtools_key() -> Input {
     Input::Key {
         aim: Aim {
@@ -138,7 +137,11 @@ async fn a_devtools_view_is_their_frames_and_ends_as_the_person_hands_the_browse
 
     client.inspect(&program, 1000, 600).await.unwrap();
     let attached = client.attach_inspector_view(&program).await.unwrap();
-    assert_eq!((attached.cols, attached.rows), (1000, 600), "drawn at DevTools' size");
+    assert_eq!(
+        (attached.cols, attached.rows),
+        (1000, 600),
+        "drawn at DevTools' size"
+    );
     let stream = timeout(PATIENCE, views.accept()).await.unwrap().unwrap();
     let mut reader = Viewer::default().accept(stream).await.unwrap();
     assert!(screen.shown().showing_devtools);
@@ -166,16 +169,28 @@ async fn the_persons_input_reaches_devtools_only_while_they_drive_with_them_open
     let (client, _views) = window(&hosted.hosting, hosted.project.path()).await;
     let (program, screen) = a_browser(&client, &hosted.browsers).await;
 
-    let early = client.inspector_input(&program, devtools_key()).await.unwrap_err();
+    let early = client
+        .inspector_input(&program, devtools_key())
+        .await
+        .unwrap_err();
     assert_eq!(early.refusal().unwrap().code, session::NOT_DRIVING);
     client.take_over(&program).await.unwrap();
-    let unopened = client.inspector_input(&program, devtools_key()).await.unwrap_err();
+    let unopened = client
+        .inspector_input(&program, devtools_key())
+        .await
+        .unwrap_err();
     assert_eq!(unopened.refusal().unwrap().code, session::INPUT_MISSED);
 
     client.inspect(&program, 1000, 600).await.unwrap();
-    client.inspector_input(&program, devtools_key()).await.unwrap();
+    client
+        .inspector_input(&program, devtools_key())
+        .await
+        .unwrap();
     assert_eq!(screen.shown().devtools_inputs, [devtools_key()]);
-    assert!(screen.shown().inputs.is_empty(), "nothing of it reached the page");
+    assert!(
+        screen.shown().inputs.is_empty(),
+        "nothing of it reached the page"
+    );
 }
 
 #[tokio::test]

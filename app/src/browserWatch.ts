@@ -91,6 +91,9 @@ export type BrowserWatch = { watched: Watched; reconnecting: boolean };
  * Where its page is goes to the browsers' origins ({@link useBrowserOrigin}, #2300), what each
  * frame shows and the view's attachment to `heard`, and whether the link to the runner it is
  * drawn from is down (#2542) is in the answer.
+ *
+ * `of` `"devtools"` watches the browser's open DevTools instead of its page (#2028): their
+ * frames, as the page's are, which name no page's origin.
  */
 export function useBrowserWatch(
   program: string,
@@ -99,6 +102,7 @@ export function useBrowserWatch(
   seen: boolean,
   across?: number,
   heard?: WatchHeard,
+  of: "page" | "devtools" = "page",
 ): BrowserWatch {
   const [watched, setWatched] = useState<Watched>({ kind: "opening" });
   const [reconnecting, setReconnecting] = useState(false);
@@ -137,7 +141,11 @@ export function useBrowserWatch(
       told.current?.aimed?.(frame.aim);
       draw(frameBytes(frame.jpeg));
     };
-    void commands.watchBrowser(program, role, frames).then((answer) => {
+    const watching =
+      of === "devtools"
+        ? commands.watchInspector(program, frames)
+        : commands.watchBrowser(program, role, frames);
+    void watching.then((answer) => {
       if (answer.status === "error") {
         if (!gone) setWatched({ kind: "refused", why: answer.error });
         return;
@@ -154,6 +162,6 @@ export function useBrowserWatch(
       gone = true;
       if (view !== undefined) void commands.unwatchBrowser(program, view);
     };
-  }, [program, role, canvas, seen, across]);
+  }, [program, role, canvas, seen, across, of]);
   return { watched, reconnecting };
 }

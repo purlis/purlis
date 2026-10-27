@@ -587,6 +587,8 @@ export const commands = {
 	handBackBrowser: __WINDOW_ONLY_RESULT,
 	browserInput: __WINDOW_ONLY_RESULT,
 	sizeBrowser: __WINDOW_ONLY_RESULT,
+	inspectBrowser: __WINDOW_ONLY_RESULT,
+	inspectorInput: __WINDOW_ONLY_RESULT,
 	goBrowser: __WINDOW_ONLY_RESULT,
 	/**  The sessions that are running, in the order they were opened. */
 	runningSessions: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("running_sessions", { plane })),

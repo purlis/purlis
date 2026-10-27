@@ -416,7 +416,8 @@ impl Connection {
             };
             tapping.calls.insert(own, id);
         }
-        let message = json!({ "id": own, "method": method, "params": params, "sessionId": session });
+        let message =
+            json!({ "id": own, "method": method, "params": params, "sessionId": session });
         let mut bytes = serde_json::to_vec(&message).expect("a JSON value serialises");
         bytes.push(0);
         match self.to_engine.try_send(Outgoing {
@@ -426,7 +427,9 @@ impl Connection {
         }) {
             Ok(()) => Ok(()),
             Err(why) => {
-                if let Some(tapping) = lock(&self.shared.taps).iter_mut().find(|one| one.id == tap.0)
+                if let Some(tapping) = lock(&self.shared.taps)
+                    .iter_mut()
+                    .find(|one| one.id == tap.0)
                 {
                     tapping.calls.remove(&own);
                 }
@@ -560,7 +563,11 @@ fn method_name(method: &str) -> Option<String> {
 /// ends the connection, and why is said: false.
 fn too_large(shared: &Shared, head: &[u8]) -> bool {
     if let Some(id) = id_of(head)
-        && tapped_answer(shared, id, Err(json!({ "code": -32000, "message": "the answer was too large to relay" })))
+        && tapped_answer(
+            shared,
+            id,
+            Err(json!({ "code": -32000, "message": "the answer was too large to relay" })),
+        )
     {
         return true;
     }
@@ -812,7 +819,9 @@ fn tapped_event(shared: &Shared, event: Event) -> Option<Event> {
             .session_id
             .as_ref()
             .is_some_and(|session| one.sessions.contains(session))
-            || gone.as_ref().is_some_and(|gone| one.sessions.contains(gone))
+            || gone
+                .as_ref()
+                .is_some_and(|gone| one.sessions.contains(gone))
     });
     let Some(at) = at else {
         return Some(event);

@@ -78,13 +78,13 @@ impl Default for Lease {
 #[derive(Default)]
 pub(crate) struct Typing {
     /// The pages (by target) the person typed into since each was last read.
-    dirty: HashSet<String>,
+    pub(super) dirty: HashSet<String>,
     /// The runs of characters the person typed on each page (by target), the last one still
     /// growing: a key that types no character, or a press of the mouse, ends a run.
     runs: HashMap<String, Vec<String>>,
     /// Every field the person typed into (its page's target and its element), read again at a
     /// press of the mouse and at the hand-back.
-    touched: HashSet<(String, NodeKey)>,
+    pub(super) touched: HashSet<(String, NodeKey)>,
     /// What each field the person typed into held when last read from the field itself.
     latest: HashMap<NodeKey, String>,
     /// The fields the person typed into, in the order they first typed into each.
@@ -238,7 +238,9 @@ impl Browser {
         if self.driver() != Driver::Person {
             return self.epoch();
         }
-        // DevTools are the person's while they drive (#2028): nothing set in them outlives it.
+        // DevTools are the person's while they drive (#2028): what they put into the page's
+        // fields is read and kept out as typing is, and nothing set in them outlives the lease.
+        self.devtools_touched_every_field();
         self.stop_inspecting();
         lock(&self.typing).end_run(super::inspect::INSPECTOR_PAGE);
         self.keep_typing_out();

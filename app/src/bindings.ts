@@ -1303,6 +1303,19 @@ export const commands = {
 	/**  The person sets browser `program`'s pages to `width` by `height` CSS pixels (#2014). */
 	sizeBrowser: (program: string, width: number, height: number) => typedError<null, string>(__TAURI_INVOKE("size_browser", { program, width, height })),
 	/**
+	 *  **The person opens browser `program`'s DevTools** (#2028), `width` by `height` CSS pixels,
+	 *  while they drive it; sent again while open, it sizes them. They close as the person hands
+	 *  the browser back.
+	 */
+	inspectBrowser: (program: string, width: number, height: number) => typedError<null, string>(__TAURI_INVOKE("inspect_browser", { program, width, height })),
+	/**
+	 *  Attaches a view of browser `program`'s open DevTools (#2028): each whole frame is sent on
+	 *  `frames` as a browser view's are; an empty one says DevTools have closed.
+	 */
+	watchInspector: (program: string, frames: Channel<BrowserFrame>) => typedError<BrowserWatching, string>(__TAURI_INVOKE("watch_inspector", { program, frames })),
+	/**  One click, move, wheel or key of the person's in browser `program`'s open DevTools (#2028). */
+	inspectorInput: (program: string, input: BrowserInput) => typedError<InputOutcome, string>(__TAURI_INVOKE("inspector_input", { program, input })),
+	/**
 	 *  **The person sends browser `program` of project `plane` to the address they typed** (#2176),
 	 *  from its view tab: http and https only, any other scheme refused in words, and an address
 	 *  the browser's reach refuses outright said so before it loads. A site new to the project is

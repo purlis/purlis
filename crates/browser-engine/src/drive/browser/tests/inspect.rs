@@ -52,7 +52,11 @@ fn inspected(browser: &super::Browser, engine: &super::Engine) -> Ends {
     let ends: Ends = Arc::default();
     let told = Arc::clone(&ends);
     browser
-        .inspect(1000, 600, Box::new(move |why| told.lock().unwrap().push(why)))
+        .inspect(
+            1000,
+            600,
+            Box::new(move |why| told.lock().unwrap().push(why)),
+        )
         .expect("the person may inspect a browser they drive");
     ends
 }
@@ -116,16 +120,20 @@ fn the_front_end_runs_the_engines_own_devtools_in_a_context_of_its_own_that_is_n
     assert_eq!(front.params["url"], super::super::inspect::FRONT_END);
     // Its stand-in socket is in before any of its scripts.
     let stand_in = engine.sent("Page.addScriptToEvaluateOnNewDocument");
-    assert!(stand_in
-        .iter()
-        .any(|s| s.session.as_deref() == Some("S-FRONT-1")
-            && s.params["source"].as_str().unwrap().contains("'WebSocket'")));
+    assert!(
+        stand_in
+            .iter()
+            .any(|s| s.session.as_deref() == Some("S-FRONT-1")
+                && s.params["source"].as_str().unwrap().contains("'WebSocket'"))
+    );
     // The driver neither closed it as a page that is not a web address, nor set it up, nor
     // let it go: it is not one of its pages.
-    assert!(!engine
-        .sent("Target.closeTarget")
-        .iter()
-        .any(|s| s.params["targetId"] == "FRONT-1"));
+    assert!(
+        !engine
+            .sent("Target.closeTarget")
+            .iter()
+            .any(|s| s.params["targetId"] == "FRONT-1")
+    );
     assert!(!engine
         .sent("Target.detachFromTarget")
         .iter()
@@ -166,15 +174,32 @@ fn what_the_page_says_reaches_the_front_end_in_order_and_what_it_asks_reaches_th
         json!({"sessionId":"S-WORKER","targetInfo":{"targetId":"W","type":"worker"},"waitingForDebugger":true}),
         Some("S-INSPECTED"),
     );
-    engine.emit("Runtime.consoleAPICalled", json!({"type":"log"}), Some("S-WORKER"));
-    front_end_sends(&engine, &json!({"id": 1, "method": "DOM.getDocument", "params": {"depth": 1}}));
-    front_end_sends(&engine, &json!({"id": 2, "method": "Runtime.evaluate", "params": {"expression": "1"}, "sessionId": "S-WORKER"}));
+    engine.emit(
+        "Runtime.consoleAPICalled",
+        json!({"type":"log"}),
+        Some("S-WORKER"),
+    );
+    front_end_sends(
+        &engine,
+        &json!({"id": 1, "method": "DOM.getDocument", "params": {"depth": 1}}),
+    );
+    front_end_sends(
+        &engine,
+        &json!({"id": 2, "method": "Runtime.evaluate", "params": {"expression": "1"}, "sessionId": "S-WORKER"}),
+    );
     wait_for("both answers are handed to the front end", || {
-        handed_to_the_front_end(&engine).iter().filter(|m| m.get("id").is_some()).count() == 2
+        handed_to_the_front_end(&engine)
+            .iter()
+            .filter(|m| m.get("id").is_some())
+            .count()
+            == 2
     });
     let handed = handed_to_the_front_end(&engine);
     assert_eq!(handed[0]["method"], "DOM.documentUpdated");
-    assert!(handed[0].get("sessionId").is_none(), "the page's own session is the front end's root");
+    assert!(
+        handed[0].get("sessionId").is_none(),
+        "the page's own session is the front end's root"
+    );
     assert_eq!(handed[1]["method"], "Target.attachedToTarget");
     assert_eq!(handed[2]["method"], "Runtime.consoleAPICalled");
     assert_eq!(handed[2]["sessionId"], "S-WORKER");
@@ -182,38 +207,70 @@ fn what_the_page_says_reaches_the_front_end_in_order_and_what_it_asks_reaches_th
     assert!(handed[3].get("result").is_some());
     assert_eq!(handed[4]["id"], 2);
     // Sent on the session they were meant for: the page's, and the worker's under it.
-    assert!(engine
-        .sent("DOM.getDocument")
-        .iter()
-        .any(|s| s.session.as_deref() == Some("S-INSPECTED")));
-    assert!(engine
-        .sent("Runtime.evaluate")
-        .iter()
-        .any(|s| s.session.as_deref() == Some("S-WORKER")));
-    assert_eq!(browser.inspector_heard(), vec!["DOM.getDocument", "Runtime.evaluate"]);
+    assert!(
+        engine
+            .sent("DOM.getDocument")
+            .iter()
+            .any(|s| s.session.as_deref() == Some("S-INSPECTED"))
+    );
+    assert!(
+        engine
+            .sent("Runtime.evaluate")
+            .iter()
+            .any(|s| s.session.as_deref() == Some("S-WORKER"))
+    );
+    assert_eq!(
+        browser.inspector_heard(),
+        vec!["DOM.getDocument", "Runtime.evaluate"]
+    );
 }
 
 #[test]
 fn what_reaches_past_the_inspected_page_is_refused_to_the_front_end_and_never_sent() {
     let (browser, engine) = browser();
     let _ends = inspected(&browser, &engine);
-    front_end_sends(&engine, &json!({"id": 1, "method": "Browser.close", "params": {}}));
-    front_end_sends(&engine, &json!({"id": 2, "method": "Target.createTarget", "params": {"url": "https://example.com/"}}));
-    front_end_sends(&engine, &json!({"id": 3, "method": "Page.navigate", "params": {"url": "file:///etc/hosts"}}));
+    front_end_sends(
+        &engine,
+        &json!({"id": 1, "method": "Browser.close", "params": {}}),
+    );
+    front_end_sends(
+        &engine,
+        &json!({"id": 2, "method": "Target.createTarget", "params": {"url": "https://example.com/"}}),
+    );
+    front_end_sends(
+        &engine,
+        &json!({"id": 3, "method": "Page.navigate", "params": {"url": "file:///etc/hosts"}}),
+    );
     // The driver's own session on the page is not the front end's to speak on.
-    front_end_sends(&engine, &json!({"id": 4, "method": "Runtime.evaluate", "params": {"expression": "1"}, "sessionId": "S-PAGE-1"}));
+    front_end_sends(
+        &engine,
+        &json!({"id": 4, "method": "Runtime.evaluate", "params": {"expression": "1"}, "sessionId": "S-PAGE-1"}),
+    );
     wait_for("each is refused to the front end", || {
-        handed_to_the_front_end(&engine).iter().filter(|m| m.get("error").is_some()).count() == 4
+        handed_to_the_front_end(&engine)
+            .iter()
+            .filter(|m| m.get("error").is_some())
+            .count()
+            == 4
     });
     assert!(engine.sent("Browser.close").is_empty());
-    assert_eq!(engine.sent("Target.createTarget").len(), 1, "only the front end's own page");
-    assert!(!engine
-        .sent("Page.navigate")
-        .iter()
-        .any(|s| s.params["url"] == "file:///etc/hosts"));
-    assert!(!engine.sent("Runtime.evaluate").iter().any(|s| {
-        s.session.as_deref() == Some("S-PAGE-1") && s.params["expression"] == "1"
-    }));
+    assert_eq!(
+        engine.sent("Target.createTarget").len(),
+        1,
+        "only the front end's own page"
+    );
+    assert!(
+        !engine
+            .sent("Page.navigate")
+            .iter()
+            .any(|s| s.params["url"] == "file:///etc/hosts")
+    );
+    assert!(
+        !engine
+            .sent("Runtime.evaluate")
+            .iter()
+            .any(|s| { s.session.as_deref() == Some("S-PAGE-1") && s.params["expression"] == "1" })
+    );
 }
 
 #[test]
@@ -223,14 +280,18 @@ fn handing_the_browser_back_closes_devtools_and_throws_away_all_it_kept() {
     browser.hand_back();
     assert!(!browser.inspecting());
     assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Closed]);
-    assert!(engine
-        .sent("Target.detachFromTarget")
-        .iter()
-        .any(|s| s.params["sessionId"] == "S-INSPECTED"));
-    assert!(engine
-        .sent("Target.disposeBrowserContext")
-        .iter()
-        .any(|s| s.params["browserContextId"] == "CONTEXT-DEVTOOLS"));
+    assert!(
+        engine
+            .sent("Target.detachFromTarget")
+            .iter()
+            .any(|s| s.params["sessionId"] == "S-INSPECTED")
+    );
+    assert!(
+        engine
+            .sent("Target.disposeBrowserContext")
+            .iter()
+            .any(|s| s.params["browserContextId"] == "CONTEXT-DEVTOOLS")
+    );
     // What the page says after is the driver's again, and nothing more is handed to DevTools.
     let handed = handed_to_the_front_end(&engine).len();
     engine.emit("DOM.documentUpdated", json!({}), Some("S-INSPECTED"));
@@ -242,7 +303,11 @@ fn handing_the_browser_back_closes_devtools_and_throws_away_all_it_kept() {
 fn devtools_close_when_the_page_they_inspect_goes() {
     let (browser, engine) = browser();
     let ends = inspected(&browser, &engine);
-    engine.emit("Target.detachedFromTarget", json!({"sessionId": "S-INSPECTED"}), None);
+    engine.emit(
+        "Target.detachedFromTarget",
+        json!({"sessionId": "S-INSPECTED"}),
+        None,
+    );
     wait_for("the Inspect ends", || !browser.inspecting());
     assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::PageGone]);
 }
@@ -282,8 +347,17 @@ fn the_front_ends_frames_go_to_its_own_watchers_alone() {
     assert_eq!(frames.len(), 1);
     assert_eq!(frames[0].jpeg, b"devtools-jpeg");
     assert_eq!(frames[0].aim.page, PageId::new("devtools"));
-    assert_eq!(frames[0].address, "", "a frame of DevTools names no page's address");
-    assert!(page_frames.lock().unwrap().iter().all(|p| p.jpeg != b"devtools-jpeg"));
+    assert_eq!(
+        frames[0].address, "",
+        "a frame of DevTools names no page's address"
+    );
+    assert!(
+        page_frames
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|p| p.jpeg != b"devtools-jpeg")
+    );
 }
 
 #[test]
@@ -305,7 +379,10 @@ fn the_persons_input_reaches_the_front_end_and_nothing_aimed_elsewhere_does() {
         })
         .unwrap();
     let pressed = engine.sent("Input.dispatchMouseEvent");
-    assert_eq!(pressed.last().unwrap().session.as_deref(), Some("S-FRONT-1"));
+    assert_eq!(
+        pressed.last().unwrap().session.as_deref(),
+        Some("S-FRONT-1")
+    );
     // A key aimed at the page, not at DevTools, is dropped.
     let page_aim = browser.aim().unwrap();
     assert_eq!(
@@ -331,10 +408,12 @@ fn what_the_person_types_into_devtools_is_kept_out_of_every_later_answer() {
         browser.inspector_input(&key(&at, letter, true)).unwrap();
         browser.inspector_input(&key(&at, letter, false)).unwrap();
     }
-    assert!(engine
-        .sent("Input.dispatchKeyEvent")
-        .iter()
-        .all(|s| s.session.as_deref() == Some("S-FRONT-1")));
+    assert!(
+        engine
+            .sent("Input.dispatchKeyEvent")
+            .iter()
+            .all(|s| s.session.as_deref() == Some("S-FRONT-1"))
+    );
     browser.hand_back();
     // The page now shows what was typed into DevTools (written into it from the console).
     {
@@ -362,8 +441,27 @@ fn the_front_ends_own_requests_to_the_web_fail() {
             .iter()
             .any(|s| s.params["requestId"] == "R-DEVTOOLS")
     });
-    assert!(!engine
-        .sent("Fetch.continueRequest")
-        .iter()
-        .any(|s| s.params["requestId"] == "R-DEVTOOLS"));
+    assert!(
+        !engine
+            .sent("Fetch.continueRequest")
+            .iter()
+            .any(|s| s.params["requestId"] == "R-DEVTOOLS")
+    );
+}
+
+#[test]
+fn what_devtools_put_into_a_field_of_the_page_is_kept_out_once_the_browser_is_handed_back() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    // From the console, the person writes a value into the page's Name field.
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.value = "console-set-Secret8".into();
+        let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+        let field = nodes.iter_mut().find(|n| n["nodeId"] == "8").unwrap();
+        field["value"]["value"] = json!("console-set-Secret8");
+    }
+    browser.hand_back();
+    let read = snapshot(&browser, 2);
+    assert!(!read.contains("console-set-Secret8"), "{read}");
 }

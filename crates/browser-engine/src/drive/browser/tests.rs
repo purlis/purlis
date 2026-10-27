@@ -722,7 +722,10 @@ impl DevTools for Stand {
             session: Some(session.to_owned()),
         };
         super::lock(&self.0.sent).push(sent.clone());
-        let outcome = self.0.answer(&sent).map_err(|why| json!({ "code": -32000, "message": why.to_string() }));
+        let outcome = self
+            .0
+            .answer(&sent)
+            .map_err(|why| json!({ "code": -32000, "message": why.to_string() }));
         sink(crate::cdp::Tapped::Answer { id, outcome });
         Ok(())
     }

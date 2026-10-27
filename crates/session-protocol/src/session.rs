@@ -2340,8 +2340,13 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
             ),
         });
     }
-    if matches!(command, Command::AttachView { kind: ViewKind::Inspector, .. })
-        && !scope.may(Power::Inspect)
+    if matches!(
+        command,
+        Command::AttachView {
+            kind: ViewKind::Inspector,
+            ..
+        }
+    ) && !scope.may(Power::Inspect)
     {
         return Some(Refusal {
             code: NOT_ALLOWED.into(),

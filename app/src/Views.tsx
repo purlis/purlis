@@ -17,6 +17,7 @@ import {
   Activity,
   Archive,
   Brain,
+  Bug,
   ChartColumn,
   CircleDashed,
   Cpu,
@@ -91,6 +92,8 @@ import { BrowserView } from "./BrowserView";
 import { BrowserTimeline } from "./BrowserTimeline";
 import { isBrowserTimeline } from "./browserTimelines";
 import { BROWSER_VIEW, isBrowser } from "./browsers";
+import { INSPECTOR_VIEW, isInspector } from "./inspector";
+import { InspectorView } from "./InspectorView";
 import { SessionRecordTab } from "./SessionRecordTab";
 import { useSessionOffers } from "./sessionOffers";
 import { TodoTab } from "./TodoTab";
@@ -345,6 +348,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [BROWSER_VIEW]: Globe,
   /** This machine and its runners (#2052, `DevicesView.tsx`). */
   [DEVICES_VIEW.view]: MonitorSmartphone,
+  /** A browser's DevTools, drawn live (#2028, `inspector.ts`). */
+  [INSPECTOR_VIEW]: Bug,
 };
 
 /** The glyph a view's tab carries: a person for a persona, a piece of a puzzle for a view an
@@ -591,6 +596,9 @@ export function ViewPane({
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
              browser, so a pane that comes to show another one opens its own view. */
           <BrowserView key={`${plane}\u0000${view.key}`} plane={plane} program={view.key} />
+        ) : isInspector(view) ? (
+          /* A browser's DevTools, drawn live from their frames (#2028). Keyed by the browser. */
+          <InspectorView key={`${plane}\u0000${view.key}`} program={view.key} />
         ) : isBrowserTimeline(view) ? (
           /* A chat's browser timeline (#2017), keyed by the chat's id, which it keeps across a
              launch. */

@@ -640,7 +640,7 @@ pub(crate) struct Browser {
     hub: Arc<Hub>,
     screen: Arc<dyn Screen>,
     /// Its open DevTools' frames and their size, while the person has them open (#2028).
-    inspector: Arc<Mutex<Option<(Arc<Hub>, (u16, u16))>>>,
+    inspector: Arc<Mutex<Option<OpenDevTools>>>,
     /// Its id in the host, and the host's own act that ends it, for the line its end leaves in
     /// the host's log (#2745).
     program: String,
@@ -672,7 +672,7 @@ impl Browser {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn inspector(&self) -> MutexGuard<'_, Option<(Arc<Hub>, (u16, u16))>> {
+    fn inspector(&self) -> MutexGuard<'_, Option<OpenDevTools>> {
         self.inspector
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -698,8 +698,11 @@ impl Hub {
     }
 }
 
+/// A browser's open DevTools: their frames, and the size they are drawn at (#2028).
+type OpenDevTools = (Arc<Hub>, (u16, u16));
+
 /// DevTools of `hub` closed: their views end, and `slot` forgets them where it still holds them.
-fn closed(slot: &Mutex<Option<(Arc<Hub>, (u16, u16))>>, hub: &Arc<Hub>) {
+fn closed(slot: &Mutex<Option<OpenDevTools>>, hub: &Arc<Hub>) {
     let mut open = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if open.as_ref().is_some_and(|(now, _)| Arc::ptr_eq(now, hub)) {
         *open = None;
@@ -841,9 +844,9 @@ impl Running for Browser {
         // Held while the engine opens them, so an end it says at once finds them here.
         *open = Some((Arc::clone(&hub), (width, height)));
         drop(open);
-        if let Err(why) = self
-            .screen
-            .inspect(width, height, Box::new(move || closed(&slot, &theirs)))
+        if let Err(why) =
+            self.screen
+                .inspect(width, height, Box::new(move || closed(&slot, &theirs)))
         {
             closed(&self.inspector, &hub);
             return Err(not_taken(why));
