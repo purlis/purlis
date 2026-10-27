@@ -1,0 +1,17 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+/** Test-only: **what the status family says of its own rules to the theme's tests**
+ *  (`theme/families.testkit.ts`, #3387). */
+import type { FamilyTheme } from "../../theme/families.testkit";
+
+export default {
+  faint: [
+    // A disabled status item's words (#2913).
+    '[data-scope="status-item"][data-part="root"][data-disabled]',
+  ],
+  quiet: [
+    // A status cell's word before its count (#2913).
+    '[data-static]:has(> [data-part="count"]) > [data-scope="status-item"][data-part="label"]',
+  ],
+} satisfies FamilyTheme;

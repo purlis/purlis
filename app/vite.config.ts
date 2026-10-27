@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { generate, NOTICES_FILE, render } from "../tools/third-party-notices.mjs";
-import { familiesIn, withEveryFamily } from "./src/ui/stylesheets.ts";
+import { withTheFamilies } from "./src/ui/stylesheets.ts";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -79,17 +79,18 @@ function thirdPartyNotices(): Plugin {
 /**
  * **Every family's stylesheet, in `styles.css`'s `@families` line** (`src/ui/stylesheets.ts`):
  * each `src/ui/<family>/<family>.css` that `styles.css` does not import by name, by name, so a
- * pull request that adds a family adds no line there. Before Tailwind, which reads the imports.
+ * pull request that adds a family adds no line there; and each family's `forced-colors.css` in
+ * its `@forced` line's place. Before Tailwind, which reads the imports.
  */
 function familyStylesheets(): Plugin {
   const ui = fileURLToPath(new URL("src/ui", import.meta.url));
   const styles = normalizePath(fileURLToPath(new URL("src/styles.css", import.meta.url)));
-  /** A family's own stylesheet, `src/ui/<family>/<family>.css`. */
+  /** A family's own stylesheet, `src/ui/<family>/<family>.css`, or its forced-colours sheet. */
   const isFamilySheet = (file: string) => {
     const [family, sheet, ...rest] = normalizePath(file)
       .slice(normalizePath(ui).length + 1)
       .split("/");
-    return rest.length === 0 && sheet === `${family}.css`;
+    return rest.length === 0 && (sheet === `${family}.css` || sheet === "forced-colors.css");
   };
   return {
     name: "purlis-family-stylesheets",
@@ -109,7 +110,7 @@ function familyStylesheets(): Plugin {
     },
     transform(code, id) {
       if (normalizePath(id.split("?")[0]) !== styles) return undefined;
-      return { code: withEveryFamily(code, familiesIn(ui)), map: null };
+      return { code: withTheFamilies(code, ui), map: null };
     },
   };
 }

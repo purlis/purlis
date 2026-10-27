@@ -5,30 +5,45 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { forcedFamiliesIn, forcedSheet } from "../ui/stylesheets";
 
 /**
  * **Forced colours** (#2328): `forced-colors.css` says again, in the system's palette and with a
  * shape, what the window says with a background or a shadow alone. jsdom evaluates no media
  * query and no cascade, so this reads the sheet the way `surfaces.test.ts` reads `App.css`: each
  * rule as its selector and its declarations. `tailwind.test.ts` holds that the build keeps it in
- * the last layer, and `e2e/specs/forced-colors.e2e.ts` that the WebView parses it.
+ * the last layer, and `e2e/specs/forced-colors.e2e.ts` that the WebView parses it. Each family's
+ * own sheet (`ui/<family>/forced-colors.css`, #3387) is read with it, in the order the window
+ * imports them: every family's, by name, and then the window's.
  */
 
 const read = (file: string) =>
   readFileSync(join(process.cwd(), "src", file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 
-const sheet = read("theme/forced-colors.css");
+/** The forced-colours sheets, in the order `styles.css` imports them into the `forced` layer. */
+const SHEETS = [
+  ...forcedFamiliesIn(join(process.cwd(), "src", "ui"))
+    .sort()
+    .map((family) => forcedSheet(family).slice(2)),
+  "theme/forced-colors.css",
+];
 
-/** The sheet's one `@media` block's body. */
-function inside(): string {
+/** One sheet's one `@media` block's body. */
+function insideOf(file: string): string {
+  const sheet = read(file);
   const open = /@media\s*\(forced-colors:\s*active\)\s*\{/.exec(sheet);
-  expect(open, "one @media (forced-colors: active) block").not.toBeNull();
+  expect(open, `${file}: one @media (forced-colors: active) block`).not.toBeNull();
   const start = (open?.index ?? 0) + (open?.[0].length ?? 0);
   const end = sheet.lastIndexOf("}");
   // Nothing outside it: forced colours are all the sheet draws.
-  expect(sheet.slice(0, open?.index).trim()).toBe("");
-  expect(sheet.slice(end + 1).trim()).toBe("");
+  expect(sheet.slice(0, open?.index).trim(), file).toBe("");
+  expect(sheet.slice(end + 1).trim(), file).toBe("");
   return sheet.slice(start, end);
+}
+
+/** Every sheet's block, one after another, as the cascade reads them. */
+function inside(): string {
+  return SHEETS.map(insideOf).join("\n");
 }
 
 /** Each rule as its selectors (one per comma, whitespace collapsed) and its declarations. */
@@ -255,17 +270,21 @@ describe("forced colours", () => {
   });
 
   it("tell a refused box from a taken one by its edge's shape, which takes no room (#3335)", () => {
-    const refused =
-      ':is( [data-scope="text-input"], [data-scope="textarea"], [data-scope="select"], [data-scope="combobox"] )[data-part="root"][data-invalid]';
-    const it = drawn(refused);
-    expect(it.get("border-style")).toBe("dashed");
-    expect(it.get("border-color")).toBe("CanvasText");
-    // Its own edge, at the width it has: nothing moves, and the focus ring (an outline) stays.
-    for (const property of it.keys())
-      expect(property, property).not.toMatch(/width|outline|padding|margin|^border$/);
+    const refused = [
+      ':is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-invalid]',
+      ':is([data-scope="select"], [data-scope="combobox"])[data-part="root"][data-invalid]',
+    ];
+    for (const box of refused) {
+      const it = drawn(box);
+      expect(it.get("border-style"), box).toBe("dashed");
+      expect(it.get("border-color"), box).toBe("CanvasText");
+      // Its own edge, at the width it has: nothing moves, and the focus ring (an outline) stays.
+      for (const property of it.keys())
+        expect(property, property).not.toMatch(/width|outline|padding|margin|^border$/);
+    }
     // Every box a value is given to is reached.
     for (const family of ["text-input", "textarea", "select", "combobox"])
-      expect(refused).toContain(`[data-scope="${family}"]`);
+      expect(refused.join(" ")).toContain(`[data-scope="${family}"]`);
   });
 
   it("outline what is opened over the window, taking no room", () => {
@@ -286,5 +305,7 @@ describe("forced colours", () => {
     // In two halves: the stylesheet guard reads a quoted path ending in the extension as an
     // import (`literals.test.ts`).
     expect(styles).toContain(['@import "./theme/forced-colors', 'css" layer(forced);'].join("."));
+    // Every family's own sheet just before it, in the place of the `@forced` line.
+    expect(styles.indexOf("/* @forced:")).toBeLessThan(styles.indexOf("./theme/forced-colors"));
   });
 });

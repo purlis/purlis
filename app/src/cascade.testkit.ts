@@ -17,14 +17,10 @@
  *   drawn at its ordinary width, with motion and no narrowing query in force;
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
- * - `primitives/collections.css`, `ui/button/button.css`, `ui/field/field.css`,
- *   `ui/select/select.css`, the window's own families (`ui/panel`, `ui/empty-state`,
- *   `ui/status`), the card, notice, badge and separator families (`ui/card`, `ui/notice`,
- *   `ui/badge`, `ui/separator`), `ui/dialog/dialog.css`, `primitives/overlays.css`,
- *   `ui/tooltip/tooltip.css`, the popover and menu families' sheets, the list family's and a
- *   chat's pane (`paneFrame.css`) are in the `components` layer,
- *   above `App.css`'s `charter` (`styles.css`), so a family's rule beats any of `App.css`'s that
- *   sets the same property, at any specificity;
+ * - every sheet `styles.css` imports into the `components` layer (the collections, every
+ *   family's, the overlay surface, a chat's pane and the text roles), in the order the window is
+ *   built with, is above `App.css`'s `charter` (`styles.css`), so a family's rule beats any of
+ *   `App.css`'s that sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
  *
  * What it answers is the declared value, `var(--list-selected)` and not a colour: two rows that
@@ -33,6 +29,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { builtStyles } from "./ui/stylesheets";
 
 /** A stylesheet under `src/`, without its comments. */
 function sheet(file: string): string {
@@ -109,35 +106,16 @@ function rulesOf(css: string, layer = 0, from = 0): Rule[] {
   });
 }
 
-/** The window's cascade: `App.css`, and in the layer above it the collections, the button
- *  family (#2904), the field family (#2905), the select and combobox families
- *  (#2906), the window's own families
- *  (#2913), the harness icon (#2922), the dialog family (#2910), the overlay surface, the tooltip family (#2908), the popover and menu families (#2909), the list and table families (#2911), a chat's pane (#3142) and then the text roles,
- *  in the order `styles.css` imports them. */
+/** The window's cascade: `App.css`, and in the layer above it every sheet `styles.css` imports
+ *  into `components`, in its order, the families' in the `@families` line's place as the build
+ *  puts them (`ui/stylesheets.ts`, #3387), so a new family is read here with no line of its own. */
 const COMPONENTS = [
-  "primitives/collections.css",
-  "ui/button/button.css",
-  "ui/field/field.css",
-  "ui/select/select.css",
-  "ui/panel/panel.css",
-  "ui/empty-state/empty-state.css",
-  "ui/status/status.css",
-  "ui/harness-icon/harness-icon.css",
-  "ui/card/card.css",
-  "ui/notice/notice.css",
-  "ui/badge/badge.css",
-  "ui/separator/separator.css",
-  "ui/dialog/dialog.css",
-  "primitives/overlays.css",
-  "ui/tooltip/tooltip.css",
-  "ui/popover/popover.css",
-  "ui/menu/menu.css",
-  "ui/list/list.css",
-  "paneFrame.css",
-  "ui/table/table.css",
-  "ui/tree/tree.css",
-  "primitives/text.css",
-].reduce<Rule[]>((rules, file) => [...rules, ...rulesOf(sheet(file), 1, rules.length)], []);
+  ...builtStyles(join(process.cwd(), "src")).matchAll(
+    /^@import "\.\/([^"]+)" layer\(components\);/gm,
+  ),
+]
+  .map((hit) => hit[1])
+  .reduce<Rule[]>((rules, file) => [...rules, ...rulesOf(sheet(file), 1, rules.length)], []);
 const RULES = [...rulesOf(sheet("App.css"), 0), ...COMPONENTS];
 
 /** `[ids, classes + attributes + pseudo-classes, types + pseudo-elements]`. */
