@@ -848,14 +848,22 @@ jobs:
     steps:
       # Bounded, and each download tried again by dnf itself (#1625), as the Ubuntu jobs'
       # packages are (#1477): a slow mirror ends this step rather than holding the job.
+      #
+      # The programs the core's tests run that the Ubuntu runner image has and Fedora's does not
+      # (#3507): `nc` (`nmap-ncat`), the client the brokered tunnel's tests send through it, and
+      # the `openssl` command, which makes the certificate of a private skill source's https
+      # test. `openssl-devel` is only the library's headers.
       - name: Fedora's build dependencies for Tauri, and a display to start the app in
         timeout-minutes: 15
         run: |
           dnf -y install --setopt=install_weak_deps=False --setopt=retries=3 --setopt=timeout=60 \
             gcc gcc-c++ make pkgconf-pkg-config perl git tar gzip xz which findutils procps-ng gawk \
-            curl wget file openssl-devel webkit2gtk4.1-devel libxdo-devel \
+            curl wget file openssl openssl-devel webkit2gtk4.1-devel libxdo-devel \
             libappindicator-gtk3-devel librsvg2-devel \
-            xorg-x11-server-Xvfb xauth dbus-daemon dbus-x11 mesa-dri-drivers             bubblewrap socat
+            xorg-x11-server-Xvfb xauth dbus-daemon dbus-x11 mesa-dri-drivers bubblewrap socat \
+            nmap-ncat
+          test -x /usr/bin/nc
+          openssl version
           cat /etc/fedora-release
           got=$(. /etc/os-release && echo "$VERSION_ID")
           if [ "$got" != "$FEDORA" ]; then
