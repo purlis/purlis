@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793069255056,
+  "lastUpdate": 1793081996447,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -7970,6 +7970,42 @@ window.BENCHMARK_DATA = {
             "value": 282.6,
             "unit": "MB",
             "extra": "median of 6 samples: 331.8, 296.3, 281.4, 282.1, 283.2, 206 MB; window 165.3 MB, session host 119.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1a420d199abb8a1448ed30e0f5f6c769032a8ec3",
+          "message": "SK-52: one folder-handle reader for skills and harness configs (#3457)\n\n* SK-52: one folder-handle reader for skills and harness configs (#3205)\n\npurlis_skills::held::Folder is now the one folder-handle type, public from\npurlis-skills. purlis_core::harness_plugin::Folder, its Child/Kind/NotListed\nand its own read_opened are gone; opencode's listing and the outside-skill\nlisting read through the shared type.\n\n- Following a link is a choice per step (held::Follow), on open and child.\n- names() is whole or not at all, at most held::MOST_NAMES (2000), and says\n  why not (NotListed::Crowded / Unreadable).\n- scan() refuses a plane level of more names than that with a sentence\n  (Missing::Crowded): the scan side of SK-44's limit.\n- is_git_top and the 1 MiB config limit stay purlis-core's choices.\n- An opencode config with a second name (a hard link) read through a held\n  folder is now refused, as a skill's own file is; it is still listed, as a\n  config purlis cannot read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-52 review: hard links read in the person's own folders, crowded walks end the files\n\nFrom the two-axis review of #3457:\n- read_config takes the hard-link choice per root: refused inside the plane\n  (project, workspace, clones, worktrees), read in ~/.opencode, the folders\n  above the project and a .git file, as the person's harness reads them.\n- A skill folder walk that meets a crowded or unreadable folder ends as the\n  MOST_FILES cap does, keeping what it listed before.\n- outside.rs uses text_names; a changelog fragment says what people notice.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-52: cargo fmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T04:51:02Z",
+          "tree_id": "e12a7ffd4eacfb5dc874c6589c455bca32aec581",
+          "url": "https://github.com/purlis/purlis/commit/1a420d199abb8a1448ed30e0f5f6c769032a8ec3"
+        },
+        "date": 1793081993381,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1225,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1121, 1225, 1523 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 330.9,
+            "unit": "MB",
+            "extra": "median of 6 samples: 354.3, 342.7, 338.4, 322.1, 323.3, 215.9 MB; window 206.4 MB, session host 124.1 MB"
           }
         ]
       }
