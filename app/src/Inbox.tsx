@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  Fragment,
   useCallback,
   useId,
   useLayoutEffect,
@@ -16,6 +17,7 @@ import { useTabStop } from "./roving";
 import { RestartEndsLine } from "./RestartEnds";
 import { commands, type InboxUpdate, type Offered, type PlaneId, type Shown } from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
+import { counted as countedSaid } from "./dispatches";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import {
   ElsewhereGroup,
@@ -656,7 +658,7 @@ export const linesSaid = (lines: NonNullable<Shape["lines"]>) =>
     : `Allow is not offered. It runs over ${lines.count} lines, put on one here.`;
 
 /** What a row says of the lines it does not draw. */
-const moreLines = (more: number) => `and ${more} more ${more === 1 ? "line" : "lines"}`;
+const moreLines = (more: number) => `and ${countedSaid(more, "more line", "more lines")}`;
 
 /** An ask's line, each mark on it drawn as one (`invisible-char`), apart from the words. Its
  *  parts, not a component of its own, so the tooltip still reads the words it repeats. */
@@ -732,9 +734,17 @@ const DOES = {
   hidden: "a reader does not see here",
 } as const;
 
+/** What a row says of a hidden character a permission holds. */
+const holdsSaid = (mark: string, also = false) =>
+  `It ${also ? "also holds" : "holds"} ${mark}, a character ${DOES[blankOf(mark) ?? "hidden"]}.`;
+
 /** Why a permission holding `mark` offers no Allow (SK-51, #3202; #3470). */
-export const hiddenSaid = (mark: string) =>
-  `Allow is not offered. It holds ${mark}, a character ${DOES[blankOf(mark) ?? "hidden"]}.`;
+export const hiddenSaid = (mark: string) => `Allow is not offered. ${holdsSaid(mark)}`;
+
+/** Why a permission over several lines offers no Allow, and the hidden character it holds too,
+ *  where it holds one (#3502). */
+const withheldSaid = (lines: NonNullable<Shape["lines"]>, mark: string | undefined) =>
+  mark === undefined ? linesSaid(lines) : `${linesSaid(lines)} ${holdsSaid(mark, true)}`;
 
 /** What a row says of where it waits. */
 const SOURCE_SAID: Record<Shown["source"], string> = {
@@ -946,14 +956,20 @@ function Ask({
                 className="ask-says ask-lines inbox-primary ui-text-body ui-text-strong"
               >
                 {shape.lines.drawn.map((one, at) => (
-                  <span key={at} className="ask-line">
-                    {markedLine(one)}
-                  </span>
+                  // A space between lines, which a column does not draw, so the row's name
+                  // reads them apart.
+                  <Fragment key={at}>
+                    {at > 0 && " "}
+                    <span className="ask-line">{markedLine(one)}</span>
+                  </Fragment>
                 ))}
                 {shape.lines.more > 0 && (
-                  <span className="ask-line ask-more-lines ui-text-secondary">
-                    {moreLines(shape.lines.more)}
-                  </span>
+                  <>
+                    {" "}
+                    <span className="ask-line ask-more-lines ui-text-secondary">
+                      {moreLines(shape.lines.more)}
+                    </span>
+                  </>
                 )}
               </span>
             ) : (
@@ -975,11 +991,11 @@ function Ask({
           </Tooltip>
         </p>
         {/* Why its Allow is missing: the lines it runs over, which its line put on one
-            (#3502), or a character it holds that reads otherwise (SK-51). */}
+            (#3502), and a character it holds that reads otherwise (SK-51). */}
         {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
           <p className="inbox-hidden ui-text-secondary">
             {shape.lines !== undefined
-              ? linesSaid(shape.lines)
+              ? withheldSaid(shape.lines, shape.hidden)
               : hiddenSaid(shape.hidden ?? "")}
           </p>
         )}

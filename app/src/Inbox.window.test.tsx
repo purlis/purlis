@@ -370,6 +370,15 @@ describe("the asks, grouped by chat", () => {
     const lines = Array.from(document.querySelectorAll(".ask-line"), (one) => one.textContent);
     expect(lines).toEqual([...shown.slice(0, MOST_LINES), `and ${40 - MOST_LINES} more lines`]);
     expect(screen.getByText("Allow is not offered. It runs over 40 lines.")).toBeTruthy();
+    cleanup();
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], shown.slice(0, 6).join(" ")),
+        options: [deny()],
+        lines: { count: 6, shown: shown.slice(0, 6) },
+      },
+    ]);
+    expect(document.querySelector(".ask-more-lines")?.textContent).toBe("and 1 more line");
   });
 
   it("says how many lines a command runs over where it cannot draw them (#3502)", () => {
@@ -389,7 +398,7 @@ describe("the asks, grouped by chat", () => {
     ).toBeTruthy();
   });
 
-  it("says the lines over a mark, and never offers Allow it was not given (#3502)", () => {
+  it("says the lines and a mark they hold, and never offers Allow it was not given (#3502)", () => {
     core();
     const said = "Run a command: git⟦U+00A0⟧commit rm -rf x";
     draw([
@@ -409,7 +418,15 @@ describe("the asks, grouped by chat", () => {
       },
     ]);
     expect(screen.getByText("⟦U+00A0⟧").tagName).toBe("MARK");
-    expect(screen.getByText("Allow is not offered. It runs over 2 lines.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Allow is not offered. It runs over 2 lines. It also holds ⟦U+00A0⟧, a character that looks like another one here.",
+      ),
+    ).toBeTruthy();
+    // The row's name reads the lines apart.
+    expect(document.querySelector(".ask-lines")?.textContent).toBe(
+      "Run a command: git⟦U+00A0⟧commit rm -rf x",
+    );
   });
 
   it("says nothing of a ⟦ the command wrote itself, which keeps its Allow (SK-51, #3202)", () => {

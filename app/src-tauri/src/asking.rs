@@ -313,10 +313,17 @@ pub fn permission(raised: Raised) -> Option<Shown> {
     })
 }
 
-/// **The lines `ask`'s action runs over, as the row shows `says`**, its line (#3502): `None`
-/// where the action is on one line, or where its summary is not made from the action. Each line
-/// is kept only where, joined by a space, they are `says`.
+/// **The lines `ask`'s command runs over, as the row shows `says`**, its line (#3502): `None`
+/// for any other action, a command on one line, or one whose summary is not made from it. Each
+/// line is kept only where, joined by a space, they are `says`.
 fn lines_of(ask: &purlis_core::harness::model::Ask, says: &str) -> Option<LinesShown> {
+    let Action::Command { line } = &ask.action else {
+        return None;
+    };
+    // Most commands are on one line: no summary is made again for them.
+    if !line.contains('\n') {
+        return None;
+    }
     let said = ask.action.said();
     if ask.summary != purlis_core::harness::model::Summary::of(&said) {
         return None;

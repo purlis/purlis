@@ -278,7 +278,7 @@ fn a_permission_over_several_lines_carries_them_as_its_line_shows_them() {
 }
 
 #[test]
-fn a_permission_on_one_line_or_not_said_from_its_action_carries_no_lines() {
+fn a_permission_on_one_line_not_a_command_or_not_said_from_it_carries_no_lines() {
     let asks = Asks::new();
     let one = asks
         .raise("3", a_command_ask("ls -la"), Instant::now())
@@ -294,7 +294,22 @@ fn a_permission_on_one_line_or_not_said_from_its_action_carries_no_lines() {
         )
         .raised;
 
+    let question = asks
+        .raise(
+            "3",
+            Ask {
+                action: purlis_core::harness::model::Action::Question {
+                    question: "Which?\nThis one".to_owned(),
+                },
+                summary: purlis_core::harness::model::Summary::of("Asks you: Which?\nThis one"),
+                ..a_hook_ask("")
+            },
+            Instant::now(),
+        )
+        .raised;
+
     assert_eq!(permission(one).expect("a chat").lines, None);
+    assert_eq!(permission(question).expect("a chat").lines, None);
     assert_eq!(permission(titled).expect("a chat").lines, None);
 }
 

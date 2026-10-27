@@ -377,7 +377,7 @@ impl Summary {
     /// A masked summary is not its action word for word, so nothing that lets the call run is
     /// offered beside it ([`super::hooked::shown_in_full`]).
     pub fn of(text: &str) -> Self {
-        Self(written(&one_line(text), text))
+        Self(cut(masked(&one_line(text), text)))
     }
 
     /// **The lines `text` runs over, as its summary shows them** (#3502): where `text` breaks
@@ -394,15 +394,19 @@ impl Summary {
         if !laid.contains('\n') {
             return None;
         }
-        let lines = written(&laid, text);
-        let shown = if lines.replace('\n', " ") == Self::of(text).0 {
-            lines.split('\n').map(str::to_owned).collect()
+        let lines = masked(&laid, text);
+        let shown = cut(lines.clone());
+        Some(if shown.replace('\n', " ") == Self::of(text).0 {
+            // Counted once masked, so a mask over a line end counts the line it joined once.
+            Lines {
+                count: lines.split('\n').count(),
+                shown: shown.split('\n').map(str::to_owned).collect(),
+            }
         } else {
-            Vec::new()
-        };
-        Some(Lines {
-            count: laid.split('\n').count(),
-            shown,
+            Lines {
+                count: laid.split('\n').count(),
+                shown: Vec::new(),
+            }
         })
     }
 
@@ -414,17 +418,17 @@ impl Summary {
 /// The lines a text runs over, as [`Summary::lines_of`] shows them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lines {
-    /// How many lines it runs over, counted before the summary is cut.
+    /// How many lines it runs over, counted before the summary is cut: as masked, where the
+    /// lines are shown.
     pub count: usize,
     /// Each line as the summary shows it, masked and cut as it is. Empty where they could not
     /// be shown as the summary shows them.
     pub shown: Vec<String>,
 }
 
-/// `line`, made from `text`, as a [`Summary`] writes it: each credential shape and each vault
-/// value masked, the whole of it the mask where a value `text` held still stands on it, and cut
-/// to [`SUMMARY_WIDTH`].
-fn written(line: &str, text: &str) -> String {
+/// `line`, made from `text`, as a [`Summary`] masks it: each credential shape and each vault
+/// value masked, and the whole of it the mask where a value `text` held still stands on it.
+fn masked(line: &str, text: &str) -> String {
     let mut spans = crate::secretshape::leak_spans(line);
     spans.extend(
         crate::secrets::seen::found_in(line)
@@ -449,6 +453,11 @@ fn written(line: &str, text: &str) -> String {
     if still_holds_a_vault_value(text, &out) {
         out = format!("[{VAULT_VALUE}]");
     }
+    out
+}
+
+/// `out` cut to [`SUMMARY_WIDTH`] characters, the last an ellipsis where it was cut.
+fn cut(mut out: String) -> String {
     if out.chars().count() > SUMMARY_WIDTH {
         out = out.chars().take(SUMMARY_WIDTH - 1).collect();
         out.push('…');
@@ -456,9 +465,9 @@ fn written(line: &str, text: &str) -> String {
     out
 }
 
-/// `text` as [`one_line`] puts it, but with a line end where a run of blanks it collapses held
-/// one: the lines a reader is shown ([`Summary::lines_of`]). With each `\n` read as a space it
-/// is [`one_line`]'s line.
+/// `text` with the white space a command line is laid out with collapsed ([`one_line`]): each
+/// run of spaces, tabs and line ends (`\n` or `\r\n`) is one line end where it held one, and
+/// one space otherwise. The lines a reader is shown ([`Summary::lines_of`]).
 fn laid_out(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut gap = None;
@@ -488,11 +497,7 @@ fn laid_out(text: &str) -> String {
 /// tab, a form feed, a next line, a line or paragraph separator, #3470). Purlis's one rule
 /// marks it where the line is shown, so the window can say why it is not offered Allow.
 fn one_line(text: &str) -> String {
-    text.replace("\r\n", "\n")
-        .split([' ', '\t', '\n'])
-        .filter(|word| !word.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+    laid_out(text).replace('\n', " ")
 }
 
 /// Whether `written`, the masked line made from `text`, still shows a vault value `text` held:
