@@ -13,7 +13,7 @@
 //!   other address is closed. It is watched as frames, as a browser is, and the person's input
 //!   reaches it as a browser view's does.
 //! - **It speaks to the inspected page through the host, over the browser's one pipe.** Inside
-//!   the front end, the `WebSocket` it opens is a stand-in ([`STAND_IN`]) that never opens a
+//!   the front end, the `WebSocket` it opens is a stand-in ([`STAND_IN_SOURCE`]) that never opens a
 //!   connection, and the engine's own embedder interface is not given to it: what it sends comes
 //!   to the driver as a binding's call from its own main world, and what the page answers is
 //!   handed back into it as a value. The page is spoken to on a session of the front end's own,
@@ -82,13 +82,42 @@ const FIELD_ROLES: &[&str] = &["textbox", "searchbox", "combobox", "spinbutton",
 
 /// The stand-in for the front end's `WebSocket`, run in the front end before its own scripts: a
 /// constant. It opens nothing: what is sent goes through [`BINDING`], and what the page answers
-/// is handed to it by `deliver`, as a list of messages. The engine's embedder interface
-/// (`DevToolsHost`) is put out of the front end's reach before anything reads it, so the front
-/// end runs as a hosted one.
-pub(crate) const STAND_IN: &str = r"(() => {
-  try {
-    Object.defineProperty(globalThis, 'DevToolsHost', { value: undefined, writable: false, configurable: false });
-  } catch (e) {}
+/// is handed to it by `deliver`, as a list of messages. Where the engine gives the front end its
+/// embedder interface (`DevToolsHost`), it is wrapped before anything reads it, so only the asks
+/// of [`EMBEDDER_ALLOWED`] reach the engine and every other is answered with nothing.
+pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
+  const native = globalThis.DevToolsHost;
+  if (native) {
+    const allowed = new Set(EMBEDDER_ALLOWED);
+    const refuse = (message) => {
+      let id;
+      try { id = JSON.parse(message).id; } catch (e) { return; }
+      if (typeof id !== 'number') return;
+      setTimeout(() => {
+        const api = globalThis.DevToolsAPI;
+        if (api && typeof api.embedderMessageAck === 'function') api.embedderMessageAck(id, null);
+      }, 0);
+    };
+    const toEmbedder = (message) => {
+      let method;
+      try { method = JSON.parse(message).method; } catch (e) { return; }
+      if (allowed.has(method)) native.sendMessageToEmbedder(message);
+      else refuse(message);
+    };
+    const wrapped = new Proxy(native, {
+      get(target, key) {
+        if (key === '__purlisWrapped') return true;
+        if (key === 'sendMessageToEmbedder') return toEmbedder;
+        const value = Reflect.get(target, key);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+      set() { return false; },
+      defineProperty() { return false; },
+    });
+    try {
+      Object.defineProperty(globalThis, 'DevToolsHost', { value: wrapped, writable: false, configurable: false });
+    } catch (e) {}
+  }
   const send = globalThis.__purlisInspect;
   const open = [];
   class Socket extends EventTarget {
@@ -124,6 +153,35 @@ pub(crate) const STAND_IN: &str = r"(() => {
   Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver }), writable: false, configurable: false });
 })()";
 
+/// **What the front end may ask of the engine's embedder interface** (#2028), where the engine
+/// gives it one: its own settings and what it draws, and nothing that reaches past the front
+/// end (no network, file, window, tab or device of the engine's). Every other ask is answered
+/// with nothing and never reaches the engine.
+pub(crate) const EMBEDDER_ALLOWED: &[&str] = &[
+    "getPreferences",
+    "getPreference",
+    "setPreference",
+    "removePreference",
+    "clearPreferences",
+    "getSyncInformation",
+    "getHostConfig",
+    "setInspectedPageBounds",
+    "setIsDocked",
+    "setWhitelistedShortcuts",
+    "setEyeDropperActive",
+    "loadCompleted",
+    "zoomIn",
+    "zoomOut",
+    "resetZoom",
+    "copyText",
+];
+
+/// [`STAND_IN_SOURCE`] with [`EMBEDDER_ALLOWED`] in it: what runs in the front end.
+pub(crate) fn stand_in() -> String {
+    let allowed = serde_json::to_string(EMBEDDER_ALLOWED).expect("names serialise");
+    STAND_IN_SOURCE.replacen("EMBEDDER_ALLOWED", &allowed, 1)
+}
+
 /// The function a batch is handed to the front end with: a constant, the batch its argument.
 pub(crate) const DELIVER: &str =
     "function (batch) { globalThis.__purlisInspector.deliver(batch); }";
@@ -132,6 +190,7 @@ pub(crate) const DELIVER: &str =
 /// names what it found and nothing the front end showed.
 const HOSTED: &str = r"JSON.stringify({
   host: typeof globalThis.DevToolsHost,
+  wrapped: !!(globalThis.DevToolsHost && globalThis.DevToolsHost.__purlisWrapped),
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
 })";
 
@@ -468,7 +527,7 @@ impl Browser {
         devtools
             .call(
                 "Page.addScriptToEvaluateOnNewDocument",
-                json!({ "source": STAND_IN }),
+                json!({ "source": stand_in() }),
                 on,
             )
             .map_err(refusal)?;
@@ -1144,5 +1203,26 @@ fn to_the_page(inner: &Inner, open: &Inspection, payload: &str) -> Option<String
     match inner.devtools.send_tapped(tap, id, method, params, session) {
         Ok(()) => None,
         Err(why) => refused(id, &why.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod stand_in_tests {
+    use super::{EMBEDDER_ALLOWED, stand_in};
+
+    #[test]
+    fn the_stand_in_carries_the_embedder_asks_it_lets_through_and_no_other_name() {
+        let source = stand_in();
+        assert!(!source.contains("EMBEDDER_ALLOWED"));
+        assert!(source.contains(&serde_json::to_string(EMBEDDER_ALLOWED).unwrap()));
+        for never in [
+            "loadNetworkResource",
+            "openInNewTab",
+            "save",
+            "addFileSystem",
+            "setDevicesDiscoveryConfig",
+        ] {
+            assert!(!EMBEDDER_ALLOWED.contains(&never), "{never}");
+        }
     }
 }
