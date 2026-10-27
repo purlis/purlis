@@ -1245,6 +1245,16 @@ impl session::Host for Relay {
                     .into(),
             });
         }
+        // A runner keeps a profile for the desktop it is paired with, on that desktop's own link
+        // to it (#2049): never sent on for a client.
+        if let Command::KeepProfile(_) = command {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "a runner keeps a profile for its desktop on that desktop's own link, never \
+                      through a relaying host"
+                    .into(),
+            });
+        }
         if the_windows_alone(&command) && peer.scope() != Scope::LocalUi {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),

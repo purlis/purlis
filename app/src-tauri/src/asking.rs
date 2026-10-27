@@ -193,7 +193,12 @@ pub enum AnswerPath {
     /// Sign in sends nothing: it opens a shell tab where the core types the harness's own
     /// sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
     /// the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
-    SignIn { profile: String },
+    /// With `pool`, it is signed in on that pool's runner (#2049): the line typed is the
+    /// runner's own sign-in, and both commands name the pool.
+    SignIn {
+        profile: String,
+        pool: Option<String>,
+    },
     /// Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
     /// Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
     /// `dismiss_sandbox_only`.
@@ -1459,6 +1464,60 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         chain: vec![said_inertly(&format!("Profile {name}"))],
         answer: AnswerPath::SignIn {
             profile: name.clone(),
+            pool: None,
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+    }
+}
+
+/// The key a profile's Ask to sign it in on pool `pool` is kept under (#2049).
+fn pool_sign_in_key(profile: &str, pool: &str) -> String {
+    format!("sign-in:{profile}:on:{pool}")
+}
+
+/// **A profile a start on a pool was refused on, as its Ask** (#2049): *Sign in <profile> on
+/// pool <pool>*, about no chat. Sign in opens a shell tab where the core types the runner's own
+/// sign-in for it, which the person drives there; the Ask waits until the runner says it is
+/// signed in there. Nothing of this machine's sign-in goes to the runner.
+pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Shown {
+    use purlis_core::profilestore::sign_in;
+    let (name, pool) = (&wait.profile, &wait.pool);
+    let plans = sign_in::providers(&wait.kind);
+    let mut options: Vec<Offered> = if plans.is_empty() {
+        vec![Offered {
+            id: SIGN_IN.to_owned(),
+            label: format!("Sign in on pool {pool}"),
+            allows: true,
+            preselected: None,
+        }]
+    } else {
+        plans
+            .iter()
+            .map(|plan| Offered {
+                id: format!("{SIGN_IN}:{}", plan.provider),
+                label: format!("Sign in to {} on pool {pool}", plan.title),
+                allows: true,
+                preselected: None,
+            })
+            .collect()
+    };
+    options.push(refuses(DISMISS, "Dismiss"));
+    Shown {
+        session: 0,
+        ask: pool_sign_in_key(name, pool),
+        says: said_inertly(&format!(
+            "{name} is not signed in on pool {pool}. Sign in runs {}'s own sign-in on its \
+             runner; nothing of this machine's sign-in goes there",
+            wait.harness
+        )),
+        options,
+        source: AskSource::SignIn,
+        chain: vec![said_inertly(&format!("Profile {name} on pool {pool}"))],
+        answer: AnswerPath::SignIn {
+            profile: name.clone(),
+            pool: Some(pool.clone()),
         },
         since: None,
         held_until: None,
@@ -1579,6 +1638,9 @@ pub struct Waiting<'a> {
     pub runner_writes: Vec<crate::runnerwrites::HeldWrite>,
     /// The profiles a start was refused on because they are not signed in here (#2035).
     pub sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
+    /// The profiles a start on a pool was refused on because they are not signed in on its
+    /// runner (#2049).
+    pub pool_sign_ins: Vec<purlis_core::profilestore::onrunner::PoolWait>,
     /// Whether a sandboxed Codex chat here waits for a sandbox-only profile (#2037).
     pub sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
     /// The chats whose first browser call asks what their browser may reach (#2013).
@@ -1672,6 +1734,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
     asks.extend(waiting.sign_ins.iter().map(sign_in));
+    asks.extend(waiting.pool_sign_ins.iter().map(pool_sign_in));
     asks.extend(waiting.sandbox_only.iter().map(sandbox_only));
     asks.extend(
         waiting
@@ -1704,8 +1767,11 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     }));
     for (at, ask) in asks.iter_mut().enumerate() {
         // A profile's Ask is about no chat: its chain is the profile, as its adapter said.
-        let profiles =
-            signing..signing + waiting.sign_ins.len() + usize::from(waiting.sandbox_only.is_some());
+        let profiles = signing
+            ..signing
+                + waiting.sign_ins.len()
+                + waiting.pool_sign_ins.len()
+                + usize::from(waiting.sandbox_only.is_some());
         if !profiles.contains(&at) {
             ask.chain = chain(ask.session, waiting.name_of, waiting.asker_of);
         }
@@ -1831,6 +1897,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &sign_ins {
         since.insert(format!("sign-in:{}", one.profile.name), one.since);
     }
+    let pool_sign_ins = purlis_core::profilestore::onrunner::waiting_on_pools(root);
+    for one in &pool_sign_ins {
+        since.insert(pool_sign_in_key(&one.profile, &one.pool), one.since);
+    }
     let sandbox_only = purlis_core::profilestore::sandbox_only::waiting(
         root,
         &purlis_core::profilestore::listed_here(),
@@ -1869,6 +1939,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         pool_tools,
         sandbox_only,
         sign_ins,
+        pool_sign_ins,
         removals,
         proposals,
         runner_writes,

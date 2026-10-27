@@ -242,7 +242,7 @@ pub fn create(
     machine: &MachineSettings,
     now: u64,
 ) -> Result<Made, String> {
-    make(homes, name, kind, Some(machine), now)
+    make(homes, name, kind, Making::imported_from(machine), now)
 }
 
 /// **Makes the profile `name` of the harness `kind` for sandboxed chats only** (#2037, ruled
@@ -255,18 +255,47 @@ pub fn create_sandbox_only(
     kind: &str,
     now: u64,
 ) -> Result<Made, String> {
-    make(homes, name, kind, None, now)
+    make(homes, name, kind, Making::SANDBOX_ONLY, now)
+}
+
+/// How a profile is made: where its settings are imported from, whether it is for sandboxed
+/// chats only, and whether it may take a built-in's name.
+pub(super) struct Making<'a> {
+    /// This machine's settings, imported into it; none imports nothing.
+    pub(super) machine: Option<&'a MachineSettings<'a>>,
+    pub(super) sandbox_only: bool,
+    /// A runner keeping a desktop's profile (#2049) keeps its name, a built-in's included: no
+    /// folder of the runner's own is ever adopted in place under it.
+    pub(super) builtin_name: bool,
+}
+
+impl<'a> Making<'a> {
+    const SANDBOX_ONLY: Making<'static> = Making {
+        machine: None,
+        sandbox_only: true,
+        builtin_name: false,
+    };
+
+    fn imported_from(machine: &'a MachineSettings<'a>) -> Self {
+        Making {
+            machine: Some(machine),
+            sandbox_only: false,
+            builtin_name: false,
+        }
+    }
 }
 
 /// [`create`], with its settings imported from `machine`'s, or, with none, a profile for
-/// sandboxed chats only ([`create_sandbox_only`]).
-fn make(
+/// sandboxed chats only ([`create_sandbox_only`]); or a runner's keeping of a desktop's
+/// profile ([`super::onrunner`]).
+pub(super) fn make(
     homes: &Homes,
     name: &str,
     kind: &str,
-    machine: Option<&MachineSettings>,
+    making: Making<'_>,
     now: u64,
 ) -> Result<Made, String> {
+    let machine = making.machine;
     if !crate::profiles::name_ok(name) {
         return Err(format!(
             "'{}' cannot be a profile's name: use letters, digits, '-' and '_', starting with a \
@@ -274,7 +303,7 @@ fn make(
             crate::shown::short(name)
         ));
     }
-    if crate::profiles::KINDS.iter().any(|k| k.word == name) {
+    if !making.builtin_name && crate::profiles::KINDS.iter().any(|k| k.word == name) {
         return Err(format!(
             "'{name}' is the name of the profile purlis gives every project for that harness. \
              Pick another name."
@@ -328,7 +357,7 @@ fn make(
             imported: from.map(|from| Imported { at: now, from }),
             sign_in: None,
             pinned: None,
-            sandbox_only: machine.is_none(),
+            sandbox_only: making.sandbox_only,
             rest: Map::new(),
         };
         store.profiles.push(record.clone());

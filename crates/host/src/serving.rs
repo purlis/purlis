@@ -58,12 +58,18 @@ pub type Answering = Arc<dyn Fn() -> Result<Option<(Identity, Pinned)>, String> 
 /// (`unpair`, 1.25, #2525): no later link from it is admitted.
 pub type Unpairing = Arc<dyn Fn(&Pinned) -> Result<(), String> + Send + Sync>;
 
+/// Keeps a profile of the desktop's on the runner (`keep_profile`, 1.43, #2049), and says
+/// whether its harness says it is signed in there: `signed-in`, `signed-out` or `cannot-tell`.
+pub type Keeping = Arc<dyn Fn(&session::ProfileToKeep) -> Result<String, String> + Send + Sync>;
+
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
-/// and how the desktop it admits is taken out of its peers ([`Unpairing`]).
+/// how the desktop it admits is taken out of its peers ([`Unpairing`]), and how it keeps that
+/// desktop's profiles ([`Keeping`]).
 #[derive(Clone)]
 pub struct Pairing {
     pub answering: Answering,
     pub unpairing: Unpairing,
+    pub keeping: Keeping,
 }
 
 /// The lock's file name beside `purlisd.sock`, the socket of a person's own config home.
@@ -198,6 +204,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
         };
         let hosting = hosting.clone();
         let unpairing = Arc::clone(&pairing.unpairing);
+        let keeping = Arc::clone(&pairing.keeping);
         tokio::spawn(async move {
             let chats = Arc::new(hosting.clone());
             match hostlink::answer_local(
@@ -216,6 +223,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         hosting,
                         desktop,
                         unpairing,
+                        keeping,
                         unpaired: Arc::clone(&unpaired),
                     };
                     let serving = session::serve(answered.link, paired, None);
@@ -236,12 +244,13 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 }
 
 /// The session protocol on a link from the desktop a runner is paired with: the host's own,
-/// and `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of
-/// the runner's peers.
+/// `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of the
+/// runner's peers, and `keep_profile` (1.43, #2049), which keeps one of its profiles here.
 struct PairedLink {
     hosting: Hosting,
     desktop: Pinned,
     unpairing: Unpairing,
+    keeping: Keeping,
     /// Told once the desktop is unpaired, so its link ends.
     unpaired: Arc<tokio::sync::Notify>,
 }
@@ -250,15 +259,9 @@ struct PairedLink {
 /// reach it.
 const UNPAIRED_LINK_ENDS: std::time::Duration = std::time::Duration::from_secs(2);
 
-impl session::Host for PairedLink {
-    async fn call(
-        &self,
-        command: session::Command,
-        peer: &session::Peer,
-    ) -> Result<session::Answer, session::Refusal> {
-        if command != session::Command::Unpair {
-            return session::Host::call(&self.hosting, command, peer).await;
-        }
+impl PairedLink {
+    /// `unpair` (1.25): the desktop the handshake proved taken out of the runner's peers.
+    async fn unpair(&self) -> Result<session::Answer, session::Refusal> {
         let (unpairing, desktop) = (Arc::clone(&self.unpairing), self.desktop.clone());
         let unpaired = tokio::task::spawn_blocking(move || unpairing(&desktop))
             .await
@@ -273,6 +276,37 @@ impl session::Host for PairedLink {
                 code: session::NOT_STARTED.into(),
                 why,
             }),
+        }
+    }
+
+    /// `keep_profile` (1.43, #2049): the desktop's profile kept here, off the runtime, since
+    /// its harness is asked whether it is signed in.
+    async fn keep(
+        &self,
+        profile: session::ProfileToKeep,
+    ) -> Result<session::Answer, session::Refusal> {
+        let keeping = Arc::clone(&self.keeping);
+        tokio::task::spawn_blocking(move || keeping(&profile))
+            .await
+            .unwrap_or_else(|why| Err(format!("the profile was not kept: {why}")))
+            .map(|standing| session::Answer::ProfileKept { standing })
+            .map_err(|why| session::Refusal {
+                code: session::NOT_STARTED.into(),
+                why,
+            })
+    }
+}
+
+impl session::Host for PairedLink {
+    async fn call(
+        &self,
+        command: session::Command,
+        peer: &session::Peer,
+    ) -> Result<session::Answer, session::Refusal> {
+        match command {
+            session::Command::KeepProfile(profile) => self.keep(profile).await,
+            session::Command::Unpair => self.unpair().await,
+            command => session::Host::call(&self.hosting, command, peer).await,
         }
     }
 

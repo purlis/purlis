@@ -297,6 +297,40 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
     })
 }
 
+/// **Has the runner keep this desktop's profile `profile` over a link of its own**
+/// (`keep_profile`, 1.43, #2049): the word for whether its harness says it is signed in there.
+pub fn keep_profile(
+    to: &ToARunner,
+    profile: purlis_session_protocol::session::ProfileToKeep,
+) -> Result<String, String> {
+    keep_profiles(to, vec![profile])?
+        .pop()
+        .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
+}
+
+/// [`keep_profile`] for each of `profiles`, in order, over one link: each one's word, or why
+/// the runner did not keep it.
+pub fn keep_profiles(
+    to: &ToARunner,
+    profiles: Vec<purlis_session_protocol::session::ProfileToKeep>,
+) -> Result<Vec<Result<String, String>>, String> {
+    on_one_link(to, async |linked| match linked {
+        Ok(client) => {
+            let mut said = Vec::with_capacity(profiles.len());
+            for profile in profiles {
+                said.push(
+                    client
+                        .keep_profile(profile)
+                        .await
+                        .map_err(|why| why.to_string()),
+                );
+            }
+            Ok(said)
+        }
+        Err(down) => Err(down.why),
+    })
+}
+
 /// **Where the runner stands, as one link to it says** (#2679): linked with the key pinned for
 /// it, refused for another key, or down and why.
 pub fn link_state(to: &ToARunner) -> Result<crate::dockerpools::PoolLink, String> {

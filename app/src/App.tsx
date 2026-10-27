@@ -2302,7 +2302,7 @@ function App() {
             {/* A browser sign-in a forge ended, with Sign in again (#729). */}
             <ForgeSignInEnded />
             {/* Add a Docker pool… (#2679): a dialog, opened from the palette or the Pools group. */}
-            <AddDockerPoolHost />
+            <AddDockerPoolHost plane={inFront} />
             {/* An entry the store itself would not take back, said the same way. */}
             {notRestored.map((line) => (
               <Notice

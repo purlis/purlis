@@ -7148,6 +7148,58 @@ fn a_harness_chat_on_a_runner_is_started_by_its_names_and_a_shell_by_the_window_
     assert_eq!(host.named().len(), 1);
 }
 
+/// What a chat's start asked of its profile on a pool, and what it answers (#2049).
+#[derive(Default)]
+struct ProfilesOnAPool {
+    asked: Mutex<Vec<(PathBuf, String, String)>>,
+    refusing: Mutex<Option<String>>,
+}
+
+impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        lock(&self.asked).push((root.to_path_buf(), pool.to_owned(), profile.to_owned()));
+        match lock(&self.refusing).clone() {
+            Some(why) => Err(why),
+            None => Ok(()),
+        }
+    }
+}
+
+/// **A chat on a pool is started there only once its profile is ready on the pool's runner**
+/// (#2049): signed in, it starts with nobody asked, as a moved chat does; refused, nothing is
+/// sent to the runner and the start says why.
+#[test]
+fn a_runner_chat_starts_once_its_profile_is_ready_on_the_pool_and_nothing_starts_otherwise() {
+    let host = Pretend::default();
+    host.on_pool("builds");
+    let on_pools = Arc::new(ProfilesOnAPool::default());
+    let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+    chats.readying_profiles_on_pools(on_pools.clone());
+
+    chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert_eq!(
+        *lock(&on_pools.asked),
+        vec![(no_project(), "builds".to_owned(), "work".to_owned())]
+    );
+    assert_eq!(host.named().len(), 1);
+
+    *lock(&on_pools.refusing) = Some("the profile 'work' is not signed in on pool builds".into());
+    let refused = chats.start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE);
+    assert_eq!(
+        refused,
+        Err("the profile 'work' is not signed in on pool builds".to_owned())
+    );
+    assert_eq!(host.named().len(), 1, "nothing more was sent to the runner");
+
+    // A shell on the runner starts on no profile, and asks nothing of one.
+    chats
+        .start(&chat("/bin/sh", "shell", None), SIZE)
+        .expect("a shell starts");
+    assert_eq!(lock(&on_pools.asked).len(), 2);
+}
+
 /// #2692: a harness chat a runner composes by its names is judged by the runner host's record of
 /// how it applied the sandbox, as the start answered it: one recorded off has its persona's
 /// browser logins, as an unsandboxed local chat does; one recorded in the runner's sandbox, or

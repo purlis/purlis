@@ -249,7 +249,7 @@ describe("the asks, grouped by chat", () => {
       ],
       source: "sign-in",
       chain: ["Profile work"],
-      answer: { via: "sign-in", profile: "work" },
+      answer: { via: "sign-in", profile: "work", pool: null },
     };
     draw([signIn]);
     expect(chats()).toEqual(["Profile work"]);

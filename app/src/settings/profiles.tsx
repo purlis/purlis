@@ -1,12 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { commands, type MachineProfileRemoval, type MachineProfileRow } from "../bindings";
 import { HarnessIcon } from "../ui/harness-icon/HarnessIcon";
 import { Choice, Field, SettingActions, SettingRow } from "./components";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { askProfileSignIn } from "./links";
+import { askProfiles, usePools } from "../pools";
+import { standingOnPool } from "./PoolProfiles";
 import { Button } from "../ui/button/Button";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Form } from "../ui/field/Field";
@@ -238,6 +240,21 @@ const listed = (plane: string | undefined): LiveSetting => ({
   writes: "this machine",
   useControl: function useProfiles() {
     const now = useSyncExternalStore(subscribe, () => held);
+    // **Where each is signed in** (#2049): this machine, and each pool's runner, asked once as
+    // the list comes on screen.
+    const pools = usePools();
+    const poolNames =
+      pools.read.state === "read" ? pools.read.shown.pools.map((one) => one.name) : [];
+    const asked = poolNames.join("\u0000");
+    useEffect(() => {
+      for (const name of asked === "" ? [] : asked.split("\u0000")) void askProfiles(name);
+    }, [asked]);
+    const onPools = (name: string) =>
+      poolNames.flatMap((pool) => {
+        const rows = pools.profiles[pool];
+        const row = Array.isArray(rows) ? rows.find((one) => one.name === name) : undefined;
+        return row === undefined ? [] : [standingOnPool(pool, row)];
+      });
     return {
       grouped: true,
       error: now.refused === undefined ? undefined : [now.refused],
@@ -261,6 +278,11 @@ const listed = (plane: string | undefined): LiveSetting => ({
                     <span className="ui-machine-path">{profile.folder}</span>
                     <Badge variant="accent">{note(profile)}</Badge>
                     <span className="ui-setting-help">{signedIn(profile)}</span>
+                    {onPools(profile.name).map((line) => (
+                      <span key={line} className="ui-setting-help">
+                        {line}
+                      </span>
+                    ))}
                     {profile.origin === "made" &&
                       (plane === undefined ? (
                         <span className="ui-setting-help">

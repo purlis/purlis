@@ -123,7 +123,7 @@ const SIGN_IN: Shown = {
   ],
   source: "sign-in",
   chain: ["Profile oc"],
-  answer: { via: "sign-in", profile: "oc" },
+  answer: { via: "sign-in", profile: "oc", pool: null },
 };
 
 const SANDBOX_ONLY: Shown = {
@@ -301,7 +301,34 @@ describe("answering through the path an ask names", () => {
       window.removeEventListener(PROFILE_SIGN_IN, heard);
     }
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
-      ["dismiss_sign_in", { plane: PLANE, profile: "oc" }],
+      ["dismiss_sign_in", { plane: PLANE, profile: "oc", pool: null }],
+    ]);
+  });
+
+  it("signs a profile in on a pool's runner by opening its shell tab, and puts it away there (#2049)", async () => {
+    const onPool: Shown = {
+      ...SIGN_IN,
+      ask: "sign-in:oc:on:builds",
+      answer: { via: "sign-in", profile: "oc", pool: "builds" },
+    };
+    const calls = sent({ dismiss_sign_in: null });
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(PROFILE_SIGN_IN, heard);
+    try {
+      expect(await answerTaken(PLANE, onPool, "sign-in:openai")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+      expect(opened).toEqual([{ plane: PLANE, profile: "oc", provider: "openai", pool: "builds" }]);
+      expect(calls).toEqual([]);
+      await answerTaken(PLANE, onPool, "dismiss");
+    } finally {
+      window.removeEventListener(PROFILE_SIGN_IN, heard);
+    }
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["dismiss_sign_in", { plane: PLANE, profile: "oc", pool: "builds" }],
     ]);
   });
 

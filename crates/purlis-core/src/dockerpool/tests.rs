@@ -645,6 +645,30 @@ fn pairing_runs_the_bridge_to_pair_as_the_runners_user_and_group_in_the_containe
     );
 }
 
+/// A profile is signed in on the runner by the runner's own `purlis profile sign-in`, with a
+/// terminal, as the runner's user and group in the container it pinned (#2049).
+#[test]
+fn a_profile_is_signed_in_on_the_runner_by_its_own_sign_in_in_the_container_it_pinned() {
+    assert_eq!(
+        made().sign_in_args("work", None),
+        [
+            "exec",
+            "-it",
+            "--user",
+            "10001:10001",
+            ID,
+            PURLIS,
+            "profile",
+            "sign-in",
+            "work"
+        ]
+    );
+    assert_eq!(
+        made().sign_in_args("chatgpt", Some("openai"))[7..],
+        ["sign-in", "chatgpt", "--provider", "openai"]
+    );
+}
+
 /// A stand-in for `docker`: a script that logs each call's words and answers from the files
 /// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and

@@ -467,6 +467,30 @@ impl Made {
         self.exec(&["--version"])
     }
 
+    /// `docker`'s arguments that run the runner's own `purlis profile sign-in` of its profile
+    /// `name` (#2049), to `provider`'s plan where one is named, with a terminal the person drives:
+    /// the harness's own sign-in, run on the runner in the runner's folder for that profile.
+    pub fn sign_in_args(&self, name: &str, provider: Option<&str>) -> Vec<String> {
+        let mut args: Vec<String> = [
+            "exec",
+            "-it",
+            "--user",
+            &self.runner.user.spelled(),
+            self.container.as_str(),
+            PURLIS,
+            "profile",
+            "sign-in",
+            name,
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        if let Some(provider) = provider {
+            args.extend(["--provider".to_owned(), provider.to_owned()]);
+        }
+        args
+    }
+
     fn exec(&self, words: &[&str]) -> Vec<String> {
         let mut args: Vec<String> = [
             "exec",
@@ -1645,6 +1669,36 @@ impl Docker {
                  container {container} and the volume {volume} with docker"
             )),
         }
+    }
+
+    /// **The line a person's shell runs to sign the profile `name` in on `made`'s runner**
+    /// (#2049), on the engine whose local socket is `engine`, to `provider`'s plan where one is
+    /// named: this `docker`, the engine named on the line so no setting of the shell's reaches
+    /// another, and the container by its id, checked as it was made first, as the connector
+    /// checks it before every link. Refused, with nothing to type, where the check fails.
+    pub fn sign_in_line(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<String, String> {
+        self.check(made).map_err(|why| why.0)?;
+        let engine = engine
+            .to_str()
+            .ok_or_else(|| "the Docker engine's socket is not a path purlis can type".to_owned())?;
+        let mut args = vec!["--host".to_owned(), format!("unix://{engine}")];
+        args.extend(made.sign_in_args(name, provider));
+        crate::profilestore::sign_in::Login {
+            program: self
+                .program
+                .to_str()
+                .ok_or_else(|| "this machine's docker is not at a path purlis can type".to_owned())?
+                .to_owned(),
+            args,
+            env: Vec::new(),
+        }
+        .line()
     }
 
     /// What Docker says of `made`'s container, its home volume and the daemon, held to

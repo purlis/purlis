@@ -104,6 +104,7 @@ struct World {
     since: Vec<(&'static str, u32)>,
     /// The profiles waiting to be signed in (#2035).
     sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
+    pool_sign_ins: Vec<purlis_core::profilestore::onrunner::PoolWait>,
     sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
     /// The chats whose first browser call asks what their browser may reach (#2013).
     browsers: Vec<crate::chatbrowsers::Waits>,
@@ -135,6 +136,7 @@ impl World {
             held: Vec::new(),
             since: Vec::new(),
             sign_ins: Vec::new(),
+            pool_sign_ins: Vec::new(),
             sandbox_only: None,
             browsers: Vec::new(),
             needs_you: Vec::new(),
@@ -167,6 +169,7 @@ impl World {
         };
         derive(&Waiting {
             sign_ins: self.sign_ins.clone(),
+            pool_sign_ins: self.pool_sign_ins.clone(),
             sandbox_only: self.sandbox_only.clone(),
             proposals: Vec::new(),
             runner_writes: Vec::new(),
@@ -1149,7 +1152,8 @@ fn a_profile_not_signed_in_is_one_ask_about_no_chat_that_signs_it_in() {
     assert_eq!(
         ask.answer,
         AnswerPath::SignIn {
-            profile: "work".to_owned()
+            profile: "work".to_owned(),
+            pool: None,
         }
     );
     assert!(
@@ -1164,6 +1168,61 @@ fn a_profile_not_signed_in_is_one_ask_about_no_chat_that_signs_it_in() {
             .any(|one| one.session == 3 && one.chain == ["steward 3"]),
         "the chats keep their own chains"
     );
+}
+
+/// **A profile not signed in on a pool is one Ask to sign it in there** (#2049), about no chat,
+/// beside the same profile's Ask for this machine, each answered on its own device.
+#[test]
+fn a_profile_not_signed_in_on_a_pool_is_one_ask_to_sign_it_in_on_that_pool() {
+    let mut world = World::new();
+    world.sign_ins = vec![waits_to_sign_in("claude", "Claude Code")];
+    world.pool_sign_ins = vec![purlis_core::profilestore::onrunner::PoolWait {
+        root: "/p".into(),
+        pool: "builds".to_owned(),
+        profile: "work".to_owned(),
+        kind: "claude".to_owned(),
+        harness: "Claude Code".to_owned(),
+        since: 9,
+    }];
+    world.since = vec![("sign-in:work:on:builds", 9)];
+
+    let asks = world.asks();
+    let on_pool: Vec<_> = asks
+        .iter()
+        .filter(|ask| {
+            ask.answer
+                != AnswerPath::SignIn {
+                    profile: "work".to_owned(),
+                    pool: None,
+                }
+        })
+        .filter(|ask| ask.source == AskSource::SignIn)
+        .collect();
+
+    assert_eq!(on_pool.len(), 1);
+    let ask = on_pool[0];
+    assert_eq!(ask.session, 0);
+    assert_eq!(ask.chain, ["Profile work on pool builds"]);
+    assert_eq!(ids(ask), ["sign-in", "dismiss"]);
+    assert_eq!(
+        ask.answer,
+        AnswerPath::SignIn {
+            profile: "work".to_owned(),
+            pool: Some("builds".to_owned()),
+        }
+    );
+    assert!(
+        ask.says.contains("not signed in on pool builds"),
+        "{}",
+        ask.says
+    );
+    assert!(
+        ask.says
+            .contains("nothing of this machine's sign-in goes there"),
+        "{}",
+        ask.says
+    );
+    assert_eq!(ask.since, Some(9));
 }
 
 #[test]

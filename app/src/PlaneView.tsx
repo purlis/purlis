@@ -537,6 +537,8 @@ type Typed =
   | {
       signIn: string;
       provider?: string;
+      /** The pool whose runner it is signed in on (#2049), where it is not this machine. */
+      pool?: string;
       line?: undefined;
       installer?: undefined;
       sandboxInstall?: undefined;
@@ -2935,7 +2937,13 @@ export const PlaneView = memo(function PlaneView({
           // sign-in with the profile's folder set, and the person drives it in this tab.
           else if (typed?.signIn !== undefined)
             void commands
-              .typeProfileSignIn(plane, session, typed.signIn, typed.provider ?? null)
+              .typeProfileSignIn(
+                plane,
+                session,
+                typed.signIn,
+                typed.provider ?? null,
+                typed.pool ?? null,
+              )
               .then((said) => {
                 if (said.status === "error") refusedBy("shell", said.error);
               })
@@ -3148,15 +3156,15 @@ export const PlaneView = memo(function PlaneView({
    * core. The person drives the harness's flow there; purlis reads none of it.
    */
   const signIn = useCallback(
-    (profile: string, provider?: string) => {
-      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider });
+    (profile: string, provider?: string, pool?: string) => {
+      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider, pool });
     },
     [openShell, root],
   );
   useEffect(() => {
     const asked = (event: Event) => {
       const wanted = (event as CustomEvent<ProfileSignInAsk>).detail;
-      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider);
+      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider, wanted.pool);
     };
     window.addEventListener(PROFILE_SIGN_IN, asked);
     return () => window.removeEventListener(PROFILE_SIGN_IN, asked);

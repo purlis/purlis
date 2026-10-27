@@ -107,7 +107,7 @@ pub use relay::{Dial, Keep, Relay};
 pub use routing::{DrainsTo, RelaysTo, Routed};
 #[cfg(unix)]
 pub use serving::{
-    Answering, HostError, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,
+    Answering, HostError, Keeping, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,
 };
 
 /// The argument that starts the window's binary as its session host. Its word is the window's

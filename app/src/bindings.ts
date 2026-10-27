@@ -1570,13 +1570,19 @@ export const commands = {
 	 *  plane or the window reaches the shell through here. It is typed only into a shell at the
 	 *  project root, the one the window opened for it, never into a chat's pane. An adopted
 	 *  profile is refused: it is signed in by the person's own sign-in.
+	 * 
+	 *  **With `pool`, it is signed in on that pool's runner** (#2049): the line is the runner's own
+	 *  `purlis profile sign-in`, run there through this machine's `docker`, in the runner's folder
+	 *  for the profile ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in
+	 *  goes there. The runner is asked again every few seconds until it says the profile is signed
+	 *  in there.
 	 */
-	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider })),
+	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool })),
 	/**
 	 *  Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
 	 *  next start on it asks again while its harness says it is signed out.
 	 */
-	dismissSignIn: (plane: PlaneId, profile: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_sign_in", { plane, profile })),
+	dismissSignIn: (plane: PlaneId, profile: string, pool: string | null) => typedError<null, string>(__TAURI_INVOKE("dismiss_sign_in", { plane, profile, pool })),
 	/**
 	 *  **Update the pin** (#2038): pins `name` to `version`, the one the page showed installed, so
 	 *  its chats run, and its conversations resume, on that version from now on.
@@ -2748,6 +2754,12 @@ export const commands = {
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
+	/**
+	 *  **Every profile of this machine's, kept on pool `pool`'s runner**, as the runner stands with
+	 *  each (#2049): what adding a pool ends with, and what Settings › Pools shows. Refused, with
+	 *  nothing sent, for a pool not shown to be the person's own.
+	 */
+	poolProfiles: (pool: string) => typedError<PoolProfileRow[], string>(__TAURI_INVOKE("pool_profiles", { pool })),
 	/**
 	 *  **The projects a runner would not hold again after a re-link**, each with the runner's words
 	 *  and the pools its chats run on.
@@ -4251,8 +4263,10 @@ export type AnswerPath =
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
+ *  With `pool`, it is signed in on that pool's runner (#2049): the line typed is the
+ *  runner's own sign-in, and both commands name the pool.
  */
-{ via: "sign-in"; profile: string } | 
+{ via: "sign-in"; profile: string; pool: string | null } | 
 /**
  *  Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
  *  Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
@@ -9317,6 +9331,24 @@ export type PoolLink =
 { state: "key_changed" } | 
 /**  It did not answer, and why. */
 { state: "down"; why: string };
+
+/**  One of this machine's profiles, as a pool's runner stands with it. */
+export type PoolProfileRow = {
+	name: string,
+	/**  The harness, as a profile's kind names it. */
+	kind: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
+	/**
+	 *  Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
+	 *  `cannot-tell`. Null where it is not kept there.
+	 */
+	standing: string | null,
+	/**  Why it is not kept on the runner, in words, where it is not. */
+	not_kept: string | null,
+	/**  The plans Sign in offers there, where purlis names the provider. */
+	plans: PlanRow[],
+};
 
 /**  One pool, as its row draws it. */
 export type PoolRow = {

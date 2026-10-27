@@ -435,6 +435,7 @@ macro_rules! app_commands {
                 dockerpools::remove_docker_pool,
                 dockerpools::docker_pool_link,
                 dockerpools::docker_pool_version,
+                poolprofiles::pool_profiles,
                 notheld::projects_not_held,
                 dockerpools::chats_run_on,
                 runnerwrites::apply_runner_write,

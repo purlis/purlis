@@ -1391,6 +1391,7 @@ export const commands = {
 	removeDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	dockerPoolVersion: __WINDOW_ONLY_RESULT,
+	poolProfiles: __WINDOW_ONLY_RESULT,
 	projectsNotHeld: __WINDOW_ONLY_RESULT,
 	chatsRunOn: __WINDOW_ONLY_RESULT,
 	applyRunnerWrite: __WINDOW_ONLY_RESULT,
@@ -2360,8 +2361,10 @@ export type AnswerPath =
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
+ *  With `pool`, it is signed in on that pool's runner (#2049): the line typed is the
+ *  runner's own sign-in, and both commands name the pool.
  */
-{ via: "sign-in"; profile: string } | 
+{ via: "sign-in"; profile: string; pool: string | null } | 
 /**
  *  Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
  *  Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
@@ -7426,6 +7429,24 @@ export type PoolLink =
 { state: "key_changed" } | 
 /**  It did not answer, and why. */
 { state: "down"; why: string };
+
+/**  One of this machine's profiles, as a pool's runner stands with it. */
+export type PoolProfileRow = {
+	name: string,
+	/**  The harness, as a profile's kind names it. */
+	kind: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
+	/**
+	 *  Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
+	 *  `cannot-tell`. Null where it is not kept there.
+	 */
+	standing: string | null,
+	/**  Why it is not kept on the runner, in words, where it is not. */
+	not_kept: string | null,
+	/**  The plans Sign in offers there, where purlis names the provider. */
+	plans: PlanRow[],
+};
 
 /**  One pool, as its row draws it. */
 export type PoolRow = {

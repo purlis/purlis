@@ -5,6 +5,7 @@
 //! (ADR 0078 §2). The desktop it is paired with is linked and served the session protocol as
 //! `remote-link`; another key, a runner that is not paired, and what the runner keeps that
 //! cannot be read are refused; the link socket is this user's alone and goes when the host ends.
+//! The paired desktop has the runner keep its profiles (1.43, #2049).
 //!
 //! These bind a socket, which a sandboxed agent cannot: they first run on CI.
 
@@ -15,7 +16,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use purlis_host::{
-    Answering, ComposesNothing, HostError, Hosting, Pairing, Place, Unpairing, serve_answering,
+    Answering, ComposesNothing, HostError, Hosting, Keeping, Pairing, Place, Unpairing,
+    serve_answering,
 };
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, LinkKey, Liveness, Pinned};
 use purlis_session_protocol::link::Link;
@@ -87,9 +89,36 @@ fn unpairing(paired: &Paired) -> Unpairing {
     })
 }
 
+/// The profiles the runner was asked to keep, in order.
+type KeptHere = Arc<Mutex<Vec<purlis_session_protocol::session::ProfileToKeep>>>;
+
+/// Keeps each profile in `kept`, signed out there unless its name is `signed-in`.
+fn keeping(kept: &KeptHere) -> Keeping {
+    let kept = Arc::clone(kept);
+    Arc::new(move |profile| {
+        kept.lock().unwrap().push(profile.clone());
+        Ok(if profile.name == "signed-in" {
+            "signed-in".to_owned()
+        } else {
+            "signed-out".to_owned()
+        })
+    })
+}
+
 async fn hosting(
     place: &Place,
     paired: &Paired,
+) -> (
+    oneshot::Sender<()>,
+    tokio::task::JoinHandle<Result<(), HostError>>,
+) {
+    hosting_keeping(place, paired, &KeptHere::default()).await
+}
+
+async fn hosting_keeping(
+    place: &Place,
+    paired: &Paired,
+    kept: &KeptHere,
 ) -> (
     oneshot::Sender<()>,
     tokio::task::JoinHandle<Result<(), HostError>>,
@@ -101,6 +130,7 @@ async fn hosting(
         Pairing {
             answering: answering(paired),
             unpairing: unpairing(paired),
+            keeping: keeping(kept),
         },
     );
     let host = tokio::spawn(async move {
@@ -258,4 +288,40 @@ async fn the_paired_desktop_unpairs_the_runner_and_is_linked_no_more() {
         .expect("the link ends after the unpairing");
     assert!(!matches!(ended, Some(Ok(_))), "{ended:?}");
     assert!(link(&place, &desktop, &runner_pinned).await.is_err());
+}
+
+/// **The paired desktop has the runner keep its profile** (1.43, #2049): the runner is handed the
+/// profile's name, harness, sandbox-only mark and pin, and answers whether it is signed in there.
+#[tokio::test]
+async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_stands() {
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let kept = KeptHere::default();
+    let (_stop, _host) = hosting_keeping(&place, &paired, &kept).await;
+
+    let linked = link(&place, &desktop, &runner_pinned)
+        .await
+        .expect("the paired desktop is linked");
+    let client = purlis_session_protocol::session::Client::new(linked).0;
+    let profile = |name: &str| purlis_session_protocol::session::ProfileToKeep {
+        name: name.into(),
+        harness: "claude".into(),
+        sandbox_only: false,
+        pinned: Some("2.1.300".into()),
+    };
+    assert_eq!(
+        client.keep_profile(profile("signed-in")).await.unwrap(),
+        "signed-in"
+    );
+    assert_eq!(
+        client.keep_profile(profile("work")).await.unwrap(),
+        "signed-out"
+    );
+    assert_eq!(
+        *kept.lock().unwrap(),
+        vec![profile("signed-in"), profile("work")]
+    );
 }

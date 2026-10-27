@@ -327,6 +327,10 @@ impl SessionHost for RoutedSessions {
         self.here.composes_its_harness_chats()
     }
 
+    fn pool_for(&self, workspace: Option<&str>) -> Option<String> {
+        self.route(workspace).ok().flatten()
+    }
+
     fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
         match self.route(workspace) {
             // A start whose pool is not kept is refused as it opens, in its own words.

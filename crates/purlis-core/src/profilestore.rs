@@ -509,6 +509,7 @@ pub fn adopt_at_launch() -> Result<Adoption, String> {
 mod made;
 pub use made::*;
 
+pub mod onrunner;
 pub mod pin;
 pub mod sandbox_only;
 pub mod sign_in;
