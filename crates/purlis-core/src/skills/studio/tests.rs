@@ -205,6 +205,8 @@ fn a_grade() -> super::super::grades::Graded {
             spent_tokens: None,
             cost_cap_usd: None,
             spent_usd: None,
+            counted_usd: None,
+            priced: None,
         },
         spent: super::super::grades::Spent {
             chats: 12,

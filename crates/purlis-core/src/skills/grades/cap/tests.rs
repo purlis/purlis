@@ -76,10 +76,13 @@ fn a_cap_set_here_is_read_back_and_kept_in_this_machines_file() {
 }
 
 #[test]
-fn the_cost_bound_is_the_caps_tokens_at_the_dearest_price() {
+fn the_dollar_limit_is_the_caps_tokens_at_its_models_price_or_the_dearest() {
     let cap = Cap {
         tokens: DEFAULT,
         from: From::Default,
     };
-    assert!((cap.cost_usd() - 15.0).abs() < 1e-9, "{}", cap.cost_usd());
+    let dearest = super::super::price::of_model(None);
+    assert!((cap.cost_usd(&dearest) - 15.0).abs() < 1e-9);
+    let sonnet = super::super::price::of_model(Some("claude-sonnet-5-5"));
+    assert!((cap.cost_usd(&sonnet) - 2.0).abs() < 1e-9);
 }

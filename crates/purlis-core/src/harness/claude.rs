@@ -339,6 +339,22 @@ impl HarnessAdapter for ClaudeCode {
             .map(|flag| prompts_off_by(&flag))
     }
 
+    /// Claude Code's own order: the last `--model` in the command, then `ANTHROPIC_MODEL`; a
+    /// family alias read through the variable that remaps it ([`remapped`]). `None` where
+    /// neither says, and Claude Code picks: a `model` in its settings is not read, as the
+    /// project's outranks the person's and both reach the chat, so the limit is priced at the
+    /// dearest rather than at a model that may not run.
+    fn grade_model(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        let model = model_flag_in(command)
+            .or_else(|| env.var(MODEL_VARIABLE))
+            .filter(|model| !model.trim().is_empty())?;
+        remapped(&model, env)
+    }
+
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
     /// `armed`), beside the project settings its arming decided to load ([`project`], ADR 0067
     /// as amended 2026-10-15), and there it is allowed the chat's hook socket, which only the
@@ -749,6 +765,46 @@ fn mode_that_does_not_ask(command: &[String]) -> Option<String> {
         })
     })
 }
+
+/// **The model the last `--model` in `command` names**, where one names a model.
+fn model_flag_in(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command
+        .iter()
+        .enumerate()
+        .filter(|(_, word)| is_flag(word))
+        .filter_map(|(at, word)| {
+            let (flag, attached) = split(word);
+            (flag == MODEL_FLAG).then(|| {
+                attached
+                    .map(str::to_owned)
+                    .or_else(|| command.get(at + 1).filter(|next| !is_flag(next)).cloned())
+            })
+        })
+        .next_back()
+        .flatten()
+}
+
+/// **`model` as Claude Code runs it**: a family alias it remaps through
+/// `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` is the model that variable names, and `opusplan`, which
+/// runs both Opus and Sonnet, is none where either is remapped (the limit then prices at the
+/// dearest). Any other model is itself.
+fn remapped(model: &str, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+    let family = |name: &str| env.var(&format!("ANTHROPIC_DEFAULT_{name}_MODEL"));
+    let alias = model.trim().to_ascii_lowercase();
+    let alias = alias.split('[').next().unwrap_or_default();
+    match alias {
+        "opus" | "sonnet" | "haiku" => {
+            Some(family(&alias.to_ascii_uppercase()).unwrap_or_else(|| model.to_owned()))
+        }
+        "opusplan" if family("OPUS").is_some() || family("SONNET").is_some() => None,
+        _ => Some(model.to_owned()),
+    }
+}
+
+/// The flag Claude Code starts a chat on a model by, and the variable it reads after it.
+const MODEL_FLAG: &str = "--model";
+const MODEL_VARIABLE: &str = "ANTHROPIC_MODEL";
 
 /// The flag Claude Code starts a chat in a permission mode by.
 const PERMISSION_MODE_FLAG: &str = "--permission-mode";

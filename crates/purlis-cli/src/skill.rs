@@ -1243,16 +1243,22 @@ fn grade_said(
             for left in &planned.left_out {
                 text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
             }
+            // The terminal knows no profile, so its limit is at the dearest known price: the
+            // Skill studio's plan prices it from the model its profile's chats run on (#3469).
+            let dearest = purlis_core::skills::grades::price::of_model(None);
             text.push_str(&format!(
                 "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
-                 sets it), or once they cost ${:.2}, where the harness says what they cost.\n",
+                 sets it), or once they cost ${:.2}, its tokens at the dearest known price of \
+                 ${:.2} a million; the Skill studio's plan prices it from the model the chats \
+                 run on.\n",
                 counted(planned.cap.tokens, "token", "tokens"),
                 match planned.cap.from {
                     purlis_core::skills::grades::cap::From::Default => "the default",
                     purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
                 },
                 local_file,
-                planned.cap.cost_usd(),
+                planned.cap.cost_usd(&dearest),
+                dearest.usd_per_million,
             ));
             text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
         }

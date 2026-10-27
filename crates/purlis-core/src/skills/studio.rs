@@ -434,6 +434,7 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
                         GradeEnd::Cancelled => "Stopped",
                         GradeEnd::ChatsDidNotStart => "Chats did not start",
                         GradeEnd::OverCap => "Stopped at its token cap",
+                        GradeEnd::OverLimit => "Stopped at its dollar limit",
                         GradeEnd::SpendNotReported => "Stopped: spend not reported",
                         GradeEnd::Interrupted => "Interrupted: not scored",
                     }

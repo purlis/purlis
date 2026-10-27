@@ -3776,9 +3776,15 @@ An end row, never a pass or a fail:
   records it (the tree git holds of it, or `uncommitted`); `commit`, the commit that tree is, or
   null; `harness` and `profile`, the plain names its chats ran on; `ts`; `runs`, each fixture's
   runs per arm; `report`, the grade report as ADR 0105 §1 spells it, with the token cap it was
-  held to and what its chats spent (`cap`, `spent_tokens`, ADR 0105 §4), and the cost bound
+  held to and what its chats spent (`cap`, `spent_tokens`, ADR 0105 §4), and the dollar limit
   beside it and what they cost, where their harness said (`cost_cap_usd`, `spent_usd`, absent
-  otherwise; ADR 0105 as amended 2026-10-26); and `spent`,
+  otherwise; ADR 0105 as amended 2026-10-26); the price that limit was worked out at, `priced`
+  `{usd_per_million, from, model}`, `from` `model` (the model its chats ran on, as its harness's
+  adapter reads it, `model` absent where none was said) or `dearest` (the dearest known price,
+  `purlis_core::skills::grades::price`), and `counted_usd`, what the limit counted where a chat
+  said its tokens and not its cost (its tokens at the dearest price; absent otherwise), both
+  since #3469 and absent in older rows; `report.ended` `over-limit` where it stopped at that
+  limit before its tokens' cap (ADR 0105 as amended 2026-10-27, the dollar limit); and `spent`,
   `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
@@ -3789,7 +3795,9 @@ An end row, never a pass or a fail:
   name; a test triggered more often than it ran, run more often than the grade's `runs`, with a
   rate that is not the two's share or a pass where nothing ran, or a chat that is no plain id; an
   arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
-  reason that holds a control character or passes 2 KiB, #3353) is skipped. At most 200 grades of a skill are answered, newest first
+  reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
+  1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469) is
+  skipped. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::grades_of`).
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
@@ -7237,13 +7245,16 @@ rewritten.
 
 ### `<state>/grades-under-way/<grade>.json`
 - **Format:** one JSON object per grade running on this machine (#3353): `pid`, the process that
-  runs it; `local`, whether its copy is this machine's alone; and `graded`, its eval record row as
+  runs it; `local`, whether its copy is this machine's alone; `locked`, whether the grade holds the
+  file's lock (#3466, `false` where absent); and `graded`, its eval record row as
   it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
   nothing spent). Written `0600` through no link when a grade starts
-  (`grades::underway::began`) and removed when it ends (`grades::underway::ended`). At the
-  project's next start, each file whose process no longer runs is recorded as it is, interrupted,
-  and removed (`grades::underway::interrupted`): so a crash, a fault or a quit never leaves a grade
-  running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
+  (`grades::underway::began`) and removed when it ends (`grades::underway::ended`). The grade
+  holds the file's `flock` while it runs, taken before the file is in its place, so the lock goes
+  with its process however that ends (#3466). At the project's next start, each file whose lock no
+  other holds, of a grade that took it, is recorded as it is, interrupted, and removed (`grades::underway::interrupted`),
+  whatever process number it names; where the lock cannot be asked, one whose process no longer
+  runs is: so a crash, a fault or a quit never leaves a grade running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
   sound row is removed unrecorded.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state, transient — it lasts as long as its grade.

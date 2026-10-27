@@ -89,6 +89,8 @@ fn report(passed_with: bool) -> GradeReport {
         spent_tokens: None,
         cost_cap_usd: None,
         spent_usd: None,
+        counted_usd: None,
+        priced: None,
     }
 }
 
@@ -512,7 +514,7 @@ fn uncommitted_row() -> Graded {
 fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
     assert!(uncommitted_row().sound(), "a row purlis writes is kept");
     type Breaks = fn(&mut Graded);
-    let broken: [(&str, Breaks); 13] = [
+    let broken: [(&str, Breaks); 17] = [
         ("a cost below nothing", |row| {
             row.spent.cost_usd = Some(-1.0)
         }),
@@ -550,6 +552,27 @@ fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
         }),
         ("a cap's cost below nothing", |row| {
             row.report.cost_cap_usd = Some(-5.0);
+        }),
+        ("a counted cost below nothing", |row| {
+            row.report.counted_usd = Some(-1.0);
+        }),
+        ("a price past any model's", |row| {
+            row.report.priced = Some(grade::Priced {
+                usd_per_million: 7_500.0,
+                from: grade::PricedFrom::Model,
+                model: None,
+            });
+        }),
+        ("a model no reader sees whole", |row| {
+            row.report.priced = Some(grade::Priced {
+                usd_per_million: 15.0,
+                from: grade::PricedFrom::Model,
+                model: Some("sonnet\u{202e}".into()),
+            });
+        }),
+        ("stopped at a dollar limit it never had", |row| {
+            row.report.ended = GradeEnd::OverLimit;
+            row.report.cost_cap_usd = None;
         }),
         ("a reason that breaks the line", |row| {
             row.report.not_started = Some("no\u{1b}[31m chat".into());

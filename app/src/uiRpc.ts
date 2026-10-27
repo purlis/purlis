@@ -5272,6 +5272,8 @@ export type GoneProject = {
 export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" | 
 /**  It reached its token cap. */
 "over-cap" | 
+/**  It reached its dollar limit (#3469). */
+"over-limit" | 
 /**  A chat did not say what it spent, so the cap could not be held. */
 "spend-not-reported" | 
 /**  A fault in purlis ended it before it was scored (#3353): recorded as interrupted. */
@@ -5292,6 +5294,16 @@ export type GradeEstimate = {
 export type GradeLeftOut = {
 	at: number,
 	why: string,
+};
+
+/**  **The price a grade's dollar limit is worked out at** (`grades::price`), as the plan says it. */
+export type GradePrice = {
+	/**  Dollars a million tokens. */
+	usd_per_million: number | null,
+	/**  Whether it is the price of the model the chats run on, rather than the dearest known. */
+	of_the_model: boolean,
+	/**  The model the chats run on, where the profile says one. */
+	model: string | null,
 };
 
 /**  One trigger test, as the plan shows it before anything runs. */
@@ -9821,10 +9833,11 @@ export type SkillGradePlan = {
 	token_cap: number | null,
 	cap_set_here: boolean,
 	/**
-	 *  The cost a grade may reach besides, where its chats say what they cost: the cap's tokens
-	 *  at the dearest price (`grades::cap::Cap::cost_usd`).
+	 *  The dollar limit a grade is held to besides (the operator's ruling G12, #3469): the cap's
+	 *  tokens at `priced` (`grades::cap::Cap::cost_usd`).
 	 */
 	cost_cap_usd: number | null,
+	priced: GradePrice,
 	/**  The longest one of its chats runs, in minutes: the plan's "up to". */
 	chat_minutes: number,
 	/**
