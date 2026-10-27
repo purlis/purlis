@@ -996,20 +996,7 @@ const ORDINARY: Answers = {
       {
         harness: "claude",
         title: "Claude Code",
-        unsupported: null,
-        only_off: null,
         repo_left_out: [],
-        trouble: null,
-        plugins: [
-          {
-            id: "figma@official",
-            name: "figma",
-            origin: "official, user",
-            installed: true,
-            state: "off",
-            pinned: null,
-          },
-        ],
         skills: [
           {
             name: "deploy",

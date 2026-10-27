@@ -449,10 +449,6 @@ describe("a row's menu", () => {
           {
             harness: "claude",
             title: "Claude Code",
-            unsupported: null,
-            only_off: null,
-            trouble: null,
-            plugins: [],
             skills: [
               skill("lint-rs", {
                 level: "repo",
