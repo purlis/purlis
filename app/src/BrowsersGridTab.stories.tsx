@@ -60,6 +60,13 @@ function Grid() {
 
 const meta = {
   component: Grid,
+  // **A tile is named by its label and described by its one line** (D-2911-22), as the list
+  // family's cards are: that meets WCAG 2.5.3, since the name is the visible label, and axe's
+  // experimental `label-content-name-mismatch` compares the name with the whole of the tile's
+  // visible text (its line as well), so it is off on these stories alone.
+  parameters: {
+    a11y: { options: { rules: { "label-content-name-mismatch": { enabled: false } } } },
+  },
   beforeEach: () => {
     // A view no frame ever reaches: each tile keeps its mark.
     mockIPC((cmd) => (cmd === "watch_browser" ? new Promise(() => undefined) : null));
