@@ -182,6 +182,20 @@ pub fn providers(kind: &str) -> &'static [Plan] {
     crate::harness_declaration::builtin(kind).map_or(&[], |declared| &declared.sign_in.plans)
 }
 
+/// **Whether `provider` may be named for a sign-in of harness `kind`** (#2049): none, or one of
+/// its plans ([`providers`]); anything else is refused in words, and nothing is typed.
+pub fn plan_named(kind: &str, provider: Option<&str>) -> Result<(), String> {
+    match provider {
+        Some(provider) if !providers(kind).iter().any(|plan| plan.provider == provider) => {
+            Err(format!(
+                "'{}' is no plan {kind} signs in to, so no sign-in was typed.",
+                crate::shown::short(provider)
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
 /// The value `profile` sets its harness's `variable` to, from its declared folder variables.
 fn folder(profile: &Profile, variable: Option<&str>) -> Option<PathBuf> {
     let variable = variable?;

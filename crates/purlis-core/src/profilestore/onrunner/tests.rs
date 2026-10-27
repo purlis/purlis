@@ -473,3 +473,158 @@ fn a_runner_that_does_not_keep_the_profile_starts_nothing_in_words() {
     assert!(refused.contains("the runner says: no room"), "{refused}");
     assert!(refused.contains("Nothing was started"), "{refused}");
 }
+
+/// **A runner's own profile of that name is never taken over** (#2049): its own sandbox-only
+/// `work` of the same harness is refused, and stays its own and sandbox-only.
+#[test]
+fn a_runners_own_sandbox_only_profile_of_that_name_is_refused_and_stays_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    crate::profilestore::create_sandbox_only(&runner, "work", "claude", 1).unwrap();
+    let mut desktop = a_signed_in_desktop_profile(dir.path());
+    desktop.sandbox_only = false;
+
+    let refused = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).unwrap(),
+        DESKTOP,
+        7,
+    )
+    .unwrap_err();
+
+    assert!(refused.contains("of its own"), "{refused}");
+    let own = &list(runner.config_root()).unwrap()[0];
+    assert!(own.sandbox_only);
+    assert_eq!(own.kept_for, None);
+}
+
+/// A profile kept for another desktop paired before is not this desktop's to bring up to date.
+#[test]
+fn a_profile_kept_for_another_desktop_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let home = runner_home(dir.path());
+    keep(
+        &runner,
+        &home,
+        &Kept::of(&desktop).unwrap(),
+        "01JA0OTHER00000000000000000",
+        7,
+    )
+    .unwrap();
+    let adopted = the_desktops_adopted_folder(dir.path());
+    keep(
+        &runner,
+        &home,
+        &Kept::of(&adopted).unwrap(),
+        "01JA0OTHER00000000000000000",
+        7,
+    )
+    .unwrap();
+
+    for kept in [Kept::of(&desktop).unwrap(), Kept::of(&adopted).unwrap()] {
+        let refused = keep(&runner, &home, &kept, DESKTOP, 9).unwrap_err();
+        assert!(refused.contains("of its own"), "{}: {refused}", kept.name);
+    }
+}
+
+/// A runner's own adopted folder somewhere else than its harness's default, or reached through
+/// a variable, is its own: the desktop's adopted folder is never kept in its place.
+#[test]
+fn a_runners_own_folder_adopted_elsewhere_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let mut own = the_desktops_adopted_folder(dir.path());
+    own.folders.config = dir.path().join("somewhere/else");
+    own.pinned = None;
+    crate::profilestore::update(runner.config_root(), |store| {
+        store.profiles.push(own.clone())
+    })
+    .unwrap();
+
+    let refused = keep(
+        &runner,
+        &home,
+        &Kept::of(&the_desktops_adopted_folder(dir.path())).unwrap(),
+        DESKTOP,
+        7,
+    )
+    .unwrap_err();
+    assert!(refused.contains("of its own"), "{refused}");
+
+    // At its default folder but reached through a variable: its own too.
+    own.folders.config = home.join(".claude");
+    own.adopted = Some(Adopted {
+        at: 1,
+        variables: vec!["CLAUDE_CONFIG_DIR".to_owned()],
+    });
+    crate::profilestore::update(runner.config_root(), |store| {
+        store.profiles[0] = own.clone()
+    })
+    .unwrap();
+    assert!(
+        keep(
+            &runner,
+            &home,
+            &Kept::of(&the_desktops_adopted_folder(dir.path())).unwrap(),
+            DESKTOP,
+            7,
+        )
+        .is_err()
+    );
+}
+
+/// **Two keeps at once make one record** (#2049): each finds or makes it under the store's one
+/// lock, so the second finds the first's, and both answer it.
+#[test]
+fn two_keeps_at_once_make_one_record_and_both_answer_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    let runner = homes(dir.path(), "runner");
+    let home = runner_home(dir.path());
+    let kept = Kept::of(&desktop).unwrap();
+    let adopted = Kept::of(&the_desktops_adopted_folder(dir.path())).unwrap();
+
+    let answers: Vec<_> = std::thread::scope(|scope| {
+        let keeps: Vec<_> = (0..4)
+            .map(|at| {
+                let (runner, home, kept, adopted) = (&runner, &home, &kept, &adopted);
+                scope.spawn(move || {
+                    (
+                        keep(runner, home, kept, DESKTOP, at),
+                        keep(runner, home, adopted, DESKTOP, at),
+                    )
+                })
+            })
+            .collect();
+        keeps.into_iter().map(|one| one.join().unwrap()).collect()
+    });
+
+    for (made, adopted) in &answers {
+        assert_eq!(
+            made.as_ref().unwrap().folders,
+            answers[0].0.as_ref().unwrap().folders
+        );
+        assert!(adopted.is_ok(), "{adopted:?}");
+    }
+    let names: Vec<String> = list(runner.config_root())
+        .unwrap()
+        .into_iter()
+        .map(|p| p.name)
+        .collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+}
+
+/// **Only a plan a harness serves is named for its sign-in** (#2049, L2): opencode's ChatGPT,
+/// and nothing else; a harness of one plan takes none.
+#[test]
+fn only_a_plan_its_harness_serves_is_named_for_a_sign_in() {
+    assert_eq!(sign_in::plan_named("opencode", Some("openai")), Ok(()));
+    assert_eq!(sign_in::plan_named("opencode", None), Ok(()));
+    assert!(sign_in::plan_named("opencode", Some("anthropic")).is_err());
+    assert!(sign_in::plan_named("claude", Some("openai")).is_err());
+    assert_eq!(sign_in::plan_named("claude", None), Ok(()));
+}

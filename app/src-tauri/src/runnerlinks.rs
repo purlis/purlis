@@ -309,9 +309,8 @@ pub fn keep_profiles(
     to: &ToARunner,
     profiles: Vec<purlis_session_protocol::session::ProfileToKeep>,
 ) -> Result<Option<ProfilesKept>, String> {
-    use purlis_session_protocol::session::KNOWS_KEEP_PROFILE;
     on_one_link(to, async |linked| match linked {
-        Ok(client) if client.version() < KNOWS_KEEP_PROFILE => Ok(None),
+        Ok(client) if !keeps_profiles(client.version()) => Ok(None),
         Ok(client) => {
             let mut said = Vec::with_capacity(profiles.len());
             for profile in profiles {
@@ -320,10 +319,7 @@ pub fn keep_profiles(
                         .keep_profile(profile)
                         .await
                         .map_err(|why| match why.refusal() {
-                            Some(refused) => format!(
-                                "the runner says: {}",
-                                purlis_core::shown::short(&refused.why)
-                            ),
+                            Some(refused) => said_by_the_runner(&refused.why),
                             None => why.to_string(),
                         }),
                 );
@@ -332,6 +328,17 @@ pub fn keep_profiles(
         }
         Err(down) => Err(down.why),
     })
+}
+
+/// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.42).
+pub fn keeps_profiles(version: purlis_session_protocol::version::Version) -> bool {
+    version >= purlis_session_protocol::session::KNOWS_KEEP_PROFILE
+}
+
+/// A runner's own words refusing a profile, as the person reads them: marked as its, and cut
+/// short.
+pub fn said_by_the_runner(why: &str) -> String {
+    format!("the runner says: {}", purlis_core::shown::short(why))
 }
 
 /// **Where the runner stands, as one link to it says** (#2679): linked with the key pinned for

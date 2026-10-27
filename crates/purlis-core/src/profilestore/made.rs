@@ -290,7 +290,6 @@ pub(super) fn make(
     making: Making<'_>,
     now: u64,
 ) -> Result<Made, String> {
-    let machine = making.machine;
     if !crate::profiles::name_ok(name) {
         return Err(format!(
             "'{}' cannot be a profile's name: use letters, digits, '-' and '_', starting with a \
@@ -304,60 +303,10 @@ pub(super) fn make(
              Pick another name."
         ));
     }
-    let (folders, allowed) = harness_of(kind)?;
     let folder = homes.folder_of(name);
     let mut made_folder = false;
     let answer = super::update(&homes.config_root, |store| {
-        if store.profiles.iter().any(|p| p.name == name) {
-            return Err(format!(
-                "this machine already has a profile named '{name}'. Pick another name, or \
-                 remove that one first."
-            ));
-        }
-        if std::fs::symlink_metadata(&folder).is_ok() {
-            return Err(format!(
-                "{} is already there, so purlis made no profile '{name}'. Move it away, or \
-                 pick another name.",
-                folder.display()
-            ));
-        }
-        let made = (|| {
-            private_dirs(&homes.folders)?;
-            private_dir(&folder)?;
-            made_folder = true;
-            let config = folder.join(CONFIG);
-            private_dir(&config)?;
-            let data = match folders.data_env {
-                Some(_) => {
-                    let data = folder.join(DATA);
-                    private_dir(&data)?;
-                    Some(data)
-                }
-                None => None,
-            };
-            let from = machine.and_then(|machine| machine.of(kind));
-            let copied = match &from {
-                Some(from) => import_into(allowed, from, &folder, &config)?,
-                None => Copied::default(),
-            };
-            Ok::<_, io::Error>((config, data, from, copied))
-        })();
-        let (config, data, from, copied) = made.map_err(|e| could_not(homes, &e))?;
-        let record = MachineProfile {
-            name: name.to_owned(),
-            harness: kind.to_owned(),
-            title: name.to_owned(),
-            folders: Folders { config, data },
-            adopted: None,
-            imported: from.map(|from| Imported { at: now, from }),
-            sign_in: None,
-            pinned: None,
-            sandbox_only: making.sandbox_only,
-            kept_for: None,
-            rest: Map::new(),
-        };
-        store.profiles.push(record.clone());
-        Ok(Made { record, copied })
+        make_in(store, homes, name, kind, &making, now, &mut made_folder)
     });
     match answer {
         Ok(Ok(made)) => Ok(made),
@@ -368,6 +317,73 @@ pub(super) fn make(
             Err(why)
         }
     }
+}
+
+/// [`make`]'s change of the store `store`, under its lock: the profile `name` made, its folder
+/// with it, and its record pushed. `made_folder` says whether its folder was made, for the
+/// caller to remove it where the change is not written.
+pub(super) fn make_in(
+    store: &mut super::Store,
+    homes: &Homes,
+    name: &str,
+    kind: &str,
+    making: &Making<'_>,
+    now: u64,
+    made_folder: &mut bool,
+) -> Result<Made, String> {
+    let machine = making.machine;
+    let (folders, allowed) = harness_of(kind)?;
+    let folder = homes.folder_of(name);
+    if store.profiles.iter().any(|p| p.name == name) {
+        return Err(format!(
+            "this machine already has a profile named '{name}'. Pick another name, or \
+             remove that one first."
+        ));
+    }
+    if std::fs::symlink_metadata(&folder).is_ok() {
+        return Err(format!(
+            "{} is already there, so purlis made no profile '{name}'. Move it away, or \
+             pick another name.",
+            folder.display()
+        ));
+    }
+    let made = (|| {
+        private_dirs(&homes.folders)?;
+        private_dir(&folder)?;
+        *made_folder = true;
+        let config = folder.join(CONFIG);
+        private_dir(&config)?;
+        let data = match folders.data_env {
+            Some(_) => {
+                let data = folder.join(DATA);
+                private_dir(&data)?;
+                Some(data)
+            }
+            None => None,
+        };
+        let from = machine.and_then(|machine| machine.of(kind));
+        let copied = match &from {
+            Some(from) => import_into(allowed, from, &folder, &config)?,
+            None => Copied::default(),
+        };
+        Ok::<_, io::Error>((config, data, from, copied))
+    })();
+    let (config, data, from, copied) = made.map_err(|e| could_not(homes, &e))?;
+    let record = MachineProfile {
+        name: name.to_owned(),
+        harness: kind.to_owned(),
+        title: name.to_owned(),
+        folders: Folders { config, data },
+        adopted: None,
+        imported: from.map(|from| Imported { at: now, from }),
+        sign_in: None,
+        pinned: None,
+        sandbox_only: making.sandbox_only,
+        kept_for: None,
+        rest: Map::new(),
+    };
+    store.profiles.push(record.clone());
+    Ok(Made { record, copied })
 }
 
 /// Imports `name`'s settings again from `machine`'s, at `now`: each listed settings file and

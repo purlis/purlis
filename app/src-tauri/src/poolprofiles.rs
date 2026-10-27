@@ -74,7 +74,18 @@ pub fn keep_on(
     pool: &str,
     kept: &onrunner::Kept,
 ) -> Result<Option<Standing>, String> {
-    if owned().is_err() {
+    keep_on_as(owned(), config, pool, kept)
+}
+
+/// [`keep_on`], with `owned` what [`owned`] said of this machine's pools: nothing is read or
+/// sent where it said no.
+fn keep_on_as(
+    owned: Result<PathBuf, String>,
+    config: &Path,
+    pool: &str,
+    kept: &onrunner::Kept,
+) -> Result<Option<Standing>, String> {
+    if owned.is_err() {
         return Ok(None);
     }
     let to = ToARunner::of(&Machine::here(config)?, pool)?;
@@ -191,16 +202,7 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
                 purlis_core::shown::short(name)
             )
         })?;
-    let plans = profilestore::sign_in::providers(&record.harness);
-    if let Some(provider) = provider
-        && !plans.iter().any(|plan| plan.provider == provider)
-    {
-        return Err(format!(
-            "'{}' is no plan {} signs in to, so no sign-in was typed.",
-            purlis_core::shown::short(provider),
-            record.harness
-        ));
-    }
+    profilestore::sign_in::plan_named(&record.harness, provider)?;
     let kept = onrunner::Kept::of(&record)?;
     if keep_on(&config, pool, &kept)?.is_none() {
         return Err(format!(
@@ -226,12 +228,13 @@ static WATCHED: Mutex<Option<HashSet<(String, String)>>> = Mutex::new(None);
 /// starts none.
 pub fn watch(pool: String, name: String, told: impl FnOnce() + Send + 'static) {
     let key = (pool.clone(), name.clone());
-    if !WATCHED
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .get_or_insert_with(HashSet::new)
-        .insert(key.clone())
-    {
+    if !claimed(
+        WATCHED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get_or_insert_with(HashSet::new),
+        &key,
+    ) {
         return;
     }
     std::thread::spawn(move || {
@@ -244,6 +247,11 @@ pub fn watch(pool: String, name: String, told: impl FnOnce() + Send + 'static) {
             watched.remove(&key);
         }
     });
+}
+
+/// Whether `key` is claimed for a watcher now, in `watched`: only where none watches it.
+fn claimed(watched: &mut HashSet<(String, String)>, key: &(String, String)) -> bool {
+    watched.insert(key.clone())
 }
 
 fn watching(pool: &str, name: &str, told: impl FnOnce()) {
@@ -270,3 +278,6 @@ fn watching(pool: &str, name: &str, told: impl FnOnce()) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

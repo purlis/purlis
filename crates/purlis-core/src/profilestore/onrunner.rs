@@ -119,6 +119,11 @@ pub fn keep(
             "the profile '{name}' is named like a harness it does not run, so no runner keeps it"
         ));
     }
+    if !builtin && !crate::profiles::name_ok(&kept.name) {
+        return Err(format!(
+            "'{name}' cannot be a profile's name, so no runner keeps it"
+        ));
+    }
     let pinned = match &kept.pinned {
         Some(_) if builtin => None,
         Some(version) => Some(
@@ -130,6 +135,14 @@ pub fn keep(
         ),
         None => None,
     };
+    let defaults = if builtin {
+        let (config, data, _) = super::defaults(&kept.harness, home).ok_or_else(|| {
+            format!("the profile '{name}' runs no harness purlis ships, so no runner keeps it")
+        })?;
+        Some(super::Folders { config, data })
+    } else {
+        None
+    };
     let brought = |record: &mut MachineProfile| {
         record.kept_for = Some(desktop.to_owned());
         record.sandbox_only = kept.sandbox_only && !builtin;
@@ -139,32 +152,29 @@ pub fn keep(
                 .map(|version| super::pin::Pinned { version, at: now });
         }
     };
-    let found = super::update(homes.config_root(), |store| {
-        let record = store.profiles.iter_mut().find(|p| p.name == kept.name)?;
-        if record.harness != kept.harness || record.adopted.is_some() != builtin {
-            return Some(Err(format!(
-                "this runner has a profile named '{name}' of its own, so it keeps no other of \
-                 that name"
-            )));
+    let title = crate::harness_declaration::builtin(&kept.harness)
+        .map_or_else(|| kept.harness.clone(), |d| d.title.clone());
+    let folder = homes.folder_of(&kept.name);
+    let mut made_folder = false;
+    // One change of the store, found or made under its lock: two keeps at once make one record,
+    // and the second finds the first's.
+    let answer = super::update(homes.config_root(), |store| {
+        if let Some(record) = store.profiles.iter_mut().find(|p| p.name == kept.name) {
+            if !is_ours(record, kept, desktop, defaults.as_ref()) {
+                return Err(format!(
+                    "this runner has a profile named '{name}' of its own, so it keeps no other \
+                     of that name"
+                ));
+            }
+            brought(record);
+            return Ok(record.clone());
         }
-        brought(record);
-        Some(Ok(record.clone()))
-    })?;
-    if let Some(found) = found {
-        return found;
-    }
-    if builtin {
-        let (config, data, _) = super::defaults(&kept.harness, home).ok_or_else(|| {
-            format!("the profile '{name}' runs no harness purlis ships, so no runner keeps it")
-        })?;
-        let title = crate::harness_declaration::builtin(&kept.harness)
-            .map_or_else(|| kept.harness.clone(), |d| d.title.clone());
-        return super::update(homes.config_root(), |store| {
-            let mut record = MachineProfile {
+        let mut record = match &defaults {
+            Some(folders) => MachineProfile {
                 name: kept.name.clone(),
                 harness: kept.harness.clone(),
                 title: format!("{title} (this runner)"),
-                folders: super::Folders { config, data },
+                folders: folders.clone(),
                 adopted: Some(super::Adopted {
                     at: now,
                     variables: Vec::new(),
@@ -175,31 +185,66 @@ pub fn keep(
                 sandbox_only: false,
                 kept_for: None,
                 rest: Default::default(),
-            };
-            brought(&mut record);
-            store.profiles.push(record.clone());
-            record
-        });
+            },
+            None => {
+                let making = super::made::Making {
+                    machine: None,
+                    sandbox_only: kept.sandbox_only,
+                };
+                let made = super::made::make_in(
+                    store,
+                    homes,
+                    &kept.name,
+                    &kept.harness,
+                    &making,
+                    now,
+                    &mut made_folder,
+                )?;
+                store.profiles.retain(|p| p.name != kept.name);
+                made.record
+            }
+        };
+        brought(&mut record);
+        store.profiles.push(record.clone());
+        Ok(record)
+    });
+    match answer {
+        Ok(Ok(record)) => Ok(record),
+        Ok(Err(why)) | Err(why) => {
+            if made_folder {
+                let _ = std::fs::remove_dir_all(&folder);
+            }
+            Err(why)
+        }
     }
-    super::made::make(
-        homes,
-        &kept.name,
-        &kept.harness,
-        super::made::Making {
-            machine: None,
-            sandbox_only: kept.sandbox_only,
-        },
-        now,
-    )?;
-    super::update(homes.config_root(), |store| {
-        let record = store
-            .profiles
-            .iter_mut()
-            .find(|p| p.name == kept.name)
-            .ok_or_else(|| format!("the profile '{name}' was not kept"))?;
-        brought(record);
-        Ok(record.clone())
-    })?
+}
+
+/// **Whether `record`, this runner's of `kept`'s name, is one it keeps for `desktop`**, so that
+/// keeping `kept` may bring it up to date: of the same harness, and, for a profile purlis made,
+/// kept for that desktop; for a folder adopted in place (`defaults` its harness's default
+/// folders here), adopted at exactly those folders with no variable, and kept for no other
+/// desktop. A runner's own profile, or another desktop's, is never taken over.
+fn is_ours(
+    record: &MachineProfile,
+    kept: &Kept,
+    desktop: &str,
+    defaults: Option<&super::Folders>,
+) -> bool {
+    if record.harness != kept.harness {
+        return false;
+    }
+    match (&record.adopted, defaults) {
+        (None, None) => record.kept_for.as_deref() == Some(desktop),
+        (Some(adopted), Some(defaults)) => {
+            record
+                .kept_for
+                .as_deref()
+                .is_none_or(|kept_for| kept_for == desktop)
+                && adopted.variables.is_empty()
+                && record.folders == *defaults
+        }
+        _ => false,
+    }
 }
 
 /// **Whether the profile `record`, kept on this runner, is signed in here**, as its harness says
