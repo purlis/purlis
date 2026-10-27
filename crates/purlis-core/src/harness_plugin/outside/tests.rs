@@ -144,7 +144,13 @@ fn codex_finds_the_persons_own_and_each_plugins_newest_version() {
             ("notes", Origin::Harness, "you".to_owned(), true, false),
             // #3467: a plugin's skill is its plugin's, read-only, and a file's `false` for it
             // turns nothing off.
-            ("zp:zp-skill", Origin::Harness, "zp".to_owned(), false, false),
+            (
+                "zp:zp-skill",
+                Origin::Harness,
+                "zp".to_owned(),
+                false,
+                false
+            ),
         ]
     );
 }

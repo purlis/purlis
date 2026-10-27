@@ -134,9 +134,12 @@ pub fn proposable(root: &Path, path: &Path) -> Result<PathBuf, String> {
 /// ([`proposable`]) is not widened by it: no chat's proposal is judged here.
 pub fn proposable_by_purlis(root: &Path, path: &Path) -> Result<PathBuf, String> {
     let rel = relative_to(root, path).ok_or_else(|| not_proposable(path))?;
-    let ours = [crate::settings::Which::Shared, crate::settings::Which::Local]
-        .into_iter()
-        .any(|which| rel == Path::new(which.file_at(root)));
+    let ours = [
+        crate::settings::Which::Shared,
+        crate::settings::Which::Local,
+    ]
+    .into_iter()
+    .any(|which| rel == Path::new(which.file_at(root)));
     if !ours {
         return Err(not_proposable(path));
     }

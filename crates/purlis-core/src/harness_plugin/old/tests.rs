@@ -25,11 +25,16 @@ fn a_project_with_no_old_keys_has_nothing_to_say() {
 fn each_of_the_projects_files_that_holds_the_old_table_is_found_with_its_text() {
     let dir = project(&[
         ("charter.toml", OLD),
-        ("charter.local.toml", "harness_plugins.codex.\"a@b\" = false\n"),
+        (
+            "charter.local.toml",
+            "harness_plugins.codex.\"a@b\" = false\n",
+        ),
     ]);
     let all = found(dir.path());
-    let files: Vec<(&str, Option<Which>)> =
-        all.iter().map(|one| (one.file.as_str(), one.which)).collect();
+    let files: Vec<(&str, Option<Which>)> = all
+        .iter()
+        .map(|one| (one.file.as_str(), one.which))
+        .collect();
     assert_eq!(
         files,
         [
@@ -62,7 +67,10 @@ fn remove_takes_out_the_old_table_and_keeps_every_other_line_as_written() {
                 [harness_plugins.claude]\n\"figma@x\" = true\n\n[memory]\nshare = true\n";
     let after = removed(text).expect("TOML");
     assert!(!after.contains("harness_plugins"), "{after}");
-    assert!(after.contains("# mine\n[plane]\nname = \"p\" # kept\n"), "{after}");
+    assert!(
+        after.contains("# mine\n[plane]\nname = \"p\" # kept\n"),
+        "{after}"
+    );
     assert!(after.contains("[memory]\nshare = true\n"), "{after}");
 }
 

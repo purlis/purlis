@@ -96,5 +96,8 @@ fn a_workspaces_old_settings_are_named_and_given_no_change() {
     assert!(!notice.removable);
     let proposals = Proposals::default();
     assert!(removal_held(&root, &proposals, 1).is_err());
-    assert!(notice_of(&root).is_some(), "nothing held, so the notice still stands");
+    assert!(
+        notice_of(&root).is_some(),
+        "nothing held, so the notice still stands"
+    );
 }

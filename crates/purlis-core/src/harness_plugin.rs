@@ -717,7 +717,8 @@ pub fn keyed_in(top: &toml::Table, file: &str, at: &str) -> Vec<Refusal> {
     let Some(table) = top.get(name) else {
         return Vec::new();
     };
-    let shape = format!("each harness is [{name}.<harness>], holding \"<skill name>\" = true or false");
+    let shape =
+        format!("each harness is [{name}.<harness>], holding \"<skill name>\" = true or false");
     let Some(table) = table.as_table() else {
         return vec![Refusal::at(
             format!("{at}{name} in {file} is not a table — {shape}"),

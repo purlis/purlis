@@ -237,11 +237,7 @@ fn a_left_out_local_file_is_said_only_where_it_would_have_decided_something() {
     // theme, so those groups have nothing that was not applied.
     let dir = plane(Git::Committable);
     let root = dir.path();
-    fs::write(
-        root.join(LOCAL_FILE),
-        "[harness]\ndefault = \"claude\"\n",
-    )
-    .unwrap();
+    fs::write(root.join(LOCAL_FILE), "[harness]\ndefault = \"claude\"\n").unwrap();
     assert!(!why(root).is_empty(), "the file is left out");
 
     for workspace in [None, Some("alpha")] {

@@ -23,7 +23,9 @@ fn pins_of(adapter: &dyn Adapter) -> Vec<(String, bool)> {
 #[test]
 fn claude_codes_pins_are_charters_own_on_and_the_two_it_replaced_off() {
     assert_eq!(
-        pins_of(&CLAUDE_CODE).into_iter().collect::<BTreeMap<_, _>>(),
+        pins_of(&CLAUDE_CODE)
+            .into_iter()
+            .collect::<BTreeMap<_, _>>(),
         BTreeMap::from([
             ("purlis@inline".to_owned(), true),
             ("charter@charter".to_owned(), false),
@@ -75,7 +77,9 @@ fn a_chat_is_handed_the_pins_alone_whatever_the_old_keys_say() {
         for workspace in [None, Some("alpha")] {
             assert_eq!(
                 for_start_as(studio, "claude", plane.path(), workspace).plugins,
-                pins_of(&CLAUDE_CODE).into_iter().collect::<BTreeMap<_, _>>(),
+                pins_of(&CLAUDE_CODE)
+                    .into_iter()
+                    .collect::<BTreeMap<_, _>>(),
                 "{studio} {workspace:?}"
             );
             assert_eq!(
@@ -96,7 +100,10 @@ fn the_old_table_is_refused_nothing_so_a_file_that_holds_it_saves_as_it_did() {
         ),
         Vec::<String>::new()
     );
-    assert_eq!(refusals("harness_plugins = 3\n", "charter.toml"), Vec::<String>::new());
+    assert_eq!(
+        refusals("harness_plugins = 3\n", "charter.toml"),
+        Vec::<String>::new()
+    );
 }
 
 #[test]
@@ -380,7 +387,10 @@ fn a_chat_is_handed_the_harness_skills_the_project_turned_off_only_while_the_stu
             "charter.toml",
             "[harness_skills.codex]\nlangfuse = false\nreview = false\n",
         ),
-        ("charter.local.toml", "[harness_skills.codex]\nreview = true\n"),
+        (
+            "charter.local.toml",
+            "[harness_skills.codex]\nreview = true\n",
+        ),
     ]);
     assert_eq!(
         for_start_as(true, "codex", plane.path(), None).skills_off,
@@ -556,7 +566,7 @@ fn the_studio_refuses_what_a_harness_cannot_switch_and_writes_nothing() {
                 plane.path(),
                 None,
                 crate::harness::Harness::ClaudeCode,
-                        "figma:frame",
+                "figma:frame",
                 false,
                 &built_in(),
             ),
@@ -568,7 +578,7 @@ fn the_studio_refuses_what_a_harness_cannot_switch_and_writes_nothing() {
                 plane.path(),
                 None,
                 crate::harness::Harness::Opencode,
-                        "secrets",
+                "secrets",
                 false,
                 &built_in(),
             ),
@@ -582,4 +592,3 @@ fn the_studio_refuses_what_a_harness_cannot_switch_and_writes_nothing() {
     }
     assert!(!plane.path().join("charter.local.toml").exists());
 }
-

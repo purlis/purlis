@@ -85,7 +85,10 @@ pub fn removal_held(
     now: u64,
 ) -> Result<Vec<HeldRemoval>, String> {
     let mut held = Vec::new();
-    for one in old::found(root).into_iter().filter(|one| one.which.is_some()) {
+    for one in old::found(root)
+        .into_iter()
+        .filter(|one| one.which.is_some())
+    {
         let content = old::removed(&one.text)?;
         let base = base_of(Some(one.text.as_bytes()));
         if let Some(id) = proposals.note(BY_PURLIS, &one.file, base, Change::Whole { content }, now)
@@ -129,11 +132,7 @@ pub async fn remove_old_harness_plugins(
 
 /// [`remove_old_harness_plugins`]'s work, for project `held`.
 fn removed(held: &Held) -> Result<Vec<HeldRemoval>, String> {
-    let ids = removal_held(
-        held.root(),
-        held.proposals(),
-        crate::sandboxing::now_secs(),
-    )?;
+    let ids = removal_held(held.root(), held.proposals(), crate::sandboxing::now_secs())?;
     held.chats().asks_may_have_moved();
     Ok(ids)
 }

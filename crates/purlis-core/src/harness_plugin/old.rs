@@ -45,7 +45,12 @@ pub fn found(root: &Path) -> Vec<Found> {
         let Ok(read) = crate::settings::read(root, which) else {
             continue;
         };
-        if read.exists && read.text.parse::<toml::Table>().is_ok_and(|top| holds(&top)) {
+        if read.exists
+            && read
+                .text
+                .parse::<toml::Table>()
+                .is_ok_and(|top| holds(&top))
+        {
             out.push(Found {
                 file: which.file_at(root).to_owned(),
                 which: Some(which),

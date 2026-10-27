@@ -395,7 +395,10 @@ fn a_workspaces_old_harness_plugins_are_refused_nothing_and_a_save_keeps_them() 
         dir.path(),
         "alpha",
         Some(&old()),
-        &[at(&["harness_plugins", "claude", "purlis@inline"], Some(Value::Bool(false)))],
+        &[at(
+            &["harness_plugins", "claude", "purlis@inline"],
+            Some(Value::Bool(false)),
+        )],
     )
     .expect("saved: the table is no longer read");
     assert!(read_file(dir.path(), "alpha").unwrap().refusals.is_empty());
