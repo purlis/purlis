@@ -16,15 +16,17 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { AnchoredPopover } from "./ui/popover/Popover";
-import { ChevronRight, Hand, Plus, Search } from "lucide-react";
+import { ChevronRight, Ellipsis, Hand, Plus, Search } from "lucide-react";
 import {
   besideId,
   ONLY_A_TASK_OPENS_BESIDE,
   taskStopId,
+  DISPATCHES_SHOW,
   type Catalogued,
   type Offer,
   type TaskEndWay,
 } from "./actions";
+import { Menu, MenuItem, MenuTrigger } from "./ui/menu/Menu";
 import { TaskEndConfirm, type TaskEndInline } from "./TaskEnd";
 import type { AtLimit, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
@@ -806,6 +808,11 @@ export function ChatsSection({
   };
   /** The catalogue's new chat, which the view's title line offers (#3342). */
   const newChat = offers.get("chat.new");
+  /** The rows the title line's More offers (#3342), those the catalogue offers here. */
+  const more = MORE_ROWS.flatMap((id) => {
+    const offer = offers.get(id);
+    return offer === undefined ? [] : [offer];
+  });
   const hidden = steady.length - base.length;
   /** Where a chat the scope leaves out is, as the line says it (#1679). */
   const outside = scope === "all" ? undefined : OUTSIDE_SCOPE[scope];
@@ -913,6 +920,37 @@ export function ChatsSection({
                 onPress={() => press(newChat)}
                 icon={<Plus className="node-icon" aria-hidden="true" />}
               />
+            )}
+            {/* **More** (Q1 A, #3342): the catalogue's other ways to start or look at chats
+                here, a new shell and the dispatches, and Settings; each its row, run as a
+                press of it is. */}
+            {more.length > 0 && (
+              <MenuTrigger>
+                <IconButton
+                  size="sm"
+                  aria-label="More"
+                  tooltip="More"
+                  icon={<Ellipsis className="node-icon" aria-hidden="true" />}
+                />
+                <Menu
+                  aria-label="More for Chats"
+                  onAction={(key) => {
+                    const offer = more.find((one) => one.id === key);
+                    if (offer?.available) press(offer);
+                  }}
+                >
+                  {more.map((offer) => (
+                    <MenuItem
+                      key={offer.id}
+                      id={offer.id}
+                      textValue={offer.title}
+                      isDisabled={!offer.available}
+                    >
+                      {offer.title}
+                    </MenuItem>
+                  ))}
+                </Menu>
+              </MenuTrigger>
             )}
           </div>
           {every.length > 0 && (
@@ -1174,6 +1212,10 @@ function endingAt(drawn: readonly ChatRow[], at: number, folded: ReadonlySet<num
   }
   return ending;
 }
+
+/** What the Chats title line's More holds (#3342), by catalogue id: a new shell, the project's
+ *  dispatches, and Settings. */
+const MORE_ROWS = ["shell.new", DISPATCHES_SHOW, "settings.show"] as const;
 
 /**
  * How long a row is rested on, by the pointer or the keyboard, before its card comes up

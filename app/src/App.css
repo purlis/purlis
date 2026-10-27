@@ -3345,12 +3345,28 @@ body {
 }
 
 /* **Who it runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
-   persona's mark leads the row, in its colour, and the chat's state is a dot on its lower end
-   corner, ringed in the panel's fill so it reads apart from the mark. A chat that is done wears
-   no dot. The state's word is still the row's to a screen reader. */
+   persona's mark leads the row, in its colour, and a chat that asks for the person or is at work
+   wears its state's own mark, about 10px, on the mark's lower end corner, ringed in the row's own
+   ground so it reads apart from the mark. **The mark keeps its shape** (`shownState.ts`: a state
+   is told without its colour, WCAG 1.4.1): the hand, the ring, the question, the hourglass, the
+   cross, the triangle. A chat at rest (done, idle, reported, stopped or closed) wears none, so no
+   grey mark stands for seven states; its state is still the row's word to a screen reader and
+   its tooltip's. */
 .chats-section .chat-persona {
   position: relative;
   display: inline-flex;
+  /* The ground the badge is ringed in: the row's, at rest, under the pointer, chosen. */
+  --chat-badge-ground: var(--panel-fill);
+}
+
+.chats-section .chat:hover .chat-persona {
+  --chat-badge-ground: var(--surface-hover);
+}
+
+.chats-section
+  .chat:is([aria-selected="true"], [aria-current]:not([aria-current="false"]))
+  .chat-persona {
+  --chat-badge-ground: var(--list-selected);
 }
 
 .chats-section .chat-persona > svg,
@@ -3359,24 +3375,41 @@ body {
   block-size: var(--chats-mark);
 }
 
+/* At rest, no badge. */
 .chats-section .chat-persona > .shown-state {
+  display: none;
+}
+
+/* The states that ask for the person or are at work. */
+.chats-section
+  .chat-persona:is(
+    [data-state="needs-you"],
+    [data-state="working"],
+    [data-state="asking"],
+    [data-state="waiting-on-tasks"],
+    [data-state="failed"],
+    [data-state="unreported"],
+    [data-state="last-message"]
+  )
+  > .shown-state {
+  display: block;
   position: absolute;
-  inset-block-end: calc(-1 * var(--space-1));
-  inset-inline-end: calc(-1 * var(--space-1));
+  inset-block-end: calc(-1 * var(--space-2));
+  inset-inline-end: calc(-1 * var(--space-2));
 }
 
 .chats-section .chat-persona > .shown-state .shape {
-  display: block;
-  inline-size: var(--space-4);
-  block-size: var(--space-4);
+  display: grid;
+  place-items: center;
+  inline-size: calc(var(--space-4) + var(--space-2));
+  block-size: calc(var(--space-4) + var(--space-2));
   border-radius: 50%;
-  background-color: currentColor;
-  box-shadow: 0 0 0 var(--space-1) var(--panel-fill);
+  background-color: var(--chat-badge-ground);
 }
 
-.chats-section .chat-persona > .shown-state .shape > svg,
-.chats-section .chat-persona[data-state="done"] > .shown-state .shape {
-  display: none;
+.chats-section .chat-persona > .shown-state .shape > svg {
+  inline-size: calc(var(--space-4) + var(--space-1));
+  block-size: calc(var(--space-4) + var(--space-1));
 }
 
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the

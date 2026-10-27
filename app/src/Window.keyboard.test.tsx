@@ -391,10 +391,11 @@ describe("the window's tab order", () => {
       "tab Chats",
       "tab Repos",
       // The left region, top to bottom, as the Chats view's top stacks it (#3342, Q1 A): the
-      // new chat on its title's line, the filter's box (#1499), the scope switch (#1679, ONE
+      // new chat and More on its title's line, the filter's box (#1499), the scope switch (#1679, ONE
       // stop, the arrows between This tab, Workspace and All), then the chips, needs you and
       // working, ONE stop with the arrows between them.
       "button New chat",
+      "button More",
       "input Filter chats by name, persona, workspace or state",
       "radio Workspace",
       "checkbox needs you",

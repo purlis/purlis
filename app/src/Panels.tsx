@@ -23,6 +23,7 @@ import { catalogueMenu } from "./Menus";
 import { useSessionOffers } from "./sessionOffers";
 import { PanelList, type CheckOfRow } from "./PanelList";
 import { doneSlugOf, todoDoneId, todoReopenId } from "./todos";
+import { PersonaAtWork } from "./ChatRows";
 import { HeadingOffer, PanelSection } from "./PanelSection";
 import { Vaults, type VaultsSaid } from "./Vaults";
 import { Chart, Facts, Table } from "./Views";
@@ -89,6 +90,7 @@ export function Panels({
   onAddTodo,
   atRoot = false,
   rootPanels,
+  personaChats,
 }: {
   /** The view this draws: one of the right side's own, or an extension's panel (#1678). */
   view: ViewId;
@@ -131,6 +133,9 @@ export function Panels({
    *  the plane root is, while it is focused (`sessions.usePlaneRootPanels`); and its Personas,
    *  which are the project's, with no workspace focused too (#1686). */
   rootPanels?: readonly PanelView[];
+  /** Each persona's chats, by number (#3341): a persona's row says whether one is at work or
+   *  asks for the person. */
+  personaChats?: ReadonlyMap<string, readonly number[]>;
 }) {
   const { panels, trouble } = state;
   // Each view is still the "for you" side's (ADR 0038), and says whose: the tab names the view,
@@ -162,6 +167,7 @@ export function Panels({
       onPress={onPress}
       shownRow={shownRow}
       onShowRow={onShowRow}
+      personaChats={personaChats}
     />
   );
 
@@ -310,6 +316,7 @@ function Contributed({
   onPress,
   shownRow,
   onShowRow,
+  personaChats,
 }: {
   panel: PanelView;
   /** The focused workspace, which charter's todos panel writes to. */
@@ -319,6 +326,7 @@ function Contributed({
   onPress: (offer: Offer) => void;
   shownRow: string | undefined;
   onShowRow: (row: string | undefined) => void;
+  personaChats?: ReadonlyMap<string, readonly number[]>;
 }) {
   const Mark = MARKS[panel.mark] ?? Circle;
   const open = shownRow?.startsWith(`${panel.key}/`)
@@ -444,6 +452,15 @@ function Contributed({
             // would share, as the prototype's Q1 A draws them (#3340).
             dateAtEnd={panel.key === MEMORY || panel.key === SESSIONS}
             markless={panel.key === MEMORY || panel.key === SESSIONS}
+            // A list of things named is filtered; a store of things written is searched (Q1 A).
+            searchWord={panel.key === PERSONAS ? "Filter" : "Search"}
+            // **A persona's row says whether its chats are at work or ask for you** (#3341): the
+            // state's own mark at the row's end, the strongest of its chats'.
+            stateOf={
+              panel.key === PERSONAS
+                ? (row) => <PersonaAtWork sessions={personaChats?.get(row.key) ?? NO_CHATS} />
+                : undefined
+            }
             open={open}
             // The empty list's way out (#1156): the catalogue's row, as a row's is.
             offerFor={lookUp}
@@ -497,6 +514,9 @@ function Contributed({
     </PanelSection>
   );
 }
+
+/** No chats: what a persona with none running is handed. */
+const NO_CHATS: readonly number[] = [];
 
 /** charter's own panels, by the key `purlis_core::panel::Panel::key` gives them. */
 const TODOS = "charter/todos";

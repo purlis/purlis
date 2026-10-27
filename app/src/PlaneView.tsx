@@ -6587,6 +6587,14 @@ export const PlaneView = memo(function PlaneView({
   /** The Chats list's rows: a task that ended keeps its row until its finished row is read,
    *  so the rows below it move once and not up and then down (`useRowsUntilRead`). */
   const listRows = useRowsUntilRead(chatRows, finishedSettled);
+  /** Each persona's chats, by number (#3341): what a persona's row in the Personas view reads
+   *  its state from. */
+  const personaChats = useMemo(() => {
+    const of = new Map<string, number[]>();
+    for (const row of listRows)
+      if (row.persona !== null) of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
+    return of;
+  }, [listRows]);
   /**
    * **How long each chat has been in its state, as this window saw it** (`stateClock.ts`): one
    * clock for the project, held here so it runs whether or not the Chats list is drawn, and
@@ -9012,6 +9020,7 @@ export const PlaneView = memo(function PlaneView({
                       onAddTodo={edits.addTodo}
                       atRoot={focused === OUTSIDE}
                       rootPanels={rootPanels?.contributed}
+                      personaChats={personaChats}
                     />
                   )}
                 />,

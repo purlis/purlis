@@ -9,6 +9,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { attentionPanels, Panels } from "./Panels";
 import { HeadActions } from "./viewHead";
+import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 import { drawnWith } from "./cascade.testkit";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { wears } from "./textRoles.testkit";
@@ -1283,14 +1284,18 @@ describe("a view on the sidebar view frame (#3340)", () => {
       ],
     });
 
-    for (const [testid, label] of [
-      ["panel-personas", "Personas"],
-      ["panel-vaults", "Vaults"],
-      ["panel-ext-acme-reviews", "Reviews"],
+    // A list of things named is filtered, as the prototype's Q1 A says it (#3341).
+    for (const [testid, name, placeholder] of [
+      ["panel-personas", "Filter Personas", "Filter personas"],
+      ["panel-vaults", "Filter Vaults", "Filter vaults"],
+      ["panel-ext-acme-reviews", "Search Reviews", "Search reviews"],
     ]) {
       const top = topOf(testid);
       expect(within(top).getAllByRole("heading")).toHaveLength(1);
-      expect(within(top).getByRole("searchbox", { name: `Search ${label}` })).toBeInTheDocument();
+      expect(within(top).getByRole("searchbox", { name })).toHaveAttribute(
+        "placeholder",
+        placeholder,
+      );
     }
   });
 
@@ -1371,5 +1376,71 @@ describe("a view on the sidebar view frame (#3340)", () => {
     expect(within(top).getByRole("searchbox", { name: "Search Memory" })).toBeInTheDocument();
     expect(within(line).getByRole("button", { name: "New memory in alpha…" })).toBeInTheDocument();
     line.remove();
+  });
+});
+
+describe("the right side's rows on the frame (#3341)", () => {
+  it("draws a vault as its name and count, under its provider, with no shared mark", () => {
+    draw({
+      vaults: [
+        {
+          name: "forge",
+          provider: "keyring",
+          count: 3,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+        {
+          name: "devops",
+          provider: "file",
+          count: 1,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+      ],
+    });
+
+    const vaults = screen.getByTestId("panel-vaults");
+    const forge = within(vaults).getByRole("row", { name: /forge/ });
+    expect(forge.querySelector(".row-text")).toHaveTextContent("forge");
+    expect(forge.querySelector(".row-date")).toHaveTextContent("3 secrets");
+    expect(forge.querySelector('[data-part="lead"]')).toBeNull();
+    // Under its provider, each a group of its own.
+    expect(
+      within(vaults)
+        .getAllByRole("rowgroup")
+        .map((group) => group.getAttribute("aria-label") ?? group.textContent?.split(/\d/)[0]),
+    ).toHaveLength(2);
+  });
+
+  it("marks a persona whose chat is at work with that state's own mark, and one at rest with none", () => {
+    const personas = personasPanel(["devops", "steward"], "steward");
+    render(
+      <ChatsHere.Provider
+        value={fixedChats({ ...nothingKnown, bySession: { 7: "running" }, needsYou: [] })}
+      >
+        <Panels
+          view="personas"
+          workspace="alpha"
+          state={state({ panels: { ...PANELS, contributed: [personas] } })}
+          offers={new Map()}
+          onPress={() => {}}
+          contributed={[]}
+          shownRow={undefined}
+          onShowRow={() => {}}
+          personaChats={new Map([["steward", [7]]])}
+        />
+      </ChatsHere.Provider>,
+    );
+
+    const steward = screen.getByRole("row", { name: /steward/ });
+    const mark = steward.querySelector(".persona-at-work .shown-state");
+    expect(mark).toHaveAttribute("data-state", "working");
+    // Its shape, and its word for a screen reader.
+    expect(mark?.querySelector('[data-shape="ring"]')).not.toBeNull();
+    expect(steward).toHaveTextContent(/working/);
+    expect(
+      screen.getByRole("row", { name: /devops/ }).querySelector(".persona-at-work"),
+    ).toBeNull();
   });
 });

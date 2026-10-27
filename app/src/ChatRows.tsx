@@ -325,3 +325,44 @@ export function TabMarks({
     </>
   );
 }
+
+/** The states a persona's row tells, the strongest first (#3341): the person is asked for, then
+ *  a question or a wait is open, then something is at work. A persona at rest tells none. */
+const AT_WORK: readonly Shown["kind"][] = ["needs-you", "asking", "waiting-on-tasks", "working"];
+
+/**
+ * **Whether a persona's chats are at work or ask for you** (#3341, the prototype's Personas
+ * `.dot`): the strongest state among its chats, as its own mark (a shape and a colour,
+ * `shownState.ts`), with its word for a screen reader. Nothing for a persona at rest.
+ */
+export const PersonaAtWork = memo(function PersonaAtWork({
+  sessions,
+}: {
+  sessions: readonly number[];
+}) {
+  const shown = useChatsSelect(
+    useChatsHere(),
+    (states) => {
+      let best: Shown | undefined;
+      for (const session of sessions) {
+        const one = shownState({
+          board: markOf(states, session, false),
+          needsYou: states.needsYou.includes(session),
+          task: null,
+          harness: null,
+        });
+        if (one === undefined || !AT_WORK.includes(one.kind)) continue;
+        if (best === undefined || AT_WORK.indexOf(one.kind) < AT_WORK.indexOf(best.kind))
+          best = one;
+      }
+      return best;
+    },
+    sameShown,
+  );
+  if (shown === undefined) return null;
+  return (
+    <span className="persona-at-work">
+      <StateShown shown={shown} markOnly />
+    </span>
+  );
+});

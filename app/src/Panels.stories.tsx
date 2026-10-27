@@ -17,7 +17,7 @@ import { expect, waitFor } from "storybook/test";
 import { ownPanelKey, Panels } from "./Panels";
 import { expectFocusInSight } from "./stories.testkit";
 import type { PanelRow, PanelView, Panels as PanelsModel, VaultSummary } from "./bindings";
-import type { OwnViewId } from "./sideViews";
+import { panelView, type OwnViewId } from "./sideViews";
 import type { WorkspaceState } from "./workspaceState";
 import { Panel, PanelTitle } from "./ui/panel/Panel";
 import { HeadActions } from "./viewHead";
@@ -151,17 +151,46 @@ const VAULTS: VaultSummary[] = ["forge", "reddit", "crates-io", "devops", "relea
  * line holds the view's one title and its actions (#3355), and the view under it is the one
  * scroll, its top held at the top of it.
  */
+/** An approved extension's panel (#3341): declared rows, its own marks, on the same frame. */
+const EXTENSION: PanelView = {
+  key: "ext/acme/reviews",
+  title: "Reviews",
+  order: 15,
+  mark: "note",
+  from: "acme",
+  about: null,
+  blocks: [
+    {
+      kind: "list",
+      rows: ["Land the panel contract", "Review the rollout plan", "Read the audit"].map(
+        (text, at) => ({
+          key: `review-${at}`,
+          text,
+          note: null,
+          mark: at === 0 ? "trouble" : "note",
+          tone: "plain",
+          detail: { kind: "text", text: `${text}, in full.` },
+          runs: null,
+          actions: [],
+        }),
+      ),
+      empty: { headline: "Nothing to review", body: null, offer: null },
+    },
+  ],
+};
+
 function View({
   view,
   count,
   done = 0,
 }: {
-  view: keyof typeof KEYS | "vaults";
+  view: keyof typeof KEYS | "vaults" | "extension";
   count: number;
   /** Done todos after the open ones, each with its box ticked (the Todos view only). */
   done?: number;
 }) {
-  const title = view === "vaults" ? "Vaults" : KEYS[view][0];
+  const title =
+    view === "vaults" ? "Vaults" : view === "extension" ? EXTENSION.title : KEYS[view][0];
   const [shown, setShown] = useState<string>();
   // The catalogue's Mark done and Reopen rows, which a todo's box runs: without them a row keeps
   // its mark, as it does where the catalogue offers none.
@@ -205,12 +234,16 @@ function View({
         <div style={{ display: "flex", flex: "1 1 0", minBlockSize: 0 }}>
           <HeadActions.Provider value={line}>
             <Panels
-              view={view as OwnViewId}
+              view={view === "extension" ? panelView(EXTENSION.key) : (view as OwnViewId)}
               workspace="alpha"
-              state={stateOf(view === "vaults" ? "memory" : view, count, done)}
+              state={stateOf(
+                view === "vaults" || view === "extension" ? "memory" : view,
+                count,
+                done,
+              )}
               offers={offers}
               onPress={() => {}}
-              contributed={[]}
+              contributed={view === "extension" ? [EXTENSION] : []}
               shownRow={shown}
               onShowRow={setShown}
               onAddTodo={async () => undefined}
@@ -369,7 +402,7 @@ export const Personas: Story = {
     await walk(
       canvasElement,
       () => userEvent.tab(),
-      canvas.getByRole("searchbox", { name: "Search Personas" }),
+      canvas.getByRole("searchbox", { name: "Filter Personas" }),
       false,
     );
   },
@@ -382,7 +415,22 @@ export const Vaults: Story = {
     await walk(
       canvasElement,
       () => userEvent.tab(),
-      canvas.getByRole("searchbox", { name: "Search Vaults" }),
+      canvas.getByRole("searchbox", { name: "Filter Vaults" }),
+      false,
+    );
+  },
+};
+
+/** An extension's panel on the frame (#3341): its one title on the half's head, whose panel it is
+ *  beside it, the search held in the top, its rows with the marks it declared. */
+export const ExtensionPanel: Story = {
+  args: { view: "extension", count: 3 },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await expect(canvas.getByRole("heading", { name: "Reviews" })).toBeInTheDocument();
+    await walk(
+      canvasElement,
+      () => userEvent.tab(),
+      canvas.getByRole("searchbox", { name: "Search Reviews" }),
       false,
     );
   },

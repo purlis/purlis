@@ -1889,6 +1889,59 @@ describe("a tidy Chats list (DS-11, #1843)", () => {
     ).toEqual(["SPAN", "svg"]);
   });
 
+  it("says the persona and the state in the mark's tooltip, a terminal's too (#3342)", async () => {
+    const { move } = core([
+      chat(1, "alpha"),
+      chat(2, "alpha", { persona: null, from: by(1, "handoff") }),
+    ]);
+    render(<App />);
+    const tree = await section();
+    await waitFor(() => expect(shape(tree)).toHaveLength(2));
+    move(1, "running", 10);
+    move(2, "running", 11);
+
+    const steward = row(tree, "steward 1").querySelector(".chat-persona > .persona-mark");
+    await waitFor(() => expect(tipOf(steward)).toBe("steward, working"));
+    const terminal = within(tree)
+      .getAllByRole("treeitem")
+      .map((one) => one.querySelector(".chat-persona > svg"))
+      .find((one) => one !== null);
+    expect(tipOf(terminal)).toBe("terminal, working");
+  });
+
+  it("draws the state's mark on the persona only for a chat that asks or is at work (#3342)", async () => {
+    core([chat(1, "alpha")]);
+    render(<App />);
+    await section();
+
+    // At rest no badge, whatever the state: a grey mark would stand for seven (WCAG 1.4.1).
+    const sheet = cascadeOf("App.css");
+    const at = (kind: string) => {
+      const persona = document.createElement("span");
+      persona.className = "chat-persona";
+      persona.dataset.state = kind;
+      const shown = document.createElement("span");
+      shown.className = "shown-state";
+      persona.append(shown);
+      const holder = screen.getByTestId("chats-section");
+      holder.append(persona);
+      const display = sheet(shown, "display");
+      persona.remove();
+      return display;
+    };
+    for (const kind of ["done", "idle", "reported", "stopped-by-you", "closed-by-you", "unheard"])
+      expect(at(kind), kind).toBe("none");
+    for (const kind of [
+      "needs-you",
+      "working",
+      "asking",
+      "waiting-on-tasks",
+      "failed",
+      "unreported",
+    ])
+      expect(at(kind), kind).toBe("block");
+  });
+
   it("draws a twist only on a row with chats under it, and its press folds without opening", async () => {
     core([
       chat(1, "alpha"),

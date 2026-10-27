@@ -43,6 +43,7 @@ export function Vaults({
   onPress: (offer: Offer) => void;
 }) {
   const { vaults, trouble, reload } = said;
+  const byName = new Map((vaults ?? []).map((vault) => [vault.name, vault]));
   return (
     <PanelSection
       testid="panel-vaults"
@@ -74,6 +75,20 @@ export function Vaults({
           label="Vaults"
           testid="list-vaults"
           search="always"
+          searchWord="Filter"
+          // As the prototype's Q1 A draws a vault (#3341): its name, its count quiet at its end,
+          // under its provider; no mark, which every row would share. Provider and count stay its
+          // hover.
+          titleOnly
+          markless
+          trailOf={(row) => {
+            const count = byName.get(row.key)?.count;
+            return count === null || count === undefined ? undefined : counted(count);
+          }}
+          groupOf={(row) => {
+            const vault = byName.get(row.key);
+            return vault === undefined ? "" : providerName(vault.provider);
+          }}
           // No row opens a card: pressing one opens the vault's tab, which says the rest.
           open={undefined}
           onOpen={() => undefined}
