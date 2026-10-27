@@ -5290,7 +5290,9 @@ body {
   padding: var(--space-4) var(--space-5);
 }
 
-.pane-frame.pane-viewed .devices-view > .devices-bar {
+/* Whatever its first row is: Refresh, the line that says it is reading, or the Notice of a
+   read that failed (#3147). */
+.pane-frame.pane-viewed .devices-view > :first-child {
   margin-inline-end: calc(var(--pane-actions-room) - var(--space-5));
 }
 

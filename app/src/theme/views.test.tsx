@@ -1175,7 +1175,7 @@ const DEVICES_SHOWN = {
   placement: {
     here: {
       chats: [{ plane: "/plane", session: 1, name: "lint" }],
-      browsers: [{ plane: "/plane", session: 1, name: "b1", chat: "lint" }],
+      browsers: [{ plane: "/plane", session: 1, program: "p-lint-b1", name: "b1", chat: "lint" }],
     },
     runners: [
       {
@@ -1186,8 +1186,10 @@ const DEVICES_SHOWN = {
       },
       { pool: "qa", runner: "qa", draining: true, on: { chats: [], browsers: [] } },
     ],
-    unkept: [],
+    unkept: [{ plane: "/plane", session: 7, name: "orphan", pool: "removed" }],
+    unkept_browsers: [{ plane: "/plane", session: 7, name: "b2", chat: "orphan", pool: "removed" }],
   },
+  owned: false,
   pools: [
     {
       pool: "builds",
@@ -1203,7 +1205,36 @@ const DEVICE_ANSWERS = {
   link: { state: "linked" },
   version: "0.8.1",
   contacted: 1_800_000_000,
-  holds: { open: [], chats: 2, browsers: 1 },
+  holds: { open: [], browsers_open: [], chats: 2, browsers: 1 },
+};
+
+/** A runner's answer in each other state a Devices row draws. */
+const DEVICE_SAYS = {
+  suspended: {
+    ...DEVICE_ANSWERS,
+    standing: { state: "suspended" },
+    link: null,
+    version: null,
+    contacted: null,
+  },
+  silent: {
+    ...DEVICE_ANSWERS,
+    link: {
+      state: "down",
+      why: "the runner did not answer in time, after the link was made and the container checked as it was made",
+    },
+    version: null,
+  },
+  rekeyed: { ...DEVICE_ANSWERS, link: { state: "key_changed" }, version: null },
+  unread: {
+    ...DEVICE_ANSWERS,
+    standing: {
+      state: "unknown",
+      why: "Cannot connect to the Docker daemon. Is the docker daemon running?",
+    },
+    link: null,
+    version: null,
+  },
 };
 
 const STATES: State[] = [
@@ -1266,6 +1297,25 @@ const STATES: State[] = [
     view: { from: null, view: "devices", key: "" },
     answers: { devices: DEVICES_SHOWN, device_runner: DEVICE_ANSWERS },
     drawn: /CPUs requested/,
+  },
+  ...(
+    [
+      ["suspended", DEVICE_SAYS.suspended, /Its container is stopped/],
+      ["that do not answer", DEVICE_SAYS.silent, /It does not answer/],
+      ["whose key changed", DEVICE_SAYS.rekeyed, /another key than the one/],
+      ["whose container could not be read", DEVICE_SAYS.unread, /Check that Docker runs/],
+    ] as const
+  ).map(([which, answer, drawn]) => ({
+    name: `Devices, runners ${which}, with chats on a pool no longer kept`,
+    view: { from: null, view: "devices", key: "" } as ViewRef,
+    answers: { devices: DEVICES_SHOWN, device_runner: answer },
+    drawn,
+  })),
+  {
+    name: "Devices, while they are read",
+    view: { from: null, view: "devices", key: "" },
+    answers: { devices: DEVICES_SHOWN, device_runner: DEVICE_ANSWERS },
+    drawn: /Reading this machine/,
   },
   {
     name: "Devices that could not be read",
