@@ -277,8 +277,13 @@ fn walk(
     files: &mut usize,
 ) {
     use crate::held::{Follow, Kind, Opened};
-    // A folder of more names than purlis reads of one lists none of them (SK-52).
-    for name in dir.names().unwrap_or_default() {
+    // A folder of more names than purlis reads of one (SK-52), or one that cannot be read
+    // whole, ends the walk as the most files do: what was listed before it stays listed.
+    let Ok(names) = dir.names() else {
+        *files = MOST_FILES;
+        return;
+    };
+    for name in names {
         if *files >= MOST_FILES {
             return;
         }

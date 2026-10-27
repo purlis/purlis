@@ -213,7 +213,7 @@ fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<Found
     );
     let mut out = Vec::new();
     // A name that is no text names no skill a harness loads by it.
-    for name in names.into_iter().filter_map(|name| name.into_string().ok()) {
+    for name in super::text_names(names) {
         let path = shown.join(&name).join(purlis_skills::FILE);
         let follow = match links {
             Links::Followed => Follow::Link,

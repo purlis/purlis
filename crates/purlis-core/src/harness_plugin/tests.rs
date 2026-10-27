@@ -1127,7 +1127,14 @@ fn a_held_opencode_folder_is_read_as_opened_when_a_link_takes_its_place() {
     std::fs::rename(root.join(".opencode"), root.join("moved")).unwrap();
     std::os::unix::fs::symlink(elsewhere.path(), root.join(".opencode")).unwrap();
 
-    let listed = opencode_dot(OPENCODE.harness(), &dot, "", "this project's", true);
+    let listed = opencode_dot(
+        OPENCODE.harness(),
+        &dot,
+        "",
+        "this project's",
+        true,
+        HardLinks::Refused,
+    );
     assert_eq!(
         ids_and_sources(listed),
         [pair(
@@ -1695,16 +1702,25 @@ fn a_chat_written_config_is_read_only_as_a_plain_file_of_its_own() {
     let folder = Folder::open(dir.path(), Follow::NoLink).expect("the folder opens");
 
     assert_eq!(
-        read_config(&folder, "own.json"),
+        read_config(&folder, "own.json", HardLinks::Refused),
         Ok(Some(r#"{"plugin":["b"]}"#.to_owned()))
     );
-    assert_eq!(read_config(&folder, "missing.json"), Ok(None));
-    assert_eq!(read_config(&folder, "elsewhere.json"), Err(()));
-    assert_eq!(read_config(&folder, "endless.json"), Err(()));
-    assert_eq!(read_config(&folder, "big.json"), Err(()));
-    assert_eq!(read_config(&folder, "folder.json"), Err(()));
-    assert_eq!(read_config(&folder, "twinned.json"), Err(()));
-    assert_eq!(read_config(&folder, "plain.json"), Err(()), "its twin is a hard link too");
+    assert_eq!(read_config(&folder, "missing.json", HardLinks::Refused), Ok(None));
+    assert_eq!(read_config(&folder, "elsewhere.json", HardLinks::Refused), Err(()));
+    assert_eq!(read_config(&folder, "endless.json", HardLinks::Refused), Err(()));
+    assert_eq!(read_config(&folder, "big.json", HardLinks::Refused), Err(()));
+    assert_eq!(read_config(&folder, "folder.json", HardLinks::Refused), Err(()));
+    assert_eq!(read_config(&folder, "twinned.json", HardLinks::Refused), Err(()));
+    assert_eq!(
+        read_config(&folder, "plain.json", HardLinks::Refused),
+        Err(()),
+        "its twin is a hard link too"
+    );
+    assert_eq!(
+        read_config(&folder, "twinned.json", HardLinks::Read),
+        Ok(Some(r#"{"plugin":["a"]}"#.to_owned())),
+        "the person's own folders read it"
+    );
 }
 
 // -------------------------------------------------------------------------------------

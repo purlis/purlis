@@ -46,7 +46,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use purlis_skills::held::{Follow, Folder, Kind, NotListed, Opened};
+use purlis_skills::held::{Follow, Folder, HardLinks, Kind, NotListed, Opened};
 
 use crate::extension::project::{Source, toml_key};
 use crate::profiles::{COMMITTED_FILE, LOCAL_FILE};
@@ -564,11 +564,13 @@ impl Adapter for Opencode {
             .as_deref()
             .and_then(|home| Folder::open(home, Follow::Link))
         {
+            // The person's own: a config with a second name is read, as their harness reads it.
             out.extend(opencode_dot_at(
                 self.harness(),
                 &home,
                 "~/",
                 "the home folder's",
+                HardLinks::Read,
             ));
         }
         Ok(out)
@@ -606,15 +608,24 @@ impl Adapter for Opencode {
                 format!("{shown}{}", std::path::MAIN_SEPARATOR)
             };
             let whose = format!("the {shown} folder's");
+            // A folder above the project is the person's own, outside the plane: a config with
+            // a second name is read there, as opencode reads it.
             out.extend(opencode_configs(
                 self.harness(),
                 &level,
                 &prefix,
                 &whose,
                 "",
+                HardLinks::Read,
             ));
             if home.as_deref() != Some(above) {
-                out.extend(opencode_dot_at(self.harness(), &level, &prefix, &whose));
+                out.extend(opencode_dot_at(
+                    self.harness(),
+                    &level,
+                    &prefix,
+                    &whose,
+                    HardLinks::Read,
+                ));
             }
             if is_git_top(&level) {
                 break;
@@ -775,9 +786,19 @@ fn npm_plugins(doc: &serde_json::Value) -> Vec<&str> {
 /// `plugins` that is a link is named as one purlis does not follow, and what opencode loads
 /// through it is not listed: opencode follows it, so it is named rather than left out. Each is
 /// read through the folder handle purlis opened (#1828, [`Folder`]), never by its path again.
+///
+/// **A config with a second name (a hard link) is refused here** (SK-52, #3205): every level
+/// this reads is inside the plane, where a chat can write, and a second name reaches past the
+/// folder as a link does. It is still named, as a config purlis cannot read.
 fn opencode_level(harness: &'static str, level: &Folder, prefix: &str, whose: &str) -> Vec<Plugin> {
-    let mut out = opencode_configs(harness, level, prefix, whose, "");
-    out.extend(opencode_dot_at(harness, level, prefix, whose));
+    let mut out = opencode_configs(harness, level, prefix, whose, "", HardLinks::Refused);
+    out.extend(opencode_dot_at(
+        harness,
+        level,
+        prefix,
+        whose,
+        HardLinks::Refused,
+    ));
     out
 }
 
@@ -787,9 +808,10 @@ fn opencode_dot_at(
     level: &Folder,
     prefix: &str,
     whose: &str,
+    hard_links: HardLinks,
 ) -> Vec<Plugin> {
     match level.child(".opencode", Follow::NoLink) {
-        Opened::Folder(dot) => opencode_dot(harness, &dot, prefix, whose, true),
+        Opened::Folder(dot) => opencode_dot(harness, &dot, prefix, whose, true, hard_links),
         Opened::Link => vec![unfollowed(harness, prefix, ".opencode")],
         Opened::Absent => Vec::new(),
     }
@@ -803,8 +825,9 @@ fn opencode_dot(
     prefix: &str,
     whose: &str,
     chat_written: bool,
+    hard_links: HardLinks,
 ) -> Vec<Plugin> {
-    let mut out = opencode_configs(harness, dot, prefix, whose, ".opencode/");
+    let mut out = opencode_configs(harness, dot, prefix, whose, ".opencode/", hard_links);
     out.extend(opencode_scripts(
         harness,
         dot,
@@ -913,11 +936,12 @@ fn opencode_configs(
     prefix: &str,
     whose: &str,
     place: &str,
+    hard_links: HardLinks,
 ) -> Vec<Plugin> {
     let mut out = Vec::new();
     for config in OPENCODE_CONFIGS {
         let config_at = format!("{place}{config}");
-        let text = match read_config(folder, config) {
+        let text = match read_config(folder, config, hard_links) {
             Ok(None) => continue,
             Ok(Some(text)) => Ok(text),
             Err(()) => Err(()),
@@ -1028,15 +1052,14 @@ fn text_names(names: Vec<std::ffi::OsString>) -> Vec<String> {
         .collect()
 }
 
-/// **A config a chat can write, read through the folder purlis holds** (train 77 review; SK-52,
-/// #3205): `None` where nothing is there, and an error for a link, a pipe, a device, a file with
-/// a second name (a hard link), anything past [`MOST_PROJECT_CONFIG_BYTES`] or a file that will
-/// not read ([`purlis_skills::held::Folder::read`]). A link is never followed, so a chat cannot
-/// have this read a file elsewhere, nor one that never ends; a hard link is refused as a skill's
-/// own file is, since it reaches past its folder as a link does. A config refused is still
-/// named, as one purlis cannot read ([`opencode_configs`]).
-fn read_config(folder: &Folder, name: &str) -> Result<Option<String>, ()> {
-    match folder.read(name, MOST_PROJECT_CONFIG_BYTES) {
+/// **A config read through the folder purlis holds** (train 77 review; SK-52, #3205): `None`
+/// where nothing is there, and an error for a link, a pipe, a device, anything past
+/// [`MOST_PROJECT_CONFIG_BYTES`], a file that will not read, or a file with a second name (a hard
+/// link) where `hard_links` refuses one ([`purlis_skills::held::Folder::read_as`]). A link is
+/// never followed, so a chat cannot have this read a file elsewhere, nor one that never ends. A
+/// config refused is still named, as one purlis cannot read ([`opencode_configs`]).
+fn read_config(folder: &Folder, name: &str, hard_links: HardLinks) -> Result<Option<String>, ()> {
+    match folder.read_as(name, MOST_PROJECT_CONFIG_BYTES, hard_links) {
         Ok(text) => Ok(Some(text)),
         Err(_) if folder.kind(name).is_none() => Ok(None),
         Err(_) => Err(()),
@@ -1056,7 +1079,9 @@ fn is_git_top(folder: &Folder) -> bool {
     match folder.child(".git", Follow::NoLink) {
         Opened::Folder(git) => git.kind("HEAD").is_some(),
         Opened::Link => false,
-        Opened::Absent => read_config(folder, ".git")
+        // Only its first word is looked at: a `.git` file with a second name (a worktree a
+        // backup tool linked) is still git's.
+        Opened::Absent => read_config(folder, ".git", HardLinks::Read)
             .is_ok_and(|text| text.is_some_and(|text| text.starts_with("gitdir:"))),
     }
 }
