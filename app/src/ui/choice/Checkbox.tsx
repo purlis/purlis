@@ -59,6 +59,9 @@ export interface CheckboxProps extends Omit<
   style?: CSSProperties;
   /** A line under its words on what it does, which describes it: the `description` part. */
   description?: ReactNode;
+  /** How many things it stands for, after its words: the `count` part (a chip's, #3484). It
+   *  describes the box and is never part of its name, so the name stays its words. */
+  count?: number;
   /** Its hint, the shared tooltip (#2908). */
   tooltip?: Tip;
   ref?: Ref<HTMLLabelElement>;
@@ -84,12 +87,14 @@ export function Checkbox({
   className,
   style,
   description,
+  count,
   tooltip,
   ref,
   ...rest
 }: CheckboxProps) {
   const id = useId();
   const described = description === undefined || description === null ? undefined : `${id}-says`;
+  const counted = count === undefined ? undefined : `${id}-count`;
   const words = children !== undefined && children !== null && children !== false;
   // Named by its words alone: the line under them describes it, and is not its name.
   const named =
@@ -101,7 +106,7 @@ export function Checkbox({
       {...rest}
       aria-labelledby={named}
       aria-describedby={
-        [rest["aria-describedby"], described].filter(Boolean).join(" ") || undefined
+        [rest["aria-describedby"], counted, described].filter(Boolean).join(" ") || undefined
       }
       ref={ref}
       className={className}
@@ -118,6 +123,11 @@ export function Checkbox({
               {children}
             </span>
           ) : null}
+          {counted !== undefined && (
+            <span data-scope="checkbox" data-part="count" id={counted}>
+              {count}
+            </span>
+          )}
           {described !== undefined && (
             <span data-scope="checkbox" data-part="description" id={described}>
               {description}

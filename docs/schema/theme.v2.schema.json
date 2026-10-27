@@ -2822,6 +2822,51 @@
         "checkbox.label.chip.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "checkbox.count.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.box.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.box.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.box.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.box.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.box.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.chip.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.chip.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.chip.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.chip.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "checkbox.count.chip.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "checkbox.description.text": {
           "$ref": "#/$defs/part-text"
         },

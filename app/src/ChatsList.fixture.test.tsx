@@ -20,6 +20,7 @@ import { tasksBelowOf } from "./sessionTasks";
 import { TasksBelowLent } from "./TasksBelow";
 import { forgetThisLaunch, SLOTS } from "./regions";
 import { MOST_TEXT } from "./textSize";
+import { stateClock } from "./stateClock";
 
 /**
  * **The Chats list as the e2e measures it** (#1499): the real component, drawn here with a
@@ -206,6 +207,11 @@ const DOINGS = fixedDoings({
 });
 
 function markup(): string {
+  // **Every chat but the first arrived while the window was open** (#3484): its row ends with
+  // the time it came into its state, which the e2e holds whole while the name gives way.
+  const clock = stateClock();
+  clock.read(states(), chatsTree(CHATS.slice(0, 1)), Date.now());
+  clock.read(states(), chatsTree(CHATS), Date.now());
   const { container } = render(
     <ChatsHere.Provider value={fixedChats(states())}>
       <DoingsHere.Provider value={DOINGS}>
@@ -216,6 +222,7 @@ function markup(): string {
             onOpen={() => {}}
             stopping={new Set([6])}
             finished={FINISHED}
+            clock={clock}
           />
         </TasksBelowLent>
       </DoingsHere.Provider>
@@ -243,6 +250,7 @@ describe("the Chats list the e2e measures", () => {
       "Stopping…",
       "finished-task",
       'class="task-count" data-testid="task-count-7" data-scope="count"',
+      'class="chat-time ui-text-meta" aria-hidden="true">now<',
     ])
       expect(html, drawn).toContain(drawn);
     // And nothing of a second line: what it said is each row's card, drawn only while it is up.

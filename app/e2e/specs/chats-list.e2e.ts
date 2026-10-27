@@ -454,8 +454,14 @@ describe("the Chats list in a narrow sidebar", () => {
         const line = chat.querySelector(".ui-row-label")?.getBoundingClientRect();
         const mark = chat.querySelector(".chat-persona")?.getBoundingClientRect();
         const name = chat.querySelector(".session")?.getBoundingClientRect();
+        const time = chat.querySelector(".chat-time")?.getBoundingClientRect();
         return {
           name: chat.querySelector(".session")?.textContent ?? "",
+          timed: time !== undefined,
+          timeWidth: time?.width ?? 0,
+          timeRight: time?.right ?? 0,
+          nameRight: name?.right ?? 0,
+          rowRight: chat.getBoundingClientRect().right,
           height: Math.round(chat.getBoundingClientRect().height),
           lineHeight: Math.round(line?.height ?? 0),
           markLeft: mark?.left ?? 0,
@@ -475,6 +481,15 @@ describe("the Chats list in a narrow sidebar", () => {
     for (const one of rows) {
       check(`${one.name}: its mark is not before its name`, one.markLeft < one.nameLeft, one);
       check(`${one.name}: its mark is not on its name's line`, one.markTop < one.nameBottom, one);
+    }
+    // **The time at a row's end stays whole, and the name gives way** (#3484): after the name,
+    // inside the row, however long the name is.
+    const timed = rows.filter((one) => one.timed);
+    check("no chat row says its time", timed.length > 0, rows);
+    for (const one of timed) {
+      check(`${one.name}: its time is not drawn`, one.timeWidth > 0, one);
+      check(`${one.name}: its time is cut off`, one.timeRight <= one.rowRight + 0.5, one);
+      check(`${one.name}: its time is over its name`, one.nameRight <= one.timeRight, one);
     }
   });
 });

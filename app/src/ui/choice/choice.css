@@ -145,6 +145,14 @@
   color: var(--text-faint);
 }
 
+/* A chip's count, after its words (#3484), in their colour: a dimmer one is not held to 4.5:1 on
+   the control's ground or the accent's wash. Its figures are one width, so a count that changes
+   moves nothing after it. */
+[data-scope="checkbox"][data-part="count"] {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------------------------------------------------------------------------------------------
    The radio group: a column of options, each its mark, its words and the line under them.
    --------------------------------------------------------------------------------------------- */

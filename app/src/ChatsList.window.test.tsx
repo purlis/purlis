@@ -526,10 +526,9 @@ describe("the order of the Chats list (V100-47)", () => {
     act(() => setChatsListPrefs({ grouped: true }));
 
     expect(shape()).toEqual(["1 steward 2", "1 steward 1", "2 devops 4", "1 steward 3"]);
-    expect([...theTree().querySelectorAll(".chats-group")].map((one) => one.textContent)).toEqual([
-      "alpha",
-      "beta",
-    ]);
+    expect(
+      [...theTree().querySelectorAll(".chats-group-name")].map((one) => one.textContent),
+    ).toEqual(["alpha", "beta"]);
     // The names over them are not rows: the tree still counts three sessions.
     expect(place("steward 3")).toBe("3/3");
   });

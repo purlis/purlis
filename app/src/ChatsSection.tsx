@@ -43,6 +43,7 @@ import {
   matches,
   matchesFinished,
   sessionOrder,
+  rowTimeSaid,
   sinceSaid,
   stamped,
   type Filter,
@@ -469,6 +470,30 @@ export function ChatsSection({
     sameAsked,
   );
   const listed = useMemo(() => rows.map((row) => row.session), [rows]);
+  /** **How many chats each chip would leave** (#3484, the prototype's `Needs you 2`): the scope's
+   *  chats that the typed words find, in that chip's rank, read as the filter reads them. */
+  const chipCounts = useChatsSelect(
+    chats,
+    (states) => {
+      const stood = standingOfRows(states, rows);
+      return CHIPS.map(
+        (chip) =>
+          rows.filter((row) =>
+            matches(row, stood.get(row.session)?.shown, { text, ranks: [chip.rank] }),
+          ).length,
+      );
+    },
+    sameList,
+  );
+  const chipOptions = useMemo(
+    () =>
+      CHIP_OPTIONS.map((option, at) => ({
+        ...option,
+        // None where there are none, as the prototype draws an empty chip.
+        count: chipCounts[at] === 0 ? undefined : chipCounts[at],
+      })),
+    [chipCounts],
+  );
 
   // **Held still while the pointer is over the list or the keyboard is in it** (V100-47): no
   // row moves under a click. Taken as the pointer or the keyboard comes in, let go when both
@@ -591,6 +616,17 @@ export function ChatsSection({
     [opens],
   );
   const drawn = useMemo(() => unfolded(base, folded), [base, folded]);
+  /** **How many rows each workspace's name stands over** (#3484), by the session it is drawn
+   *  above: the rows drawn until the next workspace's, as the frame's group counts its rows. */
+  const groupCounts = useMemo(() => {
+    const of = new Map<number, number>();
+    let head: ChatRow | undefined;
+    for (const row of drawn) {
+      if (row.level === 1 && row.workspace !== head?.workspace) head = row;
+      if (head !== undefined) of.set(head.session, (of.get(head.session) ?? 0) + 1);
+    }
+    return of;
+  }, [drawn]);
   // **The keyboard's hold never outlives the keyboard being here.** A focused row that is
   // taken out of the document (its task stopped, or finished, or was filtered away) sends no
   // blur, so after every draw the hold is let go when the focus is no longer in the list.
@@ -989,7 +1025,7 @@ export function ChatsSection({
             <Choice
               ids={{ id: chipsId, label: "Show only" }}
               kind="chips"
-              options={CHIP_OPTIONS}
+              options={chipOptions}
               checked={new Set(ranks.map(String))}
               onCheckedChange={(value, on) => {
                 const rank = CHIPS.find((chip) => String(chip.rank) === value)?.rank;
@@ -1066,10 +1102,12 @@ export function ChatsSection({
                       <li
                         key={`group:${row.session}`}
                         role="none"
-                        className="chats-group ui-text-label"
+                        className="chats-group"
                         aria-hidden="true"
                       >
-                        {row.workspace}
+                        {/* The frame's group head (#3484): its name, and its count at its end. */}
+                        <span className="chats-group-name">{row.workspace}</span>
+                        <span data-count="">{groupCounts.get(row.session)}</span>
                       </li>
                     ),
                     <Row
@@ -1534,6 +1572,7 @@ const Row = memo(function Row({
                 </>
               )}
               {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
+              <RowTime clock={clock} session={session} />
             </span>
           </button>
         </RovingFocusGroup.Item>
@@ -1740,6 +1779,22 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
     </div>
   );
 }
+
+/**
+ * **When a chat came into its state, at its row's end** (#3484, the prototype's `.rm`): `now`,
+ * `2m`, `10:42`, quiet, from the one clock (`useStateSince`), so its tick redraws this and no
+ * row. Seen and not heard: the row's card says how long in words (`StateSince`). None where the
+ * window did not see the chat come into its state.
+ */
+const RowTime = memo(function RowTime({ clock, session }: { clock: StateClock; session: number }) {
+  const seconds = useStateSince(clock, session);
+  if (seconds === null) return null;
+  return (
+    <span className="chat-time ui-text-meta" aria-hidden="true">
+      {rowTimeSaid(seconds, new Date())}
+    </span>
+  );
+});
 
 /**
  * How long a chat has been in its state (V100-19), where this window saw it come into it

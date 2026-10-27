@@ -604,7 +604,7 @@ imports Radix's checkbox, radio group, switch, slider or toggles, or wears the o
 
 | Member | Is |
 | --- | --- |
-| `Checkbox` | a native box in its own label: a press of its words ticks it as a press of its box does, Space from the keyboard; `isIndeterminate` draws a bar. `variant="chip"` is one of a few small chips over the list they narrow, its tick in a slot it always keeps |
+| `Checkbox` | a native box in its own label: a press of its words ticks it as a press of its box does, Space from the keyboard; `isIndeterminate` draws a bar. `variant="chip"` is one of a few small chips over the list they narrow, its tick in a slot it always keeps; a chip's `count` is after its words and describes it, never part of its name (#3484) |
 | `CheckboxGroup` | a named group of boxes, each holding its own value (two may stand for one); `roving` makes the row one Tab stop with the arrows between its `RovingCheckbox`es (the Chats list's state chips, #1687) |
 | `RadioGroup`, `Radio` | one of a few, a column of options, each its mark, its words (and a `lead` before them: a persona's mark) and a `description` under them |
 | `SegmentedControl`, `Segment` | a few views of one thing side by side (a level of Settings, a side view's scope), `sm` (the chrome's height, never under 24) or `md` (the control's, as a button's); a segment's `count` is beside its words and in its name. The chosen segment stands on the window's ground with a 1 px edge under it, held to 3:1; its weight never changes |
