@@ -183,3 +183,22 @@ fn a_question_answer_that_carries_a_vault_value_is_answered_in_the_pane() {
             .all(|option| !option.label.contains("1047g"))
     );
 }
+
+#[test]
+fn a_vault_value_across_a_kept_blank_and_a_line_end_is_masked_on_the_line_shown() {
+    // #3470: a vertical tab (or a no-break space) stays on the summary's line while the line
+    // end beside it is collapsed. The value, put on one line the same way, is still found.
+    for (value, said) in [
+        ("ab-1047d\u{0B}\ncd-1047d", "echo ab-1047d\u{0B}\ncd-1047d"),
+        (
+            "ab-1047e\u{00A0}\ncd-1047e",
+            "echo ab-1047e\u{00A0}\ncd-1047e",
+        ),
+    ] {
+        seen::remember(value);
+
+        let summary = Summary::of(said);
+
+        assert!(!summary.as_str().contains("1047"), "{}", summary.as_str());
+    }
+}

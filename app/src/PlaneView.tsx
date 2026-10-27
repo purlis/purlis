@@ -104,7 +104,7 @@ import { Menued } from "./Menus";
 import { afterDrop, reslotted } from "./reorder";
 import { stripAccessibility, useStripSensors } from "./sortable";
 import { NewWorkspace } from "./NewWorkspace";
-import { FORGE_LOGIN, type LoginAsk } from "./RepoPicker";
+import { FORGE_LOGIN, typableLogin, type LoginAsk } from "./RepoPicker";
 import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
@@ -499,10 +499,6 @@ import {
 } from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
-
-/** Any C0 or C1 control character, or DEL: what a line typed and left unrun must not hold. */
-// eslint-disable-next-line no-control-regex
-const HAS_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -3122,9 +3118,13 @@ export const PlaneView = memo(function PlaneView({
       const asked = (event as CustomEvent<LoginAsk>).detail;
       if (asked.plane !== plane || sidebar === undefined) return;
       // "Typed, not run" holds here, not only in the core's host check: a line with a control
-      // character in it (a newline is a Return) is refused and typed nowhere.
-      if (HAS_CONTROL.test(asked.line)) {
-        refusedBy("shell", "purlis will not type a login line that holds a control character");
+      // character in it (a newline is a Return), or any other the one rule hides, is refused
+      // and typed nowhere (#3470).
+      if (!typableLogin(asked.line)) {
+        refusedBy(
+          "shell",
+          "purlis will not type a login line that holds a control or a hidden character. Type the login in a terminal yourself.",
+        );
         return;
       }
       openShell(sidebar.root, OUTSIDE, { line: asked.line, held: true });

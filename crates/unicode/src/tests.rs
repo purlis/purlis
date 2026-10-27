@@ -331,3 +331,31 @@ fn a_symbol_in_an_emoji_block_that_is_no_emoji_takes_no_selector() {
         "\u{2B00}⟦U+FE0F⟧"
     );
 }
+
+/// The generated letter and virama tables, anchored by hand (#3470): the window's corpus reads
+/// the same tables, so only fixed answers catch a wrong block or filter in the generator.
+#[test]
+fn the_joiner_rule_s_letters_and_viramas_are_the_ones_each_script_writes() {
+    for letter in ['\u{0915}', '\u{0995}', '\u{0B95}', '\u{0D15}', '\u{093F}'] {
+        assert!(brahmic_letter(letter), "U+{:04X}", u32::from(letter));
+    }
+    for not in ['\u{0966}', '\u{0964}', '\u{094D}', 'a', '\u{0E01}'] {
+        assert!(!brahmic_letter(not), "U+{:04X}", u32::from(not));
+    }
+    for letter in [
+        '\u{0645}', '\u{06CC}', '\u{0750}', '\u{08A0}', '\u{FB50}', '\u{FE8D}',
+    ] {
+        assert!(arabic_letter(letter), "U+{:04X}", u32::from(letter));
+    }
+    for not in ['\u{0660}', '\u{060C}', '\u{061F}', 'a', '\u{05D0}'] {
+        assert!(!arabic_letter(not), "U+{:04X}", u32::from(not));
+    }
+    for one in [
+        '\u{094D}', '\u{09CD}', '\u{0BCD}', '\u{0D4D}', '\u{0D3B}', '\u{0D3C}',
+    ] {
+        assert!(virama(one), "U+{:04X}", u32::from(one));
+    }
+    for not in ['\u{0915}', '\u{0E3A}', '\u{1039}'] {
+        assert!(!virama(not), "U+{:04X}", u32::from(not));
+    }
+}
