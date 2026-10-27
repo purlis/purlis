@@ -35,6 +35,7 @@ fn starting(id: &str, level: &Level) -> Graded {
         runs: 3,
         report: interrupted_report(50_000, Some(1.5)),
         spent: Spent::default(),
+        plugins_off: None,
     }
 }
 

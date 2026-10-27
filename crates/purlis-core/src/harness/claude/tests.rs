@@ -678,7 +678,7 @@ fn the_walk_stops_at_the_nearer_of_the_git_root_and_the_project_root() {
 fn claude_code_alone_says_a_grade_can_run_on_it() {
     for harness in Harness::ALL {
         assert_eq!(
-            harness.adapter().can_grade(),
+            harness.adapter().can_grade().is_ok(),
             harness == Harness::ClaudeCode,
             "{harness:?}"
         );

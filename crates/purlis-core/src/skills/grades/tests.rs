@@ -110,6 +110,7 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
         runs: 3,
         report: report(true),
         spent,
+        plugins_off: Some(vec!["figma@claude-plugins-official".to_owned()]),
     }
 }
 
@@ -342,6 +343,8 @@ fn a_row_that_says_more_than_purlis_writes_is_skipped() {
         ("harness", serde_json::json!("claude\u{202e}")),
         ("tree", serde_json::json!("../../etc")),
         ("ts", serde_json::json!("yesterday")),
+        ("plugins_off", serde_json::json!(["figma@x\u{1b}[31m"])),
+        ("plugins_off", serde_json::json!("figma@x")),
     ] {
         let mut row = serde_json::to_value(graded(
             root,
@@ -503,6 +506,7 @@ fn uncommitted_row() -> Graded {
             tokens: Some(1200),
             cost_usd: Some(0.04),
         },
+        plugins_off: None,
     }
 }
 
@@ -560,4 +564,38 @@ fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
         breaks(&mut row);
         assert!(!row.sound(), "{what}: {row:?}");
     }
+}
+
+/// #3468: the record says which plugins its chats had off, and reads it back.
+#[test]
+fn a_grade_records_which_plugins_its_chats_had_off() {
+    let plane = plane();
+    let root = plane.path();
+    record(
+        root,
+        &Level::project(),
+        &graded(root, "one", "2026-10-25T10:00:00+00:00", Spent::default()),
+        "laptop",
+    );
+    let read = grades_of(root, "deploy", None);
+    assert_eq!(
+        read[0].plugins_off.as_deref(),
+        Some(&["figma@claude-plugins-official".to_owned()][..])
+    );
+}
+
+/// #3468, P8: opencode's grade is refused with its own reason, and Codex's names who can.
+#[test]
+fn a_harness_that_cannot_grade_is_refused_with_its_own_reason() {
+    let opencode = refused_on(crate::harness::Harness::Opencode);
+    assert!(opencode.contains("plugins"), "{opencode}");
+    assert!(opencode.contains("Claude Code"), "{opencode}");
+    assert_eq!(
+        opencode.matches(". ").count(),
+        0,
+        "one sentence: {opencode}"
+    );
+    let codex = refused_on(crate::harness::Harness::Codex);
+    assert!(codex.contains("Claude Code"), "{codex}");
+    assert!(!codex.contains("plugins"), "{codex}");
 }

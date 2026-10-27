@@ -3778,8 +3778,11 @@ An end row, never a pass or a fail:
   runs per arm; `report`, the grade report as ADR 0105 §1 spells it, with the token cap it was
   held to and what its chats spent (`cap`, `spent_tokens`, ADR 0105 §4), and the cost bound
   beside it and what they cost, where their harness said (`cost_cap_usd`, `spent_usd`, absent
-  otherwise; ADR 0105 as amended 2026-10-26); and `spent`,
-  `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not.
+  otherwise; ADR 0105 as amended 2026-10-26); `spent`,
+  `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not; and
+  `plugins_off`, the ids of the harness's own plugins its chats were handed off (every one it had
+  installed, purlis's pins left out; #3468, ADR 0105 as amended 2026-10-28), absent in a row
+  written before.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
   16 MiB, each line at most 1 MiB; a line that
@@ -3789,7 +3792,8 @@ An end row, never a pass or a fail:
   name; a test triggered more often than it ran, run more often than the grade's `runs`, with a
   rate that is not the two's share or a pass where nothing ran, or a chat that is no plain id; an
   arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
-  reason that holds a control character or passes 2 KiB, #3353) is skipped. At most 200 grades of a skill are answered, newest first
+  reason that holds a control character or passes 2 KiB, #3353; a `plugins_off` that is no list of
+  at most 256 ids a plugin could have, #3468) is skipped. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::grades_of`).
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the

@@ -211,6 +211,7 @@ fn a_grade() -> super::super::grades::Graded {
             tokens: None,
             cost_usd: None,
         },
+        plugins_off: None,
     }
 }
 

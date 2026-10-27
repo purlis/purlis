@@ -438,6 +438,7 @@ pub(crate) async fn skill_grade_start(
             runs: request.runs,
             spent: Spent::default(),
             report: grades::underway::interrupted_report(cap, limits.cost_usd),
+            plugins_off: None,
         };
         if let Err(why) = grades::underway::began(&root, &level, &under_way) {
             tracing::warn!(
@@ -480,12 +481,15 @@ pub(crate) async fn skill_grade_start(
                         spent: Spent::default(),
                         tell: &|ran, tokens| tell(ran, tokens, None, None),
                         harness: None,
+                        plugins_off: None,
                     };
                     let report = grading::grade(&request, &mut chats, Some(limits));
                     let harness = chats.harness.take();
+                    let plugins_off = chats.plugins_off.take();
                     let spent = chats.spent;
                     let graded = Graded {
                         harness,
+                        plugins_off,
                         ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
                         spent,
                         report,
@@ -599,6 +603,9 @@ struct InChats<'a> {
     tell: &'a dyn Fn(u32, Option<u64>),
     /// The harness the chats ran on, as the first that started said.
     harness: Option<String>,
+    /// The plugins its chats were handed off, as the first that started was (#3468): each
+    /// chat's start reads them, so the first stands for them all.
+    plugins_off: Option<Vec<String>>,
 }
 
 impl Chats for InChats<'_> {
@@ -676,6 +683,9 @@ impl InChats<'_> {
                 .ready
                 .harness
                 .map(|harness| harness.name().to_owned());
+        }
+        if self.plugins_off.is_none() {
+            self.plugins_off = Some(grades::plugins_off(&started.ready));
         }
         let session = started.session;
         let id = self.held.chats().chat_at(session).and_then(|at| at.id);

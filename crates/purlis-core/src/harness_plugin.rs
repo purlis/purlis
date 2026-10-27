@@ -663,6 +663,37 @@ pub fn pins(adapter: &dyn Adapter) -> Chosen {
         .into()
 }
 
+/// **What a grade's chat on `adapter`'s harness is handed of its plugins** (P8, #3468): every
+/// plugin the harness has installed off, by the harness's id, read from its record under `env`
+/// and never written, and purlis's pins over them, so purlis's own plugin is the one on. A
+/// grade measures the skill alone. Refused where the record cannot be read: a grade that could
+/// not say which plugins were off does not run.
+pub fn only_purlis_on(
+    adapter: &dyn Adapter,
+    env: &Env<'_>,
+) -> Result<BTreeMap<String, bool>, String> {
+    let mut plugins: BTreeMap<String, bool> = adapter
+        .installed(env)?
+        .into_iter()
+        .map(|plugin| (plugin.id, false))
+        .collect();
+    plugins.extend(pins(adapter).plugins);
+    Ok(plugins)
+}
+
+/// The ids in `plugins` that are off and not one of `adapter`'s pins: the harness's own plugins
+/// a chat was handed off, in id order, as a grade's record names them (#3468).
+pub fn off_besides_the_pins(
+    adapter: &dyn Adapter,
+    plugins: &BTreeMap<String, bool>,
+) -> Vec<String> {
+    plugins
+        .iter()
+        .filter(|(id, on)| !**on && !adapter.pinned().iter().any(|pin| pin.id == id.as_str()))
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
 /// **What a chat of `kind`, started in the plane at `root` — in `workspace`, when it is in one —
 /// is handed**: its harness's pins ([`pins`]), and, only while the Skill studio's flag is on, the
 /// harness's own skills the project turned off ([`Choices::skills_off`]). No other plugin is

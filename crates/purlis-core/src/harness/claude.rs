@@ -317,9 +317,10 @@ impl HarnessAdapter for ClaudeCode {
 
     /// Yes (SK-16): a grade's chat is armed with purlis's MCP server alone and its read tools
     /// (`--strict-mcp-config`), is denied the tools that start a sub-agent, and says what it
-    /// spent, so purlis holds it to the grade's limits.
-    fn can_grade(&self) -> bool {
-        true
+    /// spent, so purlis holds it to the grade's limits. Its plugins are turned off for that chat
+    /// alone in its `--settings` (`enabledPlugins`), purlis's own pinned on (#3468).
+    fn can_grade(&self) -> Result<(), String> {
+        Ok(())
     }
 
     /// The person's own settings that start every chat with its prompts off, or that purlis
