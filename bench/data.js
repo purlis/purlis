@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793130709694,
+  "lastUpdate": 1793132762413,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27174,6 +27174,48 @@ window.BENCHMARK_DATA = {
             "value": 102.08134100000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.448, 101.564, 102.081, 102.717, 103.018 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c8bc5aec22ed0790cc7ebc4c7c602c5667e660b9",
+          "message": "purlis stops managing other harnesses' plugins; keeps its own (#3467) (#3475)\n\n* #3467: the old [harness_plugins] keys are said once, and Remove is an edit you apply\n\nA project that still holds [harness_plugins] gets one Notice: the keys are\nignored and each harness decides. Remove holds a proposed change per file\nof the project's own two (purlis's own, session 0, judged by\nproposed::proposable_by_purlis) for the person to Apply; Dismiss keeps the\nNotice away. A workspace's settings.harness_plugins is named, not edited.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: purlis no longer chooses other harnesses' plugins per project\n\nThe per-project switches go: [harness_plugins] (and a workspace's\nsettings.harness_plugins) is read by nothing and refused nothing, the\nresolver/survey and opencode plugin listing are removed, and the\nwindow loses the Settings Plugins group, the studio's plugin rows and\nproject_harness_plugins. purlis's own plugin and its pins are written\nas before; a Try it scratch chat still turns every installed plugin\noff. A plugin's skill is read-only on every harness: shown with its\nplugin named, refused by the save, never handed as off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: record it: ADR 0050 amendment, glossary, plane-format, changelog\n\nADR 0050's amendment of 2026-10-27 (spec decisions 25 and 35 marked\namended), CONTEXT.md's Harness plugin and purlis's plugin, plane-format\nrows retired, control-plane.md, a changelog fragment, and three unreleased\nfragments about the removed opencode plugin listing dropped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* proposed: its tests move to proposed/tests.rs, a move alone\n\nCONTRIBUTING.md: an older <module>_tests.rs moves when its module is next\nchanged, as a move alone (#3467 changed proposed.rs).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: review fixes: the start tests, Remove's pairs, no chat as purlis\n\nThe start integration tests assert the pins alone. Remove answers the\nNotice only once a change is held and returns each id with its file. A\nchat claiming session 0 is refused. The local file's message names\n[harness_skills]; a stale comment is fixed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: prettier\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: the old keys are one Inbox ask, so a project switch reads nothing more\n\nprojectSwitch.cost held a switch to 20 commands, and the Notice's own read\nmade 21. The ask rides on asks_waiting, which a switch reads already, as\npurlis's own ask of no chat: Remove opens the first proposed change, and\nDismiss says it no more. An ask of session 0 offers no Go to chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: the palette counts no Plugins group\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: the studio e2e opens from Settings at Skills\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: bindings, regenerated\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: no message reads as a purlis command; the old-name allowance drops to 8\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3467: tests merged from main drop the harness fields this PR removes\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T19:19:33Z",
+          "tree_id": "76530b16aa68272b332b88584e36ae19b874c01a",
+          "url": "https://github.com/purlis/purlis/commit/c8bc5aec22ed0790cc7ebc4c7c602c5667e660b9"
+        },
+        "date": 1793132756716,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33775,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.328, 0.334, 0.338, 0.338, 0.347 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5406645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.480, 16.519, 16.541, 16.566, 16.763 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0135435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.430, 100.833, 102.014, 102.021, 102.410 ms"
           }
         ]
       }
