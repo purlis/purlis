@@ -434,12 +434,6 @@ while (accept(my $c, $s)) {
             .take()
             .expect("its output")
             .read_exact(&mut ready);
-        // The server's bound name is its socket's, which is what the door checks it by.
-        let peer = std::os::unix::net::UnixStream::connect(&socket)
-            .expect("the server answers on its socket")
-            .peer_addr()
-            .expect("its server's name");
-        assert_eq!(peer.as_pathname(), Some(socket.as_path()), "{peer:?}");
         let door = door::Door::open(port, &socket).expect("the door opens");
         let carried = ask(port, &format!("127.0.0.1:{port}"));
         let refused = ask(port, "evil.example");

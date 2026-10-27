@@ -315,6 +315,19 @@ fn a_body_is_carried_by_its_length() {
     assert_eq!(carried.body, 11);
 }
 
+#[test]
+fn a_servers_bound_name_is_read_up_to_its_first_nul() {
+    // macOS keeps the whole address a server bound, padding included.
+    assert_eq!(
+        up_to_nul(Path::new("/run/serve/5173.sock\0\0\0")),
+        Path::new("/run/serve/5173.sock")
+    );
+    assert_eq!(
+        up_to_nul(Path::new("/run/serve/5173.sock")),
+        Path::new("/run/serve/5173.sock")
+    );
+}
+
 /// Over sockets: a door carries a request to a server on its socket and back, refuses another
 /// site's, and lets its port go once dropped. First runs on CI: this sandbox binds no socket.
 mod sockets {

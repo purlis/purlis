@@ -636,7 +636,7 @@ fn bound_at(server: &UnixStream, socket: &Path) -> bool {
     let Ok(peer) = server.peer_addr() else {
         return false;
     };
-    let Some(named) = peer.as_pathname() else {
+    let Some(named) = peer.as_pathname().map(up_to_nul) else {
         return false;
     };
     let folder = |path: &Path| {
@@ -647,6 +647,18 @@ fn bound_at(server: &UnixStream, socket: &Path) -> bool {
     named.file_name().is_some()
         && named.file_name() == socket.file_name()
         && folder(named).is_some_and(|at| Some(at) == folder(socket))
+}
+
+/// `named` up to its first NUL: macOS keeps the whole address a server bound, so a name bound
+/// in a padded address reads back with the padding.
+fn up_to_nul(named: &Path) -> &Path {
+    use std::os::unix::ffi::OsStrExt as _;
+    let bytes = named.as_os_str().as_bytes();
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
+    Path::new(std::ffi::OsStr::from_bytes(&bytes[..end]))
 }
 
 /// A request's head and what came after it, read whole within [`HEAD_WITHIN`].
