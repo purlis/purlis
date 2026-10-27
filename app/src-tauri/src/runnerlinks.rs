@@ -302,17 +302,26 @@ fn once_for(
 /// on before it is removed. One link, made and let go of; a runner that does not answer is not
 /// known to be idle.
 pub fn chats_on(to: &ToARunner) -> Result<u32, String> {
-    match listed(to) {
+    count_of(listed(to))
+}
+
+/// **How many programs a runner's list holds that have not ended**, or why there is no list, in
+/// words shown safely (#2052): what the drain and the removal of a pool say.
+pub fn count_of(
+    listed: Result<Vec<crate::devices::ListedProgram>, crate::dockerpools::PoolLink>,
+) -> Result<u32, String> {
+    use crate::dockerpools::PoolLink;
+    match listed {
         Ok(listed) => Ok(
             u32::try_from(listed.iter().filter(|program| !program.ended).count())
                 .unwrap_or(u32::MAX),
         ),
-        Err(crate::dockerpools::PoolLink::Down { why }) => Err(why),
-        Err(crate::dockerpools::PoolLink::KeyChanged) => {
+        Err(PoolLink::Down { why }) => Err(crate::devices::shown_safely(&why)),
+        Err(PoolLink::KeyChanged) => {
             Err("the runner answered with another key than the one pinned for it".to_owned())
         }
-        Err(crate::dockerpools::PoolLink::Suspended) => Err("the runner is suspended".to_owned()),
-        Err(crate::dockerpools::PoolLink::Linked) => Err("the runner did not list".to_owned()),
+        Err(PoolLink::Suspended) => Err("the runner is suspended".to_owned()),
+        Err(PoolLink::Linked) => Err("the runner did not list".to_owned()),
     }
 }
 
@@ -355,6 +364,8 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
         Ok(client) => client.unpair().await.map_err(|why| why.to_string()),
         Err(down) => Err(down.why),
     })
+    // What the removal says of it: shown safely, as every pool surface shows such words.
+    .map_err(|why| crate::devices::shown_safely(&why))
 }
 
 /// **Where the runner stands, as one link to it says** (#2679): linked with the key pinned for
@@ -364,10 +375,24 @@ pub fn link_state(to: &ToARunner) -> Result<crate::dockerpools::PoolLink, String
     on_one_link(to, async |linked| {
         Ok(match linked {
             Ok(_) => PoolLink::Linked,
-            Err(down) if down.key_changed => PoolLink::KeyChanged,
-            Err(down) => PoolLink::Down { why: down.why },
+            Err(down) => link_of(down),
         })
     })
+    .map_err(|why| crate::devices::shown_safely(&why))
+}
+
+/// **Where a runner stands, as a link that is down says** (#2052): its key changed, or down, and
+/// why, shown safely ([`crate::devices::shown_safely`]): the reason can carry what the runner's
+/// container said.
+pub fn link_of(down: hostlink::Down) -> crate::dockerpools::PoolLink {
+    use crate::dockerpools::PoolLink;
+    if down.key_changed {
+        PoolLink::KeyChanged
+    } else {
+        PoolLink::Down {
+            why: crate::devices::shown_safely(&down.why),
+        }
+    }
 }
 
 /// **What the runner `to` holds, as its own list says** (#2052, the Devices view): one link, made
@@ -395,13 +420,14 @@ pub fn listed(
                     why: crate::devices::list_refused(&why),
                 }),
             },
-            Err(down) if down.key_changed => Err(PoolLink::KeyChanged),
-            Err(down) => Err(PoolLink::Down { why: down.why }),
+            Err(down) => Err(link_of(down)),
         })
     });
     match listed {
         Ok(listed) => listed,
-        Err(why) => Err(PoolLink::Down { why }),
+        Err(why) => Err(PoolLink::Down {
+            why: crate::devices::shown_safely(&why),
+        }),
     }
 }
 
