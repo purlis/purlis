@@ -46,19 +46,77 @@ fn each_of_the_projects_files_that_holds_the_old_table_is_found_with_its_text() 
 }
 
 #[test]
-fn a_workspaces_old_settings_are_named_and_never_offered_as_a_text() {
+fn a_workspaces_old_settings_are_found_with_the_manifests_text() {
+    let manifest =
+        r#"{"name": "alpha", "settings": {"harness_plugins": {"claude": {"a@b": true}}}}"#;
     let dir = project(&[
         ("charter.toml", "[plane]\nname = \"p\"\n"),
-        (
-            "workspaces/alpha/workspace.json",
-            r#"{"name": "alpha", "settings": {"harness_plugins": {"claude": {"a@b": true}}}}"#,
-        ),
+        ("workspaces/alpha/workspace.json", manifest),
     ]);
     let all = found(dir.path());
     assert_eq!(all.len(), 1, "{all:?}");
     assert_eq!(all[0].file, "workspaces/alpha/workspace.json");
     assert_eq!(all[0].which, None);
-    assert!(said(&all).contains("Edit as JSON"), "{}", said(&all));
+    assert_eq!(
+        all[0].text, manifest,
+        "Remove works its change out against it"
+    );
+    assert!(!said(&all).contains("Edit as JSON"), "{}", said(&all));
+}
+
+/// A workspace's manifest, as purlis's own writer writes it: stamped.
+fn stamped(root: &std::path::Path, doc: serde_json::Value) -> String {
+    let mut doc = doc;
+    crate::manifest::stamp(&mut doc, true, crate::manifest::key_for(root));
+    crate::pyjson::dumps_indent2(&doc)
+}
+
+#[test]
+fn remove_takes_the_old_key_out_of_a_manifest_purlis_wrote_and_stamps_it_again() {
+    let dir = project(&[]);
+    let before = stamped(
+        dir.path(),
+        serde_json::json!({
+            "name": "alpha",
+            "repos": [],
+            "settings": {
+                "harness_plugins": {"claude": {"a@b": true}},
+                "theme": {"color": "teal"},
+            },
+        }),
+    );
+    assert_eq!(
+        crate::manifest::ownership(Some(&before)),
+        crate::manifest::Ownership::Charter
+    );
+    let after = removed_from_manifest(dir.path(), &before).expect("a manifest");
+    assert!(!after.contains(TABLE), "{after}");
+    assert!(after.contains("\"theme\""), "{after}");
+    assert_eq!(
+        crate::manifest::ownership(Some(&after)),
+        crate::manifest::Ownership::Charter,
+        "it stays purlis's, as after a form save"
+    );
+}
+
+#[test]
+fn remove_leaves_a_hand_written_manifest_the_persons_and_takes_an_emptied_settings_out() {
+    let dir = project(&[]);
+    let before = r#"{"name": "alpha", "settings": {"harness_plugins": {"claude": {"a@b": true}}}, "repos": []}"#;
+    let after = removed_from_manifest(dir.path(), before).expect("a manifest");
+    assert_eq!(after, "{\n  \"name\": \"alpha\",\n  \"repos\": []\n}\n");
+    assert_eq!(
+        crate::manifest::ownership(Some(&after)),
+        crate::manifest::Ownership::Operator,
+        "a hand's manifest is never stamped"
+    );
+}
+
+#[test]
+fn remove_refuses_a_manifest_that_is_not_an_object() {
+    let dir = project(&[]);
+    assert!(removed_from_manifest(dir.path(), "[1]").is_err());
+    assert!(removed_from_manifest(dir.path(), r#"{"settings": 1}"#).is_err());
 }
 
 #[test]

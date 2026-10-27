@@ -548,11 +548,28 @@ pub fn apply_in(
         })
     };
     record(proposed::Outcome::Intent, None).map_err(Refusal::Not)?;
-    let result = proposed::write_pinned(root, &rel, one.base.as_deref(), &made.after);
-    let couldnt = format!(
-        "purlis could not write {}, so nothing was written.",
-        purlis_core::shown::short(&one.path)
-    );
+    // purlis's own change to a workspace's manifest goes through the manifest's writer (#3486).
+    // Where its writer said why it refused, that is what the person is told.
+    let (result, said) = match if one.session == BY_PURLIS {
+        proposed::write_by_purlis(
+            root,
+            &rel,
+            one.base.as_deref(),
+            made.before.as_deref(),
+            &made.after,
+        )
+    } else {
+        proposed::write_pinned(root, &rel, one.base.as_deref(), &made.after).map_err(|m| (m, None))
+    } {
+        Ok(()) => (Ok(()), None),
+        Err((made, said)) => (Err(made), said),
+    };
+    let couldnt = said.unwrap_or_else(|| {
+        format!(
+            "purlis could not write {}, so nothing was written.",
+            purlis_core::shown::short(&one.path)
+        )
+    });
     let (outcome, why) = match &result {
         Ok(()) => (proposed::Outcome::Applied, None),
         Err(NotMade::Stale) => (proposed::Outcome::Stale, None),
