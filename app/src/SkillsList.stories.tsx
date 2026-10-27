@@ -170,8 +170,9 @@ export const ByLevel: Story = {
     );
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
-    expectFocusInSight();
+    // The focus comes back once the menu has gone, which WebKit can take a frame longer for.
     await untilFocused(() => off, "Skills: Escape gives the keyboard back to the row");
+    expectFocusInSight();
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "After the view" }),
