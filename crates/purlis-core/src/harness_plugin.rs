@@ -46,6 +46,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use purlis_skills::held::{Folder, Follow, HardLinks, Kind, NotListed, Opened};
+
 use crate::extension::project::{Source, toml_key};
 use crate::profiles::{COMMITTED_FILE, LOCAL_FILE};
 use crate::settings::Refusal;
@@ -547,7 +549,7 @@ impl Adapter for Opencode {
                     source: "npm, in opencode.json".to_owned(),
                 }));
             }
-            if let Some(dir) = Folder::open(&dir, true) {
+            if let Some(dir) = Folder::open(&dir, Follow::Link) {
                 out.extend(opencode_scripts(
                     self.harness(),
                     &dir,
@@ -560,13 +562,15 @@ impl Adapter for Opencode {
         if let Some(home) = env
             .home
             .as_deref()
-            .and_then(|home| Folder::open(home, true))
+            .and_then(|home| Folder::open(home, Follow::Link))
         {
+            // The person's own: a config with a second name is read, as their harness reads it.
             out.extend(opencode_dot_at(
                 self.harness(),
                 &home,
                 "~/",
                 "the home folder's",
+                HardLinks::Read,
             ));
         }
         Ok(out)
@@ -582,11 +586,11 @@ impl Adapter for Opencode {
     /// each folder above the project named by its path, at most [`MOST_LEVELS_ABOVE`] of them.
     /// The home folder's own `.opencode` is [`Self::installed`]'s, and is not listed twice.
     fn in_project(&self, root: &Path) -> Vec<Plugin> {
-        let Some(level) = Folder::open(root, true) else {
+        let Some(level) = Folder::open(root, Follow::Link) else {
             return Vec::new();
         };
         let mut out = opencode_level(self.harness(), &level, "", "this project's");
-        if level.is_git_top() {
+        if is_git_top(&level) {
             return out;
         }
         let Ok(start) = root.canonicalize() else {
@@ -594,7 +598,7 @@ impl Adapter for Opencode {
         };
         let home = crate::profiles::home().and_then(|home| home.canonicalize().ok());
         for above in start.ancestors().skip(1).take(MOST_LEVELS_ABOVE) {
-            let Some(level) = Folder::open(above, false) else {
+            let Some(level) = Folder::open(above, Follow::NoLink) else {
                 break;
             };
             let shown = above.display().to_string();
@@ -604,17 +608,26 @@ impl Adapter for Opencode {
                 format!("{shown}{}", std::path::MAIN_SEPARATOR)
             };
             let whose = format!("the {shown} folder's");
+            // A folder above the project is the person's own, outside the plane: a config with
+            // a second name is read there, as opencode reads it.
             out.extend(opencode_configs(
                 self.harness(),
                 &level,
                 &prefix,
                 &whose,
                 "",
+                HardLinks::Read,
             ));
             if home.as_deref() != Some(above) {
-                out.extend(opencode_dot_at(self.harness(), &level, &prefix, &whose));
+                out.extend(opencode_dot_at(
+                    self.harness(),
+                    &level,
+                    &prefix,
+                    &whose,
+                    HardLinks::Read,
+                ));
             }
-            if level.is_git_top() {
+            if is_git_top(&level) {
                 break;
             }
         }
@@ -638,7 +651,7 @@ impl Adapter for Opencode {
         let Ok(dir) = crate::worktree::confine::workspace_dir(root, workspace) else {
             return Vec::new();
         };
-        let Some(held) = Folder::open(&dir, false) else {
+        let Some(held) = Folder::open(&dir, Follow::NoLink) else {
             return Vec::new();
         };
         let mut out = Vec::new();
@@ -650,7 +663,7 @@ impl Adapter for Opencode {
             let here = if level == dir {
                 None
             } else {
-                match Folder::open(level, false) {
+                match Folder::open(level, Follow::NoLink) {
                     Some(here) => Some(here),
                     None => break,
                 }
@@ -670,7 +683,7 @@ impl Adapter for Opencode {
             ));
             // opencode stops at the git top: a workspace that is a repository of its own is
             // where a chat in it stops looking.
-            if here.is_git_top() {
+            if is_git_top(here) {
                 break;
             }
             let Some(up) = level.parent() else {
@@ -682,7 +695,7 @@ impl Adapter for Opencode {
             .map(|clones| clones.repos)
             .unwrap_or_default();
         for repo in &repos {
-            let Some(clone) = Folder::open(&repo.path, false) else {
+            let Some(clone) = Folder::open(&repo.path, Follow::NoLink) else {
                 continue;
             };
             out.extend(opencode_level(
@@ -747,7 +760,7 @@ impl Adapter for Opencode {
 /// since each is its own git top ([`Opencode::in_workspace`]).
 ///
 /// **The git top is the one git takes** (#1828): a `.git` folder holding `HEAD`, or a `.git`
-/// file that starts `gitdir:` ([`Folder::is_git_top`]). Any other `.git` is no repository to
+/// file that starts `gitdir:` ([`is_git_top`]). Any other `.git` is no repository to
 /// git, and opencode walks on past it.
 const OPENCODE_CONFIGS: [&str; 2] = ["opencode.json", "opencode.jsonc"];
 
@@ -773,9 +786,19 @@ fn npm_plugins(doc: &serde_json::Value) -> Vec<&str> {
 /// `plugins` that is a link is named as one purlis does not follow, and what opencode loads
 /// through it is not listed: opencode follows it, so it is named rather than left out. Each is
 /// read through the folder handle purlis opened (#1828, [`Folder`]), never by its path again.
+///
+/// **A config with a second name (a hard link) is refused here** (SK-52, #3205): every level
+/// this reads is inside the plane, where a chat can write, and a second name reaches past the
+/// folder as a link does. It is still named, as a config purlis cannot read.
 fn opencode_level(harness: &'static str, level: &Folder, prefix: &str, whose: &str) -> Vec<Plugin> {
-    let mut out = opencode_configs(harness, level, prefix, whose, "");
-    out.extend(opencode_dot_at(harness, level, prefix, whose));
+    let mut out = opencode_configs(harness, level, prefix, whose, "", HardLinks::Refused);
+    out.extend(opencode_dot_at(
+        harness,
+        level,
+        prefix,
+        whose,
+        HardLinks::Refused,
+    ));
     out
 }
 
@@ -785,11 +808,12 @@ fn opencode_dot_at(
     level: &Folder,
     prefix: &str,
     whose: &str,
+    hard_links: HardLinks,
 ) -> Vec<Plugin> {
-    match level.child(".opencode", false) {
-        Child::Folder(dot) => opencode_dot(harness, &dot, prefix, whose, true),
-        Child::Link => vec![unfollowed(harness, prefix, ".opencode")],
-        Child::Absent => Vec::new(),
+    match level.child(".opencode", Follow::NoLink) {
+        Opened::Folder(dot) => opencode_dot(harness, &dot, prefix, whose, true, hard_links),
+        Opened::Link => vec![unfollowed(harness, prefix, ".opencode")],
+        Opened::Absent => Vec::new(),
     }
 }
 
@@ -801,8 +825,9 @@ fn opencode_dot(
     prefix: &str,
     whose: &str,
     chat_written: bool,
+    hard_links: HardLinks,
 ) -> Vec<Plugin> {
-    let mut out = opencode_configs(harness, dot, prefix, whose, ".opencode/");
+    let mut out = opencode_configs(harness, dot, prefix, whose, ".opencode/", hard_links);
     out.extend(opencode_scripts(
         harness,
         dot,
@@ -827,26 +852,26 @@ fn opencode_worktrees(
 ) -> Vec<Plugin> {
     use crate::worktree::DIR_NAME;
     let at = format!("workspaces/{workspace}/");
-    let pieces = match held.child(DIR_NAME, false) {
-        Child::Folder(pieces) => pieces,
-        Child::Link => return vec![unfollowed(harness, &at, DIR_NAME)],
-        Child::Absent => return Vec::new(),
+    let pieces = match held.child(DIR_NAME, Follow::NoLink) {
+        Opened::Folder(pieces) => pieces,
+        Opened::Link => return vec![unfollowed(harness, &at, DIR_NAME)],
+        Opened::Absent => return Vec::new(),
     };
     let at = format!("{at}{DIR_NAME}/");
     let mut out = Vec::new();
     for repo in repos {
-        let folder = match pieces.child(&repo.name, false) {
-            Child::Folder(folder) => folder,
-            Child::Link => {
+        let folder = match pieces.child(&repo.name, Follow::NoLink) {
+            Opened::Folder(folder) => folder,
+            Opened::Link => {
                 out.push(unfollowed(harness, &at, &repo.name));
                 continue;
             }
-            Child::Absent => continue,
+            Opened::Absent => continue,
         };
         let listed: BTreeSet<String> = crate::worktree::list(root, workspace, &repo.name)
             .map(|pieces| pieces.into_iter().map(|piece| piece.piece).collect())
             .unwrap_or_default();
-        let mut names = match folder.names() {
+        let names = match folder.names() {
             Ok(names) => names,
             Err(why) => {
                 out.push(unlisted(harness, &at, &repo.name, why));
@@ -854,11 +879,10 @@ fn opencode_worktrees(
             }
         };
         let at = format!("{at}{}/", repo.name);
-        names.sort();
-        for name in names {
-            match folder.child(&name, false) {
-                Child::Link => out.push(unfollowed(harness, &at, &name)),
-                Child::Folder(piece) if listed.contains(&name) => out.extend(opencode_level(
+        for name in text_names(names) {
+            match folder.child(&name, Follow::NoLink) {
+                Opened::Link => out.push(unfollowed(harness, &at, &name)),
+                Opened::Folder(piece) if listed.contains(&name) => out.extend(opencode_level(
                     harness,
                     &piece,
                     &format!("{at}{name}/"),
@@ -890,10 +914,7 @@ fn unlisted(harness: &'static str, prefix: &str, name: &str, why: NotListed) -> 
         id: format!("{prefix}{name}"),
         harness,
         name: name.to_owned(),
-        source: format!(
-            "{}: the plugins opencode loads from it are not listed",
-            why.said()
-        ),
+        source: format!("{}: the plugins opencode loads from it are not listed", why),
     }
 }
 
@@ -912,11 +933,12 @@ fn opencode_configs(
     prefix: &str,
     whose: &str,
     place: &str,
+    hard_links: HardLinks,
 ) -> Vec<Plugin> {
     let mut out = Vec::new();
     for config in OPENCODE_CONFIGS {
         let config_at = format!("{place}{config}");
-        let text = match folder.read(config) {
+        let text = match read_config(folder, config, hard_links) {
             Ok(None) => continue,
             Ok(Some(text)) => Ok(text),
             Err(()) => Err(()),
@@ -961,13 +983,18 @@ fn opencode_scripts(
 ) -> Vec<Plugin> {
     let mut out = Vec::new();
     for folder in ["plugin", "plugins"] {
-        let scripts = match dir.child(folder, !chat_written) {
-            Child::Folder(scripts) => scripts,
-            Child::Link => {
+        let follow = if chat_written {
+            Follow::NoLink
+        } else {
+            Follow::Link
+        };
+        let scripts = match dir.child(folder, follow) {
+            Opened::Folder(scripts) => scripts,
+            Opened::Link => {
                 out.push(unfollowed(harness, prefix, folder));
                 continue;
             }
-            Child::Absent => continue,
+            Opened::Absent => continue,
         };
         let names = match scripts.names() {
             Ok(names) => names,
@@ -976,7 +1003,7 @@ fn opencode_scripts(
                 continue;
             }
         };
-        let mut files: Vec<String> = names
+        let files: Vec<String> = text_names(names)
             .into_iter()
             .filter(|name| {
                 Path::new(name)
@@ -984,13 +1011,13 @@ fn opencode_scripts(
                     .and_then(|ext| ext.to_str())
                     .is_some_and(|ext| OPENCODE_SCRIPTS.contains(&ext))
             })
-            .filter(|name| match scripts.kind(name, false) {
-                Some(Kind::File) => true,
-                Some(Kind::Link) => scripts.kind(name, true) != Some(Kind::Folder),
-                _ => false,
+            .filter(|name| {
+                matches!(
+                    scripts.kind(name),
+                    Some(Kind::File | Kind::Link { to_folder: false })
+                )
             })
             .collect();
-        files.sort();
         out.extend(files.into_iter().map(|file| Plugin {
             id: format!("{prefix}{folder}/{file}"),
             harness,
@@ -1013,260 +1040,46 @@ fn read(path: &Path) -> Result<Option<String>, String> {
 /// The most of a project's own config purlis reads to list its plugins.
 const MOST_PROJECT_CONFIG_BYTES: u64 = 1024 * 1024;
 
-/// A file a chat can write, read only where it is a plain file of its own (train 77 review),
-/// from what opening it gave: `None` where nothing is there, and an error for a link, a pipe, a
-/// device, anything past `most` bytes or a file that will not read. A link is
-/// never followed, so a chat cannot have this read a file elsewhere, nor one that never ends.
-fn read_opened(opened: std::io::Result<std::fs::File>, most: u64) -> Result<Option<String>, ()> {
-    use std::io::Read;
-    let file = match opened {
-        Ok(file) => file,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(()),
-    };
-    let meta = file.metadata().map_err(drop)?;
-    if !meta.is_file() || meta.len() > most {
-        return Err(());
-    }
-    let mut text = String::new();
-    file.take(most + 1)
-        .read_to_string(&mut text)
-        .map_err(drop)?;
-    if text.len() as u64 > most {
-        return Err(());
-    }
-    Ok(Some(text))
+/// The names of a folder that are text, in the order listed: the only ones opencode's ids are
+/// written in.
+fn text_names(names: Vec<std::ffi::OsString>) -> Vec<String> {
+    names
+        .into_iter()
+        .filter_map(|name| name.into_string().ok())
+        .collect()
 }
 
-/// **The most names purlis reads of one folder it lists** (SK-44, #3133): a clone's skills
-/// folder and a project's plugin folder are a chat's to fill, and each name read is opened, read
-/// and linted. A folder holding more is read for none of them, and named as one purlis did not
-/// read ([`Folder::names`]).
-const MOST_NAMES: usize = 2000;
-
-/// What a name in a [`Folder`] is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Kind {
-    Folder,
-    File,
-    Link,
-    Other,
-}
-
-/// What a name in a [`Folder`] opened as.
-enum Child {
-    /// A folder, held open.
-    Folder(Folder),
-    /// A symbolic link where none is followed: named, never read through.
-    Link,
-    /// Nothing there, or nothing purlis opens as a folder.
-    Absent,
-}
-
-/// **A folder held open, and read by name through that one handle** (#1828). A chat can write
-/// what opencode reads in a project, so purlis never asks about a path and then opens it again:
-/// a `.opencode` or a plugin folder is opened once, without following a link at its last step,
-/// and everything in it is opened relative to that handle. A link put in its place after it was
-/// opened is never read through. Off unix, by path, with the same answers where nothing changes
-/// in between.
-#[cfg(unix)]
-struct Folder(rustix::fd::OwnedFd);
-
-#[cfg(unix)]
-impl Folder {
-    fn flags(follow: bool) -> rustix::fs::OFlags {
-        use rustix::fs::OFlags;
-        let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
-        if follow {
-            flags
-        } else {
-            flags | OFlags::NOFOLLOW
-        }
-    }
-
-    /// `path` opened as a folder, through a link at its last step only when `follow`.
-    fn open(path: &Path, follow: bool) -> Option<Self> {
-        rustix::fs::open(path, Self::flags(follow), rustix::fs::Mode::empty())
-            .ok()
-            .map(Self)
-    }
-
-    /// `name` in this folder opened as a folder, through a link only when `follow`.
-    fn child(&self, name: &str, follow: bool) -> Child {
-        match rustix::fs::openat(
-            &self.0,
-            name,
-            Self::flags(follow),
-            rustix::fs::Mode::empty(),
-        ) {
-            Ok(fd) => Child::Folder(Self(fd)),
-            Err(_) if !follow && self.kind(name, false) == Some(Kind::Link) => Child::Link,
-            Err(_) => Child::Absent,
-        }
-    }
-
-    /// What `name` is, or what it leads to when `follow`.
-    fn kind(&self, name: &str, follow: bool) -> Option<Kind> {
-        use rustix::fs::{AtFlags, FileType};
-        let flags = if follow {
-            AtFlags::empty()
-        } else {
-            AtFlags::SYMLINK_NOFOLLOW
-        };
-        let stat = rustix::fs::statat(&self.0, name, flags).ok()?;
-        Some(match FileType::from_raw_mode(stat.st_mode) {
-            FileType::Directory => Kind::Folder,
-            FileType::RegularFile => Kind::File,
-            FileType::Symlink => Kind::Link,
-            _ => Kind::Other,
-        })
-    }
-
-    /// `name`'s text, read as [`read_opened`] reads, never through a link.
-    fn read(&self, name: &str) -> Result<Option<String>, ()> {
-        use rustix::fs::OFlags;
-        let opened = rustix::fs::openat(
-            &self.0,
-            name,
-            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
-            rustix::fs::Mode::empty(),
-        );
-        read_opened(
-            opened.map(std::fs::File::from).map_err(Into::into),
-            MOST_PROJECT_CONFIG_BYTES,
-        )
-    }
-
-    /// Every name in this folder that is text, in no order, or why it is not listed whole
-    /// ([`names_whole`]).
-    fn names(&self) -> Result<Vec<String>, NotListed> {
-        let Ok(dir) = rustix::fs::Dir::read_from(&self.0) else {
-            return Err(NotListed::Unreadable);
-        };
-        names_whole(
-            dir.map(|entry| entry.map(|entry| entry.file_name().to_bytes().to_vec()))
-                .filter(|name| !matches!(name.as_deref(), Ok(b".") | Ok(b"..")))
-                .map(|name| name.map(String::from_utf8)),
-        )
+/// **A config read through the folder purlis holds** (train 77 review; SK-52, #3205): `None`
+/// where nothing is there, and an error for a link, a pipe, a device, anything past
+/// [`MOST_PROJECT_CONFIG_BYTES`], a file that will not read, or a file with a second name (a hard
+/// link) where `hard_links` refuses one ([`purlis_skills::held::Folder::read_as`]). A link is
+/// never followed, so a chat cannot have this read a file elsewhere, nor one that never ends. A
+/// config refused is still named, as one purlis cannot read ([`opencode_configs`]).
+fn read_config(folder: &Folder, name: &str, hard_links: HardLinks) -> Result<Option<String>, ()> {
+    match folder.read_as(name, MOST_PROJECT_CONFIG_BYTES, hard_links) {
+        Ok(text) => Ok(Some(text)),
+        Err(_) if folder.kind(name).is_none() => Ok(None),
+        Err(_) => Err(()),
     }
 }
 
-/// Off unix, a folder by its path ([`Folder`]'s unix half holds it open).
-#[cfg(not(unix))]
-struct Folder(PathBuf);
+/// **The most names purlis reads of one folder it lists** (SK-44, #3133): the one limit of the
+/// folder-handle reader ([`purlis_skills::held::MOST_NAMES`]).
+#[cfg(test)]
+pub(crate) use purlis_skills::held::MOST_NAMES;
 
-#[cfg(not(unix))]
-impl Folder {
-    fn open(path: &Path, follow: bool) -> Option<Self> {
-        let here = Self(path.to_path_buf());
-        (follow || !std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_symlink()))
-            .then_some(here)
-            .filter(|here| here.0.is_dir())
-    }
-
-    fn child(&self, name: &str, follow: bool) -> Child {
-        let path = self.0.join(name);
-        if !follow && self.kind(name, false) == Some(Kind::Link) {
-            return Child::Link;
-        }
-        if path.is_dir() {
-            Child::Folder(Self(path))
-        } else {
-            Child::Absent
-        }
-    }
-
-    fn kind(&self, name: &str, follow: bool) -> Option<Kind> {
-        let path = self.0.join(name);
-        let meta = if follow {
-            std::fs::metadata(path)
-        } else {
-            std::fs::symlink_metadata(path)
-        }
-        .ok()?;
-        let kind = meta.file_type();
-        Some(if kind.is_symlink() {
-            Kind::Link
-        } else if kind.is_dir() {
-            Kind::Folder
-        } else if kind.is_file() {
-            Kind::File
-        } else {
-            Kind::Other
-        })
-    }
-
-    fn read(&self, name: &str) -> Result<Option<String>, ()> {
-        let path = self.0.join(name);
-        if self.kind(name, false) == Some(Kind::Link) {
-            return Err(());
-        }
-        read_opened(std::fs::File::open(path), MOST_PROJECT_CONFIG_BYTES)
-    }
-
-    fn names(&self) -> Result<Vec<String>, NotListed> {
-        let Ok(entries) = std::fs::read_dir(&self.0) else {
-            return Err(NotListed::Unreadable);
-        };
-        names_whole(entries.map(|entry| entry.map(|entry| entry.file_name().into_string())))
-    }
-}
-
-/// Why a folder's names are not listed whole ([`Folder::names`]): nothing of it is read then.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NotListed {
-    /// It holds more than [`MOST_NAMES`].
-    Crowded,
-    /// Reading it failed, at its start or partway.
-    Unreadable,
-}
-
-impl NotListed {
-    /// What is said of a folder purlis did not list: "a folder of more than 2000 names, the most
-    /// purlis reads of one", or "a folder purlis could not read whole".
-    fn said(self) -> String {
-        match self {
-            Self::Crowded => format!(
-                "a folder of more than {}, the most purlis reads of one",
-                crate::counts::counted(MOST_NAMES, "name", "names")
-            ),
-            Self::Unreadable => "a folder purlis could not read whole".to_owned(),
-        }
-    }
-}
-
-/// **A folder's names, whole or not at all**: each entry read as `names` gives it, the ones that
-/// are text kept. [`NotListed::Crowded`] past [`MOST_NAMES`], read no further than one past them,
-/// and [`NotListed::Unreadable`] where an entry could not be read: a short list is never taken for
-/// the whole.
-fn names_whole<E, F>(
-    names: impl Iterator<Item = Result<Result<String, F>, E>>,
-) -> Result<Vec<String>, NotListed> {
-    let mut out = Vec::new();
-    for (n, name) in names.enumerate() {
-        if n == MOST_NAMES {
-            return Err(NotListed::Crowded);
-        }
-        if let Ok(name) = name.map_err(|_| NotListed::Unreadable)? {
-            out.push(name);
-        }
-    }
-    Ok(out)
-}
-
-impl Folder {
-    /// Whether this folder is a git top as git takes one (#1828): a `.git` folder holding
-    /// `HEAD`, or a `.git` file that starts `gitdir:`. Any other `.git` (an empty folder, a
-    /// stray file) is no repository to git, so opencode walks on past it. A `.git` that is a
-    /// link is not followed, and the walk goes on: it lists more, never less.
-    fn is_git_top(&self) -> bool {
-        match self.child(".git", false) {
-            Child::Folder(git) => git.kind("HEAD", false).is_some(),
-            Child::Link => false,
-            Child::Absent => self
-                .read(".git")
-                .is_ok_and(|text| text.is_some_and(|text| text.starts_with("gitdir:"))),
-        }
+/// **Whether `folder` is a git top as git takes one** (#1828): a `.git` folder holding `HEAD`,
+/// or a `.git` file that starts `gitdir:`. Any other `.git` (an empty folder, a stray file) is no
+/// repository to git, so opencode walks on past it. A `.git` that is a link is not followed, and
+/// the walk goes on: it lists more, never less.
+fn is_git_top(folder: &Folder) -> bool {
+    match folder.child(".git", Follow::NoLink) {
+        Opened::Folder(git) => git.kind("HEAD").is_some(),
+        Opened::Link => false,
+        // Only its first word is looked at: a `.git` file with a second name (a worktree a
+        // backup tool linked) is still git's.
+        Opened::Absent => read_config(folder, ".git", HardLinks::Read)
+            .is_ok_and(|text| text.is_some_and(|text| text.starts_with("gitdir:"))),
     }
 }
 

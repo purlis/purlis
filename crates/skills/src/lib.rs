@@ -45,7 +45,7 @@ mod declared;
 pub mod grade;
 mod grant;
 pub mod handed;
-mod held;
+pub mod held;
 pub mod lifecycle;
 pub mod lint;
 mod load;
@@ -431,6 +431,9 @@ pub enum Missing {
     Link,
     /// Its `SKILL.md` is larger than purlis reads ([`MOST_BYTES`]).
     TooLarge,
+    /// The level's folder holds more names than purlis reads of one ([`held::MOST_NAMES`]), so
+    /// none of its skills is read (SK-52).
+    Crowded,
 }
 
 impl std::fmt::Display for Reason {
@@ -450,6 +453,11 @@ impl std::fmt::Display for Reason {
                 f,
                 "its SKILL.md is larger than purlis reads ({} KiB)",
                 MOST_BYTES / 1024
+            ),
+            Self::NotASkill(Missing::Crowded) => write!(
+                f,
+                "{}, so none of its skills is read",
+                held::NotListed::Crowded
             ),
             Self::NotGranted => f.write_str(
                 "not granted to this workspace: a project skill is for chats at the project's root \
