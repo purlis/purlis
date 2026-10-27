@@ -7,8 +7,9 @@
 //!
 //! **Every runner container is confined the same way, and nothing loosens it** ([`Runner`]):
 //!
-//! - Docker's default seccomp profile, and the runtime's default AppArmor profile: no
-//!   `--security-opt` that names either, and never `--privileged`;
+//! - Docker's default seccomp profile with one call added, `pidfd_getfd`, which the Linux
+//!   sandbox's supervisor takes a chat's socket with to make its `listen` ([`SECCOMP_PROFILE`],
+//!   #3410); the runtime's default AppArmor profile; and never `--privileged`;
 //! - every capability dropped (`--cap-drop ALL`), none added, and no new privileges
 //!   (`no-new-privileges`), so nothing in it gains a power its user does not have;
 //! - a user who is not root, by number ([`User`]);
@@ -377,14 +378,15 @@ impl Runner {
     }
 
     /// `docker`'s arguments that make and start the runner's container, confined as the
-    /// module says. Its id is what `docker` prints.
-    pub fn create_args(&self) -> Vec<String> {
-        self.create_args_for(None)
+    /// module says, with [`SECCOMP_PROFILE`] read from `seccomp`. Its id is what `docker`
+    /// prints.
+    pub fn create_args(&self, seccomp: &std::path::Path) -> Vec<String> {
+        self.create_args_for(None, seccomp)
     }
 
     /// [`Runner::create_args`], the container also labelled as made by `desktop`
     /// ([`DESKTOP_LABEL`], #2869), where one is named.
-    pub fn create_args_for(&self, desktop: Option<&str>) -> Vec<String> {
+    pub fn create_args_for(&self, desktop: Option<&str>, seccomp: &std::path::Path) -> Vec<String> {
         let mut args: Vec<String> = Vec::new();
         let mut pair = |flag: &str, value: String| {
             args.push(flag.to_owned());
@@ -398,6 +400,7 @@ impl Runner {
         pair("--user", self.user.spelled());
         pair("--cap-drop", "ALL".into());
         pair("--security-opt", "no-new-privileges".into());
+        pair("--security-opt", format!("seccomp={}", seccomp.display()));
         pair("--network", "bridge".into());
         pair("--ipc", "private".into());
         pair("--cgroupns", "private".into());
@@ -488,15 +491,32 @@ pub struct Engine {
     pub rootless: bool,
 }
 
+/// **Which seccomp profile a runner's container runs** (#3410), as the check found it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Seccomp {
+    /// The runner's own, [`SECCOMP_PROFILE`]: a server a chat starts there listens where it
+    /// was bound.
+    Runners,
+    /// The runtime's own default, which a runner made before #3410 runs. It is stricter than
+    /// the runner's (it refuses `pidfd_getfd`), so the runner is still linked, and no server a
+    /// chat starts there listens until the runner is removed and added again.
+    RuntimeDefault,
+}
+
 /// Whether `inspected`, what `docker inspect <container>` printed, is `made`'s container,
 /// running and confined exactly as [`Runner::create_args`] made it, on a rootful engine.
 /// Anything else is refused, with what differs: a field missing, or of another shape, included.
 pub fn check(inspected: &serde_json::Value, made: &Made) -> Result<(), Refused> {
-    check_on(inspected, made, Engine::default())
+    check_on(inspected, made, Engine::default()).map(drop)
 }
 
-/// [`check`], on the `engine` the daemon's check found ([`check_podman`]).
-pub fn check_on(inspected: &serde_json::Value, made: &Made, engine: Engine) -> Result<(), Refused> {
+/// [`check`], on the `engine` the daemon's check found ([`check_podman`]): the seccomp profile
+/// the container runs, where it passes.
+pub fn check_on(
+    inspected: &serde_json::Value,
+    made: &Made,
+    engine: Engine,
+) -> Result<Seccomp, Refused> {
     let not = |what: &str| {
         refused(format!(
             "runner {}'s container {what}, so purlis does not link to it; remove the runner and \
@@ -569,7 +589,22 @@ pub fn check_on(inspected: &serde_json::Value, made: &Made, engine: Engine) -> R
     if !options.iter().any(|option| is_no_new_privileges(option)) {
         return Err(not("may gain new privileges"));
     }
-    if let Some(option) = options.iter().find(|option| !is_no_new_privileges(option)) {
+    // The runner's seccomp profile, or, on a runner made before it, the runtime's own default
+    // (no seccomp option at all), which is stricter.
+    let seccomp = if options
+        .iter()
+        .any(|option| is_the_runners_seccomp(option, podman))
+    {
+        Seccomp::Runners
+    } else if options.iter().any(|option| option.starts_with("seccomp")) {
+        return Err(not("does not have the runner's seccomp profile"));
+    } else {
+        Seccomp::RuntimeDefault
+    };
+    if let Some(option) = options
+        .iter()
+        .find(|option| !is_no_new_privileges(option) && !is_the_runners_seccomp(option, podman))
+    {
         let named = option.split(['=', ':']).next().unwrap_or_default();
         return Err(not(&format!(
             "has a security option of its own ({named}), where purlis keeps the runtime's defaults"
@@ -781,7 +816,7 @@ pub fn check_on(inspected: &serde_json::Value, made: &Made, engine: Engine) -> R
     if !truth("/State/Running")? {
         return Err(not("is not running"));
     }
-    Ok(())
+    Ok(seccomp)
 }
 
 /// Whether the Docker daemon, by what `docker info --format '{{json .SecurityOptions}}'`
@@ -902,6 +937,7 @@ pub fn check_oci(
     made: &Made,
     config: &std::path::Path,
     store: &PodmanStore,
+    seccomp: Seccomp,
 ) -> Result<(), Refused> {
     let not = |what: &str| {
         refused(format!(
@@ -919,6 +955,19 @@ pub fn check_oci(
     let run_userdata = own_folder(&store.run_root);
     if config != userdata.join("config.json") {
         return Err(not("has a runtime config that is not its own"));
+    }
+    // The runner's profile, exactly as Podman compiles it; on a runner made before it, a
+    // profile that refuses what it does not name, which `podman info`'s check holds to Podman's
+    // own default ([`check_podman`]).
+    let compiled = oci.pointer("/linux/seccomp");
+    let held = match seccomp {
+        Seccomp::Runners => compiled.is_some_and(is_the_runners_compiled),
+        Seccomp::RuntimeDefault => {
+            compiled.is_some_and(|it| it.is_object() && it["defaultAction"] == "SCMP_ACT_ERRNO")
+        }
+    };
+    if !held {
+        return Err(not("does not run with the runner's seccomp profile"));
     }
     match oci.pointer("/linux/devices") {
         None | Some(serde_json::Value::Null) => {}
@@ -1005,6 +1054,133 @@ fn is_containers_default(profile: &str) -> bool {
     let a_suffix = suffix
         .is_none_or(|number| !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()));
     a_version && a_suffix
+}
+
+/// **The runner container's seccomp profile** (#3410): Docker's default, the Moby project's
+/// `seccomp/v0.2.4` (Apache-2.0), kept beside it as published (`seccomp-moby-v0.2.4.json`), with
+/// one rule added after its first: `pidfd_getfd` allowed, which that profile allows only with
+/// `CAP_SYS_PTRACE`. The Linux sandbox's supervisor takes a chat's own socket with it to make the
+/// chat's `listen` (`purlis_linux_sandbox`), and every capability is dropped from a runner, so
+/// without it no server a chat starts there listens. Nothing else differs from Docker's default.
+pub const SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp.json");
+
+/// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read.
+pub const SECCOMP_FILE: &str = "runner-seccomp.json";
+
+/// [`SECCOMP_PROFILE`], read.
+fn the_runners_profile() -> serde_json::Value {
+    serde_json::from_str(SECCOMP_PROFILE).unwrap_or(serde_json::Value::Null)
+}
+
+/// Whether `option`, one of a container's security options as `inspect` writes it, is the
+/// runner's seccomp profile. Docker's client reads the file and sends its contents, and the
+/// engine keeps them as they came: held to the runner's profile rule for rule. Podman reads the
+/// file as it makes the container and keeps only its path: held to an absolute path naming the
+/// runner's profile's file, and, where its runtime's config can be read (rootless), to what it
+/// compiled from it ([`check_oci`]). Rootful Podman's runtime config is root's: there the path is
+/// all that is read (ADR 0078, amended 2026-10-27).
+fn is_the_runners_seccomp(option: &str, podman: bool) -> bool {
+    let Some(profile) = option.strip_prefix("seccomp=") else {
+        return false;
+    };
+    if podman {
+        let path = std::path::Path::new(profile);
+        path.is_absolute() && path.file_name() == Some(std::ffi::OsStr::new(SECCOMP_FILE))
+    } else {
+        serde_json::from_str::<serde_json::Value>(profile)
+            .is_ok_and(|given| given == the_runners_profile())
+    }
+}
+
+/// Whether `compiled`, the profile Podman's runtime config holds for a container, is exactly what
+/// Podman makes of [`SECCOMP_PROFILE`] for a runner, which holds no capability, on the
+/// architecture the profile names first ([`compiled_for`]).
+fn is_the_runners_compiled(compiled: &serde_json::Value) -> bool {
+    compiled
+        .pointer("/architectures/0")
+        .and_then(serde_json::Value::as_str)
+        .and_then(compiled_for)
+        .is_some_and(|ours| &ours == compiled)
+}
+
+/// **What Podman (`containers/common`'s seccomp) makes of [`SECCOMP_PROFILE`]** for a container
+/// with no capability on the architecture `native` (`SCMP_ARCH_X86_64` or `SCMP_ARCH_AARCH64`),
+/// as its runtime config holds it: the default action and errno; `native` and the
+/// architectures its map puts beside it; and each rule its conditions keep, by its names,
+/// action, errno and arguments (an argument's second value left out where it is zero). A rule
+/// is kept unless it is for other architectures, excluded on this one, or for a capability. Each
+/// rule's lowest kernel is below the 6.12 the Linux sandbox needs, so none is dropped for it.
+/// None for any other architecture, or a condition this does not know.
+fn compiled_for(native: &str) -> Option<serde_json::Value> {
+    use serde_json::{Map, Value, json};
+    let arch = match native {
+        "SCMP_ARCH_X86_64" => "amd64",
+        "SCMP_ARCH_AARCH64" => "arm64",
+        _ => return None,
+    };
+    let profile = the_runners_profile();
+    let mut architectures = vec![Value::from(native)];
+    for map in profile["archMap"].as_array()? {
+        if map["architecture"] == native {
+            architectures.extend(map["subArchitectures"].as_array()?.iter().cloned());
+        }
+    }
+    let names = |list: &Value| -> Option<Vec<String>> {
+        match list {
+            Value::Null => Some(Vec::new()),
+            Value::Array(items) => items
+                .iter()
+                .map(|it| it.as_str().map(str::to_owned))
+                .collect(),
+            _ => None,
+        }
+    };
+    let mut rules = Vec::new();
+    for rule in profile["syscalls"].as_array()? {
+        let (includes, excludes) = (&rule["includes"], &rule["excludes"]);
+        for condition in [includes, excludes] {
+            let known = condition.as_object().is_none_or(|it| {
+                it.keys()
+                    .all(|key| matches!(key.as_str(), "arches" | "caps" | "minKernel"))
+            });
+            if !known {
+                return None;
+            }
+        }
+        let arches = names(&includes["arches"])?;
+        if (!arches.is_empty() && !arches.iter().any(|it| it == arch))
+            || !names(&includes["caps"])?.is_empty()
+            || names(&excludes["arches"])?.iter().any(|it| it == arch)
+        {
+            continue;
+        }
+        let mut compiled = Map::new();
+        compiled.insert("names".into(), rule["names"].clone());
+        compiled.insert("action".into(), rule["action"].clone());
+        if !rule["errnoRet"].is_null() {
+            compiled.insert("errnoRet".into(), rule["errnoRet"].clone());
+        }
+        if let Some(args) = rule["args"].as_array().filter(|args| !args.is_empty()) {
+            let args = args
+                .iter()
+                .map(|arg| {
+                    let mut arg = arg.as_object()?.clone();
+                    if arg.get("valueTwo").is_some_and(|it| it == 0) {
+                        arg.remove("valueTwo");
+                    }
+                    Some(Value::Object(arg))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            compiled.insert("args".into(), args.into());
+        }
+        rules.push(Value::Object(compiled));
+    }
+    Some(json!({
+        "defaultAction": profile["defaultAction"],
+        "defaultErrnoRet": profile["defaultErrnoRet"],
+        "architectures": architectures,
+        "syscalls": rules,
+    }))
 }
 
 /// Whether a security option is `no-new-privileges`, as Docker takes and writes it.
@@ -1236,10 +1412,21 @@ impl Docker {
     /// `most` bytes: one that prints more is ended and refused. What it says on standard error
     /// is kept only to be shown, up to [`MOST_SAID`], and never read to decide anything.
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
-        let mut command = std::process::Command::new(&self.program);
         // A checked copy of Docker's settings, the engine pinned, and its helpers found where it
         // is (#2752), whatever the window's environment and Docker's own settings say.
-        let prepared = self.prepared()?;
+        self.run_prepared(&self.prepared()?, args, input, most)
+    }
+
+    /// [`Docker::run`], given its run's folder already prepared, which is kept until the run
+    /// ends.
+    fn run_prepared(
+        &self,
+        prepared: &settings::Prepared,
+        args: &[String],
+        input: Option<&str>,
+        most: u64,
+    ) -> Result<String, Refused> {
+        let mut command = std::process::Command::new(&self.program);
         command.envs(prepared.env.iter().map(|(name, value)| (name, value)));
         for name in settings::CLEARED {
             command.env_remove(name);
@@ -1403,7 +1590,23 @@ impl Docker {
         }
         // Docker makes the container and its volume before it starts it, so a run that fails
         // can leave both: they are removed with the refusal.
-        let out = match self.run(&runner.create_args_for(desktop), None, MOST_INSPECTED) {
+        // The runner's seccomp profile, in the run's own folder, read by `docker` as it runs.
+        let prepared = self.prepared()?;
+        let seccomp = prepared
+            .keep(SECCOMP_FILE, SECCOMP_PROFILE)
+            .map_err(|why| {
+                refused(format!(
+                    "purlis could not keep the runner's seccomp profile for docker: {why}"
+                ))
+            })?;
+        let made = self.run_prepared(
+            &prepared,
+            &runner.create_args_for(desktop, &seccomp),
+            None,
+            MOST_INSPECTED,
+        );
+        drop(prepared);
+        let out = match made {
             Ok(out) => out,
             Err(why) => return Err(self.and_removed(why, &container, &volume)),
         };
@@ -1416,10 +1619,20 @@ impl Docker {
                 return Err(self.and_removed(why, &runner.container(), &volume));
             }
         };
-        if let Err(why) = self.check(&made) {
-            return Err(self.and_removed(why, made.container.as_str(), &volume));
+        // A runner made now runs the runner's profile: the runtime's own default is taken only
+        // for one made before it (#3410).
+        match self.checked(&made) {
+            Ok(Seccomp::Runners) => Ok(made),
+            Ok(Seccomp::RuntimeDefault) => {
+                let why = refused(format!(
+                    "runner {}'s container was made without the runner's seccomp profile, so \
+                     purlis does not link to it",
+                    made.runner.name
+                ));
+                Err(self.and_removed(why, made.container.as_str(), &volume))
+            }
+            Err(why) => Err(self.and_removed(why, made.container.as_str(), &volume)),
         }
-        Ok(made)
     }
 
     /// `why`, after removing the container `container` names and the volume `volume`; a
@@ -1437,12 +1650,17 @@ impl Docker {
     /// What Docker says of `made`'s container, its home volume and the daemon, held to
     /// [`check`], [`check_volume`] and [`check_daemon`].
     pub fn check(&self, made: &Made) -> Result<(), Refused> {
+        self.checked(made).map(drop)
+    }
+
+    /// [`Docker::check`]: the seccomp profile the container runs, where it passes.
+    fn checked(&self, made: &Made) -> Result<Seccomp, Refused> {
         let engine = self.check_daemon()?;
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        check_on(&inspected, made, engine)?;
+        let seccomp = check_on(&inspected, made, engine)?;
         // Rootless Podman writes some of what it was asked for only in what it asked its
         // runtime for (#2895), which this user can read.
         if engine.rootless {
@@ -1452,11 +1670,18 @@ impl Docker {
                 .ok_or_else(|| refused("podman did not say where its runtime's config is"))?;
             let store = self.json(&["info", "--format", "{{json .Store}}"], "podman info")?;
             let config = std::path::Path::new(path);
-            check_oci(&read_oci(config)?, made, config, &podman_store(&store)?)?;
+            check_oci(
+                &read_oci(config)?,
+                made,
+                config,
+                &podman_store(&store)?,
+                seccomp,
+            )?;
         }
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
-        check_volume(&inspected, made)
+        check_volume(&inspected, made)?;
+        Ok(seccomp)
     }
 
     /// Pair `made`'s runner with `desktop`, once its container passes the check: the runner's

@@ -77,8 +77,8 @@ describe("what was allowed lately", () => {
       [],
       NOW,
     );
-    expect(listed?.says).toBe("Write in /w/\\u202egnp.exe");
-    expect(listed?.chat).toBe("steward\\u200b 3");
+    expect(listed?.says).toBe("Write in /w/⟦U+202E⟧gnp.exe");
+    expect(listed?.chat).toBe("steward⟦U+200B⟧ 3");
   });
 
   it("lists the person's Keep blocked answers beside what was allowed (#1700)", () => {
@@ -97,7 +97,7 @@ describe("what was allowed lately", () => {
     const [listed] = lately([], [], NOW, [
       { target: "a\u202eb.example.com:443", chat: "steward\u200b 3", at: ago(1000) },
     ]);
-    expect(listed?.says).toBe("Kept a\\u202eb.example.com:443 blocked");
-    expect(listed?.chat).toBe("steward\\u200b 3");
+    expect(listed?.says).toBe("Kept a⟦U+202E⟧b.example.com:443 blocked");
+    expect(listed?.chat).toBe("steward⟦U+200B⟧ 3");
   });
 });

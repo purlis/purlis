@@ -129,6 +129,53 @@ pub(crate) fn pins_or_none(
     })
 }
 
+/// **A chat's pins, past the most it reads only together** (#3391): its workspace and its persona
+/// each pin fewer than [`MOST_PINS`] and are each accepted, but the chat reads both lists at
+/// once, past the limit, so it reads none. What its Skills chip and Use skill… say, where the
+/// studio of either pinner alone would say nothing is wrong.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PinsTogether {
+    /// Each pinner, the workspace first, and how many skills its own list pins.
+    pub held: Vec<PinsHeld>,
+    /// The most pins a chat reads ([`MOST_PINS`]).
+    pub most: usize,
+}
+
+/// One pinner of a [`PinsTogether`]: whose list, and how many skills it pins, a name it holds
+/// twice counted once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PinsHeld {
+    pub by: PinnedBy,
+    pub pins: usize,
+}
+
+/// **Whether a chat's pins are not read only because its workspace's and its persona's together
+/// pass [`MOST_PINS`]** (#3391): `None` where the chat reads them, and where one pinner's own list
+/// is refused, which that pinner's studio says ([`pins_refused`]).
+pub(crate) fn pins_together(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> Option<PinsTogether> {
+    pins_of(plane, workspace, persona).err()?;
+    let pinners = workspace
+        .map(|ws| PinnedBy::Workspace(ws.to_owned()))
+        .into_iter()
+        .chain(persona.map(|p| PinnedBy::Persona(p.to_owned())));
+    let mut held = Vec::new();
+    for by in pinners {
+        let pins = read_pins(pins_written(plane, &by).into_iter()).ok()?;
+        held.push(PinsHeld {
+            by,
+            pins: pins.len(),
+        });
+    }
+    (held.len() > 1).then_some(PinsTogether {
+        held,
+        most: MOST_PINS,
+    })
+}
+
 /// **Whose pins a pin changes** (SK-15, ADR 0102 §4): a workspace's or a persona's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PinnedBy {

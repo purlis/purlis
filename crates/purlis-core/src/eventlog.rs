@@ -262,6 +262,10 @@ pub struct Log {
     /// Whom the retention waits for ([`Consumer`]).
     consumers: Vec<Consumer>,
     next: u64,
+    /// The time of the newest event the log held as it was opened, in milliseconds since 1970
+    /// by its id: every id the log held then was minted no later (#3394). 0 for an empty log,
+    /// and `u64::MAX` for one whose newest event's id is not one, so nothing is taken as newer.
+    held_until_ms: u64,
     /// How long the file is up to the end of its last whole line.
     good: u64,
     /// Whether a write failed partway, so the file may end in a torn line.
@@ -316,11 +320,11 @@ impl Log {
         lock_as_the_writer(&lock)?;
         let mut file = private_file(&dir.join(FILE))?;
         let good = cut_a_torn_line(&mut file)?;
-        let last = match last_seq(&mut file)? {
+        let last = match last_event(&mut file)? {
             Some(last) => Some(last),
             None if good == 0 => match segments(dir)?.last() {
                 Some((_, sealed)) => {
-                    Some(last_seq(&mut File::open(sealed)?)?.ok_or_else(|| {
+                    Some(last_event(&mut File::open(sealed)?)?.ok_or_else(|| {
                         unreadable("its newest sealed segment holds no event purlis can read")
                     })?)
                 }
@@ -330,9 +334,15 @@ impl Log {
             // reuse every number already handed out, which is the one thing a seq may not do.
             None => return Err(unreadable("the event log holds no event purlis can read")),
         };
-        let next = match last {
-            Some(last) => after(last)?,
+        let next = match &last {
+            Some(last) => after(last.seq)?,
             None => 1,
+        };
+        let held_until_ms = match &last {
+            None => 0,
+            Some(last) => {
+                ulid::Ulid::from_string(&last.ulid).map_or(u64::MAX, |ulid| ulid.timestamp_ms())
+            }
         };
         let durable = std::sync::Arc::new(Durable {
             appended: std::sync::atomic::AtomicU64::new(next - 1),
@@ -346,6 +356,7 @@ impl Log {
             retention,
             consumers,
             next,
+            held_until_ms,
             good,
             torn: false,
             seal_at: retention.segment_bytes,
@@ -1572,7 +1583,22 @@ pub struct Recorder {
     /// the chat's next report hands it to its run ([`Recorder::skill_prompted`]): held from
     /// before the chat starts, so it is there however soon the chat's first prompt comes.
     prompted: HashMap<(PathBuf, u32), crate::skillspan::Prompted>,
+    /// Every run this writer began in the log, ended or not, up to [`RUNS_HELD`]: an id no run
+    /// a clear begins may take (#3394).
+    begun: std::collections::HashSet<String>,
+    /// The time of the newest run let go of from [`Self::begun`] when it was full, in
+    /// milliseconds since 1970 by its id: an id no later is not taken either (#3394).
+    begun_until_ms: u64,
 }
+
+/// How many runs a writer remembers it began ([`Recorder::never_held`]). Past it, they are let
+/// go of, and only an id minted later than the newest of them is taken.
+const RUNS_HELD: usize = 4096;
+
+/// **How far ahead of the newest event the log held as it was opened an id must be minted** for
+/// a run a clear begins to take it (#3394): the window that mints the id and the host that
+/// writes the log keep time apart, and their clocks are taken to agree within this.
+const CLOCKS_AGREE_WITHIN_MS: u64 = 5 * 60 * 1000;
 
 /// How many chats' prompts [`Recorder::skill_prompted`] holds at most: a start that never
 /// reported is let go when there are more.
@@ -1656,12 +1682,68 @@ impl Recorder {
             kill_switch_skipped: None,
             skills: crate::skillspan::Tracker::default(),
             prompted: HashMap::new(),
+            begun: std::collections::HashSet::new(),
+            begun_until_ms: 0,
         }
     }
 
     /// The device's directory the log is in, as [`Recorder::open_in`] found it.
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// **Whether `run` is an id the log never held** (#3394), so a run may begin under it: an
+    /// id minted more than [`CLOCKS_AGREE_WITHIN_MS`] after the newest event the log held as it
+    /// was opened, and no run's this writer began or holds since. The log is never read back
+    /// for it: an id is minted before the run it names is written, so one minted later than
+    /// every event the log held then, by clocks that agree within that margin, is none of
+    /// theirs.
+    pub(crate) fn never_held(&self, run: &str) -> bool {
+        let bound = self
+            .log
+            .held_until_ms
+            .saturating_add(CLOCKS_AGREE_WITHIN_MS);
+        ulid::Ulid::from_string(run)
+            .is_ok_and(|id| id.timestamp_ms() > bound && id.timestamp_ms() > self.begun_until_ms)
+            && !self.begun.contains(run)
+            && !self.chats.values().any(|who| who.run == run)
+    }
+
+    /// The conversation chat `number` of `plane`'s current run is in, as this writer recorded
+    /// it: `None` for a chat it holds no run of, `Some(None)` for a run in none yet (#3394).
+    pub(crate) fn run_conversation(&self, plane: &Path, number: u32) -> Option<Option<&str>> {
+        self.chats
+            .get(&(plane.to_path_buf(), number))
+            .map(|who| who.attributes.conversation.as_deref())
+    }
+
+    /// **What a state hook's line followed, as this writer takes it from a window** (#3394):
+    /// what the window's board made of `report` (`claimed`), checked against the conversation
+    /// this writer recorded the chat's run in. A move is taken only onto a conversation the
+    /// line names that is not the run's, and a first name only for a run in none. A line naming
+    /// another conversation than its run's is a move whatever else the board said of it, since
+    /// a run is a stretch of one conversation (ADR 0066): a first name there begins the run
+    /// that follows, as a `clear` (the chat was followed onto another conversation, which is
+    /// what that cause says). That the chat stayed is always taken: it begins nothing and names
+    /// nothing. A chat this writer holds no run of is taken as said.
+    pub(crate) fn followed_as_heard(
+        &self,
+        plane: &Path,
+        report: &crate::hookwire::Report,
+        claimed: Followed,
+    ) -> Followed {
+        let Some(current) = self.run_conversation(plane, report.chat) else {
+            return claimed;
+        };
+        let named = match &report.conversation {
+            crate::hookwire::Conversation::Named(id) => id.as_str(),
+            _ => return Followed::No,
+        };
+        match (current, claimed) {
+            (Some(current), _) if current == named => Followed::No,
+            (Some(_), Followed::FirstNamed) => Followed::Moved,
+            (_, claimed) => claimed,
+        }
     }
 
     /// The event for one state hook: `hook.<word>`, after a `run.started` when the report
@@ -1706,12 +1788,9 @@ impl Recorder {
         };
         let top = match followed {
             Followed::Moved if known => {
-                // The run the window named for the clear, where it is an id no chat's run here
-                // has; any other is minted here, and the line still recorded (#3304).
-                let cleared = cleared.filter(|run| {
-                    ulid::Ulid::from_string(run).is_ok()
-                        && !self.chats.values().any(|who| who.run == *run)
-                });
+                // The run the window named for the clear, where it is an id the log never
+                // held; any other is minted here, and the line still recorded (#3304, #3394).
+                let cleared = cleared.filter(|run| self.never_held(run));
                 Some(self.new_run(plane, report.chat, Began::Clear, cleared, named)?)
             }
             Followed::Moved | Followed::No | Followed::FirstNamed => {
@@ -2311,6 +2390,22 @@ impl Recorder {
         kind: &str,
         mut body: serde_json::Value,
     ) -> io::Result<Event> {
+        if kind == "run.started"
+            && let Some(run) = run
+        {
+            if self.begun.len() >= RUNS_HELD {
+                let newest = self
+                    .begun
+                    .iter()
+                    .filter_map(|run| ulid::Ulid::from_string(run).ok())
+                    .map(|id| id.timestamp_ms())
+                    .max()
+                    .unwrap_or_default();
+                self.begun_until_ms = self.begun_until_ms.max(newest);
+                self.begun.clear();
+            }
+            self.begun.insert(run.to_owned());
+        }
         if let Some(open) = parent.or(run).and_then(|key| self.skills.inside(key))
             && let Some(fields) = body.as_object_mut()
         {

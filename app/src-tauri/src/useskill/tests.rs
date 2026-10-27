@@ -67,6 +67,7 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
             hidden: 0,
             still_over: None,
             pinned_by: Vec::new(),
+            pins_together: None,
         })
     );
     assert!(shown.skills.iter().all(|one| one.hidden.is_none()));
@@ -142,4 +143,77 @@ fn the_budget_names_the_workspace_and_the_persona_that_pin_a_skill_sk15d() {
             name: "ops".to_owned()
         }]
     );
+}
+
+/// #3391: forty pins of the workspace's and thirty of the persona's, each list read alone, are
+/// past the 64 a chat reads together: the budget names both and how many each pins.
+#[test]
+fn the_budget_says_a_workspace_and_a_persona_pin_past_64_together_3391() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    let names = |from: usize, to: usize| -> Vec<String> {
+        (from..to).map(|at| format!("pin-{at:02}")).collect()
+    };
+    let quoted: Vec<String> = names(0, 40).iter().map(|n| format!("{n:?}")).collect();
+    std::fs::write(
+        root.join("workspaces/ops/workspace.json"),
+        format!(
+            r#"{{"settings": {{"skills": {{"pinned": [{}]}}}}}}"#,
+            quoted.join(", ")
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("personas/reviewer")).unwrap();
+    std::fs::write(
+        root.join("personas/reviewer/persona.md"),
+        format!(
+            "---\nname: reviewer\nrole: Reviews.\npinned-skills: {}\n---\n\nReviews.\n",
+            names(40, 70).join(", ")
+        ),
+    )
+    .unwrap();
+    let chat = |persona| {
+        for_use_skill(&Running {
+            plane: &root,
+            workspace: Some("ops"),
+            persona,
+            harness: Harness::ClaudeCode,
+            built_in: None,
+            plane_skills: true,
+            start: None,
+        })
+    };
+
+    let budget = shown(Some(&chat(Some("reviewer")))).budget.unwrap();
+
+    use crate::skillchange::{SkillPinner, SkillPinsHeld, SkillPinsTogether};
+    assert_eq!(
+        budget.pins_together,
+        Some(SkillPinsTogether {
+            held: vec![
+                SkillPinsHeld {
+                    by: SkillPinner::Workspace {
+                        name: "ops".to_owned()
+                    },
+                    pins: 40
+                },
+                SkillPinsHeld {
+                    by: SkillPinner::Persona {
+                        name: "reviewer".to_owned()
+                    },
+                    pins: 30
+                },
+            ],
+            most: 64,
+        })
+    );
+    // Each pinner alone is accepted.
+    for by in [
+        purlis_core::skills::PinnedBy::Workspace("ops".to_owned()),
+        purlis_core::skills::PinnedBy::Persona("reviewer".to_owned()),
+    ] {
+        assert_eq!(crate::skillchange::pins_refused(&root, &by), None);
+    }
+    assert_eq!(shown(Some(&chat(None))).budget.unwrap().pins_together, None);
 }

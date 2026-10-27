@@ -51,8 +51,11 @@ mod on_machine;
 pub mod persona;
 mod routing;
 
-pub use routing::{PinnedBy, PinsRefused, pinners_of, pins_file, pins_refused, pins_written};
-pub(crate) use routing::{pin, pinners_of_a_chat, pins_or_none};
+pub use routing::{
+    PinnedBy, PinsHeld, PinsRefused, PinsTogether, pinners_of, pins_file, pins_refused,
+    pins_written,
+};
+pub(crate) use routing::{pin, pinners_of_a_chat, pins_or_none, pins_together};
 
 pub use on_machine::on_machine;
 pub(crate) use on_machine::{folders, skill_dirs};
@@ -910,6 +913,9 @@ pub struct ChatSkills {
     /// Which of the chat's workspace and persona pin a skill (SK-15d): where unpinning is done
     /// when the pins alone are past the budget.
     pub pinned_by: Vec<PinnedBy>,
+    /// Where the chat reads none of its pins because its workspace's and its persona's together
+    /// pass the most it reads (#3391): both pinners, and how many each holds.
+    pub pins_together: Option<PinsTogether>,
 }
 
 /// **The skills of chat `chat`, as Use skill… offers them** (SK-12): exactly its set, worked out
@@ -955,6 +961,10 @@ pub fn for_use_skill(chat: &Running<'_>) -> ChatSkills {
         } else {
             Vec::new()
         },
+        pins_together: chat
+            .plane_skills
+            .then(|| pins_together(chat.plane, chat.workspace, chat.persona))
+            .flatten(),
     }
 }
 

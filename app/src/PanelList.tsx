@@ -22,6 +22,7 @@ import type { PanelEmpty, PanelRow, RowAction } from "./bindings";
 import { byDay, isDated } from "./dayGroups";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Button } from "./ui/button/Button";
+import { Checkbox } from "./ui/choice/Checkbox";
 import { TextField } from "./ui/field/Field";
 import { List, ListRow, ListRowSection, type RowMenu } from "./ui/list/List";
 import { InPanelTop, useInPanelView } from "./ui/panel/Panel";
@@ -108,6 +109,22 @@ const MARKS: Record<string, React.ComponentType<{ className?: string }>> = {
  */
 export type MenuOfRow = (row: PanelRow) => RowMenu | undefined;
 
+/**
+ * **A row's box, ticked or not** (R131): drawn in place of its mark, named by what pressing it
+ * does, and ticked rows are drawn struck through. A panel's, as {@link MenuOfRow} is: the Todos
+ * view knows a row is a todo, done or not, and what ticking it runs.
+ */
+export type CheckOfRow = (row: PanelRow) =>
+  | {
+      checked: boolean;
+      /** What pressing the box does, which names it: "Mark done: …", "Reopen: …". */
+      label: string;
+      /** Why it cannot be pressed, when it cannot: drawn off, the sentence its tooltip. */
+      off?: string;
+      onChange: () => void;
+    }
+  | undefined;
+
 export function PanelList({
   rows,
   empty,
@@ -120,6 +137,8 @@ export function PanelList({
   actsOff,
   menuOf,
   besideRow,
+  checkOf,
+  groupOf,
   page = PAGE,
   testid,
   offerFor,
@@ -160,6 +179,13 @@ export function PanelList({
   menuOf?: MenuOfRow;
   /** A sentence under a row, inside it, where the core refused something about it (#474). */
   besideRow?: (row: PanelRow) => string | undefined;
+  /** A box at each row's start in place of its mark, where the panel can say what it ticks. */
+  checkOf?: CheckOfRow;
+  /**
+   * The named group a row is drawn under, after the days the other rows are under — the Todos
+   * view's Done (ADR 0106). `undefined` leaves the row under its day, as without this.
+   */
+  groupOf?: (row: PanelRow) => string | undefined;
   page?: number;
   testid?: string;
   /**
@@ -206,9 +232,25 @@ export function PanelList({
   // One clock for the whole render, so its days cannot disagree with each other.
   const now = new Date();
   const dated = titleOnly && isDated(rows, noteOf);
-  const ordered = dated ? byDay(matching, noteOf, now).flatMap((day) => day.items) : matching;
+  // A row a named group holds is drawn after every day, in that group (`groupOf`).
+  const own = (row: PanelRow) => groupOf?.(row) === undefined;
+  const named = groupOf === undefined ? [] : matching.filter((row) => !own(row));
+  const ordered = dated
+    ? [...byDay(matching.filter(own), noteOf, now).flatMap((day) => day.items), ...named]
+    : [...matching.filter(own), ...named];
   const drawn = ordered.slice(0, limit);
-  const days = dated ? byDay(drawn, noteOf, now) : undefined;
+  const days =
+    dated || named.length > 0
+      ? [
+          ...(dated
+            ? byDay(drawn.filter(own), noteOf, now)
+            : [{ day: undefined, items: drawn.filter(own) }].filter((g) => g.items.length > 0)),
+          ...groupsOf(
+            drawn.filter((row) => !own(row)),
+            (row) => groupOf?.(row) ?? "",
+          ),
+        ]
+      : undefined;
   const more = matching.length - drawn.length;
   // **Once there is more than a page**, which is the operator's own rule. Against the whole
   // list and never the filtered one: a box that vanished when a search narrowed the list to
@@ -231,6 +273,7 @@ export function PanelList({
         actsOff={actsOff}
         menu={menuOf?.(row)}
         refused={besideRow?.(row)}
+        check={checkOf?.(row)}
         titleOnly={titleOnly}
         date={dateAtEnd && row.note !== null ? shortDate(row.note, now) : undefined}
         markless={markless}
@@ -300,8 +343,8 @@ export function PanelList({
                  the last row of Today to the first of Yesterday. */
               days.map(({ day, items }) => (
                 <ListRowSection
-                  key={day}
-                  id={day}
+                  key={day ?? ""}
+                  id={day ?? ""}
                   title={day}
                   named
                   count={inView ? items.length : undefined}
@@ -329,6 +372,21 @@ export function PanelList({
 }
 
 const noteOf = (row: PanelRow) => row.note;
+
+/** `rows` under the group `groupOf` names for each, the groups in the order they are first met. */
+function groupsOf(
+  rows: readonly PanelRow[],
+  groupOf: (row: PanelRow) => string,
+): { day: string | undefined; items: PanelRow[] }[] {
+  const groups: { day: string; items: PanelRow[] }[] = [];
+  for (const row of rows) {
+    const name = groupOf(row);
+    const group = groups.find((one) => one.day === name);
+    if (group) group.items.push(row);
+    else groups.push({ day: name, items: [row] });
+  }
+  return groups;
+}
 
 /**
  * **A row's date, short** (#3340, the prototype's `.rm`): `HH:MM` for a stamp of today, `MM-DD`
@@ -381,6 +439,7 @@ function Row({
   actsOff,
   menu,
   refused,
+  check,
   titleOnly,
   date,
   markless = false,
@@ -405,6 +464,8 @@ function Row({
   menu?: RowMenu;
   /** What the core refused about it: {@link PanelList}'s `besideRow`. */
   refused?: string;
+  /** Its box: {@link PanelList}'s `checkOf`. */
+  check?: ReturnType<CheckOfRow>;
 }) {
   const Mark = MARKS[row.mark] ?? Circle;
   // **A persona's row wears that persona's mark** (#1449). Told by the row it runs, which only
@@ -455,7 +516,11 @@ function Row({
       ref={own}
       id={row.key}
       textValue={row.text}
-      className={clsx("panel-row", row.tone !== "plain" && `is-${row.tone}`)}
+      className={clsx(
+        "panel-row",
+        row.tone !== "plain" && `is-${row.tone}`,
+        check?.checked && "is-checked",
+      )}
       data-testid={`panel-row-${row.key}`}
       data-open={hasCard && open ? "" : undefined}
       onAction={action}
@@ -469,9 +534,22 @@ function Row({
       menu={menu}
       tip={hover ?? whole}
     >
-      {!markless && (
+      {(check !== undefined || !markless) && (
         <RowLead>
-          {persona ? (
+          {check !== undefined ? (
+            <Checkbox
+              /* Out of the row's own selection slot: this box ticks the todo, and selects
+                 nothing (React Aria gives a list item's checkboxes the `selection` slot). */
+              slot={null}
+              className="row-check"
+              isSelected={check.checked}
+              isDisabled={check.off !== undefined}
+              tooltip={check.off}
+              aria-label={check.label}
+              onChange={() => check.onChange()}
+              data-testid={`row-check-${row.key}`}
+            />
+          ) : persona ? (
             <PersonaMark persona={persona} className="node-icon" />
           ) : (
             <Mark className="node-icon" />

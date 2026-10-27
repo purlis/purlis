@@ -24,11 +24,16 @@ pub fn show(root: &Path, state: &Path, name: &str, session: &str, say: Sink) -> 
         return 1;
     };
     let out = |text: String, say: Sink| say(Say::Out(text));
+    // What the persona's file says is spliced marked (#3287); its charter, a document, is not.
+    let mark = crate::shown::answer;
+    let marked = |names: &mut dyn Iterator<Item = &String>, between: &str| {
+        names.map(|one| mark(one)).collect::<Vec<_>>().join(between)
+    };
     out(
         format!(
             "{} — {}",
-            def.get("name").unwrap_or(name),
-            def.get("role").unwrap_or_default()
+            mark(def.get("name").unwrap_or(name)),
+            mark(def.get("role").unwrap_or_default())
         ),
         say,
     );
@@ -40,7 +45,7 @@ pub fn show(root: &Path, state: &Path, name: &str, session: &str, say: Sink) -> 
         out(
             format!(
                 "inherits: {}  (charter + tools merged below)",
-                def.lineage.join(" → ")
+                marked(&mut def.lineage.iter(), " → ")
             ),
             say,
         );
@@ -48,7 +53,8 @@ pub fn show(root: &Path, state: &Path, name: &str, session: &str, say: Sink) -> 
     if let Some(vault) = super::vault_of(root, state, name) {
         out(
             format!(
-                "vault:   {vault}  ({})",
+                "vault:   {}  ({})",
+                mark(&vault),
                 super::list::vault_status(root, state, Some(&vault))
             ),
             say,
@@ -59,7 +65,7 @@ pub fn show(root: &Path, state: &Path, name: &str, session: &str, say: Sink) -> 
         out(
             format!(
                 "tools:   {}  (auto-approved when this persona is active)",
-                tools.into_iter().collect::<Vec<_>>().join(", ")
+                marked(&mut tools.iter(), ", ")
             ),
             say,
         );
@@ -69,12 +75,15 @@ pub fn show(root: &Path, state: &Path, name: &str, session: &str, say: Sink) -> 
         out(
             format!(
                 "scripts: {}  (executables this persona carries — run by path)",
-                scripts.into_keys().collect::<Vec<_>>().join(", ")
+                marked(&mut scripts.keys(), ", ")
             ),
             say,
         );
     }
-    out(format!("file:    {}", super::def_rel(root, name)), say);
+    out(
+        format!("file:    {}", mark(&super::def_rel(root, name))),
+        say,
+    );
     let unread = memory_summary(root, name, session, say);
     out(String::new(), say);
     out(def.charter, say);

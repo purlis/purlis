@@ -3,6 +3,7 @@
 
 import { commands, type ExtensionTheme, type ProjectExtension } from "../bindings";
 import { BUILT_IN_ICONS, DEFAULT_ICONS, ICON_THEME_ALIASES } from "../theme/icons";
+import { flagged } from "../invisible";
 import { key, textAt, valueAt, shown, type Control, type Shown } from "./fileControls";
 
 /**
@@ -37,11 +38,14 @@ const EXTENSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const LONGEST_NAME = 64;
 
 /**
- * `text`, which an extension or a file wrote, as one short line of plain text: no control or
- * invisible formatting character (a bidi override among them), and cut to `most` characters.
+ * `text`, which an extension or a file wrote, as one short line of plain text: without any
+ * character purlis's one rule hides on a line (a control, a bidi override), each white space
+ * among them (a line end, a no-break space) drawn as a space, and cut to `most` characters.
  */
 export function plainLine(text: string, most: number = LONGEST_NAME): string {
-  const plain = [...text.replace(/[\p{Cc}\p{Cf}]/gu, "")];
+  const plain = flagged(text, "marked").flatMap(({ ch, hidden }) =>
+    !hidden ? [ch] : /^\s$/u.test(ch) ? [" "] : [],
+  );
   return plain.length > most ? `${plain.slice(0, most - 1).join("")}…` : plain.join("");
 }
 

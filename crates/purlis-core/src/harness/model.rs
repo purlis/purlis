@@ -344,8 +344,9 @@ pub const SUMMARY_WIDTH: usize = 200;
 pub const VAULT_VALUE: &str = "vault value";
 
 impl Summary {
-    /// `text` on one line, cut to [`SUMMARY_WIDTH`], with each credential shape, as written and
-    /// through its escapes ([`crate::secretshape::leak_spans`], overlapping ones joined),
+    /// `text` on one line (its spaces, tabs and line ends collapsed; a blank that only looks like
+    /// a space kept, for the window to mark), cut to [`SUMMARY_WIDTH`], with each credential
+    /// shape, as written and through its escapes ([`crate::secretshape::leak_spans`], overlapping ones joined),
     /// replaced by a mask that names its kind.
     ///
     /// **And each value this process read from a vault or stored in one**
@@ -361,7 +362,19 @@ impl Summary {
     /// A masked summary is not its action word for word, so nothing that lets the call run is
     /// offered beside it ([`super::hooked::shown_in_full`]).
     pub fn of(text: &str) -> Self {
-        let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        // The white space that lays a text out is collapsed: a space, a tab, a line end or a
+        // line separator. A blank that only looks like a space (a no-break, an en or an
+        // ideographic space) stays where it stood: a reader cannot tell it from a space, and
+        // purlis's one rule marks it where the line is shown (SK-51, #3202).
+        let lays_out = |c: char| {
+            c.is_whitespace()
+                && (c == ' ' || c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
+        };
+        let line = text
+            .split(lays_out)
+            .filter(|word| !word.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
         let mut spans = crate::secretshape::leak_spans(&line);
         spans.extend(
             crate::secrets::seen::found_in(&line)

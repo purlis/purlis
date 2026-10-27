@@ -3277,10 +3277,14 @@ export const commands = {
 	personaSetProfile: (plane: PlaneId, name: string, profile: string | null) => typedError<null, string>(__TAURI_INVOKE("persona_set_profile", { plane, name, profile })),
 	/**  Record a todo in `workspace`, and answer with what was said. */
 	todoAdd: (plane: PlaneId, workspace: string, text: string) => typedError<string, string>(__TAURI_INVOKE("todo_add", { plane, workspace, text })),
-	/**  Close a todo as done: the journal records it, then the todo goes. */
+	/**  Close a todo as done: the journal records it, then the todo is kept as done (ADR 0106). */
 	todoDone: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_done", { plane, workspace, slug })),
 	/**  Forget a todo: it goes, and nothing is journalled. */
 	todoForget: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_forget", { plane, workspace, slug })),
+	/**  Delete a done todo: it goes from the done ones, and nothing is journalled. */
+	todoForgetDone: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_forget_done", { plane, workspace, slug })),
+	/**  Open a done todo again, as it was: the Todos view's checkbox unticked (R131, ADR 0106). */
+	todoReopen: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_reopen", { plane, workspace, slug })),
 	/**
 	 *  One open todo of `workspace`, for its tab. `null` is a todo that is not open any more —
 	 *  closed as done or forgotten since its tab opened, here or in a terminal — which the tab
@@ -3946,6 +3950,8 @@ export const SKILL_RUNS_PANEL = "runs" as const;
 export const SKILL_STUDIO_IN = "skills.studio:" as const;
 
 export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
+
+export const UNICODE_RULE = {"invisible":[[0,31],[127,160],[173,173],[847,847],[1536,1541],[1564,1564],[1757,1757],[1807,1807],[2192,2193],[2274,2274],[4447,4448],[5760,5760],[6068,6069],[6155,6159],[8192,8207],[8232,8239],[8287,8303],[12288,12288],[12644,12644],[65024,65039],[65279,65279],[65440,65440],[65520,65531],[69821,69821],[69837,69837],[78896,78911],[113824,113827],[119155,119162],[917504,921599]],"extended_pictographic":[[169,169],[174,174],[8252,8252],[8265,8265],[8482,8482],[8505,8505],[8596,8601],[8617,8618],[8986,8987],[9000,9000],[9096,9096],[9167,9167],[9193,9203],[9208,9210],[9410,9410],[9642,9643],[9654,9654],[9664,9664],[9723,9726],[9728,9733],[9735,9746],[9748,9861],[9872,9989],[9992,10002],[10004,10004],[10006,10006],[10013,10013],[10017,10017],[10024,10024],[10035,10036],[10052,10052],[10055,10055],[10060,10060],[10062,10062],[10067,10069],[10071,10071],[10083,10087],[10133,10135],[10145,10145],[10160,10160],[10175,10175],[10548,10549],[11013,11015],[11035,11036],[11088,11088],[11093,11093],[12336,12336],[12349,12349],[12951,12951],[12953,12953],[126976,127231],[127245,127247],[127279,127279],[127340,127345],[127358,127359],[127374,127374],[127377,127386],[127405,127461],[127489,127503],[127514,127514],[127535,127535],[127538,127546],[127548,127551],[127561,127994],[128000,128317],[128326,128591],[128640,128767],[128884,128895],[128981,129023],[129036,129039],[129096,129103],[129114,129119],[129160,129167],[129198,129279],[129292,129338],[129340,129349],[129351,129791],[130048,131069]],"emoji_modifier":[[127995,127999]],"emoji_sequences":[[35,65039,8419],[42,65039,8419],[48,65039,8419],[49,65039,8419],[50,65039,8419],[51,65039,8419],[52,65039,8419],[53,65039,8419],[54,65039,8419],[55,65039,8419],[56,65039,8419],[57,65039,8419],[127988,917607,917602,917605,917614,917607,917631],[127988,917607,917602,917619,917603,917620,917631],[127988,917607,917602,917623,917612,917619,917631]]} as const;
 
 /* Types */
 /**  What charter says about itself. */
@@ -8604,7 +8610,11 @@ export type PanelTableRow = {
 	cells: string[],
 };
 
-/**  One open todo. There is no state field: a closed todo is a deleted file (ADR 0004). */
+/**
+ *  One todo, open or done. There is no state field: an open todo is a file in `todos/` and a
+ *  done one a file in `todos/archive/` (ADR 0106, amending ADR 0004), so which list it is in
+ *  says which it is.
+ */
 export type PanelTodo = {
 	/**  The file stem, which is what a todo is closed by. */
 	slug: string,
@@ -8665,6 +8675,11 @@ export type Panels = {
 	 */
 	refused: ([string, string])[],
 	todos: PanelTodo[],
+	/**
+	 *  The done todos (ADR 0106), for the catalogue's Reopen and Delete rows. Never counted:
+	 *  the status line counts `todos`, which are the open ones.
+	 */
+	done_todos: PanelTodo[],
 	/**
 	 *  Why the todos could not be read, where they could not. A store that is a link out of
 	 *  the plane is refused, and "no todos" would be the wrong thing to draw for it.
@@ -11329,6 +11344,12 @@ export type SkillBudget = {
 	 *  undone in the Skill studio when they alone are past the budget.
 	 */
 	pinned_by: SkillPinner[],
+	/**
+	 *  Where the chat reads none of its pins because its workspace's and its persona's together
+	 *  pass the most it reads, though each alone is accepted (#3391): both, and how many each
+	 *  pins. Null where its pins are read.
+	 */
+	pins_together: SkillPinsTogether | null,
 };
 
 /**
@@ -11598,6 +11619,12 @@ export type SkillPanelKey = { kind: "grades" } | { kind: "runs" } | { kind: "ext
  */
 export type SkillPinner = { at: "workspace"; name: string } | { at: "persona"; name: string };
 
+/**  One pinner of a [`SkillPinsTogether`] and how many skills it pins. */
+export type SkillPinsHeld = {
+	by: SkillPinner,
+	pins: number,
+};
+
 /**
  *  **Why a chat reads none of a pinner's pins** (SK-15d): the core's `PinsRefused`, with whose
  *  list it is.
@@ -11613,6 +11640,17 @@ export type SkillPinsRefused = {
 	bad: string | null,
 	/**  The file the list is written in, relative to the project. */
 	file: string,
+};
+
+/**
+ *  **A chat whose workspace's and persona's pins pass the most it reads only together** (#3391):
+ *  the core's `PinsTogether`. Each list alone is accepted; the chat reads none of either.
+ */
+export type SkillPinsTogether = {
+	/**  Each pinner, the workspace first, and how many skills it pins. */
+	held: SkillPinsHeld[],
+	/**  The most pins a chat reads. */
+	most: number,
 };
 
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */

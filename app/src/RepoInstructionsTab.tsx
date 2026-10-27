@@ -8,6 +8,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Choice, SettingActions, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { flagged, markOf } from "./invisible";
 
 /**
  * **The agent instructions a workspace's repo carries, offered to its memory** (FR-18a, #612):
@@ -182,30 +183,28 @@ function isTicked(file: InstructionFile, pressed: ReadonlyMap<string, boolean>):
 }
 
 /**
- * Zero-width characters, the bidirectional controls and the Unicode tag block. Text the operator
- * approves goes into every chat's briefing, so the preview draws each one as its code point
- * instead of nothing. The window's own list, narrower than the core's one rule
- * (`purlis_unicode::hidden`), which unticks a file; one rule for both is #3202.
+ * `text` as the core reads it (SK-51, #3202): every character purlis's one rule hides there,
+ * the rule that unticks the file (`purlis_unicode::hidden`), drawn as its mark, `⟦U+XXXX⟧`,
+ * instead of nothing. Text the operator approves goes into every chat's briefing. Its line ends
+ * and tabs are the file's own layout, and a joiner inside a script or an emoji reads as text.
  */
-const INVISIBLE =
-  /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u{E0000}-\u{E007F}]/u;
-
-/** `text` with every invisible character drawn as a marked `U+XXXX`. */
 function Visible({ text }: { text: string }) {
   const parts: React.ReactNode[] = [];
-  let rest = text;
-  let at = 0;
-  for (let hit = INVISIBLE.exec(rest); hit !== null; hit = INVISIBLE.exec(rest)) {
-    parts.push(rest.slice(0, hit.index));
-    const code = (hit[0].codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0");
+  let plain = "";
+  flagged(text, "kept").forEach(({ ch, hidden }, at) => {
+    if (!hidden) {
+      plain += ch;
+      return;
+    }
+    parts.push(plain);
+    plain = "";
     parts.push(
-      <Tooltip key={at++} tip="An invisible character">
-        <mark className="invisible-char">{`U+${code}`}</mark>
+      <Tooltip key={at} tip="An invisible character">
+        <mark className="invisible-char">{markOf(ch)}</mark>
       </Tooltip>,
     );
-    rest = rest.slice(hit.index + hit[0].length);
-  }
-  parts.push(rest);
+  });
+  parts.push(plain);
   return <>{parts}</>;
 }
 

@@ -383,7 +383,7 @@ pub fn optimize(
         say(Say::Out(format!(
             "\n◆ {}  ({} · {verified}{} · {} · {} \
              stale)",
-            store.label,
+            crate::shown::answer(&store.label),
             counted(rep.total, "memory", "memories"),
             counted(rep.exact_dups.len(), "exact-dup group", "exact-dup groups"),
             counted(rep.near_dups.len(), "near-dup pair", "near-dup pairs"),

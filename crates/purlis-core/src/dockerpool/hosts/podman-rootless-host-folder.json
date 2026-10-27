@@ -45,7 +45,8 @@
    "ReadonlyRootfs": true,
    "Runtime": "oci",
    "SecurityOpt": [
-    "no-new-privileges"
+    "no-new-privileges",
+    "seccomp=/home/runner/work/_temp/measured/runner-seccomp.json"
    ],
    "Tmpfs": {
     "/tmp": "rw,nosuid,nodev,noexec,size=1024m,rprivate,tmpcopyup"

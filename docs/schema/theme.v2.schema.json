@@ -370,6 +370,7 @@
               "accent.base",
               "accent.surface",
               "accent.wash",
+              "accent.wash-hover",
               "accent.text",
               "accent.fill",
               "accent.fill-hover",
@@ -387,7 +388,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 129
+          "maxItems": 130
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -8610,6 +8611,9 @@
         "accent.wash": {
           "$ref": "#/$defs/colour"
         },
+        "accent.wash-hover": {
+          "$ref": "#/$defs/colour"
+        },
         "accent.text": {
           "$ref": "#/$defs/colour"
         },
@@ -9719,6 +9723,7 @@
         "accent.base",
         "accent.surface",
         "accent.wash",
+        "accent.wash-hover",
         "accent.text",
         "accent.fill",
         "accent.fill-hover",
@@ -9854,6 +9859,7 @@
         "accent.base",
         "accent.surface",
         "accent.wash",
+        "accent.wash-hover",
         "accent.text",
         "accent.fill",
         "accent.fill-hover",
@@ -9988,6 +9994,7 @@
         "accent.base",
         "accent.surface",
         "accent.wash",
+        "accent.wash-hover",
         "accent.text",
         "accent.fill",
         "accent.fill-hover",

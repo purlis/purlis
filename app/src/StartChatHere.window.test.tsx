@@ -120,9 +120,9 @@ const starts = (asked: Asked[]) =>
 async function startFromThePreview() {
   await showTheExplorer();
   const repos = await showTheRepos();
-  await userEvent.click(await within(repos).findByRole("treeitem", { name: /^one in svc/ }));
-  const tree = await screen.findByRole("tree", { name: "Files of one in svc" });
-  await userEvent.click(await within(tree).findByRole("treeitem", { name: /^README\.md/ }));
+  await userEvent.click(await within(repos).findByRole("row", { name: /^one in svc/ }));
+  const tree = await screen.findByRole("treegrid", { name: "Files of one in svc" });
+  await userEvent.click(await within(tree).findByRole("row", { name: /^README\.md/ }));
   await userEvent.click(
     await screen.findByRole("button", { name: /^Start a chat here on README\.md/ }),
   );
