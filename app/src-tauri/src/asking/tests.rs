@@ -243,6 +243,61 @@ fn a_permission_holding_a_line_break_its_command_is_not_laid_out_with_shows_its_
     }
 }
 
+/// A hook's ask to run `line`, its summary made from it as the hook makes it.
+fn a_command_ask(line: &str) -> Ask {
+    let action = purlis_core::harness::model::Action::Command {
+        line: line.to_owned(),
+    };
+    Ask {
+        summary: purlis_core::harness::model::Summary::of(&action.said()),
+        action,
+        ..a_hook_ask("")
+    }
+}
+
+#[test]
+fn a_permission_over_several_lines_carries_them_as_its_line_shows_them() {
+    // #3502: its line puts `ls` and `rm -rf x` on one. The row is given the lines, each as that
+    // line has it, a character it hides written as its mark there too.
+    let asks = Asks::new();
+    let raised = asks
+        .raise(
+            "3",
+            a_command_ask("ls\n  rm\u{200B} -rf x\r\n"),
+            Instant::now(),
+        )
+        .raised;
+
+    let shown = permission(raised).expect("a chat of this project's");
+
+    assert_eq!(shown.says, "Run a command: ls rm⟦U+200B⟧ -rf x");
+    let lines = shown.lines.expect("it runs over several lines");
+    assert_eq!(lines.count, 2);
+    assert_eq!(lines.shown, ["Run a command: ls", "rm⟦U+200B⟧ -rf x"]);
+    assert_eq!(lines.shown.join(" "), shown.says);
+}
+
+#[test]
+fn a_permission_on_one_line_or_not_said_from_its_action_carries_no_lines() {
+    let asks = Asks::new();
+    let one = asks
+        .raise("3", a_command_ask("ls -la"), Instant::now())
+        .raised;
+    let titled = asks
+        .raise(
+            "3",
+            Ask {
+                summary: purlis_core::harness::model::Summary::of("Run the build"),
+                ..a_command_ask("ls\nrm -rf x")
+            },
+            Instant::now(),
+        )
+        .raised;
+
+    assert_eq!(permission(one).expect("a chat").lines, None);
+    assert_eq!(permission(titled).expect("a chat").lines, None);
+}
+
 #[test]
 fn a_permission_prompt_s_answer_through_the_registry_closes_it_once() {
     // The path a permission ask names is the registry's own answer: the first one applies, and

@@ -7699,6 +7699,22 @@ export type LineRange = {
 	last: number,
 };
 
+/**
+ *  The lines an action runs over, as a row draws them under its line (#3502). An action whose
+ *  line holds several is never offered Allow (`hooked::shown_in_full`): its line is not what
+ *  would run.
+ */
+export type LinesShown = {
+	/**  How many lines it runs over. */
+	count: number,
+	/**
+	 *  **Each line, as [`Shown::says`] has it**: joined by a space, they are that line,
+	 *  character for character, masked and cut as it is. Empty where they could not be shown
+	 *  that way; the row then says only the count.
+	 */
+	shown: string[],
+};
+
 /**  One repo the person can get. */
 export type ListedRepo = {
 	/**  `github` or `gitlab`. */
@@ -11244,6 +11260,11 @@ export type Shown = {
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */
 	writes?: WritesShown | null,
+	/**
+	 *  **The lines a permission's action runs over** (#3502), where its line puts several on
+	 *  one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
+	 */
+	lines?: LinesShown | null,
 };
 
 /**

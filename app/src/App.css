@@ -2560,6 +2560,14 @@ body {
   line-clamp: 2;
   overflow: hidden;
 }
+/* A command over several lines, one per line (#3502). */
+.ask-lines {
+  display: flex;
+  flex-direction: column;
+}
+.ask-more-lines {
+  font-weight: var(--font-weight-regular);
+}
 .inbox-secondary {
   grid-area: 2 / 2;
   overflow: hidden;

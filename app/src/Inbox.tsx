@@ -553,6 +553,10 @@ type Shape = {
   /** The first character the line marks as one a reader does not see (`⟦U+XXXX⟧`), where that
    *  is why the core offers no Allow on a permission (SK-51, #3202). */
   hidden?: string;
+  /** The lines a permission's action runs over, where its line puts several on one (#3502):
+   *  the count, those drawn as lines (at most `MOST_LINES`, each run of stacked marks cut), and
+   *  how many more it runs over than are drawn. */
+  lines?: { count: number; drawn: string[]; more: number };
   /** Its answers are buttons here. */
   answers: boolean;
   /** It gets a reply box. */
@@ -584,14 +588,14 @@ function shapeOf(
     (capped && why === undefined) || unshown
       ? ask.options.filter((one) => !one.allows)
       : ask.options;
+  const withheld =
+    ask.source === "permission" && why === undefined && !offers.some((one) => one.allows);
   return {
     why,
     line,
     offers,
-    hidden:
-      ask.source === "permission" && why === undefined && !offers.some((one) => one.allows)
-        ? withheldFor(line)
-        : undefined,
+    hidden: withheld ? withheldFor(line) : undefined,
+    lines: withheld ? linesOf(ask) : undefined,
     answers:
       ask.source !== "dispatch" && ask.options.length > 0 && ask.answer.via !== "in-its-pane",
     // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
@@ -632,6 +636,27 @@ function withheldFor(line: string): string | undefined {
     undefined,
   );
 }
+
+/** The most lines of a command drawn on its row (#3502); the rest are counted. */
+export const MOST_LINES = 5;
+
+/** **The lines a permission's action runs over** (#3502): the core says how many where the
+ *  ask's line puts several on one, and gives each as the line has it (`asking::lines_of`). They
+ *  are the line, split where the command breaks one, so drawing them shows nothing it does not. */
+function linesOf(ask: Shown): Shape["lines"] {
+  if (ask.lines === undefined || ask.lines === null || ask.lines.count < 2) return undefined;
+  const drawn = ask.lines.shown.slice(0, MOST_LINES).map((one) => capMarks(one).text);
+  return { count: ask.lines.count, drawn, more: Math.max(0, ask.lines.count - drawn.length) };
+}
+
+/** Why a permission over several lines offers no Allow (#3502): its line is not what runs. */
+export const linesSaid = (lines: NonNullable<Shape["lines"]>) =>
+  lines.drawn.length > 0
+    ? `Allow is not offered. It runs over ${lines.count} lines.`
+    : `Allow is not offered. It runs over ${lines.count} lines, put on one here.`;
+
+/** What a row says of the lines it does not draw. */
+const moreLines = (more: number) => `and ${more} more ${more === 1 ? "line" : "lines"}`;
 
 /** An ask's line, each mark on it drawn as one (`invisible-char`), apart from the words. Its
  *  parts, not a component of its own, so the tooltip still reads the words it repeats. */
@@ -913,12 +938,32 @@ function Ask({
           {/* The ask's words are the source's, drawn as text and never as a control. What an
               Allow here would let run is never cut (#1146): it is read whole first. */}
           <Tooltip tip={shape.line}>
-            <span
-              id={`${id}-says`}
-              className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
-            >
-              {markedLine(shape.line)}
-            </span>
+            {shape.lines !== undefined && shape.lines.drawn.length > 0 ? (
+              // **A command over several lines is drawn on them** (#3502): each as the line has
+              // it, the first few, and how many more. Never clamped: the cap is its own.
+              <span
+                id={`${id}-says`}
+                className="ask-says ask-lines inbox-primary ui-text-body ui-text-strong"
+              >
+                {shape.lines.drawn.map((one, at) => (
+                  <span key={at} className="ask-line">
+                    {markedLine(one)}
+                  </span>
+                ))}
+                {shape.lines.more > 0 && (
+                  <span className="ask-line ask-more-lines ui-text-secondary">
+                    {moreLines(shape.lines.more)}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span
+                id={`${id}-says`}
+                className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
+              >
+                {markedLine(shape.line)}
+              </span>
+            )}
           </Tooltip>
           <Tooltip tip={SOURCE_SAID[ask.source]}>
             <span className="inbox-meta ui-text-meta">
@@ -929,9 +974,14 @@ function Ask({
             </span>
           </Tooltip>
         </p>
-        {/* Why its Allow is missing, where a character it holds reads otherwise (SK-51). */}
-        {shape.hidden !== undefined && shape.answers && (
-          <p className="inbox-hidden ui-text-secondary">{hiddenSaid(shape.hidden)}</p>
+        {/* Why its Allow is missing: the lines it runs over, which its line put on one
+            (#3502), or a character it holds that reads otherwise (SK-51). */}
+        {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
+          <p className="inbox-hidden ui-text-secondary">
+            {shape.lines !== undefined
+              ? linesSaid(shape.lines)
+              : hiddenSaid(shape.hidden ?? "")}
+          </p>
         )}
         {/* A folder or something on this machine reaches the chat only by its restart (#1986):
             what that ends is said before an Allow here, naming the chat. */}

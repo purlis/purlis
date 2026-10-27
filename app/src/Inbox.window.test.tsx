@@ -17,6 +17,7 @@ import {
   UPDATES,
   hiddenSaid,
   landOnGroup,
+  MOST_LINES,
   type UpdateRow,
   type Updates,
 } from "./Inbox";
@@ -332,6 +333,83 @@ describe("the asks, grouped by chat", () => {
         `Allow is not offered. It holds ${mark}, a character a reader does not see here.`,
       );
     }
+  });
+
+  it("draws a command over several lines on them, and says why only Deny is offered (#3502)", () => {
+    core();
+    // The core puts `ls` and `rm -rf x` on one line, offers no Allow (`hooked::shown_in_full`),
+    // and gives the lines as that line has them (`asking::lines_of`).
+    const said = "Run a command: ls rm -rf x";
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], said),
+        options: [deny()],
+        lines: { count: 2, shown: ["Run a command: ls", "rm -rf x"] },
+      },
+    ]);
+    const lines = Array.from(document.querySelectorAll(".ask-line"), (one) => one.textContent);
+    expect(lines).toEqual(["Run a command: ls", "rm -rf x"]);
+    expect(document.querySelector(".ask-lines")).not.toHaveClass("inbox-clamped");
+    expect(screen.getByText("Allow is not offered. It runs over 2 lines.")).toBeTruthy();
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Deny",
+      "Go to chat",
+    ]);
+  });
+
+  it("draws the first few lines of a long command, and counts the rest (#3502)", () => {
+    core();
+    const shown = Array.from({ length: 9 }, (_, at) => `echo ${at}`);
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], shown.join(" ")),
+        options: [deny()],
+        lines: { count: 40, shown },
+      },
+    ]);
+    const lines = Array.from(document.querySelectorAll(".ask-line"), (one) => one.textContent);
+    expect(lines).toEqual([...shown.slice(0, MOST_LINES), `and ${40 - MOST_LINES} more lines`]);
+    expect(screen.getByText("Allow is not offered. It runs over 40 lines.")).toBeTruthy();
+  });
+
+  it("says how many lines a command runs over where it cannot draw them (#3502)", () => {
+    core();
+    // A line masked whole: the core gives the count and no lines.
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], "[vault value]"),
+        options: [deny()],
+        lines: { count: 3, shown: [] },
+      },
+    ]);
+    expect(document.querySelector(".ask-line")).toBeNull();
+    expect(screen.getByText("[vault value]")).toBeTruthy();
+    expect(
+      screen.getByText("Allow is not offered. It runs over 3 lines, put on one here."),
+    ).toBeTruthy();
+  });
+
+  it("says the lines over a mark, and never offers Allow it was not given (#3502)", () => {
+    core();
+    const said = "Run a command: git⟦U+00A0⟧commit rm -rf x";
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], said),
+        lines: { count: 2, shown: ["Run a command: git⟦U+00A0⟧commit", "rm -rf x"] },
+      },
+    ]);
+    // Where the core offered Allow, the row draws its line as it is and says no reason.
+    expect(screen.queryByText(/Allow is not offered/)).toBeNull();
+    cleanup();
+    draw([
+      {
+        ...permission(3, "ml", ["steward 3"], said),
+        options: [deny()],
+        lines: { count: 2, shown: ["Run a command: git⟦U+00A0⟧commit", "rm -rf x"] },
+      },
+    ]);
+    expect(screen.getByText("⟦U+00A0⟧").tagName).toBe("MARK");
+    expect(screen.getByText("Allow is not offered. It runs over 2 lines.")).toBeTruthy();
   });
 
   it("says nothing of a ⟦ the command wrote itself, which keeps its Allow (SK-51, #3202)", () => {
