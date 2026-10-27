@@ -644,10 +644,11 @@ fn checked(
 }
 
 /// `text`, a persona's definition, with its `profile:` line saying `profile`, or without one
-/// for `None`. Every other line is left as written. `None` when `text` has no frontmatter to
-/// hold the line.
-pub fn with_profile(text: &str, profile: Option<&str>) -> Option<String> {
-    crate::personas::with_key(text, KEY, profile)
+/// for `None`, through the line format's one writer ([`crate::personas::with_key`]). Every
+/// other line is left as written. Refused, with the end of a sentence that follows the file's
+/// name, where `text` has no frontmatter to hold the line.
+pub fn with_profile(text: &str, profile: Option<&str>) -> Result<String, String> {
+    crate::personas::with_key(text, KEY, profile).map_err(|why| why.to_string())
 }
 
 /// **Set the profile `persona`'s chats start on**, or name none with `None`, in its own
@@ -682,12 +683,8 @@ pub fn set(root: &Path, persona: &str, profile: Option<&str>) -> Result<(), Stri
     crate::contain::writable(root, &file).map_err(|refused| refused.to_string())?;
     let text = crate::contain::read_text_no_link(root, &file)
         .map_err(|why| format!("purlis could not read {}: {why}", file.display()))?;
-    let Some(next) = with_profile(&text, line) else {
-        return Err(format!(
-            "{} has no frontmatter to hold a `{KEY}:` line, so nothing was written.",
-            file.display()
-        ));
-    };
+    let next = with_profile(&text, line)
+        .map_err(|why| format!("{} {why}, so nothing was written.", file.display()))?;
     if next == text {
         return Ok(());
     }
@@ -1405,7 +1402,10 @@ mod tests {
             .unwrap(),
             "---\nprofile: codex\nname: ops\n---\n"
         );
-        assert_eq!(with_profile("# no frontmatter\n", Some("codex")), None);
+        assert_eq!(
+            with_profile("# no frontmatter\n", Some("codex")),
+            Err("has no frontmatter to hold a `profile:` line".to_owned())
+        );
     }
 
     fn a_persona(root: &Path, name: &str, frontmatter: &str) {

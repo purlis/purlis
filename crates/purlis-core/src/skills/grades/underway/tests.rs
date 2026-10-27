@@ -186,3 +186,42 @@ fn a_grade_that_could_not_lock_its_marker_is_read_by_its_process_3466() {
     assert!(held.exists(), "left to the grade this process runs");
     assert_eq!(interrupted(root, laptop, |_| false), ["g-unlocked"]);
 }
+
+#[test]
+fn a_start_while_another_records_the_folder_waits_its_turn_and_records_once_3443() {
+    // Two purlis processes starting one project at once: the second waits while the first holds
+    // the folder's claim, then finds the stale grade recorded and records it never again.
+    let (tmp, level) = project();
+    let root = tmp.path().to_path_buf();
+    // Its grade's process is gone, and its marker's lock with it (#3466).
+    let held = began(&root, &level, &starting("g-both", &level))
+        .expect("held")
+        .into_path();
+    let theirs = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(crate::plane::state_dir(&root).join(CLAIM))
+        .unwrap();
+    theirs.lock().unwrap();
+
+    let waiting = std::thread::spawn({
+        let root = root.clone();
+        move || interrupted(&root, laptop, |_| false)
+    });
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert!(!waiting.is_finished(), "it waits for the claim");
+    assert!(
+        held.exists(),
+        "nothing recorded while another holds the claim"
+    );
+
+    drop(theirs);
+    assert_eq!(waiting.join().unwrap(), ["g-both"]);
+    assert!(interrupted(&root, laptop, |_| false).is_empty());
+    assert_eq!(
+        super::super::grades_of(&root, "deploy", Some(&level)).len(),
+        1,
+        "recorded once"
+    );
+}

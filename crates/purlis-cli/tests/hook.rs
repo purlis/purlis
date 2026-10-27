@@ -20,6 +20,15 @@ use purlis_core::state::{Detail, Event};
 
 const CHARTER: &str = support::PURLIS;
 
+/// **What these tests hold is the verdict, not the clock** (#3476). A `PreToolUse` word that has
+/// not decided within `guard::BUDGET` (2 s, timed inside the hook) refuses with exit 2, and
+/// `a_guard_decides_within_its_budget.rs` holds that budget on its own. On a runner whose cores
+/// are all busy, a debug build has met it on an ordinary command (`grep -rn "charter handoff"
+/// docs` came back exit 2, once, and passed on the rerun), and that is the one way an allowed
+/// command here can come back refused at random. So the hooks this file runs as a guard are
+/// given a budget no runner reaches; a guard that does not decide still fails, with its stderr.
+const VERDICT_BUDGET_MS: &str = "60000";
+
 const CLAUDE_STOP: &str = r#"{"session_id":"11111111-2222-4333-8444-555555555555","cwd":"/tmp","hook_event_name":"Stop","stop_hook_active":false}"#;
 
 /// Runs `charter hook <word>` with `payload` on stdin. Answers its exit code.
@@ -275,6 +284,7 @@ fn run_hook(cwd: &std::path::Path, args: &[&str], payload: &str) -> (i32, String
         .env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("HOME", cwd)
+        .env("PURLIS_TEST_GUARD_DEADLINE_MS", VERDICT_BUDGET_MS)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -526,6 +536,7 @@ fn charter_in(
         .env("PATH", std::env::var("PATH").unwrap_or_default())
         .env("CHARTER_ROOT", cwd)
         .env("CHARTER_HARNESS", "claude-code")
+        .env("PURLIS_TEST_GUARD_DEADLINE_MS", VERDICT_BUDGET_MS)
         .envs(env.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -690,7 +701,7 @@ fn an_ordinary_command_is_answered_with_nothing_at_all() {
         "echo hello",
     ] {
         let (code, out, err) = guard(plane.path(), &bash(command), &[]);
-        assert_eq!(code, 0, "{command:?}");
+        assert_eq!(code, 0, "{command:?}: {err}");
         assert_eq!(out, "", "{command:?} was not allowed: {out}");
         assert_eq!(err, "", "{command:?}");
     }
@@ -709,7 +720,7 @@ fn text_that_mentions_a_handoff_is_not_one_and_a_real_one_is_still_refused() {
         "git commit -m 'fix the guard\n\ncharter handoff beta now asks first'",
     ] {
         let (code, out, err) = guard(plane.path(), &bash(command), &[]);
-        assert_eq!(code, 0, "{command:?}");
+        assert_eq!(code, 0, "{command:?}: {err}");
         assert_eq!(out, "", "{command:?} was refused: {out}");
         assert_eq!(err, "", "{command:?}");
     }
@@ -718,8 +729,8 @@ fn text_that_mentions_a_handoff_is_not_one_and_a_real_one_is_still_refused() {
         "echo 'a\nb'\ncharter handoff beta",
         "bash -c 'charter handoff beta'",
     ] {
-        let (code, out, _) = guard(plane.path(), &bash(command), &[]);
-        assert_eq!(code, 0, "{command:?}");
+        let (code, out, err) = guard(plane.path(), &bash(command), &[]);
+        assert_eq!(code, 0, "{command:?}: {err}");
         assert!(decision(&out).is_some(), "{command:?} was allowed");
     }
 }

@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import type { Curating, Curations } from "./bindings";
 import { stripNamed, workspaceInFront } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * A curation action, chosen in the window, opens a chat (ADR 0061).
@@ -185,7 +186,7 @@ describe("choosing a curation action", () => {
 
     await runFromThePalette("Curate alpha: Tidy");
 
-    await screen.findByText(/says nothing until your first prompt/);
+    await findResult(/says nothing until your first prompt/);
     expect(screen.queryByRole("tab", { name: /Tidy · alpha/ })).toBeNull();
   });
 });

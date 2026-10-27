@@ -206,13 +206,12 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     ).toEqual([]);
   });
 
-  it("titles the section with the one section label", () => {
+  it("titles the view as a view's title, a strong body in its own case (#3342)", () => {
     const section = draw();
-    const title = section.querySelector("#chats-title");
+    const title = section.querySelector("#chats-title") as Element;
 
-    wears(title, "label", "the title");
-    expect(drawnWith(title as Element, "text-transform")).toBe("uppercase");
-    expect(drawnWith(title as Element, "letter-spacing")).toBe("0.05em");
+    expect(title).toHaveClass("side-title", "ui-text-body", "ui-text-strong");
+    expect(title.tagName).toBe("H2");
   });
 
   it("draws a chat's name as a body, at the regular weight on every row", () => {

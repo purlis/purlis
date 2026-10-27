@@ -67,7 +67,9 @@ describe("Use skill… on a Codex chat", function () {
     await browser.waitUntil(
       async () => {
         const lines = await browser.execute(() =>
-          [...document.querySelectorAll('p[role="status"]')].map((one) => one.textContent ?? ""),
+          [...document.querySelectorAll('.window-work > .action-result [role="status"]')].map(
+            (one) => one.textContent ?? "",
+          ),
         );
         return lines.some((line) => line.includes(typed));
       },

@@ -241,6 +241,24 @@ pub(super) fn respond(listener: BorrowedFd<'_>, id: u64, value: i64, errno: i32)
     .map(drop)
 }
 
+/// Lets notification `id`'s call go on in the kernel as the process made it
+/// (`SECCOMP_USER_NOTIF_FLAG_CONTINUE`). Only for a call nothing the process changes after it
+/// was read could carry past what holds it anyway: the chat's own Landlock layer judges the
+/// call the kernel then makes.
+pub(super) fn go_on(listener: BorrowedFd<'_>, id: u64) -> io::Result<()> {
+    let mut answer = libc::seccomp_notif_resp {
+        id,
+        val: 0,
+        error: 0,
+        flags: libc::SECCOMP_USER_NOTIF_FLAG_CONTINUE as u32,
+    };
+    number(raw(Call::Respond {
+        listener,
+        answer: &mut answer,
+    }))
+    .map(drop)
+}
+
 /// Whether notification `id` still waits: its process has not gone, nor its call been
 /// interrupted, since it was received.
 pub(super) fn valid(listener: BorrowedFd<'_>, id: u64) -> bool {

@@ -132,7 +132,9 @@ impl HarnessAdapter for Codex {
     /// ([`crate::harness_plugin::chosen`]). **And a skill the project turned off**, by one `-c
     /// 'skills.config=[{name="<name>",enabled=false},…]'`, which reaches a plugin's skill
     /// (`<plugin>:<skill>`) too, and is added to the entries of the operator's own
-    /// `config.toml` rather than replacing them (both measured on 0.163.0).
+    /// `config.toml` rather than replacing them (both measured on 0.163.0, and the second again
+    /// for #3320: a `config.toml` turning `alpha` off and `-c` turning `beta` off left neither in
+    /// `codex debug prompt-input`).
     ///
     /// Its skills ride on the `SessionStart` hook above: Codex can take no skills
     /// directory for one session ([`Harness::skills`]), so the chat is started with the
@@ -367,12 +369,17 @@ impl HarnessAdapter for Codex {
                     .to_owned(),
             );
         };
-        let profile = crate::sandbox::codex::profile(
+        // The doors its confinement opened (#2019): a socket for each, in its own folder.
+        let served = confinement.served();
+        let profile = crate::sandbox::codex::profile_serving(
             wrap,
             cwd,
             tmp,
             &confinement.proxy_ports(),
             at.hook_socket,
+            served
+                .as_ref()
+                .map(|(folder, ports)| (*folder, ports.as_slice())),
         )
         .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
         let mut charters = charters;

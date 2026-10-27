@@ -29,6 +29,12 @@
    - **What is opened over the window** (a dialog, a menu, a list, a tip) is outlined, because
      the shadow that lifted it is gone.
 
+   **Each family says the same of its own parts in its own folder**,
+   `ui/<family>/forced-colors.css` (#3387): its selected, unavailable, marked, dangerous, refused
+   and opened parts, each in the same words as the window's below. `styles.css`'s `@forced` line
+   imports every one of them, by the families' names (`ui/stylesheets.ts`), just before this
+   sheet, so the window's focus ring, last here, is drawn over all of them.
+
    It is imported last, in its own layer, `forced` (`styles.css`), the last of the window's layers,
    so it is drawn over every rule a view, a control or a utility writes. `forced-colors.test.ts` holds it to the system's colours and to
    each of the above; the WebView end-to-end suite (`e2e/specs/forced-colors.e2e.ts`, #2583) holds
@@ -41,110 +47,25 @@
   [role="tab"][aria-selected="true"],
   [role="option"][aria-selected="true"],
   [aria-current]:not([aria-current="false"]),
-  [data-scope="segment"][data-part="root"][data-selected],
   .ui-menu-item[data-highlighted],
-  .ui-menu-item[data-state="open"],
-  [data-scope="menu"][data-part="root"][data-focused]:not([data-disabled]),
-  [data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled]),
-  [data-scope="menu"][data-part="root"][data-open],
-  [data-scope="list"][data-part="root"][data-selected],
-  [data-scope="tree"][data-part="root"][data-selected] {
+  .ui-menu-item[data-state="open"] {
     forced-color-adjust: none;
     color: SelectedItemText;
     background-color: SelectedItem;
   }
 
-  /* A chosen row of a list or a tree keeps its edge down its start: its shape (#2911). */
-  [data-scope="list"][data-part="root"][data-selected],
-  [data-scope="tree"][data-part="root"][data-selected] {
-    box-shadow: inset 2px 0 0 SelectedItemText;
-  }
-
-  /* And a shape, so it is told without the colour: a tab and a segment are underlined. */
-  [role="tab"][aria-selected="true"],
-  [data-scope="segment"][data-part="root"][data-selected] {
+  /* And a shape, so it is told without the colour: a tab is underlined. */
+  [role="tab"][aria-selected="true"] {
     text-decoration-line: underline;
     text-decoration-thickness: 2px;
     text-underline-offset: 0.25em;
   }
 
-  /* An activity item is an icon: the mark along its edge is the shape (`ui/activity`), along
-     its column's outer edge on either side (#3144). */
-  [data-scope="activity"][data-part="item"][data-selected] > [data-part="indicator"] {
-    forced-color-adjust: none;
-    background-color: SelectedItemText;
-  }
-
   /* What cannot be used. */
   :is(button, input, select, textarea):disabled,
   [aria-disabled="true"],
-  .ui-menu-item[data-disabled],
-  [data-scope="menu"][data-part="root"][data-disabled],
-  [data-scope="menu"][data-part="root"][data-unavailable],
-  [data-scope="list"][data-part="root"][data-disabled],
-  [data-scope="tree"][data-part="root"][data-disabled],
-  [data-scope="checkbox"][data-part="root"][data-disabled],
-  [data-scope="radio"][data-part="root"][data-disabled],
-  [data-scope="switch"][data-part="root"][data-disabled],
-  [data-scope="segment"][data-part="root"][data-disabled],
-  [data-scope="slider"][data-part="root"][data-disabled],
-  [data-scope="option-card"][data-part="root"][data-disabled] {
+  .ui-menu-item[data-disabled] {
     color: GrayText;
-  }
-
-  /* A switch: its track is outlined, its thumb is the mark, on the side it is switched to, and
-     on is filled. */
-  [data-scope="switch"][data-part="track"] {
-    outline: 1px solid CanvasText;
-    outline-offset: -1px;
-  }
-
-  [data-scope="switch"][data-part="thumb"] {
-    forced-color-adjust: none;
-    background-color: CanvasText;
-  }
-
-  [data-scope="switch"][data-part="root"][data-selected] [data-scope="switch"][data-part="track"] {
-    forced-color-adjust: none;
-    background-color: Highlight;
-  }
-
-  [data-scope="switch"][data-part="root"][data-selected] [data-scope="switch"][data-part="thumb"] {
-    background-color: HighlightText;
-  }
-
-  /* A radio's dot. A checkbox's tick is an icon in the text's colour, which forced colours
-     draw. */
-  [data-scope="radio"][data-part="mark"]::after {
-    forced-color-adjust: none;
-    background-color: CanvasText;
-  }
-
-  /* A chosen option card: the system's pair, as what is selected is, and its check is the shape.
-     Everything it holds is drawn in the pair's words too, a line's own colour (a profile's
-     approval mark, its command) included, so nothing on it keeps a theme's colour. */
-  [data-scope="option-card"][data-part="root"][data-selected] {
-    forced-color-adjust: none;
-    color: SelectedItemText;
-    background-color: SelectedItem;
-  }
-
-  [data-scope="option-card"][data-part="root"][data-selected] * {
-    color: SelectedItemText;
-  }
-
-  /* A slider's track is outlined, as a switch's is, and its fill up to its value and its thumb
-     are the mark. */
-  [data-scope="slider"][data-part="track"] {
-    outline: 1px solid CanvasText;
-    outline-offset: -1px;
-  }
-
-  /* A slider's fill up to its value, and its thumb. */
-  [data-scope="slider"][data-part="fill"],
-  [data-scope="slider"][data-part="thumb"] {
-    forced-color-adjust: none;
-    background-color: CanvasText;
   }
 
   /* A chat's state mark keeps its shape: running a dot, waiting a dot with a ring, failed a
@@ -164,9 +85,6 @@
   }
 
   /* What needs you: the system's pair for what is marked. */
-  [data-scope="activity"][data-part="count"][data-tone="needs-you"],
-  [data-scope="count"][data-part="root"][data-variant="hot"],
-  [data-scope="status-item"][data-variant="waiting"] > [data-part="count"],
   .invisible-char {
     forced-color-adjust: none;
     color: MarkText;
@@ -175,29 +93,10 @@
 
   /* What ends or destroys, and a ground that says something is wrong: a dashed outline inside
      its edge, which takes no room. Focus, below, draws its solid ring over it. */
-  [data-scope="button"][data-part="root"][data-variant="danger"],
-  [data-scope="menu"][data-part="root"][data-variant="danger"],
-  [data-scope="status-item"][data-part="root"][data-tone="danger"],
   .trouble,
-  [data-scope="notice"][data-part="root"][data-variant="trouble"],
   .ui-setting-error p {
     outline: 2px dashed CanvasText;
     outline-offset: -2px;
-  }
-
-  /* A refused box: its own edge dashed, in the words' colour (#3335). The edge it has already,
-     the same width, so nothing moves; and not an outline, which a text box's focus ring is. A
-     theme's colour is replaced here anyway, and a theme cannot take the edge's width away. A
-     refused box that is also unavailable keeps this edge in CanvasText rather than GrayText: it
-     is still refused, and its words are GrayText by the rule above. */
-  :is(
-      [data-scope="text-input"],
-      [data-scope="textarea"],
-      [data-scope="select"],
-      [data-scope="combobox"]
-    )[data-part="root"][data-invalid] {
-    border-style: dashed;
-    border-color: CanvasText;
   }
 
   /* What is opened over the window, outlined in place of the shadow that lifted it. An outline
@@ -207,33 +106,8 @@
   [role="menu"],
   [role="listbox"],
   [role="tooltip"],
-  .ui-menu,
-  [data-scope="popover"][data-part="root"] {
+  .ui-menu {
     outline: 1px solid CanvasText;
-  }
-
-  /* A popover's own parts are inside its outline, which says it once. */
-  [data-scope="popover"]:is([data-part="list"], [data-part="body"]) {
-    outline: none;
-  }
-
-  /* A resize handle's grip under the pointer and while it is dragged (#3143): forced colours take
-     a fill away, so the grip asks to keep the system's own, the words' colour and the highlight. */
-  [data-scope="panel-separator"][data-part="grip"] {
-    forced-color-adjust: none;
-  }
-
-  [data-scope="panel-separator"][data-part="root"]:is(
-      [data-separator="hover"],
-      [data-separator="focus"]:hover
-    ):not(:focus-visible)
-    > [data-scope="panel-separator"][data-part="grip"] {
-    background-color: CanvasText;
-  }
-
-  [data-scope="panel-separator"][data-part="root"]:is([data-separator="active"], :focus-visible)
-    > [data-scope="panel-separator"][data-part="grip"] {
-    background-color: Highlight;
   }
 
   /* Focus: wherever Tab lands, a ring the system's palette draws. A menu's row says it by being

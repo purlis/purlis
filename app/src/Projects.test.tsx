@@ -31,6 +31,7 @@ import { KEPT_DRAWN } from "./projectShown";
 import { onAMac } from "./tabKeys";
 import { themeInForce } from "./theme/inForce.testkit";
 import { PURLIS_LIGHT } from "./theme/handed.testkit";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * A window holding more than one project (ADR 0033, spec decision 23).
@@ -711,7 +712,7 @@ describe("a window holding more than one project", () => {
     // A command the window asked, never answered: timed as every command is.
     void timed("createProject", () => new Promise(() => {}), 10)("/home/dev/made");
     expect(
-      await screen.findByText(saidOfLate({ command: "createProject", at: 0, ms: undefined })),
+      await findResult(saidOfLate({ command: "createProject", at: 0, ms: undefined })),
     ).toBeInTheDocument();
   });
 
@@ -726,7 +727,7 @@ describe("a window holding more than one project", () => {
       10,
     )("/home/dev/made");
     const late = saidOfLate({ command: "createProject", at: 0, ms: undefined });
-    expect(await screen.findByText(late)).toBeInTheDocument();
+    expect(await findResult(late)).toBeInTheDocument();
     await act(async () => {
       answer("made");
       await asked;
@@ -1223,6 +1224,8 @@ describe("a project that is not in front stays drawn, off the window", () => {
     expect(screen.getAllByText(/~\/dev\/gone is no longer there/)).toHaveLength(1);
   });
 
+  // Ten projects brought to the front, each a render of the whole window: past the default five
+  // seconds on a loaded runner (#3422), as the room-keeping test above is.
   it("keeps the projects the person was in last, and draws one left longer ago again", async () => {
     holding(KEPT_DRAWN + 2);
     render(<App />);
@@ -1244,7 +1247,7 @@ describe("a project that is not in front stays drawn, off the window", () => {
     await goTo(0);
     await goTo(1);
     expect(screen.getByTestId("pane")).toBe(again);
-  });
+  }, 15_000);
 });
 
 describe("the project switcher (FR-27)", () => {

@@ -55,6 +55,7 @@ pub(super) fn supervised_calls() -> Vec<i64> {
         libc::SYS_utimensat,
         libc::SYS_connect,
         libc::SYS_listen,
+        libc::SYS_bind,
     ];
     #[cfg(target_arch = "x86_64")]
     calls.extend([

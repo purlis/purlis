@@ -321,9 +321,10 @@ fn running() -> std::sync::MutexGuard<'static, HashMap<String, Running>> {
 
 /// **Runs the grade `grade`'s `body`, and the grade is not running after it, whatever happened
 /// in it** (#3353): a panic in it is handed to `failed` once the grade is no longer running, so
-/// a grade never stays running with nothing left to end it. Where a build aborts on a panic, the
-/// app ends with it, and the project's next start records the grade as interrupted
-/// (`grades::underway`).
+/// a grade never stays running with nothing left to end it. That catch works in dev and test
+/// builds alone: every shipped build aborts on a panic (`panic = "abort"` in the release
+/// profile), so there the app ends with it, and the project's next start recording the grade as
+/// interrupted (`grades::underway`) is the floor, by decision (#3443).
 fn held_to_its_end(grade: &str, body: impl FnOnce(), failed: impl FnOnce()) {
     let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
     running().remove(grade);

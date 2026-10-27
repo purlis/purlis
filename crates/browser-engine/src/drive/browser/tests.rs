@@ -27,6 +27,7 @@ mod aim;
 mod drawn;
 mod login;
 mod reach;
+mod reading;
 mod takeover;
 
 const MAIN_FRAME: &str = include_str!("../../../tests/fixtures/devtools/ax-main-frame.json");
@@ -100,6 +101,9 @@ struct Model {
     /// (#3043). A call that waits less than that fails as the connection's does, and the read
     /// it asked for runs on.
     ax_takes: Option<Duration>,
+    /// How long a call of each method named takes, past its limit failing as not answered in
+    /// time (#3277).
+    slow: HashMap<String, Duration>,
     /// The element that has the focus of each session's document, where a test says it apart
     /// from `focused_backend` (#3043): `None` where that document does not have the focus.
     focused_on: HashMap<String, Option<i64>>,
@@ -624,6 +628,13 @@ impl DevTools for Stand {
                 return Err(CallError::TimedOut);
             }
         }
+        let slow = super::lock(&self.0.model).slow.get(method).copied();
+        if let Some(takes) = slow {
+            std::thread::sleep(takes.min(timeout));
+            if takes > timeout {
+                return Err(CallError::TimedOut);
+            }
+        }
         answer
     }
 
@@ -735,6 +746,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (Browser,
             drag_told_when_asked: false,
             held_drag: None,
             ax_takes: None,
+            slow: HashMap::new(),
             focused_on: HashMap::new(),
         }),
         hook: Mutex::new(None),

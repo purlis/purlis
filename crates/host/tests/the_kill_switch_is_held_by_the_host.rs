@@ -178,12 +178,7 @@ async fn a_link_that_is_not_the_window_stops_every_program_and_cannot_re_arm() {
     let window = the_window(&hosting, project.path()).await;
     window.start_program(a_harness()).await.expect("it starts");
 
-    for scope in [
-        Scope::Terminal,
-        Scope::FleetMcp,
-        Scope::Approval,
-        Scope::RemoteLink,
-    ] {
+    for scope in [Scope::Terminal, Scope::FleetMcp, Scope::Approval] {
         let other = a_link(&hosting, scope).await;
 
         assert!(
@@ -202,6 +197,24 @@ async fn a_link_that_is_not_the_window_stops_every_program_and_cannot_re_arm() {
     }
     assert!(runs.last().seen().stopped);
     assert!(window.kill_switch().await.unwrap().stopped);
+}
+
+#[tokio::test]
+async fn a_runner_is_stopped_and_re_armed_over_its_desktops_link() {
+    // ADR 0078 §4 and ADR 0071 as amended (V29b, #2051): a runner has no window, so its desktop's
+    // host re-arms it over the link, as its own window re-arms the desktop.
+    let (folder, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let runs = StandIns::default();
+    let hosting = a_host_keeping_its_switch_in(folder.path(), &runs);
+    let window = the_window(&hosting, project.path()).await;
+    window.start_program(a_harness()).await.expect("it starts");
+    let desktop = a_link(&hosting, Scope::RemoteLink).await;
+
+    assert!(desktop.stop_all().await.expect("stopped").stopped);
+    assert!(runs.last().seen().stopped);
+    let armed = desktop.rearm().await.expect("re-armed by its desktop");
+    assert!(!armed.stopped);
+    assert!(!window.kill_switch().await.unwrap().stopped);
 }
 
 #[tokio::test]
@@ -297,7 +310,7 @@ async fn a_host_never_stopped_is_armed() {
         switch,
         session::KillSwitch {
             stopped: false,
-            why: None
+            ..Default::default()
         }
     );
     tokio::time::timeout(PATIENCE, window.start_program(a_harness()))

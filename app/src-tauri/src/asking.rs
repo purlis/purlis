@@ -106,6 +106,23 @@ pub struct Shown {
     /// not shown and no Allow is offered. Absent for any other ask.
     #[specta(optional)]
     pub writes: Option<crate::askwrites::WritesShown>,
+    /// **The lines a permission's action runs over** (#3502), where its line puts several on
+    /// one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
+    #[specta(optional)]
+    pub lines: Option<LinesShown>,
+}
+
+/// The lines an action runs over, as a row draws them under its line (#3502). An action whose
+/// line holds several is never offered Allow (`hooked::shown_in_full`): its line is not what
+/// would run.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct LinesShown {
+    /// How many lines it runs over.
+    pub count: u32,
+    /// **Each line, as [`Shown::says`] has it**: joined by a space, they are that line,
+    /// character for character, masked and cut as it is. Empty where they could not be shown
+    /// that way; the row then says only the count.
+    pub shown: Vec<String>,
 }
 
 /// Which source an ask waits on.
@@ -270,10 +287,12 @@ pub fn permission(raised: Raised) -> Option<Shown> {
     } else {
         said.to_owned()
     };
+    let says = said_inertly(&says);
+    let lines = lines_of(&ask, &says);
     Some(Shown {
         session,
         ask: raised.id.to_string(),
-        says: said_inertly(&says),
+        says,
         options: ask
             .options
             .into_iter()
@@ -290,6 +309,34 @@ pub fn permission(raised: Raised) -> Option<Shown> {
         since: None,
         held_until: None,
         writes,
+        lines,
+    })
+}
+
+/// **The lines `ask`'s command runs over, as the row shows `says`**, its line (#3502): `None`
+/// for any other action, a command on one line, or one whose summary is not made from it. Each
+/// line is kept only where, joined by a space, they are `says`.
+fn lines_of(ask: &purlis_core::harness::model::Ask, says: &str) -> Option<LinesShown> {
+    let Action::Command { line } = &ask.action else {
+        return None;
+    };
+    // Most commands are on one line: no summary is made again for them.
+    if !line.contains('\n') {
+        return None;
+    }
+    let said = ask.action.said();
+    if ask.summary != purlis_core::harness::model::Summary::of(&said) {
+        return None;
+    }
+    let lines =
+        purlis_core::harness::model::Summary::lines_of(&purlis_core::dispatchgrant::inert(&said))?;
+    Some(LinesShown {
+        count: u32::try_from(lines.count).unwrap_or(u32::MAX),
+        shown: if lines.shown.join(" ") == says {
+            lines.shown
+        } else {
+            Vec::new()
+        },
     })
 }
 
@@ -457,6 +504,7 @@ pub fn dispatch(told: &crate::dispatchgrants::DispatchPending) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -497,6 +545,7 @@ pub fn sandbox_host(
             since: None,
             held_until: None,
             writes: None,
+            lines: None,
         });
     };
     // In its Notice's order (#1666, N-3): this project on this machine is the main button.
@@ -529,6 +578,7 @@ pub fn sandbox_host(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
@@ -591,6 +641,7 @@ pub fn sandbox_write(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
@@ -653,11 +704,12 @@ pub fn sandbox_runner(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
 /// **The service-on-this-Mac adapter** (qw384): a port of this machine chat `session`'s
-/// sandbox refused, held now, is an ask as a host is. Allow is offered for this chat and for
+/// sandbox refused, to connect to or to listen on (#2019), held now, is an ask as a host is. Allow is offered for this chat and for
 /// the person (never once, never everyone's: it is this machine's and lasts past a run), at
 /// each level `locks` leaves open; then Keep blocked. A port the block did not name is typed in
 /// its Notice, so it is answered there ([`AnswerPath::InItsPane`]).
@@ -667,30 +719,41 @@ pub fn sandbox_port(
     locks: &purlis_core::sandbox::policy::Locks,
 ) -> Option<Shown> {
     use crate::sandboxing::{GrantLevel, GrantWhat};
-    use purlis_core::sandbox::grant::What;
-    if block.what != GrantWhat::Port {
-        return None;
-    }
+    // A port to listen on (#2019) is asked about as a port to connect to is, at the same two
+    // scopes, in its own words.
+    let listen = match block.what {
+        GrantWhat::Port => false,
+        GrantWhat::Listen => true,
+        _ => return None,
+    };
     let order = [GrantLevel::Chat, GrantLevel::You];
     let named: Option<u16> = block.target.parse().ok();
     let levels: Vec<GrantLevel> = order
         .into_iter()
         .filter(|level| match named {
-            Some(port) => locks
-                .refuses_grant(&What::Port(port), (*level).into())
-                .is_none(),
+            Some(port) => block
+                .what
+                .of_port(port)
+                .is_some_and(|what| locks.refuses_grant(&what, (*level).into()).is_none()),
             None => {
                 locks.port_grants_refused().is_none()
                     && locks.scope_removed((*level).into()).is_none()
             }
         })
         .collect();
-    let says = match named {
-        Some(port) => format!(
+    let says = match (named, listen) {
+        (Some(port), false) => format!(
             "The sandbox refused the service on this Mac at port {port}. Allowing it {}.",
             purlis_core::sandbox::localport::RISK
         ),
-        None => "The sandbox refused a service on this Mac at a port it did not name".to_owned(),
+        (None, false) => {
+            "The sandbox refused a service on this Mac at a port it did not name".to_owned()
+        }
+        (Some(port), true) => format!(
+            "This chat wants to run a server on port {port}. Allowing it {}.",
+            purlis_core::sandbox::localport::listen_risk(port)
+        ),
+        (None, true) => "This chat wants to run a server on a port it did not name".to_owned(),
     };
     Some(Shown {
         session,
@@ -706,7 +769,7 @@ pub fn sandbox_port(
                 shown: crate::taskblocks::BlockShown {
                     operation: block.operation.clone(),
                     kind: block.kind.clone(),
-                    what: GrantWhat::Port,
+                    what: block.what,
                     target: block.target.clone(),
                 },
             },
@@ -715,6 +778,7 @@ pub fn sandbox_port(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
@@ -785,6 +849,7 @@ pub fn sandbox_local(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     })
 }
 
@@ -804,6 +869,7 @@ pub fn terminal(session: u32, prompt: purlis_core::harness::model::Prompt) -> Sh
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -821,6 +887,7 @@ pub fn question(session: u32) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -875,6 +942,7 @@ pub fn workspace_removal(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -986,6 +1054,7 @@ pub fn browser_posture(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1049,6 +1118,7 @@ pub fn browser_needs_you(waiting: &crate::browserneedsyou::Waiting) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1101,6 +1171,7 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1152,6 +1223,7 @@ pub fn pool_tool(waits: &crate::pooltools::PoolToolWaits) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1193,6 +1265,7 @@ pub fn browser_sites(
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1359,6 +1432,7 @@ pub fn proposed_change(one: &crate::proposals::Proposal, now: &crate::proposals:
         since: None,
         held_until: None,
         writes,
+        lines: None,
     }
 }
 
@@ -1411,6 +1485,7 @@ pub fn runner_write(one: &crate::runnerwrites::HeldWrite) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1463,6 +1538,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
@@ -1517,6 +1593,7 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 

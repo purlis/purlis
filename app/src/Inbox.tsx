@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
+  Fragment,
   useCallback,
   useId,
   useLayoutEffect,
@@ -16,6 +17,7 @@ import { useTabStop } from "./roving";
 import { RestartEndsLine } from "./RestartEnds";
 import { commands, type InboxUpdate, type Offered, type PlaneId, type Shown } from "./bindings";
 import { answerTaken, asksMoved } from "./asks";
+import { counted as countedSaid } from "./dispatches";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import {
   ElsewhereGroup,
@@ -61,13 +63,14 @@ import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import { useWayPlaces } from "./wayPlaces";
 import { useProjectShown } from "./projectShown";
 import { capMarks } from "./combiningMarks";
-import { marksIn, markOf } from "./invisible";
+import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
 import { Form, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { RESULTS } from "./ActionResultNotice";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What an empty Inbox says (I-12). */
@@ -232,6 +235,9 @@ export function Inbox({
   // so it gives its place up as it leaves the front and hands it over again as it comes back.
   const shown = useProjectShown();
   const placeWindowLines = shown ? windowLines?.at : undefined;
+  // The results the window keeps (#3344), under the Notices, in the same place-giving way.
+  const placeResults = shown ? windowLines?.resultsAt : undefined;
+  const resultsCount = windowLines?.results ?? 0;
   const asking = elsewhere?.asking ?? [];
   const quiet = elsewhere?.quiet ?? [];
   // Named only where the window can bring the project forward.
@@ -471,7 +477,7 @@ export function Inbox({
             <section
               className="inbox-notices"
               aria-label={NOTICES}
-              hidden={noticed === 0 && windowLinesCount === 0}
+              hidden={noticed === 0 && windowLinesCount === 0 && resultsCount === 0}
               ref={noticesAt}
             >
               <PanelSectionTitle level={3} className="inbox-chain">
@@ -490,6 +496,16 @@ export function Inbox({
                   )}
                 </NoticeList>
               </NoticeWayGuard>
+              {/* **Results** (#3344): what the person's actions answered, newest first, each the
+              notice that stood at the top of the content, with the same ways on. */}
+              {placeResults !== undefined && (
+                <section aria-label={RESULTS} hidden={resultsCount === 0}>
+                  <PanelSectionTitle level={3} className="inbox-chain">
+                    {RESULTS}
+                  </PanelSectionTitle>
+                  <div className="inbox-results" ref={placeResults} />
+                </section>
+              )}
             </section>
           )}
           {updates !== undefined && <UpdateList updates={updates} stops={stops} />}
@@ -505,6 +521,10 @@ export type WindowLines = {
   at: (element: HTMLDivElement | null) => void;
   /** How many lines the window lists now. */
   count: number;
+  /** Handed the element the window's kept results are drawn into, under the Notices (#3344). */
+  resultsAt?: (element: HTMLDivElement | null) => void;
+  /** How many results the window keeps for this project. */
+  results?: number;
 };
 
 /**
@@ -535,6 +555,10 @@ type Shape = {
   /** The first character the line marks as one a reader does not see (`⟦U+XXXX⟧`), where that
    *  is why the core offers no Allow on a permission (SK-51, #3202). */
   hidden?: string;
+  /** The lines a permission's action runs over, where its line puts several on one (#3502):
+   *  the count, those drawn as lines (at most `MOST_LINES`, each run of stacked marks cut), and
+   *  how many more it runs over than are drawn. */
+  lines?: { count: number; drawn: string[]; more: number };
   /** Its answers are buttons here. */
   answers: boolean;
   /** It gets a reply box. */
@@ -566,14 +590,14 @@ function shapeOf(
     (capped && why === undefined) || unshown
       ? ask.options.filter((one) => !one.allows)
       : ask.options;
+  const withheld =
+    ask.source === "permission" && why === undefined && !offers.some((one) => one.allows);
   return {
     why,
     line,
     offers,
-    hidden:
-      ask.source === "permission" && why === undefined && !offers.some((one) => one.allows)
-        ? withheldFor(line)
-        : undefined,
+    hidden: withheld ? withheldFor(line) : undefined,
+    lines: withheld ? linesOf(ask) : undefined,
     answers:
       ask.source !== "dispatch" && ask.options.length > 0 && ask.answer.via !== "in-its-pane",
     // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
@@ -597,13 +621,44 @@ function shapeOf(
  * (`hooked::shown_in_full`), and the registry writes each character it hides as its mark
  * (`asking::said_inertly`), a `⟦` the chat wrote itself as `⟦U+27E6⟧`. So any mark but that one
  * on the line is a character the action holds that reads otherwise here: a no-break or an en
- * space that looks like a space, a control, a bidi override.
+ * space that looks like a space, a control, a bidi override. Where it holds several, the row
+ * names the one that misleads most (#3470): a line break, which can hide a second command, then
+ * any other hidden character, then a blank that looks like a space.
  */
 function withheldFor(line: string): string | undefined {
-  return marksIn(line)
+  const marks = marksIn(line)
     .map((one) => one.mark)
-    .find((one) => one !== markOf("\u27E6"));
+    .filter((one) => one !== markOf("\u27E6"));
+  const rank = (mark: string) => {
+    const kind = blankOf(mark);
+    return kind === "break" ? 0 : kind === "blank" ? 2 : 1;
+  };
+  return marks.reduce<string | undefined>(
+    (best, one) => (best === undefined || rank(one) < rank(best) ? one : best),
+    undefined,
+  );
 }
+
+/** The most lines of a command drawn on its row (#3502); the rest are counted. */
+export const MOST_LINES = 5;
+
+/** **The lines a permission's action runs over** (#3502): the core says how many where the
+ *  ask's line puts several on one, and gives each as the line has it (`asking::lines_of`). They
+ *  are the line, split where the command breaks one, so drawing them shows nothing it does not. */
+function linesOf(ask: Shown): Shape["lines"] {
+  if (ask.lines === undefined || ask.lines === null || ask.lines.count < 2) return undefined;
+  const drawn = ask.lines.shown.slice(0, MOST_LINES).map((one) => capMarks(one).text);
+  return { count: ask.lines.count, drawn, more: Math.max(0, ask.lines.count - drawn.length) };
+}
+
+/** Why a permission over several lines offers no Allow (#3502): its line is not what runs. */
+export const linesSaid = (lines: NonNullable<Shape["lines"]>) =>
+  lines.drawn.length > 0
+    ? `Allow is not offered. It runs over ${lines.count} lines.`
+    : `Allow is not offered. It runs over ${lines.count} lines, put on one here.`;
+
+/** What a row says of the lines it does not draw. */
+const moreLines = (more: number) => `and ${countedSaid(more, "more line", "more lines")}`;
 
 /** An ask's line, each mark on it drawn as one (`invisible-char`), apart from the words. Its
  *  parts, not a component of its own, so the tooltip still reads the words it repeats. */
@@ -672,9 +727,24 @@ function WithWrites({
   );
 }
 
-/** Why a permission holding `mark` offers no Allow (SK-51, #3202). */
-export const hiddenSaid = (mark: string) =>
-  `Allow is not offered. It holds ${mark}, a character that looks like another one here.`;
+/** What the row says a hidden character does, by the kind of blank it is (#3470). */
+const DOES = {
+  break: "that breaks the line here",
+  blank: "that looks like another one here",
+  hidden: "a reader does not see here",
+} as const;
+
+/** What a row says of a hidden character a permission holds. */
+const holdsSaid = (mark: string, also = false) =>
+  `It ${also ? "also holds" : "holds"} ${mark}, a character ${DOES[blankOf(mark) ?? "hidden"]}.`;
+
+/** Why a permission holding `mark` offers no Allow (SK-51, #3202; #3470). */
+export const hiddenSaid = (mark: string) => `Allow is not offered. ${holdsSaid(mark)}`;
+
+/** Why a permission over several lines offers no Allow, and the hidden character it holds too,
+ *  where it holds one (#3502). */
+const withheldSaid = (lines: NonNullable<Shape["lines"]>, mark: string | undefined) =>
+  mark === undefined ? linesSaid(lines) : `${linesSaid(lines)} ${holdsSaid(mark, true)}`;
 
 /** What a row says of where it waits. */
 const SOURCE_SAID: Record<Shown["source"], string> = {
@@ -878,12 +948,38 @@ function Ask({
           {/* The ask's words are the source's, drawn as text and never as a control. What an
               Allow here would let run is never cut (#1146): it is read whole first. */}
           <Tooltip tip={shape.line}>
-            <span
-              id={`${id}-says`}
-              className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
-            >
-              {markedLine(shape.line)}
-            </span>
+            {shape.lines !== undefined && shape.lines.drawn.length > 0 ? (
+              // **A command over several lines is drawn on them** (#3502): each as the line has
+              // it, the first few, and how many more. Never clamped: the cap is its own.
+              <span
+                id={`${id}-says`}
+                className="ask-says ask-lines inbox-primary ui-text-body ui-text-strong"
+              >
+                {shape.lines.drawn.map((one, at) => (
+                  // A space between lines, which a column does not draw, so the row's name
+                  // reads them apart.
+                  <Fragment key={at}>
+                    {at > 0 && " "}
+                    <span className="ask-line">{markedLine(one)}</span>
+                  </Fragment>
+                ))}
+                {shape.lines.more > 0 && (
+                  <>
+                    {" "}
+                    <span className="ask-line ask-more-lines ui-text-secondary">
+                      {moreLines(shape.lines.more)}
+                    </span>
+                  </>
+                )}
+              </span>
+            ) : (
+              <span
+                id={`${id}-says`}
+                className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
+              >
+                {markedLine(shape.line)}
+              </span>
+            )}
           </Tooltip>
           <Tooltip tip={SOURCE_SAID[ask.source]}>
             <span className="inbox-meta ui-text-meta">
@@ -894,9 +990,14 @@ function Ask({
             </span>
           </Tooltip>
         </p>
-        {/* Why its Allow is missing, where a character it holds reads otherwise (SK-51). */}
-        {shape.hidden !== undefined && shape.answers && (
-          <p className="inbox-hidden ui-text-secondary">{hiddenSaid(shape.hidden)}</p>
+        {/* Why its Allow is missing: the lines it runs over, which its line put on one
+            (#3502), and a character it holds that reads otherwise (SK-51). */}
+        {shape.answers && (shape.lines !== undefined || shape.hidden !== undefined) && (
+          <p className="inbox-hidden ui-text-secondary">
+            {shape.lines !== undefined
+              ? withheldSaid(shape.lines, shape.hidden)
+              : hiddenSaid(shape.hidden ?? "")}
+          </p>
         )}
         {/* A folder or something on this machine reaches the chat only by its restart (#1986):
             what that ends is said before an Allow here, naming the chat. */}

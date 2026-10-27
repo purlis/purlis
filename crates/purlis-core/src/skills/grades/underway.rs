@@ -60,10 +60,14 @@ impl std::ops::Deref for Marker {
 }
 
 /// The folder of this machine's state the grades under way are held in.
-pub const DIR: &str = "grades-under-way";
+const DIR: &str = "grades-under-way";
 
 /// The most bytes of one grade under way read back.
-pub const MOST_FILE_BYTES: u64 = 64 * 1024;
+const MOST_FILE_BYTES: u64 = 64 * 1024;
+
+/// The file beside that folder a start holds the lock of while it records what it finds there:
+/// two purlis processes starting one project at once never both record one grade (#3443).
+const CLAIM: &str = "grades-under-way.lock";
 
 /// One grade under way, as its file holds it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -188,7 +192,10 @@ pub fn ended(root: &Path, grade: &str) {
 /// whose lock another holds is left as it is ([`Marker`], #3466); where its lock cannot be asked,
 /// one whose process still runs is, unless it is this process and `runs_here` says this process
 /// runs no such grade; a file that is a link, too large, or not a sound row is taken away
-/// unrecorded. `device` names this machine's committed record file, and is asked only for a
+/// unrecorded. Two calls at once, of two processes or of one, take turns on the folder's claim
+/// ([`CLAIM`], #3443), so the second finds what the first recorded gone and records it never
+/// again; one that cannot take the claim records nothing. `device` names this machine's
+/// committed record file, and is asked only for a
 /// grade recorded there: a start with no grade under way reads nothing of this machine's store
 /// (a fenced test's start among them). A file of a newer purlis is left for it, and one whose row could not be written
 /// is kept for the next start, so a grade is never lost. The answer is the grades recorded, by
@@ -202,6 +209,9 @@ pub fn interrupted(
     if !std::fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir()) {
         return Vec::new();
     }
+    let Some(_claim) = claimed(root) else {
+        return Vec::new();
+    };
     let Ok(reader) = std::fs::read_dir(&dir) else {
         return Vec::new();
     };
@@ -257,6 +267,29 @@ fn locked_by_another(path: &Path) -> Option<bool> {
         }
         Err(std::fs::TryLockError::WouldBlock) => Some(true),
         Err(std::fs::TryLockError::Error(_)) => None,
+    }
+}
+
+/// **The claim on the grades under way in the project at `root`, held**: its [`CLAIM`] file's
+/// lock, opened following no link, waited for while another call records (a few rows, so a
+/// wait that ends). `None` where it cannot be opened or locked.
+fn claimed(root: &Path) -> Option<crate::filelock::Held> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let file = crate::contain::nofollow(&mut options)
+        .open(crate::plane::state_dir(root).join(CLAIM))
+        .ok()?;
+    match file.lock() {
+        Ok(()) => Some(crate::filelock::Held::locked(file)),
+        Err(why) => {
+            tracing::warn!("purlis: the grades under way were not claimed ({why})");
+            None
+        }
     }
 }
 

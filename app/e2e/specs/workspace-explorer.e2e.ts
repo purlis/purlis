@@ -793,14 +793,16 @@ describe("the explorer", () => {
     await expect($('[data-testid="explorer"] [data-row^="workspace:"]')).not.toBeExisting();
   });
 
-  it("is the files of the workspace the strip is on, and names it in its heading", async () => {
-    /** What the Files heading says its files are of. Read from the document, shown or not. */
+  it("is the files of the workspace the strip is on, and names it in its tree", async () => {
+    /** What the files' tree says it is of: *Files* is no fold since #3343, and the view's title
+     *  is its region's. Read from the document, shown or not. */
     const filesOf = () =>
       browser.execute(
         () =>
           document
-            .querySelector('[data-testid="explorer"] [data-section="files"] .section-of')
-            ?.textContent?.trim() ?? "",
+            .querySelector('[data-testid="explorer"] [data-section="files"] [role="treegrid"]')
+            ?.getAttribute("aria-label")
+            ?.replace(/^Files of /, "") ?? "",
       );
     const untilFilesOf = (name: string) =>
       browser.waitUntil(async () => (await filesOf()) === name, {
@@ -879,14 +881,13 @@ describe("the explorer", () => {
   });
 
   /**
-   * **A chat's row and a file's row are one height** (#1920): both are the shared tree row
-   * (`--ui-row-height`), so the Chats list and the Files tree read at one rhythm, whatever size
-   * each one's words are. jsdom lays nothing out, so the two are measured here, in the real
-   * engine: within a pixel of each other, never an exact height. And the row's words are the
-   * roles' sizes, as shares of the window's text: a name a body (13 of 14), the section's title
-   * the label (11 of 14).
+   * **A chat's row is a sidebar view's row** (#3342, the prototype's Q1 A): the control's height
+   * and a step, 30px at 14px, measured here in the real engine within a pixel, never exactly. A
+   * file's row is still the shared tree row (the Explorer moves onto the frame on its own
+   * ticket). The row's words are the roles' sizes, as shares of the window's text: a name a
+   * body (13 of 14), and the view's title a strong body (13 of 14).
    */
-  it("draws a chat's row as high as a file's row, its name at the body's size (#1920)", async () => {
+  it("draws a chat's row as a view's row, its name and its title at the body's size (#1920, #3342)", async () => {
     await onAlpha();
     await showView("Chats");
     const rows = '[data-testid="chats-section"] [role="treeitem"]';
@@ -898,7 +899,13 @@ describe("the explorer", () => {
       const name = row?.querySelector(".session");
       const title = document.querySelector("#chats-title");
       if (!row || !name || !title) return null;
+      const probe = document.createElement("div");
+      probe.style.height = "calc(var(--size-control) + var(--space-1))";
+      document.body.append(probe);
+      const viewRow = probe.getBoundingClientRect().height;
+      probe.remove();
       return {
+        viewRow,
         height: row.getBoundingClientRect().height,
         root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
         name: Number.parseFloat(getComputedStyle(name).fontSize),
@@ -919,13 +926,13 @@ describe("the explorer", () => {
     const seen = { chat, fileHeight };
     if (!(chat.height > 0 && fileHeight > 0))
       throw new Error(`a row has no height: ${JSON.stringify(seen)}`);
-    if (Math.abs(chat.height - fileHeight) > 1)
-      throw new Error(`a chat's row is not a file's row's height: ${JSON.stringify(seen)}`);
+    if (Math.abs(chat.height - chat.viewRow) > 1)
+      throw new Error(`a chat's row is not a view's row's height: ${JSON.stringify(seen)}`);
     // Ranges, never exact pixels: within half a pixel of the role's share of the window's text.
     if (Math.abs(chat.name - (chat.root * 13) / 14) > 0.5)
       throw new Error(`a chat's name is not the body's size: ${JSON.stringify(seen)}`);
-    if (Math.abs(chat.title - (chat.root * 11) / 14) > 0.5)
-      throw new Error(`the Chats title is not the label's size: ${JSON.stringify(seen)}`);
+    if (Math.abs(chat.title - (chat.root * 13) / 14) > 0.5)
+      throw new Error(`the Chats title is not a view's title's size: ${JSON.stringify(seen)}`);
   });
 
   it("shows one workspace's chats on the strip, and keeps the others running", async () => {
@@ -1036,7 +1043,8 @@ describe("the explorer", () => {
     });
     expect(dropped).toBe(true);
 
-    const said = await $('p[role="status"]');
+    // What the action answered: its closable notice at the top of the content (#3344).
+    const said = await $('.window-work > .action-result [role="status"]');
     await said.waitForExist({ timeout: 20_000 });
     await expect(said).toHaveText(expect.stringContaining("Nothing was sent."));
     await browser.waitUntil(

@@ -64,6 +64,7 @@ impl Machine {
 impl ToARunner {
     /// The runner kept for `pool` on `machine`: only one this machine paired and keeps, and
     /// never one draining (#2749).
+    #[cfg(test)]
     pub fn of(machine: &Machine, pool: &str) -> Result<ToARunner, String> {
         let kept = purlis_core::runners::runner_for(&machine.config, pool)
             .map_err(|why| why.to_string())?;
@@ -72,16 +73,33 @@ impl ToARunner {
 
     /// The runner `kept`, as `machine` keeps it: a draining one too, which keeps its chats
     /// until each ends (#2749).
+    ///
+    /// **A suspended runner is left as it is** (#2051): a check, a poll, an unpairing or a stop
+    /// never wakes one; only the window's relayed link does ([`Self::of_kept_waking`]).
     pub fn of_kept(machine: &Machine, kept: &Kept) -> Result<ToARunner, String> {
         let desktop = machine.desktop()?;
         Ok(ToARunner::kept(
             kept,
             machine.docker.clone(),
             desktop.into_identity(),
+            false,
         ))
     }
 
-    fn kept(kept: &Kept, docker: Docker, desktop: Identity) -> ToARunner {
+    /// [`Self::of_kept`], **a suspended runner started again** as it is linked to (#2051): one a
+    /// day without a link stopped its own container, which is checked as it was made before it
+    /// starts. The window's relayed link alone: its chats are what the person asked for.
+    pub fn of_kept_waking(machine: &Machine, kept: &Kept) -> Result<ToARunner, String> {
+        let desktop = machine.desktop()?;
+        Ok(ToARunner::kept(
+            kept,
+            machine.docker.clone(),
+            desktop.into_identity(),
+            true,
+        ))
+    }
+
+    fn kept(kept: &Kept, docker: Docker, desktop: Identity, resumes: bool) -> ToARunner {
         let made = kept.made.clone();
         let checking = docker.clone();
         let preparing = docker.clone();
@@ -90,7 +108,14 @@ impl ToARunner {
             made.connect_args(),
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
-            Arc::new(move || checking.check(&made).map_err(|why| why.0)),
+            Arc::new(move || {
+                if resumes {
+                    checking.resumed(&made)
+                } else {
+                    checking.check(&made)
+                }
+                .map_err(|why| why.0)
+            }),
         )
         // Each run of `docker exec` is given what every run of `docker` is: a checked copy of
         // Docker's settings and the engine pinned (#2752).
@@ -150,8 +175,42 @@ pub fn relaying(
             tracing::warn!("purlis: pool {pool}: {behind}");
         }
         let resolved = format!("{}/{}", kept.pool(), kept.name());
-        let to = ToARunner::of_kept(&machine, &kept)?;
+        let to = ToARunner::of_kept_waking(&machine, &kept)?;
         Ok((Arc::new(move || to.keep()) as purlis_host::Keep, resolved))
+    })
+}
+
+/// **Every runner this machine keeps, as the session host's kill switch reaches them** (#2051,
+/// ADR 0078 §7): each `<pool>/<runner>` kept under `config_root`, a draining one among them, with
+/// a link kept to it as a relayed window's is, or why there is none. Read as each stop is sent.
+pub fn every_runner(config_root: PathBuf) -> purlis_host::EveryRunner {
+    Arc::new(move || {
+        let kept = match purlis_core::runners::read(&config_root) {
+            Ok(kept) => kept,
+            Err(why) => {
+                tracing::warn!("purlis: the runners this machine keeps could not be read: {why}");
+                return Vec::new();
+            }
+        };
+        let machine = Machine::here(&config_root);
+        kept.iter()
+            .filter_map(|kept| {
+                let name = format!("{}/{}", kept.pool(), kept.name());
+                let keep = match &machine {
+                    Err(why) => Err(why.clone()),
+                    Ok(machine) => match machine.docker.running(&kept.made) {
+                        // Suspended: nothing runs there, and it is not woken to be stopped. A
+                        // link made to it later carries the stop first while this machine is
+                        // stopped.
+                        Ok(false) => return None,
+                        Ok(true) => ToARunner::of_kept(machine, kept),
+                        Err(why) => Err(why.0),
+                    },
+                }
+                .map(|to| Arc::new(move || to.keep()) as purlis_host::Keep);
+                Some((name, keep))
+            })
+            .collect()
     })
 }
 

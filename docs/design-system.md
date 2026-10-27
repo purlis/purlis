@@ -134,7 +134,8 @@ stay as they are: they are brand, not theme.
 **Forced colours win** (#2328). On a platform that forces its contrast colours (Windows'
 contrast themes), the browser draws every colour in the system's palette, and what the window
 says with a background or a shadow alone would be lost. `app/src/theme/forced-colors.css`, the
-last layer of the window's stylesheet, says it again in system colours and with a shape: a solid
+last layer of the window's stylesheet (each family's own parts in its
+`app/src/ui/<family>/forced-colors.css`, imported just before it), says it again in system colours and with a shape: a solid
 `Highlight` ring wherever Tab lands; what is selected or current in `SelectedItem` and
 `SelectedItemText`, underlined (an icon tab keeps its edge); what cannot be used in `GrayText`;
 each state mark's shape in `CanvasText`; a count of chats that need you in `Mark` and
@@ -1042,6 +1043,7 @@ has it; nothing reads the key after that.
   "notifications": { "quiet": { "on": true, "from": "22:00", "to": "07:00" } },
   "explorer": { "closed": ["repos"] },
   "rail": "auto",
+  "skills": { "onlyThisChat": true },
   "dismissed": { "/home/me/project": ["pin-dormant:ide", "chat-fresh:3"] }
 }
 ```
@@ -1192,6 +1194,10 @@ has it; nothing reads the key after that.
   (`app/src/railMode.ts`); the first frame draws the rail as it says. Where the rail would
   crowd the work, the window hides it over a `rail` left out (#3077, `app/src/railRoom.ts`), and
   that hide is never written.
+- **`skills`** is what the Skills view keeps for the window (#3308): `{ "onlyThisChat": true }`
+  while Only this chat's narrows its list to the chat in front, and left out while it lists every
+  skill, the default. Any other value is the default, and the Inbox says so. The switch writes
+  it (`app/src/skillsViewPrefs.ts`).
 - **`dismissed`** is the Notices you dismissed (NO-2, V91j), per project by its path, each
   by its cause. A Notice stays hidden while its cause is kept here, and the window lets the
   cause go once the project answers without it, so the Notice shows again if the cause comes

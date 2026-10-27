@@ -16,7 +16,7 @@
 #![cfg(target_os = "linux")]
 
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -33,6 +33,8 @@ struct Project {
     proxy: Option<(u16, std::thread::JoinHandle<()>)>,
     hook: PathBuf,
     bus: PathBuf,
+    /// The folder a chat serves in and the port it serves on (#2019), as purlis compiles them.
+    serve: Option<(PathBuf, u16)>,
 }
 
 fn real(path: &Path) -> PathBuf {
@@ -77,12 +79,28 @@ fn project() -> Project {
         proxy: None,
         hook: base.join("hooks.sock"),
         bus: base.join("bus"),
+        serve: None,
         _dir: dir,
     }
 }
 
 impl Project {
     fn profile(&self, port: u16) -> String {
+        let mut out = self.profile_unserved(port);
+        if let Some((folder, served)) = &self.serve {
+            let socket = folder.join(format!("{served}.sock"));
+            let socket = socket.display();
+            out.push_str(&format!(
+                "(allow network-bind (local unix-socket (path-literal \"{socket}\")))\n\
+                 (allow network-inbound (local unix-socket (path-literal \"{socket}\")))\n\
+                 (allow file-write-create file-write-unlink (literal \"{socket}\"))\n\
+                 (allow network-outbound (remote ip \"localhost:{served}\"))\n"
+            ));
+        }
+        out
+    }
+
+    fn profile_unserved(&self, port: u16) -> String {
         let cwd = self.cwd.display();
         let tmp = self.tmp.display();
         let vaults = self.root.join(".purlis/vaults");
@@ -418,6 +436,48 @@ fn a_thread_with_its_own_descriptors_is_judged_by_its_own_socket() {
     let mut p = project();
     assert_eq!(
         p.run(&["listen-unshared", "purlis-probe-unshared"]),
+        "EACCES"
+    );
+}
+
+/// A port free on this machine now.
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .and_then(|it| it.local_addr())
+        .expect("a free port")
+        .port()
+}
+
+/// #2019: a chat serves on its own socket in the folder purlis made for it, and nowhere else: a
+/// server it starts on its port, at whatever address, is bound to that socket instead, and any
+/// other port or path is refused.
+#[test]
+fn a_chat_serves_on_its_own_socket_whatever_address_it_asks_for() {
+    let mut p = project();
+    let folder = p.tmp.parent().expect("a parent").join("serve");
+    std::fs::create_dir_all(&folder).expect("the chat's folder");
+    let port = free_port();
+    let socket = folder.join(format!("{port}.sock"));
+    let port_word = port.to_string();
+    // Nothing served before it is allowed.
+    assert_eq!(p.run(&["serve-on", "127.0.0.1", &port_word]), "EACCES");
+    p.serve = Some((folder.clone(), port));
+    for address in ["127.0.0.1", "0.0.0.0", "::"] {
+        assert_eq!(p.run(&["serve-on", address, &port_word]), "ok", "{address}");
+        let meta = std::fs::symlink_metadata(&socket).expect("its socket");
+        assert!(std::os::unix::fs::FileTypeExt::is_socket(&meta.file_type()));
+        assert!(
+            TcpStream::connect(("127.0.0.1", port)).is_err(),
+            "no TCP port"
+        );
+    }
+    assert_eq!(p.run(&["serve-at", &p.s(&socket)]), "ok");
+    assert_eq!(
+        p.run(&["serve-on", "127.0.0.1", &(port.wrapping_add(1)).to_string()]),
+        "EACCES"
+    );
+    assert_eq!(
+        p.run(&["serve-at", &p.s(&folder.join("other.sock"))]),
         "EACCES"
     );
 }

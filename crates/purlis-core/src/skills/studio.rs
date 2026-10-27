@@ -331,7 +331,7 @@ impl Answered {
 ///
 /// **One copy's grades** (#3353, #3275): same-named copies at two levels are two skills, so the
 /// panel reads the rows of the copy at `level` alone, or, with none, of the copy the skill's tab
-/// shows first (the first level of [`Level::every`] that holds it).
+/// shows first (the first of [`Level::copies_of`]).
 #[derive(Debug, Clone, Copy)]
 pub struct GradesPanel<'a> {
     pub plane: &'a Path,
@@ -354,9 +354,9 @@ impl StudioPanel for GradesPanel<'_> {
     fn blocks(&self, skill: &str) -> Result<Vec<Block>, String> {
         let first = match self.level {
             Some(_) => None,
-            None => Level::every(self.plane)
-                .into_iter()
-                .find(|level| level.named(self.plane, skill).is_some()),
+            None => Level::copies_of(self.plane, skill)
+                .next()
+                .map(|(level, _)| level),
         };
         let Some(level) = self.level.or(first.as_ref()) else {
             return Ok(grades_blocks(&[], skill));

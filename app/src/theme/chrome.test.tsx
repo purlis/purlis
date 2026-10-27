@@ -26,7 +26,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
@@ -75,6 +75,7 @@ import { RelaunchAsk } from "../RelaunchAsk";
 import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
+import { AddVision } from "../AddVision";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
 import { StartChat } from "../StartChat";
@@ -99,8 +100,6 @@ vi.mock("../SessionPane", () => ({
     </div>
   ),
 }));
-
-configure({ asyncUtilTimeout: 5_000 });
 
 const PLANE = "/home/dev/plane";
 const ALPHA = `${PLANE}/workspaces/alpha`;
@@ -1141,6 +1140,21 @@ const DIALOGS: Opened[] = [
           trouble="beta already exists"
           renaming={false}
           onRename={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "adding a workspace's vision",
+    file: "AddVision.tsx",
+    open: async () =>
+      render(
+        <AddVision
+          workspace="gamma"
+          current=""
+          trouble="a vision has words: nothing was written"
+          saving={false}
+          onSave={nothing}
           onCancel={nothing}
         />,
       ),

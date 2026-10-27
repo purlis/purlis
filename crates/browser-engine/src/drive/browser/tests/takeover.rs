@@ -1905,3 +1905,163 @@ fn a_kept_read_whose_field_the_engine_cannot_describe_is_not_used() {
     assert_eq!(unsure, Err(Refusal::PageUnreadInTime));
     assert_eq!(engine.sent("Input.dispatchKeyEvent").len(), 1, "a key went");
 }
+
+/// What a field holds, read from the field itself, is what `boxes` says of its element; the
+/// reads `fails` names, by their number from the first (1), fail.
+fn fields_hold(
+    engine: &super::Engine,
+    boxes: Arc<Mutex<std::collections::HashMap<i64, String>>>,
+    fails: fn(usize) -> bool,
+) {
+    let mut reads = 0;
+    let mut resolved = None;
+    engine.on(move |sent, _| {
+        if sent.method == "DOM.resolveNode" {
+            resolved = sent.params["backendNodeId"].as_i64();
+        }
+        if sent.method == "Runtime.callFunctionOn"
+            && sent.params["functionDeclaration"] == super::super::READ_VALUE
+        {
+            reads += 1;
+            if fails(reads) {
+                return Some(Err(crate::cdp::CallError::TimedOut));
+            }
+            let held = resolved
+                .and_then(|at| super::super::lock(&boxes).get(&at).cloned())
+                .unwrap_or_default();
+            return Some(Ok(json!({"result": {"type": "string", "value": held}})));
+        }
+        None
+    });
+}
+
+/// The person types "739214" into the page's six boxes, one digit a box, moving on with Tab;
+/// what the last box holds after its key cannot be read, so it is read at the hand-back (#2138),
+/// and the page's tree then takes `hand_back_reads` a frame to read.
+fn the_last_box_is_read_only_at_the_hand_back(
+    browser: &super::Browser,
+    engine: &super::Engine,
+    hand_back_reads: Duration,
+) {
+    the_page_asks_for_a_code(engine);
+    let boxes = Arc::new(Mutex::new(std::collections::HashMap::new()));
+    // One read after each key; both reads after the sixth fail.
+    fields_hold(engine, Arc::clone(&boxes), |read| read == 6 || read == 7);
+    browser.take_over();
+    let aim = aim_now(browser);
+    for (at, digit) in (1..=6).zip("739214".chars()) {
+        focus_on(engine, &[("PAGE-1", &format!("10{at}"))]);
+        super::super::lock(&boxes).insert(100 + at as i64, digit.to_string());
+        let typed = browser.person_input(&key(&aim, &digit.to_string(), true));
+        if at == 6 {
+            assert_eq!(typed, Err(Refusal::FieldUnreadAfterKey));
+        } else {
+            typed.unwrap();
+        }
+        the_box_shows(engine, at, &digit.to_string());
+        browser.person_input(&key(&aim, "Tab", true)).unwrap();
+    }
+    super::super::lock(&engine.model).ax_takes = Some(hand_back_reads);
+}
+
+/// A browser whose person's reads of a page wait at most `within` (#3277).
+fn reads_within(within: Duration) -> (super::Browser, Arc<super::Engine>) {
+    super::browser_with(crate::drive::Limits {
+        key_reads_within: within,
+        ..super::limits()
+    })
+}
+
+#[test]
+fn the_hand_back_of_a_page_slow_to_read_ends_within_its_limit() {
+    let (browser, engine) = reads_within(Duration::from_millis(300));
+    the_last_box_is_read_only_at_the_hand_back(&browser, &engine, Duration::from_secs(2));
+
+    let started = Instant::now();
+    browser.hand_back();
+
+    assert!(
+        started.elapsed() < Duration::from_millis(1500),
+        "the hand-back took {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn a_code_typed_one_character_a_box_stays_out_whole_where_the_hand_back_cannot_read_its_page() {
+    let (browser, engine) = reads_within(Duration::from_millis(300));
+    the_last_box_is_read_only_at_the_hand_back(&browser, &engine, Duration::from_secs(2));
+    let said = said_in_the_log(|| {
+        browser.hand_back();
+    });
+    super::super::lock(&engine.model).ax_takes = None;
+    the_boxes_go(&engine);
+    the_page_says(&engine, "PAGE-1", "Your code 739214 is right");
+
+    let text = snapshot(&browser, 1);
+
+    assert!(text.contains("\"Your code (blanked) is right\""), "{text}");
+    assert!(
+        said.iter()
+            .any(|line| line.contains("rebuilt from the page as the person's last key read it")),
+        "{said:?}"
+    );
+}
+
+/// What `run` said in the log, on this thread.
+fn said_in_the_log(run: impl FnOnce()) -> Vec<String> {
+    use tracing::field::{Field, Visit};
+    use tracing::span::{Attributes, Id, Record};
+    use tracing::{Event, Metadata, Subscriber};
+
+    struct Lines(Arc<Mutex<Vec<String>>>);
+    struct Message(String);
+    impl Visit for Message {
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "message" {
+                self.0 = format!("{value:?}");
+            }
+        }
+    }
+    impl Subscriber for Lines {
+        fn enabled(&self, _: &Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &Attributes<'_>) -> Id {
+            Id::from_u64(1)
+        }
+        fn record(&self, _: &Id, _: &Record<'_>) {}
+        fn record_follows_from(&self, _: &Id, _: &Id) {}
+        fn event(&self, event: &Event<'_>) {
+            let mut message = Message(String::new());
+            event.record(&mut message);
+            super::super::lock(&self.0).push(message.0);
+        }
+        fn enter(&self, _: &Id) {}
+        fn exit(&self, _: &Id) {}
+    }
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    tracing::subscriber::with_default(Lines(Arc::clone(&lines)), run);
+    super::super::lock(&lines).clone()
+}
+
+#[test]
+fn the_hand_back_reads_its_fields_and_its_pages_within_its_limit_in_all() {
+    let (browser, engine) = reads_within(Duration::from_millis(400));
+    the_last_box_is_read_only_at_the_hand_back(&browser, &engine, Duration::from_secs(2));
+    {
+        let mut model = super::super::lock(&engine.model);
+        for method in ["Runtime.callFunctionOn", "DOM.getFrameOwner"] {
+            model.slow.insert(method.into(), Duration::from_secs(1));
+        }
+    }
+
+    let started = Instant::now();
+    browser.hand_back();
+
+    assert!(
+        started.elapsed() < Duration::from_millis(1200),
+        "the hand-back took {:?}",
+        started.elapsed()
+    );
+}

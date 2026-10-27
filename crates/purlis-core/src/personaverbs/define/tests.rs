@@ -170,7 +170,6 @@ fn create_refuses_a_value_that_would_write_a_second_frontmatter_line() {
     let plane = Plane::fixture("daily");
     for (role, when, vault) in [
         (Some("QA\ntools: Bash"), Some("x"), None),
-        (None, Some("x --- y"), None),
         (None, Some("x"), Some("../elsewhere")),
     ] {
         let (rc, heard) = create_on(
@@ -197,6 +196,25 @@ fn create_refuses_a_value_that_would_write_a_second_frontmatter_line() {
             .read("personas/qa/persona.md")
             .contains("vault: none\n")
     );
+}
+
+#[test]
+fn create_writes_a_value_holding_three_dashes_and_reads_it_back_as_written() {
+    // #3244: only a line that is `---` ends the frontmatter, so `---` inside a value is text.
+    let plane = Plane::fixture("daily");
+    let (rc, heard) = create_on(&plane, &ask("qa", Some("Use when: x --- y")));
+    assert_eq!(rc, 0, "{}", heard.err);
+    let text = plane.read("personas/qa/persona.md");
+    let pairs = crate::personas::frontmatter(&text);
+    let said = |key: &str| {
+        pairs
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    };
+    assert_eq!(said("delegate-when"), Some("Use when: x --- y"));
+    assert_eq!(said("draft"), Some("true"));
 }
 
 #[test]
