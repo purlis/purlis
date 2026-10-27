@@ -133,7 +133,46 @@ describe("arranged", () => {
   });
 });
 
+describe("arranged, when two runners of one pool say they hold a chat", () => {
+  it("keeps it on the runner the window placed it on", () => {
+    const shown = shownWith({
+      runners: [
+        runner("builds", "builds"),
+        runner("builds", "builds-2b1f", [chat(2, "verify")], [browser(2, "p-verify")]),
+      ],
+    });
+    const rows = arranged(shown, {
+      "builds/builds": answered("running", [2], ["p-verify"]),
+      "builds/builds-2b1f": answered("running", [2], ["p-verify"]),
+    });
+    expect(rows.map((row) => [row.key, row.chats.length, row.browsers.length])).toEqual([
+      ["here", 0, 0],
+      ["builds/builds", 0, 0],
+      ["builds/builds-2b1f", 1, 1],
+    ]);
+  });
+});
+
 describe("healthSaid", () => {
+  it("says a runner not answered in time does not answer", () => {
+    const asked: RunnerAsked = {
+      ...answered("running"),
+      standing: { state: "unanswered" },
+      link: null,
+    };
+    expect(healthSaid(asked)).toEqual({
+      badge: "does not answer",
+      line: "It did not answer in time. purlis asks again when you press Refresh.",
+    });
+  });
+
+  it("says in purlis's words why it could not ask, and names no one else as saying it", () => {
+    expect(healthSaid({ failed: "There is no config home on this machine." })).toEqual({
+      badge: "not asked",
+      line: "purlis could not ask this runner: There is no config home on this machine.",
+    });
+  });
+
   it("says a suspended runner is suspended, with nothing said for it elsewhere", () => {
     const health = healthSaid(answered("suspended"));
     expect(health.badge).toBe("suspended");

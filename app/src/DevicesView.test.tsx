@@ -6,6 +6,8 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { DevicesShown, RunnerAsked } from "./bindings";
 import { DevicesView } from "./DevicesView";
+import { answerWithinForTests, forgetDevicesForTests } from "./devices";
+import { userEvent } from "@testing-library/user-event";
 
 /**
  * **Devices** (#2052): this machine and every runner, each with its chats and browsers, its
@@ -20,6 +22,8 @@ let asked: Record<string, RunnerAsked>;
 let runnersAsked: string[];
 /** Set by a test to hold every runner's answer until it is called. */
 let holdAnswers: Promise<void> | undefined;
+/** Set by a test: the core refuses to ask runner `qa/qa`, in these words. */
+let refuse: string | undefined;
 
 beforeEach(() => {
   shown = {
@@ -65,12 +69,16 @@ beforeEach(() => {
   };
   runnersAsked = [];
   holdAnswers = undefined;
+  refuse = undefined;
+  answerWithinForTests(90_000);
+  forgetDevicesForTests();
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as { pool?: string; runner?: string };
     if (cmd === "devices") return structuredClone(shown);
     if (cmd === "device_runner") {
       const key = `${a.pool}/${a.runner}`;
       runnersAsked.push(key);
+      if (refuse !== undefined && key === "qa/qa") throw refuse;
       const answer = structuredClone(asked[key]);
       return holdAnswers === undefined ? answer : holdAnswers.then(() => answer);
     }
@@ -170,16 +178,47 @@ describe("DevicesView", () => {
     expect(said.tagName).toBe("BDI");
   });
 
-  it("offers Refresh only once every runner has answered", async () => {
+  it("says a runner whose ask never returns does not answer once its time is up, and Refresh asks again", async () => {
+    answerWithinForTests(200);
     let release = () => {};
     holdAnswers = new Promise((resolve) => {
       release = resolve;
     });
     render(<DevicesView />);
-    const refresh = await screen.findByRole("button", { name: "Refresh" });
-    expect(refresh).toHaveAttribute("aria-disabled", "true");
+    const builds = await waitFor(() => section("Runner builds of pool builds"));
+    await waitFor(() => expect(within(builds).getByText("asking…")).toBeInTheDocument());
+    // Refresh stays offered while a runner is being asked.
+    expect(screen.getByRole("button", { name: "Refresh" })).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await waitFor(() =>
+      expect(
+        within(section("Runner builds of pool builds")).getByText("does not answer"),
+      ).toBeInTheDocument(),
+    );
+    holdAnswers = undefined;
     release();
-    await waitFor(() => expect(refresh).not.toHaveAttribute("aria-disabled", "true"));
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() =>
+      expect(
+        within(section("Runner builds of pool builds")).getByText("answers"),
+      ).toBeInTheDocument(),
+    );
+    expect(runnersAsked.filter((one) => one === "builds/builds").length).toBeGreaterThan(1);
+  });
+
+  it("says in purlis's own words why it could not ask a runner", async () => {
+    refuse = "No runner qa of pool qa is on this machine.";
+    render(<DevicesView />);
+    await waitFor(() =>
+      expect(
+        within(section("Runner qa of pool qa")).getByText(
+          "purlis could not ask this runner: No runner qa of pool qa is on this machine.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/Docker said/)).toBeNull();
   });
 
   it("names the person only where this machine's runners are shown to be theirs", async () => {

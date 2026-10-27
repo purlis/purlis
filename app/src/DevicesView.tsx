@@ -18,8 +18,8 @@
  *   and with nothing a reader does not see.
  * - **The table family** for the use: one row per pool and person. No money: a pool declares no
  *   price per hour yet, and a cost is never guessed.
- * - **Refresh** reads every device again, as the view's coming on screen does; it waits until
- *   every runner has answered the last read, so it never asks a runner twice at once.
+ * - **Refresh** reads every device again, as the view's coming on screen does. A runner still
+ *   being asked is not asked twice: Refresh waits on that ask for it, and asks every other one.
  */
 import { Fragment } from "react";
 import { List, ListRow, ListRowSection } from "./ui/list/List";
@@ -28,9 +28,8 @@ import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
 import { Notice } from "./Notice";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
-import type { DevicesShown, RunnerAsked } from "./bindings";
+import type { DevicesShown } from "./bindings";
 import {
-  anyAsking,
   arranged,
   contactSaid,
   healthSaid,
@@ -39,6 +38,8 @@ import {
   usageOf,
   useDevices,
   versionSaid,
+  answerOf,
+  type Asked,
   type DeviceRow,
 } from "./devices";
 import { DEVICES_TITLE } from "./tabs";
@@ -48,9 +49,10 @@ const counted = (count: number, one: string, many: string) =>
   `${count} ${count === 1 ? one : many}`;
 
 /** What a runner's row says of what it holds that this window has not open. */
-function notOpenSaid(asked: RunnerAsked | "asking" | undefined): string | undefined {
-  if (asked === undefined || asked === "asking") return undefined;
-  const { chats, browsers } = asked.holds;
+function notOpenSaid(asked: Asked | undefined): string | undefined {
+  const answer = answerOf(asked);
+  if (answer === undefined) return undefined;
+  const { chats, browsers } = answer.holds;
   const parts = [
     chats > 0 ? counted(chats, "chat", "chats") : undefined,
     browsers > 0 ? counted(browsers, "browser", "browsers") : undefined,
@@ -85,7 +87,7 @@ function DeviceSection({
   now,
 }: {
   row: DeviceRow;
-  asked: RunnerAsked | "asking" | undefined;
+  asked: Asked | undefined;
   version: string;
   now: Date;
 }) {
@@ -99,12 +101,10 @@ function DeviceSection({
   const runs =
     runner === undefined
       ? versionSaid(version, version)
-      : versionSaid(typeof asked === "object" ? asked.version : null, version);
+      : versionSaid(answerOf(asked)?.version ?? null, version);
   const facts = [
     runs,
-    runner === undefined
-      ? undefined
-      : contactSaid(typeof asked === "object" ? asked.contacted : null, now),
+    runner === undefined ? undefined : contactSaid(answerOf(asked)?.contacted ?? null, now),
     runner?.draining === true
       ? "An older runner: it keeps its chats until they end, then purlis removes it"
       : undefined,
@@ -207,16 +207,10 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
   const shown = read.shown;
   const rows = arranged(shown, asked);
   const use = usageOf(shown.pools, shown.placement.runners, asked, shown.owned);
-  const busy = anyAsking(asked);
   return (
     <div className="devices-view" data-testid="devices-view">
       <div className="devices-bar">
-        <Button
-          size="sm"
-          isDisabled={busy}
-          tooltip={busy ? "Offered once every runner has answered." : undefined}
-          onPress={() => void rereadDevices()}
-        >
+        <Button size="sm" onPress={() => void rereadDevices()}>
           Refresh
         </Button>
       </div>

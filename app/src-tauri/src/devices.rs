@@ -278,25 +278,36 @@ pub fn shown_safely(text: &str) -> String {
     out
 }
 
-/// `text` with the user and password of every `scheme://user[:password]@host` written `…`.
+/// `text` with the user and password before a host written `…`, word by word: in
+/// `scheme://user[:password]@host`, the whole of what stands between `://` and the word's last
+/// `@` (a password may hold a `/`), and in `user@host` without a scheme (as ssh writes it), what
+/// stands before the `@`. An image named by its digest (`name@sha256:…`) keeps its name.
 fn without_userinfo(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(at) = rest.find("://") {
-        let (before, after) = rest.split_at(at + 3);
-        out.push_str(before);
-        // The authority runs to the next `/`, space or end; a `@` in it ends its userinfo.
-        let end = after.find(['/', ' ']).unwrap_or(after.len());
-        match after[..end].rfind('@') {
-            Some(user_end) => {
-                out.push('…');
-                rest = &after[user_end..];
+    text.split(' ')
+        .map(|word| {
+            let Some(at) = word.rfind('@') else {
+                return word.to_owned();
+            };
+            if let Some(scheme) = word.find("://").filter(|scheme| scheme + 3 <= at) {
+                return format!("{}…{}", &word[..scheme + 3], &word[at..]);
             }
-            None => rest = after,
-        }
-    }
-    out.push_str(rest);
-    out
+            let (before, after) = word.split_at(at);
+            let digest = ["@sha256:", "@sha384:", "@sha512:"]
+                .iter()
+                .any(|algorithm| after.starts_with(algorithm));
+            // A word that names a path or a registry before its `@` is not a user's name.
+            if digest || before.is_empty() || before.contains('/') {
+                return word.to_owned();
+            }
+            // Keep what opens the word (a quote, a bracket): only the name itself goes.
+            let opens = before
+                .char_indices()
+                .find(|(_, ch)| ch.is_alphanumeric())
+                .map_or(before.len(), |(at, _)| at);
+            format!("{}…{after}", &before[..opens])
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// **Why a runner did not list what it holds, in purlis's words** (#2052): a refusal says so,
@@ -338,6 +349,9 @@ pub enum RunnerStanding {
     Unknown {
         why: String,
     },
+    /// It was not answered within the time an ask of it waits ([`WAITS_AT_MOST`]): how it is
+    /// is not known.
+    Unanswered,
 }
 
 /// One program a runner holds, as its own list says.
@@ -514,9 +528,17 @@ impl Contacts {
     }
 }
 
+/// Where one ask in flight stands.
+enum Standing<T> {
+    Asking,
+    Answered(T),
+    /// It ended without an answer: it panicked.
+    Failed,
+}
+
 /// One ask in flight, which a second ask of the same runner waits on.
 struct Slot<T> {
-    answer: Mutex<Option<T>>,
+    standing: Mutex<Standing<T>>,
     ready: Condvar,
     waiting: AtomicUsize,
 }
@@ -526,6 +548,11 @@ struct Slot<T> {
 /// opened again, so never leaves more than one link open to one runner. The ask in flight is
 /// joined, not cancelled: a `docker exec` that is part way through its handshake is not stopped
 /// cleanly from here, and its answer is what the second ask wants anyway.
+///
+/// **Nothing waits for ever.** A second ask waits at most the time it is given, then answers what
+/// `late` says; and the first always leaves its answer and its place, whatever becomes of it: one
+/// that panics is said to have failed to everyone waiting on it ([`Done`]), and the next ask asks
+/// again.
 pub struct Joined<T> {
     asking: Mutex<HashMap<String, Arc<Slot<T>>>>,
 }
@@ -538,10 +565,47 @@ impl<T> Default for Joined<T> {
     }
 }
 
+/// **The first ask's guard**: when it is dropped, answered or not, the ask's place is cleared and
+/// everyone waiting on it is told. One dropped without an answer (the ask panicked) is said to
+/// have failed.
+struct Done<'a, T> {
+    joined: &'a Joined<T>,
+    key: &'a str,
+    slot: Arc<Slot<T>>,
+}
+
+impl<T> Drop for Done<'_, T> {
+    fn drop(&mut self) {
+        {
+            let mut standing = self
+                .slot
+                .standing
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if matches!(*standing, Standing::Asking) {
+                *standing = Standing::Failed;
+            }
+        }
+        self.joined
+            .asking
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(self.key);
+        self.slot.ready.notify_all();
+    }
+}
+
 impl<T: Clone> Joined<T> {
-    /// What `ask` answers for `key`, asked only when no ask of `key` is in flight; else what that
-    /// one answers.
-    pub fn once(&self, key: &str, ask: impl FnOnce() -> T) -> T {
+    /// What `ask` answers for `key`, asked only when no ask of `key` is in flight. Else what that
+    /// one answers, waited for at most `within`; and what `late` answers where it gave none in
+    /// that time, or failed.
+    pub fn once(
+        &self,
+        key: &str,
+        within: std::time::Duration,
+        ask: impl FnOnce() -> T,
+        late: impl FnOnce() -> T,
+    ) -> T {
         let (slot, first) = {
             let mut asking = self.asking.lock().unwrap_or_else(PoisonError::into_inner);
             match asking.get(key) {
@@ -551,7 +615,7 @@ impl<T: Clone> Joined<T> {
                 }
                 None => {
                     let slot = Arc::new(Slot {
-                        answer: Mutex::new(None),
+                        standing: Mutex::new(Standing::Asking),
                         ready: Condvar::new(),
                         waiting: AtomicUsize::new(0),
                     });
@@ -561,24 +625,38 @@ impl<T: Clone> Joined<T> {
             }
         };
         if first {
+            let done = Done {
+                joined: self,
+                key,
+                slot: Arc::clone(&slot),
+            };
             let answer = ask();
-            *slot.answer.lock().unwrap_or_else(PoisonError::into_inner) = Some(answer.clone());
-            self.asking
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(key);
-            slot.ready.notify_all();
+            *slot.standing.lock().unwrap_or_else(PoisonError::into_inner) =
+                Standing::Answered(answer.clone());
+            drop(done);
             return answer;
         }
-        let mut answer = slot.answer.lock().unwrap_or_else(PoisonError::into_inner);
+        let deadline = std::time::Instant::now() + within;
+        let mut standing = slot.standing.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
-            if let Some(answer) = answer.as_ref() {
-                return answer.clone();
+            match &*standing {
+                Standing::Answered(answer) => return answer.clone(),
+                Standing::Failed => {
+                    drop(standing);
+                    return late();
+                }
+                Standing::Asking => {}
             }
-            answer = slot
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                drop(standing);
+                return late();
+            }
+            standing = slot
                 .ready
-                .wait(answer)
-                .unwrap_or_else(PoisonError::into_inner);
+                .wait_timeout(standing, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
         }
     }
 
@@ -590,6 +668,15 @@ impl<T: Clone> Joined<T> {
             .unwrap_or_else(PoisonError::into_inner)
             .get(key)
             .is_some_and(|slot| slot.waiting.load(Ordering::SeqCst) > 0)
+    }
+
+    /// Whether an ask of `key` is in flight.
+    #[cfg(test)]
+    pub fn is_asking(&self, key: &str) -> bool {
+        self.asking
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(key)
     }
 }
 
@@ -758,7 +845,12 @@ pub async fn device_runner(
     {
         crate::off_the_window("asking a runner how it is", move || {
             let name = format!("{pool}/{runner}");
-            asking().once(&name, || ask_runner(&pool, &runner, &name, &open))
+            asking().once(
+                &name,
+                WAITS_AT_MOST,
+                || ask_runner(&pool, &runner, &name, &open),
+                || Ok(unanswered(contacts().last(&name))),
+            )
         })
         .await
     }
@@ -766,6 +858,24 @@ pub async fn device_runner(
     {
         let _ = (open, pool, runner);
         Err("purlis keeps Docker pools on macOS and Linux only.".to_owned())
+    }
+}
+
+/// How long an ask of a runner waits on another ask of it already in flight.
+pub const WAITS_AT_MOST: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How long each `docker` run an ask makes may take (an inspect, a version, the check before a
+/// link): a wedged engine answers nothing, and the ask goes on without it.
+pub const EACH_DOCKER_RUN_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// What a runner not answered in time is said to be: not known, last answered when it last was.
+pub fn unanswered(last: Option<u64>) -> RunnerAsked {
+    RunnerAsked {
+        standing: RunnerStanding::Unanswered,
+        link: None,
+        version: None,
+        contacted: last.and_then(|at| u32::try_from(at).ok()),
+        holds: NotOpenHere::default(),
     }
 }
 
@@ -779,7 +889,12 @@ fn ask_runner(
 ) -> Result<RunnerAsked, String> {
     let config = purlis_core::machine::config_root()
         .ok_or_else(|| "There is no config home on this machine.".to_owned())?;
-    let machine = crate::runnerlinks::Machine::here(&config)?;
+    let here = crate::runnerlinks::Machine::here(&config)?;
+    // Every `docker` run this ask makes is held to a time: a wedged engine holds up nothing.
+    let machine = crate::runnerlinks::Machine {
+        docker: here.docker.clone().within(EACH_DOCKER_RUN_WITHIN),
+        ..here
+    };
     let kept = purlis_core::runners::read(&config)
         .map_err(|why| why.to_string())?
         .into_iter()

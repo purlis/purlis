@@ -429,18 +429,28 @@ fn a_runner_asked_again_while_it_is_being_asked_is_asked_once() {
         let (joined, asked, started, go) =
             (joined.clone(), asked.clone(), started.clone(), go.clone());
         std::thread::spawn(move || {
-            joined.once("builds/builds", || {
-                started.wait();
-                go.wait();
-                asked.fetch_add(1, Ordering::SeqCst) + 1
-            })
+            joined.once(
+                "builds/builds",
+                std::time::Duration::from_secs(60),
+                || {
+                    started.wait();
+                    go.wait();
+                    asked.fetch_add(1, Ordering::SeqCst) + 1
+                },
+                || 0,
+            )
         })
     };
     started.wait();
     let second = {
         let (joined, asked) = (joined.clone(), asked.clone());
         std::thread::spawn(move || {
-            joined.once("builds/builds", || asked.fetch_add(1, Ordering::SeqCst) + 1)
+            joined.once(
+                "builds/builds",
+                std::time::Duration::from_secs(60),
+                || asked.fetch_add(1, Ordering::SeqCst) + 1,
+                || 0,
+            )
         })
     };
     // The second waits on the first's answer rather than asking again.
@@ -452,5 +462,139 @@ fn a_runner_asked_again_while_it_is_being_asked_is_asked_once() {
     assert_eq!(second.join().unwrap(), 1);
     assert_eq!(asked.load(Ordering::SeqCst), 1);
     // Once answered, the next ask asks again.
-    assert_eq!(joined.once("builds/builds", || 7), 7);
+    assert_eq!(
+        joined.once(
+            "builds/builds",
+            std::time::Duration::from_secs(60),
+            || 7,
+            || 0
+        ),
+        7
+    );
+}
+
+#[test]
+fn an_ask_joined_to_one_that_never_answers_is_answered_late_once_its_time_is_up() {
+    use std::sync::Arc;
+    let joined = Arc::new(Joined::<u32>::default());
+    let (started, release) = (
+        Arc::new(std::sync::Barrier::new(2)),
+        Arc::new(std::sync::Barrier::new(2)),
+    );
+    let first = {
+        let (joined, started, release) = (joined.clone(), started.clone(), release.clone());
+        std::thread::spawn(move || {
+            joined.once(
+                "builds/builds",
+                std::time::Duration::from_secs(60),
+                || {
+                    started.wait();
+                    // An ask that does not answer until the test lets it.
+                    release.wait();
+                    1
+                },
+                || 0,
+            )
+        })
+    };
+    started.wait();
+    let waited = std::time::Instant::now();
+    let late = joined.once(
+        "builds/builds",
+        std::time::Duration::from_millis(200),
+        || 2,
+        || 9,
+    );
+    assert_eq!(late, 9, "it is answered late, not left waiting");
+    assert!(waited.elapsed() < std::time::Duration::from_secs(10));
+    release.wait();
+    assert_eq!(first.join().unwrap(), 1);
+    assert!(!joined.is_asking("builds/builds"));
+}
+
+#[test]
+fn an_ask_that_panics_leaves_its_place_and_whoever_waits_on_it_is_answered_late() {
+    use std::sync::Arc;
+    let joined = Arc::new(Joined::<u32>::default());
+    let (started, go) = (
+        Arc::new(std::sync::Barrier::new(2)),
+        Arc::new(std::sync::Barrier::new(2)),
+    );
+    let first = {
+        let (joined, started, go) = (joined.clone(), started.clone(), go.clone());
+        std::thread::spawn(move || {
+            joined.once(
+                "builds/builds",
+                std::time::Duration::from_secs(60),
+                || {
+                    started.wait();
+                    go.wait();
+                    panic!("the ask failed");
+                },
+                || 0,
+            )
+        })
+    };
+    started.wait();
+    let second = {
+        let joined = joined.clone();
+        std::thread::spawn(move || {
+            joined.once(
+                "builds/builds",
+                std::time::Duration::from_secs(60),
+                || 2,
+                || 9,
+            )
+        })
+    };
+    while !joined.is_waited_on("builds/builds") {
+        std::thread::yield_now();
+    }
+    go.wait();
+    assert!(first.join().is_err(), "the first ask panicked");
+    assert_eq!(
+        second.join().unwrap(),
+        9,
+        "the one waiting on it is answered late"
+    );
+    assert!(!joined.is_asking("builds/builds"), "its place is cleared");
+    assert_eq!(
+        joined.once(
+            "builds/builds",
+            std::time::Duration::from_secs(60),
+            || 3,
+            || 0
+        ),
+        3,
+        "the next ask asks again"
+    );
+}
+
+#[test]
+fn a_runner_not_answered_in_time_is_not_known_and_keeps_its_last_contact() {
+    let asked = unanswered(Some(1_000));
+    assert_eq!(asked.standing, RunnerStanding::Unanswered);
+    assert_eq!(asked.link, None);
+    assert_eq!(asked.contacted, Some(1_000));
+}
+
+#[test]
+fn a_password_that_holds_a_slash_is_hidden_too() {
+    assert_eq!(
+        shown_safely("cannot reach tcp://someone:pass/word@engine.example:2376"),
+        "cannot reach tcp://…@engine.example:2376"
+    );
+}
+
+#[test]
+fn a_user_named_without_a_scheme_is_hidden_and_an_image_digest_is_kept() {
+    assert_eq!(
+        shown_safely("someone@build.example: Permission denied (publickey)."),
+        "…@build.example: Permission denied (publickey)."
+    );
+    assert_eq!(
+        shown_safely("pulling ghcr.io/example/runner@sha256:0123 and runner@sha256:0456"),
+        "pulling ghcr.io/example/runner@sha256:0123 and runner@sha256:0456"
+    );
+    assert_eq!(shown_safely("as 'someone@host'"), "as '…@host'");
 }

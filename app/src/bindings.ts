@@ -10700,7 +10700,12 @@ export type RunnerStanding = { state: "running" } |
 /**  Its container stopped, its home kept: it starts again as a chat next needs it. */
 { state: "suspended" } | 
 /**  Its container could not be read, and why, as Docker said it ([`shown_safely`]). */
-{ state: "unknown"; why: string };
+{ state: "unknown"; why: string } | 
+/**
+ *  It was not answered within the time an ask of it waits ([`WAITS_AT_MOST`]): how it is
+ *  is not known.
+ */
+{ state: "unanswered" };
 
 /**
  *  **A held write whole, as its own tab draws it**: what it would do with every text whole, and

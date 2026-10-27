@@ -21,8 +21,10 @@ import {
  *
  * **A runner still being asked is not asked again**: a Refresh, or the view opened again, waits
  * on the ask in flight ({@link inFlight}), and the core joins a second ask of one runner to the
- * first, so one runner never has two links open to it for this view. Refresh is not offered
- * while any runner is being asked ({@link anyAsking}).
+ * first, so one runner never has two links open to it for this view. Refresh is always offered,
+ * and asks again every runner that is not being asked. **Nothing waits for ever**: an ask not
+ * answered within {@link answerWithinMs} says the runner does not answer, and the next Refresh
+ * asks it again. An ask purlis could not make is said in purlis's words ({@link Asked}).
  *
  * What is drawn is made here, from plain inputs ({@link arranged}, {@link usageOf},
  * {@link healthSaid}, {@link contactSaid}), so the view only draws it.
@@ -32,10 +34,18 @@ type Read =
   | { state: "trouble"; trouble: string }
   | { state: "read"; shown: DevicesShown };
 
+/** What a runner answered, that it is being asked, or why purlis could not ask it. */
+export type Asked = RunnerAsked | "asking" | { failed: string };
+
+/** What `asked` answered, where it did. */
+export function answerOf(asked: Asked | undefined): RunnerAsked | undefined {
+  return asked === undefined || asked === "asking" || "failed" in asked ? undefined : asked;
+}
+
 export type DevicesHeld = {
   read: Read;
   /** What each runner answered, or that it is being asked, by `<pool>/<runner>`. */
-  asked: Readonly<Record<string, RunnerAsked | "asking">>;
+  asked: Readonly<Record<string, Asked>>;
 };
 
 const START: DevicesHeld = { read: { state: "reading" }, asked: {} };
@@ -62,26 +72,52 @@ function caught<T>(sent: Promise<Said<T>>): Promise<Said<T>> {
 /** Each runner's ask in flight, by its key: a second read waits on it rather than asking again. */
 const inFlight = new Map<string, Promise<Said<RunnerAsked>>>();
 
-/** Asks runner `one` how it is, or waits on the ask of it in flight. */
-function ask(one: RunnerOnTheList): Promise<Said<RunnerAsked>> {
-  const key = runnerKey(one);
-  const already = inFlight.get(key);
-  if (already !== undefined) return already;
-  const asking = caught(commands.deviceRunner(one.pool, one.runner)).finally(() =>
-    inFlight.delete(key),
-  );
-  inFlight.set(key, asking);
-  return asking;
+/**
+ * How long the window waits on one ask of a runner, in milliseconds: longer than the core takes
+ * to give up on its own (each Docker run is held to 20 seconds, a link to two times 20, a joined
+ * ask to 60), so this is only for a core that answers nothing at all.
+ */
+let answerWithinMs = 90_000;
+
+/** For a test: how long an ask is waited on. */
+export function answerWithinForTests(ms: number) {
+  answerWithinMs = ms;
 }
 
-/** What a runner's row says when purlis did not say how it is. */
-const UNSAID = (why: string): RunnerAsked => ({
-  standing: { state: "unknown", why },
+/** For a test: forget every ask in flight, so the next view asks each runner anew. */
+export function forgetDevicesForTests() {
+  inFlight.clear();
+  reading += 1;
+}
+
+/** What a runner not answered in time is said to be: not known. */
+const UNANSWERED: RunnerAsked = {
+  standing: { state: "unanswered" },
   link: null,
   version: null,
   contacted: null,
   holds: { open: [], browsers_open: [], chats: 0, browsers: 0 },
-});
+};
+
+/** Asks runner `one` how it is, or waits on the ask of it in flight; at most {@link answerWithinMs}. */
+function ask(one: RunnerOnTheList): Promise<Said<RunnerAsked>> {
+  const key = runnerKey(one);
+  const already = inFlight.get(key);
+  if (already !== undefined) return already;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<Said<RunnerAsked>>((resolve) => {
+    timer = setTimeout(() => resolve({ status: "ok", data: UNANSWERED }), answerWithinMs);
+  });
+  const asking = Promise.race([caught(commands.deviceRunner(one.pool, one.runner)), late]).finally(
+    () => {
+      clearTimeout(timer);
+      // Answered or not, the next ask of it asks again.
+      if (inFlight.get(key) === asking) inFlight.delete(key);
+    },
+  );
+  inFlight.set(key, asking);
+  return asking;
+}
 
 /** Reads every device again, then asks each runner how it is. */
 export async function rereadDevices() {
@@ -109,18 +145,13 @@ export async function rereadDevices() {
     runners.map(async (one) => {
       const answer = await ask(one);
       if (mine !== reading) return;
-      const asked: RunnerAsked =
+      const asked: Asked =
         answer.status === "ok" && typeof answer.data === "object" && answer.data !== null
           ? answer.data
-          : UNSAID(answer.status === "error" ? answer.error : "purlis did not say.");
+          : { failed: answer.status === "error" ? answer.error : "purlis did not say." };
       set((was) => ({ ...was, asked: { ...was.asked, [runnerKey(one)]: asked } }));
     }),
   );
-}
-
-/** Whether a runner is still being asked: Refresh waits until none is. */
-export function anyAsking(asked: DevicesHeld["asked"]): boolean {
-  return Object.values(asked).some((one) => one === "asking");
 }
 
 function subscribe(listener: () => void) {
@@ -160,22 +191,19 @@ const poolOf = (key: string) => (key === "here" ? undefined : key.split("/")[0])
  * its own pool**: it never takes a chat or browser off this machine or off another pool's runner
  * (the core holds the same rule, and this is its second guard).
  */
-export function arranged(
-  shown: DevicesShown,
-  asked: Readonly<Record<string, RunnerAsked | "asking">>,
-): DeviceRow[] {
-  const said = (key: string) => {
-    const one = asked[key];
-    return one === undefined || one === "asking" ? undefined : one.holds;
-  };
+export function arranged(shown: DevicesShown, asked: Readonly<Record<string, Asked>>): DeviceRow[] {
+  const said = (key: string) => answerOf(asked[key])?.holds;
   const claims = shown.placement.runners.map((one) => ({
     key: runnerKey(one),
     holds: said(runnerKey(one)),
   }));
-  // The runner of the same pool that says it holds it, else where the window placed it.
+  // Where the window placed it, if that runner says it holds it too (N6); else the runner of the
+  // same pool that says it holds it; else where the window placed it.
   const moved = (on: string, holds: (one: RunnerAsked["holds"]) => boolean) => {
     const pool = poolOf(on);
     if (pool === undefined) return on;
+    const placed = claims.find((one) => one.key === on);
+    if (placed?.holds !== undefined && holds(placed.holds)) return on;
     const claim = claims.find(
       (one) => poolOf(one.key) === pool && one.holds !== undefined && holds(one.holds),
     );
@@ -220,10 +248,18 @@ export function arranged(
 export type Health = { badge: string; line: string; said?: { by: string; text: string } };
 
 /** **How a runner is, in words** (#2052): `asked` as its row says it. */
-export function healthSaid(asked: RunnerAsked | "asking" | undefined): Health {
+export function healthSaid(asked: Asked | undefined): Health {
   if (asked === undefined || asked === "asking")
     return { badge: "asking…", line: "Asking the runner how it is…" };
+  // In purlis's own words: nothing Docker or a runner said.
+  if ("failed" in asked)
+    return { badge: "not asked", line: `purlis could not ask this runner: ${asked.failed}` };
   const standing = asked.standing;
+  if (standing.state === "unanswered")
+    return {
+      badge: "does not answer",
+      line: "It did not answer in time. purlis asks again when you press Refresh.",
+    };
   if (standing.state === "suspended")
     return {
       badge: "suspended",
@@ -299,14 +335,16 @@ export type PoolUse = {
 export function usageOf(
   pools: readonly PoolRequests[],
   runners: readonly RunnerOnTheList[],
-  asked: Readonly<Record<string, RunnerAsked | "asking">>,
+  asked: Readonly<Record<string, Asked>>,
   owned: boolean,
 ): PoolUse[] {
   return pools.map((pool) => {
     const of = runners.filter((one) => one.pool === pool.pool);
     const standing = of.map((one) => {
       const answer = asked[runnerKey(one)];
-      return answer === undefined || answer === "asking" ? "asking" : answer.standing.state;
+      return answer === undefined || answer === "asking"
+        ? "asking"
+        : (answerOf(answer)?.standing.state ?? "unknown");
     });
     const running = standing.filter((one) => one === "running").length;
     const millicpus = running * pool.millicpus;
