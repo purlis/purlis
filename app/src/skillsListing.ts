@@ -38,17 +38,31 @@ export type ListedSkill = {
   hiddenInChat?: SkillHidden | null;
 };
 
+/** The groups named by purlis's own word, each program's apart. */
+const OWN_GROUPS = [
+  "needs-you",
+  "built-in",
+  "project",
+  "workspace",
+  "personas",
+  "repo",
+  "local",
+  "not-in-chat",
+] as const;
+
 /** **A group of the list**, in its order: what needs the person, each level, each program's own. */
-export type GroupId =
-  | "needs-you"
-  | "built-in"
-  | "project"
-  | "workspace"
-  | "personas"
-  | "repo"
-  | "local"
-  | `program:${string}`
-  | "not-in-chat";
+export type GroupId = (typeof OWN_GROUPS)[number] | `program:${string}`;
+
+/** The longest program's name a group is read back with: a title an adapter gives, not a path. */
+const MOST_PROGRAM = 64;
+
+/** **Whether `id` names a group**, as a kept fold is read back (`skillsViewPrefs.ts`). */
+export function isGroupId(id: unknown): id is GroupId {
+  if (typeof id !== "string") return false;
+  if ((OWN_GROUPS as readonly string[]).includes(id)) return true;
+  const program = id.startsWith("program:") ? id.slice("program:".length) : "";
+  return program.trim() !== "" && program.length <= MOST_PROGRAM;
+}
 
 /**
  * **A group, under its heading.** Every heading is drawn as purlis's own words are, a program's
