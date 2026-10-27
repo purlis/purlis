@@ -17,8 +17,11 @@
 //      queue (`jump`), since a jump restarts every group being built;
 //   4. reruns the runs of the head that wait on approval (`action_required`): gh counts those as
 //      failing checks, so they are rerun, and given a moment to start, before the checks are read;
-//   5. reads the required checks: with `--watch` it waits for them to finish, and without it,
-//      it refuses while any is pending; either way it refuses while any failed, naming each;
+//   5. reads the required checks: their names from main's rulesets and branch protection, and
+//      their states from `gh pr checks --required`, which lists only the checks that have posted,
+//      so a required check not posted yet (a rerun's, just started) counts as pending. With
+//      `--watch` it waits until every one has posted and finished, and without it, it refuses
+//      while any is pending; either way it refuses while any failed, naming each;
 //   6. marks a draft ready (`gh pr ready`), which the queue needs, and reads the checks again. No
 //      workflow here starts on `ready_for_review` today; the second read is a safety net for one
 //      that does;
@@ -102,11 +105,33 @@ export function redRun(runs) {
 }
 
 /**
- * The required checks (gh's `pr checks --required` JSON) sorted by gh's bucket: those still
- * going and those that failed. A check that passed or was skipped is in neither.
+ * The names of the checks main requires, of `rules` (the rules GitHub applies to the branch, from
+ * its rulesets) and `protection` (the branch's classic protection, as the branch reads it):
+ * either can require a check, and the queue waits on both.
  */
-export function sortChecks(checks) {
-  const pending = checks.filter((check) => check.bucket === "pending");
+export function requiredNames(rules, protection) {
+  const fromRules = (rules ?? [])
+    .filter((rule) => rule.type === "required_status_checks")
+    .flatMap((rule) => rule.parameters?.required_status_checks ?? [])
+    .map((check) => check.context);
+  const fromProtection = protection?.required_status_checks?.contexts ?? [];
+  return [...new Set([...fromRules, ...fromProtection])];
+}
+
+/**
+ * The required checks (gh's `pr checks --required` JSON) sorted by gh's bucket: those still
+ * going and those that failed. A check that passed or was skipped is in neither. gh lists only
+ * the checks that have posted, so each of `required` (main's required names) it does not list
+ * is still going too: its run has not started, or has only just been rerun.
+ */
+export function sortChecks(checks, required = []) {
+  const posted = new Set(checks.map((check) => check.name));
+  const pending = [
+    ...checks.filter((check) => check.bucket === "pending"),
+    ...required
+      .filter((name) => !posted.has(name))
+      .map((name) => ({ name, state: "not posted yet" })),
+  ];
   const failing = checks.filter((check) => check.bucket === "fail" || check.bucket === "cancel");
   return { pending, failing };
 }
@@ -146,9 +171,10 @@ const seconds = (name, fallback) => {
 // entry go. The tests set both to 0.
 const POLL = seconds("LAND_POLL_SECONDS", 60);
 const SETTLE = seconds("LAND_SETTLE_SECONDS", 30);
-// How long a wait lasts before it gives up: the checks, then the queue.
-const CHECKS_FOR = 120 * 60;
+// How long a wait lasts before it gives up: the checks, then the queue. The tests shorten the first.
+const CHECKS_FOR = seconds("LAND_CHECKS_FOR_SECONDS", 120 * 60);
 const QUEUE_FOR = 240 * 60;
+const waitedFor = (s) => (s % 60 === 0 ? `${s / 60} minutes` : `${s} seconds`);
 
 const pause = (s) =>
   s > 0 && Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, s * 1000);
@@ -247,7 +273,12 @@ function main(options) {
   // Until the rerun starts, gh still reads its old check as failed.
   if ((waiting ?? []).length > 0) pause(SETTLE);
 
-  // 5, 6. The required checks.
+  // 5, 6. The required checks. Their names come from main's rules, since gh lists only the
+  // checks that have posted: right after a rerun, a required check can be missing altogether.
+  const required = requiredNames(
+    gh(["api", `repos/${repo}/rules/branches/main`]),
+    gh(["api", `repos/${repo}/branches/main`, "--jq", ".protection"]),
+  );
   const readChecks = () => {
     const done = ghRaw([
       "pr",
@@ -262,12 +293,14 @@ function main(options) {
     // The checks are read from what gh prints, whatever its exit status: with --json, gh 2.83
     // exits 0 even with a check failed, and older ones exit 1 or 8 while one is failed or
     // pending. With none reported yet it prints nothing, which is a check still to come.
-    if (done.stdout) return sortChecks(JSON.parse(done.stdout));
+    if (done.stdout) return sortChecks(JSON.parse(done.stdout), required);
     if (/no (required )?checks reported/i.test(done.stderr))
-      return {
-        pending: [{ name: "every required check", state: "not reported yet" }],
-        failing: [],
-      };
+      return required.length > 0
+        ? sortChecks([], required)
+        : {
+            pending: [{ name: "every required check", state: "not reported yet" }],
+            failing: [],
+          };
     stop(`gh pr checks ${options.pr} failed: ${done.stderr}`);
   };
   const checksGate = (wait) => {
@@ -276,7 +309,7 @@ function main(options) {
       if (waited >= CHECKS_FOR)
         stop(
           [
-            `the required checks are still going after ${CHECKS_FOR / 60} minutes:`,
+            `the required checks are still going after ${waitedFor(CHECKS_FOR)}:`,
             ...named(checks.pending),
           ].join("\n"),
         );
