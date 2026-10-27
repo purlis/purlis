@@ -60,7 +60,7 @@ const HEIGHT = 620;
  * nothing — no harness ran, and no identity was recorded.
  *
  * **Two panes, at a fixed height** (#2918, prototype B of #2798; R1–R36 of the audit in #2897):
- * a wide dialog of the family, `min(620 px, the window less 48 px)` tall whatever the list holds,
+ * a wide dialog of the family, `min(620 px, the room under its fixed top)` tall whatever the list holds,
  * with the persona list on the left under its filter and what the chat starts with on the right.
  * Each pane scrolls on its own; the header and the footer, with Start, never leave. The dialog is
  * as wide as its size and anchored at a fixed top, so a pick changes nothing of its place.
