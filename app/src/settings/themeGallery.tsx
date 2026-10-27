@@ -36,6 +36,7 @@ import { Button } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { ListBox, ListOption } from "../ui/list/List";
 import { RowDescription, RowLabel } from "../ui/list/Row";
+import { Badge as LevelBadge } from "../ui/badge/Badge";
 
 /**
  * **Settings › Theme is a gallery** (spec #2313, #2331): a card per theme a choice at this level
@@ -579,9 +580,9 @@ function Cards({
 function SourceBadge({ badge }: { badge: Badge }) {
   return (
     <Tooltip tip={badge.says}>
-      <span className="ui-setting-badge" aria-description={badge.says}>
+      <LevelBadge variant="accent" aria-description={badge.says}>
         {badge.label}
-      </span>
+      </LevelBadge>
     </Tooltip>
   );
 }

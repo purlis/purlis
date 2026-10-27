@@ -1,0 +1,35 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The separator family's default** (#2912, ADR 0103, ADR 0104): the line between two groups
+   inside a surface, its own part and never a control's border (`ui/separator/Separator.tsx`).
+   Keyed on the wrapper's attributes alone; `purlis_core::theme::parts` holds a copy of its
+   colour. Its thickness is the theme's `separator.width` (`--separator-width`, 0 for none); its
+   room is its margin, the view's, so a line that is not drawn moves nothing.
+
+   In the `components` layer (`styles.css`), above `App.css`. */
+
+/* The colour every line between groups reads, the separator's own, a row's edge included: a
+   theme's `separator.root.fill` sets it in the `parts` layer above. */
+:root {
+  --separator-fill: var(--border-subtle);
+}
+
+[data-scope="separator"][data-part="root"] {
+  flex: none;
+  box-sizing: content-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: var(--border-subtle);
+}
+
+[data-scope="separator"][data-part="root"][data-orientation="horizontal"] {
+  align-self: stretch;
+  block-size: var(--separator-width);
+}
+
+[data-scope="separator"][data-part="root"][data-orientation="vertical"] {
+  align-self: stretch;
+  inline-size: var(--separator-width);
+}

@@ -173,6 +173,7 @@ describe("forced colours", () => {
       '[data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled])',
       '[data-scope="menu"][data-part="root"][data-open]',
       '[data-scope="list"][data-part="root"][data-selected]',
+      '[data-scope="tree"][data-part="root"][data-selected]',
     ]) {
       const it = drawn(selected);
       expect(it.get("forced-color-adjust"), selected).toBe("none");
@@ -189,10 +190,11 @@ describe("forced colours", () => {
         '[data-scope="activity"][data-part="item"][data-selected] > [data-part="indicator"]',
       ).get("background-color"),
     ).toBe("SelectedItemText");
-    // A list's chosen row keeps its edge (#2911).
-    expect(drawn('[data-scope="list"][data-part="root"][data-selected]').get("box-shadow")).toBe(
-      "inset 2px 0 0 SelectedItemText",
-    );
+    // A list's and a tree's chosen row keeps its edge (#2911).
+    for (const row of ["list", "tree"])
+      expect(
+        drawn(`[data-scope="${row}"][data-part="root"][data-selected]`).get("box-shadow"),
+      ).toBe("inset 2px 0 0 SelectedItemText");
   });
 
   it("keep each state mark's shape, which tells the states apart without colour", () => {
@@ -226,9 +228,8 @@ describe("forced colours", () => {
 
   it("mark what needs you in the system's pair for what is marked", () => {
     for (const needs of [
-      ".count-pill-needs",
-      ".show-more-needs",
       '[data-scope="activity"][data-part="count"][data-tone="needs-you"]',
+      '[data-scope="count"][data-part="root"][data-variant="hot"]',
       '[data-scope="status-item"][data-variant="waiting"] > [data-part="count"]',
       ".invisible-char",
     ]) {
@@ -245,13 +246,26 @@ describe("forced colours", () => {
       '[data-scope="menu"][data-part="root"][data-variant="danger"]',
       '[data-scope="status-item"][data-part="root"][data-tone="danger"]',
       ".trouble",
-      ".ui-inline-surface-trouble",
-      ".notice-list .notice-inbox.notice-trouble",
+      '[data-scope="notice"][data-part="root"][data-variant="trouble"]',
       ".ui-setting-error p",
     ]) {
       expect(drawn(danger).get("outline"), danger).toBe("2px dashed CanvasText");
       expect(drawn(danger).get("outline-offset"), danger).toBe("-2px");
     }
+  });
+
+  it("tell a refused box from a taken one by its edge's shape, which takes no room (#3335)", () => {
+    const refused =
+      ':is( [data-scope="text-input"], [data-scope="textarea"], [data-scope="select"], [data-scope="combobox"] )[data-part="root"][data-invalid]';
+    const it = drawn(refused);
+    expect(it.get("border-style")).toBe("dashed");
+    expect(it.get("border-color")).toBe("CanvasText");
+    // Its own edge, at the width it has: nothing moves, and the focus ring (an outline) stays.
+    for (const property of it.keys())
+      expect(property, property).not.toMatch(/width|outline|padding|margin|^border$/);
+    // Every box a value is given to is reached.
+    for (const family of ["text-input", "textarea", "select", "combobox"])
+      expect(refused).toContain(`[data-scope="${family}"]`);
   });
 
   it("outline what is opened over the window, taking no room", () => {

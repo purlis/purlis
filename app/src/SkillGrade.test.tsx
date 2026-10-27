@@ -190,6 +190,40 @@ describe("a grade's token cap", () => {
   });
 });
 
+describe("a trigger test a grade leaves out", () => {
+  it("is named by its number in the file, with why (#3275)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({ left_out: [{ at: 1, why: "it starts with a dash" }] });
+      if (cmd === "start_options") return { profiles: [] };
+      return null;
+    });
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    expect((await screen.findByTestId("skill-grade-left-out")).textContent).toBe(
+      "Left out: Test 2: it starts with a dash",
+    );
+  });
+});
+
+describe("a grade a fault ended", () => {
+  it("says it ended before it was scored, and is told as ended (#3353)", () => {
+    expect(
+      endedSaid({
+        plane: "p",
+        skill: "deploy",
+        grade: "g",
+        ran: 0,
+        of: 12,
+        tokens: null,
+        cap: 200000,
+        ended: "failed",
+        said: "A fault in purlis ended the grade before it was scored.",
+      }),
+    ).toBe("A fault in purlis ended the grade before it was scored.");
+  });
+});
+
 describe("a grade that cannot run, or runs already", () => {
   it("says why no grade can run on the profile, and offers no Grade press", async () => {
     mockIPC((cmd) => {

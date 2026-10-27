@@ -1341,6 +1341,77 @@ pub fn loads_code(var: &str) -> bool {
             .any(|prefix| var.starts_with(prefix))
 }
 
+/// **The chat's variables a brokered run starts from** (#2047), a declared tool's or an
+/// approved server's: where the program is
+/// found, the language, time zone and terminal it prints for, the chat's ssh agent (#1350), the
+/// certificate authorities it trusts, and the plain values a client reads for where it connects
+/// (a database's host, port and name, as a run's tunnel reads them, #1708, and a cloud's
+/// region), which an argument could say as well. Nothing else of the chat's environment reaches
+/// the run: no `HOME` or `XDG_*` folder, no `GIT_CONFIG_*`, `AWS_CONFIG_FILE` or any other
+/// variable that names a file of settings a chat could have written, and no program to run
+/// (`PAGER`, `EDITOR`, `GIT_SSH_COMMAND`). What the tool is handed comes from its declaration,
+/// and the run sets its own proxy, temp folder and home ([`home_of_its_own`]). An approved
+/// server's run starts with the variables its approved entry sets too.
+const A_RUN_STARTS_FROM: &[&str] = &[
+    "PATH",
+    "LANG",
+    "TZ",
+    "TERM",
+    "COLORTERM",
+    "NO_COLOR",
+    "COLUMNS",
+    "LINES",
+    "USER",
+    "LOGNAME",
+    "SSH_AUTH_SOCK",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "AWS_CA_BUNDLE",
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPORT",
+    "PGDATABASE",
+    "PGUSER",
+    "PGSSLMODE",
+    "MYSQL_HOST",
+    "MYSQL_TCP_PORT",
+    "REDIS_HOST",
+    "REDIS_PORT",
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+];
+
+/// **Whether a brokered run starts with the chat's `var`** ([`A_RUN_STARTS_FROM`], and each
+/// `LC_*`).
+pub fn a_run_starts_from(var: &str) -> bool {
+    A_RUN_STARTS_FROM.contains(&var) || var.starts_with("LC_")
+}
+
+/// **A brokered run's home** (#2047): `HOME` and the `XDG_*` folders, each in the run's own
+/// temp folder `tmp`, so whatever a program reads or writes as its settings is the run's alone.
+pub fn home_of_its_own(tmp: &Path) -> Vec<(String, String)> {
+    [
+        ("HOME", ""),
+        ("XDG_CONFIG_HOME", ".config"),
+        ("XDG_CACHE_HOME", ".cache"),
+        ("XDG_DATA_HOME", ".local/share"),
+        ("XDG_STATE_HOME", ".local/state"),
+    ]
+    .iter()
+    .map(|(var, below)| {
+        let at = if below.is_empty() {
+            tmp.to_path_buf()
+        } else {
+            tmp.join(below)
+        };
+        ((*var).to_owned(), at.display().to_string())
+    })
+    .collect()
+}
+
 /// Where a chat's shims and Claude Code's env file were written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Written {

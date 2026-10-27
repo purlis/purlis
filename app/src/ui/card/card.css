@@ -1,0 +1,40 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The card family's default** (#2912, ADR 0103, ADR 0104): a box one step off the surface it
+   stands on (`ui/card/Card.tsx`). Keyed on the wrapper's attributes alone;
+   `purlis_core::theme::parts` holds a copy of its colours.
+
+   Classic's look: the raised ground, the subtle hairline. Purlis sets its card on the window's
+   fill with no hairline through its parts (`built-in/purlis/theme.json`), and its `radius.lg` is
+   the card's 10 (R25, R157). An ask keeps its waiting edge in every theme.
+
+   In the `components` layer (`styles.css`), above `App.css`. */
+
+[data-scope="card"][data-part="root"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  margin: 0;
+  padding-block: var(--space-4);
+  padding-inline: var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: var(--surface-raised);
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+[data-scope="card"][data-part="root"][data-variant="ask"] {
+  border-color: var(--state-waiting);
+}
+
+[data-scope="card"][data-part="title"] {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-strong);
+}

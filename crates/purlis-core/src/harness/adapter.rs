@@ -83,6 +83,27 @@ pub trait HarnessAdapter: Sync {
     /// default: each adapter says how its sandbox is applied.
     fn sandbox_holds_what_it_starts(&self) -> bool;
 
+    /// **Whether a grade's chats can run on this harness** (SK-16, ADR 0105, #3310): purlis can
+    /// hold one of its chats to the grade's limits there (to purlis's MCP server alone and its
+    /// read tools) and read what it spent, the operator's ruling of 2026-10-26. No default: each
+    /// adapter says, and every grade's chat on one that says `false` is refused
+    /// ([`crate::skills::grades::chat_refused`]).
+    fn can_grade(&self) -> bool;
+
+    /// **Why a grade's chat on this harness may not start** as `command` (the program, then the
+    /// profile's own words) under the chat's environment `env` would start it, or `None` where it
+    /// may: a command, or the person's own settings, that keep the chat from ever asking, so a
+    /// grade's "end at the first ask" would never fire. Asked only where [`Self::can_grade`]
+    /// says `true`. The default is a harness with no such switch.
+    fn grade_refused(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        let _ = (command, env);
+        None
+    }
+
     /// The chat's whole line under `form`, the sandbox [`Self::sandbox_compiler`] compiled,
     /// from `words`: the program, the profile's `command`, then `armed` (what [`Self::arm`]
     /// gave), then `charters`, charter's own words — where the chat opens, `at`; or the one

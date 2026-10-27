@@ -13,6 +13,7 @@ import {
   GitBranch,
   KeyRound,
   LoaderCircle,
+  Plus,
   Send,
   TriangleAlert,
   UserRound,
@@ -145,6 +146,12 @@ export function Panels({
 
   /** The panel this view shows, by its key: purlis's own by name, an extension's by its own. */
   const key = isPanelView(view) ? panelKeyOf(view) : OWN_PANELS[view];
+  /** A view drawn on the panel family's view (#3340): its region is its one scroll, with no
+   *  room of its own around it, and the view's top is held at the top of it. */
+  const aside =
+    key !== undefined && FRAMED.has(key)
+      ? "panels panels-view ui-text-body"
+      : "panels ui-text-body";
   const all = [...(panels?.contributed ?? []), ...contributed];
   const draw = (panel: PanelView, at: string) => (
     <Contributed
@@ -170,12 +177,12 @@ export function Panels({
         : undefined;
     if (own !== undefined && view === "personas")
       return (
-        <aside className="panels ui-text-body" data-view={view} aria-label={named}>
+        <aside className={aside} data-view={view} aria-label={named}>
           {draw(own, "")}
         </aside>
       );
     return (
-      <aside className="panels ui-text-body" data-view={view} aria-label={named}>
+      <aside className={aside} data-view={view} aria-label={named}>
         <p className="empty ui-text-secondary">
           {atRoot
             ? "The project root is not a workspace: it has no todos or memory of its own. Chats here look after the project and its workspaces; focus a workspace to see its panels."
@@ -188,7 +195,7 @@ export function Panels({
 
   const panel = all.find((one) => one.key === key);
   return (
-    <aside className="panels ui-text-body" data-view={view} aria-label={named}>
+    <aside className={aside} data-view={view} aria-label={named}>
       {trouble && (
         <p className="trouble" role="alert">
           {trouble}
@@ -213,6 +220,22 @@ const OWN_PANELS: Partial<Record<OwnViewId, string>> = {
   personas: "charter/personas",
   sessions: "charter/sessions",
 };
+
+/** The key of the panel one of purlis's own views shows, as the core names it. */
+export function ownPanelKey(view: OwnViewId): string | undefined {
+  return OWN_PANELS[view];
+}
+
+/**
+ * **The panels drawn as a view** (#3340): one scroll, the heading and the field held at the top,
+ * each group's name held under them, 30px rows. Memory, Todos and Sessions first; the others
+ * follow (#3341).
+ */
+const FRAMED: ReadonlySet<string | undefined> = new Set([
+  OWN_PANELS.memory,
+  OWN_PANELS.todos,
+  OWN_PANELS.sessions,
+]);
 
 /**
  * **The extensions' panels, each a view of the right side** (#1678): every approved extension's
@@ -327,6 +350,11 @@ function Contributed({
   // (`sessionOffers.tsx`, #1160), so a record written draws this list and not the whole view.
   const sessions = useSessionOffers();
   const lookUp = (id: string) => memories.get(id) ?? sessions.get(id) ?? offers.get(id);
+  const framed = FRAMED.has(panel.key);
+  const addTodo =
+    panel.key === TODOS && onAddTodo !== undefined ? (
+      <AddTodo workspace={workspace} onAdd={onAddTodo} />
+    ) : undefined;
 
   return (
     <PanelSection
@@ -335,6 +363,9 @@ function Contributed({
       mark={Mark}
       title={panel.title}
       provenance={panel.from ?? undefined}
+      view={framed}
+      // A view's top holds the box that adds one, under the heading and above the rows (#3340).
+      top={framed ? addTodo : undefined}
       actions={
         <>
           {/* charter's own panels are about things charter can make (SI-3): the heading's `+`
@@ -365,9 +396,7 @@ function Contributed({
         </>
       }
     >
-      {panel.key === TODOS && onAddTodo !== undefined && (
-        <AddTodo workspace={workspace} onAdd={onAddTodo} />
-      )}
+      {!framed && addTodo}
       {panel.blocks.map((block, at) =>
         block.kind === "chart" ? (
           <Chart key={at} chart={block} />
@@ -397,6 +426,13 @@ function Contributed({
             // One line a row on this side (#1674): the title, the note on hover, and a dated
             // list under its days.
             titleOnly
+            // In a view the search is in its top from the first row (the prototype's Q1 A), but
+            // the Todos view's top holds its box for adding one, and searches past a page.
+            search={framed && panel.key !== TODOS ? "always" : "beyond-a-page"}
+            // A memory's and a session's date at the row's end, and no mark that every row
+            // would share, as the prototype's Q1 A draws them (#3340).
+            dateAtEnd={framed && (panel.key === MEMORY || panel.key === SESSIONS)}
+            markless={framed && (panel.key === MEMORY || panel.key === SESSIONS)}
             open={open}
             // The empty list's way out (#1156): the catalogue's row, as a row's is.
             offerFor={lookUp}
@@ -495,7 +531,11 @@ function AddTodo({
         <TextField
           value={text}
           aria-label={`New todo in ${workspace}`}
-          error={trouble}
+          // The add field's mark, as the prototype's Q1 A draws it (#3340).
+          icon={<Plus aria-hidden="true" />}
+          // The refusal's line only while there is one (#3340): the prototype's top has 8px under
+          // the box, so no empty line is kept for a refusal that has not come.
+          {...(trouble === undefined ? {} : { error: trouble })}
           placeholder="Add a todo…"
           // Read-only rather than disabled while it is sent: a disabled box drops the keyboard,
           // and the next todo is typed into the same box.

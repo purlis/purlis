@@ -641,12 +641,13 @@ describe("the Panel's right half (#1738)", () => {
 
     const head = half("right").querySelector(".half-head") as HTMLElement;
     expect(within(head).getByRole("heading", { name: "Memory" })).toBeInTheDocument();
-    // The half's title is the one section label (#1920), as a sidebar section's is.
-    wears(within(head).getByRole("heading", { name: "Memory" }), "label", "the half's title");
+    // The half's title is a view's title (#3340, the prototype's Q1 A): a strong body.
+    wears(within(head).getByRole("heading", { name: "Memory" }), "body", "the half's title", true);
     wears(
       within(half("left")).getByRole("heading", { name: "Repos" }),
-      "label",
+      "body",
       "the other half's title",
+      true,
     );
     // The view's own action is on the half's line, and its title is said once, there.
     expect(within(head).getByRole("button", { name: "New memory" })).toBeInTheDocument();

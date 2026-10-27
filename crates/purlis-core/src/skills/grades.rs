@@ -60,7 +60,7 @@ pub const MOST_FILES: usize = 600;
 pub const COMMAND_STARTS: [char; 5] = ['-', '/', '!', '#', '@'];
 
 /// `personas/_grades/<YYYY-MM>.<device>.jsonl`, `<device>` named as the skill log's is.
-pub fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
+fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
     root.join("personas")
         .join(DIR_NAME)
         .join(format!("{}.{device}.jsonl", when.format("%Y-%m")))
@@ -128,9 +128,10 @@ impl Graded {
     }
 
     /// **Whether a row read back says only what purlis writes**: a tree or `uncommitted`, a
-    /// commit that is a whole hex id, a harness and a profile that are plain names, and a stamp
-    /// of a time's shape. A teammate's purlis writes the record, and a person reads these words
-    /// in the window and the terminal, so a row that says anything else is skipped.
+    /// commit that is a whole hex id, a harness and a profile that are plain names, a stamp of a
+    /// time's shape, and a spend and a report that hold together ([`report_holds_together`],
+    /// #3353). A teammate's purlis writes the record, and a person reads these words in the
+    /// window and the terminal, so a row that says anything else is skipped.
     fn sound(&self) -> bool {
         let hex = |word: &str| {
             matches!(word.len(), 40 | 64)
@@ -138,35 +139,121 @@ impl Graded {
                     .bytes()
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         };
-        let plain = |word: &str| {
-            !word.is_empty()
-                && word.len() <= 64
-                && word
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
-        };
         self.content().is_some()
             && self.commit.as_deref().is_none_or(hex)
             && self.harness.as_deref().is_none_or(plain)
             && self.profile.as_deref().is_none_or(plain)
             && plain(&self.grade)
             && chrono::DateTime::parse_from_rfc3339(&self.ts).is_ok()
+            && self.spent.cost_usd.is_none_or(amount)
+            && report_holds_together(&self.report, self.runs)
     }
 }
+
+/// A plain name: at most 64 of letters, digits, `-`, `_` and `.`.
+fn plain(word: &str) -> bool {
+    !word.is_empty()
+        && word.len() <= 64
+        && word
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+}
+
+/// An amount: a finite number, not below nothing.
+fn amount(value: f64) -> bool {
+    value.is_finite() && value >= 0.0
+}
+
+/// A share: a finite number from nothing to the whole.
+fn share(value: f64) -> bool {
+    (0.0..=1.0).contains(&value)
+}
+
+/// The longest reason a report gives why its chats stopped starting, as read back.
+const MOST_REASON_BYTES: usize = 2 * 1024;
+
+/// **Whether the report `report` of a grade of `runs` runs holds together** (#3353): what the
+/// built-in runner could have written. Its grader is a plain name; each trigger test's query is
+/// one a fixture could hold, its triggered runs at most its runs and its runs at most the
+/// grade's, its rate what those two make and its pass there exactly where its rate is, each chat
+/// a plain id; each arm once, its pass rate a share and its other figures amounts, every spread
+/// in order; the difference between two shares; and every cost an amount. Its reason is one
+/// line a reader sees whole.
+fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
+    let stat = |stat: &grade::Stat, fits: fn(f64) -> bool| {
+        [stat.mean, stat.min, stat.max].into_iter().all(fits)
+            && amount(stat.stddev)
+            && stat.min <= stat.mean
+            && stat.mean <= stat.max
+    };
+    let tests = report.triggers.iter().all(|test| {
+        let rate = match (test.runs, test.rate) {
+            (0, None) => true,
+            (0, Some(_)) | (_, None) => false,
+            (ran, Some(rate)) => {
+                share(rate) && (rate - f64::from(test.triggered) / f64::from(ran)).abs() < 1e-9
+            }
+        };
+        !test.query.trim().is_empty()
+            && test.query.len() <= grade::MOST_PROMPT_BYTES
+            && test.triggered <= test.runs
+            && test.runs <= u32::from(runs)
+            && rate
+            && test.pass.is_some() == test.rate.is_some()
+            && test.chats.len() <= usize::from(runs)
+            && test.chats.iter().flatten().all(|chat| plain(chat))
+    });
+    let mut arms = std::collections::HashSet::new();
+    let arms_hold = report.arms.iter().all(|arm| {
+        arms.insert(arm.arm)
+            && arm.pass_rate.as_ref().is_none_or(|one| stat(one, share))
+            && arm.tokens.as_ref().is_none_or(|one| stat(one, amount))
+            && arm.seconds.as_ref().is_none_or(|one| stat(one, amount))
+    });
+    plain(&report.grader)
+        && report.triggers.len() <= grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE
+        && tests
+        && arms_hold
+        && report
+            .delta
+            .is_none_or(|delta| (-1.0..=1.0).contains(&delta))
+        && [report.cost_cap_usd, report.spent_usd]
+            .into_iter()
+            .flatten()
+            .all(amount)
+        && report
+            .not_started
+            .as_deref()
+            .is_none_or(|why| why.len() <= MOST_REASON_BYTES && !why.chars().any(char::is_control))
+}
+
+/// Every arm a grade can compare: the skill, no skill and its previous version.
+const ARMS_THERE_ARE: usize = 3;
 
 /// **Appends `graded`, a grade of the copy at `level`, to this month's file of the project at
 /// `root`**: the committed record, or, for a copy that is this machine's alone ([`is_local`]),
 /// this machine's state. `None` where the project is one this purlis may not write, or the write
 /// was refused.
 pub fn record(root: &Path, level: &Level, graded: &Graded, device: &str) -> Option<PathBuf> {
+    record_to(root, is_local(root, level), graded, || device.to_owned())
+}
+
+/// [`record`], to this machine's state where `local`, else to the committed record of the
+/// device `device` names: asked only then, as naming it reads this machine's store.
+fn record_to(
+    root: &Path,
+    local: bool,
+    graded: &Graded,
+    device: impl FnOnce() -> String,
+) -> Option<PathBuf> {
     let row = serde_json::to_value(graded).ok()?;
-    if is_local(root, level) {
+    if local {
         return append_local(&local_path_for(root, chrono::Utc::now()), &row).ok();
     }
     if crate::compat::read_only(root).is_some() {
         return None;
     }
-    crate::dispatch::append(&path_for(root, chrono::Utc::now(), device), root, &row)
+    crate::dispatch::append(&path_for(root, chrono::Utc::now(), &device()), root, &row)
 }
 
 /// **Appends `row` to this machine's record file `path`**, in a folder of this machine's state
@@ -291,9 +378,9 @@ pub struct Planned {
     pub plan: Option<Plan>,
     pub estimate: Option<Estimate>,
     pub unseen: Vec<usize>,
-    /// The trigger tests left out, by their place in the file, each with why: a query a chat
-    /// cannot be started on ([`crate::handoff::bad_message`]).
-    pub left_out: Vec<(usize, String)>,
+    /// The trigger tests left out, each with why: a query a chat cannot be started on
+    /// ([`left_out_why`]).
+    pub left_out: Vec<LeftOut>,
     /// The token cap the grade is held to ([`cap::token_cap`]).
     pub cap: cap::Cap,
     /// What the person consents to by pressing Grade on this plan ([`consent_of`]): a grade
@@ -303,6 +390,14 @@ pub struct Planned {
     /// out every arm from, and records its version as. Never shown, so never sent.
     #[serde(skip)]
     pub copy: Option<SkillCopy>,
+}
+
+/// **A trigger test a grade leaves out**: its place in the file, from 0, and why
+/// ([`left_out_why`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct LeftOut {
+    pub at: usize,
+    pub why: String,
 }
 
 /// **The copy of a skill a grade runs, read once** (the review of #3229): its files, what its
@@ -341,7 +436,7 @@ fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> 
 pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String> {
     let folder = find(root, level, name)?;
     let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
-    let mut left_out: Vec<(usize, String)> = Vec::new();
+    let mut left_out: Vec<LeftOut> = Vec::new();
     let sendable: Vec<grade::TriggerTest> = fixtures
         .triggers
         .read()
@@ -351,7 +446,7 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
                 .enumerate()
                 .filter(|(at, test)| match left_out_why(&test.query) {
                     Some(why) => {
-                        left_out.push((*at, why));
+                        left_out.push(LeftOut { at: *at, why });
                         false
                     }
                     None => true,
@@ -477,31 +572,26 @@ pub fn ready_to_grade(
 }
 
 /// **Why a grade's chat may not start as `ready` would start it**, or the sandbox level it would
-/// run at (the review of #3229, the operator's ruling of 2026-10-26): a grade's chats run on a
-/// Claude Code profile alone, as only there can purlis hold a chat to the grade's limits (its
-/// spend, #3272; its MCP servers); never on a profile whose command turns the harness's
-/// permission prompts off; and only at the full sandbox, never at the floor, with the sandbox
-/// lifted, or with no backend.
+/// run at (the review of #3229, the operator's ruling of 2026-10-26): a grade's chats run only on
+/// a harness whose adapter says it can hold a chat to the grade's limits (its spend, its MCP
+/// servers: [`crate::harness::HarnessAdapter::can_grade`], #3310); never where that adapter says
+/// the profile's command or the person's settings keep the chat from asking
+/// ([`crate::harness::HarnessAdapter::grade_refused`]); and only at the full sandbox, never at
+/// the floor, with the sandbox lifted, or with no backend.
 pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level, String> {
-    if ready.harness != Some(crate::harness::Harness::ClaudeCode) {
-        return Err(
-            "A grade runs its chats on a Claude Code profile only, as only there can purlis \
-             hold a chat to the grade's limits: pick one."
-                .to_owned(),
-        );
-    }
-    if let Some(why) = bypassed_by_your_settings(&crate::harness_plugin::Env::of(&ready.env)) {
-        return Err(why);
-    }
+    let Some(adapter) = ready
+        .harness
+        .map(crate::harness::Harness::adapter)
+        .filter(|adapter| adapter.can_grade())
+    else {
+        return Err(not_on_this_harness());
+    };
     let command: Vec<String> = std::iter::once(ready.program.clone())
         .chain(ready.command.iter().cloned())
         .collect();
-    if let Some(flag) = crate::dispatchunattended::bypass_in(&command) {
-        return Err(format!(
-            "This profile's command turns the program's permission prompts off ({}), and a \
-             grade never runs on one: pick another profile.",
-            crate::shown::one_line(&flag, 60)
-        ));
+    if let Some(why) = adapter.grade_refused(&command, &crate::harness_plugin::Env::of(&ready.env))
+    {
+        return Err(why);
     }
     if let Some(lifted) = &ready.unsandboxed {
         return Err(match &lifted.reason {
@@ -536,50 +626,24 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
     }
 }
 
-/// **Why the person's own Claude Code settings, as the chat's environment `env` finds them, keep
-/// a grade from running**, or `None`: settings that start every chat with its permission prompts
-/// off, or settings purlis cannot read, as what they say cannot be known (the review of #3229).
-/// No settings file is none of either.
-fn bypassed_by_your_settings(env: &crate::harness_plugin::Env<'_>) -> Option<String> {
-    let Some(dir) = env.dir("CLAUDE_CONFIG_DIR", ".claude") else {
-        return Some(
-            "purlis cannot find Claude Code's settings for this profile, so it cannot tell \
-             whether its chats keep their permission prompts, and a grade never runs on one \
-             that does not."
-                .to_owned(),
-        );
-    };
-    let file = dir.join("settings.json");
-    let unreadable = || {
-        Some(
-            "purlis could not read your Claude Code settings, so it cannot tell whether its \
-             chats keep their permission prompts, and a grade never runs on one that does not."
-                .to_owned(),
-        )
-    };
-    let text = match std::fs::metadata(&file) {
-        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(_) => return unreadable(),
-        Ok(meta)
-            if !meta.is_file()
-                || meta.len() > crate::harness::claude::MOST_SETTINGS_BYTES as u64 =>
-        {
-            return unreadable();
-        }
-        Ok(_) => match std::fs::read_to_string(&file) {
-            Ok(text) => text,
-            Err(_) => return unreadable(),
-        },
-    };
-    match crate::harness::claude::bypass_by_default(&text) {
-        Some(false) => None,
-        Some(true) => Some(
-            "Your Claude Code settings start every chat with its permission prompts off, and a \
-             grade never runs on one: turn that off in Claude Code's settings first."
-                .to_owned(),
-        ),
-        None => unreadable(),
+/// **Why a grade's chat is refused on a profile whose harness cannot grade**: named by the
+/// harnesses that can ([`crate::harness::HarnessAdapter::can_grade`]), so the core names none.
+fn not_on_this_harness() -> String {
+    let can: Vec<&str> = crate::harness::Harness::ALL
+        .into_iter()
+        .filter(|harness| harness.adapter().can_grade())
+        .map(crate::harness::Harness::title)
+        .collect();
+    if can.is_empty() {
+        return "No program this purlis runs can hold a grade's chats to its limits yet, so no \
+                grade runs."
+            .to_owned();
     }
+    format!(
+        "A grade runs its chats on a {} profile only, as only there can purlis hold a chat to \
+         the grade's limits: pick one.",
+        can.join(" or ")
+    )
 }
 
 /// **The commit whose version of the copy of `name` at `level` is `content`**: what a grade is
@@ -602,6 +666,7 @@ fn commit_of(root: &Path, level: &Level, name: &str, content: &Content) -> Optio
 }
 
 pub mod cap;
+pub mod underway;
 
 #[cfg(test)]
 mod tests;
