@@ -28,6 +28,7 @@ import {
   listedOf,
   narrowedTo,
   personaRowsOf,
+  pinOf,
   turnOf,
   type ListedSkill,
   type SkillAct,
@@ -106,8 +107,8 @@ async function readSkills(plane: string, workspace: string | undefined): Promise
  * workspace, and reads again whenever the project's skills change on disk, as the studio does.
  *
  * Every act is one the window already has: a row opens the skill's tab, Use in this chat is
- * Use skill… opened on it, the switch is the studio's, Show in Explorer opens Explorer on its
- * folder, and New skill is the studio's three starts.
+ * Use skill… opened on it, the switch and the pin are the studio's, Show in Explorer opens
+ * Explorer on its folder, and New skill is the studio's three starts.
  */
 export function SkillsView({
   plane,
@@ -205,15 +206,19 @@ export function SkillsView({
       onShowInExplorer(row.skill.folder);
       return;
     }
-    const turn = turnOf(row.skill, place);
-    if (!("label" in turn) || place === undefined) return;
+    const change = what === "pin" ? pinOf(row, place) : turnOf(row.skill, place);
+    if (!("label" in change) || place === undefined) return;
     setBusy(true);
-    void commands
-      .skillTurn(plane, place, row.skill.name, turn.on)
+    // The pin is the studio's own command (SK-15d), for this workspace's chats: one commit.
+    void (
+      what === "pin"
+        ? commands.skillPin(plane, { at: "workspace", name: place }, row.skill.name, change.on)
+        : commands.skillTurn(plane, place, row.skill.name, change.on)
+    )
       .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
       .then((answer) => {
         // Done, it is read again as the project's skills change on disk: one read, not two.
-        if (answer.status === "error") setSaid({ label: turn.refused, text: answer.error });
+        if (answer.status === "error") setSaid({ label: change.refused, text: answer.error });
         else setSaid(undefined);
       })
       .finally(() => setBusy(false));
