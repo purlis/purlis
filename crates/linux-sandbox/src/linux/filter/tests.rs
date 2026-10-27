@@ -87,6 +87,7 @@ fn every_file_call_a_path_decides_goes_to_the_supervisor() {
         libc::SYS_fchmodat,
         libc::SYS_utimensat,
         libc::SYS_connect,
+        libc::SYS_listen,
     ] {
         assert_eq!(
             verdict(nr, [0; 6]),

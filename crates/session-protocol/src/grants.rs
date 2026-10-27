@@ -47,7 +47,7 @@
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
-//! | `take_conversation`, `give_conversation`, a moving chat's conversation carried over the link (1.42) | yes | | | | | relayed |
+//! | `take_conversation`, `give_conversation`, a moving chat's conversation carried over the link (1.41) | yes | | | | | relayed |
 //! | `cancel_engine_download`, and the pushed `engine_download`: a browser engine's first download (1.37) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
@@ -197,7 +197,7 @@
 //!   decides moves between the desktop and a runner, as holding the project is. A relaying host
 //!   sends them on for a `local-ui` client alone, so `remote-link` is granted them only as the
 //!   desktop's host relaying its window, never as any other client of it.
-//! - **`take_conversation` and `give_conversation` are the window's, relayed for it** (1.42,
+//! - **`take_conversation` and `give_conversation` are the window's, relayed for it** (1.41,
 //!   #2048), for the same reason: they carry the conversation of a chat the window moves, into
 //!   and out of the harness folder of a profile the host holds it on.
 
@@ -284,7 +284,7 @@ pub enum Power {
     RelayTo,
     /// `take_code` and `give_code` (1.34, #2046): a repository's history moved between the
     /// desktop and a runner as a git bundle; and `take_conversation` and `give_conversation`
-    /// (1.42, #2048): a moving chat's conversation carried with it.
+    /// (1.41, #2048): a moving chat's conversation carried with it.
     Code,
 }
 

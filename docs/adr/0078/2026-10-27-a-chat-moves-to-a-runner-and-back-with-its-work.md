@@ -24,7 +24,7 @@ stands, with these additions.
    only once the new one has started. A switch that fails puts the setting back, and the chat runs
    where it was, its pane saying why.
 4. **A work tree is taken over only where nothing was done in it since it was last exchanged**
-   (session protocol 1.42, `take_code` with `moving`, `give_code` with `with_work`). Each end keeps
+   (session protocol 1.41, `take_code` with `moving`, `give_code` with `with_work`). Each end keeps
    what the two last agreed of a branch's work tree, a snapshot commit, as
    `refs/purlis/moved/<branch>`. The receiving end takes its work tree over (git's two-tree
    `read-tree -m -u`, with no attribute or filter of the tree read) only where it is still exactly

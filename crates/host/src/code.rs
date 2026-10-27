@@ -54,7 +54,7 @@ pub trait Code: Send + Sync + 'static {
         into: &Path,
     ) -> Result<(Vec<CodeRef>, bool), Refusal>;
 
-    /// **Take a moving chat's work tree over** (1.42, #2048): `refs`, the branch `checkout` and
+    /// **Take a moving chat's work tree over** (1.41, #2048): `refs`, the branch `checkout` and
     /// its snapshot, from the bundle at `bundle` or what the repository holds, onto the
     /// repository's work tree where it is still what both ends last agreed. Answers every branch
     /// and snapshot it holds after. A binary that moves no chat refuses it.
@@ -71,7 +71,7 @@ pub trait Code: Send + Sync + 'static {
     }
 
     /// [`Code::give`], with the work tree's uncommitted work as its branch's snapshot, which both
-    /// ends agree on from then on (1.42, #2048).
+    /// ends agree on from then on (1.41, #2048).
     fn give_work(
         &self,
         project: &Path,
@@ -84,7 +84,7 @@ pub trait Code: Send + Sync + 'static {
     }
 
     /// **Keep conversation `conversation`, carried as `file` at `from`**, in the harness folder
-    /// of `profile` for a chat in `workspace` of the project at `project` (1.42, #2048).
+    /// of `profile` for a chat in `workspace` of the project at `project` (1.41, #2048).
     fn take_conversation(
         &self,
         project: &Path,
@@ -96,7 +96,7 @@ pub trait Code: Send + Sync + 'static {
     }
 
     /// **Write conversation `conversation`** of `profile`, for a chat in `workspace`, into
-    /// `into` (1.42, #2048). Answers where its harness keeps it, as [`Carried::file`] names it.
+    /// `into` (1.41, #2048). Answers where its harness keeps it, as [`Carried::file`] names it.
     fn give_conversation(
         &self,
         project: &Path,
@@ -108,7 +108,7 @@ pub trait Code: Send + Sync + 'static {
     }
 }
 
-/// **A conversation a moving chat carries** (1.42, #2048): what `take_conversation` and
+/// **A conversation a moving chat carries** (1.41, #2048): what `take_conversation` and
 /// `give_conversation` name of it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Carried {
@@ -179,15 +179,15 @@ pub(crate) enum Way {
     },
     /// The host writes it: `give_code`, with the work tree's work where `with_work`.
     Out { have: Vec<String>, with_work: bool },
-    /// The client writes a moving chat's conversation: `take_conversation` (1.42).
+    /// The client writes a moving chat's conversation: `take_conversation` (1.41).
     ConversationIn(Carried),
-    /// The host writes one: `give_conversation` (1.42).
+    /// The host writes one: `give_conversation` (1.41).
     ConversationOut(Carried),
 }
 
 impl Hosting {
     /// Carry out one transfer of code in `repo` of `project`, on a code stream named `transfer`:
-    /// a bundle, or a moving chat's conversation (1.42, #2048).
+    /// a bundle, or a moving chat's conversation (1.41, #2048).
     pub(crate) async fn move_code(
         &self,
         project: &str,

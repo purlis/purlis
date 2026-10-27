@@ -981,9 +981,9 @@ impl HostLink {
         })
     }
 
-    /// **Has the host take a moving chat's work tree over** (1.42, #2048): `refs`, the branch
+    /// **Has the host take a moving chat's work tree over** (1.41, #2048): `refs`, the branch
     /// `checkout` and its snapshot, from the bundle at `bundle`. Refused in purlis's words by a
-    /// host before 1.42, which would not read it as a move.
+    /// host before 1.41, which would not read it as a move.
     pub(crate) fn send_work(
         &self,
         project: &str,
@@ -1003,7 +1003,7 @@ impl HostLink {
         })
     }
 
-    /// **Has the host keep a moving chat's conversation** (1.42, #2048), from `file`.
+    /// **Has the host keep a moving chat's conversation** (1.41, #2048), from `file`.
     pub(crate) fn send_conversation(
         &self,
         project: &str,
@@ -1049,7 +1049,7 @@ impl HostLink {
     }
 
     /// [`Self::fetch_code`], with the work tree's uncommitted work as its branch's snapshot, as
-    /// a chat moves off the host (1.42, #2048).
+    /// a chat moves off the host (1.41, #2048).
     pub(crate) fn fetch_work(
         &self,
         project: &str,
@@ -1065,7 +1065,7 @@ impl HostLink {
         .map(|(heads, read)| (heads, read > 0))
     }
 
-    /// **Has the host write a moving chat's conversation into `into`** (1.42, #2048). Answers
+    /// **Has the host write a moving chat's conversation into `into`** (1.41, #2048). Answers
     /// where its harness keeps it there.
     pub(crate) fn fetch_conversation(
         &self,
@@ -1091,7 +1091,7 @@ impl HostLink {
         .map(|(file, _)| file)
     }
 
-    /// Refused in purlis's words where the host is before 1.42 and moves no chat.
+    /// Refused in purlis's words where the host is before 1.41 and moves no chat.
     pub(crate) fn moves_chats(&self) -> Result<(), String> {
         if self.version() < session::MOVES_CHATS {
             return Err(format!(
@@ -1417,7 +1417,16 @@ struct HookLines {
 
 impl HookLines {
     /// Hear line `id` that `project`'s hooks wrote, with what hears that project's lines.
-    fn hear(&self, shared: &Shared, project: String, id: u64, line: serde_json::Value) {
+    /// `pathless`: the host records it under the project as it holds it, and is sent no path
+    /// (1.40, #3400).
+    fn hear(
+        &self,
+        shared: &Shared,
+        project: String,
+        id: u64,
+        line: serde_json::Value,
+        pathless: bool,
+    ) {
         let Some(relayed) = lock(&shared.hearing).get(&project).cloned() else {
             tracing::warn!("purlis: the session host told a hook line of a project not open here");
             return;
@@ -1431,15 +1440,21 @@ impl HookLines {
                 return;
             }
         };
-        let reply = self.reply(project, id);
+        let reply = self.reply(project, id, pathless);
         relayed.take(self.link, id, heard, reply);
     }
 
-    /// What replies to line `id` of `project`: each reply sent at once, behind the one before.
-    fn reply(&self, project: String, id: u64) -> Reply {
+    /// What replies to line `id` of `project`: each reply sent at once, behind the one before,
+    /// naming no project path where the host said it uses none (`pathless`, #3400).
+    fn reply(&self, project: String, id: u64, pathless: bool) -> Reply {
         let client = Arc::clone(&self.client);
         let runtime = self.runtime.clone();
         Arc::new(move |replied: Replied| {
+            let replied = if pathless {
+                replied.without_path()
+            } else {
+                replied
+            };
             let reply = within_a_frame(replied);
             let sent = client.call_now(Command::ReplyHeard {
                 project: project.clone(),
@@ -1674,7 +1689,8 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 project,
                 heard,
                 line,
-            }) => lines.hear(&shared, project, heard, line),
+                pathless,
+            }) => lines.hear(&shared, project, heard, line, pathless),
             Told::Pushed(Pushed::Ended { program, exit, .. }) => {
                 let tell = lock(&shared.ends).remove(&program);
                 match tell {

@@ -1290,10 +1290,13 @@ impl Hosting {
     /// Push line `id` that the hooks of the project held `at` wrote to every subscriber whose
     /// link holds it there: whether one was told.
     fn hand_on(&self, at: &HeldAt, id: u64, line: serde_json::Value) -> bool {
+        // This host's channel records each line under the project as it holds it, whatever
+        // path the window names, so the window need name none (1.40, #3400).
         let pushed = Pushed::Heard {
             project: at.project.clone(),
             heard: id,
             line,
+            pathless: true,
         };
         Self::tell_holders(&mut self.state(), at, &pushed, false)
     }

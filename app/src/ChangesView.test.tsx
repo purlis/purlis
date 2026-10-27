@@ -180,7 +180,7 @@ describe("the Changes view", () => {
     );
 
     const there = screen.getByTestId("runner-svc-builds-fix\u202egol");
-    expect(there).toHaveTextContent("fix\\u202egol");
+    expect(there).toHaveTextContent("fix⟦U+202E⟧gol");
     expect(there.textContent).not.toContain("\u202e");
   });
 
@@ -207,7 +207,7 @@ describe("the Changes view", () => {
     );
     const left = screen.getByTestId("left-out-svc");
     expect(left).toHaveTextContent("Not sent to the runner");
-    expect(left).toHaveTextContent(".env, notes\\u202e.txt");
+    expect(left).toHaveTextContent(".env, notes⟦U+202E⟧.txt");
     expect(left).toHaveAttribute("role", "row");
     expect(screen.queryByTestId("left-out-tool")).toBeNull();
   });

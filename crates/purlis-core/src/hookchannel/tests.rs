@@ -375,6 +375,11 @@ fn a_log_in(dir: &Path) -> EventLog {
 /// Chat `number` of the project at `root` began run `run` in `log`, as a runner begins the run
 /// of a chat it composes (ADR 0078, amended 2026-10-18).
 fn a_run_begun(log: &EventLog, root: &Path, number: u32, run: &str) {
+    a_run_begun_in(log, root, number, run, None);
+}
+
+/// [`a_run_begun`], the run in `conversation` where it names one.
+fn a_run_begun_in(log: &EventLog, root: &Path, number: u32, run: &str, conversation: Option<&str>) {
     use crate::eventlog::{Attributes, Began};
     log.write(Entry::Begin {
         plane: root.to_path_buf(),
@@ -382,7 +387,10 @@ fn a_run_begun(log: &EventLog, root: &Path, number: u32, run: &str) {
         chat: "01K6W0RKER000000000000000B".into(),
         run: run.into(),
         cause: Began::Start,
-        attributes: Attributes::default(),
+        attributes: Attributes {
+            conversation: conversation.map(str::to_owned),
+            ..Attributes::default()
+        },
         held: false,
         trust: None,
     })
@@ -453,21 +461,250 @@ fn a_run_a_clear_begins_is_never_under_an_id_the_log_holds_or_no_id_at_all() {
 
         record(Entry::Report {
             plane: project.path().to_path_buf(),
-            report: a_report(1, crate::state::Event::SessionStart),
+            report: a_report_in(1, crate::state::Event::SessionStart, "conversation-b"),
             followed: crate::eventlog::Followed::Moved,
             begun: Some(named.to_owned()),
         })
         .expect("it is recorded");
 
-        let started: Vec<String> = crate::eventlog::read(data.path())
-            .expect("the log reads")
-            .into_iter()
-            .filter(|event| event.kind == "run.started")
-            .filter_map(|event| event.run)
-            .collect();
+        let started = runs_started_in(data.path());
         assert_eq!(started.len(), 2, "{named}: {started:?}");
         assert_ne!(started[1], run, "{named}");
         assert_ne!(started[1], named, "{named}");
         assert!(ulid::Ulid::from_string(&started[1]).is_ok(), "{started:?}");
     }
+}
+
+/// [`a_report`], its harness naming `conversation`.
+fn a_report_in(
+    chat: u32,
+    event: crate::state::Event,
+    conversation: &str,
+) -> crate::hookwire::Report {
+    crate::hookwire::Report {
+        conversation: crate::hookwire::Conversation::Named(conversation.to_owned()),
+        ..a_report(chat, event)
+    }
+}
+
+/// Each `run.started` in the log in `dir`, by its run.
+fn runs_started_in(dir: &Path) -> Vec<String> {
+    crate::eventlog::read(dir)
+        .expect("the log reads")
+        .into_iter()
+        .filter(|event| event.kind == "run.started")
+        .filter_map(|event| event.run)
+        .collect()
+}
+
+/// Each hook line's event in the log in `dir`, by its kind and run.
+fn hook_lines_in(dir: &Path) -> Vec<(String, Option<String>)> {
+    crate::eventlog::read(dir)
+        .expect("the log reads")
+        .into_iter()
+        .filter(|event| event.kind.starts_with("hook."))
+        .map(|event| (event.kind, event.run))
+        .collect()
+}
+
+const RUN: &str = "01K6W0RKRUN00000000000000B";
+
+#[test]
+fn a_move_the_window_says_of_a_line_naming_its_runs_own_conversation_begins_no_run() {
+    // The window's board said the chat moved, but the line names the conversation the chat's
+    // run is in, as the host recorded it (#3394): the host records the line under that run.
+    let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let log = a_log_in(data.path());
+    a_run_begun_in(&log, project.path(), 1, RUN, Some("conversation-a"));
+    let record = hook_lines_recorded(log, project.path());
+
+    for followed in [
+        crate::eventlog::Followed::Moved,
+        crate::eventlog::Followed::FirstNamed,
+    ] {
+        record(Entry::Report {
+            plane: project.path().to_path_buf(),
+            report: a_report_in(1, crate::state::Event::Stop, "conversation-a"),
+            followed,
+            begun: Some(crate::reopen::mint()),
+        })
+        .expect("it is recorded");
+    }
+
+    assert_eq!(runs_started_in(data.path()), vec![RUN.to_owned()]);
+    assert_eq!(
+        hook_lines_in(data.path()),
+        vec![("hook.stop".to_owned(), Some(RUN.to_owned())); 2]
+    );
+}
+
+#[test]
+fn a_move_the_window_says_of_a_line_naming_no_conversation_begins_no_run() {
+    // Only a conversation the line names can be one the chat moved onto (#3394).
+    let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let log = a_log_in(data.path());
+    a_run_begun_in(&log, project.path(), 1, RUN, Some("conversation-a"));
+    let record = hook_lines_recorded(log, project.path());
+
+    record(Entry::Report {
+        plane: project.path().to_path_buf(),
+        report: a_report(1, crate::state::Event::Stop),
+        followed: crate::eventlog::Followed::Moved,
+        begun: Some(crate::reopen::mint()),
+    })
+    .expect("it is recorded");
+
+    assert_eq!(runs_started_in(data.path()), vec![RUN.to_owned()]);
+    assert_eq!(hook_lines_in(data.path()).len(), 1);
+}
+
+#[test]
+fn a_line_naming_another_conversation_than_its_runs_is_a_move_though_the_window_said_first_named() {
+    // A run is a stretch of one conversation (ADR 0066): a line naming another than the run's,
+    // which the window's board took for the chat's first, begins the run that follows (#3394),
+    // under an id the host mints.
+    let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let log = a_log_in(data.path());
+    a_run_begun_in(&log, project.path(), 1, RUN, Some("conversation-a"));
+    let record = hook_lines_recorded(log, project.path());
+
+    record(Entry::Report {
+        plane: project.path().to_path_buf(),
+        report: a_report_in(1, crate::state::Event::SessionStart, "conversation-b"),
+        followed: crate::eventlog::Followed::FirstNamed,
+        begun: None,
+    })
+    .expect("it is recorded");
+
+    let started = runs_started_in(data.path());
+    assert_eq!(started.len(), 2, "{started:?}");
+    assert_eq!(
+        hook_lines_in(data.path()),
+        vec![("hook.sessionstart".to_owned(), Some(started[1].clone()))]
+    );
+}
+
+#[test]
+fn a_move_and_a_first_name_the_window_says_where_they_can_be_are_taken() {
+    // The window's board decides while it holds the project: a move onto another conversation
+    // is taken with the run it named, and a first name keeps the run (#3394).
+    let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let log = a_log_in(data.path());
+    a_run_begun_in(&log, project.path(), 1, RUN, None);
+    a_run_begun_in(
+        &log,
+        project.path(),
+        2,
+        "01K6W0RKRUN00000000000002B",
+        Some("conversation-a"),
+    );
+    let record = hook_lines_recorded(log, project.path());
+    let cleared = crate::reopen::mint();
+
+    record(Entry::Report {
+        plane: project.path().to_path_buf(),
+        report: a_report_in(1, crate::state::Event::SessionStart, "conversation-x"),
+        followed: crate::eventlog::Followed::FirstNamed,
+        begun: None,
+    })
+    .expect("it is recorded");
+    record(Entry::Report {
+        plane: project.path().to_path_buf(),
+        report: a_report_in(2, crate::state::Event::SessionStart, "conversation-b"),
+        followed: crate::eventlog::Followed::Moved,
+        begun: Some(cleared.clone()),
+    })
+    .expect("it is recorded");
+
+    assert_eq!(
+        runs_started_in(data.path()),
+        vec![
+            RUN.to_owned(),
+            "01K6W0RKRUN00000000000002B".to_owned(),
+            cleared
+        ]
+    );
+}
+
+#[test]
+fn a_run_a_clear_begins_is_never_under_an_id_the_log_held_before_its_writer_opened_it() {
+    // The log's writer knows only the runs it began itself, so a run the log held before the
+    // host opened it is told by its id's time (#3394): an id minted before the log's newest
+    // event is not taken, and the line is still recorded under a run the writer mints.
+    let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let old = crate::reopen::mint();
+    {
+        let before = a_log_in(data.path());
+        a_run_begun(&before, project.path(), 7, &old);
+    }
+    let log = a_log_in(data.path());
+    a_run_begun_in(&log, project.path(), 1, RUN, Some("conversation-a"));
+    let record = hook_lines_recorded(log, project.path());
+
+    record(Entry::Report {
+        plane: project.path().to_path_buf(),
+        report: a_report_in(1, crate::state::Event::SessionStart, "conversation-b"),
+        followed: crate::eventlog::Followed::Moved,
+        begun: Some(old.clone()),
+    })
+    .expect("it is recorded");
+
+    let started = runs_started_in(data.path());
+    assert_eq!(started.len(), 3, "{started:?}");
+    assert_ne!(started[2], old);
+    assert!(ulid::Ulid::from_string(&started[2]).is_ok(), "{started:?}");
+}
+
+#[test]
+fn a_run_a_clear_begins_is_never_under_an_id_of_a_run_that_ended_since_the_writer_opened() {
+    // A run superseded by a clear is no current run, and its id is still the log's (#3394).
+    let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let log = a_log_in(data.path());
+    let first = crate::reopen::mint();
+    a_run_begun_in(&log, project.path(), 1, &first, Some("conversation-a"));
+    let record = hook_lines_recorded(log, project.path());
+    let second = crate::reopen::mint();
+
+    for (conversation, begun) in [("conversation-b", &second), ("conversation-c", &first)] {
+        record(Entry::Report {
+            plane: project.path().to_path_buf(),
+            report: a_report_in(1, crate::state::Event::SessionStart, conversation),
+            followed: crate::eventlog::Followed::Moved,
+            begun: Some(begun.clone()),
+        })
+        .expect("it is recorded");
+    }
+
+    let started = runs_started_in(data.path());
+    assert_eq!(started.len(), 3, "{started:?}");
+    assert_eq!(started[1], second);
+    assert!(started[2] != first && started[2] != second, "{started:?}");
+}
+
+#[test]
+fn a_run_a_clear_begins_is_not_under_an_id_minted_within_the_clocks_margin_of_the_logs_newest() {
+    // The window and the host keep time apart (#3394): an id minted only just after the newest
+    // event the log held as its writer opened it may have been one of the log's by the other
+    // clock, so the writer mints the run's id.
+    let (data, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    {
+        let before = a_log_in(data.path());
+        a_run_begun(&before, project.path(), 7, &crate::reopen::mint());
+    }
+    let log = a_log_in(data.path());
+    a_run_begun_in(&log, project.path(), 1, RUN, Some("conversation-a"));
+    let record = hook_lines_recorded(log, project.path());
+    let named = crate::reopen::mint();
+
+    record(Entry::Report {
+        plane: project.path().to_path_buf(),
+        report: a_report_in(1, crate::state::Event::SessionStart, "conversation-b"),
+        followed: crate::eventlog::Followed::Moved,
+        begun: Some(named.clone()),
+    })
+    .expect("it is recorded");
+
+    let started = runs_started_in(data.path());
+    assert_eq!(started.len(), 3, "{started:?}");
+    assert_ne!(started[2], named);
 }

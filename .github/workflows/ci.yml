@@ -320,6 +320,38 @@ jobs:
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-parity:candidate)
           echo "image $image"
           echo "DOCKER_POOL_TEST_IMAGE=$image" >> "$GITHUB_ENV"
+      # The Linux wrap's listen in a container, as a Docker pool runs one: the runner's seccomp
+      # profile (Docker's default and `pidfd_getfd`), no new privileges, every capability
+      # dropped, not root. A socket the chat bound listens there; one it never bound does not.
+      # Docker's own default profile is tried too: there nothing listens (fail closed).
+      - name: A socket listens only where it was bound, in a container
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          bin=$(cargo test --locked -p purlis-linux-sandbox --test a_wrapped_chat_is_held_on_linux --no-run \
+            --message-format=json | jq -r 'select(.profile.test == true and .executable != null) | .executable' \
+            | grep '/a_wrapped_chat_is_held_on_linux-' | tail -1)
+          test -x "$bin"
+          echo "test binary: $bin"
+          # `contained <seccomp option or "default"> <test>`: one test in a runner's container.
+          contained() {
+            local seccomp=()
+            if [ "$1" != default ]; then seccomp=(--security-opt "$1"); fi
+            docker run --rm --security-opt no-new-privileges --cap-drop ALL --user "$(id -u):$(id -g)" \
+              "${seccomp[@]}" --volume "$PWD:$PWD" --workdir "$PWD" --entrypoint "$bin" \
+              purlis-runner:parity "$2" --exact --test-threads=1
+          }
+          runner="seccomp=$PWD/crates/purlis-core/src/dockerpool/seccomp.json"
+          contained "$runner" a_socket_never_bound_does_not_listen
+          contained "$runner" a_server_on_a_socket_the_chat_bound_listens
+          # A thread's own descriptor table is tried on the host (`rust`): a container's
+          # default profile refuses `unshare`, so no thread makes one there.
+          contained default a_socket_never_bound_does_not_listen
+          if contained default a_server_on_a_socket_the_chat_bound_listens; then
+            echo "::notice title=Listening in a container::Docker's own default profile lets the chat's socket be taken now"
+          else
+            echo "::notice title=Listening in a container::under Docker's own default profile nothing listens (fail closed)"
+          fi
       # Under `tools/no-orphans.sh`, as `rust` is: a test ends what it started, its pool's
       # container included.
       - name: The behaviour suite on its Docker pool target, and the window's real-Docker tests
@@ -1007,7 +1039,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1026,6 +1058,10 @@ jobs:
       - name: The studio probe, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p studio-probe
+      # A wrapped chat's own compiled profile, applied for real: no port bound, nothing listening.
+      - name: A wrapped chat listens nowhere, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p purlis-core --test a_sandboxed_chat_listens_nowhere_under_seatbelt
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused

@@ -158,3 +158,5 @@
 {"call":{"id":156,"command":"take_conversation","project":"01J9PRJCT00000000000000000","transfer":13,"workspace":"app","profile":"claude","conversation":"0d6f3c1e-8a4b-4c7d-9e21-5b3f2a1c0e99","file":"{config}/projects/{cwd_key}/0d6f3c1e-8a4b-4c7d-9e21-5b3f2a1c0e99.jsonl"}}
 {"call":{"id":157,"command":"give_conversation","project":"01J9PRJCT00000000000000000","transfer":14,"workspace":"app","profile":"claude","conversation":"0d6f3c1e-8a4b-4c7d-9e21-5b3f2a1c0e99"}}
 {"reply":{"re":157,"ok":{"conversation":{"file":"{config}/projects/{cwd_key}/0d6f3c1e-8a4b-4c7d-9e21-5b3f2a1c0e99.jsonl"}}}}
+{"pushed":{"heard":{"project":"01J9PRJCT00000000000000000","heard":13,"line":{"report":{"chat":7,"event":"stop"}},"pathless":true}}}
+{"call":{"id":154,"command":"reply_heard","project":"01J9PRJCT00000000000000000","heard":13,"reply":{"line":{"entry":"report","report":{"chat":7,"event":"stop"},"followed":"no"}}}}

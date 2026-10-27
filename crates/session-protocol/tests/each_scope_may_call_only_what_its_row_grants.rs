@@ -555,7 +555,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "log_in",
             "take_back",
             // Code moved for the desktop's window (1.34, #2046), and a chat's conversation as it
-            // moves (1.42, #2048).
+            // moves (1.41, #2048).
             "take_code",
             "give_code",
             "take_conversation",

@@ -47,9 +47,9 @@ type KeptConversation = (Carried, Vec<u8>);
 #[derive(Default, Clone)]
 struct Recorded {
     taken: Arc<Mutex<Vec<Taken>>>,
-    /// Each work tree taken over: the branch it went onto (1.42).
+    /// Each work tree taken over: the branch it went onto (1.41).
     taken_over: Arc<Mutex<Vec<String>>>,
-    /// Each conversation kept: what it was carried as, and its bytes (1.42).
+    /// Each conversation kept: what it was carried as, and its bytes (1.41).
     conversations: Arc<Mutex<Vec<KeptConversation>>>,
 }
 

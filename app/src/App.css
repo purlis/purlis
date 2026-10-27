@@ -927,6 +927,24 @@ body {
   margin-block-start: var(--space-1);
 }
 
+/* Pins past the most a chat reads only together (#3391): the sentence, and under it a way to
+   each pinner's studio. */
+.use-skill-pins-together > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.use-skill-pins-together p {
+  margin: 0;
+}
+
+.use-skill-studios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 /* The skills are a list of the family (`ui/list`, #2911): a skill's name, its level and its
    description under them, in the row. The list scrolls inside the dialog. */
 .use-skill-list {
@@ -2617,6 +2635,11 @@ body {
 /* What an Allow's restart of the chat ends (#1986): a secondary line of the row, its colour
    the text role's (`ui-text-secondary`). */
 .inbox-restart {
+  margin: 0;
+}
+/* Why a permission offers no Allow, where a character it holds reads otherwise (SK-51, #3202):
+   a secondary line of the row, as the restart's is. */
+.inbox-hidden {
   margin: 0;
 }
 .inbox-none {
@@ -6434,8 +6457,9 @@ nav.piece-files-head {
   border-radius: var(--radius-md);
 }
 
-/* An invisible character in a previewed file, drawn as its code point (FR-18a). */
-.repo-instruction-text .invisible-char {
+/* A character a reader does not see, drawn as its mark, `⟦U+XXXX⟧` (FR-18a; SK-51, #3202): in a
+   previewed file, and in an ask's line. */
+.invisible-char {
   padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
   background: var(--danger-surface);

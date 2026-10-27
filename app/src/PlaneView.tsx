@@ -413,7 +413,7 @@ import type {
 } from "./bindings";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
-import { useSkillStudioOn } from "./skillStudio";
+import { skillStudioTitle, skillStudioView, useSkillStudioOn } from "./skillStudio";
 import { SkillRunsHere, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
@@ -9484,6 +9484,10 @@ export const PlaneView = memo(function PlaneView({
               busy={usingSkill.busy}
               onUse={(skill, values) => void sendUseSkill(skill, values)}
               onCancel={() => setUsingSkill(undefined)}
+              onOpenStudio={(scope) => {
+                setUsingSkill(undefined);
+                showView(skillStudioView(scope), skillStudioTitle(scope));
+              }}
             />
           )}
 

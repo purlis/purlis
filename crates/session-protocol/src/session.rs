@@ -255,25 +255,30 @@ use crate::view::{Limits, Views};
 /// earlier minor answers no browser, and a window that comes back to it ends them as nothing
 /// takes them back.
 ///
-/// 1.42 added a chat moving between the desktop and a runner (#2048, spec #2041): `take_code`
+/// 1.40 added a host saying it records a hook line under the project as it holds it (#3400):
+/// each `heard` it pushes says so (`pathless`), and the window's reply to that line names no
+/// project path, which such a host never used. A host before 1.40 says nothing of it, and is
+/// sent the path as before.
+///
+/// 1.41 added a chat moving between the desktop and a runner (#2048, spec #2041): `take_code`
 /// with `moving` takes a repository's work tree over onto the branch and work the client sends,
 /// where it is still what the two ends last agreed, and `give_code` with `with_work` sends the
 /// work tree's uncommitted work back as its branch's snapshot; `take_conversation` and
 /// `give_conversation` carry the chat's conversation into and out of the harness folder of the
 /// profile it runs on there, on a code stream, answered `conversation` with where the
-/// harness's declaration keeps it. The window's alone, relayed for it. A host before 1.42 reads
+/// harness's declaration keeps it. The window's alone, relayed for it. A host before 1.41 reads
 /// no `moving` or `with_work` and refuses the conversation commands `unknown_command`, so the
 /// window moves no chat to or from one.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 42,
+    minor: 41,
 };
 
 /// The version that first moves a chat's work tree and conversation (#2048): the window moves
 /// no chat to or from a host before it.
 pub const MOVES_CHATS: Version = Version {
     major: 1,
-    minor: 42,
+    minor: 41,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -682,12 +687,12 @@ pub enum Command {
     /// chats then work in. A repository with something checked out is left as it is, and a
     /// branch one of its work trees has checked out is the runner's own and is never moved.
     ///
-    /// `moving` (1.42, #2048) moves a chat's work tree with the chat: `refs` are exactly the
+    /// `moving` (1.41, #2048) moves a chat's work tree with the chat: `refs` are exactly the
     /// branch `checkout` names and its snapshot, and the repository's work tree is taken over
     /// onto them, checked out or not, where it is still what the two ends last agreed (it was
     /// left as a move left it, or has nothing uncommitted and no commit `checkout` lacks).
     /// Refused [`NOT_ALLOWED`] otherwise, with nothing of the repository changed. A host before
-    /// 1.42 does not read it, so the window moves no chat to one.
+    /// 1.41 does not read it, so the window moves no chat to one.
     TakeCode {
         project: String,
         #[serde(default)]
@@ -705,7 +710,7 @@ pub enum Command {
     /// [`Answer::Code`] with the branches the bundle is of. The window's alone
     /// ([`crate::grants::Power::Code`]), relayed for it.
     ///
-    /// `with_work` (1.42, #2048) also carries the repository's work tree as a chat moving off the
+    /// `with_work` (1.41, #2048) also carries the repository's work tree as a chat moving off the
     /// host leaves it: a snapshot of its uncommitted work on the branch it is on, as
     /// `refs/purlis/snapshots/<branch>`, which the two ends agree on from then on.
     GiveCode {
@@ -718,7 +723,7 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         with_work: bool,
     },
-    /// The client writes a chat's conversation into the host's harness folder (1.42, #2048), as
+    /// The client writes a chat's conversation into the host's harness folder (1.41, #2048), as
     /// the chat moves there: on a code stream named `transfer`, as `take_code` reads a bundle,
     /// at most [`crate::code::MOST_BUNDLE_BYTES`]. `conversation` is the harness's session id,
     /// and `file` where the harness's declaration keeps it, every `*` part as found and
@@ -735,7 +740,7 @@ pub enum Command {
         conversation: String,
         file: String,
     },
-    /// The host writes a chat's conversation back to the client (1.42, #2048), as the chat
+    /// The host writes a chat's conversation back to the client (1.41, #2048), as the chat
     /// moves off it: found in the harness folder of `profile` there, as its declaration keeps
     /// it, on a code stream named `transfer`. Answered [`Answer::Conversation`] with where the
     /// declaration keeps it, as `take_conversation` names it. The window's alone
@@ -1192,7 +1197,7 @@ pub enum Answer {
     /// The refs a transfer of code left (1.34): [`Command::TakeCode`] and
     /// [`Command::GiveCode`].
     Code { heads: Vec<CodeRef> },
-    /// Where a conversation is kept, as its harness's declaration says it (1.42):
+    /// Where a conversation is kept, as its harness's declaration says it (1.41):
     /// [`Command::GiveConversation`].
     Conversation { file: String },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
@@ -1417,6 +1422,10 @@ pub enum Pushed {
         project: String,
         heard: u64,
         line: serde_json::Value,
+        /// The host records the line under the project as it holds it, so the reply's record
+        /// of it names no project path (1.40, #3400). A host before 1.40 never says it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        pathless: bool,
     },
     /// What a confinement's proxy did (1.4). Pushed only to a link that may confine
     /// ([`crate::grants::Power::Confine`]) and that the host named the confinement to (#2444):
@@ -2736,7 +2745,7 @@ impl Client {
     }
 
     /// [`Client::take_code`], taking the repository's work tree over onto `checkout` and its
-    /// snapshot as a chat moves to the host (1.42, #2048).
+    /// snapshot as a chat moves to the host (1.41, #2048).
     pub async fn take_work(
         &self,
         project: &str,
@@ -2757,7 +2766,7 @@ impl Client {
     }
 
     /// [`Client::give_code`], with the work tree's uncommitted work as its branch's snapshot, as
-    /// a chat moves off the host (1.42, #2048).
+    /// a chat moves off the host (1.41, #2048).
     pub async fn give_work(
         &self,
         project: &str,
@@ -2777,7 +2786,7 @@ impl Client {
 
     /// Have the host keep chat's conversation `conversation`, written on the code stream it
     /// opens for `transfer`, as `file` in the harness folder of `profile` there, for a chat in
-    /// `workspace` of `project` (1.42, #2048).
+    /// `workspace` of `project` (1.41, #2048).
     pub async fn take_conversation(
         &self,
         project: &str,
@@ -2799,7 +2808,7 @@ impl Client {
     }
 
     /// Have the host write chat's conversation `conversation` of `profile` on the code stream
-    /// it opens for `transfer` (1.42, #2048). Answers where the harness keeps it.
+    /// it opens for `transfer` (1.41, #2048). Answers where the harness keeps it.
     pub async fn give_conversation(
         &self,
         project: &str,
