@@ -89,6 +89,10 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
   // The engine may install its embedder interface before this runs or after: either way, what
   // the front end reads is the wrapped one.
   const refusedNames = new Set();
+  const passedNames = new Set();
+  const errors = [];
+  globalThis.addEventListener('error', (e) => { if (errors.length < 5) errors.push(String(e.message).slice(0, 160)); });
+  globalThis.addEventListener('unhandledrejection', (e) => { if (errors.length < 5) errors.push(String(e.reason && e.reason.message || e.reason).slice(0, 160)); });
   const wrap = (native) => {
     const allowed = new Set(EMBEDDER_ALLOWED);
     const refuse = (message) => {
@@ -103,6 +107,7 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
     const toEmbedder = (message) => {
       let method;
       try { method = JSON.parse(message).method; } catch (e) { return; }
+      if (passedNames.size < 64) passedNames.add(String(method).slice(0, 64));
       if (allowed.has(method)) native.sendMessageToEmbedder(message);
       else refuse(message);
     };
@@ -157,7 +162,7 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
       }
     }
   };
-  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver, refused: () => [...refusedNames] }), writable: false, configurable: false });
+  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver, refused: () => [...refusedNames], asked: () => [...passedNames], errors: () => [...errors], sockets: () => open.length }), writable: false, configurable: false });
 })()";
 
 /// **What the front end may ask of the engine's embedder interface** (#2028), where the engine
@@ -199,6 +204,9 @@ const HOSTED: &str = r"JSON.stringify({
   host: typeof globalThis.DevToolsHost,
   wrapped: !!(globalThis.DevToolsHost && globalThis.DevToolsHost.__purlisWrapped),
   refused: (globalThis.__purlisInspector && globalThis.__purlisInspector.refused) ? globalThis.__purlisInspector.refused() : null,
+  asked: (globalThis.__purlisInspector && globalThis.__purlisInspector.asked) ? globalThis.__purlisInspector.asked() : null,
+  errors: (globalThis.__purlisInspector && globalThis.__purlisInspector.errors) ? globalThis.__purlisInspector.errors() : null,
+  sockets: (globalThis.__purlisInspector && globalThis.__purlisInspector.sockets) ? globalThis.__purlisInspector.sockets() : null,
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
 })";
 
