@@ -369,6 +369,40 @@ pub fn link_state(to: &ToARunner) -> Result<crate::dockerpools::PoolLink, String
     })
 }
 
+/// **What the runner `to` holds, as its own list says** (#2052, the Devices view): one link, made
+/// and let go of; or where the runner stands where it gave no list, as [`link_state`] says it.
+pub fn listed(
+    to: &ToARunner,
+) -> Result<Vec<crate::devices::ListedProgram>, crate::dockerpools::PoolLink> {
+    use crate::dockerpools::PoolLink;
+    let listed = on_one_link(to, async |linked| {
+        Ok(match linked {
+            Ok(client) => match client.list().await {
+                Ok(chats) => Ok(chats
+                    .into_iter()
+                    .map(|chat| crate::devices::ListedProgram {
+                        browser: chat.kind
+                            == Some(purlis_session_protocol::session::ProgramKind::Browser),
+                        ended: chat.state == "ended",
+                        id: chat.chat,
+                        project: chat.project,
+                        number: chat.number,
+                    })
+                    .collect()),
+                Err(why) => Err(PoolLink::Down {
+                    why: why.to_string(),
+                }),
+            },
+            Err(down) if down.key_changed => Err(PoolLink::KeyChanged),
+            Err(down) => Err(PoolLink::Down { why: down.why }),
+        })
+    });
+    match listed {
+        Ok(listed) => listed,
+        Err(why) => Err(PoolLink::Down { why }),
+    }
+}
+
 /// How long one link to a runner waits for it to answer.
 const ANSWER_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 

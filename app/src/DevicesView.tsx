@@ -1,0 +1,189 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * **Devices** (#2052, spec #2041 stories 54 and 55): this machine and every runner it keeps, each
+ * with its chats and browsers, its version, how it is and when it last answered; then each
+ * pool's use per person. A view tab of its own, opened from the palette's Devices row, which is
+ * offered only once this machine keeps a pool (story 6). It is the Runners view ADR 0089 §12
+ * named, which was never drawn, under the spec's name.
+ *
+ * - **The list family**: a section per device, its first row how it is, then a row per chat
+ *   and per browser on it, and one for what it holds that this window has not open.
+ * - **The table family** for the use: one row per pool and person. No money: a pool declares no
+ *   price per hour yet, and a cost is never guessed.
+ * - **Refresh** reads every device again, as the view's coming on screen does.
+ */
+import { List, ListRow, ListRowSection } from "./ui/list/List";
+import { RowDescription, RowLabel, RowTrail } from "./ui/list/Row";
+import { Badge } from "./ui/badge/Badge";
+import { Button } from "./ui/button/Button";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
+import type { RunnerAsked } from "./bindings";
+import {
+  arranged,
+  contactSaid,
+  healthSaid,
+  rereadDevices,
+  usageOf,
+  useDevices,
+  versionSaid,
+  type DeviceRow,
+} from "./devices";
+import { DEVICES_TITLE } from "./tabs";
+
+/** `count` of `one`, said whole: `1 chat`, `2 chats`. */
+const counted = (count: number, one: string, many: string) =>
+  `${count} ${count === 1 ? one : many}`;
+
+/** What a runner's row says of what it holds that this window has not open. */
+function notOpenSaid(asked: RunnerAsked | "asking" | undefined): string | undefined {
+  if (asked === undefined || asked === "asking") return undefined;
+  const { chats, browsers } = asked.holds;
+  const parts = [
+    chats > 0 ? counted(chats, "chat", "chats") : undefined,
+    browsers > 0 ? counted(browsers, "browser", "browsers") : undefined,
+  ].filter((one) => one !== undefined);
+  return parts.length === 0
+    ? undefined
+    : `${parts.join(" and ")} of projects not open in this window`;
+}
+
+/** A device's section: its name, how it is, and what runs on it. */
+function DeviceSection({
+  row,
+  asked,
+  version,
+  now,
+}: {
+  row: DeviceRow;
+  asked: RunnerAsked | "asking" | undefined;
+  version: string;
+  now: Date;
+}) {
+  const runner = row.runner;
+  const title = runner === undefined ? "This machine" : `Runner ${runner.runner} of pool ${runner.pool}`;
+  const health = runner === undefined ? { badge: "here", trouble: false } : healthSaid(asked);
+  const runs =
+    runner === undefined
+      ? versionSaid(version, version)
+      : versionSaid(typeof asked === "object" ? asked.version : null, version);
+  const facts = [
+    runs,
+    runner === undefined
+      ? undefined
+      : contactSaid(typeof asked === "object" ? asked.contacted : null, now),
+    runner?.draining === true
+      ? "An older runner: it keeps its chats until they end, then purlis removes it"
+      : undefined,
+  ].filter((one) => one !== undefined);
+  const more = notOpenSaid(asked);
+  const nothing = row.chats.length === 0 && row.browsers.length === 0 && more === undefined;
+  return (
+    <ListRowSection id={row.key} title={title} named={runner !== undefined}>
+      <ListRow id={`${row.key}:standing`} textValue={`${title}: ${health.badge}`}>
+        <RowLabel>{health.line ?? (health.badge === "here" ? "Where this window runs" : "Answers")}</RowLabel>
+        {facts.length > 0 && <RowDescription>{facts.join(" · ")}</RowDescription>}
+        <RowTrail>
+          <Badge variant={health.trouble ? "waiting" : "neutral"}>{health.badge}</Badge>
+        </RowTrail>
+      </ListRow>
+      {row.chats.map((chat) => (
+        <ListRow key={`${chat.plane}:${chat.session}`} id={`${row.key}:chat:${chat.plane}:${chat.session}`} textValue={chat.name}>
+          <RowLabel>{chat.name}</RowLabel>
+          <RowDescription>Chat</RowDescription>
+        </ListRow>
+      ))}
+      {row.browsers.map((browser) => (
+        <ListRow
+          key={`${browser.plane}:${browser.session}:${browser.name}`}
+          id={`${row.key}:browser:${browser.plane}:${browser.session}:${browser.name}`}
+          textValue={`Browser ${browser.name} of ${browser.chat}`}
+        >
+          <RowLabel>{`Browser ${browser.name}`}</RowLabel>
+          <RowDescription>{`Of ${browser.chat}`}</RowDescription>
+        </ListRow>
+      ))}
+      {more !== undefined && (
+        <ListRow id={`${row.key}:more`} textValue={more}>
+          <RowLabel>{more}</RowLabel>
+        </ListRow>
+      )}
+      {nothing && (
+        <ListRow id={`${row.key}:nothing`} textValue="No chat or browser runs here">
+          <RowLabel>No chat or browser runs here</RowLabel>
+        </ListRow>
+      )}
+    </ListRowSection>
+  );
+}
+
+/** **The view tab**: the devices, then each pool's use. */
+export function DevicesView({ now = new Date() }: { now?: Date }) {
+  const { read, asked } = useDevices();
+  if (read.state === "reading")
+    return (
+      <div className="devices-view" data-testid="devices-view">
+        <p role="status">Reading this machine&apos;s devices…</p>
+      </div>
+    );
+  if (read.state === "trouble")
+    return (
+      <div className="devices-view" data-testid="devices-view">
+        <p role="alert">{read.trouble}</p>
+        <Button onPress={() => void rereadDevices()}>Refresh</Button>
+      </div>
+    );
+  const shown = read.shown;
+  const rows = arranged(shown, asked);
+  const use = usageOf(shown.pools, shown.placement.runners, asked);
+  return (
+    <div className="devices-view" data-testid="devices-view">
+      <div className="devices-bar">
+        <Button size="sm" onPress={() => void rereadDevices()}>
+          Refresh
+        </Button>
+      </div>
+      <List aria-label={DEVICES_TITLE} className="devices-list">
+        {rows.map((row) => (
+          <DeviceSection
+            key={row.key}
+            row={row}
+            asked={asked[row.key]}
+            version={shown.version}
+            now={now}
+          />
+        ))}
+      </List>
+      {shown.placement.unkept.length > 0 && (
+        <p className="ui-setting-help">
+          {`${counted(shown.placement.unkept.length, "chat runs", "chats run")} on a pool this machine no longer keeps: ${shown.placement.unkept.map((one) => `${one.name} on ${one.pool}`).join(", ")}.`}
+        </p>
+      )}
+      {use.length > 0 && (
+        <Table aria-label="Use per pool and person" className="devices-use">
+          <TableHeader>
+            <TableColumn isRowHeader>Pool</TableColumn>
+            <TableColumn>Person</TableColumn>
+            <TableColumn>Running</TableColumn>
+            <TableColumn>Suspended</TableColumn>
+            <TableColumn>CPUs requested</TableColumn>
+            <TableColumn>Memory requested</TableColumn>
+          </TableHeader>
+          <TableBody>
+            {use.map((one) => (
+              <TableRow key={`${one.pool}:${one.person}`} id={`${one.pool}:${one.person}`}>
+                <TableCell>{one.pool}</TableCell>
+                <TableCell>{one.person}</TableCell>
+                <TableCell>{one.asking > 0 ? `${one.running}, asking ${one.asking}…` : `${one.running}`}</TableCell>
+                <TableCell>{`${one.suspended}`}</TableCell>
+                <TableCell>{one.cpus}</TableCell>
+                <TableCell>{`${one.memoryMib} MiB`}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}

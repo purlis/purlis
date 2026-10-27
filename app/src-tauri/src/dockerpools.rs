@@ -98,7 +98,8 @@ pub struct PoolVersion {
 }
 
 #[cfg(unix)]
-fn shown(limits: Limits) -> PoolLimitsShown {
+/// `limits`, as a row draws them.
+pub(crate) fn shown(limits: Limits) -> PoolLimitsShown {
     let (whole, part) = (limits.millicpus() / 1000, limits.millicpus() % 1000);
     let cpus = if part == 0 {
         whole.to_string()

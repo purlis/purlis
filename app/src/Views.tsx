@@ -31,6 +31,7 @@ import {
   KeyRound,
   ListChecks,
   LoaderCircle,
+  MonitorSmartphone,
   Puzzle,
   RefreshCw,
   Save,
@@ -84,6 +85,7 @@ import { HeadingOffer } from "./PanelSection";
 import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
 import { ShortcutsView } from "./keys/ShortcutsView";
+import { DevicesView } from "./DevicesView";
 import { BrowserView } from "./BrowserView";
 import { BrowserTimeline } from "./BrowserTimeline";
 import { isBrowserTimeline } from "./browserTimelines";
@@ -114,6 +116,7 @@ import {
   SAVING_VIEW,
   LICENCES_VIEW,
   SHORTCUTS_VIEW,
+  DEVICES_VIEW,
   SETTINGS_TAB_TITLE,
   settingsLevelOf,
   settingsView,
@@ -327,6 +330,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [RUNNER_WRITE_VIEW]: GitCompare,
   /** A browser, drawn live (#2012, `browsers.ts`). */
   [BROWSER_VIEW]: Globe,
+  /** This machine and its runners (#2052, `DevicesView.tsx`). */
+  [DEVICES_VIEW.view]: MonitorSmartphone,
 };
 
 /** The glyph a view's tab carries: a person for a persona, a piece of a puzzle for a view an
@@ -475,6 +480,14 @@ export function ViewPane({
         aria-label={title}
       >
         <ShortcutsView />
+      </section>
+    );
+  }
+  // **Devices** (#2052): this machine and its runners, with no title of its own (#3147).
+  if (view.from === null && view.view === DEVICES_VIEW.view) {
+    return (
+      <section className="view-pane view-alone" data-testid="view-pane-devices" aria-label={title}>
+        <DevicesView />
       </section>
     );
   }

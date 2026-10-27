@@ -5277,6 +5277,23 @@ body {
   overflow-y: auto;
 }
 
+/* **Devices** (#2052, `DevicesView.tsx`): no heading of its own (#3147). Refresh is its first
+   row, keeping the room the pane's actions take at its end; the devices and the use scroll under
+   it. */
+.devices-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+}
+
+.pane-frame.pane-viewed .devices-view > .devices-bar {
+  margin-inline-end: calc(var(--pane-actions-room) - var(--space-5));
+}
+
 /* The light editor (RC-5): a piece's files beside the file picked, or one file filling its
    tab. CodeMirror draws its own colours from `src/editor/look.ts`; only the layout is here. */
 .view-body:has(> .piece-files, > .piece-file) {

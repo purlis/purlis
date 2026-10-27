@@ -1,0 +1,273 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+use std::cell::Cell;
+use std::path::Path;
+
+use super::*;
+use crate::planes::PlaneId;
+
+fn plane() -> PlaneId {
+    PlaneId::for_tests(Path::new("/plane"))
+}
+
+fn runner(pool: &str, runner: &str, draining: bool) -> KeptRunner {
+    KeptRunner {
+        pool: pool.to_owned(),
+        runner: runner.to_owned(),
+        draining,
+    }
+}
+
+fn chat(session: u32, name: &str, on: Option<&str>) -> Placed {
+    Placed {
+        plane: plane(),
+        session,
+        name: name.to_owned(),
+        on: on.map(str::to_owned),
+    }
+}
+
+fn browser(session: u32, name: &str, chat: &str, on: Option<&str>) -> BrowserPlaced {
+    BrowserPlaced {
+        plane: plane(),
+        session,
+        name: name.to_owned(),
+        chat: chat.to_owned(),
+        on: on.map(str::to_owned),
+    }
+}
+
+fn sessions(on: &OnADevice) -> Vec<u32> {
+    on.chats.iter().map(|chat| chat.session).collect()
+}
+
+#[test]
+fn a_chat_with_no_pool_is_on_this_machine_and_one_on_a_pool_is_on_its_runner() {
+    let shown = placed(
+        &[runner("builds", "builds", false)],
+        vec![chat(1, "lint", None), chat(2, "verify", Some("builds"))],
+        Vec::new(),
+    );
+    assert_eq!(sessions(&shown.here), [1]);
+    assert_eq!(shown.runners.len(), 1);
+    assert_eq!(shown.runners[0].pool, "builds");
+    assert_eq!(sessions(&shown.runners[0].on), [2]);
+    assert_eq!(shown.runners[0].on.chats[0].name, "verify");
+    assert!(shown.unkept.is_empty());
+}
+
+#[test]
+fn a_chat_on_a_pool_is_on_its_runner_that_takes_new_chats_and_one_named_whole_on_the_draining_one()
+{
+    let shown = placed(
+        &[
+            runner("builds", "builds", true),
+            runner("builds", "builds-2b1f", false),
+        ],
+        vec![
+            chat(3, "new", Some("builds")),
+            chat(4, "old", Some("builds/builds")),
+        ],
+        Vec::new(),
+    );
+    let by_name = |name: &str| {
+        shown
+            .runners
+            .iter()
+            .find(|one| one.runner == name)
+            .expect("the runner is listed")
+    };
+    assert_eq!(sessions(&by_name("builds-2b1f").on), [3]);
+    assert_eq!(sessions(&by_name("builds").on), [4]);
+    assert!(by_name("builds").draining);
+}
+
+#[test]
+fn every_kept_runner_is_listed_whether_or_not_a_chat_runs_on_it() {
+    let shown = placed(
+        &[runner("builds", "builds", false), runner("qa", "qa", false)],
+        Vec::new(),
+        Vec::new(),
+    );
+    let names: Vec<&str> = shown.runners.iter().map(|one| one.runner.as_str()).collect();
+    assert_eq!(names, ["builds", "qa"]);
+    assert!(shown.runners.iter().all(|one| one.on.chats.is_empty()));
+}
+
+#[test]
+fn a_chat_on_a_pool_this_machine_no_longer_keeps_is_said_apart_never_put_on_another_device() {
+    let shown = placed(
+        &[runner("builds", "builds", false)],
+        vec![chat(5, "gone", Some("removed")), chat(6, "gone too", Some("builds/old"))],
+        Vec::new(),
+    );
+    assert!(shown.here.chats.is_empty());
+    assert!(shown.runners[0].on.chats.is_empty());
+    let unkept: Vec<(u32, &str)> = shown
+        .unkept
+        .iter()
+        .map(|one| (one.session, one.pool.as_str()))
+        .collect();
+    assert_eq!(unkept, [(5, "removed"), (6, "builds/old")]);
+}
+
+#[test]
+fn a_browser_is_on_the_device_its_chat_runs_it_on() {
+    let shown = placed(
+        &[runner("builds", "builds", false)],
+        Vec::new(),
+        vec![
+            browser(1, "b1", "lint", None),
+            browser(2, "b1", "verify", Some("builds")),
+        ],
+    );
+    assert_eq!(shown.here.browsers.len(), 1);
+    assert_eq!(shown.here.browsers[0].chat, "lint");
+    assert_eq!(shown.runners[0].on.browsers.len(), 1);
+    assert_eq!(shown.runners[0].on.browsers[0].session, 2);
+    assert_eq!(shown.runners[0].on.browsers[0].name, "b1");
+}
+
+fn listed(id: &str, project: &str, number: Option<u32>, state: &str, browser: bool) -> ListedProgram {
+    ListedProgram {
+        id: id.to_owned(),
+        project: project.to_owned(),
+        number,
+        ended: state == "ended",
+        browser,
+    }
+}
+
+#[test]
+fn a_suspended_runner_is_never_linked_to_and_keeps_when_it_last_answered() {
+    let linked = Cell::new(false);
+    let asked = answered(
+        Ok(false),
+        || {
+            linked.set(true);
+            Ok(Vec::new())
+        },
+        || None,
+        Some(1_000),
+        2_000,
+    );
+    assert!(!linked.get(), "a suspended runner is not woken to be asked");
+    assert_eq!(asked.standing, RunnerStanding::Suspended);
+    assert_eq!(asked.link, None);
+    assert_eq!(asked.contacted, Some(1_000));
+}
+
+#[test]
+fn a_running_runner_that_answers_is_contacted_now_and_counts_what_it_holds_that_has_not_ended() {
+    let asked = answered(
+        Ok(true),
+        || {
+            Ok(vec![
+                listed("c1", "p1", Some(1), "running", false),
+                listed("c2", "p1", Some(2), "ended", false),
+                listed("c3", "p2", Some(1), "running", false),
+                listed("b1", "p1", None, "running", true),
+            ])
+        },
+        || Some("0.9.0".to_owned()),
+        Some(1_000),
+        2_000,
+    );
+    assert_eq!(asked.standing, RunnerStanding::Running);
+    assert_eq!(asked.link, Some(PoolLink::Linked));
+    assert_eq!(asked.contacted, Some(2_000));
+    assert_eq!(asked.version.as_deref(), Some("0.9.0"));
+    let holds: Vec<(&str, Option<u32>, bool)> = asked
+        .holds
+        .iter()
+        .map(|one| (one.project.as_str(), one.number, one.browser))
+        .collect();
+    assert_eq!(
+        holds,
+        [("p1", Some(1), false), ("p2", Some(1), false), ("p1", None, true)]
+    );
+}
+
+#[test]
+fn a_running_runner_that_does_not_answer_says_why_and_keeps_its_last_contact() {
+    let asked = answered(
+        Ok(true),
+        || {
+            Err(PoolLink::Down {
+                why: "the runner did not answer in time".to_owned(),
+            })
+        },
+        || None,
+        Some(1_000),
+        2_000,
+    );
+    assert_eq!(
+        asked.link,
+        Some(PoolLink::Down {
+            why: "the runner did not answer in time".to_owned()
+        })
+    );
+    assert_eq!(asked.contacted, Some(1_000));
+    assert!(asked.holds.is_empty());
+}
+
+#[test]
+fn a_runner_whose_container_cannot_be_read_is_not_linked_to_and_says_why() {
+    let linked = Cell::new(false);
+    let asked = answered(
+        Err("docker is not running".to_owned()),
+        || {
+            linked.set(true);
+            Ok(Vec::new())
+        },
+        || None,
+        None,
+        2_000,
+    );
+    assert!(!linked.get());
+    assert_eq!(
+        asked.standing,
+        RunnerStanding::Unknown {
+            why: "docker is not running".to_owned()
+        }
+    );
+    assert_eq!(asked.contacted, None);
+}
+
+#[test]
+fn the_last_contact_is_kept_for_each_runner_apart() {
+    let contacts = Contacts::default();
+    contacts.answered("builds/builds", 10);
+    contacts.answered("qa/qa", 20);
+    contacts.answered("builds/builds", 30);
+    assert_eq!(contacts.last("builds/builds"), Some(30));
+    assert_eq!(contacts.last("qa/qa"), Some(20));
+    assert_eq!(contacts.last("other/other"), None);
+}
+
+#[test]
+fn what_a_runner_holds_for_chats_and_browsers_the_window_has_not_open_is_counted_apart() {
+    let holds = vec![
+        listed("c1", "p1", Some(1), "running", false),
+        listed("c3", "p2", Some(1), "running", false),
+        listed("c4", "p1", Some(7), "running", false),
+        listed("b1", "p1", None, "running", true),
+        listed("b2", "p2", None, "running", true),
+    ];
+    let open = OpenHere {
+        chats: [(("p1".to_owned(), 1), (plane(), 1))].into_iter().collect(),
+        browsers: ["b1".to_owned()].into_iter().collect(),
+    };
+    assert_eq!(
+        not_open_here(&holds, &open),
+        NotOpenHere {
+            open: vec![ChatHeld {
+                plane: plane(),
+                session: 1
+            }],
+            chats: 2,
+            browsers: 1
+        }
+    );
+}
