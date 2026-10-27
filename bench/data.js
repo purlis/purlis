@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793106749185,
+  "lastUpdate": 1793110850649,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26838,6 +26838,48 @@ window.BENCHMARK_DATA = {
             "value": 102.01710349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.032, 100.875, 102.017, 102.041, 102.954 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3b271b1b09ec65837b43eaaed21de14aacabf41c",
+          "message": "Runners: lifecycle while you are away, and a runner's event log in the window (#2051, #3393) (#3473)\n\n* Runners: runner lifecycle while you are away (#2051)\n\nStop all reaches every runner this machine keeps: the desktop's host sends\na stop down a link of its own to each, names in the kill switch's words any\nit did not reach and tries it again while stopped, and a link it relays\nwhile stopped carries a stop first. The window's re-arm re-arms the runners\nthat stop reached, so a runner's remote-link may re-arm (ADR 0078 §4, V29b).\n\nA runner's host with no link from its desktop for a day suspends itself:\nit stops serving, every chat ends as at a quit, and its container stops\nwith its home kept. The desktop starts a suspended Docker runner again as it\nnext links to it, once its container is checked as it was made. The kill\nswitch never wakes one to stop it.\n\nWhile you were away gains a section per runner: what finished there, what\nwaits for the person, and the branches ready to push, each a link.\n\nADR 0089 is amended: a runner a live chat owns, or whose browser holds an\nAsk, is never idle; one left a day without a link suspends itself.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* The window shows a runner chat's event log lines beside local ones (#3393)\n\nSession protocol 1.44: `log_end` answers a host's device and the last seq\nof its own event log, and a subscribe whose `since` names that device is\npushed each line after the cursor, then each as it is written, and a gap as\n`missed`. Only the window and its host relaying it may read it; a since that\nnames no such device is pushed none of it, as before.\n\nEach link the window's host relays to a pool's runner reads the runner's log\nfrom where it ends as it links, and on from its cursor after it fell behind\nor the link came back. The lines are held in the window's memory alone,\nnever written into this machine's log.\n\nWhile you were away reads them: each run of the project's chats that ended\non a runner while away, at its time in the person's time zone, and a runner\nwhose link is down is said to be. ADR 0078 is amended for how.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T12:03:57Z",
+          "tree_id": "c675554d0a0339a6e1f14c7e671f94845d98c972",
+          "url": "https://github.com/purlis/purlis/commit/3b271b1b09ec65837b43eaaed21de14aacabf41c"
+        },
+        "date": 1793110845493,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.286721,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.279, 0.281, 0.287, 0.288, 0.290 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.641927499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.463, 16.602, 16.642, 16.656, 16.739 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.22098349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.566, 101.204, 101.221, 101.605, 101.753 ms"
           }
         ]
       }
