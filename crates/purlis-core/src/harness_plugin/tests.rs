@@ -1120,14 +1120,21 @@ fn a_held_opencode_folder_is_read_as_opened_when_a_link_takes_its_place() {
     )
     .unwrap();
 
-    let level = Folder::open(&root, true).expect("the project opens");
-    let Child::Folder(dot) = level.child(".opencode", false) else {
+    let level = Folder::open(&root, Follow::Link).expect("the project opens");
+    let Opened::Folder(dot) = level.child(".opencode", Follow::NoLink) else {
         panic!(".opencode is a folder")
     };
     std::fs::rename(root.join(".opencode"), root.join("moved")).unwrap();
     std::os::unix::fs::symlink(elsewhere.path(), root.join(".opencode")).unwrap();
 
-    let listed = opencode_dot(OPENCODE.harness(), &dot, "", "this project's", true);
+    let listed = opencode_dot(
+        OPENCODE.harness(),
+        &dot,
+        "",
+        "this project's",
+        true,
+        HardLinks::Refused,
+    );
     assert_eq!(
         ids_and_sources(listed),
         [pair(
@@ -1688,17 +1695,50 @@ fn a_chat_written_config_is_read_only_as_a_plain_file_of_its_own() {
     std::os::unix::fs::symlink("/dev/zero", dir.path().join("endless.json")).unwrap();
     std::fs::write(dir.path().join("big.json"), vec![b' '; 1024 * 1024 + 1]).unwrap();
     std::fs::create_dir(dir.path().join("folder.json")).unwrap();
-    let folder = Folder::open(dir.path(), false).expect("the folder opens");
+    // SK-52 (#3205): a config with a second name reaches past its folder as a link does, and
+    // is refused as a skill's own file is.
+    std::fs::hard_link(&plain, dir.path().join("twinned.json")).unwrap();
+    std::fs::write(dir.path().join("own.json"), r#"{"plugin":["b"]}"#).unwrap();
+    let folder = Folder::open(dir.path(), Follow::NoLink).expect("the folder opens");
 
     assert_eq!(
-        folder.read("plain.json"),
-        Ok(Some(r#"{"plugin":["a"]}"#.to_owned()))
+        read_config(&folder, "own.json", HardLinks::Refused),
+        Ok(Some(r#"{"plugin":["b"]}"#.to_owned()))
     );
-    assert_eq!(folder.read("missing.json"), Ok(None));
-    assert_eq!(folder.read("elsewhere.json"), Err(()));
-    assert_eq!(folder.read("endless.json"), Err(()));
-    assert_eq!(folder.read("big.json"), Err(()));
-    assert_eq!(folder.read("folder.json"), Err(()));
+    assert_eq!(
+        read_config(&folder, "missing.json", HardLinks::Refused),
+        Ok(None)
+    );
+    assert_eq!(
+        read_config(&folder, "elsewhere.json", HardLinks::Refused),
+        Err(())
+    );
+    assert_eq!(
+        read_config(&folder, "endless.json", HardLinks::Refused),
+        Err(())
+    );
+    assert_eq!(
+        read_config(&folder, "big.json", HardLinks::Refused),
+        Err(())
+    );
+    assert_eq!(
+        read_config(&folder, "folder.json", HardLinks::Refused),
+        Err(())
+    );
+    assert_eq!(
+        read_config(&folder, "twinned.json", HardLinks::Refused),
+        Err(())
+    );
+    assert_eq!(
+        read_config(&folder, "plain.json", HardLinks::Refused),
+        Err(()),
+        "its twin is a hard link too"
+    );
+    assert_eq!(
+        read_config(&folder, "twinned.json", HardLinks::Read),
+        Ok(Some(r#"{"plugin":["a"]}"#.to_owned())),
+        "the person's own folders read it"
+    );
 }
 
 // -------------------------------------------------------------------------------------
