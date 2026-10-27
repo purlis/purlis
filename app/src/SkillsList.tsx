@@ -96,9 +96,9 @@ export function SkillsList({
   const filtering = query.trim() !== "";
   // **While a filter is typed every group is open**, so no match is folded out of sight; a group
   // folded meanwhile is folded for that filter alone, and the kept folds wait for it to clear.
-  const [shut, setShut] = useState<{ query: string; groups: readonly GroupId[] }>();
+  const [filterFolds, setFilterFolds] = useState<{ query: string; groups: readonly GroupId[] }>();
   const shown = groups.map((group) => group.id);
-  const closed = filtering ? (shut?.query === query ? shut.groups : []) : folded;
+  const closed = filtering ? (filterFolds?.query === query ? filterFolds.groups : []) : folded;
   const open = new Set(shown.filter((id) => !closed.includes(id)).map((id): Key => groupKey(id)));
   return (
     <div className="skills-view" data-testid="skills-view">
@@ -159,7 +159,7 @@ export function SkillsList({
             const opened = new Set(
               groups.filter((group) => keys.has(groupKey(group.id))).map((group) => group.id),
             );
-            if (filtering) setShut({ query, groups: shown.filter((id) => !opened.has(id)) });
+            if (filtering) setFilterFolds({ query, groups: shown.filter((id) => !opened.has(id)) });
             else onFold(shown, opened);
           }}
           empty={
@@ -180,7 +180,7 @@ export function SkillsList({
               content={
                 <>
                   <RowLabel>{group.title}</RowLabel>
-                  <RowTrail className="skills-view-count">{group.rows.length}</RowTrail>
+                  <RowTrail>{group.rows.length}</RowTrail>
                 </>
               }
             >

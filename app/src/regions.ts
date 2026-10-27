@@ -35,6 +35,7 @@ import {
 import { forgetEntering } from "./settings/entering";
 import { forgetDismissals } from "./dismissals";
 import type { YourEditor } from "./bindings";
+import type { GroupId } from "./skillsListing";
 import { atCreation, onLayoutMovedAside, sayAboutThisMachine, type Reading } from "./windowprefs";
 
 /**
@@ -588,7 +589,7 @@ type Document = {
   rail?: "auto";
   /** The Skills view narrowed to the chat in front, and its folded groups (`skillsViewPrefs.ts`,
    *  #3308, #3281), while either is set. */
-  skills?: { onlyThisChat?: true; folded?: string[] };
+  skills?: { onlyThisChat?: true; folded?: GroupId[] };
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

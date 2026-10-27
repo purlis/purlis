@@ -5,9 +5,9 @@
  * **The Skills view** (SK-55, #3266), drawn as the left sidebar draws it: its header, the switch
  * to the chat in front, and this workspace's skills as a tree of levels that fold (#3281), Needs
  * you on top, one mark at most per row, each with the view's own menu; then a project with no
- * skill of its own, whose starts are New skill…'s. Each is walked by the keyboard from the header in, held to axe and
- * pictured in every pictured cell of the theme matrix, light and dark among them
- * (`docs/component-stories.md`).
+ * skill of its own, whose starts are New skill…'s. Each is walked by the keyboard from the header
+ * in, held to axe and pictured in every pictured cell of the theme matrix, light and dark among
+ * them (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { SkillPinsRefused } from "./bindings";
@@ -122,10 +122,10 @@ type Story = StoryObj<typeof meta>;
 
 /**
  * **By level**: Tab walks the header (Open Skill studio, New skill…, Only this chat's) onto the
- * tree's first level; ↓ walks a level's skills and the next level; ← folds Built-in and ↓ passes
- * it; → moves into Project, Enter opens a skill's tab, the keyboard on a row shows what it does
- * and why it has its mark, Shift+F10 opens its menu, and Tab leaves the tree (#3281). The picture
- * is the tree with Built-in folded.
+ * tree's first level; ↓ walks a level's skills and the next level; ← folds Built-in, → opens it
+ * and ← folds it again, and ↓ passes it; → moves into Project, Enter opens a skill's tab, the
+ * keyboard on a row shows what it does and why it has its mark, Shift+F10 opens its menu, and Tab
+ * leaves the tree (#3281). The picture is the tree with Built-in folded.
  */
 export const ByLevel: Story = {
   render: () => <Skills />,
@@ -160,6 +160,11 @@ export const ByLevel: Story = {
     await waitFor(() => expect(level("Built-in")).toHaveAttribute("aria-expanded", "false"));
     expect(within(list).queryByRole("row", { name: /secrets/ })).toBeNull();
     await untilFocused(() => level("Built-in"), "Skills: Left folds the level, and stays on it");
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(level("Built-in")).toHaveAttribute("aria-expanded", "true"));
+    await untilFocused(() => level("Built-in"), "Skills: Right opens the folded level");
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(level("Built-in")).toHaveAttribute("aria-expanded", "false"));
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => level("Project"), "Skills: Down passes a folded level's skills");
     await userEvent.keyboard("{ArrowRight}");
