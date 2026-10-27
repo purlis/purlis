@@ -19,6 +19,11 @@ import {
  * runner asked how it is on a link of its own (`device_runner`), so one that does not answer
  * holds up no other row.
  *
+ * **A runner still being asked is not asked again**: a Refresh, or the view opened again, waits
+ * on the ask in flight ({@link inFlight}), and the core joins a second ask of one runner to the
+ * first, so one runner never has two links open to it for this view. Refresh is not offered
+ * while any runner is being asked ({@link anyAsking}).
+ *
  * What is drawn is made here, from plain inputs ({@link arranged}, {@link usageOf},
  * {@link healthSaid}, {@link contactSaid}), so the view only draws it.
  */
@@ -54,6 +59,30 @@ function caught<T>(sent: Promise<Said<T>>): Promise<Said<T>> {
   return sent.catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
 }
 
+/** Each runner's ask in flight, by its key: a second read waits on it rather than asking again. */
+const inFlight = new Map<string, Promise<Said<RunnerAsked>>>();
+
+/** Asks runner `one` how it is, or waits on the ask of it in flight. */
+function ask(one: RunnerOnTheList): Promise<Said<RunnerAsked>> {
+  const key = runnerKey(one);
+  const already = inFlight.get(key);
+  if (already !== undefined) return already;
+  const asking = caught(commands.deviceRunner(one.pool, one.runner)).finally(() =>
+    inFlight.delete(key),
+  );
+  inFlight.set(key, asking);
+  return asking;
+}
+
+/** What a runner's row says when purlis did not say how it is. */
+const UNSAID = (why: string): RunnerAsked => ({
+  standing: { state: "unknown", why },
+  link: null,
+  version: null,
+  contacted: null,
+  holds: { open: [], browsers_open: [], chats: 0, browsers: 0 },
+});
+
 /** Reads every device again, then asks each runner how it is. */
 export async function rereadDevices() {
   const mine = ++reading;
@@ -78,24 +107,20 @@ export async function rereadDevices() {
   }));
   await Promise.all(
     runners.map(async (one) => {
-      const answer = await caught(commands.deviceRunner(one.pool, one.runner));
+      const answer = await ask(one);
       if (mine !== reading) return;
       const asked: RunnerAsked =
         answer.status === "ok" && typeof answer.data === "object" && answer.data !== null
           ? answer.data
-          : {
-              standing: {
-                state: "unknown",
-                why: answer.status === "error" ? answer.error : "purlis did not say.",
-              },
-              link: null,
-              version: null,
-              contacted: null,
-              holds: { open: [], chats: 0, browsers: 0 },
-            };
+          : UNSAID(answer.status === "error" ? answer.error : "purlis did not say.");
       set((was) => ({ ...was, asked: { ...was.asked, [runnerKey(one)]: asked } }));
     }),
   );
+}
+
+/** Whether a runner is still being asked: Refresh waits until none is. */
+export function anyAsking(asked: DevicesHeld["asked"]): boolean {
+  return Object.values(asked).some((one) => one === "asking");
 }
 
 function subscribe(listener: () => void) {
@@ -125,11 +150,15 @@ export type DeviceRow = {
 const sameChat = (one: { plane: PlaneId; session: number }, two: typeof one) =>
   one.plane === two.plane && one.session === two.session;
 
+/** The pool of a device's key: none for this machine. */
+const poolOf = (key: string) => (key === "here" ? undefined : key.split("/")[0]);
+
 /**
  * **Each device and the chats and browsers on it** (#2052): where the window started each, unless
- * a runner that answered says it holds the chat, which puts it on that runner's row: a runner
- * of a pool that moved on keeps the chats it had (#2865), and what a runner says it holds is
- * where the chat is.
+ * a runner that answered says it holds it, which puts it on that runner's row: a runner of a pool
+ * that moved on keeps the chats and browsers it had (#2865). **A runner is believed only about
+ * its own pool**: it never takes a chat or browser off this machine or off another pool's runner
+ * (the core holds the same rule, and this is its second guard).
  */
 export function arranged(
   shown: DevicesShown,
@@ -137,59 +166,89 @@ export function arranged(
 ): DeviceRow[] {
   const said = (key: string) => {
     const one = asked[key];
-    return one === undefined || one === "asking" ? [] : one.holds.open;
+    return one === undefined || one === "asking" ? undefined : one.holds;
   };
-  const claimed = shown.placement.runners.flatMap((one) =>
-    said(runnerKey(one)).map((chat) => ({ ...chat, key: runnerKey(one) })),
-  );
-  // Each chat with the device the window placed it on, then the one a runner says holds it.
-  const placed = [
+  const claims = shown.placement.runners.map((one) => ({
+    key: runnerKey(one),
+    holds: said(runnerKey(one)),
+  }));
+  // The runner of the same pool that says it holds it, else where the window placed it.
+  const moved = (on: string, holds: (one: RunnerAsked["holds"]) => boolean) => {
+    const pool = poolOf(on);
+    if (pool === undefined) return on;
+    const claim = claims.find(
+      (one) => poolOf(one.key) === pool && one.holds !== undefined && holds(one.holds),
+    );
+    return claim?.key ?? on;
+  };
+  const chats = [
     ...shown.placement.here.chats.map((chat) => ({ chat, on: "here" })),
     ...shown.placement.runners.flatMap((runner) =>
       runner.on.chats.map((chat) => ({ chat, on: runnerKey(runner) })),
     ),
-  ].map(({ chat, on }) => ({ chat, on: claimed.find((one) => sameChat(one, chat))?.key ?? on }));
-  const chatsOn = (key: string) => placed.filter((one) => one.on === key).map((one) => one.chat);
+  ].map(({ chat, on }) => ({
+    chat,
+    on: moved(on, (holds) => holds.open.some((one) => sameChat(one, chat))),
+  }));
+  const browsers = [
+    ...shown.placement.here.browsers.map((browser) => ({ browser, on: "here" })),
+    ...shown.placement.runners.flatMap((runner) =>
+      runner.on.browsers.map((browser) => ({ browser, on: runnerKey(runner) })),
+    ),
+  ].map(({ browser, on }) => ({
+    browser,
+    on: moved(on, (holds) => holds.browsers_open.includes(browser.program)),
+  }));
+  const on = (key: string) => ({
+    chats: chats.filter((one) => one.on === key).map((one) => one.chat),
+    browsers: browsers.filter((one) => one.on === key).map((one) => one.browser),
+  });
   return [
-    { key: "here", chats: chatsOn("here"), browsers: shown.placement.here.browsers },
+    { key: "here", ...on("here") },
     ...shown.placement.runners.map((runner) => ({
       key: runnerKey(runner),
       runner,
-      chats: chatsOn(runnerKey(runner)),
-      browsers: runner.on.browsers,
+      ...on(runnerKey(runner)),
     })),
   ];
 }
 
-/** What a runner's row says of how it is: a badge's word and, where there is more, a line. */
-export type Health = { badge: string; line?: string; trouble: boolean };
+/**
+ * What a runner's row says of how it is: its badge, its first line, and what Docker or the link
+ * said, which the row draws apart from purlis's own words, as said elsewhere.
+ */
+export type Health = { badge: string; line: string; said?: { by: string; text: string } };
 
 /** **How a runner is, in words** (#2052): `asked` as its row says it. */
 export function healthSaid(asked: RunnerAsked | "asking" | undefined): Health {
-  if (asked === undefined || asked === "asking") return { badge: "asking…", trouble: false };
+  if (asked === undefined || asked === "asking")
+    return { badge: "asking…", line: "Asking the runner how it is…" };
   const standing = asked.standing;
-  // Suspended, as its container says, or as its link does (#2051).
-  if (standing.state === "suspended" || asked.link?.state === "suspended")
+  if (standing.state === "suspended")
     return {
       badge: "suspended",
       line: "Its container is stopped and its home is kept. It starts again when one of its chats is next used.",
-      trouble: false,
     };
   if (standing.state === "unknown")
     return {
       badge: "not read",
-      line: `purlis could not read its container: ${standing.why}`,
-      trouble: true,
+      line: "purlis could not read its container. Check that Docker runs, then press Refresh.",
+      said: { by: "Docker said", text: standing.why },
     };
   const link = asked.link;
-  if (link === null || link.state === "linked") return { badge: "answers", trouble: false };
+  if (link === null || link.state === "linked") return { badge: "answers", line: "Answers" };
   if (link.state === "key_changed")
     return {
       badge: "key changed",
       line: "It answered with another key than the one this machine paired with, so purlis does not link to it. Remove its pool in Settings › You › This machine › Pools, then add the pool again.",
-      trouble: true,
     };
-  return { badge: "does not answer", line: link.why, trouble: true };
+  // Suspended is said by the container alone: this view's link is never made to one, and so
+  // never says so (D-2052-9).
+  return {
+    badge: "does not answer",
+    line: "It does not answer. purlis asks again when you press Refresh.",
+    said: link.state === "down" ? { by: "The link said", text: link.why } : undefined,
+  };
 }
 
 /** **Which version a device runs, against this machine's** (#2052). */
@@ -212,10 +271,13 @@ export function contactSaid(contacted: number | null, now: Date, locale?: string
     : `Last answered ${at.toLocaleDateString(locale, { day: "numeric", month: "short" })} at ${time}`;
 }
 
+/** Who a pool's row names, where its runners are not known to be the person's own (D-2050-4). */
+export const NOT_KNOWN_TO_BE_YOURS = "Not known to be yours";
+
 /** One pool's use by one person, as the usage table's row draws it. */
 export type PoolUse = {
   pool: string;
-  /** Who claims it: on this machine's Docker, always the person at it. */
+  /** Who claims it: "You" only where its runners are shown to be the person's own. */
   person: string;
   running: number;
   suspended: number;
@@ -230,13 +292,15 @@ export type PoolUse = {
 /**
  * **Each pool's use per person** (#2052, story 55): its runners that run and that are suspended,
  * and the CPUs and memory those that run request (a runner requests its pool's limits). A Docker
- * pool on this machine is the person's own, so it has one row, theirs. Money is never shown: no
- * pool declares a price per hour yet, and a cost is never guessed.
+ * pool on this machine's own engine is the person's (`owned`, D-2050-4), so its one row is
+ * "You"; one on an engine elsewhere is not known to be anyone's in particular. Money is never
+ * shown: no pool declares a price per hour yet, and a cost is never guessed.
  */
 export function usageOf(
   pools: readonly PoolRequests[],
   runners: readonly RunnerOnTheList[],
   asked: Readonly<Record<string, RunnerAsked | "asking">>,
+  owned: boolean,
 ): PoolUse[] {
   return pools.map((pool) => {
     const of = runners.filter((one) => one.pool === pool.pool);
@@ -248,7 +312,7 @@ export function usageOf(
     const millicpus = running * pool.millicpus;
     return {
       pool: pool.pool,
-      person: "You",
+      person: owned ? "You" : NOT_KNOWN_TO_BE_YOURS,
       running,
       suspended: standing.filter((one) => one === "suspended").length,
       cpus: cpusSaid(millicpus),
@@ -256,6 +320,11 @@ export function usageOf(
       asking: standing.filter((one) => one === "asking").length,
     };
   });
+}
+
+/** What a use row's Running cell says: the count, and those not answered yet apart. */
+export function runningSaid(use: Pick<PoolUse, "running" | "asking">): string {
+  return use.asking === 0 ? `${use.running}` : `${use.running}, ${use.asking} not answered yet`;
 }
 
 /** `millicpus`, as a number of CPUs to the thousandth: `2`, `1.5`. */

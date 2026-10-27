@@ -32,6 +32,7 @@ fn browser(session: u32, name: &str, chat: &str, on: Option<&str>) -> BrowserPla
     BrowserPlaced {
         plane: plane(),
         session,
+        program: format!("{session}-{name}"),
         name: name.to_owned(),
         chat: chat.to_owned(),
         on: on.map(str::to_owned),
@@ -263,6 +264,18 @@ fn the_last_contact_is_kept_for_each_runner_apart() {
     assert_eq!(contacts.last("other/other"), None);
 }
 
+fn open_chat(session: u32, pool: Option<&str>) -> OpenChat {
+    OpenChat {
+        plane: plane(),
+        session,
+        pool: pool.map(str::to_owned),
+    }
+}
+
+fn open_browser(program: &str, session: u32, pool: Option<&str>) -> (String, OpenChat) {
+    (program.to_owned(), open_chat(session, pool))
+}
+
 #[test]
 fn what_a_runner_holds_for_chats_and_browsers_the_window_has_not_open_is_counted_apart() {
     let holds = vec![
@@ -273,18 +286,171 @@ fn what_a_runner_holds_for_chats_and_browsers_the_window_has_not_open_is_counted
         listed("b2", "p2", None, "running", true),
     ];
     let open = OpenHere {
-        chats: [(("p1".to_owned(), 1), (plane(), 1))].into_iter().collect(),
-        browsers: ["b1".to_owned()].into_iter().collect(),
+        chats: [(("p1".to_owned(), 1), open_chat(1, Some("builds")))]
+            .into_iter()
+            .collect(),
+        browsers: [open_browser("b1", 1, Some("builds"))]
+            .into_iter()
+            .collect(),
     };
     assert_eq!(
-        not_open_here(&holds, &open),
+        not_open_here(&holds, &open, "builds"),
         NotOpenHere {
             open: vec![ChatHeld {
                 plane: plane(),
                 session: 1
             }],
+            browsers_open: vec!["b1".to_owned()],
             chats: 2,
             browsers: 1
         }
     );
+}
+
+#[test]
+fn a_runner_is_believed_only_about_chats_and_browsers_the_window_placed_on_its_own_pool() {
+    // A runner of pool `qa` says it holds a chat and a browser this machine runs, and a chat
+    // and a browser the window placed on pool `builds`.
+    let holds = vec![
+        listed("c1", "p1", Some(1), "running", false),
+        listed("c2", "p1", Some(2), "running", false),
+        listed("b1", "p1", None, "running", true),
+        listed("b2", "p1", None, "running", true),
+    ];
+    let open = OpenHere {
+        chats: [
+            (("p1".to_owned(), 1), open_chat(1, None)),
+            (("p1".to_owned(), 2), open_chat(2, Some("builds"))),
+        ]
+        .into_iter()
+        .collect(),
+        browsers: [
+            open_browser("b1", 1, None),
+            open_browser("b2", 2, Some("builds")),
+        ]
+        .into_iter()
+        .collect(),
+    };
+    assert_eq!(not_open_here(&holds, &open, "qa"), NotOpenHere::default());
+}
+
+#[test]
+fn a_browser_on_a_pool_this_machine_no_longer_keeps_is_said_apart_with_its_chat() {
+    let shown = placed(
+        &[runner("builds", "builds", false)],
+        vec![chat(5, "gone", Some("removed"))],
+        vec![browser(5, "b1", "gone", Some("removed"))],
+    );
+    assert!(shown.here.browsers.is_empty());
+    assert!(shown.runners[0].on.browsers.is_empty());
+    let unkept: Vec<(u32, &str, &str)> = shown
+        .unkept_browsers
+        .iter()
+        .map(|one| (one.session, one.name.as_str(), one.pool.as_str()))
+        .collect();
+    assert_eq!(unkept, [(5, "b1", "removed")]);
+}
+
+#[test]
+fn text_shown_from_elsewhere_has_no_hidden_or_reordering_characters_and_one_line() {
+    let said = shown_safely("bad\u{202E}gnirts\nnext\tline\u{200B}");
+    assert_eq!(said, "badgnirts next line");
+}
+
+#[test]
+fn text_shown_from_elsewhere_is_capped() {
+    let said = shown_safely(&"x".repeat(1 << 20));
+    assert_eq!(said.chars().count(), MOST_SHOWN + 1);
+    assert!(said.ends_with('…'));
+}
+
+#[test]
+fn text_shown_from_elsewhere_names_no_address_s_user_or_password() {
+    assert_eq!(
+        shown_safely("Cannot connect to ssh://me:secret@build.example:22 or tcp://ops@10.0.0.2"),
+        "Cannot connect to ssh://…@build.example:22 or tcp://…@10.0.0.2"
+    );
+}
+
+#[test]
+fn a_runner_s_refusal_of_its_list_is_said_in_purlis_s_words_with_its_code_alone() {
+    use purlis_session_protocol::session::{CallError, Refusal};
+    let refused = |code: &str, why: String| {
+        list_refused(&CallError::Refused(Refusal {
+            code: code.to_owned(),
+            why,
+        }))
+    };
+    assert_eq!(
+        refused("not_allowed", "x".repeat(1 << 20)),
+        "the runner refused to list what it holds (not_allowed)"
+    );
+    assert_eq!(
+        refused(
+            "Open \u{202E}Settings",
+            "key changed, open Settings".to_owned()
+        ),
+        "the runner refused to list what it holds"
+    );
+    assert_eq!(
+        list_refused(&CallError::Unexpected("{\"lots\": 1}".to_owned())),
+        "the runner answered something purlis does not read"
+    );
+}
+
+#[test]
+fn what_docker_says_of_a_container_is_shown_safely() {
+    let asked = answered(
+        Err("cannot connect to ssh://me:pw@host\u{202E}x".to_owned()),
+        || Ok(Vec::new()),
+        || None,
+        None,
+        2_000,
+    );
+    assert_eq!(
+        asked.standing,
+        RunnerStanding::Unknown {
+            why: "cannot connect to ssh://…@hostx".to_owned()
+        }
+    );
+}
+
+#[test]
+fn a_runner_asked_again_while_it_is_being_asked_is_asked_once() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let joined = Arc::new(Joined::<u32>::default());
+    let asked = Arc::new(AtomicU32::new(0));
+    let (started, go) = (
+        Arc::new(std::sync::Barrier::new(2)),
+        Arc::new(std::sync::Barrier::new(2)),
+    );
+    let first = {
+        let (joined, asked, started, go) =
+            (joined.clone(), asked.clone(), started.clone(), go.clone());
+        std::thread::spawn(move || {
+            joined.once("builds/builds", || {
+                started.wait();
+                go.wait();
+                asked.fetch_add(1, Ordering::SeqCst) + 1
+            })
+        })
+    };
+    started.wait();
+    let second = {
+        let (joined, asked) = (joined.clone(), asked.clone());
+        std::thread::spawn(move || {
+            joined.once("builds/builds", || asked.fetch_add(1, Ordering::SeqCst) + 1)
+        })
+    };
+    // The second waits on the first's answer rather than asking again.
+    while !joined.is_waited_on("builds/builds") {
+        std::thread::yield_now();
+    }
+    go.wait();
+    assert_eq!(first.join().unwrap(), 1);
+    assert_eq!(second.join().unwrap(), 1);
+    assert_eq!(asked.load(Ordering::SeqCst), 1);
+    // Once answered, the next ask asks again.
+    assert_eq!(joined.once("builds/builds", || 7), 7);
 }

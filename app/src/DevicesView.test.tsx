@@ -18,6 +18,8 @@ const LIMITS = { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 };
 let shown: DevicesShown;
 let asked: Record<string, RunnerAsked>;
 let runnersAsked: string[];
+/** Set by a test to hold every runner's answer until it is called. */
+let holdAnswers: Promise<void> | undefined;
 
 beforeEach(() => {
   shown = {
@@ -25,7 +27,7 @@ beforeEach(() => {
     placement: {
       here: {
         chats: [{ plane: PLANE, session: 1, name: "lint" }],
-        browsers: [{ plane: PLANE, session: 1, name: "b1", chat: "lint" }],
+        browsers: [{ plane: PLANE, session: 1, program: "p-lint-b1", name: "b1", chat: "lint" }],
       },
       runners: [
         {
@@ -37,7 +39,9 @@ beforeEach(() => {
         { pool: "qa", runner: "qa", draining: false, on: { chats: [], browsers: [] } },
       ],
       unkept: [],
+      unkept_browsers: [],
     },
+    owned: true,
     pools: [
       { pool: "builds", limits: LIMITS, millicpus: 2000 },
       { pool: "qa", limits: LIMITS, millicpus: 2000 },
@@ -49,24 +53,26 @@ beforeEach(() => {
       link: { state: "linked" },
       version: "0.8.1",
       contacted: Math.floor(Date.now() / 1000),
-      holds: { open: [{ plane: PLANE, session: 2 }], chats: 1, browsers: 0 },
+      holds: { open: [{ plane: PLANE, session: 2 }], browsers_open: [], chats: 1, browsers: 0 },
     },
     "qa/qa": {
       standing: { state: "suspended" },
       link: null,
       version: null,
       contacted: null,
-      holds: { open: [], chats: 0, browsers: 0 },
+      holds: { open: [], browsers_open: [], chats: 0, browsers: 0 },
     },
   };
   runnersAsked = [];
+  holdAnswers = undefined;
   mockIPC((cmd, args) => {
     const a = (args ?? {}) as { pool?: string; runner?: string };
     if (cmd === "devices") return structuredClone(shown);
     if (cmd === "device_runner") {
       const key = `${a.pool}/${a.runner}`;
       runnersAsked.push(key);
-      return structuredClone(asked[key]);
+      const answer = structuredClone(asked[key]);
+      return holdAnswers === undefined ? answer : holdAnswers.then(() => answer);
     }
     return null;
   });
@@ -132,5 +138,56 @@ describe("DevicesView", () => {
         .map((cell) => cell.textContent),
     ).toEqual(["You", "0", "1", "0", "0 MiB"]);
     expect(screen.queryByText(/\$|cost|price/i)).toBeNull();
+  });
+
+  it("lists what runs on a pool this machine no longer keeps, chats and browsers alike", async () => {
+    shown.placement.unkept = [{ plane: PLANE, session: 7, name: "orphan", pool: "removed" }];
+    shown.placement.unkept_browsers = [
+      { plane: PLANE, session: 7, name: "b2", chat: "orphan", pool: "removed" },
+    ];
+    render(<DevicesView />);
+    const unkept = await screen.findByRole("rowgroup", {
+      name: "On a pool this machine no longer keeps",
+    });
+    expect(within(unkept).getByText("Chat · on pool removed")).toBeInTheDocument();
+    expect(within(unkept).getByText("Of orphan · on pool removed")).toBeInTheDocument();
+  });
+
+  it("draws what Docker said apart from purlis's own words, and says what to do", async () => {
+    asked["qa/qa"] = {
+      ...asked["qa/qa"],
+      standing: { state: "unknown", why: "Cannot connect to the Docker daemon" },
+    };
+    render(<DevicesView />);
+    const qa = await waitFor(() => section("Runner qa of pool qa"));
+    await waitFor(() => expect(within(qa).getByText("not read")).toBeInTheDocument());
+    expect(
+      within(qa).getByText(
+        "purlis could not read its container. Check that Docker runs, then press Refresh.",
+      ),
+    ).toBeInTheDocument();
+    const said = within(qa).getByText("Cannot connect to the Docker daemon");
+    expect(said.tagName).toBe("BDI");
+  });
+
+  it("offers Refresh only once every runner has answered", async () => {
+    let release = () => {};
+    holdAnswers = new Promise((resolve) => {
+      release = resolve;
+    });
+    render(<DevicesView />);
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    expect(refresh).toHaveAttribute("aria-disabled", "true");
+    release();
+    await waitFor(() => expect(refresh).not.toHaveAttribute("aria-disabled", "true"));
+  });
+
+  it("names the person only where this machine's runners are shown to be theirs", async () => {
+    shown.owned = false;
+    render(<DevicesView />);
+    const table = await screen.findByRole("grid", { name: "Use per pool and person" });
+    await waitFor(() =>
+      expect(within(table).getAllByText("Not known to be yours")).toHaveLength(2),
+    );
   });
 });

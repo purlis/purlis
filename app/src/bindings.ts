@@ -2777,7 +2777,7 @@ export const commands = {
 	devices: () => typedError<DevicesShown, string>(__TAURI_INVOKE("devices")),
 	/**
 	 *  **How the runner `runner` of pool `pool` is** (#2052): its container read, and only a running
-	 *  one linked to, asked its version and what it holds.
+	 *  one linked to, asked its version and what it holds. Asked once at a time ([`Joined`]).
 	 */
 	deviceRunner: (pool: string, runner: string) => typedError<RunnerAsked, string>(__TAURI_INVOKE("device_runner", { pool, runner })),
 	/**
@@ -4870,10 +4870,25 @@ export type BrowserOnADevice = {
 	plane: PlaneId,
 	/**  The chat it is of. */
 	session: number,
+	/**  Its program in the session host that runs it: what a runner names it by. */
+	program: string,
 	/**  What the chat calls it: `b1`. */
 	name: string,
 	/**  What its chat is called. */
 	chat: string,
+};
+
+/**  A browser on a pool this machine no longer keeps. */
+export type BrowserOnAPoolNotKept = {
+	plane: PlaneId,
+	/**  The chat it is of. */
+	session: number,
+	/**  What the chat calls it: `b1`. */
+	name: string,
+	/**  What its chat is called. */
+	chat: string,
+	/**  The pool its chat runs it on. */
+	pool: string,
 };
 
 /**
@@ -5567,6 +5582,12 @@ export type DevicesShown = {
 	/**  Where everything the window has open runs. */
 	placement: Placement,
 	pools: PoolRequests[],
+	/**
+	 *  Whether this machine's Docker pools are shown to be the person's own (D-2050-4): their
+	 *  engine is a local socket on this machine. Only then does the use table name them as the
+	 *  person's.
+	 */
+	owned: boolean,
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */
@@ -8195,12 +8216,14 @@ export type NotASkill = {
 };
 
 /**
- *  What a runner holds, set against what the window has open: the chats it has open, which the
- *  row lists by what the runner says rather than where the window started them, and how many of
- *  the chats and browsers it holds the window has not open.
+ *  What a runner holds, set against what the window has open: the chats and browsers of its own
+ *  pool it holds, which its row lists by what the runner says rather than where the window
+ *  started them, and how many it holds the window has not open.
  */
 export type NotOpenHere = {
 	open: ChatHeld[],
+	/**  The browsers, by their programs. */
+	browsers_open: string[],
 	chats: number,
 	browsers: number,
 };
@@ -9161,6 +9184,7 @@ export type Placement = {
 	here: OnADevice,
 	runners: RunnerOnTheList[],
 	unkept: ChatOnAPoolNotKept[],
+	unkept_browsers: BrowserOnAPoolNotKept[],
 };
 
 /**  A plain-file vault, and whether this machine may move it. */
@@ -10596,6 +10620,10 @@ export type RunStart =
 
 /**  **How one runner is**, as its row says it once asked (#2052). */
 export type RunnerAsked = {
+	/**
+	 *  Whether its container runs. A suspended runner is told by this alone: nothing links to
+	 *  it, so its `link` is none.
+	 */
 	standing: RunnerStanding,
 	/**
 	 *  What a link to it said; none where nothing linked to it (one suspended, or whose
@@ -10671,7 +10699,7 @@ export type RunnerOnTheList = {
 export type RunnerStanding = { state: "running" } | 
 /**  Its container stopped, its home kept: it starts again as a chat next needs it. */
 { state: "suspended" } | 
-/**  Its container could not be read, and why. */
+/**  Its container could not be read, and why, as Docker said it ([`shown_safely`]). */
 { state: "unknown"; why: string };
 
 /**

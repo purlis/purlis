@@ -6,26 +6,36 @@
  * with its chats and browsers, its version, how it is and when it last answered; then each
  * pool's use per person. A view tab of its own, opened from the palette's Devices row, which is
  * offered only once this machine keeps a pool (story 6). It is the Runners view ADR 0089 §12
- * named, which was never drawn, under the spec's name.
+ * named (as amended 2026-10-27, for spec #2041), under the spec's name.
  *
  * - **The list family**: a section per device, its first row how it is, then a row per chat
- *   and per browser on it, and one for what it holds that this window has not open.
+ *   and per browser on it, and one for what it holds that this window has not open; and a
+ *   section for what runs on a pool this machine no longer keeps. **No row acts yet**: opening a
+ *   chat, a runner's shell or its log from its row is #3494's, and until then a row is a stop
+ *   for the keyboard and the screen reader that reads it, and nothing more.
+ * - **What Docker or the link said is drawn apart** from purlis's own words: after the row's
+ *   facts, isolated (`<bdi>`), as said elsewhere. The core has already put it on one line, capped
+ *   and with nothing a reader does not see.
  * - **The table family** for the use: one row per pool and person. No money: a pool declares no
  *   price per hour yet, and a cost is never guessed.
- * - **Refresh** reads every device again, as the view's coming on screen does.
+ * - **Refresh** reads every device again, as the view's coming on screen does; it waits until
+ *   every runner has answered the last read, so it never asks a runner twice at once.
  */
+import { Fragment } from "react";
 import { List, ListRow, ListRowSection } from "./ui/list/List";
 import { RowDescription, RowLabel, RowTrail } from "./ui/list/Row";
 import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
 import { Notice } from "./Notice";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
-import type { RunnerAsked } from "./bindings";
+import type { DevicesShown, RunnerAsked } from "./bindings";
 import {
+  anyAsking,
   arranged,
   contactSaid,
   healthSaid,
   rereadDevices,
+  runningSaid,
   usageOf,
   useDevices,
   versionSaid,
@@ -50,6 +60,23 @@ function notOpenSaid(asked: RunnerAsked | "asking" | undefined): string | undefi
     : `${parts.join(" and ")} of projects not open in this window`;
 }
 
+/** A row's facts, then what was said elsewhere, apart and isolated. */
+function Facts({ facts, said }: { facts: readonly string[]; said?: { by: string; text: string } }) {
+  if (facts.length === 0 && said === undefined) return null;
+  return (
+    <RowDescription>
+      {facts.join(" · ")}
+      {said !== undefined && (
+        <Fragment>
+          {facts.length > 0 ? " · " : ""}
+          {`${said.by}: `}
+          <bdi>{said.text}</bdi>
+        </Fragment>
+      )}
+    </RowDescription>
+  );
+}
+
 /** A device's section: its name, how it is, and what runs on it. */
 function DeviceSection({
   row,
@@ -65,7 +92,10 @@ function DeviceSection({
   const runner = row.runner;
   const title =
     runner === undefined ? "This machine" : `Runner ${runner.runner} of pool ${runner.pool}`;
-  const health = runner === undefined ? { badge: "here", trouble: false } : healthSaid(asked);
+  const health =
+    runner === undefined
+      ? { badge: "here", line: "Where this window runs", said: undefined }
+      : healthSaid(asked);
   const runs =
     runner === undefined
       ? versionSaid(version, version)
@@ -84,12 +114,10 @@ function DeviceSection({
   return (
     <ListRowSection id={row.key} title={title} named={runner !== undefined}>
       <ListRow id={`${row.key}:standing`} textValue={`${title}: ${health.badge}`}>
-        <RowLabel>
-          {health.line ?? (health.badge === "here" ? "Where this window runs" : "Answers")}
-        </RowLabel>
-        {facts.length > 0 && <RowDescription>{facts.join(" · ")}</RowDescription>}
+        <RowLabel>{health.line}</RowLabel>
+        <Facts facts={facts} said={health.said} />
         <RowTrail>
-          <Badge variant={health.trouble ? "waiting" : "neutral"}>{health.badge}</Badge>
+          <Badge variant="neutral">{health.badge}</Badge>
         </RowTrail>
       </ListRow>
       {row.chats.map((chat) => (
@@ -104,8 +132,8 @@ function DeviceSection({
       ))}
       {row.browsers.map((browser) => (
         <ListRow
-          key={`${browser.plane}:${browser.session}:${browser.name}`}
-          id={`${row.key}:browser:${browser.plane}:${browser.session}:${browser.name}`}
+          key={`${browser.plane}:${browser.program}`}
+          id={`${row.key}:browser:${browser.plane}:${browser.program}`}
           textValue={`Browser ${browser.name} of ${browser.chat}`}
         >
           <RowLabel>{`Browser ${browser.name}`}</RowLabel>
@@ -122,6 +150,35 @@ function DeviceSection({
           <RowLabel>No chat or browser runs here</RowLabel>
         </ListRow>
       )}
+    </ListRowSection>
+  );
+}
+
+/** What runs on a pool this machine no longer keeps, as a section of its own. */
+function UnkeptSection({ placement }: { placement: DevicesShown["placement"] }) {
+  if (placement.unkept.length === 0 && placement.unkept_browsers.length === 0) return null;
+  return (
+    <ListRowSection id="unkept" title="On a pool this machine no longer keeps">
+      {placement.unkept.map((chat) => (
+        <ListRow
+          key={`${chat.plane}:${chat.session}`}
+          id={`unkept:chat:${chat.plane}:${chat.session}`}
+          textValue={chat.name}
+        >
+          <RowLabel>{chat.name}</RowLabel>
+          <RowDescription>{`Chat · on pool ${chat.pool}`}</RowDescription>
+        </ListRow>
+      ))}
+      {placement.unkept_browsers.map((browser) => (
+        <ListRow
+          key={`${browser.plane}:${browser.session}:${browser.name}`}
+          id={`unkept:browser:${browser.plane}:${browser.session}:${browser.name}`}
+          textValue={`Browser ${browser.name} of ${browser.chat}`}
+        >
+          <RowLabel>{`Browser ${browser.name}`}</RowLabel>
+          <RowDescription>{`Of ${browser.chat} · on pool ${browser.pool}`}</RowDescription>
+        </ListRow>
+      ))}
     </ListRowSection>
   );
 }
@@ -149,11 +206,17 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
     );
   const shown = read.shown;
   const rows = arranged(shown, asked);
-  const use = usageOf(shown.pools, shown.placement.runners, asked);
+  const use = usageOf(shown.pools, shown.placement.runners, asked, shown.owned);
+  const busy = anyAsking(asked);
   return (
     <div className="devices-view" data-testid="devices-view">
       <div className="devices-bar">
-        <Button size="sm" onPress={() => void rereadDevices()}>
+        <Button
+          size="sm"
+          isDisabled={busy}
+          tooltip={busy ? "Offered once every runner has answered." : undefined}
+          onPress={() => void rereadDevices()}
+        >
           Refresh
         </Button>
       </div>
@@ -167,12 +230,8 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
             now={now}
           />
         ))}
+        <UnkeptSection placement={shown.placement} />
       </List>
-      {shown.placement.unkept.length > 0 && (
-        <p className="ui-setting-help">
-          {`${counted(shown.placement.unkept.length, "chat runs", "chats run")} on a pool this machine no longer keeps: ${shown.placement.unkept.map((one) => `${one.name} on ${one.pool}`).join(", ")}.`}
-        </p>
-      )}
       {use.length > 0 && (
         <Table aria-label="Use per pool and person" className="devices-use">
           <TableHeader>
@@ -188,9 +247,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
               <TableRow key={`${one.pool}:${one.person}`} id={`${one.pool}:${one.person}`}>
                 <TableCell>{one.pool}</TableCell>
                 <TableCell>{one.person}</TableCell>
-                <TableCell>
-                  {one.asking > 0 ? `${one.running}, asking ${one.asking}…` : `${one.running}`}
-                </TableCell>
+                <TableCell>{runningSaid(one)}</TableCell>
                 <TableCell>{`${one.suspended}`}</TableCell>
                 <TableCell>{one.cpus}</TableCell>
                 <TableCell>{`${one.memoryMib} MiB`}</TableCell>

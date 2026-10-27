@@ -302,17 +302,18 @@ fn once_for(
 /// on before it is removed. One link, made and let go of; a runner that does not answer is not
 /// known to be idle.
 pub fn chats_on(to: &ToARunner) -> Result<u32, String> {
-    on_one_link(to, async |linked| match linked {
-        Ok(client) => client
-            .list()
-            .await
-            .map(|chats| {
-                u32::try_from(chats.iter().filter(|chat| chat.state != "ended").count())
-                    .unwrap_or(u32::MAX)
-            })
-            .map_err(|why| why.to_string()),
-        Err(down) => Err(down.why),
-    })
+    match listed(to) {
+        Ok(listed) => Ok(
+            u32::try_from(listed.iter().filter(|program| !program.ended).count())
+                .unwrap_or(u32::MAX),
+        ),
+        Err(crate::dockerpools::PoolLink::Down { why }) => Err(why),
+        Err(crate::dockerpools::PoolLink::KeyChanged) => {
+            Err("the runner answered with another key than the one pinned for it".to_owned())
+        }
+        Err(crate::dockerpools::PoolLink::Suspended) => Err("the runner is suspended".to_owned()),
+        Err(crate::dockerpools::PoolLink::Linked) => Err("the runner did not list".to_owned()),
+    }
 }
 
 /// **Runs `then` on the first link to `to`**, on a runtime of its own, waiting at most
@@ -389,8 +390,9 @@ pub fn listed(
                         number: chat.number,
                     })
                     .collect()),
+                // In purlis's words: the runner's own are never shown (#2052).
                 Err(why) => Err(PoolLink::Down {
-                    why: why.to_string(),
+                    why: crate::devices::list_refused(&why),
                 }),
             },
             Err(down) if down.key_changed => Err(PoolLink::KeyChanged),
