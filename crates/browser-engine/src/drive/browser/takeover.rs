@@ -174,6 +174,14 @@ pub(super) fn metrics(width: u16, height: u16) -> Value {
 /// The smallest and largest page a size may give, in CSS pixels.
 const SIZES: std::ops::RangeInclusive<u16> = 200..=4096;
 
+/// `width` by `height`, each held to [`SIZES`].
+pub(super) fn sized(width: u16, height: u16) -> (u16, u16) {
+    (
+        width.clamp(*SIZES.start(), *SIZES.end()),
+        height.clamp(*SIZES.start(), *SIZES.end()),
+    )
+}
+
 impl Browser {
     /// The epoch of the lease now held.
     pub fn epoch(&self) -> u64 {
@@ -230,6 +238,9 @@ impl Browser {
         if self.driver() != Driver::Person {
             return self.epoch();
         }
+        // DevTools are the person's while they drive (#2028): nothing set in them outlives it.
+        self.stop_inspecting();
+        lock(&self.typing).end_run(super::inspect::INSPECTOR_PAGE);
         self.keep_typing_out();
         {
             let mut typing = lock(&self.typing);
@@ -321,8 +332,7 @@ impl Browser {
         if self.driver() != Driver::Person {
             return Err(Refusal::NotDriving);
         }
-        let width = width.clamp(*SIZES.start(), *SIZES.end());
-        let height = height.clamp(*SIZES.start(), *SIZES.end());
+        let (width, height) = sized(width, height);
         let sessions: Vec<String> = {
             let mut state = lock(&self.inner.state);
             state.size = Some((width, height));
@@ -1180,7 +1190,7 @@ impl Typing {
     }
 
     /// The person pressed `key` on `target`'s page, typing `text`, if it types any.
-    fn typed(&mut self, target: &str, key: &str, text: Option<&str>) {
+    pub(super) fn typed(&mut self, target: &str, key: &str, text: Option<&str>) {
         let runs = self.runs.entry(target.to_owned()).or_default();
         match text {
             Some(text) if text != "\r" => match runs.last_mut() {
@@ -1197,7 +1207,7 @@ impl Typing {
     }
 
     /// The run of characters being typed on `target`'s page ends here.
-    fn end_run(&mut self, target: &str) {
+    pub(super) fn end_run(&mut self, target: &str) {
         let runs = self.runs.entry(target.to_owned()).or_default();
         if runs.last().is_some_and(|run| !run.is_empty()) {
             runs.push(String::new());
@@ -1238,7 +1248,7 @@ fn commands(modifiers: Modifiers) -> bool {
 
 /// The text a key types, if it types any: a key named by one character, or Enter, held with no
 /// chord ([`commands`]): with Alt or AltGr, the character the key named (`@`, `€`).
-fn typed(key: &str, modifiers: Modifiers) -> Option<String> {
+pub(super) fn typed(key: &str, modifiers: Modifiers) -> Option<String> {
     if commands(modifiers) {
         return None;
     }
@@ -1263,7 +1273,7 @@ fn edits(key: &str, modifiers: Modifiers) -> bool {
 }
 
 /// The engine's key event for one key of the person's.
-fn key_event(
+pub(super) fn key_event(
     down: bool,
     key: &str,
     code: &str,
@@ -1297,7 +1307,7 @@ fn key_event(
 }
 
 /// The engine's mouse event of `kind` at (`x`, `y`) for `button`, with `buttons` held.
-fn mouse_event(
+pub(super) fn mouse_event(
     kind: MouseKind,
     x: f64,
     y: f64,
@@ -1326,7 +1336,7 @@ fn mouse_event(
 }
 
 /// The engine's bit for a held mouse button.
-fn button_bit(button: MouseButton) -> i64 {
+pub(super) fn button_bit(button: MouseButton) -> i64 {
     match button {
         MouseButton::None => 0,
         MouseButton::Left => 1,

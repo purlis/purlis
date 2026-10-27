@@ -52,6 +52,10 @@
 //!   go through, and hands the browser back. What it filled is kept out of every answer about
 //!   every page of the browser for as long as the browser lives, and each field it filled is
 //!   blanked before the value goes in.
+//! - **Inspect is the person's** (#2028). [`Browser::inspect`] opens the engine's own DevTools
+//!   for the page the browser shows, only while the person drives: a front end the driver never
+//!   lists as a page, watched as frames and spoken to through a tapped session over the one
+//!   pipe, reaching that page alone. Handing the browser back closes it.
 
 mod blank;
 mod browser;
@@ -70,7 +74,9 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-pub use browser::{Browser, LOGIN_WAIT, LoginEnded, origin_of};
+pub use browser::{
+    Browser, FRONT_END, INSPECTOR_PAGE, InspectEnded, LOGIN_WAIT, LoginEnded, MOST_QUEUED, origin_of,
+};
 pub use screencast::QUALITY;
 
 use crate::WebAddress;

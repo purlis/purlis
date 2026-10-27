@@ -28,17 +28,19 @@ use super::{
     PageId, PageInfo, Painted, Ref, Refusal, Settled, Why, lock,
 };
 use crate::WebAddress;
-use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event};
+use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event, Tap, TapSink};
 use crate::ending::{EndedBy, Ending, EngineExit};
 
 mod changes;
 mod drawing;
+mod inspect;
 mod login;
 mod reading;
 mod takeover;
 mod view;
 mod world;
 
+pub use inspect::{FRONT_END, INSPECTOR_PAGE, InspectEnded, MOST_QUEUED};
 pub use login::{LOGIN_WAIT, LoginEnded, origin_of};
 
 use drawing::Drawing;
@@ -78,6 +80,27 @@ pub(crate) trait DevTools: Send + Sync {
     fn call(&self, method: &str, params: Value, session: Option<&str>) -> Result<Value, CallError> {
         self.call_within(method, params, session, CALL_TIMEOUT)
     }
+
+    /// Taps `session` (#2028): its messages, and those of the sessions under it, go to `sink`.
+    /// `None` where it cannot be tapped.
+    fn tap(&self, _session: &str, _sink: TapSink) -> Option<Tap> {
+        None
+    }
+
+    /// Ends `tap`.
+    fn untap(&self, _tap: &Tap) {}
+
+    /// Sends a call on one of `tap`'s sessions, its answer the tap's under `id`.
+    fn send_tapped(
+        &self,
+        _tap: &Tap,
+        _id: u64,
+        _method: &str,
+        _params: Value,
+        _session: &str,
+    ) -> Result<(), CallError> {
+        Err(CallError::Ended)
+    }
 }
 
 impl DevTools for Connection {
@@ -108,6 +131,25 @@ impl DevTools for Connection {
 
     fn closed(&self) -> Option<Closed> {
         Connection::closed(self)
+    }
+
+    fn tap(&self, session: &str, sink: TapSink) -> Option<Tap> {
+        Some(Connection::tap(self, session, sink))
+    }
+
+    fn untap(&self, tap: &Tap) {
+        Connection::untap(self, tap);
+    }
+
+    fn send_tapped(
+        &self,
+        tap: &Tap,
+        id: u64,
+        method: &str,
+        params: Value,
+        session: &str,
+    ) -> Result<(), CallError> {
+        Connection::send_tapped(self, tap, id, method, params, session)
     }
 }
 
@@ -422,6 +464,33 @@ struct State {
     /// Where a drag of the agent's ended without the engine's word that its own drag started,
     /// by session (#2839): a word that comes later is answered by cancelling that drag there.
     cancels_late: Option<(String, (f64, f64))>,
+    /// What the driver leaves to an Inspect (#2028).
+    inspecting: Inspecting,
+}
+
+/// **What the driver leaves to an Inspect** (#2028): the engine's word of these is the front
+/// end's, never the driver's, so no page of DevTools is ever one of the browser's pages.
+#[derive(Default)]
+struct Inspecting {
+    /// The contexts DevTools' front ends run in.
+    contexts: HashSet<String>,
+    /// The front ends' own targets.
+    front_ends: HashSet<String>,
+    /// The pages a session is being made on for DevTools to speak to them.
+    bridging: HashSet<String>,
+}
+
+impl Inspecting {
+    /// Whether the target `info` tells of is DevTools' own.
+    fn owns(&self, info: &Value) -> bool {
+        info.get("browserContextId")
+            .and_then(Value::as_str)
+            .is_some_and(|context| self.contexts.contains(context))
+            || info
+                .get("targetId")
+                .and_then(Value::as_str)
+                .is_some_and(|target| self.front_ends.contains(target))
+    }
 }
 
 impl State {
@@ -811,6 +880,8 @@ enum FollowUp {
         at: (f64, f64),
         data: Value,
     },
+    /// A request of DevTools' front end, which never goes (#2028).
+    Refuse(String),
     /// A request held until the judge says whether it goes (#2018).
     Judge {
         paused: Paused,
@@ -820,6 +891,8 @@ enum FollowUp {
 
 pub(crate) struct Inner {
     pub(crate) devtools: Arc<dyn DevTools>,
+    /// The person's open DevTools, if any (#2028).
+    inspection: Mutex<Option<Arc<inspect::Inspection>>>,
     state: Mutex<State>,
     changed: Condvar,
     limits: Limits,
@@ -951,6 +1024,7 @@ impl Browser {
     ) -> Result<Self, Refusal> {
         let inner = Arc::new(Inner {
             devtools,
+            inspection: Mutex::new(None),
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
             limits: limits.clone(),
@@ -3461,6 +3535,7 @@ impl Inner {
     /// tells of it itself, the engine is given a moment to end by itself where its pipe closed,
     /// and ended at once where the connection closed on a message, and whoever waits is told how.
     fn connection_ended(&self) {
+        self.stop_inspecting(inspect::InspectEnded::Ended);
         let closed = self.devtools.closed();
         let pipe_ended = matches!(
             closed,
@@ -3563,8 +3638,47 @@ impl Inner {
         state.page(current)?.session.clone()
     }
 
+    /// Whether `event` says the open Inspect's front end went: its session detached, or its
+    /// target was destroyed.
+    fn inspection_gone(&self, event: &Event) -> Option<inspect::InspectEnded> {
+        let open = lock(&self.inspection).clone()?;
+        let target = event.params["targetId"].as_str();
+        match event.method.as_str() {
+            "Target.detachedFromTarget"
+                if event.params["sessionId"].as_str() == Some(open.front_session.as_str()) =>
+            {
+                Some(inspect::InspectEnded::Ended)
+            }
+            "Target.targetDestroyed" | "Target.targetCrashed"
+                if target == Some(open.front_end.as_str()) =>
+            {
+                Some(inspect::InspectEnded::Ended)
+            }
+            // The page's own end is the driver's to hear too: the Inspect ends beside it.
+            "Target.targetDestroyed" | "Target.targetCrashed"
+                if target == Some(open.inspected.as_str()) =>
+            {
+                self.stop_inspecting(inspect::InspectEnded::PageGone);
+                None
+            }
+            _ => None,
+        }
+    }
+
     /// Takes in one event from the engine.
     fn take_in(&self, event: &Event) {
+        // The front end of the person's DevTools is DevTools' own, never one of the browser's
+        // pages (#2028).
+        if let Some(session) = event.session_id.as_deref()
+            && let Some(open) = self.inspection_on(session)
+        {
+            open.front_end_event(&event.method, &event.params);
+            return;
+        }
+        if let Some(why) = self.inspection_gone(event) {
+            self.stop_inspecting(why);
+            return;
+        }
         if event.method == "Page.screencastFrame" {
             let shown = event.session_id.as_deref().and_then(|session| {
                 let state = lock(&self.state);
@@ -3589,6 +3703,21 @@ impl Inner {
                     .map(str::to_owned)
             };
             match event.method.as_str() {
+                "Target.targetCreated" | "Target.targetInfoChanged"
+                    if state.inspecting.owns(&params["targetInfo"]) =>
+                {
+                    // A page DevTools' context opened that is not its front end goes at once.
+                    if let Some(target) = text("/targetInfo/targetId")
+                        && !state.inspecting.front_ends.is_empty()
+                        && !state.inspecting.front_ends.contains(&target)
+                    {
+                        follow.push(FollowUp::Close(target));
+                    }
+                }
+                "Target.attachedToTarget"
+                    if state.inspecting.owns(&params["targetInfo"])
+                        || text("/targetInfo/targetId")
+                            .is_some_and(|target| state.inspecting.bridging.contains(&target)) => {}
                 "Target.targetCreated" | "Target.targetInfoChanged" => {
                     let info = &params["targetInfo"];
                     if info.get("type").and_then(Value::as_str) == Some("page")
@@ -3757,6 +3886,15 @@ impl Inner {
                             marks.pop_front();
                         }
                         marks.push_back(without_fragment(&url).to_owned());
+                    }
+                }
+                // The front end loads its own files alone: what it asks of the web fails (#2028).
+                "Fetch.requestPaused"
+                    if text("/frameId")
+                        .is_some_and(|frame| state.inspecting.front_ends.contains(&frame)) =>
+                {
+                    if let Some(request) = text("/requestId") {
+                        follow.push(FollowUp::Refuse(request));
                     }
                 }
                 "Fetch.requestPaused" => {
@@ -3955,6 +4093,14 @@ impl Inner {
                 if let Some((paused, outbound)) = unsent {
                     self.judged(&paused, &outbound);
                 }
+            }
+            FollowUp::Refuse(request) => {
+                let _ = devtools.call_within(
+                    "Fetch.failRequest",
+                    json!({ "requestId": request, "errorReason": "BlockedByClient" }),
+                    None,
+                    JUDGED_WITHIN,
+                );
             }
             FollowUp::CancelDrag { session, at, data } => {
                 let _ = devtools.call(
