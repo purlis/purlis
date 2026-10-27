@@ -314,6 +314,26 @@ describe("the asks, grouped by chat", () => {
     );
   });
 
+  it("names the mark that misleads most, and what each kind does (#3470)", () => {
+    core();
+    // A no-break space and a line separator: the separator, which can hide a second command.
+    const said = "Run a command: git⟦U+00A0⟧commit⟦U+2028⟧rm -rf x";
+    draw([{ ...permission(3, "lb", ["steward 3"], said), options: [deny()] }]);
+    expect(
+      screen.getByText(
+        "Allow is not offered. It holds ⟦U+2028⟧, a character that breaks the line here.",
+      ),
+    ).toBeTruthy();
+    expect(hiddenSaid("⟦U+000D⟧")).toBe(
+      "Allow is not offered. It holds ⟦U+000D⟧, a character that breaks the line here.",
+    );
+    for (const mark of ["⟦U+202E⟧", "⟦U+001B⟧", "⟦U+200B⟧"]) {
+      expect(hiddenSaid(mark)).toBe(
+        `Allow is not offered. It holds ${mark}, a character a reader does not see here.`,
+      );
+    }
+  });
+
   it("says nothing of a ⟦ the command wrote itself, which keeps its Allow (SK-51, #3202)", () => {
     core();
     draw([permission(3, "lb", ["steward 3"], "Run a command: echo ⟦U+27E6⟧U+00A0⟧")]);

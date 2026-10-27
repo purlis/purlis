@@ -362,18 +362,7 @@ impl Summary {
     /// A masked summary is not its action word for word, so nothing that lets the call run is
     /// offered beside it ([`super::hooked::shown_in_full`]).
     pub fn of(text: &str) -> Self {
-        // The white space a command line is laid out with is collapsed: a space, a tab and a
-        // line end. Any other blank stays where it stood: one that only looks like a space (a
-        // no-break, an en or an ideographic space, SK-51, #3202), and a break a shell does not
-        // lay a line out with (a vertical tab, a form feed, a next line, a line or paragraph
-        // separator, #3470). Purlis's one rule marks it where the line is shown, so the window
-        // can say why it is not offered Allow.
-        let lays_out = |c: char| matches!(c, ' ' | '\t' | '\n' | '\r');
-        let line = text
-            .split(lays_out)
-            .filter(|word| !word.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ");
+        let line = one_line(text);
         let mut spans = crate::secretshape::leak_spans(&line);
         spans.extend(
             crate::secrets::seen::found_in(&line)
@@ -410,6 +399,20 @@ impl Summary {
     }
 }
 
+/// `text` on one line: the white space a command line is laid out with collapsed to one space.
+/// That is a space, a tab and a line end (`\n` or `\r\n`). Any other blank stays where it
+/// stood: one that only looks like a space (a no-break, an en or an ideographic space, SK-51,
+/// #3202), and a break a shell does not lay a line out with (a lone carriage return, a vertical
+/// tab, a form feed, a next line, a line or paragraph separator, #3470). Purlis's one rule
+/// marks it where the line is shown, so the window can say why it is not offered Allow.
+fn one_line(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .split([' ', '\t', '\n'])
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Whether `written`, the masked line made from `text`, still shows a vault value `text` held:
 /// one found in `text` whose words, on one line, stand in `written`. The masks hide every
 /// value found on the line itself, so this is a value the text held across white space.
@@ -417,7 +420,9 @@ fn still_holds_a_vault_value(text: &str, written: &str) -> bool {
     crate::secrets::seen::found_in(text)
         .into_iter()
         .any(|span| {
-            let held = text[span].split_whitespace().collect::<Vec<_>>().join(" ");
+            // Put on one line the way the summary was, so a value across a kept blank reads
+            // as it does there.
+            let held = one_line(&text[span]);
             !held.is_empty() && written.contains(&held)
         })
 }

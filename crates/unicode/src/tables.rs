@@ -1413,3 +1413,33 @@ pub static ARABIC_LETTER: [(u32, u32); 21] = [
     (0xFE70, 0xFE74),
     (0xFE76, 0xFEFC),
 ];
+
+/// Codepoints of canonical combining class 9 in the Brahmic blocks: the viramas, after which
+/// either joiner may stand before a letter.
+pub static VIRAMA: [(u32, u32); 10] = [
+    (0x094D, 0x094D),
+    (0x09CD, 0x09CD),
+    (0x0A4D, 0x0A4D),
+    (0x0ACD, 0x0ACD),
+    (0x0B4D, 0x0B4D),
+    (0x0BCD, 0x0BCD),
+    (0x0C4D, 0x0C4D),
+    (0x0CCD, 0x0CCD),
+    (0x0D3B, 0x0D3C),
+    (0x0D4D, 0x0D4D),
+];
+
+/// White_Space codepoints of general category `Cc` (but the tab), `Zl` or `Zp`: the blanks
+/// that break a line.
+pub static LINE_BREAK: [(u32, u32); 3] = [(0x000A, 0x000D), (0x0085, 0x0085), (0x2028, 0x2029)];
+
+/// White_Space codepoints of general category `Zs` but the space: the blanks that look like
+/// one.
+pub static BLANK: [(u32, u32); 6] = [
+    (0x00A0, 0x00A0),
+    (0x1680, 0x1680),
+    (0x2000, 0x200A),
+    (0x202F, 0x202F),
+    (0x205F, 0x205F),
+    (0x3000, 0x3000),
+];

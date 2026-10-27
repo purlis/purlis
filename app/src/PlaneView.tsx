@@ -3090,7 +3090,7 @@ export const PlaneView = memo(function PlaneView({
       if (!typableLogin(asked.line)) {
         refusedBy(
           "shell",
-          "purlis will not type a login line that holds a control or a hidden character",
+          "purlis will not type a login line that holds a control or a hidden character. Type the login in a terminal yourself.",
         );
         return;
       }

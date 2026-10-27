@@ -221,11 +221,10 @@ fn brahmic_letter(c: char) -> bool {
     in_table(c, &tables::BRAHMIC_LETTER)
 }
 
-/// Is `c` a virama of those scripts: each block's U+0x4D, and Malayalam's vertical-bar and
-/// circular viramas.
+/// Is `c` a virama of those scripts ([`tables::VIRAMA`]): each block's U+0x4D, and Malayalam's
+/// vertical-bar and circular viramas.
 fn virama(c: char) -> bool {
-    let cp = c as u32;
-    matches!(cp, 0x0900..=0x0D7F) && (cp & 0x7F == 0x4D || matches!(cp, 0x0D3B | 0x0D3C))
+    in_table(c, &tables::VIRAMA)
 }
 
 /// Is `c` an emoji a presentation selector or a ZWJ may follow: Unicode's

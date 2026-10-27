@@ -37,6 +37,12 @@ pub struct UnicodeRule {
     pub brahmic_letter: Vec<(u32, u32)>,
     /// [`tables::ARABIC_LETTER`]: the Arabic letters a ZWNJ may stand between.
     pub arabic_letter: Vec<(u32, u32)>,
+    /// [`tables::VIRAMA`]: the viramas of those Brahmic blocks.
+    pub virama: Vec<(u32, u32)>,
+    /// [`tables::LINE_BREAK`]: the blanks that break a line, for what the window says of one.
+    pub line_break: Vec<(u32, u32)>,
+    /// [`tables::BLANK`]: the blanks that look like a space, for what the window says of one.
+    pub blank: Vec<(u32, u32)>,
 }
 
 /// The one rule's tables, from `purlis_unicode`'s generated statics.
@@ -51,6 +57,9 @@ pub fn rule() -> UnicodeRule {
             .collect(),
         brahmic_letter: tables::BRAHMIC_LETTER.to_vec(),
         arabic_letter: tables::ARABIC_LETTER.to_vec(),
+        virama: tables::VIRAMA.to_vec(),
+        line_break: tables::LINE_BREAK.to_vec(),
+        blank: tables::BLANK.to_vec(),
     }
 }
 
@@ -203,5 +212,8 @@ mod tests {
         assert_eq!(rule.emoji_sequences.len(), tables::EMOJI_SEQUENCES.len());
         assert_eq!(rule.brahmic_letter, tables::BRAHMIC_LETTER);
         assert_eq!(rule.arabic_letter, tables::ARABIC_LETTER);
+        assert_eq!(rule.virama, tables::VIRAMA);
+        assert_eq!(rule.line_break, tables::LINE_BREAK);
+        assert_eq!(rule.blank, tables::BLANK);
     }
 }

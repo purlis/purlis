@@ -57,6 +57,18 @@ export function markOf(ch: string): string {
   return `⟦U+${code}⟧`;
 }
 
+/** What kind of blank the character `mark` stands for is, by the core's tables (#3470): one
+ *  that breaks the line, one that looks like a space, or neither. Only for what the window
+ *  says of a mark; whether it is hidden is `hidden`'s to say. */
+export function blankOf(mark: string): "break" | "blank" | undefined {
+  const code = /^⟦U\+([0-9A-F]{4,6})⟧$/u.exec(mark);
+  if (code === null) return undefined;
+  const cp = parseInt(code[1], 16);
+  if (inTable(cp, UNICODE_RULE.line_break)) return "break";
+  if (inTable(cp, UNICODE_RULE.blank)) return "blank";
+  return undefined;
+}
+
 /** Each mark the core or this module wrote in `text` (`⟦U+XXXX⟧`), with where it stands. */
 export function marksIn(text: string): { mark: string; at: number }[] {
   return Array.from(text.matchAll(/⟦U\+[0-9A-F]{4,6}⟧/gu), (one) => ({
@@ -152,9 +164,9 @@ function doesItsJob(cps: readonly number[], at: number): boolean {
  *  engine's own (#3470). */
 const brahmicLetter = (cp: number) => inTable(cp, UNICODE_RULE.brahmic_letter);
 
-/** A virama of those scripts: each block's U+0x4D, and Malayalam's two others. */
-const virama = (cp: number) =>
-  cp >= 0x0900 && cp <= 0x0d7f && ((cp & 0x7f) === 0x4d || cp === 0x0d3b || cp === 0x0d3c);
+/** A virama of those scripts: each block's U+0x4D, and Malayalam's two others (the core's
+ *  table). */
+const virama = (cp: number) => inTable(cp, UNICODE_RULE.virama);
 
 /** An emoji a presentation selector or a ZWJ may follow (Extended_Pictographic). */
 const pictographic = (cp: number) => inTable(cp, UNICODE_RULE.extended_pictographic);

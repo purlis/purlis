@@ -1181,12 +1181,12 @@ mod tests {
         // #3470: a shell lays a command out with spaces, tabs and line ends. A next line, a
         // vertical tab, a form feed or a line or paragraph separator is a character the command
         // holds, which a reader takes for a break: kept for the window to mark and say why.
-        for c in ['\u{0B}', '\u{0C}', '\u{85}', '\u{2028}', '\u{2029}'] {
+        for c in ['\r', '\u{0B}', '\u{0C}', '\u{85}', '\u{2028}', '\u{2029}'] {
             let line = format!("ls{c}rm -rf x");
 
             assert_eq!(Summary::of(&line).as_str(), line, "U+{:04X}", u32::from(c));
         }
-        assert_eq!(Summary::of("ls\r\n\t rm").as_str(), "ls rm");
+        assert_eq!(Summary::of("ls\r\n\t rm\r\n").as_str(), "ls rm");
     }
 
     #[test]
