@@ -30,6 +30,12 @@
 //! call fails at once, as one not answered in time. A call whose limit passed before its turn
 //! is not written at all: what its caller was told failed never reaches the engine.
 //!
+//! **A call on a session that detaches ends as it detaches** (#3081). The engine does not
+//! always answer a call made on a frame's session that goes away while the call waits (a frame
+//! that loads another document every 100 ms detaches its session each time): as the engine
+//! says the session detached, every call still waiting on it fails at once, refused as the
+//! engine refuses a call to a session it does not have, and never waits out its limit.
+//!
 //! **Why it closed is kept** ([`Connection::closed`], [`Closed`]): the end of the pipe, a read
 //! that failed, or the message that ended it, named by its method and never by what it held.
 
@@ -150,13 +156,17 @@ impl std::fmt::Display for Closed {
 
 type Answer = Result<Value, CallError>;
 
-/// A call waiting for its answer, the most bytes the answer may take, and its method, to name an
-/// answer that does not read.
+/// A call waiting for its answer, the most bytes the answer may take, its method, to name an
+/// answer that does not read, and the session it was made on.
 struct Waiting {
     answer: SyncSender<Answer>,
     most: usize,
     method: String,
+    session: Option<String>,
 }
+
+/// The code the engine refuses a call to a session it does not have with.
+const NO_SUCH_SESSION: i64 = -32001;
 
 struct Shared {
     /// `None` once the engine's side has ended: every later call is refused at once.
@@ -257,6 +267,7 @@ impl Connection {
                     answer,
                     most: most.min(MAX_MESSAGE_BYTES),
                     method: method.to_owned(),
+                    session: session.map(str::to_owned),
                 },
             );
         }
@@ -615,6 +626,11 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
                         .remove("sessionId")
                         .and_then(|s| s.as_str().map(str::to_owned)),
                 };
+                if event.method == "Target.detachedFromTarget"
+                    && let Some(gone) = event.params["sessionId"].as_str()
+                {
+                    detached(shared, gone);
+                }
                 match events.try_send(event) {
                     Ok(()) | Err(mpsc::TrySendError::Disconnected(_)) => {}
                     Err(mpsc::TrySendError::Full(_)) => {
@@ -626,6 +642,31 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
     }
     // Dropping every waiting sender wakes each call with `Ended`.
     lock(&shared.pending).take();
+}
+
+/// The engine detached session `gone`: every call still waiting on it is refused now, as the
+/// engine refuses one to a session it does not have (#3081).
+fn detached(shared: &Shared, gone: &str) {
+    let waiting: Vec<Waiting> = match lock(&shared.pending).as_mut() {
+        Some(pending) => {
+            let ids: Vec<u64> = pending
+                .iter()
+                .filter(|(_, one)| one.session.as_deref() == Some(gone))
+                .map(|(id, _)| *id)
+                .collect();
+            ids.iter().filter_map(|id| pending.remove(id)).collect()
+        }
+        None => Vec::new(),
+    };
+    for one in waiting {
+        let _ = one.answer.try_send(Err(CallError::Engine {
+            code: NO_SUCH_SESSION,
+            message: format!(
+                "{} was not answered: the session it was made on detached",
+                one.method
+            ),
+        }));
+    }
 }
 
 /// A message read whole, or one read past because it went past its bound.

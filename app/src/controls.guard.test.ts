@@ -36,7 +36,7 @@ import {
  * | `<button>`, or a Radix trigger or close without `asChild`        | a list's row or a tree's row (`ui-row`, `ui-tree-row`); a button is the button family's `Button` (#2904), a segment the choice family's, a menu's row the menu family's |
  * | `<input>`, `<textarea>`                                          | nothing: a box is the field family's `TextField` or `TextArea` (#2905), a checkbox or a radio the choice family's (#2907) |
  * | `<select>`, Radix Select's `Trigger`                             | nothing: the select family's `Select` (#2906) |
- * | `<table>`                                                        | `ui-table`                |
+ * | `<table>`                                                        | nothing: the table family's `Table` or `ControlTable` (#2911) |
  * | a Radix menu's or Select's `Content`, `SubContent`, `Item`, `SubTrigger`, checkbox or radio item | nothing: the menu and popover families' (#2909) |
  *
  * A Radix part is found by the name its file imports the package under (`import * as Menu from
@@ -64,7 +64,8 @@ const WEARS: Record<string, string[]> = {
   textarea: [],
   // A select is the select family's (#2906).
   select: [],
-  table: ["ui-table"],
+  // A table is the table family's (#2911).
+  table: [],
   // A menu and its rows are the menu and popover families' (#2909).
   menu: [],
   "menu-item": [],
@@ -345,6 +346,7 @@ describe("the control guard (#1837)", () => {
       '<textarea className="notes">',
       '<select className="wide">',
       '<table className="vault-secrets">',
+      '<table className="ui-table ui-table-fixed">',
       '<Menu.Content className="more-menu">',
       "<Menu.Item>",
       '<Pick.Trigger className="field">',
@@ -1144,9 +1146,10 @@ export const plantedTall = { minBlockSize: 32 };
     const controls = sourceFiles(isView).flatMap((file) =>
       controlClasses(readFileSync(join(SRC, file), "utf8")),
     );
-    // Fewer since the field (#2905), the status items and pills (#2913) and the menus (#2909)
-    // became families of their own.
-    expect(new Set(controls).size).toBeGreaterThan(70);
+    // Fewer since the field (#2905), the status items and pills (#2913), the menus (#2909) and
+    // the cards, Notices and counts (#2912) became families of their own, and the hand-drawn
+    // buttons moved to the button family (#3208).
+    expect(new Set(controls).size).toBeGreaterThan(60);
     const read = declarations(readFileSync(join(SRC, "App.css"), "utf8")).filter(({ property }) =>
       HEIGHT_PROPERTY.test(property),
     );

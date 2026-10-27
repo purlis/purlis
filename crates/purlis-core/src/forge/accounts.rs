@@ -802,7 +802,7 @@ fn kept_as_remembered(keyring: &dyn Store, account: &ForgeAccount) -> Result<Opt
             "purlis could not read the token for {} on {} from the keychain: {}",
             account.login,
             account.host,
-            unechoed(e.message, &SecretString::from(""))
+            unechoed(e.message.to_string(), &SecretString::from(""))
         )
     })?;
     let Some(secret) = read else {
@@ -1046,7 +1046,7 @@ fn keep(
     };
     keyring
         .set(&service(&account), ITEM_ACCOUNT, &item)
-        .map_err(|e| unechoed(e.message, &secret))?;
+        .map_err(|e| unechoed(e.message.to_string(), &secret))?;
     drop(item);
     drop(secret);
     let value = written(&account, rest);
@@ -1118,7 +1118,7 @@ pub(super) fn keep_refreshed(
         .map_err(|e| {
             format!(
                 "purlis could not keep the renewed sign-in in the keychain: {}",
-                unechoed(e.message, &granted.access)
+                unechoed(e.message.to_string(), &granted.access)
             )
         })
         .map(|_| ())

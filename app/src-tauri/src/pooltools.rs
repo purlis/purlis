@@ -494,14 +494,15 @@ fn watch_the_asker(mut reader: Box<dyn std::io::BufRead + Send>, gone: Arc<Atomi
 
 /// The value of each of `tool`'s keys, read from its vault here.
 fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, String)>, String> {
-    let vault = purlis_core::secrets::cmd::provider(ctx, &tool.vault).map_err(|e| e.message)?;
+    let vault =
+        purlis_core::secrets::cmd::provider(ctx, &tool.vault).map_err(|e| e.message.to_string())?;
     let mut values: Vec<(String, String)> = Vec::new();
     for value in &tool.values {
         if values.iter().any(|(key, _)| *key == value.key) {
             continue;
         }
-        let read =
-            purlis_core::secrets::cmd::get_value(ctx, &vault, &value.key).map_err(|e| e.message)?;
+        let read = purlis_core::secrets::cmd::get_value(ctx, &vault, &value.key)
+            .map_err(|e| e.message.to_string())?;
         values.push((value.key.clone(), read));
     }
     Ok(values)

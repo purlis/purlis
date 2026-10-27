@@ -59,6 +59,7 @@ import { Select } from "./ui/select/Select";
 import type { ViewRef } from "./tabs";
 import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
+import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { ListBox, ListOption, ListSection } from "./ui/list/List";
 import { RowLabel, RowLead } from "./ui/list/Row";
@@ -545,7 +546,7 @@ function Hits({
                       <HitIcon file={file} name={name} />
                       <span className="search-file-name">{name}</span>
                       {folder !== "" && <span className="search-file-folder">{folder}</span>}
-                      <span className="search-count">{file.count}</span>
+                      <Count className="search-count">{file.count}</Count>
                     </span>
                     {file.count > file.lines.length && (
                       <span className="search-file-rest">

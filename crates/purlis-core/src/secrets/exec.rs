@@ -214,7 +214,7 @@ pub(crate) fn prepare_from(
         if let Some(sig) = caught() {
             return Err(Stopped::Signal(128 + sig));
         }
-        got.map_err(|e| Stopped::Said(1, e.message))
+        got.map_err(|e| Stopped::Said(1, e.message.to_string()))
     };
 
     for spec in &req.env {

@@ -92,7 +92,7 @@ export function ChatAsk({
  */
 export function focusAfterNoticeGone(band: Element | null, strip: Element | null): void {
   const next =
-    band?.querySelector<HTMLElement>(".notice button") ??
+    band?.querySelector<HTMLElement>('[data-scope="notice"][data-part="root"] button') ??
     strip?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ??
     strip?.querySelector<HTMLElement>('[role="tab"]');
   next?.focus();

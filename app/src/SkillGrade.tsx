@@ -42,6 +42,8 @@ export function endedSaid(step: SkillGradeStep): string {
       return `Stopped at its cap of ${tokensSaid(step.cap ?? 0)} after ${chats}${spent}. What ran is scored in Grades below.`;
     case "spend-not-reported":
       return `Stopped after ${chats}: ${step.said ?? "a chat did not say what it spent, so the grade could not be held to its cap."}`;
+    case "failed":
+      return step.said ?? "A fault in purlis ended the grade before it was scored.";
     default:
       return "";
   }
@@ -329,7 +331,7 @@ function GradePlan({
           </ol>
           {plan.left_out.length > 0 && (
             <p className="honest" data-testid="skill-grade-left-out">
-              Left out: {plan.left_out.join(" ")}
+              Left out: {plan.left_out.map((left) => `Test ${left.at + 1}: ${left.why}`).join(" ")}
             </p>
           )}
         </>

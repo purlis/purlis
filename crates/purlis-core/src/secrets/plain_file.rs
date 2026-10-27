@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 
 use super::registry::Vault;
 use super::{Ctx, VaultError};
+use crate::tui::Markup;
 
 /// The vault's file, resolved — `VaultProvider.file_path`.
 pub fn path(ctx: &Ctx, vault: &Vault) -> Result<PathBuf, VaultError> {
@@ -80,16 +81,21 @@ pub fn load(ctx: &Ctx, vault: &Vault, what: &str) -> Result<Map<String, Value>, 
 pub fn gone(ctx: &Ctx, vault: &Vault, p: &Path) -> Option<VaultError> {
     let record = meta_path(p);
     std::fs::symlink_metadata(&record).ok()?;
-    Some(VaultError::new(format!(
-        "vault '{}': its file {} is missing, but values were written to it before (its record {} \
-         is still there). charter will not read it as an empty vault, nor write a new file there \
-         beside the old one. Nothing was read or written.\n  Put the file back, or point the \
-         vault's 'file' at where it is now; to start this vault empty on purpose, remove {} too.",
-        vault.name,
-        super::short_path(&ctx.root, p),
-        super::short_path(&ctx.root, &record),
-        super::short_path(&ctx.root, &record),
-    )))
+    Some(VaultError::new(Markup::lines([
+        Markup::from(format!(
+            "vault '{}': its file {} is missing, but values were written to it before (its \
+             record {} is still there). charter will not read it as an empty vault, nor write a \
+             new file there beside the old one. Nothing was read or written.",
+            vault.name,
+            super::short_path(&ctx.root, p),
+            super::short_path(&ctx.root, &record),
+        )),
+        Markup::from(format!(
+            "  Put the file back, or point the vault's 'file' at where it is now; to start this \
+             vault empty on purpose, remove {} too.",
+            super::short_path(&ctx.root, &record),
+        )),
+    ])))
 }
 
 /// `_tighten`: force the file to 0600 if any group/other bit is set. Called from the VALUE
@@ -195,14 +201,18 @@ fn write_private_from(
             .get_ref()
             .and_then(|e| e.downcast_ref::<crate::rewrite::NotPrivate>())
         {
-            Some(loose) => VaultError::new(format!(
-                "refusing to write {}: {loose}, so the plaintext would be readable by other \
-                 accounts on this machine. Nothing was written.\n  Filesystems with fixed \
-                 permissions (exFAT, many network mounts) cannot hold a plain-file vault — \
-                 point the vault at a path on a filesystem that keeps modes, or use a provider \
-                 that does not store plaintext.",
-                p.display()
-            )),
+            Some(loose) => VaultError::new(Markup::lines([
+                Markup::from(format!(
+                    "refusing to write {}: {loose}, so the plaintext would be readable by other \
+                     accounts on this machine. Nothing was written.",
+                    p.display()
+                )),
+                Markup::from(
+                    "  Filesystems with fixed permissions (exFAT, many network mounts) cannot \
+                     hold a plain-file vault — point the vault at a path on a filesystem that \
+                     keeps modes, or use a provider that does not store plaintext.",
+                ),
+            ])),
             // Linked between the check above and the replace's own gate.
             None if std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink()) => {
                 linked(p)
@@ -214,12 +224,14 @@ fn write_private_from(
 
 /// The refusal of a vault path that is a symlink (#429).
 fn linked(p: &Path) -> VaultError {
-    VaultError::new(format!(
-        "refusing to write {}: it is a symlink. purlis replaces a vault file whole and will not \
-         write secrets through a link to wherever it points. Nothing was written.\n  Point the \
-         vault's 'file' at the real path instead.",
-        p.display()
-    ))
+    VaultError::new(Markup::lines([
+        Markup::from(format!(
+            "refusing to write {}: it is a symlink. purlis replaces a vault file whole and will \
+             not write secrets through a link to wherever it points. Nothing was written.",
+            p.display()
+        )),
+        Markup::from("  Point the vault's 'file' at the real path instead."),
+    ]))
 }
 
 pub(super) fn meta_path(p: &Path) -> PathBuf {
@@ -369,12 +381,12 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
         return (false, "no 'file' configured".into());
     };
     if let Some(refused) = linked_on_the_way(ctx, &pp) {
-        return (false, refused.message);
+        return (false, refused.message.to_string());
     }
     let note = super::loose_dir_note(&ctx.root, &loose_dirs(ctx, vault));
     if !pp.exists() {
         if let Some(gone) = gone(ctx, vault, &pp) {
-            return (false, gone.message);
+            return (false, gone.message.to_string());
         }
         let mut line = format!("not created yet ({})", super::short_path(&ctx.root, &pp));
         if !note.is_empty() {
@@ -384,7 +396,7 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
     }
     let count = match load(ctx, vault, "secret") {
         Ok(d) => d.len(),
-        Err(e) => return (false, e.message),
+        Err(e) => return (false, e.message.to_string()),
     };
     let mut parts = vec![crate::counts::counted(count, "secret", "secrets")];
     for s in [super::mode_note(&pp), note] {

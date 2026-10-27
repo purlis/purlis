@@ -909,6 +909,9 @@ impl Held {
         // What the session host still runs of this project from before this window and no
         // chat put back reattached ends now, so nothing runs with no tab (#2006).
         self.chats.close_what_was_not_reattached();
+        // A grade under way when purlis last stopped is recorded as interrupted, its chat ended
+        // with the rest above (#3353).
+        let _ = crate::skillgrade::record_interrupted(&self.root);
         // And its browsers, each with its chat, pinned past it, or as the person's own; what
         // nothing takes back ends too (#2025).
         crate::chatbrowsers::take_back(self);
@@ -2781,6 +2784,20 @@ impl Planes {
         }
         let held = Arc::new(self.hold(id.clone(), root));
         let _ = held.me.set(Arc::downgrade(&held));
+        // What becomes of its chats' browsers, in its event log (#2842). A `Weak`, as the
+        // answer below holds one: the plane's browsers must not keep a closed plane alive.
+        held.browsers.saying({
+            let held = Arc::downgrade(&held);
+            Arc::new(move |number, said| {
+                let Some(held) = held.upgrade() else {
+                    return;
+                };
+                let kind = said.kind();
+                if let Err(why) = held.hooks().record_browser(held.root(), number, said) {
+                    tracing::warn!("purlis: {kind} was not written to the event log ({why})");
+                }
+            })
+        });
         // A handoff from one of this plane's chats is answered by this plane, which is the
         // only one holding the asking chat's record. A `Weak`, because the plane holds the
         // socket that holds this answer: a strong handle would keep a closed plane alive.

@@ -150,7 +150,7 @@ fn program_row(ctx: &Ctx, program: &str, vaults: &[Vault]) -> Row {
             )),
             Err(e) => {
                 said.push(format!("{label} has no pinned {program} it can run"));
-                hints.push(e.message);
+                hints.push(e.message.to_string());
             }
         }
     }

@@ -54,7 +54,7 @@ async function secretNames(): Promise<string[]> {
   // does not have.
   return browser.execute(
     (tab: string) =>
-      [...document.querySelectorAll(`${tab} tbody tr td:first-child`)].map((cell) =>
+      [...document.querySelectorAll(`${tab} tbody tr > :first-child`)].map((cell) =>
         (cell.textContent ?? "").trim(),
       ),
     TAB,

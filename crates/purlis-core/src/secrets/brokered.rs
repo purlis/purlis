@@ -56,7 +56,10 @@
 //! exactly that tool's vault and hand-over ([`crate::sandbox::tools::declared`]). Anything else
 //! is refused with a sentence naming the tool to declare. The run is of the tool's program by
 //! its absolute path, from a `PATH` without the folders the chat may write, and without the
-//! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]). On
+//! chat's variables that make a program load code ([`crate::sandbox::tools::loads_code`]): it
+//! starts from only the few of the chat's variables a run needs, with a home of its own in the
+//! run's temp directory ([`crate::sandbox::tools::a_run_starts_from`]), and keeps no core dump
+//! (#2047). On
 //! Linux, purlis's own wrap that holds it starts with none of these: the run's environment is
 //! carried past it to the tool alone ([`purlis_linux_sandbox::carried`]). A
 //! credentialed MCP server's line passes only as this machine approved it, wrapped by purlis
@@ -86,6 +89,7 @@ use super::cmd::{self, Io, Say};
 use super::exec::{self, Request, Stopped};
 use super::{Ctx, Env, registry};
 use crate::sandbox::{Confines, Denial};
+use crate::tui::Markup;
 
 /// The line a chat writes: which chat (checked against its token), and what it wants run.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -322,7 +326,7 @@ pub enum Reader {
 /// **A courtesy, not the boundary.** The mark it reads is the chat's environment, which the
 /// chat can change; what holds the item is the store's own rule (V90a) and the sandbox. This
 /// keeps purlis itself from raising a question on the chat's behalf, and says what to do.
-pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) -> Option<String> {
+pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) -> Option<Markup> {
     let env = |name: &str| ctx.env.get(name);
     if !crate::sandbox::chat_is_sandboxed_in(&env) || !super::keyring::holds_values_of(ctx, vault) {
         return None;
@@ -347,13 +351,16 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
             ),
         ),
     };
-    Some(format!(
-        "vault '{}' is read from {}, which a sandboxed chat reaches only through the app, and \
-         {why}. purlis does not read {} from inside a sandboxed chat.\n  {next}",
-        vault.name,
-        super::keyring::STORE_NAME,
-        super::keyring::STORE_NAME,
-    ))
+    Some(Markup::lines([
+        Markup::from(format!(
+            "vault '{}' is read from {}, which a sandboxed chat reaches only through the app, \
+             and {why}. purlis does not read {} from inside a sandboxed chat.",
+            vault.name,
+            super::keyring::STORE_NAME,
+            super::keyring::STORE_NAME,
+        )),
+        Markup::from(format!("  {next}")),
+    ]))
 }
 
 /// Runs `req` through the app that started this chat, and answers its status, or `None` when
@@ -710,7 +717,7 @@ fn allowed_here(ctx: &Ctx, persona: &str, vault: &str) -> bool {
 /// registry does not read, so "which is not known" is never said as "none". Names only: no
 /// vault is opened, and nothing inside one is read.
 pub fn vaults_of(ctx: &Ctx, persona: &str) -> Result<Vec<String>, String> {
-    let doc = registry::load_registry(ctx).map_err(|e| e.message)?;
+    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
     let mut out = registry::vaults_for_persona(&doc, persona);
     if !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants() {
         for one in crate::sandbox::local::granted_vaults(&ctx.root) {
@@ -805,8 +812,8 @@ pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), St
              persona that vault '{vault}' is tagged with."
         ));
     };
-    let doc = registry::load_registry(ctx).map_err(|e| e.message)?;
-    let registered = registry::vault_in(&doc, vault).map_err(|e| e.message)?;
+    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
+    let registered = registry::vault_in(&doc, vault).map_err(|e| e.message.to_string())?;
     let tagged = registry::vaults_for_persona(&doc, persona);
     if tagged.iter().any(|t| t == vault) || allowed_here(ctx, persona, vault) {
         return Ok(());
@@ -858,7 +865,7 @@ pub struct Listed {
 /// alone, in the app, so no provider is asked and no session is opened. The registry, the
 /// policy and this machine's grants are each read once.
 pub fn listed(ctx: &Ctx, persona: Option<&str>) -> Result<Vec<Listed>, String> {
-    let doc = registry::load_registry(ctx).map_err(|e| e.message)?;
+    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
     let persona = persona.filter(|p| !p.is_empty());
     let granted = if crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants() {
         Vec::new()
@@ -999,8 +1006,8 @@ pub fn listing_from_the_app(_ctx: &Ctx) -> Option<Result<Listing, String>> {
 /// which names the ways forward.
 pub fn keys_for(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<Vec<String>, String> {
     authorise(ctx, persona, vault)?;
-    let v = cmd::provider(ctx, vault).map_err(|e| e.message)?;
-    let mut keys = cmd::keys(ctx, &v).map_err(|e| e.message)?;
+    let v = cmd::provider(ctx, vault).map_err(|e| e.message.to_string())?;
+    let mut keys = cmd::keys(ctx, &v).map_err(|e| e.message.to_string())?;
     keys.sort();
     Ok(keys)
 }
@@ -1045,7 +1052,7 @@ pub fn declares_a_tool_with(root: &Path, persona: &str, vault: &str) -> bool {
 /// chat never reads a vault, and no grant changes that; the route that works is a tool its
 /// persona declares, handed the value by `secret exec`, which the app runs. `None` outside a
 /// sandboxed chat.
-pub fn value_refused_in_this_chat(ctx: &Ctx, vault: &str) -> Option<String> {
+pub fn value_refused_in_this_chat(ctx: &Ctx, vault: &str) -> Option<Markup> {
     let env = |name: &str| ctx.env.get(name);
     if !crate::sandbox::chat_is_sandboxed_in(&env) {
         return None;
@@ -1061,11 +1068,16 @@ pub fn value_refused_in_this_chat(ctx: &Ctx, vault: &str) -> Option<String> {
          a command in a sandbox on this system."
             .to_owned()
     };
-    Some(format!(
-        "a sandboxed chat does not read a vault's values, so purlis did not read '{vault}', and \
-         no Allow changes that.\n  To check which keys it holds: purlis secret list {vault}\n  \
-         {to_use}"
-    ))
+    Some(Markup::lines([
+        Markup::from(format!(
+            "a sandboxed chat does not read a vault's values, so purlis did not read '{vault}', \
+             and no Allow changes that."
+        )),
+        Markup::from(format!(
+            "  To check which keys it holds: purlis secret list {vault}"
+        )),
+        Markup::from(format!("  {to_use}")),
+    ]))
 }
 
 /// How a run is wrapped: in the profile built from the chat's policy, applied by this system's
@@ -1185,14 +1197,21 @@ pub(crate) fn serve_wrapped(
     serve_in(asker, wanted, reader, writer, wrap, Arc::new(|_| {}));
 }
 
-/// Whether `wanted` running `command` is exactly the `secret exec` line of a credentialed MCP
-/// server of `persona` this machine approved ([`crate::personaverbs::chatstart::approved_lines`]):
-/// its vault, its `--env` and `--file` hand-overs in order, no `--dotenv`, and its command.
-fn an_approved_server(root: &Path, persona: &str, wanted: &Wanted, command: &[String]) -> bool {
+/// Where `wanted` running `command` is exactly the `secret exec` line of a credentialed MCP
+/// server of `persona` this machine approved ([`crate::personaverbs::chatstart::approved_servers`]):
+/// its vault, its `--env` and `--file` hand-overs in order, no `--dotenv`, and its command. The
+/// names of the variables its approved entry sets (`env`), which its run starts with.
+fn an_approved_server(
+    root: &Path,
+    persona: &str,
+    wanted: &Wanted,
+    command: &[String],
+) -> Option<Vec<String>> {
     let state = crate::personaverbs::state_dir(root);
-    crate::personaverbs::chatstart::approved_lines(root, &state, persona)
-        .iter()
-        .any(|words| approved_line_is(words, wanted, command))
+    crate::personaverbs::chatstart::approved_servers(root, &state, persona)
+        .into_iter()
+        .find(|server| approved_line_is(&server.words, wanted, command))
+        .map(|server| server.env)
 }
 
 /// Whether `words`, an approved server's `secret exec` words, ask for what `wanted` running
@@ -1265,7 +1284,7 @@ pub fn login_and_identity_for(
         return Err(format!("{name} is not a browser login"));
     };
     let vault = &ready.tool.vault;
-    let v = cmd::provider(&ctx, vault).map_err(|e| e.message)?;
+    let v = cmd::provider(&ctx, vault).map_err(|e| e.message.to_string())?;
     let read = |key: &str| {
         cmd::get_value(&ctx, &v, key).map(Secret::new).map_err(|e| {
             format!(
@@ -1854,6 +1873,9 @@ pub(crate) fn serve_recorded(
     let persona = asker.persona.as_deref().unwrap_or_default();
     let listed = declared_now(&asker.root, persona);
     let mut declared_as: Option<String> = None;
+    // The variables of the chat's an approved server's run starts with beside
+    // [`crate::sandbox::tools::a_run_starts_from`]'s: those its approved entry sets.
+    let mut its_entry_sets: Vec<String> = Vec::new();
     match crate::sandbox::tools::declared(
         &confines.tools,
         &listed,
@@ -1881,8 +1903,10 @@ pub(crate) fn serve_recorded(
         },
         // A persona's credentialed MCP server this machine approved, started by the chat's
         // harness, asks for its line as approved: the person's consent, as an Allow is.
-        Err(_) if an_approved_server(&asker.root, persona, &wanted, &command) => {}
-        Err(why) => return refuse(&mut *writer, 1, why),
+        Err(why) => match an_approved_server(&asker.root, persona, &wanted, &command) {
+            Some(sets) => its_entry_sets = sets,
+            None => return refuse(&mut *writer, 1, why),
+        },
     }
     // At most a few at once per chat: each holds a proxy, a temp directory and a process group.
     let Some(_slot) = Slot::take(&asker.root, asker.chat) else {
@@ -1920,7 +1944,7 @@ pub(crate) fn serve_recorded(
         Some(_) => None,
         None => match cmd::provider(&ctx, &wanted.vault) {
             Ok(v) => Some(v),
-            Err(e) => return refuse(&mut *writer, 1, e.message),
+            Err(e) => return refuse(&mut *writer, 1, e.message.to_string()),
         },
     };
     // What runs beside the child for as long as it does: the egress proxy carrying the chat's
@@ -1968,7 +1992,9 @@ pub(crate) fn serve_recorded(
     };
     // The asker's environment, less the hook channel and what makes a program load code
     // ([`crate::sandbox::tools::loads_code`]), then the wrap's own (its proxy and its
-    // temp directory), then every other vault's identity variables taken out.
+    // temp directory), then every other vault's identity variables taken out. A run starts
+    // from only the few of the chat's variables it needs, and an approved server's from those
+    // its approved entry sets too, with a home of its own in the run's temp directory (#2047).
     // A name is judged as it reads, with any byte that is not UTF-8 replaced, so one is never
     // let through for not spelling the name it is judged by.
     let mut base: Vec<(OsString, OsString)> = wanted
@@ -1979,6 +2005,8 @@ pub(crate) fn serve_recorded(
             !not_handed_on(&k)
                 && !crate::sandbox::tools::loads_code(&k)
                 && !DUMPS_MEMORY.contains(&k.as_ref())
+                && (crate::sandbox::tools::a_run_starts_from(&k)
+                    || its_entry_sets.iter().any(|set| *set == k))
         })
         .collect();
     // What the tool runs by a bare name is never from a folder the chat may write
@@ -2002,6 +2030,9 @@ pub(crate) fn serve_recorded(
     for (k, v) in crate::sandbox::seatbelt::env(&beside.proxy_url(), beside.tmp()) {
         exec::set_var(&mut base, &k, v);
     }
+    for (k, v) in crate::sandbox::tools::home_of_its_own(beside.tmp()) {
+        exec::set_var(&mut base, &k, v);
+    }
     // ssh, and git over ssh, through the run's own SOCKS port (#1667): the chat's route names
     // the chat's port, which the run's sandbox does not reach.
     if let Some(route) = beside.ssh_route() {
@@ -2019,7 +2050,7 @@ pub(crate) fn serve_recorded(
     }
     let base = match exec::child_env_of(&ctx, &wanted.vault, &base) {
         Ok(base) => base,
-        Err(e) => return refuse(&mut *writer, 1, e.message),
+        Err(e) => return refuse(&mut *writer, 1, e.message.to_string()),
     };
     let within = match private_dir(&ctx.vaults_dir()) {
         Ok(within) => within,

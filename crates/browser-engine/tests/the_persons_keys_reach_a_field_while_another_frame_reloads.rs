@@ -6,6 +6,14 @@
 //! showed before the advert moved on, and each still reaches the field: a change in another
 //! frame drops nothing.
 //!
+//! **What this raced** (#3081). Each time the advert loads, the engine detaches the frame's
+//! session and attaches a new one, and the driver sets each new session up from the thread
+//! that reads the engine's events. A call of that set-up made on a session the engine detached
+//! meanwhile was sometimes never answered, so the thread waited out the call's 30-second limit
+//! and read no other event: the world purlis made in the page to read the field after the key
+//! was never told of, and the key failed with the field unread. A call on a session now ends
+//! as the engine says the session detached (`cdp`), so the events are read on.
+//!
 //! These need a real Chrome and the right to start it and to listen on a loopback port, which a
 //! sandboxed agent does not have. They run where `PURLIS_TEST_ENGINE` names a Chrome
 //! executable, and on CI against the runner's own Chrome. Anywhere else each test says why it

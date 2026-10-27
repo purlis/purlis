@@ -358,20 +358,24 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
     let (plane, kit) = a_host_on(tmp.path());
     let sets = kit.skill_sets.clone().unwrap();
     // The host arms a Claude Code chat as the window would, with the Skill studio on.
-    let (args, env) = crate::hoststart::armed_as(
-        true,
-        &crate::hoststart::Arming {
-            root: &plane,
-            kit: &kit,
-            harness: Some(Harness::ClaudeCode),
-            cwd: Some(&plane),
-            plugins: &crate::harness_plugin::Chosen::new(),
-            sandbox: None,
-            persona: None,
-            env: &[],
-            graded: false,
-        },
-    )
+    let (args, env) = crate::hoststart::armed(&crate::hoststart::Arming {
+        root: &plane,
+        kit: &kit,
+        harness: Some(Harness::ClaudeCode),
+        cwd: Some(&plane),
+        plugins: &crate::harness_plugin::Chosen::new(),
+        sandbox: None,
+        persona: None,
+        env: &[],
+        graded: false,
+        skills: &crate::hoststart::ChatSkills::read(
+            true,
+            &plane,
+            Some(Harness::ClaudeCode),
+            Some(&plane),
+            None,
+        ),
+    })
     .unwrap();
     let folder = args
         .windows(2)
@@ -1418,20 +1422,24 @@ fn a_try_chat_turns_off_the_skills_of_its_profiles_own_config_folder() {
     .unwrap();
     let env = vec![("CLAUDE_CONFIG_DIR".to_owned(), config.display().to_string())];
     let armed_in = |cwd: &Path| {
-        crate::hoststart::armed_as(
-            true,
-            &crate::hoststart::Arming {
-                root: &plane,
-                kit: &kit,
-                harness: Some(Harness::ClaudeCode),
-                cwd: Some(cwd),
-                plugins: &crate::harness_plugin::Chosen::new(),
-                sandbox: None,
-                persona: None,
-                env: &env,
-                graded: false,
-            },
-        )
+        crate::hoststart::armed(&crate::hoststart::Arming {
+            root: &plane,
+            kit: &kit,
+            harness: Some(Harness::ClaudeCode),
+            cwd: Some(cwd),
+            plugins: &crate::harness_plugin::Chosen::new(),
+            sandbox: None,
+            persona: None,
+            env: &env,
+            graded: false,
+            skills: &crate::hoststart::ChatSkills::read(
+                true,
+                &plane,
+                Some(Harness::ClaudeCode),
+                Some(cwd),
+                None,
+            ),
+        })
         .unwrap()
         .0
         .join(" ")
@@ -1462,20 +1470,24 @@ fn a_grades_limits_follow_the_start_and_a_mismatch_with_its_folder_refuses() {
     };
     let arm = verbs::drafts::lay_out_arm(&plane, Some(&copy)).unwrap();
     let armed = |cwd: &Path, graded: bool, harness: Harness| {
-        crate::hoststart::armed_as(
-            true,
-            &crate::hoststart::Arming {
-                root: &plane,
-                kit: &kit,
-                harness: Some(harness),
-                cwd: Some(cwd),
-                plugins: &crate::harness_plugin::Chosen::new(),
-                sandbox: None,
-                persona: None,
-                env: &[],
-                graded,
-            },
-        )
+        crate::hoststart::armed(&crate::hoststart::Arming {
+            root: &plane,
+            kit: &kit,
+            harness: Some(harness),
+            cwd: Some(cwd),
+            plugins: &crate::harness_plugin::Chosen::new(),
+            sandbox: None,
+            persona: None,
+            env: &[],
+            graded,
+            skills: &crate::hoststart::ChatSkills::read(
+                true,
+                &plane,
+                Some(harness),
+                Some(cwd),
+                None,
+            ),
+        })
         .map(|(args, _)| args.join(" "))
     };
     let graded = armed(&arm.piece, true, Harness::ClaudeCode).unwrap();
@@ -1854,9 +1866,15 @@ fn a_workspace_whose_repos_leave_skills_out() -> (tempfile::TempDir, PathBuf, Pa
     (tmp, plane, api, web)
 }
 
-const HIDDEN_BY_THE_REPO: &str = "hidden by the repo skill of this name";
+/// What the studio and `purlis skill list` say of a skill `api` leaves out (#3234: by name).
+const HIDDEN_BY_THE_REPO: &str = "hidden by the skill of this name in the repo api";
 const WEB_UNREAD: &str = "purlis could not read the skills folder of web whole, so a copy of \
                           this skill may be there, and a chat in that repo would get that one";
+/// What the tab of a chat in that repo says of the same (#3234), after "because of the repo it
+/// works in".
+const API_HAS_ITS_OWN: &str = "the repo api has its own copy, which loads in its place";
+const WEB_UNREAD_TO_ITS_CHAT: &str = "purlis could not read the skills folder of web whole, so \
+                                      it is left out in case the repo has its own";
 
 #[test]
 fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
@@ -1885,7 +1903,7 @@ fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
         [(
             "review".to_owned(),
             Origin::Workspace,
-            HIDDEN_BY_THE_REPO.to_owned()
+            API_HAS_ITS_OWN.to_owned()
         )]
     );
     let mut in_web = said(Harness::Codex, &web);
@@ -1896,9 +1914,13 @@ fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
             (
                 "review".to_owned(),
                 Origin::Workspace,
-                WEB_UNREAD.to_owned()
+                WEB_UNREAD_TO_ITS_CHAT.to_owned()
             ),
-            ("ship".to_owned(), Origin::Workspace, WEB_UNREAD.to_owned()),
+            (
+                "ship".to_owned(),
+                Origin::Workspace,
+                WEB_UNREAD_TO_ITS_CHAT.to_owned()
+            ),
         ]
     );
     assert_eq!(
@@ -1911,6 +1933,54 @@ fn a_chat_in_a_clone_is_told_which_skills_its_repo_leaves_out_and_why() {
         [],
         "a chat in no clone"
     );
+}
+
+#[test]
+fn a_chats_tab_says_what_the_repo_skills_it_was_armed_with_leave_out_and_reads_the_clone_no_more() {
+    // #3234: the host reads a chat's scope and its clone's repo skills once, at its start, and
+    // what arms it and what its tab says are both worked out from that one read.
+    let (_tmp, plane, api, _web) = a_workspace_whose_repos_leave_skills_out();
+    let kit = crate::hoststart::Kit {
+        binary: None,
+        plugin: None,
+        git_hooks: None,
+        skill_sets: None,
+    };
+    let read =
+        crate::hoststart::ChatSkills::read(true, &plane, Some(Harness::Codex), Some(&api), None);
+    let said = |skills: &crate::hoststart::ChatSkills| {
+        crate::hoststart::skills_not_here(skills, &kit, Some(Harness::Codex), &[])
+            .map(|not| {
+                not.by_a_repo
+                    .into_iter()
+                    .map(|one| (one.name, one.why.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+
+    assert_eq!(read.workspace.as_deref(), Some("alpha"));
+    assert!(
+        read.repo.iter().any(|one| one.id == "review"),
+        "{:?}",
+        read.repo
+    );
+    assert_eq!(
+        said(&read),
+        [("review".to_owned(), API_HAS_ITS_OWN.to_owned())]
+    );
+    let handed_none = crate::hoststart::ChatSkills {
+        repo: Vec::new(),
+        ..read.clone()
+    };
+    assert_eq!(said(&handed_none), [], "the tab reads no clone of its own");
+    let off =
+        crate::hoststart::ChatSkills::read(false, &plane, Some(Harness::Codex), Some(&api), None);
+    assert!(
+        off.repo.is_empty(),
+        "nothing is read where the plane's skills reach no chat"
+    );
+    assert_eq!(said(&off), []);
 }
 
 #[test]

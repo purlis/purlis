@@ -7,6 +7,7 @@ import { commands, type ForgeAccountRow, type ForgeDeviceCode } from "./bindings
 import { SettingActions } from "./settings/components";
 import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
+import { Card } from "./ui/card/Card";
 
 /** What each scope the sign-in asks for lets purlis do, in the window's words (FI2). */
 const SCOPE_SAYS: Record<string, string> = {
@@ -140,11 +141,11 @@ export function ForgeDeviceSignIn({
             Enter this code on GitHub&apos;s page, then approve purlis there. The code is for this
             sign-in only.
           </p>
-          <p className="ui-inline-surface ui-inline-surface-waiting">
+          <Card as="p" variant="ask" className="forge-device-code">
             <strong>
               <code aria-label="The code to enter on GitHub">{step.code.user_code}</code>
             </strong>
-          </p>
+          </Card>
           <SettingActions>
             <Button onPress={() => copy(step.code.user_code)}>Copy code</Button>
           </SettingActions>

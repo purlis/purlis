@@ -64,6 +64,7 @@ import { capMarks } from "./combiningMarks";
 import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Card } from "./ui/card/Card";
 import { Form, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -808,7 +809,9 @@ function Ask({
 
   return (
     <Stop id={key}>
-      <li
+      <Card
+        as="li"
+        variant="ask"
         ref={drawn}
         className="inbox-ask"
         data-source={ask.source}
@@ -896,7 +899,7 @@ function Ask({
             </Stop>
           )}
         </ButtonRow>
-      </li>
+      </Card>
     </Stop>
   );
 }

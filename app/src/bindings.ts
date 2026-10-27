@@ -1811,11 +1811,12 @@ export const commands = {
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
-	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
-	 *  run of the skill, newest first, then each extension's. None while the flag is off. On a
+	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
+	 *  `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
+	 *  every run of the skill, newest first, then each extension's. None while the flag is off. On a
 	 *  blocking thread, as it reads the project's skill log and asks each extension.
 	 */
-	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
+	skillPanels: (plane: PlaneId, skill: string, level: { at: "project"; local: boolean } | { at: "workspace"; name: string; local: boolean } | { at: "persona"; name: string; local: boolean } | null) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill, level })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	/**
@@ -2709,18 +2710,11 @@ export const commands = {
 	 *  default. It applies at the next browser call; a browser running past a lowered limit runs on.
 	 */
 	setBrowserLimit: (limit: BrowserLimit, to: number | null) => typedError<null, string>(__TAURI_INVOKE("set_browser_limit", { limit, to })),
-	/**  **The Notice, while a start was refused for the engine's sandbox** since this launch. */
-	engineSandbox: () => typedError<{
-	/**  The sentence. */
-	says: string,
 	/**
-	 *  The command that adds the profile, which the person runs themselves: none for a data
-	 *  folder whose path holds a control character.
+	 *  **The Notices, while a start was refused for the engine's sandbox** since this launch: this
+	 *  machine's, and one for each pool's runner that refused one (#2990).
 	 */
-	command: string | null,
-	/**  This machine's own Chrome, where one is installed. */
-	chrome: string | null,
-} | null, string>(__TAURI_INVOKE("engine_sandbox")),
+	engineSandbox: () => typedError<EngineSandboxShown[], string>(__TAURI_INVOKE("engine_sandbox")),
 	/**  **The browser engine's downloads under way.** */
 	engineDownloads: () => typedError<EngineDownloadShown[], string>(__TAURI_INVOKE("engine_downloads")),
 	/**
@@ -6144,6 +6138,13 @@ export type EngineDownloadShown = {
 	says: string,
 };
 
+/**  **The machine whose engine a Notice is about** (#2990): this one, or a pool's runner. */
+export type EngineMachine = 
+/**  The machine the window runs on. */
+{ kind: "here" } | 
+/**  The runner of pool `pool`. */
+{ kind: "runner"; pool: string };
+
 /**  What the Notice says and offers. */
 export type EngineSandboxShown = {
 	/**  The sentence. */
@@ -6153,8 +6154,10 @@ export type EngineSandboxShown = {
 	 *  folder whose path holds a control character.
 	 */
 	command: string | null,
-	/**  This machine's own Chrome, where one is installed. */
+	/**  This machine's own Chrome, where one is installed: never for a runner's. */
 	chrome: string | null,
+	/**  The machine whose engine it is (#2990). */
+	machine: EngineMachine,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
@@ -7043,7 +7046,9 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 /**  It reached its token cap. */
 "over-cap" | 
 /**  A chat did not say what it spent, so the cap could not be held. */
-"spend-not-reported";
+"spend-not-reported" | 
+/**  A fault in purlis ended it before it was scored (#3353): recorded as interrupted. */
+"failed";
 
 /**  What a grade's chats spent last time, worked out for this one. */
 export type GradeEstimate = {
@@ -7051,6 +7056,15 @@ export type GradeEstimate = {
 	cost_usd: number | null,
 	/**  The chats of the grade it is worked out from. */
 	chats_then: number,
+};
+
+/**
+ *  **A trigger test a grade leaves out** (`grades::LeftOut`): its place in the file, from 0, and
+ *  why, as a sentence.
+ */
+export type GradeLeftOut = {
+	at: number,
+	why: string,
 };
 
 /**  One trigger test, as the plan shows it before anything runs. */
@@ -8382,6 +8396,12 @@ export type OpenHosts = {
 export type OpenRun = {
 	/**  The skill, by the name its harness started it by. */
 	skill: string,
+	/**
+	 *  The skill it is a run of, by its own name, as the core counts it
+	 *  ([`purlis_core::skilluse::own_name`]): `secrets` for opencode's `purlis-secrets`. The
+	 *  skill whose tab its chip opens.
+	 */
+	name: string,
 	/**  The run's id, as the skill's Runs panel lists it. */
 	id: string,
 	/**  Tool calls made inside it so far, each once. */
@@ -11439,7 +11459,7 @@ export type SkillGradePlan = {
 	/**  Why the trigger tests could not be read, where they were not. */
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */
-	left_out: string[],
+	left_out: GradeLeftOut[],
 	/**  The outcome evals the skill has, shown and not run (#3235 grades them). */
 	outcome_evals: number,
 	outcomes_refused: string | null,
@@ -12020,6 +12040,11 @@ export type StudioClash = {
 	outside: Level,
 	owner: Owner,
 	outcome: ClashOutcome,
+	/**
+	 *  What the row of the plane's copy says of it, in the core's words
+	 *  (`purlis_core::skills::clash_said`, SK-46): the same line `purlis skill list` prints.
+	 */
+	said: string,
 };
 
 /**
@@ -13144,6 +13169,8 @@ export type WindowApart = {
 	token: string,
 	from: string,
 	distance: number | null,
+	/**  Whether the rule is held alone: only its own sides give way to it (#3130). */
+	alone: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */

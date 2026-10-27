@@ -200,7 +200,7 @@ fn reason(sign_in: &SignIn, code: i32, stderr: &str) -> Failed {
 /// A [`VaultError`] as a failed test of kind [`Kind::Other`]: one of purlis's own refusals,
 /// which holds names and never a value.
 fn refused(e: VaultError) -> Failed {
-    Failed::new(Kind::Other, e.message)
+    Failed::new(Kind::Other, e.message.to_string())
 }
 
 /// The token as it is stored: what was given with the whitespace around it gone, since a
@@ -811,7 +811,7 @@ fn mark(
             Ok(_) => out.marked.push(tick.name.clone()),
             Err(e) => out
                 .skipped
-                .push((tick.name.clone(), NotMarked::Failed(e.message))),
+                .push((tick.name.clone(), NotMarked::Failed(e.message.to_string()))),
         }
     }
     out

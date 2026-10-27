@@ -79,6 +79,10 @@
   --panel-corner-radius: 0px;
   --panel-border-width: 1px;
 
+  /* The separator part's width (#2912): the line between two groups inside a surface, never a
+     control's border. 0 draws none. Hairline-scale, so px. */
+  --separator-width: 1px;
+
   /* The two focus-ring rules. Both are a `--focus-ring-width` outline in the theme's
      `focus.ring` colour. A control's ring sits outside it, `--focus-ring-offset` away; a row's
      or a tab's sits inside it (`--focus-ring-inset`), so a list or a strip never clips it. */
