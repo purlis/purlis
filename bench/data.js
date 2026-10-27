@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793061354248,
+  "lastUpdate": 1793064601368,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26292,6 +26292,48 @@ window.BENCHMARK_DATA = {
             "value": 103.551728,
             "unit": "ms",
             "extra": "median of 5 runs: 101.937, 103.441, 103.552, 103.791, 103.999 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e433321b5c7658e85b298b764cb3ba0d934c710a",
+          "message": "Brokered runs: only this machine's chats, and a tool's own environment (#2047) (#3419)\n\n* Brokered runs: serve only chats of this machine (#2047)\n\nA brokered run on this machine serves only chats of this machine. A\nsecret exec heard over a pool's link already goes the pool's way; one\nheard over this machine's link for a chat the router records on a pool\nis now refused here too, as a second guard beside the hook relay's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\n\n* Brokered runs: a tool runs with an environment of its own (#2047)\n\nA declared tool starts from only the chat's language, terminal, time zone,\nssh agent, certificate bundles and plain connection values, with HOME and\nXDG_* in the run's own temp folder. An approved server's line keeps the\nenvironment its entry gives it. A test shows the tool's run keeps no core\ndump, which the run's own limit gives it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\n\n* Brokered runs: an approved server starts from its own environment too (#2047)\n\nAn approved credentialed server's line starts from the same short list\nof the chat's variables a declared tool does, plus the names its approved\nentry sets, with a home of its own. The core-dump test no longer passes\nwhere the hard limit is already 0.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\n\n* Brokered runs: a test of the second pool guard (#2047)\n\nA pretend session host can say a chat runs on a pool's runner, so a\ntest shows a secret exec for such a chat over this machine's link is\nrefused. The pool-link and core-dump tests now say what of #3405 they\ncover.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T00:16:21Z",
+          "tree_id": "285edb32c0abf20f7ed3b5ea70c2a10d302e3119",
+          "url": "https://github.com/purlis/purlis/commit/e433321b5c7658e85b298b764cb3ba0d934c710a"
+        },
+        "date": 1793064596993,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5245264999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.520, 0.525, 0.530, 0.545 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.730548,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.391, 16.494, 16.731, 16.982, 17.048 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.14301700000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.850, 102.933, 104.143, 104.943, 105.176 ms"
           }
         ]
       }
