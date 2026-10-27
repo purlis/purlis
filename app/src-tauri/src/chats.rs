@@ -409,15 +409,29 @@ struct Running {
     skills: Option<purlis_core::skills::Stamp>,
     /// **Whether the plane's skills reached it at its start** (#3445): the Skill studio's flag
     /// as this window read it once as the chat started (`purlis_core::skills::reach_chats_here`),
-    /// which its arming, its Notice, its stamp and Use skill… all take. Two cases it can only
-    /// approximate, as its stamp always has: a chat reattached from the session host (#2006)
-    /// takes the flag as read at its reattach, since nothing records its first start's; and a
-    /// runner's chat is armed by its runner (#2446), so this is this machine's word for it.
+    /// which its arming, its Notice, its stamp and Use skill… all take. A chat reattached from
+    /// the session host (#2006) takes its first start's, from its record (#3466), or the flag
+    /// as read at its reattach where a record written before that has none. A runner's chat is
+    /// armed by its runner (#2446), so this is this machine's word for it.
     plane_skills: bool,
     /// **Where its plane skills came from, read once at its start** (#3234): what its restart's
     /// stamp and Use skill… route it from again, so neither reads its clone a second time and
     /// both see the set it was handed (#3245).
     skills_read: purlis_core::hoststart::ChatSkills,
+}
+
+/// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
+/// `reattaching` from the session host keeps the flag its first start read, `recorded`, where its
+/// record has one; any other start reads the Skill studio's flag now (`read`).
+fn plane_skills_at_start(
+    reattaching: bool,
+    recorded: Option<bool>,
+    read: impl FnOnce() -> bool,
+) -> bool {
+    match recorded.filter(|_| reattaching) {
+        Some(flag) => flag,
+        None => read(),
+    }
 }
 
 /// **The personas a chat is named by** (#2691), from one read of the app's record of its run
@@ -3395,8 +3409,11 @@ impl Chats {
             )
         }));
         // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
-        // here, so its arming, its Notice, its stamp and Use skill… take the same word.
-        let plane_skills = purlis_core::skills::reach_chats_here(&self.project);
+        // here, so its arming, its Notice, its stamp and Use skill… take the same word; a chat
+        // reattached keeps its start's, where its record has it (#3466).
+        let plane_skills = plane_skills_at_start(reattaching, chat.plane_skills, || {
+            purlis_core::skills::reach_chats_here(&self.project)
+        });
         // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
         // arms it below and what its tab's Notice says are both worked out from this.
         let skills = if on_the_runner {
@@ -5211,6 +5228,8 @@ impl Chats {
                 // What its harness said this program runs on (#1021), and nothing a record put
                 // back carried from an earlier run.
                 model: models.get(&session).cloned(),
+                // The Skill studio's flag its start read (#3466): what a reattach keeps.
+                plane_skills: Some(running.plane_skills),
                 ..chat.clone()
             })
         }));

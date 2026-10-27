@@ -8241,3 +8241,14 @@ fn a_chat_serving_on_a_port_is_owed_a_restart_once_its_grant_is_taken_back() {
     assert!(chats.owed_restarts().contains(&session));
     chats.close(session).expect("closed");
 }
+
+#[test]
+fn a_reattached_chat_keeps_the_studio_flag_its_start_read_3466() {
+    let never = || -> bool { panic!("the flag was read again") };
+    assert!(plane_skills_at_start(true, Some(true), never));
+    assert!(!plane_skills_at_start(true, Some(false), never));
+    // A record written before the flag was kept: read again, as before.
+    assert!(plane_skills_at_start(true, None, || true));
+    // A start that is not a reattach reads the flag now, whatever the record said.
+    assert!(!plane_skills_at_start(false, Some(true), || false));
+}
