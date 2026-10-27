@@ -128,6 +128,9 @@ pub struct ChatSkills {
     pub skills: Vec<ChatSkill>,
     /// Its budget, where it is known.
     pub budget: Option<SkillBudget>,
+    /// The clones of its workspace it works in, by name, whose repo skills its harness reads
+    /// (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
+    pub repos: Vec<String>,
 }
 
 impl ChatSkills {
@@ -138,6 +141,7 @@ impl ChatSkills {
             known: false,
             skills: Vec::new(),
             budget: None,
+            repos: Vec::new(),
         }
     }
 }
@@ -186,6 +190,21 @@ fn of_the_chat(
     Some((skills, chat.salt))
 }
 
+/// **The clones chat `session` of `held` works in**, by name (#3462): none for a chat at the
+/// project's root, in no clone, or not open here.
+fn repos_of_the_chat(held: &Held, session: u32) -> Vec<String> {
+    let Some(chat) = held.chats().skills_of(session) else {
+        return Vec::new();
+    };
+    let (Some(workspace), Some(cwd)) = (chat.workspace.as_deref(), chat.cwd.as_deref()) else {
+        return Vec::new();
+    };
+    purlis_core::skills::clones_of_chat(held.root(), workspace, cwd)
+        .into_iter()
+        .map(|repo| repo.name)
+        .collect()
+}
+
 /// `skills`, for the window: none for a chat that runs no tool purlis knows.
 pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSkills {
     let Some(skills) = skills else {
@@ -228,6 +247,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             pinned_by: skills.pinned_by.iter().cloned().map(Into::into).collect(),
             pins_together: skills.pins_together.as_ref().map(Into::into),
         }),
+        repos: Vec::new(),
     }
 }
 
@@ -245,11 +265,15 @@ pub(crate) async fn chat_skills(
         if !purlis_core::skills::studio_on_here() {
             return Ok(ChatSkills::none(false));
         }
-        Ok(shown(
+        let mut shown = shown(
             of_the_chat(&held, session)
                 .map(|(skills, _)| skills)
                 .as_ref(),
-        ))
+        );
+        if shown.known {
+            shown.repos = repos_of_the_chat(&held, session);
+        }
+        Ok(shown)
     })
     .await
 }

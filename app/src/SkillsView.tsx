@@ -25,11 +25,10 @@ import {
 import { SkillMenu, SkillsList } from "./SkillsList";
 import {
   groupsOf,
-  listedOf,
   narrowedTo,
-  personaRowsOf,
   pinOf,
   turnOf,
+  viewRowsOf,
   type ListedSkill,
   type SkillAct,
 } from "./skillsListing";
@@ -86,16 +85,22 @@ async function answered<T>(
 /**
  * **Reads what the view lists** from the Skill studio's own answer (the amendment's (f)): the
  * workspace's chats' skills, each program's own and each repo's, then every persona's own, which
- * a persona brings into every workspace, in one more read.
+ * a persona brings into every workspace, in one more read. Read for a chat as `persona` where the
+ * list is narrowed to a chat (#3462), so each program's and repo's skills carry the marks the
+ * studio gives that chat; for a chat on no persona otherwise.
  */
-async function readSkills(plane: string, workspace: string | undefined): Promise<Read> {
+async function readSkills(
+  plane: string,
+  workspace: string | undefined,
+  persona: string | null,
+): Promise<Read> {
   const [base, personas] = await Promise.all([
-    answered(commands.skillStudio(plane, workspace ?? null, null)),
+    answered(commands.skillStudio(plane, workspace ?? null, persona)),
     answered(commands.skillPersonaSkills(plane, workspace ?? null)),
   ]);
   if ("refused" in base) return base;
   return {
-    rows: [...listedOf(base.ok), ...("ok" in personas ? personaRowsOf(personas.ok) : [])],
+    rows: viewRowsOf(base.ok, "ok" in personas ? personas.ok : undefined),
     first: base.ok.first,
     levels: base.ok.levels,
   };
@@ -134,15 +139,22 @@ export function SkillsView({
   // Where the rows are read for, and where the switch and Explorer act: the chat's own place
   // while narrowed to it, else the title bar's.
   const place = narrowed === undefined ? workspace : narrowed.workspace;
+  // Whom the rows are read as: the chat's persona while narrowed to it.
+  const readAs = narrowed?.persona ?? null;
   const changed = useViewChanged([plane], skillsIn(place));
   const [read, setRead] = useState<Read>();
-  // The chat in front's real set, what Use skill… types from, while the list is narrowed to it.
-  const [chatSet, setChatSet] = useState<{ session: number; skills: ChatSkill[] }>();
+  // The chat in front's real set, what Use skill… types from, and the clones it works in, while
+  // the list is narrowed to it.
+  const [chatSet, setChatSet] = useState<{
+    session: number;
+    skills: ChatSkill[];
+    repos: string[];
+  }>();
   const [said, setSaid] = useState<{ label: string; text: string }>();
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let live = true;
-    void readSkills(plane, place)
+    void readSkills(plane, place, readAs)
       .catch((err: unknown): Read => ({ refused: String(err) }))
       .then((answer) => {
         if (live) setRead(answer);
@@ -150,13 +162,18 @@ export function SkillsView({
     return () => {
       live = false;
     };
-  }, [plane, place, changed]);
+  }, [plane, place, readAs, changed]);
   const session = narrowed?.session;
   useEffect(() => {
     let live = true;
     if (session === undefined) return;
     void answered(commands.chatSkills(plane, session)).then((answer) => {
-      if (live) setChatSet({ session, skills: "ok" in answer ? answer.ok.skills : [] });
+      if (live)
+        setChatSet(
+          "ok" in answer
+            ? { session, skills: answer.ok.skills, repos: answer.ok.repos }
+            : { session, skills: [], repos: [] },
+        );
     });
     return () => {
       live = false;
@@ -166,13 +183,13 @@ export function SkillsView({
   const base = read !== undefined && "rows" in read ? read.rows : NO_ROWS;
   const persona = narrowed?.persona ?? null;
   const harness = narrowed?.harness;
-  const set = chatSet !== undefined && chatSet.session === session ? chatSet.skills : undefined;
+  const front = chatSet !== undefined && chatSet.session === session ? chatSet : undefined;
   const rows = useMemo(
     () =>
-      session === undefined || set === undefined
+      session === undefined || front === undefined
         ? base
-        : narrowedTo(base, set, { persona, harness }),
-    [base, session, set, persona, harness],
+        : narrowedTo(base, front.skills, { persona, harness, repos: front.repos }),
+    [base, session, front, persona, harness],
   );
   const nameOf = useCallback((row: ListedSkill) => row.skill.name, []);
   const filter = useListFilter(rows, nameOf);

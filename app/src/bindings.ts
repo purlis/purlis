@@ -5240,6 +5240,11 @@ export type ChatSkills = {
 	skills: ChatSkill[],
 	/**  Its budget, where it is known. */
 	budget: SkillBudget | null,
+	/**
+	 *  The clones of its workspace it works in, by name, whose repo skills its harness reads
+	 *  (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
+	 */
+	repos: string[],
 };
 
 /**  One step of one chat's stop, as the window is told it. */

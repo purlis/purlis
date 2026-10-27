@@ -186,6 +186,8 @@ pub struct ChatForSkills {
     pub harness: Option<Harness>,
     /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
     pub salt: Option<purlis_core::skillspan::PromptSalt>,
+    /// The folder it was started in: which of its workspace's clones it works in (#3462).
+    pub cwd: Option<PathBuf>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -4764,6 +4766,7 @@ impl Chats {
                 .id
                 .as_deref()
                 .and_then(purlis_core::skillspan::PromptSalt::of_chat),
+            cwd: running.chat.cwd.clone(),
         })
     }
 

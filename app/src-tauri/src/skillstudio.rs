@@ -482,9 +482,9 @@ pub(crate) fn persona_skills(
     let off = workspace
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
-    purlis_core::skills::persona_rows(built_in, root, workspace)
+    purlis_core::skills::persona_rows(built_in, root)
         .into_iter()
-        .map(|(persona, rows)| {
+        .map(|purlis_core::skills::PersonaRows { persona, rows }| {
             let pinners = pinners_of(root, workspace, Some(&persona));
             PersonaSkills {
                 skills: rows
