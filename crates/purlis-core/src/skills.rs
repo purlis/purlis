@@ -1705,6 +1705,26 @@ pub struct HarnessInTheStudio {
     pub repo_left_out: Vec<StudioRow>,
 }
 
+impl HarnessInTheStudio {
+    /// **The clashes of a row this harness's chats in a repo start without**
+    /// ([`Self::repo_left_out`], #3461): the repo's copy that took the plane copy's name. What
+    /// `purlis skill list --json` and `show --json` put on that row, as they put each clash on
+    /// the row of the copy purlis hands ([`StudioList::clashes_of`]), so a reader of either has
+    /// whose copy won without reading the row's left-out line. None for a row left out because
+    /// a clone could not be read whole.
+    pub fn clashes_of_left_out<'a>(
+        &'a self,
+        row: &'a StudioRow,
+    ) -> impl Iterator<Item = &'a Clash> + 'a {
+        self.set.clashes.iter().filter(move |clash| {
+            clash.outcome == Outcome::RepoWins
+                && clash.name == row.name
+                && clash.plane.origin == row.origin
+                && clash.plane.local == row.local
+        })
+    }
+}
+
 /// **Every harness in the Skill studio** (SK-6, #2769), for a chat in the plane at `plane`, at
 /// its root or in `workspace` (whose clones' own skills are listed), whose plane skills are
 /// `set` ([`in_the_studio`]), or `set_on` a harness's own route where it names built-in skills
@@ -1763,20 +1783,32 @@ fn harnesses_in_the_studio(
 }
 
 /// **The repo skills the harness of a chat started in `cwd` reads** (SK-6, #2769): those of the
-/// clone `cwd` is in, in `workspace` of the plane at `plane`, each turned off where the project's
-/// choices say so. Nothing for a chat in no clone. The host's half: it reads the clone, and an
-/// adapter is handed the answer ([`PlaneSkills::repo`]).
+/// clone `cwd` is in ([`clones_of_chat`]), in `workspace` of the plane at `plane`, each turned off
+/// where the project's choices say so. Nothing for a chat in no clone. The host's half: it reads
+/// the clone, and an adapter is handed the answer ([`PlaneSkills::repo`]).
 pub fn repo_skills_of_chat(
     harness: Harness,
     plane: &Path,
     workspace: &str,
     cwd: &Path,
 ) -> Vec<OutsideSkill> {
+    let mine = clones_of_chat(plane, workspace, cwd);
+    if mine.is_empty() {
+        return Vec::new();
+    }
+    let choices = crate::harness_plugin::Choices::read_in(plane, Some(workspace));
+    crate::harness_plugin::repo_skills(harness.adapter().plugins(), &choices, &mine)
+}
+
+/// **The clones of `workspace` in the plane at `plane` a chat started in `cwd` works in**: each
+/// whose folder `cwd` is in, whose repo skills its harness reads ([`repo_skills_of_chat`]), and
+/// what the Skills view narrows a chat's repo skills to (#3462). None for a chat in no clone.
+pub fn clones_of_chat(plane: &Path, workspace: &str, cwd: &Path) -> Vec<crate::repos::Repo> {
     let Ok(clones) = crate::repos::clones(plane, workspace) else {
         return Vec::new();
     };
     let here = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-    let mine: Vec<crate::repos::Repo> = clones
+    clones
         .repos
         .into_iter()
         .filter(|repo| {
@@ -1786,9 +1818,7 @@ pub fn repo_skills_of_chat(
                 .unwrap_or_else(|_| repo.path.clone());
             here.starts_with(at)
         })
-        .collect();
-    let choices = crate::harness_plugin::Choices::read_in(plane, Some(workspace));
-    crate::harness_plugin::repo_skills(harness.adapter().plugins(), &choices, &mine)
+        .collect()
 }
 
 /// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,
@@ -2256,16 +2286,32 @@ pub fn studio_list(
     StudioList { rows, harnesses }
 }
 
-/// **Each persona's own skills, for a chat in `workspace` or at the root** (#3266, the Skills
-/// view): the rows of the plane's personas that have a folder of their own, in
-/// [`verbs::Level::every`]'s order, each with the rows of its own level only. One read for every
-/// persona, without the harnesses' listing [`studio_list`] adds, which the view does not draw
-/// for a persona.
-pub fn persona_rows(
+/// **One persona's own skills, as the Skills view lists them** (#3266, #3462): the rows of its
+/// own level, as a chat as it gets them in any workspace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonaRows {
+    pub persona: String,
+    pub rows: Vec<StudioRow>,
+}
+
+/// **Each persona's own skills** (#3266, the Skills view): the plane's personas that have a
+/// folder of their own, in [`verbs::Level::every`]'s order, each with the rows of its own level
+/// only. A persona's levels are the narrowest, read before any wider one, so no workspace changes
+/// them: each is read alone ([`purlis_skills::persona_set`], #3462), without the project's or a
+/// workspace's folders or git's word on their local skills, and without the harnesses' listing
+/// [`studio_list`] adds, which the view does not draw for a persona.
+pub fn persona_rows(built_in: Option<&Path>, plane: &Path) -> Vec<PersonaRows> {
+    persona_rows_with(built_in, plane, &|folder| {
+        crate::profiles::kept_local(plane, folder)
+    })
+}
+
+/// [`persona_rows`], asking `kept` whether git keeps a local skill on this machine.
+fn persona_rows_with(
     built_in: Option<&Path>,
     plane: &Path,
-    workspace: Option<&str>,
-) -> Vec<(String, Vec<StudioRow>)> {
+    kept: &purlis_skills::KeptLocal<'_>,
+) -> Vec<PersonaRows> {
     let mut personas: Vec<String> = Vec::new();
     for level in verbs::Level::every(plane) {
         if let purlis_skills::Whose::Persona(name) = level.at
@@ -2274,27 +2320,24 @@ pub fn persona_rows(
             personas.push(name);
         }
     }
+    // A persona folder a running sandboxed chat could have made (SK-9), asked once for them all.
+    let made = levels::made_since(plane);
+    let machine = Machine {
+        built_in,
+        kept_local: Some(kept),
+        harness: None,
+        made_since: Some(&*made as &purlis_skills::MadeSince<'_>),
+    };
     personas
         .into_iter()
         .map(|persona| {
-            let set = ask(
-                built_in,
-                Some(PlaneSkills {
-                    plane,
-                    workspace,
-                    repo: &[],
-                }),
-                Some(&persona),
-                Route::Plugin,
-                None,
-                None,
-            );
+            let set = purlis_skills::persona_set(plane, &machine, &persona, Route::Plugin);
             let names = names_of(plane, &persona);
             let rows = studio_rows(&set, plane, &names)
                 .into_iter()
                 .filter(|row| row.origin == Origin::Persona)
                 .collect();
-            (persona, rows)
+            PersonaRows { persona, rows }
         })
         .collect()
 }

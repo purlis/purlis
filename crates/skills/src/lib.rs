@@ -1100,48 +1100,10 @@ pub(crate) fn plain(name: &str) -> bool {
 pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -> SkillSet {
     let mut set = SkillSet::default();
     let route = chat.harness.route;
-    if let Some(dir) = machine.built_in {
-        let root = dir.parent().unwrap_or(dir);
-        level(
-            &mut set,
-            (root, dir),
-            (Origin::BuiltIn, false),
-            route,
-            |_| None,
-        );
-        // Each under the name its route knows it by, from here on: what a plane skill's name is
-        // checked against, and what the chat is told and handed.
-        for effective in set
-            .effective
-            .iter_mut()
-            .filter(|e| e.origin == Origin::BuiltIn)
-        {
-            effective.skill.name = route.built_in_name(&effective.skill.name);
-        }
-    }
+    built_in_level(&mut set, machine, route);
     if let Some(plane) = plane {
         if let Some(persona) = chat.persona {
-            for local in [true, false] {
-                if let Some(dir) = persona_dir(plane, persona, local) {
-                    let made = made_since(machine, &plane.join("personas").join(persona));
-                    level(
-                        &mut set,
-                        (plane, &dir),
-                        (Origin::Persona, local),
-                        route,
-                        |skill| {
-                            if let Some(why) = &made {
-                                return Some(Reason::MadeWhileAChatRan(why.clone()));
-                            }
-                            if local {
-                                kept_here(machine, folder_of_skill(skill))
-                            } else {
-                                None
-                            }
-                        },
-                    );
-                }
-            }
+            persona_levels(&mut set, plane, machine, persona, route);
         }
         let workspace = chat.workspace.filter(|ws| plain(ws));
         if let Some(ws) = workspace {
@@ -1197,6 +1159,70 @@ pub fn skill_set(plane: Option<&Path>, machine: &Machine<'_>, chat: &Chat<'_>) -
         .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
     widest_first(&mut set.left_out);
     set
+}
+
+/// **A persona's own skills** (#3462): the rows of `persona`'s local and shared levels in the
+/// plane at `plane`, on `machine` by `route`, as [`skill_set`] gives them to every chat as that
+/// persona. Only the built-in skills are read beside them: a persona's levels are the narrowest
+/// and read first, so no wider level of the plane changes what they hold, and the project's and
+/// a workspace's folders are not read for them, nor their local skills asked git about.
+pub fn persona_set(plane: &Path, machine: &Machine<'_>, persona: &str, route: Route) -> SkillSet {
+    let mut set = SkillSet::default();
+    built_in_level(&mut set, machine, route);
+    persona_levels(&mut set, plane, machine, persona, route);
+    set.effective
+        .sort_by(|a, b| a.skill.name.cmp(&b.skill.name));
+    widest_first(&mut set.left_out);
+    set
+}
+
+/// The built-in skills `machine` has, into `set`, each under the name `route` knows it by.
+fn built_in_level(set: &mut SkillSet, machine: &Machine<'_>, route: Route) {
+    let Some(dir) = machine.built_in else {
+        return;
+    };
+    let root = dir.parent().unwrap_or(dir);
+    level(set, (root, dir), (Origin::BuiltIn, false), route, |_| None);
+    // Each under the name its route knows it by, from here on: what a plane skill's name is
+    // checked against, and what the chat is told and handed.
+    for effective in set
+        .effective
+        .iter_mut()
+        .filter(|e| e.origin == Origin::BuiltIn)
+    {
+        effective.skill.name = route.built_in_name(&effective.skill.name);
+    }
+}
+
+/// `persona`'s local skills, then its shared ones, in the plane at `plane`, into `set`.
+fn persona_levels(
+    set: &mut SkillSet,
+    plane: &Path,
+    machine: &Machine<'_>,
+    persona: &str,
+    route: Route,
+) {
+    for local in [true, false] {
+        if let Some(dir) = persona_dir(plane, persona, local) {
+            let made = made_since(machine, &plane.join("personas").join(persona));
+            level(
+                set,
+                (plane, &dir),
+                (Origin::Persona, local),
+                route,
+                |skill| {
+                    if let Some(why) = &made {
+                        return Some(Reason::MadeWhileAChatRan(why.clone()));
+                    }
+                    if local {
+                        kept_here(machine, folder_of_skill(skill))
+                    } else {
+                        None
+                    }
+                },
+            );
+        }
+    }
 }
 
 /// Why the levels of the workspace or persona folder `owner` reach no chat, where `machine`

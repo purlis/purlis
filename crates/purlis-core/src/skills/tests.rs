@@ -368,13 +368,13 @@ fn a_skills_folder_a_running_chat_uses_is_kept_and_removed_once_the_chat_has_end
         persona: None,
         env: &[],
         graded: false,
-        skills: &crate::hoststart::ChatSkills::read(
+        skills: &Box::new(crate::hoststart::ChatSkills::read(
             true,
             &plane,
             Some(Harness::ClaudeCode),
             Some(&plane),
             None,
-        ),
+        )),
     })
     .unwrap();
     let folder = args
@@ -1432,13 +1432,13 @@ fn a_try_chat_turns_off_the_skills_of_its_profiles_own_config_folder() {
             persona: None,
             env: &env,
             graded: false,
-            skills: &crate::hoststart::ChatSkills::read(
+            skills: &Box::new(crate::hoststart::ChatSkills::read(
                 true,
                 &plane,
                 Some(Harness::ClaudeCode),
                 Some(cwd),
                 None,
-            ),
+            )),
         })
         .unwrap()
         .0
@@ -1480,13 +1480,13 @@ fn a_grades_limits_follow_the_start_and_a_mismatch_with_its_folder_refuses() {
             persona: None,
             env: &[],
             graded,
-            skills: &crate::hoststart::ChatSkills::read(
+            skills: &Box::new(crate::hoststart::ChatSkills::read(
                 true,
                 &plane,
                 Some(harness),
                 Some(cwd),
                 None,
-            ),
+            )),
         })
         .map(|(args, _)| args.join(" "))
     };
@@ -1507,6 +1507,53 @@ fn a_grades_limits_follow_the_start_and_a_mismatch_with_its_folder_refuses() {
     );
     let ordinary = armed(&plane, false, Harness::ClaudeCode).unwrap();
     assert!(!ordinary.contains("--strict-mcp-config"), "{ordinary}");
+}
+
+/// #3461: a start `armed` refuses reads none of the chat's skill folders, its clone's included:
+/// the read waits until every fail-closed check has passed, and a start that passes reads once.
+#[test]
+fn a_start_armed_refuses_reads_no_skills_and_one_it_arms_reads_them_once() {
+    crate::unsteered!();
+    let tmp = tempfile::tempdir().unwrap();
+    let (plane, kit) = a_host_on(tmp.path());
+    std::fs::write(plane.join("charter.toml"), "schema = 1\n").unwrap();
+    let reads = std::cell::Cell::new(0);
+    let armed = |graded: bool| {
+        let skills = std::cell::LazyCell::new(|| {
+            reads.set(reads.get() + 1);
+            crate::hoststart::ChatSkills::read(
+                true,
+                &plane,
+                Some(Harness::ClaudeCode),
+                Some(&plane),
+                None,
+            )
+        });
+        crate::hoststart::armed(&crate::hoststart::Arming {
+            root: &plane,
+            kit: &kit,
+            harness: Some(Harness::ClaudeCode),
+            cwd: Some(&plane),
+            plugins: &crate::harness_plugin::Chosen::new(),
+            sandbox: None,
+            persona: None,
+            env: &[],
+            graded,
+            skills: &skills,
+        })
+        .map(|_| ())
+    };
+    assert!(
+        armed(true).is_err(),
+        "a grade's start outside a grade's folder"
+    );
+    assert_eq!(reads.get(), 0, "a refused start read the chat's skills");
+    armed(false).unwrap();
+    assert_eq!(
+        reads.get(),
+        1,
+        "a start that is armed reads its skills once"
+    );
 }
 
 #[test]
@@ -2240,4 +2287,90 @@ fn a_run_of_purlis_secrets_is_the_built_in_skill_s_on_opencode_and_a_project_ski
         level(Harness::Opencode, "purlis-secrets"),
         Some(Origin::BuiltIn)
     );
+}
+
+/// #3462: every persona's own rows come from one read of its own levels, so a local skill of
+/// the project or a workspace is never asked about, and each persona's local skill once.
+#[test]
+fn persona_rows_asks_of_each_personas_own_local_skills_once_and_of_no_others() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    std::fs::create_dir_all(plane.join("workspaces/alpha")).unwrap();
+    let write = |dir: &Path, name: &str| {
+        std::fs::create_dir_all(dir.join(name)).unwrap();
+        std::fs::write(
+            dir.join(name).join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Does {name}.\n---\n"),
+        )
+        .unwrap();
+    };
+    write(&plane.join("skills.local"), "scratch");
+    write(&plane.join("workspaces/alpha/skills.local"), "notes");
+    for persona in ["ops", "reviewer"] {
+        let at = plane.join("personas").join(persona);
+        std::fs::create_dir_all(&at).unwrap();
+        std::fs::write(at.join("persona.md"), "---\n---\n").unwrap();
+        write(&at.join("skills"), &format!("{persona}-shared"));
+        write(&at.join("skills.local"), &format!("{persona}-local"));
+    }
+    let asked = std::sync::Mutex::new(Vec::<PathBuf>::new());
+    let kept = |folder: &Path| {
+        asked.lock().unwrap().push(folder.to_path_buf());
+        Ok(())
+    };
+
+    let rows = persona_rows_with(None, &plane, &kept);
+
+    let mut asked = asked.into_inner().unwrap();
+    asked.sort();
+    assert_eq!(
+        asked,
+        [
+            plane.join("personas/ops/skills.local/ops-local"),
+            plane.join("personas/reviewer/skills.local/reviewer-local"),
+        ]
+    );
+    let read: Vec<(&str, Vec<(&str, bool)>)> = rows
+        .iter()
+        .map(|one| {
+            (
+                one.persona.as_str(),
+                one.rows
+                    .iter()
+                    .map(|row| (row.name.as_str(), row.local))
+                    .collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        read,
+        [
+            ("ops", vec![("ops-local", true), ("ops-shared", false)]),
+            (
+                "reviewer",
+                vec![("reviewer-local", true), ("reviewer-shared", false)]
+            ),
+        ]
+    );
+}
+
+/// #3462: the clones a chat works in are the ones its folder is in, which the Skills view
+/// narrows its repo skills to: none for a chat at its workspace's own folder.
+#[test]
+fn a_chat_works_in_the_clone_its_folder_is_in_and_in_none_at_its_workspaces_folder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let plane = tmp.path().join("plane");
+    for repo in ["api", "web"] {
+        std::fs::create_dir_all(plane.join("workspaces/alpha").join(repo).join(".git")).unwrap();
+    }
+    std::fs::create_dir_all(plane.join("workspaces/alpha/api/src")).unwrap();
+    let names = |cwd: &Path| -> Vec<String> {
+        clones_of_chat(&plane, "alpha", cwd)
+            .into_iter()
+            .map(|repo| repo.name)
+            .collect()
+    };
+    assert_eq!(names(&plane.join("workspaces/alpha/api/src")), ["api"]);
+    assert_eq!(names(&plane.join("workspaces/alpha/web")), ["web"]);
+    assert!(names(&plane.join("workspaces/alpha")).is_empty());
 }
