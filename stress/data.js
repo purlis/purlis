@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793099103719,
+  "lastUpdate": 1793102954088,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -15866,6 +15866,42 @@ window.BENCHMARK_DATA = {
             "value": 677.7,
             "unit": "MB",
             "extra": "median of 6 samples: 639.2, 656.9, 672.4, 683, 683.5, 776.7 MB; window 411 MB, session host 268.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "737e495548828d3b78c64d1ca7f6e8237d15cafa",
+          "message": "Projects test: the kept-drawn test has the room-keeping test's 15 s (#3422) (#3497)\n\nTen projects brought to the front, each a render of the whole window, ran just over\nthe default five seconds on a loaded runner and turned main red twice.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T09:54:25Z",
+          "tree_id": "ca16e578f1f615569d2fedba3c749bcb466f9ebf",
+          "url": "https://github.com/purlis/purlis/commit/737e495548828d3b78c64d1ca7f6e8237d15cafa"
+        },
+        "date": 1793102949831,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1829.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1577.6, 1832.5, 1829.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 680.7,
+            "unit": "MB",
+            "extra": "median of 6 samples: 652.2, 664.7, 678, 683.4, 684.4, 764.5 MB; window 422.9 MB, session host 257.8 MB"
           }
         ]
       }
