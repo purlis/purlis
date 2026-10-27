@@ -25,7 +25,7 @@ fn has_pair(args: &[String], flag: &str, value: &str) -> bool {
 
 #[test]
 fn a_runner_container_starts_with_every_capability_dropped_and_no_new_privileges() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert_eq!(args[0], "run");
     assert!(has_pair(&args, "--cap-drop", "ALL"), "{args:?}");
     assert!(
@@ -38,18 +38,53 @@ fn a_runner_container_starts_with_every_capability_dropped_and_no_new_privileges
     assert!(has_pair(&args, "--cgroupns", "private"), "{args:?}");
 }
 
+/// The runner's seccomp profile as `docker inspect` writes it back (#3410).
+fn runners_seccomp() -> String {
+    let profile: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
+    format!("seccomp={profile}")
+}
+
+/// Where a test names the runner's seccomp profile as kept for a run of `docker`.
+const SECCOMP_AT: &str = "/data/docker-settings/run-x/runner-seccomp.json";
+
 #[test]
-fn a_runner_container_keeps_the_default_seccomp_profile_and_is_never_privileged() {
-    let args = runner().create_args();
+fn a_runner_container_has_the_runners_seccomp_profile_and_is_never_privileged() {
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert!(!args.iter().any(|a| a.contains("privileged")), "{args:?}");
-    assert!(!args.iter().any(|a| a.contains("seccomp")), "{args:?}");
+    let seccomp: Vec<&String> = args.iter().filter(|a| a.contains("seccomp")).collect();
+    assert_eq!(seccomp, [&format!("seccomp={SECCOMP_AT}")], "{args:?}");
     assert!(!args.iter().any(|a| a.contains("apparmor")), "{args:?}");
     assert!(!args.iter().any(|a| a == "--cap-add"), "{args:?}");
 }
 
+/// #3410: the runner's profile is Docker's default with `pidfd_getfd` allowed besides, and
+/// nothing else: every rule of Docker's own is there as it was.
+#[test]
+fn the_runners_seccomp_profile_is_dockers_default_and_one_call() {
+    let profile: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
+    assert_eq!(profile["defaultAction"], "SCMP_ACT_ERRNO");
+    let rules = profile["syscalls"].as_array().expect("its rules");
+    let added: Vec<&serde_json::Value> = rules
+        .iter()
+        .filter(|rule| rule["names"] == serde_json::json!(["pidfd_getfd"]))
+        .collect();
+    assert_eq!(
+        added,
+        [&serde_json::json!({"names": ["pidfd_getfd"], "action": "SCMP_ACT_ALLOW"})]
+    );
+    // Docker's own rule for it stays as Docker wrote it, behind the capability no runner has.
+    assert!(rules.iter().any(|rule| {
+        rule["names"]
+            .as_array()
+            .is_some_and(|names| names.contains(&"pidfd_getfd".into()))
+            && rule["includes"]["caps"] == serde_json::json!(["CAP_SYS_PTRACE"])
+    }));
+    assert_eq!(rules.len(), 38);
+}
+
 #[test]
 fn a_runner_container_runs_the_pinned_image_by_digest_as_its_session_host() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     let at = args
         .iter()
         .position(|a| a == &format!("ghcr.io/purlis/purlis-runner@{DIGEST}"))
@@ -59,7 +94,7 @@ fn a_runner_container_runs_the_pinned_image_by_digest_as_its_session_host() {
 
 #[test]
 fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_this_machine() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     let mounts: Vec<&String> = args
         .windows(2)
         .filter(|w| w[0] == "--mount")
@@ -74,7 +109,7 @@ fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_thi
 
 #[test]
 fn a_runner_container_has_a_read_only_root_and_a_tmp_that_runs_no_program() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert!(args.iter().any(|a| a == "--read-only"), "{args:?}");
     assert!(
         has_pair(&args, "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=1024m"),
@@ -84,7 +119,7 @@ fn a_runner_container_has_a_read_only_root_and_a_tmp_that_runs_no_program() {
 
 #[test]
 fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     for (flag, value) in [
         ("--cpus", "2"),
         ("--memory", "4096m"),
@@ -95,7 +130,7 @@ fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
     }
     let limits = Limits::new(1500, 8192, 256, 512).unwrap();
     let limited = runner().limited(limits);
-    let args = limited.create_args();
+    let args = limited.create_args(std::path::Path::new(SECCOMP_AT));
     for (flag, value) in [
         ("--cpus", "1.500"),
         ("--memory", "8192m"),
@@ -143,7 +178,7 @@ fn a_pools_limits_leave_a_runner_room_to_start_a_chat() {
 
 #[test]
 fn a_runner_container_is_named_and_labelled_as_the_pools() {
-    let args = runner().create_args();
+    let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     assert!(has_pair(&args, "--name", "purlis-runner-first"), "{args:?}");
     assert!(
         has_pair(&args, "--label", "purlis.runner=first"),
@@ -238,7 +273,7 @@ pub(crate) fn inspected() -> serde_json::Value {
         "MountLabel": "",
         "HostConfig": {
             "Privileged": false,
-            "SecurityOpt": ["no-new-privileges"],
+            "SecurityOpt": ["no-new-privileges", runners_seccomp()],
             "CapAdd": null,
             "CapDrop": ["ALL"],
             "NetworkMode": "bridge",
@@ -318,8 +353,11 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
         (
             "apparmor off",
             Box::new(|c| {
-                c["HostConfig"]["SecurityOpt"] =
-                    serde_json::json!(["no-new-privileges", "apparmor=unconfined"])
+                c["HostConfig"]["SecurityOpt"] = serde_json::json!([
+                    "no-new-privileges",
+                    "apparmor=unconfined",
+                    runners_seccomp()
+                ])
             }),
         ),
         (
@@ -330,7 +368,7 @@ fn a_container_that_is_not_confined_as_it_was_made_is_refused() {
             "labels off",
             Box::new(|c| {
                 c["HostConfig"]["SecurityOpt"] =
-                    serde_json::json!(["no-new-privileges", "label=disable"])
+                    serde_json::json!(["no-new-privileges", "label=disable", runners_seccomp()])
             }),
         ),
         (
@@ -823,6 +861,22 @@ fn a_runner_made_and_confined_as_it_should_be_is_handed_back_by_its_container_id
     assert!(!log.contains(" rm "), "{log}");
 }
 
+/// The runtime's own default profile is taken only for a runner made before #3410: one made
+/// now that came up without the runner's profile is refused and removed with its volume.
+#[test]
+fn a_runner_made_now_on_the_runtimes_default_profile_is_refused_and_removed() {
+    let fake = FakeDocker::new(&on_the_runtimes_default(inspected()));
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("seccomp"), "{refused}");
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("container rm --force --volumes {ID}")),
+        "{log}"
+    );
+    // The same container, made before, is still linked.
+    assert_eq!(fake.docker().check(&made()), Ok(()));
+}
+
 #[test]
 fn a_runner_whose_container_fails_the_check_is_removed_with_its_volume() {
     let fake = FakeDocker::new(&with(|c| c["HostConfig"]["Privileged"] = true.into()));
@@ -1118,7 +1172,7 @@ fn engine_of(host: &str) -> Engine {
 }
 
 /// What `host` wrote, held to the check on the engine it was measured on.
-fn checked_on_its_engine(host: &str, inspected: &serde_json::Value) -> Result<(), Refused> {
+fn checked_on_its_engine(host: &str, inspected: &serde_json::Value) -> Result<Seccomp, Refused> {
     check_on(inspected, &made_as_recorded(inspected), engine_of(host))
 }
 
@@ -1127,7 +1181,7 @@ fn a_container_made_the_pools_way_passes_on_docker_with_apparmor_and_on_podman()
     for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
         assert_eq!(
             checked_on_its_engine(host, &recorded(host, "made")),
-            Ok(()),
+            Ok(Seccomp::Runners),
             "{host}"
         );
     }
@@ -1185,7 +1239,7 @@ fn a_loosened_container_is_refused_on_every_host_it_was_measured_on() {
             if case == "host-users" && host.starts_with("podman") {
                 assert_eq!(
                     checked_on_its_engine(host, &recorded(host, case)),
-                    Ok(()),
+                    Ok(Seccomp::Runners),
                     "{host}"
                 );
                 continue;
@@ -1580,7 +1634,10 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
     let own = recorded("podman-rootless", "made-oci");
     let made = rootless_runner("measured-8364", &own);
     let (store, config) = rootless_store(&made);
-    assert_eq!(check_oci(&own, &made, &config, &store), Ok(()));
+    assert_eq!(
+        check_oci(&own, &made, &config, &store, Seccomp::Runners),
+        Ok(())
+    );
     for (case, name) in [
         ("device-oci", "device-8364"),
         ("host-folder-oci", "host-folder-8364"),
@@ -1589,14 +1646,14 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
         let made = rootless_runner(name, &oci);
         let (store, config) = rootless_store(&made);
         assert!(
-            check_oci(&oci, &made, &config, &store).is_err(),
+            check_oci(&oci, &made, &config, &store, Seccomp::Runners).is_err(),
             "{case} passed"
         );
     }
     let changed = |change: &dyn Fn(&mut serde_json::Value)| {
         let mut oci = own.clone();
         change(&mut oci);
-        check_oci(&oci, &made, &config, &store)
+        check_oci(&oci, &made, &config, &store, Seccomp::Runners)
     };
     // A device named for the runtime.
     assert!(
@@ -1633,8 +1690,17 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
     let elsewhere = store
         .graph_root
         .join("overlay-containers/other/userdata/config.json");
-    assert!(check_oci(&own, &made, &elsewhere, &store).is_err());
-    assert!(check_oci(&serde_json::json!({}), &made, &config, &store).is_err());
+    assert!(check_oci(&own, &made, &elsewhere, &store, Seccomp::Runners).is_err());
+    assert!(
+        check_oci(
+            &serde_json::json!({}),
+            &made,
+            &config,
+            &store,
+            Seccomp::Runners
+        )
+        .is_err()
+    );
 }
 
 /// A runtime config that is no file, such as a FIFO a reader would wait on for ever, is refused
@@ -1657,4 +1723,191 @@ fn a_runtime_config_that_is_no_file_or_not_here_is_refused_and_said() {
     ))
     .unwrap_err();
     assert!(gone.0.contains("Podman machine"), "{gone}");
+}
+
+// ---------------------------------------------------------------------------------------------
+// #3410: the runner's seccomp profile, and the runtime's default on a runner made before it.
+// ---------------------------------------------------------------------------------------------
+
+/// `inspected` with its seccomp option taken out, as a runner made before #3410 was.
+fn on_the_runtimes_default(mut inspected: serde_json::Value) -> serde_json::Value {
+    inspected[0]["HostConfig"]["SecurityOpt"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|option| !option.as_str().unwrap().starts_with("seccomp="));
+    inspected
+}
+
+/// A runner made before #3410 runs the runtime's own default profile, which is stricter than the
+/// runner's: it is still linked, and the check says which profile it runs.
+#[test]
+fn a_runner_made_on_the_runtimes_default_profile_is_still_linked() {
+    for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
+        assert_eq!(
+            checked_on_its_engine(host, &on_the_runtimes_default(recorded(host, "made"))),
+            Ok(Seccomp::RuntimeDefault),
+            "{host}"
+        );
+    }
+    assert_eq!(
+        check_on(
+            &on_the_runtimes_default(inspected()),
+            &made(),
+            Engine::default()
+        ),
+        Ok(Seccomp::RuntimeDefault)
+    );
+}
+
+/// Rootless Podman's runtime config of a runner on the runtime's default holds a profile, which
+/// `podman info`'s check holds to Podman's own; one with none is refused.
+#[test]
+fn rootless_podmans_runtime_config_on_the_runtimes_default_holds_a_profile() {
+    let own = recorded("podman-rootless", "made-oci");
+    let made = rootless_runner("measured-8364", &own);
+    let (store, config) = rootless_store(&made);
+    let mut default = own.clone();
+    default["linux"]["seccomp"]["syscalls"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|rule| rule["names"] != serde_json::json!(["pidfd_getfd"]));
+    assert_eq!(
+        check_oci(&default, &made, &config, &store, Seccomp::RuntimeDefault),
+        Ok(())
+    );
+    let mut none = own.clone();
+    none["linux"].as_object_mut().unwrap().remove("seccomp");
+    assert!(check_oci(&none, &made, &config, &store, Seccomp::RuntimeDefault).is_err());
+    // A profile that allows every call it does not name is no default of Podman's.
+    let mut open = default.clone();
+    open["linux"]["seccomp"]["defaultAction"] = "SCMP_ACT_ALLOW".into();
+    assert!(check_oci(&open, &made, &config, &store, Seccomp::RuntimeDefault).is_err());
+}
+
+/// Docker's runner is held to the runner's profile rule for rule, however its text is spaced.
+#[test]
+fn dockers_runner_is_held_to_the_runners_rules_however_they_are_spaced() {
+    let with = |profile: String| {
+        let mut one = inspected();
+        one[0]["HostConfig"]["SecurityOpt"] =
+            serde_json::json!(["no-new-privileges", format!("seccomp={profile}")]);
+        check_on(&one, &made(), Engine::default())
+    };
+    assert_eq!(with(SECCOMP_PROFILE.to_owned()), Ok(Seccomp::Runners));
+    let mut more: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).unwrap();
+    more["syscalls"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"names": ["unshare"], "action": "SCMP_ACT_ALLOW"}));
+    assert!(with(more.to_string()).is_err(), "one call more");
+    assert!(with("not json".to_owned()).is_err());
+}
+
+/// Podman keeps only the path it read the runner's profile from: held to an absolute path to a
+/// file of the runner's profile's name.
+#[test]
+fn podmans_runner_profile_is_named_by_an_absolute_path_to_its_file() {
+    for (option, taken) in [
+        ("seccomp=/run/purlis/run-x/runner-seccomp.json", true),
+        ("seccomp=run-x/runner-seccomp.json", false),
+        ("seccomp=runner-seccomp.json", false),
+        ("seccomp=/run/purlis/run-x/seccomp.json", false),
+        ("seccomp=/run/purlis/run-x/runner-seccomp.json.old", false),
+    ] {
+        let mut one = recorded("podman-rootful", "made");
+        one[0]["HostConfig"]["SecurityOpt"] = serde_json::json!(["no-new-privileges", option]);
+        assert_eq!(
+            checked_on_its_engine("podman-rootful", &one).is_ok(),
+            taken,
+            "{option}"
+        );
+    }
+}
+
+/// What rootless Podman compiled from the runner's profile is held to exactly what it makes of
+/// it for a runner with no capability: one rule more, less or changed is refused.
+#[test]
+fn rootless_podmans_compiled_profile_is_exactly_the_runners() {
+    let own = recorded("podman-rootless", "made-oci");
+    let made = rootless_runner("measured-8364", &own);
+    let (store, config) = rootless_store(&made);
+    let changed = |change: &dyn Fn(&mut serde_json::Value)| {
+        let mut oci = own.clone();
+        change(&mut oci["linux"]["seccomp"]);
+        check_oci(&oci, &made, &config, &store, Seccomp::Runners)
+    };
+    assert_eq!(changed(&|_| {}), Ok(()));
+    fn rules(seccomp: &serde_json::Value) -> Vec<serde_json::Value> {
+        seccomp["syscalls"].as_array().unwrap().clone()
+    }
+    let cases: Vec<(&str, Change)> = vec![
+        (
+            "one call more",
+            Box::new(|seccomp| {
+                let mut more = rules(seccomp);
+                more.push(serde_json::json!({"names": ["unshare"], "action": "SCMP_ACT_ALLOW"}));
+                seccomp["syscalls"] = more.into();
+            }),
+        ),
+        (
+            "a rule widened",
+            Box::new(|seccomp| {
+                seccomp["syscalls"][0]["names"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push("mount".into());
+            }),
+        ),
+        (
+            "no pidfd_getfd rule",
+            Box::new(|seccomp| {
+                let mut less = rules(seccomp);
+                less.retain(|rule| rule["names"] != serde_json::json!(["pidfd_getfd"]));
+                seccomp["syscalls"] = less.into();
+            }),
+        ),
+        (
+            "pidfd_getfd behind a condition",
+            Box::new(|seccomp| {
+                for rule in seccomp["syscalls"].as_array_mut().unwrap() {
+                    if rule["names"] == serde_json::json!(["pidfd_getfd"]) {
+                        rule["args"] =
+                            serde_json::json!([{"index": 0, "value": 1, "op": "SCMP_CMP_EQ"}]);
+                    }
+                }
+            }),
+        ),
+        (
+            "every call allowed but those named",
+            Box::new(|seccomp| seccomp["defaultAction"] = "SCMP_ACT_ALLOW".into()),
+        ),
+        (
+            "another architecture",
+            Box::new(|seccomp| seccomp["architectures"] = serde_json::json!(["SCMP_ARCH_AARCH64"])),
+        ),
+        (
+            "no profile",
+            Box::new(|seccomp| *seccomp = serde_json::Value::Null),
+        ),
+    ];
+    for (case, change) in cases {
+        assert!(changed(&*change).is_err(), "{case} passed");
+    }
+    let mut none = own.clone();
+    none["linux"].as_object_mut().unwrap().remove("seccomp");
+    assert!(check_oci(&none, &made, &config, &store, Seccomp::Runners).is_err());
+}
+
+/// The runner's profile is the Moby project's default, as pinned beside it byte for byte
+/// (`seccomp-moby-v0.2.4.json`), with one rule added after its first: `pidfd_getfd` allowed.
+#[test]
+fn the_runners_profile_is_the_pinned_upstream_default_and_one_rule() {
+    let mut upstream: serde_json::Value =
+        serde_json::from_str(include_str!("seccomp-moby-v0.2.4.json")).expect("JSON");
+    upstream["syscalls"].as_array_mut().unwrap().insert(
+        1,
+        serde_json::json!({"names": ["pidfd_getfd"], "action": "SCMP_ACT_ALLOW"}),
+    );
+    let ours: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
+    assert_eq!(ours, upstream);
 }

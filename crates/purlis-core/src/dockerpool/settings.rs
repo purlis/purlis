@@ -374,6 +374,20 @@ pub type Parts = (
 );
 
 impl Prepared {
+    /// **`contents` kept as `name` in the run's folder, `0600`**, for as long as the run goes:
+    /// a file `docker` reads during the run (the runner's seccomp profile). Its path.
+    pub fn keep(&self, name: &str, contents: &str) -> std::io::Result<PathBuf> {
+        use std::os::unix::fs::OpenOptionsExt;
+        let at = self.folder.path().join(name);
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&at)?;
+        std::io::Write::write_all(&mut file, contents.as_bytes())?;
+        Ok(at)
+    }
+
     /// Its variables, those not handed on, and what is held until the run ends, for a
     /// connector that runs `docker` itself (`purlis_host::CommandConnector::preparing`).
     pub fn into_parts(self) -> Parts {

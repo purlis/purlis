@@ -8,7 +8,9 @@ Codex on Linux.
 and a supervisor, built from the same compiled profile as on macOS.** It needs no namespace and
 no privilege, so the same wrap works on a Linux desktop, in a Docker container and in a
 Kubernetes pod under their default seccomp profiles, and a chat on a runner is sandboxed exactly
-as a local one (spec #2041).
+as a local one (spec #2041). *(A chat's server listening there needs one call more, which a
+Docker pool's runner is given and a Kubernetes runner is not yet: amended 2026-10-26, a Linux
+chat listens only where it was bound.)*
 
 - **One profile, two mechanisms.** purlis compiles one profile for a wrapped chat. macOS applies
   it with Seatbelt. On Linux the supervisor reads the same profile and judges every connect and

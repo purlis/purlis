@@ -273,6 +273,45 @@ fn addresses_dialled_past_the_proxy_are_one_block_naming_the_first() {
     );
 }
 
+/// A server the wrap refuses, a socket that listens with no bind of its own, is told as the
+/// block macOS's kernel line of a refused bind is, and stays refused.
+#[test]
+fn a_listen_the_linux_wrap_refuses_is_told_as_macos_s_refused_bind_is() {
+    purlis_core::unsteered!();
+    landlock();
+    let scratch = tempfile::tempdir().expect("a folder");
+    let out = scratch.path().canonicalize().expect("a real folder");
+    let home = out.join("home");
+    fs::create_dir_all(&home).expect("a home");
+    let (root, chat, profile) = a_codex_chat(&out, &home);
+    let script = "perl -MSocket -e 'socket(my $s, PF_INET, SOCK_STREAM, 0) or die; \
+                  print listen($s, 1) ? \"yes\\n\" : \"no\\n\"'";
+
+    let ran = wrapped(&profile, &chat, &home, script, true);
+    assert_eq!(ran.said, "no", "the listen is refused");
+    let place = Place {
+        root: &root,
+        chat: &chat,
+        cwd: &chat,
+        home: Some(&home),
+    };
+    let (as_on_macos, named) = Denial::of_line("Sandbox: perl(4120) deny(1) network-bind *:0")
+        .expect("a kernel line")
+        .block(&place);
+    assert_eq!(
+        ran.blocked,
+        vec![SandboxBlocked {
+            chat: 7,
+            sandbox_blocked: as_on_macos,
+            harness: Some("codex".to_owned()),
+            target: named,
+            read_back: false,
+            suggested: None,
+        }],
+        "one block, as macOS's kernel line of a refused bind is"
+    );
+}
+
 /// The signals the wrap leaves to its one waiter, which passes an ending on to the chat: INT,
 /// QUIT, TERM and HUP, as a `SigBlk` mask.
 const LEFT_TO_THE_WAITER: u64 = bit(1) | bit(2) | bit(3) | bit(15);
