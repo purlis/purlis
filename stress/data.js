@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793093113474,
+  "lastUpdate": 1793093403655,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -15796,6 +15796,40 @@ window.BENCHMARK_DATA = {
             "value": 722.9,
             "unit": "MB",
             "extra": "median of 6 samples: 682.3, 699.4, 719.5, 726.3, 727, 800.5 MB; window 422.9 MB, session host 300 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide",
+            "email": "aaron.yor@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "a1febfb9431078607ed064a8ecf4cf6bb88acce7",
+          "message": "The file tab and the whole Explorer on the tree family (#2911) (#3194)\n\n* Every file tree on the tree family: a file tab's, the Explorer's Files and a cockpit's (#2911)\n\nA branch's files are drawn by the tree family in all three places they\nare drawn: the file tab (BranchTree), the Explorer's Files section (a\npicked branch's, each repo's own folder, the plane root's) and a\nbranch's cockpit. Folders read when opened (a row not read yet holds a\nrow React Aria never draws), and \"Reading…\", a refusal, \"Nothing\nhere\", \"N more not shown\", the unwatched notes and what a branch names\nand does not read are lines of the tree the arrows read in place.\n\nThe tree family gains what these rows need: a row that keeps the\nkeyboard to say it cannot run (unavailable), rows its owner chooses\nwhile a press still runs them (chosen, choosesMany: #1151's picks),\nthe owner's keys before the tree's (Shift and the arrows), a press's\nmodifier keys before its action, and React Aria's drag with a drag\nbutton on each row that carries something. The file tab's file is\nReact Aria's single choice, by a press, never by the arrows.\n\nBranchTree leaves the tree-family lint exemptions; the Explorer keeps\none for its Repos and branches tree, which moves next.\n\nRefs #2911\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* The Explorer's Repos and branches on the tree family; a file tab's file is its chosen row (#2911)\n\nThe Explorer's last hand-drawn tree moves onto the tree family: the\nworkspace's own row (always open), each clone folding on a press, a\ntwist or the arrows, its branches as rows picking where the next chat\nstarts, and what a clone holds when it holds no branch (Asking git…,\nNo branches cut here, the refusal with Read again) as lines under it.\nThe current spot is aria-current, drawn as a chosen row, and the\ntree's Tab stop until the keyboard has been in; it takes no weight of\nits own (a state never changes a row's size). A row is named by its\nwords and described by its marks (unwired, done, 2 branches), and why\na mark says what it does is the row's tooltip.\n\nThe tree family gains current, alwaysOpen, description and stopAt;\nmodified arrows no longer fold a row. A file tab's file is the tree's\nchosen row and Tab stop, so a press on it shows it again and the\narrows never do. The Explorer leaves the tree-family lint exemptions.\n\nRefs #2911\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Tree family: the Chats list's exemption names its ticket (#3198)\n\nRefs #2911\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Tree family review fixes: rows fit their words, no drag button, menu keys, loading rows (#2911)\n\n- The Explorer's, the file tab's and the Changes view's trees fit their\n  rows to their words (fit=\"content\"): a row is never narrower than its\n  one line, so the pill and ring reach a long name's end (B2).\n- No row draws a focusable drag button: the pointer drags the row and\n  the menu's Add to a chat's context is the keyboard's way, so → on a\n  file stays on it (B4).\n- The tree's capture handler leaves keys from a row's menu alone: Esc\n  in the menu closes it and keeps the picks (B5).\n- The unavailable rule stands on its own, and the Rust test's message\n  names no single stylesheet (B7). Prettier on eslint.config.js (B1).\n- \"Reading…\" and \"Asking git…\" are React Aria's loading rows\n  (TreePending), passed by the arrows, with aria-busy on their row; the\n  lasting lines stay TreeLines (S1). jsdom gets an IntersectionObserver\n  that says everything is in sight.\n- A file's path is the pointer's tooltip alone; a refusal stays on the\n  keyboard too, and one Esc lets the picks go or leaves the cockpit (S2).\n- Lines and a fixed tree's rows draw no pill; an ignored file's name is\n  in the faint tier, not dimmed; an unreadable branch shows its reason\n  and no empty tree; the stop is taken once per row; the Changes rows\n  are named by their visible words first; the scenario reads the\n  preview, not the README row; the Enter test presses Enter.\n\nRefs #2911\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-27T07:07:27Z",
+          "url": "https://github.com/purlis/purlis/commit/a1febfb9431078607ed064a8ecf4cf6bb88acce7"
+        },
+        "date": 1793093401346,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1735.4,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1535.8, 1735.4, 1862.2 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 675.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 653.5, 670.2, 673.7, 676.9, 678.1, 747.6 MB; window 411 MB, session host 264.5 MB"
           }
         ]
       }
