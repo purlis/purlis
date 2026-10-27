@@ -337,6 +337,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // And the change whole, for its own tab (PC-7): what the configuration file holds is the
     // person's to read, never a chat's through the UI's link.
     "proposed_change",
+    // Remove and Dismiss on the Notice of the old `[harness_plugins]` keys (#3467): Remove holds
+    // purlis's own proposed change for the person to apply, and the answer is the person's.
+    "remove_old_harness_plugins",
+    "dismiss_old_harness_plugins",
     // Dismiss on a chat's Notice that a persona's MCP server could not start (qw381): the
     // person's answer, which no chat gives for them.
     "put_away_mcp_failure",
@@ -1028,7 +1032,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "plane_sidebar",
     "planes_to_restore",
     "project_extensions",
-    "project_harness_plugins",
     "project_icons_drawn",
     "project_saving_in_force",
     "project_settings",

@@ -944,13 +944,14 @@ describe("a row of the Chats list (V100-19, V100-50)", () => {
     return held;
   };
 
-  it("is one line: the state, the name and the persona's badge, and where it works is in its card", async () => {
+  it("is one line: the persona's badge with the state on it, the name, and where it works is in its card", async () => {
     const { move } = await up();
     move(1, "running");
 
     expect(theTree().querySelector(".line.two")).toBeNull();
     const first = row("steward 1");
-    expect(first.querySelector(".ui-row-trail .persona-mark")).not.toBeNull();
+    // The persona's mark leads the row, with the state on it (#3342).
+    expect(first.querySelector(".ui-row-lead .chat-persona .persona-mark")).not.toBeNull();
     expect(first.querySelector(".ui-row-label")?.textContent).toBe("steward 1");
     expect(first.querySelector(".ui-row-lead .shown-state .word")?.textContent).toBe("working");
     expect((await cardOf(row("steward 1"))).facts.Workspace).toBe("alpha");

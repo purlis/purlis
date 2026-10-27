@@ -160,6 +160,14 @@ mod probe {
                 .join()
                 .unwrap_or_else(|_| Err("the thread panicked".to_owned()))
             }
+            // A server started on an address and port, as a dev server is (#2019): bound and
+            // listening, whatever it is bound to in the end.
+            "serve-on" => io(std::net::TcpListener::bind((
+                word(1),
+                word(2).parse::<u16>().unwrap_or(0),
+            ))),
+            // A server on a unix socket at a path (#2019).
+            "serve-at" => io(std::os::unix::net::UnixListener::bind(word(1))),
             // A server on an abstract unix socket: bound, then listening.
             "abstract-listen" => {
                 use std::os::linux::net::SocketAddrExt;

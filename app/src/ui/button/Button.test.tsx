@@ -118,6 +118,48 @@ describe("an answer that grants (ADR 0097 §6)", () => {
   });
 });
 
+describe("a button's key hint (R33)", () => {
+  it("draws the key in its shortcut part, after its words, and keeps it out of its name", () => {
+    render(<Button shortcut="⌘↩">Start chat</Button>);
+    const button = screen.getByRole("button", { name: "Start chat" });
+    const hint = button.querySelector('[data-scope="button"][data-part="shortcut"]');
+    if (hint === null) throw new Error("no shortcut part");
+    expect(hint.tagName).toBe("KBD");
+    expect(hint).toHaveAttribute("aria-hidden", "true");
+    expect(hint).toHaveAttribute("data-key", "⌘↩");
+    // Drawn by the stylesheet from its attribute, so the button's words are its words alone.
+    expect(button.textContent).toBe("Start chat");
+    expect(button.lastElementChild).toBe(hint);
+  });
+
+  it("keeps the hint's room, undrawn, while the key does not press it", () => {
+    render(
+      <Button shortcut="⌘↩" shortcutOff>
+        Approve and start
+      </Button>,
+    );
+    const hint = screen.getByRole("button").querySelector('[data-part="shortcut"]');
+    if (hint === null) throw new Error("no shortcut part");
+    expect(hint).toHaveAttribute("data-off", "");
+    expect(drawnWith(hint, "visibility")).toBe("hidden");
+  });
+
+  it("draws the key small and mono, in the button's own words' colour", () => {
+    render(<Button shortcut="⌘↩">Start chat</Button>);
+    const hint = screen.getByRole("button").querySelector('[data-part="shortcut"]');
+    if (hint === null) throw new Error("no shortcut part");
+    expect(drawnWith(hint, "font-family")).toBe("var(--font-mono)");
+    expect(drawnWith(hint, "font-size")).toBe("var(--font-size-xs)");
+    // No colour of its own: the words' (the quiet tier would not hold on the primary fill).
+    expect(drawnWith(hint, "color")).toBeUndefined();
+  });
+
+  it("is drawn by no button that names no key", () => {
+    render(<Button>Save</Button>);
+    expect(screen.getByRole("button").querySelector('[data-part="shortcut"]')).toBeNull();
+  });
+});
+
 describe("an icon button", () => {
   it("shows only its icon and is named by its label", () => {
     render(<IconButton icon={<Plus />} aria-label="New chat" size="sm" />);

@@ -474,20 +474,9 @@ fn an_extensions_table_charter_would_not_read_is_refused_in_either_file() {
 }
 
 #[test]
-fn a_local_file_may_hold_harness_plugins() {
-    // charter-app#274: a harness's own plugins are turned on or off for this machine's use of
-    // the project in the Local file, which overrides the Shared one plugin by plugin.
-    let dir = plane(COMMENTED);
-    let why = refusals(
-        dir.path(),
-        Which::Local,
-        "[harness_plugins.claude]\n\"figma@official\" = false\n",
-    );
-    assert_eq!(why, Vec::<String>::new());
-}
-
-#[test]
-fn neither_file_may_turn_charters_own_plugin_off() {
+fn either_file_may_still_hold_the_old_harness_plugins_and_is_refused_nothing_for_it() {
+    // #3467: the old table is ignored and said once by its own Notice, so a file that holds it
+    // saves as it did, a key that turned purlis's own plugin off included.
     let dir = plane(COMMENTED);
     for which in [Which::Shared, Which::Local] {
         let why = refusals(
@@ -495,16 +484,7 @@ fn neither_file_may_turn_charters_own_plugin_off() {
             which,
             "[harness_plugins.claude]\n\"purlis@inline\" = false\n",
         );
-        assert_eq!(
-            why,
-            [format!(
-                "harness_plugins.claude.\"purlis@inline\" in {} cannot be false: \
-                 purlis@inline is always on: it is purlis's own plugin, and it carries \
-                 purlis's hooks and the Bash guard",
-                which.file()
-            )],
-            "{which:?}"
-        );
+        assert_eq!(why, Vec::<String>::new(), "{which:?}");
     }
 }
 
@@ -1532,7 +1512,7 @@ fn keys(k: &[&str]) -> Option<Vec<String>> {
     Some(k.iter().map(|s| (*s).to_owned()).collect())
 }
 
-/// **Every reader of the committed file hands its key over** (#1292): harness plugins, the
+/// **Every reader of the committed file hands its key over** (#1292): harness skills, the
 /// theme, the sandbox, the dispatch limits, the plane's saves, and the doctor's findings, each
 /// with the key its sentence is about, so none is read back from the sentence.
 #[test]
@@ -1541,8 +1521,8 @@ fn each_reader_of_the_committed_file_gives_the_key_of_its_refusal() {
     let shared = "schema = 1\n\
                   [harness]\ndefault = \"ghost\"\n\
                   [harness.mine]\nkind = \"claude\"\ncommand = [\"claude\"]\n\
-                  [harness_plugins.nope]\n\
-                  [harness_plugins.codex]\n\"one\" = 3\n\
+                  [harness_skills.nope]\n\
+                  [harness_skills.codex]\n\"one\" = 3\n\
                   [theme]\nuse = 3\nfoo = 1\n\
                   [sandbox]\nmode = \"off\"\npolicy = \"never\"\negress = \"web\"\n\
                   [sandbox.personas.ghost]\nhosts = []\n\
@@ -1560,12 +1540,12 @@ fn each_reader_of_the_committed_file_gives_the_key_of_its_refusal() {
     );
     assert_eq!(at("[harness.mine] is in"), keys(&["harness", "mine"]));
     assert_eq!(
-        at("[harness_plugins.nope]"),
-        keys(&["harness_plugins", "nope"])
+        at("[harness_skills.nope]"),
+        keys(&["harness_skills", "nope"])
     );
     assert_eq!(
-        at("harness_plugins.codex.one in"),
-        keys(&["harness_plugins", "codex", "one"])
+        at("harness_skills.codex.one in"),
+        keys(&["harness_skills", "codex", "one"])
     );
     assert_eq!(at("theme.use in"), keys(&["theme", "use"]));
     assert_eq!(at("theme.foo in"), keys(&["theme", "foo"]));

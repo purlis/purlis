@@ -11,7 +11,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import { expectFocusInSight, pictureNow } from "../../stories.testkit";
+import { expectFocusInSight, pictureNow, untilFocused } from "../../stories.testkit";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import { Button } from "../button/Button";
 import { TextField } from "../field/Field";
@@ -185,7 +185,8 @@ export const EscapeClosesOneLayer: Story = {
     // A menu may take a moment to go: WebKit draws the next frame late in a busy run (as the menu
     // family's own stories allow).
     await waitFor(() => expect(page.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
-    await waitFor(() => expect(more).toHaveFocus());
+    // The keyboard comes back to More after the menu has gone, as late as the menu goes.
+    await untilFocused(() => more, "Dialog: Escape gives the keyboard back to More");
     await expect(page.getByRole("dialog", { name: "Workspace" })).toBeVisible();
     await expect(page.getByRole("status", { hidden: true })).toHaveTextContent("Not answered yet");
     await userEvent.keyboard("{Escape}");
@@ -256,8 +257,8 @@ const inside = (inner: DOMRect, outer: DOMRect) =>
   inner.top >= outer.top - 0.5 && inner.bottom <= outer.bottom + 0.5;
 
 /**
- * **A body longer than the window**: the dialog is the window less 48 px at most, the body
- * scrolls, the header and the footer stay in view, and every field the keyboard reaches is in
+ * **A body longer than the window**: the dialog is the window less its top and 24 px at most,
+ * the body scrolls, the header and the footer stay in view, and every field the keyboard reaches is in
  * sight, never under the footer (WCAG 2.4.11).
  */
 export const LongerThanTheWindow: Story = {

@@ -350,14 +350,7 @@ fn hooked(action: Action, options: Vec<Choice>, hook_timeout: std::time::Duratio
 
 /// An ask for `action` with `options`, its summary written from the action.
 fn asking(action: Action, options: Vec<Choice>) -> Ask {
-    let summary = Summary::of(&match &action {
-        Action::Unsaid => "Asks for you".to_owned(),
-        Action::Command { line } => format!("Run a command: {line}"),
-        Action::Edit { path } => format!("Change {path}"),
-        Action::Tool { name, input } => format!("Use {name}: {input}"),
-        Action::Elicit { fields } => format!("Give values for: {}", fields.join(", ")),
-        Action::Question { question } => format!("Asks you: {question}"),
-    });
+    let summary = Summary::of(&action.said());
     Ask {
         risk: risk_of(&action),
         action,
@@ -1187,6 +1180,48 @@ mod tests {
             assert_eq!(Summary::of(&line).as_str(), line, "U+{:04X}", u32::from(c));
         }
         assert_eq!(Summary::of("ls\r\n\t rm\r\n").as_str(), "ls rm");
+    }
+
+    #[test]
+    fn a_command_over_several_lines_is_shown_line_by_line_as_its_summary_shows_it() {
+        // #3502: the summary puts `ls` and `rm -rf x` on one line. Its lines say so: the
+        // count, and each line as the summary has it. Blank lines and indents fold as there.
+        let lines = Summary::lines_of("Run a command: ls\n\n  rm -rf x\r\n\techo done\n")
+            .expect("it runs over several lines");
+
+        assert_eq!(lines.count, 3);
+        assert_eq!(lines.shown, ["Run a command: ls", "rm -rf x", "echo done"]);
+    }
+
+    #[test]
+    fn a_text_on_one_line_has_no_lines_to_show() {
+        for text in ["ls -la", "ls\t -la  ", "\nls\n", "ls\u{2028}rm -rf x"] {
+            assert_eq!(Summary::lines_of(text), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn the_lines_shown_joined_by_a_space_are_the_summary() {
+        // They are the summary split where the text broke a line: masked and cut as it is.
+        let token = crate::secretshape::escaped::token();
+        for text in [
+            format!("curl -H 'Authorization: Bearer {token}'\nrm -rf x"),
+            format!("echo {token}\n{token}"),
+            format!("one\ntwo {}\nthree", "x".repeat(400)),
+            "git\u{00A0}commit\n\u{2028}x".to_owned(),
+        ] {
+            let lines = Summary::lines_of(&text).expect("it runs over several lines");
+
+            assert_eq!(
+                lines.shown.join(" "),
+                Summary::of(&text).as_str(),
+                "{text:?}"
+            );
+            assert!(!lines.shown.iter().any(|line| line.contains(&token[4..])));
+        }
+        let cut = Summary::lines_of(&format!("one\ntwo {}\nthree", "x".repeat(400))).unwrap();
+        assert_eq!(cut.count, 3);
+        assert_eq!(cut.shown.len(), 2);
     }
 
     #[test]

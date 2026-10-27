@@ -181,6 +181,8 @@ impl Browser {
                 .store(true, std::sync::atomic::Ordering::SeqCst);
             lease.epoch
         };
+        // No read the agent's calls left is kept past a change of hands (#3277).
+        lock(&self.reading).forget();
         // A call of the agent's waiting on its page wakes now, and finds itself cut.
         self.inner.changed.notify_all();
         let outcome = {
@@ -194,6 +196,7 @@ impl Browser {
                 outcome
             }
         };
+        lock(&self.reading).forget();
         let mut lease = lock(&self.lease);
         self.inner
             .purlis_drives

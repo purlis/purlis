@@ -183,6 +183,16 @@ describe("one surface", () => {
     expect(drawnWith(scrim, "background-color")).toBe("var(--overlay-scrim)");
   });
 
+  it("anchors a dialog at max(24px, 6vh) from the top, 24px clear of the bottom (R2)", () => {
+    render(<Asking />);
+    const scrim = document.querySelector('[data-scope="dialog"][data-part="scrim"]');
+    if (scrim === null) throw new Error("the dialog drew no scrim");
+    // The prototype's place (`#mount { padding: 6vh … }`), never closer to the top than 24px; a
+    // dialog's height is at most what is left between them (`max-block-size: 100%`).
+    expect(drawnWith(scrim, "padding-block")).toBe("max(var(--space-7), 6vh) var(--space-7)");
+    expect(drawnWith(scrim, "justify-content")).toBe("flex-start");
+  });
+
   it("draws a popover's arrow in the surface's ground", async () => {
     const user = userEvent.setup();
     render(<Card />);

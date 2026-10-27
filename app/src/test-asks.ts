@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { ChatBlocked, DispatchPending, GrantLevel, Offered, Shown } from "./bindings";
-import { inertly } from "./sandboxBlocks";
+import { inertly, isGrantedOffer } from "./sandboxBlocks";
 import {
   ALLOW_SAID as DISPATCH_ALLOW_SAID,
   KEEP_SAID,
@@ -30,21 +30,13 @@ const NEVER: Offered = { id: "never", label: NEVER_SAID, allows: false };
  *  ask (purlis's own, or one no grant can name). */
 export function askOfBlock(block: ChatBlocked, chain = [`chat ${block.session}`]): Shown[] {
   const offer = block.offer;
-  if (
-    block.ours ||
-    (offer !== "host" &&
-      offer !== "write" &&
-      offer !== "socket" &&
-      offer !== "service" &&
-      offer !== "port")
-  )
-    return [];
+  if (block.ours || !isGrantedOffer(offer)) return [];
   const local = offer === "socket" || offer === "service";
   const target = block.target ?? "";
   const levels: readonly GrantLevel[] =
     offer === "host"
       ? ["you", "chat", "project"]
-      : offer === "port"
+      : offer === "port" || offer === "listen"
         ? // The registry's order (`asking::sandbox_port`).
           ["chat", "you"]
         : local
@@ -63,14 +55,18 @@ export function askOfBlock(block: ChatBlocked, chain = [`chat ${block.session}`]
             ? target === ""
               ? "The sandbox refused a service on this Mac at a port it did not name"
               : `The sandbox refused the service on this Mac at port ${target}. ${block.route ?? ""}`
-            : local
-              ? `The sandbox refused the ${offer === "socket" ? "local socket" : "system service"} ${inertly(target)}. ${block.route ?? ""}`
-              : `The sandbox refused a write in ${inertly(target)}`,
+            : offer === "listen"
+              ? target === ""
+                ? "This chat wants to run a server on a port it did not name"
+                : `This chat wants to run a server on port ${target}. ${block.route ?? ""}`
+              : local
+                ? `The sandbox refused the ${offer === "socket" ? "local socket" : "system service"} ${inertly(target)}. ${block.route ?? ""}`
+                : `The sandbox refused a write in ${inertly(target)}`,
       options: [...allowing(ALLOW_SAID.sandbox, levels), KEEP],
       source:
         offer === "host"
           ? "sandbox-host"
-          : local || offer === "port"
+          : local || offer === "port" || offer === "listen"
             ? "sandbox-local"
             : "sandbox-write",
       chain,

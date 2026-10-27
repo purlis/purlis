@@ -647,3 +647,30 @@ mod made_elsewhere {
         assert!(refused.contains("its own addresses"), "{refused}");
     }
 }
+
+/// #2019: a port a chat was given for a listen grant alone that gets no door is withdrawn from
+/// its proxy, so the grant leaves it no plain connect there; a port it holds a grant to connect
+/// to besides is left.
+#[cfg(unix)]
+#[test]
+fn a_listen_grant_s_port_that_gets_no_door_is_withdrawn_from_the_chat_s_proxy() {
+    let holder = Arc::new(Holder::default());
+    let mut confinement = Confinement::held_elsewhere(
+        placed(50871, 50872, None),
+        Box::new(Holding(Arc::clone(&holder))),
+    )
+    .expect("held");
+    // No folder can be made where a file stands, so no door opens.
+    let base = tempfile::tempdir().expect("a folder");
+    std::fs::write(base.path().join("file"), "x").expect("a file");
+    let folder = base.path().join("file").join("0123456789abcdef");
+    let widened = crate::sandbox::Widened {
+        ports: vec![5173, 8080],
+        listens: vec![5173, 8080],
+        listen_only: vec![5173],
+        ..crate::sandbox::Widened::default()
+    };
+    assert!(confinement.serve(&folder, &widened).is_err());
+    assert_eq!(*holder.withdrawn.lock().expect("held"), [5173]);
+    assert_eq!(confinement.served(), None);
+}

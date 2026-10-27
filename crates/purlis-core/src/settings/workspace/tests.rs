@@ -185,7 +185,7 @@ fn a_settings_key_no_reader_reads_is_refused() {
         refusals(text, "alpha"),
         vec![
             "settings.colour in workspaces/alpha/workspace.json is not read — a workspace's \
-             settings hold extensions, harness_plugins, harness_skills, theme, skills, runners \
+             settings hold extensions, harness_skills, theme, skills, runners \
              and nothing else"
                 .to_owned()
         ]
@@ -382,84 +382,26 @@ fn null_reads_as_not_set() {
 }
 
 // -------------------------------------------------------------------------------------
-// A workspace's harness plugins (charter-app#282)
+// A workspace's old harness plugins (charter-app#282, ignored since #3467)
 // -------------------------------------------------------------------------------------
 
-fn plugin_off(id: &str) -> Edit {
-    at(&["harness_plugins", "claude", id], Some(Value::Bool(false)))
-}
-
 #[test]
-fn a_workspaces_harness_plugins_are_saved_and_are_what_the_resolver_reads_in_that_workspace() {
-    use crate::extension::project::Source;
-    use crate::harness_plugin::{CLAUDE_CODE, Choices, Plugin, resolve};
+fn a_workspaces_old_harness_plugins_are_refused_nothing_and_a_save_keeps_them() {
+    // #3467: ignored, said once by their own Notice, and never rewritten by another save.
+    let text = r#"{"settings": {"harness_plugins": {"cursor": {"x@y": 3}}}}"#;
+    assert_eq!(refusals(text, "alpha"), Vec::<String>::new());
     let dir = plane(Some(&old()));
     save(
         dir.path(),
         "alpha",
         Some(&old()),
-        &[plugin_off("figma@official")],
+        &[at(
+            &["harness_plugins", "claude", "purlis@inline"],
+            Some(Value::Bool(false)),
+        )],
     )
-    .unwrap();
-    assert!(
-        read_file(dir.path(), "alpha").unwrap().refusals.is_empty(),
-        "a well-formed harness_plugins table is not refused"
-    );
-    let installed = [Plugin {
-        id: "figma@official".into(),
-        harness: "claude",
-        name: "figma".into(),
-        source: "fixture".into(),
-    }];
-    let figma = |workspace: Option<&str>| {
-        let it = resolve(
-            &CLAUDE_CODE,
-            &installed,
-            &Choices::read_in(dir.path(), workspace),
-        )
-        .into_iter()
-        .find(|it| it.id == "figma@official")
-        .unwrap();
-        (it.wanted, it.source)
-    };
-    assert_eq!(figma(Some("alpha")), (Some(false), Source::Workspace));
-    assert_eq!(figma(None), (None, Source::Default));
-    assert_eq!(figma(Some("beta")), (None, Source::Default));
-}
-
-#[test]
-fn a_workspace_cannot_turn_charters_own_plugin_off_and_is_told_so_at_its_own_key() {
-    let dir = plane(Some(&old()));
-    let refused = save(
-        dir.path(),
-        "alpha",
-        Some(&old()),
-        &[plugin_off("purlis@inline")],
-    )
-    .unwrap_err();
-    assert_eq!(refused.len(), 1, "{refused:?}");
-    assert!(
-        refused[0].starts_with(
-            "settings.harness_plugins.claude.\"purlis@inline\" in \
-             workspaces/alpha/workspace.json cannot be false: purlis@inline is always on"
-        ),
-        "{}",
-        refused[0]
-    );
-    assert_eq!(on_disk(dir.path()), old(), "nothing was written");
-}
-
-#[test]
-fn a_workspace_naming_a_harness_charter_does_not_know_is_refused() {
-    let text = r#"{"settings": {"harness_plugins": {"cursor": {"x@y": true}}}}"#;
-    assert_eq!(
-        refusals(text, "alpha"),
-        vec![
-            "[settings.harness_plugins.cursor] in workspaces/alpha/workspace.json is not a \
-             harness purlis knows — one of: claude, opencode, codex"
-                .to_owned()
-        ]
-    );
+    .expect("saved: the table is no longer read");
+    assert!(read_file(dir.path(), "alpha").unwrap().refusals.is_empty());
 }
 
 #[test]
@@ -873,13 +815,13 @@ fn a_workspace_refusal_carries_its_key_under_settings() {
     );
 }
 
-/// **The theme and harness-plugin readers hand a workspace's keys over too** (#1292), each under
-/// `settings`, with a plugin id as one step.
+/// **The theme and harness-skill readers hand a workspace's keys over too** (#1292), each under
+/// `settings`, with a skill name as one step.
 #[test]
-fn a_workspaces_theme_and_harness_plugin_refusals_carry_their_keys() {
+fn a_workspaces_theme_and_harness_skill_refusals_carry_their_keys() {
     let manifest = r#"{"name": "alpha", "settings": {
         "theme": {"use": 3, "shade": "x"},
-        "harness_plugins": {"nope": {}, "codex": {"a.b": 1}}
+        "harness_skills": {"nope": {}, "codex": {"a.b": 1}}
     }}"#;
     let refusals = standing(manifest, "alpha");
     let key_of = |said: &str| {
@@ -894,12 +836,12 @@ fn a_workspaces_theme_and_harness_plugin_refusals_carry_their_keys() {
     assert_eq!(key_of("settings.theme.use in"), keys(&["theme", "use"]));
     assert_eq!(key_of("settings.theme.shade in"), keys(&["theme", "shade"]));
     assert_eq!(
-        key_of("[settings.harness_plugins.nope]"),
-        keys(&["harness_plugins", "nope"])
+        key_of("[settings.harness_skills.nope]"),
+        keys(&["harness_skills", "nope"])
     );
     assert_eq!(
         key_of("is not true or false"),
-        keys(&["harness_plugins", "codex", "a.b"])
+        keys(&["harness_skills", "codex", "a.b"])
     );
 }
 

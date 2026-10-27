@@ -5,8 +5,6 @@ import { CLASSIC, DEFAULT_THEME, OLD_PICKS, PURLIS, SYSTEM, THEME_ALIASES } from
 import { isWorkspaceColour, WORKSPACE_COLOURS } from "../theme/theme";
 import type { Option } from "./components";
 import type {
-  HarnessPlugin,
-  HarnessPlugins,
   InForce,
   ProjectExtension,
   ProjectExtensions,
@@ -366,76 +364,6 @@ function enabledInForce(it: ProjectExtension): boolean | undefined {
   if (it.state === "on" || it.state === "needs-approval") return true;
   if (it.state === "off") return false;
   return undefined;
-}
-
-/** The file a harness plugin's source is, by its own name: the layer that decided it. */
-function pluginFile(source: string): string {
-  if (source === "local") return "charter.local.toml";
-  if (source === "workspace") return "workspace.json";
-  return "charter.toml";
-}
-
-/** What a harness plugin is in this project or workspace, and why, in a sentence under its
- *  control. */
-function pluginStanding(it: HarnessPlugin, harness: string, scope: Scope): string {
-  const file = pluginFile(it.source);
-  if (!it.installed)
-    return `not installed on this machine — named in ${file}, so no chat is handed it`;
-  const where = it.origin === "" ? "" : ` Installed: ${it.origin}.`;
-  if (it.state === "not-set") return `not set — ${harness} decides, from its own settings.${where}`;
-  return `${it.state} in this ${scope} — from ${file}.${where}`;
-}
-
-/** Whose settings a section is: the project's two files, or one workspace's (charter-app#282). */
-export type Scope = "project" | "workspace";
-
-/**
- * **Harness plugins, one group per harness, in every section** (charter-app#274, #282, ADR 0050).
- * Local overrides the workspace, which overrides Shared, plugin by plugin; not set leaves a
- * plugin to the harness. A plugin charter fixes is a line and not a control, and a harness whose
- * adapter cannot apply is its "not supported yet" sentence, with what it has installed listed
- * under it. In a workspace's section a toggle writes `settings.harness_plugins.<harness>` of its
- * `workspace.json` — the same path under `settings` as the files' table.
- */
-export function harnessPluginGroups(harnesses: readonly HarnessPlugins[], scope: Scope): Group[] {
-  return harnesses.map((harness) => {
-    const chosen = harness.unsupported === null ? harness.plugins.filter((it) => !it.pinned) : [];
-    return {
-      title: `Harness plugins: ${harness.title}`,
-      note: harness.unsupported ?? harness.only_off ?? undefined,
-      empty:
-        harness.unsupported === null
-          ? `${harness.title} has no plugin installed on this machine.`
-          : "Nothing to choose here.",
-      // A select of on, off and not set, never a switch (#1865): not set leaves the plugin to
-      // the harness, whose own answer purlis does not know, so a switch could show no value.
-      controls: () =>
-        chosen.map((it) =>
-          onOffAt(
-            key("harness_plugins", harness.harness, it.id),
-            `${harness.title}: ${it.id}`,
-            pluginStanding(it, harness.title, scope),
-            "not set",
-          ),
-        ),
-      notes: (file) => [
-        ...(harness.record === null
-          ? []
-          : [
-              `Listed from ${harness.record}. A profile that points ${harness.title} at another directory is listed against that one when its chat starts.`,
-            ]),
-        ...(harness.trouble === null ? [] : [harness.trouble]),
-        ...harness.plugins.flatMap((it) => (it.pinned === null ? [] : [it.pinned])),
-        ...(harness.unsupported === null
-          ? []
-          : harness.plugins.map((it) => `Installed: ${it.id} (${it.origin})`)),
-        ...harness.plugins.flatMap((it) =>
-          it.ignored.filter((one) => one.file === file.file).map((one) => one.why),
-        ),
-      ],
-      leftOut: () => harness.local_left_out,
-    };
-  });
 }
 
 /** charter's own picks, for when the core could not be asked what else there is: the two

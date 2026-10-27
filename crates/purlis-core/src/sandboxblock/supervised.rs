@@ -89,7 +89,8 @@ pub fn block_of_in(
 const UNLINKED: &str = " (deleted)";
 
 /// Whether the supervisor tells blocks such as `block` itself: every refused file operation,
-/// local socket and service on this machine. A lookup past the proxy it never sees.
+/// local socket and service on this machine, and every refused listen on a port of it (#2019).
+/// A lookup past the proxy it never sees.
 pub fn tells(block: &Block) -> bool {
     matches!(
         (block.operation, block.kind),
@@ -98,6 +99,7 @@ pub fn tells(block: &Block) -> bool {
                 Operation::Connect,
                 Kind::LocalSocket | Kind::LocalService | Kind::Address
             )
+            | (Operation::Listen, Kind::LocalService)
     )
 }
 

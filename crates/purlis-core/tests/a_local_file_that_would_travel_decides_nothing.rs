@@ -6,7 +6,7 @@
 //! The rule is the local file's own: an ignored file must not change plane policy with no trace
 //! in git. A file git tracks, or would commit, is not that file any more — it reaches every clone
 //! — so NOTHING in it is read: not its profiles (ADR 0022, already), and not its extensions, its
-//! theme or its harness plugins either (ADR 0048, ADR 0050). Every reader of the Local layer takes
+//! theme or its harness skills either (ADR 0048, ADR 0050). Every reader of the Local layer takes
 //! it through one function, `settings::layer_text`, so a reader added later cannot forget.
 //!
 //! Each reader is asked of the same three planes: the local file ignored (Local decides), not
@@ -28,12 +28,12 @@ use purlis_core::settings::{self, LayerText, Which};
 mod support;
 
 const SHARED: &str = "[extensions.stats]\nenabled = true\n\n[theme]\nuse = \"purlis-light\"\n\n\
-                      [harness_plugins.claude]\n\"figma@official\" = true\n";
+                      [harness_skills.claude]\nlangfuse = true\n";
 
 const LOCAL: &str = "[extensions.stats]\nenabled = false\n\n[theme]\nuse = \"purlis-dark\"\n\n\
-                     [harness_plugins.claude]\n\"figma@official\" = false\n";
+                     [harness_skills.claude]\nlangfuse = false\n";
 
-const MANIFEST: &str = r#"{"settings": {"extensions": {"stats": {"enabled": true}}, "theme": {"use": "system"}, "harness_plugins": {"claude": {"figma@official": true}}}}"#;
+const MANIFEST: &str = r#"{"settings": {"extensions": {"stats": {"enabled": true}}, "theme": {"use": "system"}, "harness_skills": {"claude": {"langfuse": true}}}}"#;
 
 /// How git stands to the local file.
 #[derive(Clone, Copy, Debug)]
@@ -102,7 +102,7 @@ fn an_ignored_local_file_is_read_by_every_reader() {
     );
     assert_eq!(
         harness_plugin::Choices::read(root),
-        harness_plugin::Choices::from_text(Some(SHARED), Some(LOCAL)).of_project(root)
+        harness_plugin::Choices::from_text(Some(SHARED), Some(LOCAL))
     );
     assert_eq!(settings::layer_text(root, Which::Local).text(), Some(LOCAL));
     assert_eq!(settings::layer_text(root, Which::Local).left_out(), None);
@@ -146,18 +146,18 @@ fn a_local_file_git_would_commit_or_tracks_picks_no_theme() {
 }
 
 #[test]
-fn a_local_file_git_would_commit_or_tracks_chooses_no_harness_plugin() {
+fn a_local_file_git_would_commit_or_tracks_turns_off_no_harness_skill() {
     purlis_core::unsteered!();
     for how in [Git::Committable, Git::Tracked] {
         let dir = plane(how);
         let root = dir.path();
 
         let (shared, local) = left_out(root);
-        let without = || harness_plugin::Choices::from_layers(&shared, &local).of_project(root);
+        let without = || harness_plugin::Choices::from_layers(&shared, &local);
         assert_eq!(harness_plugin::Choices::read(root), without(), "{how:?}");
         assert_eq!(
             harness_plugin::Choices::read_in(root, Some("alpha")),
-            without().in_workspace("alpha", Some(MANIFEST)),
+            without().in_workspace(Some(MANIFEST)),
             "{how:?}"
         );
     }
@@ -206,11 +206,6 @@ fn each_reader_says_it_left_the_local_file_out_in_the_local_sections_words() {
                 Some(said),
                 "{how:?} {workspace:?}: theme"
             );
-            assert_eq!(
-                harness_plugin::Choices::read_in(root, workspace).local_left_out("claude"),
-                Some(said),
-                "{how:?} {workspace:?}: harness plugins"
-            );
         }
     }
 }
@@ -231,10 +226,6 @@ fn a_local_file_that_is_read_or_is_not_there_is_left_out_of_nothing() {
                 None
             );
             assert_eq!(theme::Said::read_in(root, workspace).local_left_out(), None);
-            assert_eq!(
-                harness_plugin::Choices::read_in(root, workspace).local_left_out("claude"),
-                None
-            );
         }
     }
 }
@@ -242,16 +233,12 @@ fn a_local_file_that_is_read_or_is_not_there_is_left_out_of_nothing() {
 #[test]
 fn a_left_out_local_file_is_said_only_where_it_would_have_decided_something() {
     purlis_core::unsteered!();
-    // A Local file that sets only a default profile, and one plugin of one harness: nothing it
-    // says was an extension or a theme, so those groups have nothing that was not applied.
+    // A Local file that sets only a default profile: nothing it says was an extension or a
+    // theme, so those groups have nothing that was not applied.
     let dir = plane(Git::Committable);
     let root = dir.path();
-    fs::write(
-        root.join(LOCAL_FILE),
-        "[harness]\ndefault = \"claude\"\n\n[harness_plugins.claude]\n\"figma@official\" = false\n",
-    )
-    .unwrap();
-    let said = why(root);
+    fs::write(root.join(LOCAL_FILE), "[harness]\ndefault = \"claude\"\n").unwrap();
+    assert!(!why(root).is_empty(), "the file is left out");
 
     for workspace in [None, Some("alpha")] {
         assert_eq!(
@@ -259,10 +246,6 @@ fn a_left_out_local_file_is_said_only_where_it_would_have_decided_something() {
             None
         );
         assert_eq!(theme::Said::read_in(root, workspace).local_left_out(), None);
-        let plugins = harness_plugin::Choices::read_in(root, workspace);
-        assert_eq!(plugins.local_left_out("claude"), Some(said.as_str()));
-        assert_eq!(plugins.local_left_out("codex"), None);
-        assert_eq!(plugins.local_left_out("opencode"), None);
     }
 }
 

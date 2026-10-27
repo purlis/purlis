@@ -228,6 +228,21 @@ pub enum Action {
     Question { question: String },
 }
 
+impl Action {
+    /// What an ask about this action says, before it is put on one line and masked: the text
+    /// its [`Summary`] is made from.
+    pub fn said(&self) -> String {
+        match self {
+            Self::Unsaid => "Asks for you".to_owned(),
+            Self::Command { line } => format!("Run a command: {line}"),
+            Self::Edit { path } => format!("Change {path}"),
+            Self::Tool { name, input } => format!("Use {name}: {input}"),
+            Self::Elicit { fields } => format!("Give values for: {}", fields.join(", ")),
+            Self::Question { question } => format!("Asks you: {question}"),
+        }
+    }
+}
+
 /// One answer a source offers.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Choice {
@@ -362,41 +377,117 @@ impl Summary {
     /// A masked summary is not its action word for word, so nothing that lets the call run is
     /// offered beside it ([`super::hooked::shown_in_full`]).
     pub fn of(text: &str) -> Self {
-        let line = one_line(text);
-        let mut spans = crate::secretshape::leak_spans(&line);
-        spans.extend(
-            crate::secrets::seen::found_in(&line)
-                .into_iter()
-                .map(|span| (span, VAULT_VALUE)),
-        );
-        spans.sort_by_key(|(span, _)| (span.start, std::cmp::Reverse(span.end)));
-        let mut out = String::with_capacity(line.len());
-        let mut at = 0;
-        for (span, kind) in spans {
-            if span.end <= at {
-                continue;
+        Self(cut(masked(&one_line(text), text)))
+    }
+
+    /// **The lines `text` runs over, as its summary shows them** (#3502): where `text` breaks
+    /// a line (`\n` or `\r\n`) that the summary puts on one, the count of its lines, and each
+    /// one. Blank lines and the blanks that indent a line are collapsed, as on the summary's line.
+    ///
+    /// **The lines are the summary, split.** They are masked and cut as it is, and each is kept
+    /// only where, joined by a space, they are the summary character for character: they never
+    /// show a word, or a part of a value, the summary does not. Where they would not be
+    /// (masking across a line end reads differently from masking on one line), none is shown,
+    /// and only the count is said. Text on one line has none.
+    pub fn lines_of(text: &str) -> Option<Lines> {
+        let laid = laid_out(text);
+        if !laid.contains('\n') {
+            return None;
+        }
+        let lines = masked(&laid, text);
+        let shown = cut(lines.clone());
+        Some(if shown.replace('\n', " ") == Self::of(text).0 {
+            // Counted once masked, so a mask over a line end counts the line it joined once.
+            Lines {
+                count: lines.split('\n').count(),
+                shown: shown.split('\n').map(str::to_owned).collect(),
             }
-            // One that begins inside the last is joined to it: its mask is already written.
-            if span.start >= at {
-                out.push_str(&line[at..span.start]);
-                out.push_str(&format!("[{kind}]"));
+        } else {
+            Lines {
+                count: laid.split('\n').count(),
+                shown: Vec::new(),
             }
-            at = span.end;
-        }
-        out.push_str(&line[at..]);
-        if still_holds_a_vault_value(text, &out) {
-            out = format!("[{VAULT_VALUE}]");
-        }
-        if out.chars().count() > SUMMARY_WIDTH {
-            out = out.chars().take(SUMMARY_WIDTH - 1).collect();
-            out.push('…');
-        }
-        Self(out)
+        })
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// The lines a text runs over, as [`Summary::lines_of`] shows them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lines {
+    /// How many lines it runs over, counted before the summary is cut: as masked, where the
+    /// lines are shown.
+    pub count: usize,
+    /// Each line as the summary shows it, masked and cut as it is. Empty where they could not
+    /// be shown as the summary shows them.
+    pub shown: Vec<String>,
+}
+
+/// `line`, made from `text`, as a [`Summary`] masks it: each credential shape and each vault
+/// value masked, and the whole of it the mask where a value `text` held still stands on it.
+fn masked(line: &str, text: &str) -> String {
+    let mut spans = crate::secretshape::leak_spans(line);
+    spans.extend(
+        crate::secrets::seen::found_in(line)
+            .into_iter()
+            .map(|span| (span, VAULT_VALUE)),
+    );
+    spans.sort_by_key(|(span, _)| (span.start, std::cmp::Reverse(span.end)));
+    let mut out = String::with_capacity(line.len());
+    let mut at = 0;
+    for (span, kind) in spans {
+        if span.end <= at {
+            continue;
+        }
+        // One that begins inside the last is joined to it: its mask is already written.
+        if span.start >= at {
+            out.push_str(&line[at..span.start]);
+            out.push_str(&format!("[{kind}]"));
+        }
+        at = span.end;
+    }
+    out.push_str(&line[at..]);
+    if still_holds_a_vault_value(text, &out) {
+        out = format!("[{VAULT_VALUE}]");
+    }
+    out
+}
+
+/// `out` cut to [`SUMMARY_WIDTH`] characters, the last an ellipsis where it was cut.
+fn cut(mut out: String) -> String {
+    if out.chars().count() > SUMMARY_WIDTH {
+        out = out.chars().take(SUMMARY_WIDTH - 1).collect();
+        out.push('…');
+    }
+    out
+}
+
+/// `text` with the white space a command line is laid out with collapsed ([`one_line`]): each
+/// run of spaces, tabs and line ends (`\n` or `\r\n`) is one line end where it held one, and
+/// one space otherwise. The lines a reader is shown ([`Summary::lines_of`]).
+fn laid_out(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut gap = None;
+    for c in text.replace("\r\n", "\n").chars() {
+        match c {
+            '\n' => gap = Some('\n'),
+            ' ' | '\t' => {
+                gap.get_or_insert(' ');
+            }
+            _ => {
+                if let Some(gap) = gap.take()
+                    && !out.is_empty()
+                {
+                    out.push(gap);
+                }
+                out.push(c);
+            }
+        }
+    }
+    out
 }
 
 /// `text` on one line: the white space a command line is laid out with collapsed to one space.
@@ -406,11 +497,7 @@ impl Summary {
 /// tab, a form feed, a next line, a line or paragraph separator, #3470). Purlis's one rule
 /// marks it where the line is shown, so the window can say why it is not offered Allow.
 fn one_line(text: &str) -> String {
-    text.replace("\r\n", "\n")
-        .split([' ', '\t', '\n'])
-        .filter(|word| !word.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+    laid_out(text).replace('\n', " ")
 }
 
 /// Whether `written`, the masked line made from `text`, still shows a vault value `text` held:
