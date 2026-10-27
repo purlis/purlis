@@ -2720,5 +2720,5 @@ pub fn count(root: &Path, started: Started) -> io::Result<()> {
 }
 
 #[cfg(test)]
-#[path = "local_tests.rs"]
+#[path = "local/tests.rs"]
 mod tests;

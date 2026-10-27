@@ -6260,9 +6260,9 @@ fn built_in_skills_here() -> Option<std::path::PathBuf> {
 pub(crate) mod tests;
 
 #[cfg(test)]
-#[path = "chats_restoring_tests.rs"]
+#[path = "chats/tests/restoring.rs"]
 mod restoring_tests;
 
 #[cfg(test)]
-#[path = "chats_letting_go_tests.rs"]
+#[path = "chats/tests/letting_go.rs"]
 mod letting_go_tests;

@@ -928,5 +928,5 @@ pub fn env(proxy: &str, tmp: &Path) -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
-#[path = "seatbelt_tests.rs"]
+#[path = "seatbelt/tests.rs"]
 mod tests;

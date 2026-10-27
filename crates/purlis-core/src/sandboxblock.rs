@@ -2371,7 +2371,7 @@ pub mod supervised;
 pub mod drivers;
 
 #[cfg(test)]
-#[path = "sandboxblock_tests.rs"]
+#[path = "sandboxblock/tests.rs"]
 mod tests;
 
 #[cfg(test)]
@@ -2379,13 +2379,13 @@ mod tests;
 mod network_tests;
 
 #[cfg(test)]
-#[path = "sandboxblock_printed_tests.rs"]
+#[path = "sandboxblock/tests/printed.rs"]
 mod printed_tests;
 
 #[cfg(test)]
-#[path = "sandboxblock_background_tests.rs"]
+#[path = "sandboxblock/tests/background.rs"]
 mod background_tests;
 
 #[cfg(test)]
-#[path = "sandboxblock_drivers_tests.rs"]
+#[path = "sandboxblock/tests/drivers.rs"]
 mod drivers_tests;

@@ -5246,9 +5246,9 @@ pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
 mod tests;
 
 #[cfg(test)]
-#[path = "planes_restoring_tests.rs"]
+#[path = "planes/tests/restoring.rs"]
 mod restoring_tests;
 
 #[cfg(all(test, unix))]
-#[path = "planes_review_tests.rs"]
+#[path = "planes/tests/review.rs"]
 mod review_tests;

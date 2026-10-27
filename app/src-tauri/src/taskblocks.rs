@@ -955,5 +955,5 @@ impl Blocks {
 }
 
 #[cfg(test)]
-#[path = "taskblocks_tests.rs"]
+#[path = "taskblocks/tests.rs"]
 mod tests;
