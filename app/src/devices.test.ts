@@ -63,6 +63,11 @@ describe("healthSaid", () => {
     });
   });
 
+  it("says a runner its link calls suspended is suspended", () => {
+    const asked = { ...answered("running"), link: { state: "suspended" as const } };
+    expect(healthSaid(asked)).toMatchObject({ badge: "suspended", trouble: false });
+  });
+
   it("says why a runner does not answer", () => {
     const asked = { ...answered("running"), link: { state: "down" as const, why: "timed out" } };
     expect(healthSaid(asked)).toEqual({

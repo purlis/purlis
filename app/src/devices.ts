@@ -168,7 +168,8 @@ export type Health = { badge: string; line?: string; trouble: boolean };
 export function healthSaid(asked: RunnerAsked | "asking" | undefined): Health {
   if (asked === undefined || asked === "asking") return { badge: "asking…", trouble: false };
   const standing = asked.standing;
-  if (standing.state === "suspended")
+  // Suspended, as its container says, or as its link does (#2051).
+  if (standing.state === "suspended" || asked.link?.state === "suspended")
     return {
       badge: "suspended",
       line: "Its container is stopped and its home is kept. It starts again when one of its chats is next used.",
