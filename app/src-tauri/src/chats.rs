@@ -186,6 +186,8 @@ pub struct ChatForSkills {
     pub harness: Option<Harness>,
     /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
     pub salt: Option<purlis_core::skillspan::PromptSalt>,
+    /// Whether the plane's skills reached it at its start ([`Running::plane_skills`], #3445).
+    pub plane_skills: bool,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -402,6 +404,13 @@ struct Running {
     /// change to them: what [`Chats::skills_changed`] compares with the skills now. `None` for a
     /// chat that runs no harness.
     skills: Option<purlis_core::skills::Stamp>,
+    /// **Whether the plane's skills reached it at its start** (#3445): the Skill studio's flag
+    /// as this window read it once as the chat started (`purlis_core::skills::reach_chats_here`),
+    /// which its arming, its Notice, its stamp and Use skill… all take. Two cases it can only
+    /// approximate, as its stamp always has: a chat reattached from the session host (#2006)
+    /// takes the flag as read at its reattach, since nothing records its first start's; and a
+    /// runner's chat is armed by its runner (#2446), so this is this machine's word for it.
+    plane_skills: bool,
 }
 
 /// **The personas a chat is named by** (#2691), from one read of the app's record of its run
@@ -3300,13 +3309,16 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
+        // here, so its arming, its Notice, its stamp and Use skill… take the same word.
+        let plane_skills = purlis_core::skills::reach_chats_here(&self.project);
         // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
         // arms it below and what its tab's Notice says are both worked out from this.
         let skills = if on_the_runner {
             purlis_core::hoststart::ChatSkills::default()
         } else {
             purlis_core::hoststart::ChatSkills::read(
-                purlis_core::skills::reach_chats_here(&self.project),
+                plane_skills,
                 &self.project,
                 harness,
                 chat.cwd.as_deref(),
@@ -3808,6 +3820,7 @@ impl Chats {
         // Read before any lock is taken: a stamp is a read of the plane's skill folders.
         let skills = harness.map(|harness| {
             purlis_core::skills::stamp_now(
+                plane_skills,
                 &self.project,
                 workspace.as_deref(),
                 under.persona.as_deref(),
@@ -3836,6 +3849,7 @@ impl Chats {
                 composed_by_its_host: on_the_runner,
                 grants_as: grants_persona_of(chat, &self.project),
                 skills,
+                plane_skills,
             },
         );
         lock(&self.sizes).insert(session, size);
@@ -4754,6 +4768,7 @@ impl Chats {
             workspace: running.workspace.clone(),
             persona: running.persona().started_as,
             harness: running.harness,
+            plane_skills: running.plane_skills,
             salt: running
                 .chat
                 .identity

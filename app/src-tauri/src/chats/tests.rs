@@ -2576,6 +2576,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             )),
             grants_as: None,
             skills: None,
+            plane_skills: true,
         },
     );
 
@@ -2649,6 +2650,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 composed_by_its_host: false,
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
             },
         );
     };
@@ -3086,6 +3088,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 composed_by_its_host: false,
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
             },
         );
     };
@@ -7304,6 +7307,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 composed_by_its_host: false,
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
             },
         );
         let case = format!("compiled {}, recorded {ran:?}", confines.is_some());
@@ -7744,6 +7748,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 composed_by_its_host: false,
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
             },
         );
     };
@@ -7796,6 +7801,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 ran: Some(purlis_session_protocol::session::RunSandbox::Off),
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
             },
         );
     };
@@ -7988,6 +7994,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 )),
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
             },
         );
     }
@@ -8095,7 +8102,9 @@ fn allowing_a_host_once_from_a_notice_is_refused_and_reaches_no_chat() {
 
 /// #2770: **a running chat whose skills changed is told so**, where its harness does not take the
 /// change in by itself: a Claude Code chat for an edit to a skill's text, which a Codex chat reads
-/// from where it lies, and both for a skill added. A chat on no harness is never told.
+/// from where it lies, and both for a skill added. A chat on no harness is never told. One whose
+/// start the plane's skills did not reach (the Skill studio's flag off, #3445) was stamped
+/// empty, so with the flag on now it is offered the restart that hands it them.
 #[test]
 fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     let plane = tempfile::tempdir().expect("a plane");
@@ -8111,10 +8120,11 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     };
     skill("deploy", "one");
     let chats = restartable_chats_of(plane.path(), Pretend::default());
-    for (session, harness) in [
-        (1, Some(Harness::ClaudeCode)),
-        (2, Some(Harness::Codex)),
-        (3, None),
+    for (session, harness, plane_skills) in [
+        (1, Some(Harness::ClaudeCode), true),
+        (2, Some(Harness::Codex), true),
+        (3, None, true),
+        (4, Some(Harness::ClaudeCode), false),
     ] {
         lock(&chats.open).insert(
             session,
@@ -8131,18 +8141,29 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 ran: None,
                 grants_as: None,
                 skills: harness.map(|harness| {
-                    purlis_core::skills::stamp_of(plane.path(), None, None, harness, None)
+                    purlis_core::skills::stamp_now(
+                        plane_skills,
+                        plane.path(),
+                        None,
+                        None,
+                        harness,
+                        None,
+                    )
                 }),
+                plane_skills,
             },
         );
     }
-    assert_eq!(chats.skills_changed_while_on(), Vec::<u32>::new());
+    assert_eq!(chats.skills_changed_while_on(), [4], "the flag is on now");
+    // Use skill… is told what its start read, never a constant.
+    assert!(chats.skills_of(1).expect("open").plane_skills);
+    assert!(!chats.skills_of(4).expect("open").plane_skills);
 
     // A Codex chat reads the SKILL.md purlis wrote for it at its start (SK-8), so an edit to a
     // body waits for a restart there too.
     skill("deploy", "two");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2]);
+    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
 
     skill("triage", "one");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2]);
+    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
 }

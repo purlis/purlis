@@ -1021,24 +1021,27 @@ fn load_text(name: &str, given: &Given) -> String {
 /// its root or in `workspace`, running as `persona`, on `harness`. The window takes one as a chat
 /// starts and again when the project's skills change; where they differ, the chat's harness does
 /// not take the change in by itself ([`Harness::skills_reload`]) and its tab offers a restart.
-/// An empty stamp where the project's skills do not reach its chats ([`reach_chats_here`]).
+/// An empty stamp where the plane's skills do not `reach` it (#3445): a chat they did not reach
+/// at its start was handed none of them.
 ///
 /// The built-in skills in `built_in` count against the chat's budget as they do where the chat
 /// is armed (SK-15), so what its router hides, and so its index, is what the chat was handed.
 pub fn stamp_now(
+    reach: bool,
     plane: &Path,
     workspace: Option<&str>,
     persona: Option<&str>,
     harness: Harness,
     built_in: Option<&Path>,
 ) -> Stamp {
-    if !reach_chats_here(plane) {
+    if !reach {
         return Stamp::default();
     }
     stamp_of(plane, workspace, persona, harness, built_in)
 }
 
-/// [`stamp_now`] whatever the flag says: for a caller that asked the flag once for many chats.
+/// [`stamp_now`] where the plane's skills reach the chat: for a caller that asked the flag once
+/// for many chats.
 pub fn stamp_of(
     plane: &Path,
     workspace: Option<&str>,
