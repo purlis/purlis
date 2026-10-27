@@ -25,7 +25,7 @@
 //! | `hold_project`, `let_go_of_project` (1.2), and the pushed `not_held` a relaying host says to the client that held the project (1.30) | yes | | | | | relayed |
 //! | `stop_all` (1.5) | yes | yes | yes | yes | | yes |
 //! | `kill_switch`, the switch's state (1.5) | yes | yes | yes | yes | | yes |
-//! | `rearm` (1.5) | yes | | | | | |
+//! | `rearm` (1.5) | yes | | | | | relayed (#2051) |
 //! | a start's `launch`, the window's own composed start (1.2) | yes | | | | | relayed |
 //! | `deal`, `dealt_already` (1.3) | yes | | | | | relayed |
 //! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | relayed |
@@ -161,7 +161,12 @@
 //!   (ADR 0075): a scope that could write in it could record a person's act no person made.
 //! - **Only the window re-arms** (ADR 0071, 1.5). Any agent can run a command, so a re-arm any
 //!   other scope could send would put a person's power in every agent's hands. A `rearm` from
-//!   another scope is refused in words saying where a re-arm is made.
+//!   another scope is refused in words saying where a re-arm is made. **A runner is re-armed by
+//!   its desktop's window, through its desktop's host** (#2051, ADR 0078 §4 and ADR 0071 as
+//!   amended, ruled V29b): a runner has no window of its own, so its peer's `remote-link` may
+//!   re-arm it, and the desktop's host sends one only as its own window re-arms it, to the
+//!   runners its stop reached, or on as it relays its window's link. No other scope of the
+//!   desktop's host reaches a link.
 //! - **`fleet-mcp` lists, watches events and stops.** Its clients are outside agents (HP-20),
 //!   and an agent never holds a human power (V16): it does not type into, start, resize, view
 //!   or answer a chat. A view of a terminal is left out until HP-20 asks for it.
@@ -314,6 +319,7 @@ impl Scope {
                     | P::TakeBack
                     | P::Unpair
                     | P::Code
+                    | P::Rearm
             ),
             S::FleetMcp => matches!(power, P::List | P::Stop | P::Subscribe),
             S::Approval => matches!(power, P::List | P::Answer | P::Stop | P::Subscribe),

@@ -15,7 +15,15 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
-import type { FinishedTask, InboxUpdate, Moved, Need, OpenChat, UpdateNoted } from "./bindings";
+import type {
+  FinishedTask,
+  InboxUpdate,
+  Moved,
+  Need,
+  OpenChat,
+  RunnerAway,
+  UpdateNoted,
+} from "./bindings";
 import type { State } from "./chatState";
 import { setChatsListPrefs } from "./chatsListPrefs";
 import { forgetThisLaunch } from "./regions";
@@ -208,6 +216,8 @@ function core(open: OpenChat[], rows: FinishedTask[] = [], other?: Project) {
     if (cmd === "dispatch_grants_needed") return [];
     if (cmd === "vault_refusals") return [];
     if (cmd === "owed_restarts") return [];
+    // Where each chat runs (#2051): this machine, unless a test puts some on a runner.
+    if (cmd === "runners_away") return runners;
     if (cmd === "alerts_everywhere") return [{ plane: PLANE, alerts: [], stopped: null }];
     // The Inbox's updates (#1693): kept as the core keeps them, where a test gives a store.
     if (keeps !== null && cmd === "inbox_updates") return keeps.shown();
@@ -342,6 +352,9 @@ async function whileAway(held: Awaited<ReturnType<typeof drawn>>) {
  *  none, as most tests here have. */
 let keeps: ReturnType<typeof keeping> | null = null;
 
+/** The runners the core says the project's chats run on (#2051): none, unless a test says. */
+let runners: RunnerAway[] = [];
+
 function keeping(kept: InboxUpdate[] = []) {
   const dismissed = new Set<string>();
   const shown = () =>
@@ -367,6 +380,7 @@ function keeping(kept: InboxUpdate[] = []) {
 
 beforeEach(() => {
   keeps = null;
+  runners = [];
   globalThis.localStorage.clear();
   forgetThisLaunch();
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -794,6 +808,37 @@ describe("the Inbox's updates (#1693)", () => {
         keys: ["task:01K7FAILED"],
         how: "read",
       }),
+    );
+  });
+});
+
+describe("while you were away, a section per runner (#2051)", () => {
+  it("says what each runner's chats did in a sentence of its own, with its branches", async () => {
+    runners = [
+      {
+        pool: "qa",
+        chats: [4],
+        branches: [{ workspace: "alpha", repo: "app", branch: "fix-login", ahead: 2 }],
+      },
+    ];
+    const held = await drawn();
+    await leave();
+    await held.finish(SEVEN_DONE[0], finished("01K7ONQA", "check qa", { chat: 4 }));
+    await held.move(4, "waiting", [4]);
+    await comeBack(LEFT + 30 * MINUTE);
+
+    const notice = await theSummary();
+    await waitFor(() =>
+      expect(said(notice)).toBe(
+        "While you were away: 1 task done. On qa\u2019s runner: 1 finished, 1 waiting on you, " +
+          "1 branch ready to push.",
+      ),
+    );
+    expect(held.asked("runners_away").at(-1)).toEqual({ plane: PLANE, sessions: [4] });
+
+    await userEvent.click(within(notice).getByRole("button", { name: /^1 branch ready to push/ }));
+    await waitFor(() =>
+      expect(held.asked("workspace_focused").at(-1)).toMatchObject({ workspace: "alpha" }),
     );
   });
 });

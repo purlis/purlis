@@ -512,6 +512,10 @@ struct Inner {
     most_bundle: OnceLock<u64>,
     /// Which runner it relays to drains (#2865): the binary's, or nothing.
     drains: OnceLock<crate::routing::DrainsTo>,
+    /// The runners this machine keeps, which the kill switch reaches (#2051).
+    runners: Arc<crate::reach::Runners>,
+    /// The desktop's links to this host, which a runner's suspends itself without (#2051).
+    unattended: crate::unattended::Links,
     /// Set once the window has quit (#2006): whoever serves this host stops.
     quit: tokio::sync::watch::Sender<bool>,
     /// Told whenever a window links or goes, or a project is held or let go of: what the host's
@@ -944,6 +948,8 @@ impl Hosting {
                 projects: OnceLock::new(),
                 most_bundle: OnceLock::new(),
                 drains: OnceLock::new(),
+                runners: Arc::default(),
+                unattended: crate::unattended::Links::default(),
                 seen_elsewhere: Mutex::new(None),
                 quit: tokio::sync::watch::Sender::new(false),
                 changed: tokio::sync::Notify::new(),
@@ -982,6 +988,10 @@ impl Hosting {
     pub async fn heed_stops_written_elsewhere(self) {
         loop {
             self.heed_a_stop_written_elsewhere().await;
+            // A runner the stop has not reached yet is tried again (#2051).
+            if self.inner.switch.is_stopped() {
+                self.inner.runners.try_the_owed_again().await;
+            }
             tokio::time::sleep(crate::killswitch::LOOK_EVERY).await;
         }
     }
@@ -1028,6 +1038,69 @@ impl Hosting {
     pub fn relaying_with(self, relays: crate::routing::RelaysTo) -> Hosting {
         let _ = self.inner.relays.set(relays);
         self
+    }
+
+    /// **This host's kill switch reaches every runner `every` says this machine keeps**
+    /// (#2051, ADR 0078 §7): a stop is sent to each, a link it relays carries a stop first while
+    /// it is stopped, and its window's re-arm re-arms the runners the stop reached
+    /// ([`crate::reach`]). Set once, as the binary builds its host.
+    pub fn stopping_runners_with(self, every: crate::reach::EveryRunner) -> Hosting {
+        self.inner.runners.given(every);
+        self
+    }
+
+    /// The desktop's links to this host (#2051).
+    pub(crate) fn unattended_links(&self) -> &crate::unattended::Links {
+        &self.inner.unattended
+    }
+
+    /// What a link relayed to `runner` sends first while this host is stopped (#2051).
+    pub(crate) fn stop_first(&self, runner: String) -> crate::reach::StopFirst {
+        let inner = Arc::downgrade(&self.inner);
+        crate::reach::StopFirst {
+            runner,
+            stopped: Arc::new(move || {
+                inner
+                    .upgrade()
+                    .is_some_and(|inner| inner.switch.is_stopped())
+            }),
+            runners: Arc::clone(&self.inner.runners),
+        }
+    }
+
+    /// The kill switch as it stands, with the runners its stop has not reached yet named
+    /// (#2051).
+    fn switch_now(&self) -> session::KillSwitch {
+        let mut switch = self.inner.switch.state();
+        if switch.stopped
+            && let Some(said) = crate::reach::not_reached_said(&self.inner.runners.owed())
+        {
+            switch.why = Some(match switch.why {
+                Some(why) => format!("{why} {said}"),
+                None => said,
+            });
+        }
+        switch
+    }
+
+    /// This host re-armed as `switch` says: the runners its stop reached are re-armed too, and
+    /// those that were not are named (#2051). Their agents stay stopped until they are.
+    async fn rearmed_runners(&self, mut switch: session::KillSwitch) -> session::KillSwitch {
+        let missed = self.inner.runners.rearm_the_reached().await;
+        if !missed.is_empty() {
+            let named: Vec<String> = missed
+                .iter()
+                .map(|(runner, why)| format!("{runner} ({why})"))
+                .collect();
+            let said = format!(
+                "This machine is re-armed, and the re-arm did not reach {}: chats there stay \
+                 stopped, and the next re-arm tries it again.",
+                named.join(", ")
+            );
+            crate::say(&said);
+            switch.why = Some(said);
+        }
+        switch
     }
 
     /// This host, telling by `drains` which runner it relays to drains (#2865).
@@ -1561,7 +1634,8 @@ impl Hosting {
     /// Throws the kill switch: kept first, so nothing starts from here on, then every program
     /// the host runs is ended, all at once. Each stays, with its last screen, until closed.
     async fn stop_all(&self) -> Answer {
-        let switch = self.inner.switch.stop();
+        // What it could not keep is said by `switch_now`.
+        self.inner.switch.stop();
         let programs: Vec<Arc<dyn Running>> = self
             .state()
             .programs
@@ -1573,7 +1647,10 @@ impl Hosting {
             })
             .collect();
         let _ = tokio::task::spawn_blocking(move || stop_together(programs)).await;
-        Answer::KillSwitch(switch)
+        // Then every runner this machine keeps, once this host's own programs are stopped
+        // (#2051).
+        self.inner.runners.stop_every().await;
+        Answer::KillSwitch(self.switch_now())
     }
 
     async fn start(&self, start: StartProgram, peer: &Peer) -> Result<Answer, Refusal> {
@@ -3029,6 +3106,7 @@ impl Hosting {
 
 impl session::Host for Hosting {
     async fn call(&self, command: Command, peer: &Peer) -> Result<Answer, Refusal> {
+        self.inner.unattended.heard(peer);
         if let Some(program) = browser_acted_on(&command) {
             self.opened_for(program, peer)?;
         }
@@ -3172,16 +3250,14 @@ impl session::Host for Hosting {
             }
             Command::StopAll => Ok(self.stop_all().await),
             // Only the window's link reaches this: the grants refuse every other.
-            Command::Rearm => self
-                .inner
-                .switch
-                .rearm()
-                .map(Answer::KillSwitch)
-                .map_err(|why| Refusal {
+            Command::Rearm => {
+                let switch = self.inner.switch.rearm().map_err(|why| Refusal {
                     code: session::STOPPED.into(),
                     why,
-                }),
-            Command::KillSwitch => Ok(Answer::KillSwitch(self.inner.switch.state())),
+                })?;
+                Ok(Answer::KillSwitch(self.rearmed_runners(switch).await))
+            }
+            Command::KillSwitch => Ok(Answer::KillSwitch(self.switch_now())),
             // Only the window's link reaches this: the grants refuse every other. A write is
             // made durable, so off the runtime.
             Command::Record { entry } => {
@@ -3272,6 +3348,7 @@ impl session::Host for Hosting {
     }
 
     async fn link_ended(&self, peer: &Peer) {
+        self.inner.unattended.ended(peer);
         self.let_go_of_the_links(peer);
         {
             let mut state = self.state();
@@ -3305,6 +3382,7 @@ impl session::Host for Hosting {
         _since: Since,
         peer: &Peer,
     ) -> Result<mpsc::Receiver<Pushed>, Refusal> {
+        self.inner.unattended.heard(peer);
         let (told, notices) = mpsc::channel(MOST_NOTICES_QUEUED);
         {
             let mut state = self.state();

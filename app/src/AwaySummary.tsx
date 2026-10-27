@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AwayRefusal, FinishedTask } from "./bindings";
+import {
+  commands,
+  type AwayRefusal,
+  type FinishedTask,
+  type PlaneId,
+  type RunnerAway,
+} from "./bindings";
 import { useChatsSelect, type Chats } from "./chatState";
 import { Notice } from "./Notice";
 import {
@@ -21,6 +27,13 @@ import {
   type AwayItem,
   type Queued,
 } from "./awayCounts";
+import {
+  awayByRunner,
+  countedOnRunners,
+  runnerPartsSaid,
+  runnerSaid,
+  type RunnerSection,
+} from "./awayRunners";
 import { Button } from "./ui/button/Button";
 import { AnchoredMenu, Menu, MenuItem, opensOnTheArrows } from "./ui/menu/Menu";
 
@@ -57,6 +70,7 @@ export function AwaySummary({
   onShowChat,
   onShowFinished,
   onShowInbox,
+  onShowChanges,
 }: {
   /** What the project's summary counts now ({@link useAwaySummary}). */
   away: AwayNow;
@@ -66,31 +80,65 @@ export function AwaySummary({
   onShowFinished: (task: FinishedTask) => void;
   /** Opens the Inbox, where a refused dispatch is answered (#1693). */
   onShowInbox?: () => void;
+  /** Opens Changes on a workspace, where a runner's branch is pushed (#2051). */
+  onShowChanges?: (workspace: string) => void;
 }) {
-  const { summary, dismiss } = away;
-  if (countedAway(summary) === 0) return null;
+  const { summary, runners, dismiss } = away;
+  if (countedAway(summary) + countedOnRunners(runners) === 0) return null;
   const go = (where: AwayGo) =>
     where.to === "chat"
       ? onShowChat(where.session)
       : where.to === "finished"
         ? onShowFinished(where.task)
-        : onShowInbox?.();
+        : where.to === "changes"
+          ? onShowChanges?.(where.workspace)
+          : onShowInbox?.();
   const parts = awayPartsSaid(summary);
+  const said = [awaySaid(summary), ...runners.map(runnerSaid)].filter((one) => one !== "");
   return (
-    <Notice cause="away-summary" label={awaySaid(summary)} onDismiss={dismiss}>
-      While you were away:{" "}
+    <Notice cause="away-summary" label={said.join(". ")} onDismiss={dismiss}>
+      While you were away
+      {parts.length > 0 ? ": " : "."}
       {parts.map(({ part, says }, at) => (
         <Fragment key={part}>
           {at > 0 && ", "}
           <AwayPart says={says} items={summary[part]} onGo={go} one={part === "refused"} />
         </Fragment>
       ))}
+      {parts.length > 0 && runners.length > 0 && "."}
+      {runners.map((section) => (
+        <RunnerPart key={section.pool} section={section} onGo={go} />
+      ))}
     </Notice>
   );
 }
 
-/** A project's summary as it stands, and the way to put it away. */
-export type AwayNow = { summary: AwaySummaryOf; dismiss: () => void };
+/**
+ * **One runner's section** (#2051): its own sentence after this machine's, each part a link as
+ * this machine's are: "On qa's runner: 2 finished, 1 waiting on you, 1 branch ready to push".
+ */
+function RunnerPart({ section, onGo }: { section: RunnerSection; onGo: (where: AwayGo) => void }) {
+  return (
+    <span>
+      {" "}
+      On {section.pool}&rsquo;s runner:{" "}
+      {runnerPartsSaid(section).map(({ part, says }, at) => (
+        <Fragment key={part}>
+          {at > 0 && ", "}
+          <AwayPart says={says} items={section[part]} onGo={onGo} />
+        </Fragment>
+      ))}
+      .
+    </span>
+  );
+}
+
+/** A project's summary as it stands, a section for each runner, and the way to put it away. */
+export type AwayNow = {
+  summary: AwaySummaryOf;
+  runners: readonly RunnerSection[];
+  dismiss: () => void;
+};
 
 /**
  * **A project's summary, kept whether or not the project is in front**: the project's view
@@ -99,12 +147,15 @@ export type AwayNow = { summary: AwaySummaryOf; dismiss: () => void };
  * person switches to it.
  */
 export function useAwaySummary({
+  plane,
   chats,
   on,
   finished,
   nameOf,
   refusedAway,
 }: {
+  /** The project, whose runners are asked where its chats run (#2051). */
+  plane?: PlaneId;
   /** The project's chats, which the queue is read from. */
   chats: Chats;
   /** Whether the person wants a summary at all (`chats.away`). */
@@ -122,13 +173,60 @@ export function useAwaySummary({
   const none = away.length === 0;
   const states = useChatsSelect(chats, (now) => (none ? NOTHING_READ : readOf(now)), sameRead);
   const tasks = useMemo(() => [...finished.values()].flat(), [finished]);
-  const summary = useMemo(
+  const counted = useMemo(
     () => awaySummaryOf({ away, finished: tasks, cameToNeed, states, nameOf, refusedAway }),
     [away, tasks, cameToNeed, states, nameOf, refusedAway],
   );
-  const counted = countedAway(summary);
-  useEffect(() => counts(counted), [counts, counted]);
-  return useMemo(() => ({ summary, dismiss }), [summary, dismiss]);
+  const runnersAway = useRunnersAway(plane, counted);
+  const whole = useMemo(() => awayByRunner(counted, runnersAway), [counted, runnersAway]);
+  const total = countedAway(whole.here) + countedOnRunners(whole.runners);
+  useEffect(() => counts(total), [counts, total]);
+  return useMemo(
+    () => ({ summary: whole.here, runners: whole.runners, dismiss }),
+    [whole, dismiss],
+  );
+}
+
+const NO_RUNNERS: readonly RunnerAway[] = [];
+
+/**
+ * **Where the chats a summary counts run** (#2051): asked of the window's core once there is
+ * something to count, and again as what it counts changes. Nothing is asked while the summary
+ * counts nothing, so no time away costs a look; one the core cannot answer leaves every chat
+ * this machine's, as the summary was before runners.
+ */
+function useRunnersAway(plane: PlaneId | undefined, summary: AwaySummaryOf): readonly RunnerAway[] {
+  const sessions = useMemo(() => {
+    const chats = new Set<number>();
+    for (const item of [...summary.done, ...summary.failed, ...summary.waiting]) {
+      if (item.go.to === "chat") chats.add(item.go.session);
+      if (item.go.to === "finished" && item.go.task.chat !== null) chats.add(item.go.task.chat);
+    }
+    return [...chats].sort((a, b) => a - b);
+  }, [summary]);
+  const key = sessions.join(" ");
+  const [runners, setRunners] = useState<{ key: string; runners: readonly RunnerAway[] }>();
+  useEffect(() => {
+    if (plane === undefined || key === "") return;
+    let current = true;
+    commands
+      .runnersAway(
+        plane,
+        key.split(" ").map((one) => Number(one)),
+      )
+      .then(
+        (answered) => {
+          // Only a list is an answer: anything else leaves every chat this machine's.
+          if (current && answered.status === "ok" && Array.isArray(answered.data))
+            setRunners({ key, runners: answered.data });
+        },
+        () => undefined,
+      );
+    return () => {
+      current = false;
+    };
+  }, [plane, key]);
+  return runners !== undefined && runners.key === key ? runners.runners : NO_RUNNERS;
 }
 
 /** One part of the summary: a link to its one chat, or to the list of its several. */

@@ -1416,10 +1416,14 @@ pub fn kill_switch_kind(event: crate::halt::Event) -> &'static str {
 /// user can run `purlis stop --all` and nothing says a person did.
 fn kill_switch_body(entry: &crate::halt::Entry) -> serde_json::Value {
     use crate::halt::Actor;
-    let (actor_kind, actor) = match entry.by {
-        Actor::Window => ("human", "operator"),
-        Actor::App => ("host", "purlis"),
-        Actor::Cli => ("unattributed", "unattributed"),
+    let (actor_kind, actor) = match (entry.by, entry.event) {
+        (Actor::Window, _) => ("human", "operator"),
+        (Actor::App, _) => ("host", "purlis"),
+        (Actor::Cli, _) => ("unattributed", "unattributed"),
+        // A link's re-arm is the desktop's window's, a person's; its stop may come from any
+        // scope of the desktop (ADR 0075, "ADR 0071, amended").
+        (Actor::Link, crate::halt::Event::Rearm) => ("human", "operator"),
+        (Actor::Link, _) => ("unattributed", "unattributed"),
     };
     serde_json::json!({
         "actor_kind": actor_kind,
@@ -2225,7 +2229,7 @@ impl Recorder {
                 return Ok(Vec::new());
             }
         }
-        let written = self.kill_switch_reconcile(config, None)?;
+        let written = self.kill_switch_reconcile(config, None, None)?;
         if let Some(seen) = self.kill_switch.as_mut() {
             seen.read_as = signature;
         }
@@ -2242,14 +2246,27 @@ impl Recorder {
         entry: crate::halt::Entry,
         config: &Path,
     ) -> io::Result<Vec<Event>> {
-        self.kill_switch_reconcile(config, Some(entry))
+        self.kill_switch_reconcile(config, Some(entry), None)
+    }
+
+    /// [`Recorder::kill_switch_wrote`], the line's event naming `device`, the desktop whose link
+    /// wrote it on a runner (#2051, ADR 0075 as amended: its device id in `meta`).
+    pub fn kill_switch_wrote_by(
+        &mut self,
+        entry: crate::halt::Entry,
+        device: Option<&str>,
+        config: &Path,
+    ) -> io::Result<Vec<Event>> {
+        self.kill_switch_reconcile(config, Some(entry), device)
     }
 
     fn kill_switch_reconcile(
         &mut self,
         config: &Path,
         wrote: Option<crate::halt::Entry>,
+        device: Option<&str>,
     ) -> io::Result<Vec<Event>> {
+        let mut device = device.and_then(|device| wrote.map(|line| (line, device.to_owned())));
         let keep = self.log.retention.keep;
         let oldest = crate::halt::now().saturating_sub(keep.as_secs());
         // Taken before the journal is read: a journal changed after it reads as changed.
@@ -2296,13 +2313,15 @@ impl Recorder {
         }
         let mut written = Vec::with_capacity(owed.len());
         for entry in owed {
-            let event = self.write(
-                None,
-                None,
-                None,
-                kill_switch_kind(entry.event),
-                kill_switch_body(&entry),
-            )?;
+            let mut body = kill_switch_body(&entry);
+            // The line a link wrote names the desktop's device, once (#2051).
+            if device.as_ref().is_some_and(|(line, _)| *line == entry)
+                && let Some((_, by)) = device.take()
+                && let Some(meta) = body.as_object_mut()
+            {
+                meta.insert("device".into(), serde_json::Value::String(by));
+            }
+            let event = self.write(None, None, None, kill_switch_kind(entry.event), body)?;
             if let Some(seen) = self.kill_switch.as_mut() {
                 *seen.logged.entry(entry).or_default() += 1;
             }

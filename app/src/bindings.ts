@@ -839,6 +839,12 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**
+	 *  **Each runner of `plane`'s chats, for the away summary** (#2051): of `sessions`, the chats
+	 *  that run on each pool's runner, and the branches each runner has, as this machine last
+	 *  fetched them. A pool none of them runs on and no workspace names is not said.
+	 */
+	runnersAway: (plane: PlaneId, sessions: number[]) => typedError<RunnerAway[], string>(__TAURI_INVOKE("runners_away", { plane, sessions })),
 	/**  Whether the session host is failing, and what the window says of it. */
 	sessionHostFailing: () => __TAURI_INVOKE<{
 	/**  How many unexpected exits tripped the breaker. */
@@ -4742,6 +4748,19 @@ export type BranchMerge = {
 	behind: number,
 	/**  The uncommitted paths in the task's folder. Any, and the merge is refused. */
 	uncommitted: string[],
+};
+
+/**  One branch of a runner, as this machine last fetched it (#2046). */
+export type BranchOnARunner = {
+	workspace: string,
+	/**  The clone's folder name in the workspace. */
+	repo: string,
+	branch: string,
+	/**
+	 *  The commits it has that this machine's branch of that name does not, or what this
+	 *  checkout is on where there is none.
+	 */
+	ahead: number,
 };
 
 /**  What a branch changed against the branch it was cut from, committed or not. */
@@ -10458,6 +10477,16 @@ export type RunStart =
 "grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
+
+/**  One runner of a project, as the away summary reads it. */
+export type RunnerAway = {
+	/**  The pool whose runner it is. */
+	pool: string,
+	/**  Of the chats asked about, those that run on it, by their number in the plane. */
+	chats: number[],
+	/**  Its branches, as this machine last fetched them, in the workspaces that run on it. */
+	branches: BranchOnARunner[],
+};
 
 /**  One branch of a pool's runner, as this machine last fetched it (#2046). */
 export type RunnerBranch = {

@@ -180,6 +180,8 @@ pub struct Relay {
     links: ByLink,
     named: Named,
     claimed: Claimed,
+    /// What each new link to the other host sends first while this host is stopped (#2051).
+    stop_first: Option<crate::reach::StopFirst>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -217,7 +219,15 @@ impl Relay {
             links: Arc::default(),
             named: Arc::default(),
             claimed: Arc::default(),
+            stop_first: None,
         }
+    }
+
+    /// This relay, each new link it makes to the other host carrying `first`'s stop before
+    /// anything else while this host is stopped (#2051, ADR 0078 §7).
+    pub(crate) fn stopping_first(mut self, first: crate::reach::StopFirst) -> Relay {
+        self.stop_first = Some(first);
+        self
     }
 
     /// This relay, holding the names its client links take in `claimed`, which other relays of
@@ -240,6 +250,7 @@ impl Relay {
                 peer.opener().clone(),
                 peer.scope(),
                 lock(&self.named).remove(&peer.link()),
+                self.stop_first.clone(),
             ))
         }));
         // The link ended while this one was made: what it made goes with it.
@@ -352,9 +363,16 @@ impl Drop for Relayed {
 impl Relayed {
     /// What the relay keeps for a client link, named to the other host as `window`, where it
     /// named itself, and else by a name of its own.
-    fn start(source: Source, opener: Opener, scope: Scope, window: Option<String>) -> Relayed {
+    fn start(
+        source: Source,
+        opener: Opener,
+        scope: Scope,
+        window: Option<String>,
+        stop_first: Option<crate::reach::StopFirst>,
+    ) -> Relayed {
         let client = Arc::new(ClientLink {
             scope,
+            stop_first,
             window: window.unwrap_or_else(|| ulid::Ulid::generate().to_string()),
             opener,
             kept: Mutex::default(),
@@ -555,6 +573,8 @@ impl LinkTold {
 /// carries over to each new link to the other host.
 struct ClientLink {
     scope: Scope,
+    /// What a new link to the other host sends first while this host is stopped (#2051).
+    stop_first: Option<crate::reach::StopFirst>,
     /// The relay's name for this client link, which every link to the other host made for it
     /// says ([`Command::TakeBack`], #2511): a name no other live client link is given, the
     /// digest of the window's own where it named itself ([`taken_back_as`], #2623).
@@ -860,6 +880,10 @@ async fn carry_over(
     tell: &watch::Sender<Standing>,
 ) -> Option<Arc<Upstream>> {
     let upstream = Upstream::on(link, client);
+    // While this host is stopped, a stop is the first thing the new link carries (#2051).
+    if let Some(first) = &client.stop_first {
+        first.on(&upstream.client).await;
+    }
     let mut carried = Carried::default();
     carry(&upstream, client, &mut carried).await.ok()?;
     tell.send_replace(Standing::Linking);

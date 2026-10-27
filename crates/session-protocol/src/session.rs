@@ -1192,7 +1192,7 @@ pub struct HeldProgram {
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KillSwitch {
     /// Every agent is stopped, and nothing starts until the window re-arms.
     pub stopped: bool,
@@ -1200,6 +1200,14 @@ pub struct KillSwitch {
     /// across its restart, or a state it could not read and so holds as stopped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<String>,
+    /// **It was stopped already when this stop came** (1.43, #2051): a runner stopped from its own
+    /// command line, which its desktop's re-arm leaves stopped. Said only in answer to a stop.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub already: bool,
+    /// **The runners this host's stop stopped, which its window's re-arm re-arms** (1.43,
+    /// #2051), each `<pool>/<runner>`: what the window lists before it re-arms.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runners: Vec<String>,
 }
 
 /// What a host said of a program it started ([`Client::start_program_told`]).
