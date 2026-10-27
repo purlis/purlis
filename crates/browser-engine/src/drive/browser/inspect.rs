@@ -82,51 +82,27 @@ const FIELD_ROLES: &[&str] = &["textbox", "searchbox", "combobox", "spinbutton",
 
 /// The stand-in for the front end's `WebSocket`, run in the front end before its own scripts: a
 /// constant. It opens nothing: what is sent goes through [`BINDING`], and what the page answers
-/// is handed to it by `deliver`, as a list of messages. Where the engine gives the front end its
-/// embedder interface (`DevToolsHost`), it is wrapped before anything reads it, so only the asks
-/// of [`EMBEDDER_ALLOWED`] reach the engine and every other is answered with nothing.
+/// is handed to it by `deliver`, as a list of messages. The engine's embedder interface
+/// (`DevToolsHost`) never reaches the front end, and of the hosts offered to it only DevTools'
+/// own hosted one is taken, so it runs as a hosted front end that asks nothing of the engine.
 pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
-  // The engine may install its embedder interface before this runs or after: either way, what
-  // the front end reads is the wrapped one.
-  const refusedNames = new Set();
-  const passedNames = new Set();
+  // The engine's embedder interface never reaches the front end, however and whenever the
+  // engine installs it, and the front end runs as a hosted one: of what is offered as its host,
+  // only a hosted one is taken (DevTools' own stand-in host), so the engine's never is.
   const errors = [];
   globalThis.addEventListener('error', (e) => { if (errors.length < 5) errors.push(String(e.message).slice(0, 160)); });
-  globalThis.addEventListener('unhandledrejection', (e) => { if (errors.length < 5) errors.push(String(e.reason && e.reason.message || e.reason).slice(0, 160)); });
-  const wrap = (native) => {
-    const allowed = new Set(EMBEDDER_ALLOWED);
-    const refuse = (message) => {
-      let id;
-      try { const asked = JSON.parse(message); id = asked.id; if (refusedNames.size < 64) refusedNames.add(String(asked.method).slice(0, 64)); } catch (e) { return; }
-      if (typeof id !== 'number') return;
-      setTimeout(() => {
-        const api = globalThis.DevToolsAPI;
-        if (api && typeof api.embedderMessageAck === 'function') api.embedderMessageAck(id, null);
-      }, 0);
-    };
-    const toEmbedder = (message) => {
-      let method;
-      try { method = JSON.parse(message).method; } catch (e) { return; }
-      if (passedNames.size < 64) passedNames.add(String(method).slice(0, 64));
-      if (allowed.has(method)) native.sendMessageToEmbedder(message);
-      else refuse(message);
-    };
-    return new Proxy(native, {
-      get(target, key) {
-        if (key === '__purlisWrapped') return true;
-        if (key === 'sendMessageToEmbedder') return toEmbedder;
-        const value = Reflect.get(target, key);
-        return typeof value === 'function' ? value.bind(target) : value;
-      },
-      set() { return false; },
-      defineProperty() { return false; },
-    });
-  };
-  let host = globalThis.DevToolsHost ? wrap(globalThis.DevToolsHost) : undefined;
   try {
-    Object.defineProperty(globalThis, 'DevToolsHost', {
-      get() { return host; },
-      set(native) { if (host === undefined && native) host = wrap(native); },
+    Object.defineProperty(globalThis, 'DevToolsHost', { get() { return undefined; }, set() {}, configurable: false });
+  } catch (e) {}
+  let frontEndHost;
+  try {
+    Object.defineProperty(globalThis, 'InspectorFrontendHost', {
+      get() { return frontEndHost; },
+      set(offered) {
+        try {
+          if (offered && typeof offered.isHostedMode === 'function' && offered.isHostedMode() === true) frontEndHost = offered;
+        } catch (e) {}
+      },
       configurable: false,
     });
   } catch (e) {}
@@ -162,36 +138,12 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
       }
     }
   };
-  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver, refused: () => [...refusedNames], asked: () => [...passedNames], errors: () => [...errors], sockets: () => open.length }), writable: false, configurable: false });
+  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver, errors: () => [...errors], sockets: () => open.length }), writable: false, configurable: false });
 })()";
 
-/// **What the front end may ask of the engine's embedder interface** (#2028), where the engine
-/// gives it one: its own settings and what it draws, and nothing that reaches past the front
-/// end (no network, file, window, tab or device of the engine's). Every other ask is answered
-/// with nothing and never reaches the engine.
-pub(crate) const EMBEDDER_ALLOWED: &[&str] = &[
-    "getPreferences",
-    "getPreference",
-    "setPreference",
-    "removePreference",
-    "clearPreferences",
-    "getSyncInformation",
-    "getHostConfig",
-    "setInspectedPageBounds",
-    "setIsDocked",
-    "setWhitelistedShortcuts",
-    "setEyeDropperActive",
-    "loadCompleted",
-    "zoomIn",
-    "zoomOut",
-    "resetZoom",
-    "copyText",
-];
-
-/// [`STAND_IN_SOURCE`] with [`EMBEDDER_ALLOWED`] in it: what runs in the front end.
+/// What runs in the front end before its own scripts: [`STAND_IN_SOURCE`].
 pub(crate) fn stand_in() -> String {
-    let allowed = serde_json::to_string(EMBEDDER_ALLOWED).expect("names serialise");
-    STAND_IN_SOURCE.replacen("EMBEDDER_ALLOWED", &allowed, 1)
+    STAND_IN_SOURCE.to_owned()
 }
 
 /// The function a batch is handed to the front end with: a constant, the batch its argument.
@@ -202,9 +154,6 @@ pub(crate) const DELIVER: &str =
 /// names what it found and nothing the front end showed.
 const HOSTED: &str = r"JSON.stringify({
   host: typeof globalThis.DevToolsHost,
-  wrapped: !!(globalThis.DevToolsHost && globalThis.DevToolsHost.__purlisWrapped),
-  refused: (globalThis.__purlisInspector && globalThis.__purlisInspector.refused) ? globalThis.__purlisInspector.refused() : null,
-  asked: (globalThis.__purlisInspector && globalThis.__purlisInspector.asked) ? globalThis.__purlisInspector.asked() : null,
   errors: (globalThis.__purlisInspector && globalThis.__purlisInspector.errors) ? globalThis.__purlisInspector.errors() : null,
   sockets: (globalThis.__purlisInspector && globalThis.__purlisInspector.sockets) ? globalThis.__purlisInspector.sockets() : null,
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
@@ -1227,26 +1176,5 @@ fn to_the_page(inner: &Inner, open: &Inspection, payload: &str) -> Option<String
     match inner.devtools.send_tapped(tap, id, method, params, session) {
         Ok(()) => None,
         Err(why) => refused(id, &why.to_string()),
-    }
-}
-
-#[cfg(test)]
-mod stand_in_tests {
-    use super::{EMBEDDER_ALLOWED, stand_in};
-
-    #[test]
-    fn the_stand_in_carries_the_embedder_asks_it_lets_through_and_no_other_name() {
-        let source = stand_in();
-        assert!(!source.contains("EMBEDDER_ALLOWED"));
-        assert!(source.contains(&serde_json::to_string(EMBEDDER_ALLOWED).unwrap()));
-        for never in [
-            "loadNetworkResource",
-            "openInNewTab",
-            "save",
-            "addFileSystem",
-            "setDevicesDiscoveryConfig",
-        ] {
-            assert!(!EMBEDDER_ALLOWED.contains(&never), "{never}");
-        }
     }
 }

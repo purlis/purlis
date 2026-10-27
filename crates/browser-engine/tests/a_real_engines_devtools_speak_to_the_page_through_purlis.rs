@@ -96,7 +96,7 @@ fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purli
         "a frame of DevTools is a JPEG"
     );
     assert_eq!(first.aim.page.as_str(), "devtools");
-    // The engine's embedder interface, where it gives the front end one, reaches it wrapped.
+    // The front end runs as a hosted one: the engine's embedder interface never reaches it.
     let start = Instant::now();
     while !browser
         .inspector_told()
@@ -118,8 +118,8 @@ fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purli
     // Said in the CI log, where the D-line reads it.
     println!("{found}");
     assert!(
-        found.contains(r#""host":"undefined""#) || found.contains(r#""wrapped":true"#),
-        "the engine's embedder interface reaches the front end unwrapped: {found}"
+        found.contains(r#""host":"undefined""#) && found.contains(r#""hosted":true"#),
+        "the front end does not run as a hosted one: {found}"
     );
     assert!(
         ends.lock().unwrap().is_empty(),
