@@ -566,7 +566,7 @@ fn droppable(method: &str) -> bool {
 
 /// `method` where it is a DevTools method's name (`Domain.name`, letters and digits): nothing a
 /// page wrote is ever repeated in the host's log.
-fn method_name(method: &str) -> Option<String> {
+pub(crate) fn method_name(method: &str) -> Option<String> {
     let plain = method.len() <= 64
         && method.split_once('.').is_some_and(|(domain, name)| {
             !domain.is_empty()

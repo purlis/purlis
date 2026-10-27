@@ -22,13 +22,6 @@ use common::site::started;
 use purlis_browser_engine::WebAddress;
 use purlis_browser_engine::drive::{Call, CallId, Content, InspectEnded, Painted};
 
-fn wait_for(what: &str, within: Duration, mut done: impl FnMut() -> bool) {
-    let start = Instant::now();
-    while !done() {
-        assert!(start.elapsed() < within, "{what}");
-        std::thread::sleep(Duration::from_millis(50));
-    }
-}
 
 /// The browser's pages, by id and address.
 fn pages_of(browser: &purlis_browser_engine::drive::Browser, call: &str) -> Vec<(String, String)> {
@@ -73,16 +66,21 @@ fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purli
     browser.show_inspector(Arc::new(move |painted| seen.lock().unwrap().push(painted)));
 
     // The front end speaks to the page through the stand-in: it asks for its document.
-    wait_for(
-        "the front end asked the page for its document",
-        Duration::from_secs(30),
-        || {
-            browser
-                .inspector_heard()
-                .iter()
-                .any(|method| method == "DOM.getDocument")
-        },
-    );
+    let start = Instant::now();
+    while !browser
+        .inspector_heard()
+        .iter()
+        .any(|method| method == "DOM.getDocument")
+    {
+        assert!(
+            start.elapsed() < Duration::from_secs(30),
+            "the front end never asked the page for its document; it asked {:?}; the engine told \
+             of its page {:?}",
+            browser.inspector_heard(),
+            browser.inspector_told()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let start = Instant::now();
     while frames.lock().unwrap().is_empty() {
         assert!(

@@ -984,6 +984,7 @@ fn front_end_event(
             // Only the front end's own main world speaks for it.
             let from = params["executionContextId"].as_i64();
             if from.is_none() || from != *lock(&open.main_context) {
+                open.noted("a call from another world was not taken");
                 return None;
             }
             if let Some(payload) = params["payload"].as_str()
@@ -999,6 +1000,7 @@ fn front_end_event(
                 && context["auxData"]["frameId"].as_str() == Some(open.front_end.as_str())
             {
                 *lock(&open.main_context) = context["id"].as_i64();
+                open.noted("its main world was made");
             }
         }
         "Runtime.executionContextsCleared" => *lock(&open.main_context) = None,
@@ -1117,6 +1119,9 @@ fn to_the_page(inner: &Inner, open: &Inspection, payload: &str) -> Option<String
         ours_unique: &ours_unique,
     };
     if let Some(why) = allowed::refused(method, &params, &reach) {
+        if let Some(name) = crate::cdp::method_name(method) {
+            open.noted(&format!("refused {name}"));
+        }
         return refused(id, &why);
     }
     {
