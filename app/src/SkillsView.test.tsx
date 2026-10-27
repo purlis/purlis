@@ -118,7 +118,7 @@ function view(
   return hands;
 }
 
-const list = () => screen.findByRole("grid", { name: "Skills" });
+const list = () => screen.findByRole("treegrid", { name: "Skills" });
 /** The row of skill `name`, by the words it is drawn with. */
 const rowOf = (name: string): HTMLElement => {
   const found = [...document.querySelectorAll<HTMLElement>('[data-testid^="skills-row-"]')].find(
@@ -127,9 +127,19 @@ const rowOf = (name: string): HTMLElement => {
   if (found === undefined) throw new Error(`no row of ${name}`);
   return found;
 };
-/** The groups the list draws, by their names, in their order. */
+/** The groups the list draws, by their names, in their order: the tree's rows at its top. */
 const groupNames = (grid: HTMLElement) =>
-  [...grid.querySelectorAll('[data-part="header"]')].map((one) => one.textContent);
+  [...grid.querySelectorAll('[role="row"][aria-level="1"]')].map(
+    (one) => one.querySelector('[data-part="label"]')?.textContent,
+  );
+/** The row of group `name`, at the tree's top. */
+const groupOf = (name: string): HTMLElement => {
+  const found = [...document.querySelectorAll<HTMLElement>('[data-testid^="skills-group-"]')].find(
+    (one) => one.querySelector('[data-part="label"]')?.textContent === name,
+  );
+  if (found === undefined) throw new Error(`no group ${name}`);
+  return found;
+};
 
 describe("what the Skills view lists", () => {
   it("is this workspace's skills by level, Needs you on top, each persona's own too", async () => {
@@ -200,15 +210,90 @@ describe("what the Skills view lists", () => {
     const grid = await list();
     await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
 
-    // One Tab stop: the list's first row, then the arrows.
+    // One Tab stop, then the arrows, through each level's row and the skills under it.
     act(() => rowOf("drafted").focus());
     await userEvent.keyboard("{ArrowDown}");
+    expect(groupOf("Built-in")).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
     expect(rowOf("secrets")).toHaveFocus();
-    await userEvent.keyboard("{ArrowDown}{Enter}");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
     expect(hands.onOpenView).toHaveBeenLastCalledWith(skillView("deploy"), "deploy");
 
     await userEvent.click(within(grid).getByText("ops-runbook"));
     expect(hands.onOpenView).toHaveBeenLastCalledWith(skillView("ops-runbook"), "ops-runbook");
+  });
+
+  it("is a tree whose levels fold and open with the arrows, Enter or a click (#3281)", async () => {
+    opsCore();
+    view();
+    const grid = await list();
+    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
+    // Each level is a branch, said open, with how many skills it holds.
+    expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true");
+    expect(groupOf("Project")).toHaveAttribute("aria-description", "2 skills");
+    expect(rowOf("deploy")).toHaveAttribute("aria-level", "2");
+
+    // ← on a skill moves to its level; ← again folds it, and its skills go.
+    act(() => rowOf("deploy").focus());
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(groupOf("Project")).toHaveFocus();
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "false"));
+    expect(within(grid).queryByText("deploy")).toBeNull();
+    // ↓ passes a folded level's skills; → opens it, and → again moves into it.
+    await userEvent.keyboard("{ArrowDown}");
+    expect(groupOf("Workspace")).toHaveFocus();
+    await userEvent.keyboard("{ArrowUp}{ArrowRight}");
+    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true"));
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(rowOf("deploy")).toHaveFocus());
+    // Enter on a level folds it, as a click on its row does; neither opens a tab.
+    act(() => groupOf("Built-in").focus());
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(groupOf("Built-in")).toHaveAttribute("aria-expanded", "false"));
+    await userEvent.click(within(groupOf("Workspace")).getByText("Workspace"));
+    await waitFor(() => expect(groupOf("Workspace")).toHaveAttribute("aria-expanded", "false"));
+  });
+
+  it("keeps its folds for the window, and draws them again as it opens", async () => {
+    opsCore();
+    view();
+    await list();
+    await waitFor(() => expect(rowOf("ops-runbook")).toBeInTheDocument());
+    act(() => groupOf("Workspace").focus());
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(SKILLS_VIEW.value().folded).toEqual(["workspace"]));
+    expect(SKILLS_VIEW.written()).toEqual({ folded: ["workspace"] });
+
+    cleanup();
+    view();
+    await list();
+    await waitFor(() => expect(groupOf("Workspace")).toHaveAttribute("aria-expanded", "false"));
+    expect(screen.queryByText("ops-runbook")).toBeNull();
+    expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("opens every level while a filter is typed, so a match is never folded away", async () => {
+    const many = Array.from({ length: 9 }, (_, at) => skill(`skill-${at}`));
+    core(() => studio([...many, skill("deploy")]));
+    SKILLS_VIEW.set({ onlyThisChat: false, folded: ["project"] });
+    view();
+    const grid = await list();
+    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "false"));
+
+    await userEvent.type(screen.getByRole("searchbox", { name: "Filter skills" }), "dep");
+    await waitFor(() => expect(within(grid).getByText("deploy")).toBeInTheDocument());
+    expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true");
+    // A fold while filtering is the filter's alone: the kept one waits for the box to clear.
+    act(() => groupOf("Project").focus());
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "false"));
+    act(() => groupOf("Project").focus());
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "true"));
+    expect(SKILLS_VIEW.value().folded).toEqual(["project"]);
+    await userEvent.clear(screen.getByRole("searchbox", { name: "Filter skills" }));
+    await waitFor(() => expect(groupOf("Project")).toHaveAttribute("aria-expanded", "false"));
   });
 
   it("finds a skill by typing its name, and filters a long list from its box", async () => {

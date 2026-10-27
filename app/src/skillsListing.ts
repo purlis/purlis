@@ -50,6 +50,29 @@ export type GroupId =
   | `program:${string}`
   | "not-in-chat";
 
+/** The groups named by purlis's own word, each program's apart. */
+const OWN_GROUPS: readonly string[] = [
+  "needs-you",
+  "built-in",
+  "project",
+  "workspace",
+  "personas",
+  "repo",
+  "local",
+  "not-in-chat",
+];
+
+/** The longest program's name a group is read back with: a title an adapter gives, not a path. */
+const MOST_PROGRAM = 64;
+
+/** **Whether `id` names a group**, as a kept fold is read back (`skillsViewPrefs.ts`). */
+export function isGroupId(id: unknown): id is GroupId {
+  if (typeof id !== "string") return false;
+  if (OWN_GROUPS.includes(id)) return true;
+  const program = id.startsWith("program:") ? id.slice("program:".length) : "";
+  return program.trim() !== "" && program.length <= MOST_PROGRAM;
+}
+
 /**
  * **A group, under its heading.** Every heading is drawn as purlis's own words are, a program's
  * too (#3308): a program's title is the name purlis's adapter gives it (`Claude Code`), not data

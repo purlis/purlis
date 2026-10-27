@@ -7629,7 +7629,8 @@ nav.piece-files-head {
 }
 
 /* The Skills view (#3266): a sidebar view, its header's two ways in, the switch to the chat in
-   front, then the list, which takes the rest and scrolls. The list's look is the list family's. */
+   front, then the tree, which takes the rest and scrolls. The tree's look is the tree family's
+   (#3281). */
 .skills-view {
   display: flex;
   flex-direction: column;
@@ -7665,8 +7666,9 @@ nav.piece-files-head {
   overflow: auto;
 }
 
-/* A row's one mark, in the quiet tier: never a colour alone (WCAG 1.4.1). */
-.skills-view-mark {
+/* A row's one mark, and a level's count, in the quiet tier: never a colour alone (WCAG 1.4.1). */
+.skills-view-mark,
+.skills-view-count {
   color: var(--text-quiet);
   font-size: var(--font-size-sm);
 }

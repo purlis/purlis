@@ -36,7 +36,7 @@ import {
   type ListedSkill,
   type SkillAct,
 } from "./skillsListing";
-import { useOnlyThisChat } from "./skillsViewPrefs";
+import { useFoldedGroups, useOnlyThisChat } from "./skillsViewPrefs";
 import type { ViewRef } from "./tabs";
 import { useListFilter } from "./ui/list/ListFilter";
 
@@ -101,7 +101,8 @@ async function readSkills(plane: string, workspace: string | undefined): Promise
  * Every act is one the window already has: a row opens the skill's tab, Use in this chat is
  * Use skill… opened on it, the switch and the pin are the studio's, Show in Explorer opens
  * Explorer on its folder (a repo skill's in its clone), and New skill is the studio's three
- * starts. Only this chat's is kept in the layout file (`skillsViewPrefs.ts`).
+ * starts. Only this chat's and the folded levels are kept in the layout file
+ * (`skillsViewPrefs.ts`).
  */
 export function SkillsView({
   plane,
@@ -124,6 +125,7 @@ export function SkillsView({
   onShowInExplorer: (place: ExplorerPlace) => void;
 }) {
   const [only, setOnly] = useOnlyThisChat();
+  const [folded, onFold] = useFoldedGroups();
   const narrowed = only && chat !== undefined ? chat : undefined;
   // Where the rows are read for, and where the switch and Explorer act: the chat's own place
   // while narrowed to it, else the title bar's.
@@ -248,6 +250,8 @@ export function SkillsView({
         ),
       })}
       chat={chat === undefined ? undefined : { only, onOnly: setOnly }}
+      folded={folded}
+      onFold={onFold}
       notice={
         said !== undefined && (
           <Notice

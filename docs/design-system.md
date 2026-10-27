@@ -1193,10 +1193,12 @@ has it; nothing reads the key after that.
   (`app/src/railMode.ts`); the first frame draws the rail as it says. Where the rail would
   crowd the work, the window hides it over a `rail` left out (#3077, `app/src/railRoom.ts`), and
   that hide is never written.
-- **`skills`** is what the Skills view keeps for the window (#3308): `{ "onlyThisChat": true }`
-  while Only this chat's narrows its list to the chat in front, and left out while it lists every
-  skill, the default. Any other value is the default, and the Inbox says so. The switch writes
-  it (`app/src/skillsViewPrefs.ts`).
+- **`skills`** is what the Skills view keeps for the window (#3308, #3281): `"onlyThisChat": true`
+  while Only this chat's narrows its list to the chat in front, and `"folded"`, the levels folded
+  in its tree (`["built-in", "program:Claude Code"]`, at most 16, a name that is no level
+  skipped). Each is left out at its default, every skill listed and every level open, and the
+  whole entry while both are. Any other value is the default, and the Inbox says so. The switch
+  and the folds write it (`app/src/skillsViewPrefs.ts`).
 - **`dismissed`** is the Notices you dismissed (NO-2, V91j), per project by its path, each
   by its cause. A Notice stays hidden while its cause is kept here, and the window lets the
   cause go once the project answers without it, so the Notice shows again if the cause comes
