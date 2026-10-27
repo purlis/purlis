@@ -340,7 +340,7 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     );
   });
 
-  it("writes no size, weight or letter spacing of its own, but the scope switch's line's and the group head's", () => {
+  it("writes no size, weight or letter spacing of its own, but the scope switch's line's", () => {
     const own = app.filter(
       ({ context, property: name, value }) =>
         /\.chats-|\.chat-card/.test(context.join(" ")) &&
@@ -353,14 +353,6 @@ describe("the Chats list's words wear text roles (#1920)", () => {
       own.map(({ context, property: name, value }) => `${context.join(" ")} ${name}: ${value}`),
     ).toEqual([
       ".chats-top font-size: var(--font-size-sm)",
-      // A workspace's name is the frame's group head (#3484), which wears no text role: the
-      // panel family draws its own (`ui/panel/panel.css`), and this is its look, number for
-      // number, on a tree that is no list.
-      ".chats-section li.chats-group font-size: var(--font-size-xs)",
-      ".chats-section li.chats-group font-weight: var(--font-weight-medium)",
-      ".chats-section li.chats-group letter-spacing: 0.06em",
-      ".chats-section li.chats-group text-transform: uppercase",
-      ".chats-section li.chats-group > [data-count] letter-spacing: normal",
       ".chats-section .finished-task > .trouble font-size: var(--font-size-sm)",
     ]);
   });

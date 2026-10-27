@@ -3551,27 +3551,13 @@ body {
 }
 
 /* A workspace's name over its sessions, where the list is grouped by workspace: **the frame's
-   group head** (#3484, `ui/panel/panel.css`, the prototype's 26px `.ghead`), its name in the
-   quiet tier's 11px spaced capitals and its count at its end. Not a row of the tree, which stays
-   flat (#1672): each row says its own workspace. */
+   group head** (#3484), drawn by the panel family's rule for it (`ui/panel/panel.css`) on the
+   tree family's `header` part, so a theme that restyles a view's group heads restyles these too.
+   What is the Chats list's own: where its name starts, the room above it, and a long name cut.
+   Not a row of the tree, which stays flat (#1672): each row says its own workspace. */
 .chats-section li.chats-group {
-  align-items: center;
-  justify-content: space-between;
-  box-sizing: border-box;
-  min-block-size: calc(var(--size-chrome) + var(--space-1));
   margin-block-start: var(--space-2);
   padding-inline: var(--chats-name-at) var(--space-4);
-  color: var(--text-quiet);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  /* Held under the view's top while its chats are in sight (#3342), on the panel's fill; the
-     next workspace's name comes over it. */
-  position: sticky;
-  inset-block-start: var(--panel-section-top-size);
-  z-index: 1;
-  background-color: var(--panel-fill);
 }
 
 .chats-section li.chats-group > .chats-group-name {
@@ -3579,12 +3565,6 @@ body {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.chats-section li.chats-group > [data-count] {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: normal;
 }
 
 /* A chat row's time at its end (#3484, the prototype's `.rm`): short and quiet, in figures of one

@@ -1104,6 +1104,9 @@ export function ChatsSection({
                         role="none"
                         className="chats-group"
                         aria-hidden="true"
+                        // The tree family's group name, drawn as a view's group head is (#3484).
+                        data-scope="tree"
+                        data-part="header"
                       >
                         {/* The frame's group head (#3484): its name, and its count at its end. */}
                         <span className="chats-group-name">{row.workspace}</span>

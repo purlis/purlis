@@ -146,6 +146,23 @@ export function Panels({
   // and this names the region and the workspace it is drawing, as the one region did.
   const named = workspace === undefined ? "Attention" : `Attention · ${workspace}`;
 
+  /** Who works in the focused workspace (#3483): a persona one of its session records names,
+   *  or one of its chats runs as. No persona lives in a workspace (`personas/` is the plane's),
+   *  so this is where each has worked, and none with no workspace focused. */
+  const records = panels?.sessions;
+  const personasHere = useMemo(
+    () =>
+      workspace === undefined
+        ? NO_PERSONAS
+        : new Set([
+            ...(records ?? []).flatMap((record) =>
+              record.persona === null ? [] : [record.persona],
+            ),
+            ...(chatPersonasHere ?? NO_PERSONAS),
+          ]),
+    [workspace, records, chatPersonasHere],
+  );
+
   if (view === "vaults") {
     // A vault is the plane's, so the view is drawn with no workspace focused too.
     return (
@@ -161,18 +178,6 @@ export function Panels({
    *  scroll, with no room of its own around it, and the view's top is held at the top of it. */
   const aside = "panels panels-view ui-text-body";
   const all = [...(panels?.contributed ?? []), ...contributed];
-  /** Who works in the focused workspace (#3483): a persona one of its session records names,
-   *  or one of its chats runs as. No persona lives in a workspace (`personas/` is the plane's),
-   *  so this is where each has worked, and none with no workspace focused. */
-  const personasHere =
-    workspace === undefined
-      ? NO_PERSONAS
-      : new Set([
-          ...(panels?.sessions ?? []).flatMap((record) =>
-            record.persona === null ? [] : [record.persona],
-          ),
-          ...(chatPersonasHere ?? NO_PERSONAS),
-        ]);
   const draw = (panel: PanelView, at: string) => (
     <Contributed
       key={panel.key}

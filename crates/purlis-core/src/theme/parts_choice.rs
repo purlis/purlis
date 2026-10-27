@@ -104,7 +104,7 @@ pub(super) const CHECKBOX: Family = Family {
         Part {
             name: "count",
             since: super::NEXT,
-            description: "How many things a chip stands for, after its words (#3484).",
+            description: "How many things it stands for, after its words, on a box or a chip.",
             properties: &[Prop::Text],
         },
         Part {

@@ -459,6 +459,7 @@ describe("the Chats list in a narrow sidebar", () => {
           name: chat.querySelector(".session")?.textContent ?? "",
           timed: time !== undefined,
           timeWidth: time?.width ?? 0,
+          timeLeft: time?.left ?? 0,
           timeRight: time?.right ?? 0,
           nameRight: name?.right ?? 0,
           rowRight: chat.getBoundingClientRect().right,
@@ -489,7 +490,7 @@ describe("the Chats list in a narrow sidebar", () => {
     for (const one of timed) {
       check(`${one.name}: its time is not drawn`, one.timeWidth > 0, one);
       check(`${one.name}: its time is cut off`, one.timeRight <= one.rowRight + 0.5, one);
-      check(`${one.name}: its time is over its name`, one.nameRight <= one.timeRight, one);
+      check(`${one.name}: its name runs under its time`, one.nameRight <= one.timeLeft + 0.5, one);
     }
   });
 });
