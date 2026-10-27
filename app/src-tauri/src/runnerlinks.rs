@@ -297,35 +297,35 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
     })
 }
 
-/// **Has the runner keep this desktop's profile `profile` over a link of its own**
-/// (`keep_profile`, 1.43, #2049): the word for whether its harness says it is signed in there.
-pub fn keep_profile(
-    to: &ToARunner,
-    profile: purlis_session_protocol::session::ProfileToKeep,
-) -> Result<String, String> {
-    keep_profiles(to, vec![profile])?
-        .pop()
-        .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-}
+/// What a runner answered each profile it was asked to keep: whether it is signed in there, or
+/// why it was not kept.
+pub type Kept = Vec<Result<purlis_session_protocol::session::ProfileStanding, String>>;
 
-/// [`keep_profile`] for each of `profiles`, in order, over one link: each one's word, or why
-/// the runner did not keep it.
+/// **Has the runner keep each of this desktop's `profiles` over one link of its own**
+/// (`keep_profile`, 1.42, #2049), in order: whether each is signed in there, or why the runner
+/// did not keep it, its own words marked as its and cut short. `None` for a runner of a purlis
+/// before 1.42, which is sent nothing and runs chats on profiles of its own.
 pub fn keep_profiles(
     to: &ToARunner,
     profiles: Vec<purlis_session_protocol::session::ProfileToKeep>,
-) -> Result<Vec<Result<String, String>>, String> {
+) -> Result<Option<Kept>, String> {
+    use purlis_session_protocol::session::KNOWS_KEEP_PROFILE;
     on_one_link(to, async |linked| match linked {
+        Ok(client) if client.version() < KNOWS_KEEP_PROFILE => Ok(None),
         Ok(client) => {
             let mut said = Vec::with_capacity(profiles.len());
             for profile in profiles {
-                said.push(
-                    client
-                        .keep_profile(profile)
-                        .await
-                        .map_err(|why| why.to_string()),
-                );
+                said.push(client.keep_profile(profile).await.map_err(|why| {
+                    match why.refusal() {
+                        Some(refused) => format!(
+                            "the runner says: {}",
+                            purlis_core::shown::short(&refused.why)
+                        ),
+                        None => why.to_string(),
+                    }
+                }));
             }
-            Ok(said)
+            Ok(Some(said))
         }
         Err(down) => Err(down.why),
     })

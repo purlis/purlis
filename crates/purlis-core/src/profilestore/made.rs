@@ -264,23 +264,18 @@ pub(super) struct Making<'a> {
     /// This machine's settings, imported into it; none imports nothing.
     pub(super) machine: Option<&'a MachineSettings<'a>>,
     pub(super) sandbox_only: bool,
-    /// A runner keeping a desktop's profile (#2049) keeps its name, a built-in's included: no
-    /// folder of the runner's own is ever adopted in place under it.
-    pub(super) builtin_name: bool,
 }
 
 impl<'a> Making<'a> {
     const SANDBOX_ONLY: Making<'static> = Making {
         machine: None,
         sandbox_only: true,
-        builtin_name: false,
     };
 
     fn imported_from(machine: &'a MachineSettings<'a>) -> Self {
         Making {
             machine: Some(machine),
             sandbox_only: false,
-            builtin_name: false,
         }
     }
 }
@@ -303,7 +298,7 @@ pub(super) fn make(
             crate::shown::short(name)
         ));
     }
-    if !making.builtin_name && crate::profiles::KINDS.iter().any(|k| k.word == name) {
+    if crate::profiles::KINDS.iter().any(|k| k.word == name) {
         return Err(format!(
             "'{name}' is the name of the profile purlis gives every project for that harness. \
              Pick another name."
@@ -358,6 +353,7 @@ pub(super) fn make(
             sign_in: None,
             pinned: None,
             sandbox_only: making.sandbox_only,
+            kept_for: None,
             rest: Map::new(),
         };
         store.profiles.push(record.clone());

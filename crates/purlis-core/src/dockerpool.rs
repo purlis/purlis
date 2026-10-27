@@ -1673,9 +1673,9 @@ impl Docker {
 
     /// **The line a person's shell runs to sign the profile `name` in on `made`'s runner**
     /// (#2049), on the engine whose local socket is `engine`, to `provider`'s plan where one is
-    /// named: this `docker`, the engine named on the line so no setting of the shell's reaches
-    /// another, and the container by its id, checked as it was made first, as the connector
-    /// checks it before every link. Refused, with nothing to type, where the check fails.
+    /// named: the container checked as it was made first, as the connector checks it before
+    /// every link, then [`Docker::sign_in_login`] with settings of purlis's own
+    /// ([`settings::for_a_sign_in`]). Refused, with nothing to type, where either fails.
     pub fn sign_in_line(
         &self,
         made: &Made,
@@ -1684,21 +1684,55 @@ impl Docker {
         provider: Option<&str>,
     ) -> Result<String, String> {
         self.check(made).map_err(|why| why.0)?;
-        let engine = engine
-            .to_str()
-            .ok_or_else(|| "the Docker engine's socket is not a path purlis can type".to_owned())?;
-        let mut args = vec!["--host".to_owned(), format!("unix://{engine}")];
+        let settings_in = match &self.settings_in {
+            Some(folder) => folder.clone(),
+            None => crate::datahome::root()
+                .ok_or_else(|| "purlis has no data folder to keep docker's settings in".to_owned())?
+                .join(settings::DIR),
+        };
+        let settings = settings::for_a_sign_in(&settings_in).map_err(|why| why.0)?;
+        self.sign_in_login(made, engine, &settings, name, provider)?
+            .line()
+    }
+
+    /// **What the line [`Docker::sign_in_line`] types runs**: this `docker`, named by its path,
+    /// with Docker's settings the folder `settings` (`--config` and `DOCKER_CONFIG`), its plugin
+    /// hooks off (`DOCKER_CLI_HOOKS=false`), no context (`DOCKER_CONTEXT` cleared), the engine
+    /// named on the line (`--host unix://<engine>`), and the container by its id: no setting of
+    /// the shell's, or of the person's Docker, decides what runs.
+    pub fn sign_in_login(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        settings: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        let typed = |path: &std::path::Path, what: &str| {
+            path.to_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{what} is not at a path purlis can type"))
+        };
+        let settings = typed(settings, "docker's settings for the sign-in")?;
+        let mut args = vec![
+            "--config".to_owned(),
+            settings.clone(),
+            "--host".to_owned(),
+            format!("unix://{}", typed(engine, "the Docker engine's socket")?),
+        ];
         args.extend(made.sign_in_args(name, provider));
-        crate::profilestore::sign_in::Login {
-            program: self
-                .program
-                .to_str()
-                .ok_or_else(|| "this machine's docker is not at a path purlis can type".to_owned())?
-                .to_owned(),
+        Ok(crate::profilestore::sign_in::Login {
+            program: typed(&self.program, "this machine's docker")?,
             args,
-            env: Vec::new(),
-        }
-        .line()
+            env: vec![
+                ("DOCKER_CONFIG".to_owned(), settings),
+                ("DOCKER_CLI_HOOKS".to_owned(), "false".to_owned()),
+            ],
+            cleared: settings::CLEARED
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
+        })
     }
 
     /// What Docker says of `made`'s container, its home volume and the daemon, held to

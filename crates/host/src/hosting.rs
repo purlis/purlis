@@ -3255,7 +3255,7 @@ impl session::Host for Hosting {
                     .into(),
             }),
             // A runner's host keeps its desktop's profile on its link from that desktop
-            // (`serving`) before this host hears of it (1.43, #2049).
+            // (`serving`) before this host hears of it (1.42, #2049).
             Command::KeepProfile(_) => Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "this host is paired with no desktop over this link, so it keeps no \

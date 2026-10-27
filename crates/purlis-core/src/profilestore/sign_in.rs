@@ -396,10 +396,17 @@ pub struct Login {
     pub args: Vec<String>,
     /// The profile's folder variables, set over the terminal's own environment.
     pub env: Vec<(String, String)>,
+    /// Variables of the terminal's own environment taken away before it runs (`env -u`).
+    pub cleared: Vec<String>,
 }
 
+/// The `env` a typed line runs through, by its path, so no `env` earlier on the shell's `PATH`
+/// is the one that runs.
+pub const ENV: &str = "/usr/bin/env";
+
 impl Login {
-    /// **The one line a shell runs it by**: `env VAR=<folder> … <program> <words>`, each word
+    /// **The one line a shell runs it by**: `/usr/bin/env [-u VAR]… VAR=<folder> … <program>
+    /// <words>`, each word
     /// quoted for the shell, and a line break. `env` sets the folders in every shell a person
     /// may have. A word with a control character, a quote or a backslash in it is refused, so
     /// every shell reads each word as one, and nothing typed can break the line in two. None is
@@ -418,7 +425,10 @@ impl Login {
                 self.args.join(" ")
             ));
         }
-        let mut words = vec!["env".to_owned()];
+        let mut words = vec![ENV.to_owned()];
+        for name in &self.cleared {
+            words.extend(["-u".to_owned(), name.clone()]);
+        }
         words.extend(self.env.iter().map(|(n, v)| format!("{n}={v}")));
         words.push(self.program.clone());
         words.extend(self.args.iter().cloned());
@@ -478,6 +488,7 @@ fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result
         program: program.to_owned(),
         args,
         env: profile.env.clone(),
+        cleared: Vec::new(),
     })
 }
 
@@ -486,7 +497,7 @@ fn login_for(profile: &Profile, program: &str, provider: Option<&str>) -> Result
 /// sign-in, and for a profile whose harness purlis cannot find.
 pub fn login_of(record: &MachineProfile, provider: Option<&str>) -> Result<Login, String> {
     let name = crate::shown::short(&record.name);
-    if record.adopted.is_some() {
+    if record.adopted.is_some() && record.kept_for.is_none() {
         return Err(format!(
             "'{name}' is {}'s own folder on {}, signed in by its own sign-in, so purlis has \
              nothing to sign in.",
@@ -494,7 +505,7 @@ pub fn login_of(record: &MachineProfile, provider: Option<&str>) -> Result<Login
             super::this_device()
         ));
     }
-    let profile = crate::profiles::of_record(record)
+    let profile = profile_of(record)
         .filter(|profile| flow(&profile.kind).is_some())
         .ok_or_else(|| {
             format!("purlis cannot sign the profile '{name}' in: it runs no harness purlis ships.")
@@ -512,19 +523,29 @@ pub fn login_of(record: &MachineProfile, provider: Option<&str>) -> Result<Login
 /// Forgets what the harness of `record`, one of this machine's profiles, said of it, so it is
 /// asked again: what Sign in does, in the window and on the command line.
 pub fn forget_of(record: &MachineProfile) {
-    if let Some(profile) = crate::profiles::of_record(record) {
+    if let Some(profile) = profile_of(record) {
         forget(&profile);
     }
+}
+
+/// **The profile a chat on `record` starts on**: the one purlis made, or, for a runner's own
+/// default folder kept for its desktop's adopted one (#2049), the runner's built-in, which
+/// reaches that folder with no variable set. `None` for any other folder adopted in place.
+pub fn profile_of(record: &MachineProfile) -> Option<Profile> {
+    if record.adopted.is_none() {
+        return crate::profiles::of_record(record);
+    }
+    record.kept_for.as_ref()?;
+    crate::profiles::builtins()
+        .into_iter()
+        .find(|builtin| builtin.name == record.name && builtin.kind == record.harness)
 }
 
 /// Whether `record`, one of this machine's profiles, is signed in, as its harness says: what
 /// the window and `purlis profile sign-in --check` say. `None` for a folder adopted in place,
 /// which is signed in by the person's own sign-in and never asked.
 pub fn standing_of(record: &MachineProfile, look: &dyn Look) -> Option<Standing> {
-    if record.adopted.is_some() {
-        return None;
-    }
-    crate::profiles::of_record(record).map(|profile| standing_remembered(&profile, look))
+    profile_of(record).map(|profile| standing_remembered(&profile, look))
 }
 
 #[cfg(test)]

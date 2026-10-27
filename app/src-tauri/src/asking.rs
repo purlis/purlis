@@ -1477,8 +1477,8 @@ fn pool_sign_in_key(profile: &str, pool: &str) -> String {
     format!("sign-in:{profile}:on:{pool}")
 }
 
-/// **A profile a start on a pool was refused on, as its Ask** (#2049): *Sign in <profile> on
-/// pool <pool>*, about no chat. Sign in opens a shell tab where the core types the runner's own
+/// **A profile a start on a pool was refused on, as its Ask** (#2049): *Profile <profile> on
+/// pool <pool>*, about no chat. Its Sign in on pool <pool> opens a shell tab where the core types the runner's own
 /// sign-in for it, which the person drives there; the Ask waits until the runner says it is
 /// signed in there. Nothing of this machine's sign-in goes to the runner.
 pub fn pool_sign_in(wait: &purlis_core::profilestore::onrunner::PoolWait) -> Shown {

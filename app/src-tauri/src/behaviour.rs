@@ -697,6 +697,7 @@ impl OnTheRunner {
                 sign_in: None,
                 pinned: None,
                 sandbox_only: false,
+                kept_for: None,
                 rest: Default::default(),
             });
         })

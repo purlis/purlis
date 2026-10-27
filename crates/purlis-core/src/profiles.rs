@@ -438,16 +438,10 @@ pub fn derive_with(
         });
     }
     for record in machine {
-        let Some(profile) = of_record(record) else {
-            continue;
-        };
-        match set.get(&profile.name).map(|had| had.source) {
-            None => set.profiles.push(profile),
-            // A runner keeps its desktop's adopted folder under the built-in's name, in a folder
-            // of its own (#2049): that record is the profile of the name, in the built-in's
-            // place. Only a runner makes one; a desktop's adopted folder is no made record.
-            Some(Source::BuiltIn) => set.put(profile),
-            Some(_) => {}
+        if let Some(profile) = of_record(record)
+            && set.get(&profile.name).is_none()
+        {
+            set.profiles.push(profile);
         }
     }
     for refused in &declared.refused {

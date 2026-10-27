@@ -19,10 +19,15 @@
 //! ([`Kept::of`]). A key or a cloud's credentials are handed to no chat yet, here or there
 //! (#2151); a local model is a model on the desktop, which a runner does not reach.
 //!
-//! **A runner keeps a built-in's name too.** The desktop's own harness folder, adopted in place
-//! as `claude`, is a profile of that name on the runner, made in a folder of the runner's own
-//! (no runner folder is ever adopted), and it stands for the runner's built-in of that name
-//! ([`crate::profiles::derive_with`]).
+//! **The desktop's adopted folder is the runner's own default folder there.** The desktop's own
+//! harness folder, adopted in place as `claude`, is kept on the runner as that harness's default
+//! folder in the runner's home, adopted in place there: a chat on `claude` runs as the runner's
+//! built-in did, so a runner signed in before stays signed in and its conversations resume.
+//! Such a record carries no pin, and follows its harness, as an adopted folder does.
+//!
+//! **Every record kept for a desktop says so** (`kept_for`, the desktop's device id). Only such
+//! a record of a folder adopted in place is signed in by purlis ([`super::sign_in::profile_of`]);
+//! a folder the person adopted on their own machine never is.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
@@ -83,18 +88,39 @@ impl Kept {
             name: record.name.clone(),
             harness: record.harness.clone(),
             sandbox_only: record.sandbox_only,
-            pinned: record.pinned.as_ref().map(|p| p.version.clone()),
+            // An adopted folder follows its harness, here and there, until #3446.
+            pinned: record
+                .pinned
+                .as_ref()
+                .filter(|_| record.adopted.is_none())
+                .map(|p| p.version.clone()),
         })
     }
 }
 
-/// **Keeps the desktop's profile `kept` in this runner's store under `homes`**, at `now`: made,
-/// with nothing imported and no sign-in, where it has none of that name; brought to `kept`'s pin
-/// and sandbox-only mark where it has. A profile of that name of another harness, or one adopted
-/// in place, is refused and left as it is. The record as kept.
-pub fn keep(homes: &Homes, kept: &Kept, now: u64) -> Result<MachineProfile, String> {
+/// **Keeps the desktop's profile `kept` for the desktop `desktop` in this runner's store under
+/// `homes`**, at `now`, with `home` the runner's home: one named like a built-in (the desktop's
+/// adopted folder) as that harness's default folder under `home`, adopted in place; any other
+/// made, with nothing imported and no sign-in. One it has already is marked kept for `desktop`
+/// and brought to `kept`'s pin (none clears it) and sandbox-only mark. A profile of that name of
+/// another harness, or one of a kind the record is not (made for adopted, adopted for made), is
+/// refused and left as it is. The record as kept.
+pub fn keep(
+    homes: &Homes,
+    home: &Path,
+    kept: &Kept,
+    desktop: &str,
+    now: u64,
+) -> Result<MachineProfile, String> {
     let name = crate::shown::short(&kept.name);
+    let builtin = crate::profiles::KINDS.iter().any(|k| k.word == kept.name);
+    if builtin && kept.name != kept.harness {
+        return Err(format!(
+            "the profile '{name}' is named like a harness it does not run, so no runner keeps it"
+        ));
+    }
     let pinned = match &kept.pinned {
+        Some(_) if builtin => None,
         Some(version) => Some(
             super::pin::Version::parse(version)
                 .map_err(|_| {
@@ -105,19 +131,17 @@ pub fn keep(homes: &Homes, kept: &Kept, now: u64) -> Result<MachineProfile, Stri
         None => None,
     };
     let brought = |record: &mut MachineProfile| {
-        record.sandbox_only = kept.sandbox_only;
-        if let Some(version) = &pinned
-            && record.pinned.as_ref().map(|p| &p.version) != Some(version)
-        {
-            record.pinned = Some(super::pin::Pinned {
-                version: version.clone(),
-                at: now,
-            });
+        record.kept_for = Some(desktop.to_owned());
+        record.sandbox_only = kept.sandbox_only && !builtin;
+        if record.pinned.as_ref().map(|p| &p.version) != pinned.as_ref() && !builtin {
+            record.pinned = pinned
+                .clone()
+                .map(|version| super::pin::Pinned { version, at: now });
         }
     };
     let found = super::update(homes.config_root(), |store| {
         let record = store.profiles.iter_mut().find(|p| p.name == kept.name)?;
-        if record.harness != kept.harness || record.adopted.is_some() {
+        if record.harness != kept.harness || record.adopted.is_some() != builtin {
             return Some(Err(format!(
                 "this runner has a profile named '{name}' of its own, so it keeps no other of \
                  that name"
@@ -129,6 +153,34 @@ pub fn keep(homes: &Homes, kept: &Kept, now: u64) -> Result<MachineProfile, Stri
     if let Some(found) = found {
         return found;
     }
+    if builtin {
+        let (config, data, _) = super::defaults(&kept.harness, home).ok_or_else(|| {
+            format!("the profile '{name}' runs no harness purlis ships, so no runner keeps it")
+        })?;
+        let title = crate::harness_declaration::builtin(&kept.harness)
+            .map_or_else(|| kept.harness.clone(), |d| d.title.clone());
+        return super::update(homes.config_root(), |store| {
+            let mut record = MachineProfile {
+                name: kept.name.clone(),
+                harness: kept.harness.clone(),
+                title: format!("{title} (this runner)"),
+                folders: super::Folders { config, data },
+                adopted: Some(super::Adopted {
+                    at: now,
+                    variables: Vec::new(),
+                }),
+                imported: None,
+                sign_in: None,
+                pinned: None,
+                sandbox_only: false,
+                kept_for: None,
+                rest: Default::default(),
+            };
+            brought(&mut record);
+            store.profiles.push(record.clone());
+            record
+        });
+    }
     super::made::make(
         homes,
         &kept.name,
@@ -136,7 +188,6 @@ pub fn keep(homes: &Homes, kept: &Kept, now: u64) -> Result<MachineProfile, Stri
         super::made::Making {
             machine: None,
             sandbox_only: kept.sandbox_only,
-            builtin_name: true,
         },
         now,
     )?;
@@ -155,7 +206,7 @@ pub fn keep(homes: &Homes, kept: &Kept, now: u64) -> Result<MachineProfile, Stri
 /// through `look` now: never a remembered answer, since this is what the desktop asks after a
 /// sign-in.
 pub fn standing(record: &MachineProfile, look: &dyn Look) -> Standing {
-    match crate::profiles::of_record(record) {
+    match sign_in::profile_of(record) {
         Some(profile) => {
             sign_in::forget(&profile);
             sign_in::standing_remembered(&profile, look)
@@ -186,41 +237,59 @@ impl From<Kept> for purlis_session_protocol::session::ProfileToKeep {
     }
 }
 
-/// The standing a runner's `profile_kept` names by `word`; a word this build does not know is
-/// one it cannot tell.
-pub fn standing_of_word(word: &str) -> Standing {
-    [Standing::SignedIn, Standing::SignedOut]
-        .into_iter()
-        .find(|standing| standing.word() == word)
-        .unwrap_or(Standing::CannotTell)
+/// The standing a runner's `profile_kept` names.
+pub fn standing_on_the_wire(said: purlis_session_protocol::session::ProfileStanding) -> Standing {
+    use purlis_session_protocol::session::ProfileStanding as Said;
+    match said {
+        Said::SignedIn => Standing::SignedIn,
+        Said::SignedOut => Standing::SignedOut,
+        Said::CannotTell => Standing::CannotTell,
+    }
 }
 
-/// **What a runner's host answers its desktop's `keep_profile` with** (1.43): the profile
-/// `sent` kept in this runner's store under `homes` at `now`, and the word for whether its
-/// harness says, through `look`, that it is signed in here.
+/// `standing` as `profile_kept` names it.
+pub fn standing_for_the_wire(
+    standing: Standing,
+) -> purlis_session_protocol::session::ProfileStanding {
+    use purlis_session_protocol::session::ProfileStanding as Said;
+    match standing {
+        Standing::SignedIn => Said::SignedIn,
+        Standing::SignedOut => Said::SignedOut,
+        Standing::CannotTell => Said::CannotTell,
+    }
+}
+
+/// **What a runner's host answers its desktop's `keep_profile` with** (1.42): the profile
+/// `sent` kept for the desktop `desktop` in this runner's store under `homes`, with `home` the
+/// runner's home, at `now`, and whether its harness says, through `look`, that it is signed in
+/// here.
 pub fn kept_for_the_desktop(
     homes: &Homes,
+    home: &Path,
+    desktop: &str,
     sent: &purlis_session_protocol::session::ProfileToKeep,
     look: &dyn Look,
     now: u64,
-) -> Result<String, String> {
-    let record = keep(homes, &Kept::from(sent), now)?;
-    Ok(standing(&record, look).word().to_owned())
+) -> Result<purlis_session_protocol::session::ProfileStanding, String> {
+    let record = keep(homes, home, &Kept::from(sent), desktop, now)?;
+    Ok(standing_for_the_wire(standing(&record, look)))
 }
 
 /// **Whether a chat on the desktop's profile `name` may start on pool `pool`'s runner**, for the
 /// project at `root`, with this desktop's profiles in the store under `config_root`, the runner
-/// asked to keep it through `keep`. A profile this desktop keeps no record of (a built-in, or one
-/// a clone declares) is the runner's own to say. One that goes to no runner is refused in words;
-/// one its harness says is signed out on the runner is refused with a wait the window shows as
-/// *Sign in <profile> on pool <pool>* ([`waiting_on_pools`]). Signed in, or where its harness
-/// cannot tell, the chat starts, and nobody is asked anything.
+/// asked to keep it through `keep`, which answers `None` where it sent nothing (a runner not
+/// shown to be the person's own, or one of a purlis before 1.42). A profile this desktop keeps
+/// no record of (a built-in, or one a clone declares), and one `keep` sent nothing of, is the
+/// runner's own to say. One that goes to no runner is refused in words; one its harness says is
+/// signed out on the runner is refused with a wait the window shows as the Ask *Profile
+/// <profile> on pool <pool>* ([`waiting_on_pools`]). Signed in, or where its harness cannot
+/// tell, the chat starts, and nobody is asked anything.
 pub fn ready_on(
     config_root: &Path,
     root: &Path,
     pool: &str,
     name: &str,
-    keep: &dyn Fn(&Kept) -> Result<Standing, String>,
+    keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,
 ) -> Result<(), String> {
     let Some(record) = super::list(config_root)?
         .into_iter()
@@ -235,15 +304,15 @@ pub fn ready_on(
             "pool {pool}'s runner did not keep the profile '{shown}': {why}. Nothing was started."
         )
     })? {
-        Standing::SignedOut => {
+        Some(Standing::SignedOut) => {
             waits_on_pool(root, pool, &record);
             Err(format!(
                 "the profile '{shown}' is not signed in on pool {pool}. Nothing was started. It \
-                 waits in the Inbox as Sign in {shown} on pool {pool}, which runs its harness's \
-                 own sign-in on the runner; then start the chat again."
+                 waits in the Inbox as Profile {shown} on pool {pool}, whose Sign in on pool \
+                 {pool} runs its harness's own sign-in on the runner; then start the chat again."
             ))
         }
-        Standing::SignedIn | Standing::CannotTell => Ok(()),
+        Some(Standing::SignedIn | Standing::CannotTell) | None => Ok(()),
     }
 }
 

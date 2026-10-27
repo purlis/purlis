@@ -8,6 +8,14 @@ use std::path::{Path, PathBuf};
 use crate::profilesignin::SignIn;
 use crate::profilestore::{Adopted, Folders, MachineSettings, list};
 
+/// The desktop a runner keeps profiles for, by its device id.
+const DESKTOP: &str = "01JA0DESKT0P00000000000000";
+
+/// The runner's home, where its harnesses' default folders are.
+fn runner_home(dir: &Path) -> PathBuf {
+    dir.join("runner-home")
+}
+
 /// A device's purlis homes: its config home and its data home.
 fn homes(dir: &Path, device: &str) -> Homes {
     Homes::at(
@@ -103,7 +111,14 @@ fn a_runner_keeps_a_desktops_profile_in_a_folder_of_its_own_with_nothing_of_the_
     let desktop = a_signed_in_desktop_profile(dir.path());
     let runner = homes(dir.path(), "runner");
 
-    let kept = keep(&runner, &Kept::of(&desktop).expect("it goes"), 7).expect("kept");
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
 
     let folder = runner.folder_of("work");
     assert!(folder.is_dir());
@@ -121,18 +136,14 @@ fn a_runner_keeps_a_desktops_profile_in_a_folder_of_its_own_with_nothing_of_the_
     );
 }
 
-/// The desktop's own Claude Code folder, adopted in place as `claude`, is kept on the runner
-/// under that name, in a folder the runner made, and a chat there on `claude` runs in it rather
-/// than in the runner's default folder.
-#[test]
-fn the_desktops_adopted_folder_is_kept_under_its_built_ins_name_in_a_folder_the_runner_made() {
-    let dir = tempfile::tempdir().unwrap();
-    let adopted = MachineProfile {
+/// A desktop's Claude Code folder, adopted in place there as `claude` and pinned.
+fn the_desktops_adopted_folder(dir: &Path) -> MachineProfile {
+    MachineProfile {
         name: "claude".to_owned(),
         harness: "claude".to_owned(),
         title: "Claude Code (this Mac)".to_owned(),
         folders: Folders {
-            config: dir.path().join("desktop-home/.claude"),
+            config: dir.join("desktop-home/.claude"),
             data: None,
         },
         adopted: Some(Adopted {
@@ -141,27 +152,66 @@ fn the_desktops_adopted_folder_is_kept_under_its_built_ins_name_in_a_folder_the_
         }),
         imported: None,
         sign_in: None,
-        pinned: None,
+        pinned: Some(crate::profilestore::pin::Pinned {
+            version: "2.1.300".to_owned(),
+            at: 1,
+        }),
         sandbox_only: false,
+        kept_for: None,
         rest: Default::default(),
-    };
+    }
+}
+
+/// **The desktop's adopted folder is the runner's own default folder there** (#2049): kept as
+/// Claude Code's default folder in the runner's home, adopted in place and marked kept for the
+/// desktop, so a chat on `claude` there runs as the runner's built-in did, in that folder, and
+/// a runner signed in before stays signed in. It carries no pin: it follows its harness.
+#[test]
+fn the_desktops_adopted_folder_is_the_runners_own_default_folder_there() {
+    let dir = tempfile::tempdir().unwrap();
     let runner = homes(dir.path(), "runner");
+    let adopted = the_desktops_adopted_folder(dir.path());
 
-    keep(&runner, &Kept::of(&adopted).expect("it goes"), 7).expect("kept");
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&adopted).expect("it goes"),
+        DESKTOP,
+        7,
+    )
+    .expect("kept");
 
-    let on_the_runner = started_on(&runner, "claude");
-    assert_eq!(on_the_runner.source, crate::profiles::Source::Machine);
     assert_eq!(
-        on_the_runner.env,
-        vec![(
-            "CLAUDE_CONFIG_DIR".to_owned(),
-            runner
-                .folder_of("claude")
-                .join("config")
-                .display()
-                .to_string()
-        )]
+        kept.folders.config,
+        runner_home(dir.path()).join(".claude"),
+        "the runner's own default folder"
     );
+    assert!(kept.adopted.is_some());
+    assert_eq!(kept.kept_for.as_deref(), Some(DESKTOP));
+    assert_eq!(kept.pinned, None);
+    assert!(
+        !runner.folder_of("claude").exists(),
+        "no folder of purlis's"
+    );
+    let on_the_runner = started_on(&runner, "claude");
+    assert_eq!(on_the_runner.source, crate::profiles::Source::BuiltIn);
+    assert!(on_the_runner.env.is_empty(), "{:?}", on_the_runner.env);
+    // Signed in by purlis there, through the built-in's own sign-in, no folder set.
+    let signed_in_as = sign_in::profile_of(&kept).expect("a profile to sign in");
+    assert_eq!(signed_in_as.source, crate::profiles::Source::BuiltIn);
+    assert_eq!(standing(&kept, &Answers(Some(1))), Standing::SignedOut);
+}
+
+/// A folder the person adopted on their own machine is never signed in by purlis: only one a
+/// runner keeps for its desktop is.
+#[test]
+fn only_an_adopted_folder_kept_for_a_desktop_is_signed_in_by_purlis() {
+    let dir = tempfile::tempdir().unwrap();
+    let adopted = the_desktops_adopted_folder(dir.path());
+
+    assert!(sign_in::profile_of(&adopted).is_none());
+    assert!(sign_in::login_of(&adopted, None).is_err());
+    assert_eq!(sign_in::standing_of(&adopted, &Answers(Some(1))), None);
 }
 
 /// A desktop with no record of a built-in keeps the built-in it always had: only a record the
@@ -183,7 +233,14 @@ fn kept_again_it_keeps_its_folder_and_follows_the_desktops_pin() {
     let dir = tempfile::tempdir().unwrap();
     let mut desktop = a_signed_in_desktop_profile(dir.path());
     let runner = homes(dir.path(), "runner");
-    keep(&runner, &Kept::of(&desktop).unwrap(), 7).unwrap();
+    keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).unwrap(),
+        DESKTOP,
+        7,
+    )
+    .unwrap();
     let signed_in_there = runner.folder_of("work").join("config/.credentials.json");
     fs::write(&signed_in_there, "the runner's own sign-in").unwrap();
 
@@ -192,7 +249,14 @@ fn kept_again_it_keeps_its_folder_and_follows_the_desktops_pin() {
         at: 3,
     });
     desktop.sandbox_only = true;
-    let kept = keep(&runner, &Kept::of(&desktop).unwrap(), 9).unwrap();
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).unwrap(),
+        DESKTOP,
+        9,
+    )
+    .unwrap();
 
     assert_eq!(
         fs::read_to_string(&signed_in_there).unwrap(),
@@ -203,7 +267,20 @@ fn kept_again_it_keeps_its_folder_and_follows_the_desktops_pin() {
         Some("2.1.300")
     );
     assert!(kept.sandbox_only);
+    assert_eq!(kept.kept_for.as_deref(), Some(DESKTOP));
     assert_eq!(list(runner.config_root()).unwrap().len(), 1);
+
+    // Unpinned on the desktop, it is unpinned on the runner.
+    desktop.pinned = None;
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).unwrap(),
+        DESKTOP,
+        11,
+    )
+    .unwrap();
+    assert_eq!(kept.pinned, None);
 }
 
 /// A runner's own profile of the same name and another harness is never taken over.
@@ -214,7 +291,14 @@ fn a_runners_own_profile_of_that_name_and_another_harness_is_refused() {
     crate::profilestore::create_sandbox_only(&runner, "work", "codex", 1).unwrap();
     let desktop = a_signed_in_desktop_profile(dir.path());
 
-    let refused = keep(&runner, &Kept::of(&desktop).unwrap(), 7).unwrap_err();
+    let refused = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).unwrap(),
+        DESKTOP,
+        7,
+    )
+    .unwrap_err();
 
     assert!(refused.contains("of its own"), "{refused}");
     assert_eq!(list(runner.config_root()).unwrap()[0].harness, "codex");
@@ -256,7 +340,14 @@ fn a_kept_profiles_standing_is_what_its_harness_says_on_the_runner_now() {
     let dir = tempfile::tempdir().unwrap();
     let desktop = a_signed_in_desktop_profile(dir.path());
     let runner = homes(dir.path(), "runner");
-    let kept = keep(&runner, &Kept::of(&desktop).unwrap(), 7).unwrap();
+    let kept = keep(
+        &runner,
+        &runner_home(dir.path()),
+        &Kept::of(&desktop).unwrap(),
+        DESKTOP,
+        7,
+    )
+    .unwrap();
 
     assert_eq!(standing(&kept, &Answers(Some(1))), Standing::SignedOut);
     assert_eq!(standing(&kept, &Answers(Some(0))), Standing::SignedIn);
@@ -276,7 +367,7 @@ fn a_chat_on_a_profile_signed_in_on_the_pool_starts_with_nobody_asked() {
     for said in [Standing::SignedIn, Standing::CannotTell] {
         ready_on(desktop.config_root(), &project, "builds", "work", &|kept| {
             sent.borrow_mut().push(kept.clone());
-            Ok(said)
+            Ok(Some(said))
         })
         .expect("it starts");
     }
@@ -297,13 +388,14 @@ fn a_chat_on_a_profile_signed_out_on_the_pool_waits_as_one_sign_in_there() {
 
     for _ in 0..2 {
         let refused = ready_on(desktop.config_root(), &project, "builds", "work", &|_| {
-            Ok(Standing::SignedOut)
+            Ok(Some(Standing::SignedOut))
         })
         .unwrap_err();
         assert!(
             refused.contains("not signed in on pool builds"),
             "{refused}"
         );
+        assert!(refused.contains("Profile work on pool builds"), "{refused}");
     }
 
     let waits = waiting_on_pools(&project);
@@ -327,7 +419,7 @@ fn a_profile_with_no_record_is_the_runners_and_a_key_profile_is_refused_unsent()
     let asked = std::cell::Cell::new(0);
     let keep = |_: &Kept| {
         asked.set(asked.get() + 1);
-        Ok(Standing::SignedIn)
+        Ok(Some(Standing::SignedIn))
     };
 
     ready_on(desktop.config_root(), &project, "builds", "claude", &keep).expect("the runner's");
@@ -346,4 +438,38 @@ fn a_profile_with_no_record_is_the_runners_and_a_key_profile_is_refused_unsent()
     let refused = ready_on(desktop.config_root(), &project, "builds", "work", &keep).unwrap_err();
     assert!(refused.contains("Nothing was started"), "{refused}");
     assert_eq!(asked.get(), 0);
+}
+
+/// A runner sent nothing (one not shown to be the person's own, or of a purlis before 1.42) is
+/// the runner's own to say: the chat starts there, on whatever profiles it has, and nothing waits.
+#[test]
+fn a_runner_sent_nothing_is_its_own_to_say() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let project = dir.path().join("project-unsent");
+
+    ready_on(desktop.config_root(), &project, "builds", "work", &|_| {
+        Ok(None)
+    })
+    .expect("the runner's own to say");
+
+    assert!(waiting_on_pools(&project).is_empty());
+}
+
+/// A runner's own refusal reaches the start in words that say whose they are.
+#[test]
+fn a_runner_that_does_not_keep_the_profile_starts_nothing_in_words() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let project = dir.path().join("project-refused");
+
+    let refused = ready_on(desktop.config_root(), &project, "builds", "work", &|_| {
+        Err("the runner says: no room".to_owned())
+    })
+    .unwrap_err();
+
+    assert!(refused.contains("the runner says: no room"), "{refused}");
+    assert!(refused.contains("Nothing was started"), "{refused}");
 }

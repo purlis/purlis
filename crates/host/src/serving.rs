@@ -58,9 +58,13 @@ pub type Answering = Arc<dyn Fn() -> Result<Option<(Identity, Pinned)>, String> 
 /// (`unpair`, 1.25, #2525): no later link from it is admitted.
 pub type Unpairing = Arc<dyn Fn(&Pinned) -> Result<(), String> + Send + Sync>;
 
-/// Keeps a profile of the desktop's on the runner (`keep_profile`, 1.43, #2049), and says
-/// whether its harness says it is signed in there: `signed-in`, `signed-out` or `cannot-tell`.
-pub type Keeping = Arc<dyn Fn(&session::ProfileToKeep) -> Result<String, String> + Send + Sync>;
+/// Keeps a profile for the desktop a link proved, on the runner (`keep_profile`, 1.42, #2049),
+/// and says whether its harness says it is signed in there.
+pub type Keeping = Arc<
+    dyn Fn(&Pinned, &session::ProfileToKeep) -> Result<session::ProfileStanding, String>
+        + Send
+        + Sync,
+>;
 
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
 /// how the desktop it admits is taken out of its peers ([`Unpairing`]), and how it keeps that
@@ -245,7 +249,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
 
 /// The session protocol on a link from the desktop a runner is paired with: the host's own,
 /// `unpair` (1.25, #2525), which takes that desktop, the one the handshake proved, out of the
-/// runner's peers, and `keep_profile` (1.43, #2049), which keeps one of its profiles here.
+/// runner's peers, and `keep_profile` (1.42, #2049), which keeps one of its profiles here.
 struct PairedLink {
     hosting: Hosting,
     desktop: Pinned,
@@ -279,14 +283,14 @@ impl PairedLink {
         }
     }
 
-    /// `keep_profile` (1.43, #2049): the desktop's profile kept here, off the runtime, since
+    /// `keep_profile` (1.42, #2049): the desktop's profile kept here, off the runtime, since
     /// its harness is asked whether it is signed in.
     async fn keep(
         &self,
         profile: session::ProfileToKeep,
     ) -> Result<session::Answer, session::Refusal> {
-        let keeping = Arc::clone(&self.keeping);
-        tokio::task::spawn_blocking(move || keeping(&profile))
+        let (keeping, desktop) = (Arc::clone(&self.keeping), self.desktop.clone());
+        tokio::task::spawn_blocking(move || keeping(&desktop, &profile))
             .await
             .unwrap_or_else(|why| Err(format!("the profile was not kept: {why}")))
             .map(|standing| session::Answer::ProfileKept { standing })

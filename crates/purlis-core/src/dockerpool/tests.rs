@@ -669,6 +669,60 @@ fn a_profile_is_signed_in_on_the_runner_by_its_own_sign_in_in_the_container_it_p
     );
 }
 
+/// **The line a sign-in on a pool's runner types reads none of the person's Docker settings**
+/// (#2049): it runs `docker` by its path through `/usr/bin/env`, with Docker's settings a folder
+/// of purlis's own (`--config` and `DOCKER_CONFIG`), plugin hooks off, no context, the engine
+/// on the line, and the container by its id.
+#[test]
+fn a_sign_in_on_a_runner_runs_docker_with_settings_of_purliss_own_and_no_hooks() {
+    let line = Docker::at("/usr/local/bin/docker")
+        .sign_in_login(
+            &made(),
+            std::path::Path::new("/var/run/docker.sock"),
+            std::path::Path::new("/data/purlis/docker-settings/sign-in"),
+            "work",
+            None,
+        )
+        .unwrap()
+        .line()
+        .unwrap();
+
+    assert_eq!(
+        line,
+        format!(
+            "/usr/bin/env -u DOCKER_CONTEXT DOCKER_CONFIG=/data/purlis/docker-settings/sign-in \
+             DOCKER_CLI_HOOKS=false /usr/local/bin/docker --config \
+             /data/purlis/docker-settings/sign-in --host unix:///var/run/docker.sock exec -it \
+             --user 10001:10001 {ID} {PURLIS} profile sign-in work\n"
+        )
+    );
+}
+
+/// The settings that line names hold nothing of the person's: a `config.json` of `{}`, in a
+/// folder of this user's alone, which a sweep of the runs' copies leaves.
+#[test]
+fn the_settings_a_sign_in_names_are_an_empty_config_of_purliss_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let settings_in = dir.path().join(settings::DIR);
+
+    let folder = settings::for_a_sign_in(&settings_in).unwrap();
+
+    assert_eq!(folder, settings_in.join(settings::SIGN_IN));
+    assert_eq!(
+        std::fs::read_to_string(folder.join("config.json")).unwrap(),
+        "{}"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&folder).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "{mode:o}");
+    }
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(365 * 24 * 3600);
+    assert_eq!(settings::sweep(&settings_in, later), 0);
+    assert!(folder.join("config.json").exists());
+}
+
 /// A stand-in for `docker`: a script that logs each call's words and answers from the files
 /// of its folder: `run` with `id`, `container inspect` with `inspect`, `volume inspect` with
 /// `volume`, `volume ls` with `volumes`, `info` with `info`, `image inspect` with `image`, and

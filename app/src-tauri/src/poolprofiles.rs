@@ -4,22 +4,26 @@
 //! **This machine's profiles on its pools' runners** (#2049, spec #2041's *Profiles on runners*).
 //!
 //! A chat on a pool's runner starts on a profile the runner keeps of its own: the desktop has
-//! its runner keep each of its profiles (`keep_profile`, session protocol 1.43), over a link of
-//! its own to it, in a folder the runner makes, with nothing of this machine's folder in it
+//! its runner keep each of its profiles (`keep_profile`, session protocol 1.42), over a link of
+//! its own to it, with nothing of this machine's folder in it
 //! ([`purlis_core::profilestore::onrunner`]). A subscription is signed in there through its
 //! harness's own flow, run on the runner from a shell tab here ([`sign_in_line`]), once per
 //! device: no sign-in is copied between devices.
 //!
-//! **Only a runner purlis can show is the person's own keeps a profile and is signed in**
-//! ([`owned`]): until a pool can be marked owned (#2561), a Docker pool whose engine is a local
-//! socket on this machine, as for browser logins and tools (D-2050-4). Any other pool is refused
-//! in words, and nothing is sent to it.
+//! **Only a runner purlis can show is the person's own is sent a profile or signed in**
+//! ([`owned`], the check browser logins and tools use, D-2050-4): until a pool can be marked
+//! owned (#2561), a Docker pool whose engine is a local socket on this machine. To any other
+//! pool nothing is sent, and its chats start on the profiles its runner has of its own; its
+//! profiles are not offered for sign-in. A runner of a purlis before 1.42 is sent nothing either.
 //!
 //! Adding a pool ends with its profiles (Settings › Pools, `pool_profiles`); a start on a pool
 //! keeps its profile there first ([`Linked`]): signed in, it starts with nobody asked, a moved
-//! chat's too, and signed out, it waits as one Ask, *Sign in <profile> on pool <pool>*.
+//! chat's too, and signed out, it waits as one Ask, *Profile <profile> on pool <pool>*, whose
+//! Sign in on pool <pool> signs it in there.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use purlis_core::profilestore::{self, onrunner, sign_in::Standing};
@@ -53,26 +57,34 @@ impl ProfilesOnPools for Linked {
     }
 }
 
-/// **Whether pool `pool`'s runner is shown to be the person's own** (#2049, D-2050-4): a Docker
-/// pool whose engine is a local socket on this machine. The socket, or why purlis keeps no
-/// profile there and signs none in.
+/// **Whether this machine's pools' runners are shown to be the person's own** (#2049, by
+/// [`purlis_core::poollogins::owned`], D-2050-4): the engine's local socket, or why not.
 pub fn owned() -> Result<PathBuf, String> {
-    purlis_core::dockerpool::Docker::engine_on_this_machine().map_err(|why| {
-        format!(
-            "{why}, so its runners are not known to be yours, and purlis keeps no profile there \
-             and signs none in until a pool can be marked as yours"
-        )
-    })
+    let engine = purlis_core::dockerpool::Docker::engine_on_this_machine();
+    purlis_core::poollogins::owned(engine.clone())?;
+    engine
 }
 
 /// **Has pool `pool`'s runner, as this machine keeps it under `config`, keep `kept`**, over a
-/// link of its own: whether its harness says it is signed in there. Only a runner shown to be
-/// the person's own ([`owned`]) is sent anything.
-pub fn keep_on(config: &Path, pool: &str, kept: &onrunner::Kept) -> Result<Standing, String> {
-    owned()?;
+/// link of its own: whether its harness says it is signed in there. `None`, with nothing sent,
+/// for a runner not shown to be the person's own ([`owned`]) and one of a purlis before 1.42:
+/// what it runs on is its own to say.
+pub fn keep_on(
+    config: &Path,
+    pool: &str,
+    kept: &onrunner::Kept,
+) -> Result<Option<Standing>, String> {
+    if owned().is_err() {
+        return Ok(None);
+    }
     let to = ToARunner::of(&Machine::here(config)?, pool)?;
-    crate::runnerlinks::keep_profile(&to, kept.clone().into())
-        .map(|word| onrunner::standing_of_word(&word))
+    let Some(said) = crate::runnerlinks::keep_profiles(&to, vec![kept.clone().into()])? else {
+        return Ok(None);
+    };
+    said.into_iter()
+        .next()
+        .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
+        .map(|standing| Some(onrunner::standing_on_the_wire(standing)))
 }
 
 /// One of this machine's profiles, as a pool's runner stands with it.
@@ -92,6 +104,10 @@ pub struct PoolProfileRow {
     pub plans: Vec<crate::machineprofiles::PlanRow>,
 }
 
+/// Why a runner of a purlis before 1.42 keeps none of this machine's profiles.
+const OLDER_RUNNER: &str = "its runner runs a purlis before 1.42, so its chats start on the \
+                            profiles it has of its own";
+
 /// **Every profile of this machine's, kept on pool `pool`'s runner**, as the runner stands with
 /// each (#2049): what adding a pool ends with, and what Settings › Pools shows. Refused, with
 /// nothing sent, for a pool not shown to be the person's own.
@@ -109,15 +125,18 @@ pub async fn pool_profiles(pool: String) -> Result<Vec<PoolProfileRow>, String> 
             .iter()
             .filter_map(|kept| kept.as_ref().ok().cloned().map(Into::into))
             .collect();
-        let mut said = crate::runnerlinks::keep_profiles(&to, sent)?.into_iter();
+        let said = crate::runnerlinks::keep_profiles(&to, sent)?;
+        let mut said = said.map(Vec::into_iter);
         Ok(records
             .iter()
             .zip(kept)
             .map(|(record, kept)| {
-                let standing = kept.and_then(|_| {
-                    said.next()
+                let standing = kept.and_then(|_| match said.as_mut() {
+                    None => Err(OLDER_RUNNER.to_owned()),
+                    Some(said) => said
+                        .next()
                         .unwrap_or_else(|| Err("the runner did not answer".to_owned()))
-                        .map(|word| onrunner::standing_of_word(&word))
+                        .map(onrunner::standing_on_the_wire),
                 });
                 row(record, standing)
             })
@@ -156,10 +175,10 @@ fn config_root() -> Result<PathBuf, String> {
 }
 
 /// **The line a shell here runs to sign `name` in on pool `pool`'s runner** (#2049), to
-/// `provider`'s plan where one is named: the runner's own `purlis profile sign-in`, through
-/// this machine's `docker` on the engine shown to be the person's own, in the container as it
-/// was made, checked first. Only one of this machine's profiles that goes to a runner, kept
-/// there first, so the runner has it to sign in.
+/// `provider`'s plan where its harness serves several: the runner's own `purlis profile
+/// sign-in`, through this machine's `docker` with settings of purlis's own, on the engine shown
+/// to be the person's own, in the container as it was made, checked first. Only one of this
+/// machine's profiles that goes to a runner, kept there first, so the runner has it to sign in.
 pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<String, String> {
     let config = config_root()?;
     let engine = owned()?;
@@ -172,8 +191,20 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
                 purlis_core::shown::short(name)
             )
         })?;
+    let plans = profilestore::sign_in::providers(&record.harness);
+    if let Some(provider) = provider
+        && !plans.iter().any(|plan| plan.provider == provider)
+    {
+        return Err(format!(
+            "'{}' is no plan {} signs in to, so no sign-in was typed.",
+            purlis_core::shown::short(provider),
+            record.harness
+        ));
+    }
     let kept = onrunner::Kept::of(&record)?;
-    keep_on(&config, pool, &kept)?;
+    if keep_on(&config, pool, &kept)?.is_none() {
+        return Err(format!("Pool {pool}: {OLDER_RUNNER}. No sign-in was typed."));
+    }
     let runner = purlis_core::runners::runner_for(&config, pool).map_err(|why| why.to_string())?;
     crate::runnerlinks::docker()?.sign_in_line(&runner.made, &engine, name, provider)
 }
@@ -183,32 +214,57 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
 const WATCHED_EVERY: Duration = Duration::from_secs(5);
 const WATCHED_FOR: Duration = Duration::from_secs(15 * 60);
 
+/// The (pool, profile) pairs a watcher asks about now: one each, however often Sign in is
+/// pressed.
+static WATCHED: Mutex<Option<HashSet<(String, String)>>> = Mutex::new(None);
+
 /// **Asks pool `pool`'s runner again every few seconds whether `name` is signed in there**, for
 /// a while after its Sign in, and once it is not signed out, lets its waits go and calls
-/// `told`. On a thread of its own.
+/// `told`. On a thread of its own, one per pool and profile: a second Sign in while one asks
+/// starts none.
 pub fn watch(pool: String, name: String, told: impl FnOnce() + Send + 'static) {
+    let key = (pool.clone(), name.clone());
+    if !WATCHED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_or_insert_with(HashSet::new)
+        .insert(key.clone())
+    {
+        return;
+    }
     std::thread::spawn(move || {
-        let Ok(config) = config_root() else {
-            return;
-        };
-        let Some(kept) = profilestore::list(&config)
-            .ok()
-            .and_then(|records| records.into_iter().find(|p| p.name == name))
-            .and_then(|record| onrunner::Kept::of(&record).ok())
-        else {
-            return;
-        };
-        let ends = std::time::Instant::now() + WATCHED_FOR;
-        while std::time::Instant::now() < ends {
-            std::thread::sleep(WATCHED_EVERY);
-            if matches!(
-                keep_on(&config, &pool, &kept),
-                Ok(Standing::SignedIn | Standing::CannotTell)
-            ) {
-                onrunner::let_go(None, &pool, &name);
-                told();
-                return;
-            }
+        watching(&pool, &name, told);
+        if let Some(watched) = WATCHED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+        {
+            watched.remove(&key);
         }
     });
+}
+
+fn watching(pool: &str, name: &str, told: impl FnOnce()) {
+    let Ok(config) = config_root() else {
+        return;
+    };
+    let Some(kept) = profilestore::list(&config)
+        .ok()
+        .and_then(|records| records.into_iter().find(|p| p.name == name))
+        .and_then(|record| onrunner::Kept::of(&record).ok())
+    else {
+        return;
+    };
+    let ends = std::time::Instant::now() + WATCHED_FOR;
+    while std::time::Instant::now() < ends {
+        std::thread::sleep(WATCHED_EVERY);
+        if matches!(
+            keep_on(&config, pool, &kept),
+            Ok(Some(Standing::SignedIn | Standing::CannotTell))
+        ) {
+            onrunner::let_go(None, pool, name);
+            told();
+            return;
+        }
+    }
 }

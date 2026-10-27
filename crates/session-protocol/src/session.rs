@@ -606,7 +606,7 @@ pub enum Command {
     /// paired with, carries it out; every other host refuses it [`NOT_ALLOWED`]
     /// ([`crate::grants::Power::Unpair`]).
     Unpair,
-    /// The desktop on this link has the runner keep its profile (1.43, #2049): the runner's
+    /// The desktop on this link has the runner keep its profile (1.42, #2049): the runner's
     /// host keeps a profile of that name in a folder of its own, made where it has none, and
     /// answers [`Answer::ProfileKept`] with whether its harness says it is signed in there.
     /// Nothing of the desktop's profile folder, sign-in or settings is in it. Only a runner's
@@ -892,7 +892,7 @@ pub struct Start {
     pub harness: Option<String>,
 }
 
-/// **A desktop's profile, as its runner keeps it** (1.43, #2049): what [`Command::KeepProfile`]
+/// **A desktop's profile, as its runner keeps it** (1.42, #2049): what [`Command::KeepProfile`]
 /// sends, and nothing else. No file, setting, sign-in or vault reference of the desktop's
 /// profile has a field here, so none can reach a runner through it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -907,6 +907,19 @@ pub struct ProfileToKeep {
     /// The harness version the desktop's profile is pinned to (#2038), where it is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<String>,
+}
+
+/// **Whether a profile a runner keeps is signed in there**, as its harness says (1.42, #2049).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileStanding {
+    /// The harness says it is signed in.
+    SignedIn,
+    /// The harness says it is not: a chat on it does not start there until it is.
+    SignedOut,
+    /// The harness did not say, or has no way to; and a word a later minor adds.
+    #[serde(other)]
+    CannotTell,
 }
 
 /// What a [`Command::StartProgram`] asks for: the full start (1.2).
@@ -1174,8 +1187,8 @@ pub enum Answer {
     /// [`Command::GiveCode`].
     Code { heads: Vec<CodeRef> },
     /// Whether the profile a runner keeps is signed in there, as its harness says:
-    /// [`Command::KeepProfile`] (1.43). One of `signed-in`, `signed-out` and `cannot-tell`.
-    ProfileKept { standing: String },
+    /// [`Command::KeepProfile`] (1.42).
+    ProfileKept { standing: ProfileStanding },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Done, with nothing to say.
@@ -2683,10 +2696,10 @@ impl Client {
         self.done(Command::Unpair).await
     }
 
-    /// Have the runner keep this link's desktop's profile `profile` (1.43, #2049): whether its
+    /// Have the runner keep this link's desktop's profile `profile` (1.42, #2049): whether its
     /// harness says it is signed in there. Refused by every host but a runner's, on its link
     /// from that desktop.
-    pub async fn keep_profile(&self, profile: ProfileToKeep) -> Result<String, CallError> {
+    pub async fn keep_profile(&self, profile: ProfileToKeep) -> Result<ProfileStanding, CallError> {
         match self.call(Command::KeepProfile(profile)).await? {
             Answer::ProfileKept { standing } => Ok(standing),
             other => Err(unexpected(&other)),

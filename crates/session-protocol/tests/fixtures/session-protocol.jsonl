@@ -156,4 +156,4 @@
 {"pushed":{"heard":{"project":"01J9PRJCT00000000000000000","heard":13,"line":{"report":{"chat":7,"event":"stop"}},"pathless":true}}}
 {"call":{"id":154,"command":"reply_heard","project":"01J9PRJCT00000000000000000","heard":13,"reply":{"line":{"entry":"report","report":{"chat":7,"event":"stop"},"followed":"no"}}}}
 {"call":{"id":155,"command":"keep_profile","name":"work","harness":"claude","sandbox_only":true,"pinned":"2.1.300"}}
-{"reply":{"re":155,"ok":{"profile_kept":{"standing":"signed-in"}}}}
+{"reply":{"re":155,"ok":{"profile_kept":{"standing":"signed_in"}}}}
