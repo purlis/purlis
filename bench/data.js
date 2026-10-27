@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793124196787,
+  "lastUpdate": 1793126307860,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27048,6 +27048,48 @@ window.BENCHMARK_DATA = {
             "value": 102.3166865,
             "unit": "ms",
             "extra": "median of 5 runs: 101.727, 102.032, 102.317, 102.549, 102.643 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3a835061ca43d73da98b895e2587f79232b496bc",
+          "message": "Flaky tests wait for their real signal; per-file timeouts dropped; nightly fedora fixed (#3476, #3511, #3507) (#3526)\n\n* #3476: two flaky tests wait for their real signal\n\n- hook.rs: the guard helpers give the hook a budget no runner reaches\n  (debug-only PURLIS_TEST_GUARD_DEADLINE_MS), so a loaded runner cannot\n  turn an allowed command into exit 2; the verdict checks print stderr.\n  The real 2 s budget keeps its own test.\n- Dialog.stories and Popover.stories: the focus wait after Esc uses\n  untilFocused (3 s, as the surface's own wait), not the default 1 s.\n\nThe SkillsList story's focus flake was already fixed on main by #3463.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* #3511: drop the per-file test timeouts the shared ones cover\n\nThe 11 configure({ asyncUtilTimeout: 5_000 }) and 2 vi.setConfig({\ntestTimeout: 15_000 }) go, with their comments and unused imports:\ntest-setup.ts (5 s) and vite.config.ts (20 s) set them for every test.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* #3507: nightly fedora: install nc and openssl; isolate read-only tests\n\nThe fedora job's purlis-core --lib failed 8 tests every night:\n- 4 brokered tunnel tests: no /usr/bin/nc in the image (nmap-ncat).\n- 1 skill source https test: no openssl command (only openssl-devel).\n- 3 dispatchdormant tests: Permission denied. Two tests make the shared\n  test config home's grants folder read-only; under plain cargo test\n  (fedora) every test of the binary shares it, under nextest none do.\n  Those two now take a config home of their own (OwnConfigHome).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T17:05:08Z",
+          "tree_id": "ac9107e5df8284ec087a791f36c4da5d64106f54",
+          "url": "https://github.com/purlis/purlis/commit/3a835061ca43d73da98b895e2587f79232b496bc"
+        },
+        "date": 1793126304906,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.435057,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.418, 0.421, 0.435, 0.459, 0.459 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.811801000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.220, 16.358, 16.812, 17.048, 17.066 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7033685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.245, 101.583, 101.703, 102.415, 103.304 ms"
           }
         ]
       }
