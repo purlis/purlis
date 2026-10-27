@@ -1,0 +1,53 @@
+{
+  "source": "GitLab 19.4 REST API docs (gitlab-org/gitlab 19-4-stable-ee, doc/api), project_markdown_uploads.md: Upload a file",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "projects/acme%2Fapi/uploads"
+          }
+        },
+        "fields": [
+          {
+            "file": [
+              "file",
+              "browser-proof-1.png",
+              "iVBORw0KGgpvbmU="
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 5, \"alt\": \"browser-proof-1\", \"url\": \"/uploads/66dbcd21ec5d24ed6ea225176098d52b/browser-proof-1.png\", \"full_path\": \"/-/project/1/uploads/66dbcd21ec5d24ed6ea225176098d52b/browser-proof-1.png\", \"markdown\": \"![browser-proof-1](/uploads/66dbcd21ec5d24ed6ea225176098d52b/browser-proof-1.png)\"}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "projects/acme%2Fapi/uploads"
+          }
+        },
+        "fields": [
+          {
+            "file": [
+              "file",
+              "browser-proof-2.png",
+              "iVBORw0KGgp0d28="
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 6, \"alt\": \"browser-proof-2\", \"url\": \"/uploads/0a1b2c3d4e5f60718293a4b5c6d7e8f9/browser-proof-2.png\", \"full_path\": \"/-/project/1/uploads/0a1b2c3d4e5f60718293a4b5c6d7e8f9/browser-proof-2.png\", \"markdown\": \"![browser-proof-2](/uploads/0a1b2c3d4e5f60718293a4b5c6d7e8f9/browser-proof-2.png)\"}",
+        "err": ""
+      }
+    }
+  ]
+}

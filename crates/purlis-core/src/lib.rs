@@ -71,6 +71,7 @@ pub use purlis_terminal::engine;
 pub mod browserlimits;
 #[cfg(unix)]
 pub mod browserlogins;
+pub mod browserproof;
 pub mod browsers;
 pub mod browsersatquit;
 pub mod browsertimeline;
@@ -118,6 +119,7 @@ pub mod hookchannel;
 pub mod hookreg;
 pub mod hookstate;
 pub mod hookwire;
+pub mod hostedchats;
 pub mod hostsocket;
 pub mod hoststart;
 pub mod inboxupdates;

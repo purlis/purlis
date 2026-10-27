@@ -257,7 +257,7 @@ mod hosted {
     use std::sync::{Arc, Mutex, PoisonError};
     use std::time::Duration;
 
-    use purlis_core::eventlog::browsing::{Driver as Drives, Said, Typist};
+    use purlis_core::eventlog::browsing::{Closer, Driver as Drives, Said, Typist};
     use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, Driver};
     use purlis_session_protocol::session::{
         self, Answer, Command, ProgramKind, StartProgram, ViewKind, ViewRole,
@@ -391,8 +391,11 @@ mod hosted {
             // Back with the agent once it answers, unless the person took it over meanwhile;
             // a login that went through typed what it filled.
             if purlis_drives && self.driver_said(program) == Drives::Purlis {
-                if answered.is_ok() {
-                    self.typed(program, Typist::Purlis);
+                if let Ok(browsed) = &answered {
+                    let on = browsed.page.as_ref().and_then(|page| {
+                        purlis_session_protocol::browsing::origin_of(&page.address)
+                    });
+                    self.typed(program, Typist::Purlis, on);
                 }
                 self.drove(program, Drives::Agent);
             }
@@ -404,6 +407,7 @@ mod hosted {
         }
 
         fn stop(&self, program: &str) -> Result<(), String> {
+            self.ending_here(program);
             match self.link_for(program)?.call_refused_within(
                 Command::Stop {
                     chat: program.to_owned(),
@@ -413,6 +417,14 @@ mod hosted {
                 Err(refusal) if refusal.code != session::NO_SUCH_CHAT => Err(refusal.why),
                 _ => Ok(()),
             }
+        }
+
+        fn note(&self, root: &Path, program: &str, note: &crate::chatbrowsers::Note) {
+            WindowBrowsers::note(self, root, program, note);
+        }
+
+        fn taken_back(&self, root: &Path, program: &str) {
+            WindowBrowsers::taken_back(self, root, program);
         }
 
         fn driven(&self) -> Result<Vec<String>, String> {
@@ -458,6 +470,15 @@ mod hosted {
         says: Says,
         /// Who drives each browser, as the window last said it, by program (#2293).
         logged: Arc<Mutex<HashMap<String, Logged>>>,
+        /// Where each browser's note goes to be kept in the host, in the order given (#2025):
+        /// one thread sends them, started with the first.
+        notes: Mutex<Option<std::sync::mpsc::Sender<Noted>>>,
+        /// The browsers this window is ending, by program (#2842): an end it asked for is no
+        /// crash.
+        closing: Arc<Mutex<std::collections::HashSet<String>>>,
+        /// The origin of each browser's page, as its views were last told it, by program
+        /// (#2842): what typing into it is said on.
+        origins: Arc<Mutex<HashMap<String, Option<String>>>>,
     }
 
     /// **Told what the window says of a browser in the event log** (#2293): the project the
@@ -498,6 +519,13 @@ mod hosted {
         dimmed: bool,
     }
 
+    /// A window note on its way to the host: the project's root, the browser, the note.
+    type Noted = (
+        PathBuf,
+        String,
+        purlis_session_protocol::session::ProgramNote,
+    );
+
     /// Told the program of each browser the window started whose engine ended (#2385), on the
     /// link's own thread: whoever is told does its work elsewhere.
     pub(crate) type Ended = Arc<dyn Fn(String) + Send + Sync + 'static>;
@@ -528,7 +556,120 @@ mod hosted {
                 acts: std::sync::atomic::AtomicU64::new(0),
                 says: Arc::new(|_, _| {}),
                 logged: Arc::default(),
+                notes: Mutex::new(None),
+                closing: Arc::default(),
+                origins: Arc::default(),
             }
+        }
+
+        /// **Keeps `note` as this window's note of browser `program`, of the project at `root`,
+        /// in its host** (#2025), on that project's own link: sent after every note given before
+        /// it, never waited on. A host before 1.39 keeps none, and is sent none.
+        pub(crate) fn note(&self, root: &Path, program: &str, note: &crate::chatbrowsers::Note) {
+            // Kept on this machine's host alone: a runner's browser has none yet (#3380).
+            if self.pool_of(program).is_some() {
+                return;
+            }
+            let Some(note) = note.kept() else {
+                return;
+            };
+            let mut notes = lock(&self.notes);
+            let sender = notes.get_or_insert_with(|| {
+                let (sender, noted) = std::sync::mpsc::channel::<Noted>();
+                let connection = Arc::clone(&self.connection);
+                let spawned = std::thread::Builder::new()
+                    .name("purlis-browser-notes".into())
+                    .spawn(move || {
+                        for (root, program, note) in noted {
+                            let sent = connection.of_project(&root, LINK_WITHIN).and_then(|link| {
+                                if link.version() < session::KNOWS_BROWSERS_TAKEN_BACK {
+                                    return Ok(());
+                                }
+                                link.call(Command::NoteProgram {
+                                    program: program.clone(),
+                                    note,
+                                })
+                                .map(|_| ())
+                            });
+                            if let Err(why) = sent {
+                                tracing::warn!(
+                                    "purlis: the session host kept no note of browser {program}: \
+                                     {why}"
+                                );
+                            }
+                        }
+                    });
+                if let Err(why) = spawned {
+                    tracing::warn!("purlis: browsers' notes cannot be kept in the host: {why}");
+                }
+                sender
+            });
+            let _ = sender.send((root.to_path_buf(), program.to_owned(), note));
+        }
+
+        /// **Browser `program`, left in the host by a window before this one, is this window's
+        /// again** in the project at `root` (#2025): listed among the browsers started there, and
+        /// its end told as for one it started.
+        pub(crate) fn taken_back(&self, root: &Path, program: &str) {
+            // Left on this machine's host: a runner's are not taken back yet (#3380).
+            let at = At {
+                root: root.to_path_buf(),
+                pool: None,
+            };
+            let link = match self.held(&at) {
+                Ok((link, _)) => link,
+                Err(why) => {
+                    tracing::warn!("purlis: browser {program} could not be taken back: {why}");
+                    return;
+                }
+            };
+            self.follow_its_end(&link, root, program);
+            if let Some(held) = self.projects().get_mut(&at)
+                && !held.browsers.iter().any(|one| one == program)
+            {
+                held.browsers.push(program.to_owned());
+            }
+            // Who drives it, as the host holds the lease: kept, not said again.
+            self.seed_from_the_host(&link, program);
+        }
+
+        /// Its end, as the host says it, told to whoever is told (#2385).
+        /// An end this window did not ask for is said as a crash (#2842), in the project at
+        /// `root`.
+        fn follow_its_end(&self, link: &HostLink, root: &Path, program: &str) {
+            let ended = Arc::clone(&self.ended);
+            let logged = Arc::clone(&self.logged);
+            let closing = Arc::clone(&self.closing);
+            let origins = Arc::clone(&self.origins);
+            let says = Arc::clone(&self.says);
+            let started_in = root.to_path_buf();
+            let named = program.to_owned();
+            link.when_it_ends(
+                program,
+                Box::new(move |ending| {
+                    lock(&logged).remove(&named);
+                    lock(&origins).remove(&named);
+                    // Who ended it and why is in the session host's own line (#2745).
+                    tracing::info!("{}", ended_said(&named, &ending));
+                    // An end this window did not ask for is a crash (#2842): said off the
+                    // link's thread, before its chat lets go of it.
+                    if !lock(&closing).remove(&named) {
+                        let crashed = Said::Crashed {
+                            browser: named.clone(),
+                        };
+                        let said = std::thread::Builder::new()
+                            .name("purlis-browser-crashed".into())
+                            .spawn(move || says(Some(&started_in), crashed));
+                        if let Err(why) = said {
+                            tracing::warn!(
+                                "purlis: a browser's crash was not written to the event log \
+                                 ({why})"
+                            );
+                        }
+                    }
+                    ended(named);
+                }),
+            );
         }
 
         /// **`says` is told who drives each browser and that someone typed, never what**
@@ -641,8 +782,9 @@ mod hosted {
         }
 
         /// **`by` typed into `program`, which it drives** (#2293): said once for each stretch it
-        /// drives, never what.
-        fn typed(&self, program: &str, by: Typist) {
+        /// drives, never what; on the origin of its page (#2842), where it is known: `on`, or
+        /// what its views were last told.
+        fn typed(&self, program: &str, by: Typist, on: Option<String>) {
             {
                 let mut logged = lock(&self.logged);
                 let now = logged.entry(program.to_owned()).or_insert(STARTS);
@@ -651,7 +793,26 @@ mod hosted {
                 }
                 now.typed = true;
             }
+            let origin = on.or_else(|| lock(&self.origins).get(program).cloned().flatten());
             self.say(Said::Typed {
+                browser: program.to_owned(),
+                by,
+                origin,
+            });
+        }
+
+        /// **This window ends `program`** (#2842): its end, when the host tells it, is no crash.
+        /// Whether it was not marked so before. The one place a program is marked.
+        fn ending_here(&self, program: &str) -> bool {
+            lock(&self.closing).insert(program.to_owned())
+        }
+
+        /// **`by` closes `program`** (#2842): said once, and its end is no crash.
+        pub(crate) fn closed_by(&self, program: &str, by: Closer) {
+            if !self.ending_here(program) {
+                return;
+            }
+            self.say(Said::Closed {
                 browser: program.to_owned(),
                 by,
             });
@@ -731,10 +892,16 @@ mod hosted {
             reach: Option<BrowserReach>,
         ) -> Result<String, String> {
             self.open_reaching(root, reach, None)
+                // The person's own browser opened (#2842): a chat's says so as its chat takes it.
+                .inspect(|program| {
+                    self.say(Said::Opened {
+                        browser: program.clone(),
+                    })
+                })
                 .map_err(|not| match not {
                     NotStarted::Full { most } => purlis_core::browserlimits::device_full_told(most),
                     NotStarted::NoSandbox => {
-                        crate::enginesandbox::refused();
+                        crate::enginesandbox::refused_on(None);
                         crate::enginesandbox::NOT_STARTED_FOR_THE_PERSON.to_owned()
                     }
                     NotStarted::Cancelled => {
@@ -809,18 +976,7 @@ mod hosted {
             crate::enginedownload::here().finished(&named);
             match answered.map_err(|refused| not_started(refused, budget))? {
                 Answer::ProgramStarted { program, .. } => {
-                    let ended = Arc::clone(&self.ended);
-                    let logged = Arc::clone(&self.logged);
-                    let named = program.clone();
-                    link.when_it_ends(
-                        &program,
-                        Box::new(move |ending| {
-                            lock(&logged).remove(&named);
-                            // Who ended it and why is in the session host's own line (#2745).
-                            tracing::info!("{}", ended_said(&named, &ending));
-                            ended(named);
-                        }),
-                    );
+                    self.follow_its_end(&link, root, &program);
                     if let Some(held) = self.projects().get_mut(&at) {
                         held.browsers.push(program.clone());
                     }
@@ -865,6 +1021,14 @@ mod hosted {
             self.follow(&link, attached.view, link_said);
             // A runner's browser is held to the link's frames by the window too (#2050).
             let held = self.pool_of(program).is_some();
+            // Where its page is, kept for what typing into it is said on (#2842).
+            let kept = Arc::clone(&self.origins);
+            let of = program.to_owned();
+            let mut origins = origins;
+            let origins: crate::hostedsessions::OriginSink = Box::new(move |origin| {
+                lock(&kept).insert(of.clone(), origin.clone());
+                origins(origin);
+            });
             link.draw_frames(attached.view, frames, origins, held);
             // The lease is the host's: a view opened again says whether the person still drives.
             let person_drives = matches!(
@@ -949,7 +1113,7 @@ mod hosted {
             Ok(match sent {
                 Ok(_) => {
                     if keyed {
-                        self.typed(program, Typist::Person);
+                        self.typed(program, Typist::Person, None);
                     }
                     InputOutcome::Taken
                 }
@@ -1108,6 +1272,8 @@ mod hosted {
 
         /// Ends `program` and forgets it.
         pub(crate) fn close(&self, program: &str) -> Result<(), String> {
+            // Its end, when the host tells it, is no crash (#2842).
+            self.ending_here(program);
             // Forgotten only once the host has ended it: one it could not be told of stays
             // listed, so letting go of its project and Stop all still end it.
             let closed = self.link_for(program)?.call_refused_within(
@@ -1152,6 +1318,8 @@ mod hosted {
                     .browsers
                     .into_iter()
                     .filter(|program| {
+                        // The person let go of the project it was in (#2842).
+                        self.closed_by(program, Closer::Person);
                         link.call(Command::Close {
                             program: program.clone(),
                         })
@@ -1187,6 +1355,11 @@ mod hosted {
                     .into_iter()
                     .filter(|program| program.kind == Some(ProgramKind::Browser))
                     .filter(|browser| {
+                        // Every browser the kill switch stops is said so, a chat's too
+                        // (#2842); one that ended already is not stopped by it.
+                        if browser.state != "ended" {
+                            self.closed_by(&browser.chat, Closer::KillSwitch);
+                        }
                         link.call(Command::Stop {
                             chat: browser.chat.clone(),
                         })
@@ -1260,7 +1433,12 @@ pub async fn open_browser(
         crate::off_the_window("starting a browser", move || {
             // It reaches what the project's browsers reach, and asks of a new site (#2176).
             let reach = crate::chatbrowsers::person_reach(&held);
-            browsers.open_for_the_person(held.root(), Some(reach))
+            let program = browsers.open_for_the_person(held.root(), Some(reach))?;
+            // The person's own, noted so (#2025).
+            let listing = held.browsers().listing();
+            held.browsers().opened_by_the_person(&program);
+            held.browsers_listed_since(listing);
+            Ok(program)
         })
         .await
     }
@@ -1562,6 +1740,7 @@ pub async fn close_browser(
     {
         let browsers = browsers(&app)?;
         crate::off_the_window("ending a browser", move || {
+            browsers.closed_by(&program, purlis_core::eventlog::browsing::Closer::Person);
             browsers.close(&program)?;
             // A pinned one whose chat closed leaves its rows (#2022).
             for one in &held {

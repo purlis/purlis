@@ -247,6 +247,23 @@ impl HarnessAdapter for Codex {
         }
     }
 
+    /// **Codex 0.163.0** (`ext/skills/src/loader/metadata.rs`, `loader/mod.rs:20-21`, research of
+    /// 2026-10-20, measured): a skill it finds itself, its own or a repo's, is kept out of its
+    /// model's catalogue by `agents/openai.yaml` setting `policy.allow_implicit_invocation:
+    /// false`, and still runs when named. Codex reads that file whole with serde and ignores all
+    /// of it where it does not parse, so purlis reads it as manual-only only where its strict
+    /// reader finds that one plain `false` ([`purlis_skills::handed::flag_at`]): anything else
+    /// reads as the default, which lists the skill.
+    fn manual_beside(&self) -> Option<crate::skills::ManualBeside> {
+        Some(crate::skills::ManualBeside {
+            file: "agents/openai.yaml",
+            says: |text| {
+                purlis_skills::handed::flag_at(text, &["policy", "allow_implicit_invocation"])
+                    == Some(false)
+            },
+        })
+    }
+
     /// None: Codex has no command-pattern permissions, so a rule has no file to go into, and
     /// purlis's own guard, which rides on the chat's hooks, is what applies there.
     fn command_rule(
@@ -271,6 +288,12 @@ impl HarnessAdapter for Codex {
     /// Yes: the wrap is around the whole harness, so its hooks and MCP servers run inside it.
     fn sandbox_holds_what_it_starts(&self) -> bool {
         true
+    }
+
+    /// No grade runs here until purlis can hold its chats to the grade's limits and read their
+    /// spend on this harness (#3272).
+    fn can_grade(&self) -> bool {
+        false
     }
 
     /// The wrap's program first, with the profile written for where the chat opens, then the

@@ -29,12 +29,18 @@
 //!   types nor deletes put into the field (a paste), and what the field holds after it, are
 //!   kept as they were, like a run.
 //!
+//! **No button stays held in the engine** (#2989). A press that reached the page is let go
+//! however its release ends: where the release is dropped (the page moved on in between), the
+//! engine is sent a release of that button at the press's point, and the hand-back lets go of
+//! every button still held. That release is a real one to the page: it fires `mouseup` and
+//! `pointerup` where the press was, as a release there would, and no click.
+//!
 //! **The hand-back is explicit** ([`Browser::hand_back`]): nothing returns the lease to the
 //! agent by itself. It voids every reference dealt before it, so the agent's next act starts
 //! from a new snapshot.
 
 use std::cell::Cell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -82,8 +88,9 @@ pub(crate) struct Typing {
     latest: HashMap<NodeKey, String>,
     /// The fields the person typed into, in the order they first typed into each.
     order: Vec<NodeKey>,
-    /// The mouse buttons the person holds down, as the engine's bits.
-    held: i64,
+    /// The mouse buttons the person holds down on a page, by the engine's bit: each press that
+    /// reached the page, until its release does (#2989).
+    held: BTreeMap<i64, Pressed>,
     /// The field the person's last key was blanked and read for, while the page showed the
     /// document number it was blanked under (#2295): a key into it while it keeps the focus
     /// needs no new read of the page.
@@ -133,6 +140,16 @@ impl Landing {
             focused: None,
         }
     }
+}
+
+/// A press of the person's that reached a page: its button, the session it went to and its
+/// point, where the button is let go when its release is dropped (#2989).
+#[derive(Debug, Clone)]
+struct Pressed {
+    button: MouseButton,
+    session: String,
+    x: f64,
+    y: f64,
 }
 
 /// A field already blanked: its page's target and element, the page's read it was blanked in,
@@ -230,6 +247,8 @@ impl Browser {
         }
         self.keep_typing_out();
         lock(&self.typing).forget_reads();
+        // A button the person still holds is let go before the agent has the page (#2989).
+        self.let_go_of_held(None);
         // What a login the person cut had filled is emptied before the agent has the page.
         self.clear_cut_logins();
         let mut lease = lock(&self.lease);
@@ -341,6 +360,55 @@ impl Browser {
     /// key that edits, the focused element is blanked: a page that cannot say which element
     /// has the focus is refused [`Refusal::FocusUnclear`], and the key is not sent.
     pub fn person_input(&self, input: &PersonInput) -> Result<(), Refusal> {
+        let sent = self.person_input_once(input);
+        // A release dropped lets go of its button at its press's point, where that press
+        // reached the page (#2989): the engine holds no button the person has let go of.
+        if sent == Err(Refusal::Missed)
+            && let PersonInput::Mouse {
+                kind: MouseKind::Released,
+                button,
+                ..
+            } = input
+        {
+            self.let_go_of_held(Some(button_bit(*button)));
+        }
+        sent
+    }
+
+    /// Sends the engine a release of the button of `bit` (every button, for `None`) the person
+    /// holds on a page, at its press's point, on the session the press went to (#2989). The
+    /// engine may have gone or refused: the button counts as let go here whatever it answers.
+    fn let_go_of_held(&self, bit: Option<i64>) {
+        let (released, mut buttons) = {
+            let mut typing = lock(&self.typing);
+            let released: Vec<(i64, Pressed)> = match bit {
+                Some(bit) => typing
+                    .held
+                    .remove(&bit)
+                    .map(|p| (bit, p))
+                    .into_iter()
+                    .collect(),
+                None => std::mem::take(&mut typing.held).into_iter().collect(),
+            };
+            let still: i64 = typing.held.keys().sum();
+            let buttons = still + released.iter().map(|(bit, _)| bit).sum::<i64>();
+            (released, buttons)
+        };
+        for (bit, pressed) in released {
+            buttons &= !bit;
+            let event = mouse_event(
+                MouseKind::Released,
+                pressed.x,
+                pressed.y,
+                pressed.button,
+                buttons,
+                0,
+            );
+            let _ = self.person_sends("Input.dispatchMouseEvent", event, &pressed.session);
+        }
+    }
+
+    fn person_input_once(&self, input: &PersonInput) -> Result<(), Refusal> {
         if self.driver() != Driver::Person {
             return Err(Refusal::NotDriving);
         }
@@ -501,32 +569,14 @@ impl Browser {
                 }
                 let bit = button_bit(*button);
                 let buttons = {
-                    let mut typing = lock(&self.typing);
+                    let held: i64 = lock(&self.typing).held.keys().sum();
                     match kind {
-                        MouseKind::Pressed => typing.held |= bit,
-                        MouseKind::Released => typing.held &= !bit,
-                        MouseKind::Moved | MouseKind::Wheel => {}
+                        MouseKind::Pressed => held | bit,
+                        MouseKind::Released => held & !bit,
+                        MouseKind::Moved | MouseKind::Wheel => held,
                     }
-                    typing.held
                 };
-                let mut event = json!({
-                    "type": match kind {
-                        MouseKind::Moved => "mouseMoved",
-                        MouseKind::Pressed => "mousePressed",
-                        MouseKind::Released => "mouseReleased",
-                        MouseKind::Wheel => "mouseWheel",
-                    },
-                    "x": x,
-                    "y": y,
-                    "modifiers": modifiers,
-                    "buttons": buttons,
-                    "button": match button {
-                        MouseButton::None => "none",
-                        MouseButton::Left => "left",
-                        MouseButton::Middle => "middle",
-                        MouseButton::Right => "right",
-                    },
-                });
+                let mut event = mouse_event(*kind, *x, *y, *button, buttons, *modifiers);
                 if *clicks > 0 {
                     event["clickCount"] = (*clicks).into();
                 }
@@ -534,7 +584,30 @@ impl Browser {
                     event["deltaX"] = (*delta_x).into();
                     event["deltaY"] = (*delta_y).into();
                 }
-                self.person_sends("Input.dispatchMouseEvent", event, &session)
+                // A release the engine refused (an engine error) leaves its button counted as
+                // held, as the engine may hold it still: the hand-back lets go of it.
+                self.person_sends("Input.dispatchMouseEvent", event, &session)?;
+                // The button is held in the engine from the press that reached the page, until
+                // a release does.
+                let mut typing = lock(&self.typing);
+                match kind {
+                    MouseKind::Pressed if bit != 0 => {
+                        typing.held.insert(
+                            bit,
+                            Pressed {
+                                button: *button,
+                                session,
+                                x: *x,
+                                y: *y,
+                            },
+                        );
+                    }
+                    MouseKind::Released => {
+                        typing.held.remove(&bit);
+                    }
+                    _ => {}
+                }
+                Ok(())
             }
         }
     }
@@ -1227,6 +1300,35 @@ fn key_event(
         event["commands"] = json!([command]);
     }
     event
+}
+
+/// The engine's mouse event of `kind` at (`x`, `y`) for `button`, with `buttons` held.
+fn mouse_event(
+    kind: MouseKind,
+    x: f64,
+    y: f64,
+    button: MouseButton,
+    buttons: i64,
+    modifiers: Modifiers,
+) -> Value {
+    json!({
+        "type": match kind {
+            MouseKind::Moved => "mouseMoved",
+            MouseKind::Pressed => "mousePressed",
+            MouseKind::Released => "mouseReleased",
+            MouseKind::Wheel => "mouseWheel",
+        },
+        "x": x,
+        "y": y,
+        "modifiers": modifiers,
+        "buttons": buttons,
+        "button": match button {
+            MouseButton::None => "none",
+            MouseButton::Left => "left",
+            MouseButton::Middle => "middle",
+            MouseButton::Right => "right",
+        },
+    })
 }
 
 /// The engine's bit for a held mouse button.

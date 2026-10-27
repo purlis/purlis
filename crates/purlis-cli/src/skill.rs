@@ -21,7 +21,8 @@ use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{
-    Deprecated, Grant, Lifecycle, StudioRow, Switch, Template, TemplateId, history, lifecycle,
+    Deprecated, Grant, Lifecycle, Outcome, StudioList, StudioRow, Switch, Template, TemplateId,
+    clash_said, history, lifecycle,
 };
 use serde_json::{Value, json};
 
@@ -331,6 +332,20 @@ pub enum SkillCommand {
         #[arg(long)]
         json: bool,
     },
+    /// A skill's grades, and what grading it runs before anything does: its trigger tests, the
+    /// chats a grade runs (each test three times with the skill and three without it, one turn
+    /// each) and what its last grade spent per chat; then each grade the project's eval record
+    /// holds, newest first, with each arm's pass rate and the difference the skill made. A
+    /// grade runs from the skill's tab in the Skill studio, which shows this plan first.
+    Grade {
+        /// The skill's name, as `purlis skill list` prints it.
+        name: String,
+        #[command(flatten)]
+        at: LevelArgs,
+        /// Answer as JSON, for a chat or a script.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// The level a skill is at: the project's root, a workspace or a persona; shared, or local.
@@ -404,6 +419,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     ..
                 }
                 | SkillCommand::Runs { .. }
+                | SkillCommand::Grade { .. }
                 | SkillCommand::History { .. }
                 | SkillCommand::Uses { .. }
         );
@@ -447,7 +463,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 println!(
                     "{}",
                     json!({
-                        "skills": list.rows.iter().map(row_json).collect::<Vec<_>>(),
+                        "skills": list.rows.iter().map(|row| plane_json(&list, row))
+                            .collect::<Vec<_>>(),
                         "harnesses": list.harnesses.iter().map(|one| json!({
                             "harness": one.harness.name(),
                             "title": one.harness.title(),
@@ -459,7 +476,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     })
                 );
             } else {
-                print!("{}", table(&list.rows));
+                print!("{}", table(&list.rows, &|row| clashes_said(&list, row)));
                 for one in &list.harnesses {
                     if !one.rows.is_empty() {
                         print!(
@@ -473,7 +490,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                         print!(
                             "\n{} chats in a repo here start without these:\n{}",
                             one.harness.title(),
-                            table(&one.repo_left_out)
+                            table(&one.repo_left_out, &|_| Vec::new())
                         );
                     }
                 }
@@ -514,14 +531,17 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                     .iter()
                     .map(|(harness, row)| match harness {
                         Some(harness) => outside_json(*harness, row),
-                        None => row_json(row),
+                        None => plane_json(&list, row),
                     })
                     .collect();
                 println!("{}", json!({ "copies": shown }));
             } else {
                 let shown: Vec<String> = copies
                     .iter()
-                    .map(|(harness, row)| detail(*harness, row))
+                    .map(|(harness, row)| match harness {
+                        Some(_) => detail(*harness, row, &[]),
+                        None => detail(None, row, &clashes_said(&list, row)),
+                    })
                     .collect();
                 print!("{}", shown.join("\n"));
             }
@@ -887,6 +907,25 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                 Ok(1)
             }
         },
+        SkillCommand::Grade { name, at, json } => {
+            let level = at.level();
+            match purlis_core::skills::grades::planned(root, &level, &name) {
+                Ok(planned) => {
+                    let graded = purlis_core::skills::grades::grades_of(root, &name, Some(&level));
+                    if json {
+                        println!("{}", json!({ "plan": planned, "grades": graded }));
+                    } else {
+                        let local_file = purlis_core::settings::Which::Local.file_at(root);
+                        print!("{}", grade_said(&planned, &graded, local_file));
+                    }
+                    Ok(0)
+                }
+                Err(why) => {
+                    voice::err(why);
+                    Ok(1)
+                }
+            }
+        }
         SkillCommand::History { name, at, json, .. } => {
             match history::history(root, &at.level(), &name) {
                 Ok(versions) if json => {
@@ -1130,6 +1169,127 @@ fn versions_table(name: &str, history: &history::History) -> String {
         text.push_str(&format!(
             "On changes not committed: {}\n",
             runs_said(&history.uncommitted)
+        ));
+    }
+    text
+}
+
+/// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
+fn grade_said(
+    planned: &purlis_core::skills::grades::Planned,
+    graded: &[purlis_core::skills::grades::Graded],
+    local_file: &str,
+) -> String {
+    use purlis_core::skills::grade::{Arm, Read};
+    let name = &planned.skill;
+    let mut text = String::new();
+    if let Read::Refused(why) = &planned.fixtures.triggers {
+        text.push_str(&format!(
+            "Its trigger tests could not be read: {}\n",
+            why.terminal()
+        ));
+    }
+    match (&planned.request, planned.plan) {
+        (Some(request), Some(plan)) => {
+            text.push_str(&format!(
+                "Grading {name} runs {}, one turn each: each of {} {} with the skill and {} \
+                 without it.\n",
+                counted(plan.chats, "chat", "chats"),
+                counted(plan.trigger_tests, "trigger test", "trigger tests"),
+                counted(u32::from(request.runs), "time", "times"),
+                counted(u32::from(request.runs), "time", "times"),
+            ));
+            match planned.estimate {
+                Some(estimate) if estimate.tokens.is_some() || estimate.cost_usd.is_some() => {
+                    let mut parts = Vec::new();
+                    if let Some(tokens) = estimate.tokens {
+                        parts.push(format!("about {tokens} tokens"));
+                    }
+                    if let Some(cost) = estimate.cost_usd {
+                        parts.push(format!("about ${cost:.2}"));
+                    }
+                    text.push_str(&format!(
+                        "From its last grade, of {}, a grade spends {}.\n",
+                        counted(estimate.chats_then, "chat", "chats"),
+                        parts.join(", ")
+                    ));
+                }
+                _ => text.push_str(
+                    "It has not been graded here before, so what a grade spends is not known yet.\n",
+                ),
+            }
+            for (at, test) in request.triggers.iter().enumerate() {
+                text.push_str(&format!(
+                    "  {}. {}  ({})\n",
+                    at + 1,
+                    purlis_core::skills::review::escaped_line(&test.query),
+                    if test.should_trigger {
+                        "should start it"
+                    } else {
+                        "should leave it alone"
+                    }
+                ));
+            }
+            for left in &planned.left_out {
+                text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
+            }
+            text.push_str(&format!(
+                "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
+                 sets it), or once they cost ${:.2}, where the harness says what they cost.\n",
+                counted(planned.cap.tokens, "token", "tokens"),
+                match planned.cap.from {
+                    purlis_core::skills::grades::cap::From::Default => "the default",
+                    purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
+                },
+                local_file,
+                planned.cap.cost_usd(),
+            ));
+            text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
+        }
+        _ => text.push_str(&format!(
+            "{name} has no trigger tests to grade: the queries it should start on and the near \
+             misses it should leave alone, in its evals/triggers.json.\n"
+        )),
+    }
+    if let Some(evals) = planned
+        .fixtures
+        .outcomes
+        .read()
+        .filter(|evals| !evals.is_empty())
+    {
+        text.push_str(&format!(
+            "{} for a later purlis: grades run the trigger tests alone.\n",
+            counted(evals.len(), "outcome eval waits", "outcome evals wait"),
+        ));
+    }
+    if graded.is_empty() {
+        text.push_str(&format!("No grades of {name} yet.\n"));
+        return text;
+    }
+    text.push_str("\nGrades, newest first:\n");
+    for one in graded {
+        let rate = |arm: Arm| {
+            one.report
+                .arm(arm)
+                .and_then(|score| score.pass_rate)
+                .map_or_else(
+                    || "not run".to_owned(),
+                    |stat| format!("{:.0}%", stat.mean * 100.0),
+                )
+        };
+        let (passed, of) = one.report.passed_with();
+        text.push_str(&format!(
+            "  {}  {}  {passed} of {} passed  with {}  without {}{}  ({})\n",
+            purlis_core::skills::review::escaped_line(&one.ts),
+            one.commit.as_deref().map_or("uncommitted", history::short),
+            counted(of, "test", "tests"),
+            rate(Arm::With),
+            rate(Arm::Without),
+            one.report
+                .delta
+                .map(|delta| format!("  difference {:+.0} points", delta * 100.0))
+                .unwrap_or_default(),
+            counted(one.spent.chats, "chat", "chats"),
         ));
     }
     text
@@ -1642,9 +1802,48 @@ fn row_json(row: &StudioRow) -> Value {
     })
 }
 
+/// A plane or built-in row as JSON: [`row_json`]'s, with each skill from outside the plane that
+/// has its name (SK-46, #3149), as the studio marks it.
+fn plane_json(list: &StudioList, row: &StudioRow) -> Value {
+    let mut shown = row_json(row);
+    shown["clashes"] = list
+        .clashes_of(row)
+        .map(|(harness, clash)| {
+            json!({
+                "harness": harness.name(),
+                "outside": clash.outside.level(),
+                "owner": clash.owner,
+                "outcome": match clash.outcome {
+                    Outcome::BothLoad => "both-load",
+                    Outcome::RepoWins => "repo-wins",
+                    Outcome::EitherOne => "either-one",
+                },
+                "said": clash_said(harness, clash),
+            })
+        })
+        .collect();
+    shown
+}
+
+/// What the studio says of each clash of a plane or built-in row (SK-46, #3149), harness by
+/// harness: the lines `list` and `show` add to it, each once (two harnesses on which both
+/// copies load say the same).
+fn clashes_said(list: &StudioList, row: &StudioRow) -> Vec<String> {
+    let mut said: Vec<String> = Vec::new();
+    for line in list
+        .clashes_of(row)
+        .map(|(harness, clash)| clash_said(harness, clash))
+    {
+        if !said.contains(&line) {
+            said.push(line);
+        }
+    }
+    said
+}
+
 /// One copy of a skill, as `show` prints it: one a harness finds itself with that harness,
-/// whose it is and how it can be left out.
-fn detail(harness: Option<Harness>, row: &StudioRow) -> String {
+/// whose it is and how it can be left out, and for purlis's copy each clash `also` says.
+fn detail(harness: Option<Harness>, row: &StudioRow, also: &[String]) -> String {
     let mut text = format!("{}\n  level: {}\n", esc(&row.name), level(row));
     if let Some(harness) = harness {
         text.push_str(&format!("  harness: {}\n", harness.title()));
@@ -1663,16 +1862,31 @@ fn detail(harness: Option<Harness>, row: &StudioRow) -> String {
         text.push_str(&format!("  grant: {}\n", esc(grant)));
     }
     text.push_str(&format!("  in this chat's skills: {}\n", esc(&state(row))));
+    for said in also {
+        text.push_str(&format!("  also: {}\n", esc(said)));
+    }
     text
 }
 
-fn table(rows: &[StudioRow]) -> String {
+/// The rows of a chat's skills, each with its state and, after it, each line `also` says of it
+/// (a clash, SK-46). A repo's names are the least trusted text here, so every cell is escaped.
+fn table(rows: &[StudioRow], also: &dyn Fn(&StudioRow) -> Vec<String>) -> String {
     if rows.is_empty() {
         return "No skills here yet. A project skill is a folder in skills/ at the plane root, \
                 holding its SKILL.md.\n"
             .to_owned();
     }
-    let states: Vec<String> = rows.iter().map(|row| esc(&state(row))).collect();
+    let states: Vec<String> = rows
+        .iter()
+        .map(|row| {
+            let mut said = state(row);
+            for one in also(row) {
+                said.push_str("; also: ");
+                said.push_str(&one);
+            }
+            esc(&said)
+        })
+        .collect();
     let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
     let name_w = voice::column(names.iter().copied().chain(["SKILL"]));
     let levels: Vec<String> = rows.iter().map(level).collect();

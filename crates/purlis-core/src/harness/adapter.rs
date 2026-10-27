@@ -83,6 +83,27 @@ pub trait HarnessAdapter: Sync {
     /// default: each adapter says how its sandbox is applied.
     fn sandbox_holds_what_it_starts(&self) -> bool;
 
+    /// **Whether a grade's chats can run on this harness** (SK-16, ADR 0105, #3310): purlis can
+    /// hold one of its chats to the grade's limits there (to purlis's MCP server alone and its
+    /// read tools) and read what it spent, the operator's ruling of 2026-10-26. No default: each
+    /// adapter says, and every grade's chat on one that says `false` is refused
+    /// ([`crate::skills::grades::chat_refused`]).
+    fn can_grade(&self) -> bool;
+
+    /// **Why a grade's chat on this harness may not start** as `command` (the program, then the
+    /// profile's own words) under the chat's environment `env` would start it, or `None` where it
+    /// may: a command, or the person's own settings, that keep the chat from ever asking, so a
+    /// grade's "end at the first ask" would never fire. Asked only where [`Self::can_grade`]
+    /// says `true`. The default is a harness with no such switch.
+    fn grade_refused(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        let _ = (command, env);
+        None
+    }
+
     /// The chat's whole line under `form`, the sandbox [`Self::sandbox_compiler`] compiled,
     /// from `words`: the program, the profile's `command`, then `armed` (what [`Self::arm`]
     /// gave), then `charters`, charter's own words — where the chat opens, `at`; or the one
@@ -175,6 +196,14 @@ pub trait HarnessAdapter: Sync {
     /// handed ([`crate::skills::handed_text`]) are worked out from. No default: each adapter
     /// says which version it read and how.
     fn skill_frontmatter(&self) -> crate::skills::Honours;
+
+    /// **The file beside a `SKILL.md` this harness reads to keep one of the skills it finds
+    /// itself out of its model's choice** (SK-39), and how a text of it says so: what the badge
+    /// of each of its own and its repo skills reads. Pure: the host reads the file. `None`, the
+    /// default, for a harness that keeps one out by its frontmatter alone.
+    fn manual_beside(&self) -> Option<crate::skills::ManualBeside> {
+        None
+    }
 
     /// **Whether this harness names the skill a prompt the person sent started** (SK-12): a
     /// hook it fires says so ([`Self::prompt_started`]), and a skill Use skill… typed is then

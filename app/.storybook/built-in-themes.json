@@ -236,6 +236,14 @@
             "m21 8-2.3-2.3A9.7 9.7 0 0012 3a9 9 0 109 9"
           ]
         },
+        "skills": {
+          "paths": [
+            "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z",
+            "M20 2v4",
+            "M22 4h-4",
+            "M2 20A2 2 0 1 0 6 20A2 2 0 1 0 2 20Z"
+          ]
+        },
         "todos": {
           "paths": [
             "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z",
@@ -302,6 +310,7 @@
           "--radius-md": "7px",
           "--radius-sm": "7px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(24rem / 14)",
           "--size-control": "2rem",
           "--space-0": "0",
@@ -342,6 +351,7 @@
           "--radius-md": "7px",
           "--radius-sm": "7px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",
@@ -546,57 +556,95 @@
           {
             "token": "accent.base",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "accent.base",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "focus.ring",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "list.selected-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.fill-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
           }
         ]
       },
       "parts": [
         "@layer parts {",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); --panel-fill: var(--surface-raised); }",
         "  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }",
         "}"
       ]
     },
@@ -836,6 +884,14 @@
             "m21 8-2.3-2.3A9.7 9.7 0 0012 3a9 9 0 109 9"
           ]
         },
+        "skills": {
+          "paths": [
+            "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z",
+            "M20 2v4",
+            "M22 4h-4",
+            "M2 20A2 2 0 1 0 6 20A2 2 0 1 0 2 20Z"
+          ]
+        },
         "todos": {
           "paths": [
             "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z",
@@ -902,6 +958,7 @@
           "--radius-md": "7px",
           "--radius-sm": "7px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(24rem / 14)",
           "--size-control": "2rem",
           "--space-0": "0",
@@ -942,6 +999,7 @@
           "--radius-md": "7px",
           "--radius-sm": "7px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",
@@ -1146,57 +1204,95 @@
           {
             "token": "accent.base",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "accent.base",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "focus.ring",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "list.selected-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.fill-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
           }
         ]
       },
       "parts": [
         "@layer parts {",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); --panel-fill: var(--surface-raised); }",
         "  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }",
         "}"
       ]
     },
@@ -1436,6 +1532,14 @@
             "m21 8-2.3-2.3A9.7 9.7 0 0012 3a9 9 0 109 9"
           ]
         },
+        "skills": {
+          "paths": [
+            "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z",
+            "M20 2v4",
+            "M22 4h-4",
+            "M2 20A2 2 0 1 0 6 20A2 2 0 1 0 2 20Z"
+          ]
+        },
         "todos": {
           "paths": [
             "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z",
@@ -1502,6 +1606,7 @@
           "--radius-md": "7px",
           "--radius-sm": "7px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(24rem / 14)",
           "--size-control": "2rem",
           "--space-0": "0",
@@ -1542,6 +1647,7 @@
           "--radius-md": "7px",
           "--radius-sm": "7px",
           "--radius-xl": "12px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",
@@ -1746,57 +1852,95 @@
           {
             "token": "accent.base",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "accent.base",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "focus.ring",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "list.selected-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.fill-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
           }
         ]
       },
       "parts": [
         "@layer parts {",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"card\"][data-part=\"root\"]) { background-color: var(--surface-base); }",
+        "  :where([data-scope=\"card\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"dialog\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"panel\"][data-part=\"root\"]) { background-color: var(--surface-raised); --panel-fill: var(--surface-raised); }",
         "  :where([data-scope=\"popover\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-radius: min(8px, 50%); }",
         "  :where([data-scope=\"tooltip\"][data-part=\"root\"]) { border-width: 0px; border-style: solid; }",
+        "  :where([data-scope=\"card\"][data-part=\"root\"][data-variant=\"ask\"]) { border-width: 1px; border-style: solid; }",
         "}"
       ]
     }
@@ -2007,6 +2151,7 @@
           "--radius-md": "4px",
           "--radius-sm": "3px",
           "--radius-xl": "8px",
+          "--separator-width": "1px",
           "--size-chrome": "1.5rem",
           "--size-control": "2rem",
           "--space-0": "0",
@@ -2047,6 +2192,7 @@
           "--radius-md": "4px",
           "--radius-sm": "3px",
           "--radius-xl": "8px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",
@@ -2188,47 +2334,80 @@
           {
             "token": "accent.base",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "accent.base",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "focus.ring",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "list.selected-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.fill-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
           }
         ]
       },
@@ -2243,6 +2422,7 @@
         "  :where([data-scope=\"tabs\"][data-part=\"tab\"]) { padding-block: 0; padding-inline: calc(8rem / 14); block-size: calc(24rem / 14); --purlis-part-height: calc(24rem / 14); }",
         "  :where([data-scope=\"titlebar\"][data-part=\"workspace\"]) { border-radius: min(5px, calc(var(--purlis-part-height, 28px) / 2)); }",
         "  :where([data-scope=\"tabs\"][data-part=\"tab\"] [data-scope=\"tabs\"][data-part=\"closer\"]) { border-radius: min(0px, 50%); }",
+        "  :where([data-scope=\"table\"][data-part=\"root\"] [data-scope=\"table\"][data-part=\"rule\"]) { background-color: var(--border-subtle); }",
         "  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-grow: 1; --tabs-basis: 0px; --tabs-divider: 1px; }",
         "  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-gap: 0; }",
         "  :where([data-scope=\"status-item\"][data-part=\"root\"][data-variant=\"accent\"]) { color: var(--text-primary); }",
@@ -2471,6 +2651,7 @@
           "--radius-md": "4px",
           "--radius-sm": "3px",
           "--radius-xl": "8px",
+          "--separator-width": "1px",
           "--size-chrome": "1.5rem",
           "--size-control": "2rem",
           "--space-0": "0",
@@ -2511,6 +2692,7 @@
           "--radius-md": "4px",
           "--radius-sm": "3px",
           "--radius-xl": "8px",
+          "--separator-width": "1px",
           "--size-chrome": "calc(18rem / 14)",
           "--size-control": "calc(24rem / 14)",
           "--space-0": "0",
@@ -2652,47 +2834,80 @@
           {
             "token": "accent.base",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.base",
             "from": "border.control",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "focus.ring",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "list.selected-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.surface",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "tab.active",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-hover",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
           },
           {
             "token": "accent.fill-edge",
             "from": "danger.base",
-            "distance": 0.1
+            "distance": 0.1,
+            "alone": false
+          },
+          {
+            "token": "accent.base",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "focus.ring",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "list.selected-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
+          },
+          {
+            "token": "accent.fill-edge",
+            "from": "state.waiting",
+            "distance": 0.1,
+            "alone": true
           }
         ]
       },
@@ -2707,6 +2922,7 @@
         "  :where([data-scope=\"tabs\"][data-part=\"tab\"]) { padding-block: 0; padding-inline: calc(8rem / 14); block-size: calc(24rem / 14); --purlis-part-height: calc(24rem / 14); }",
         "  :where([data-scope=\"titlebar\"][data-part=\"workspace\"]) { border-radius: min(5px, calc(var(--purlis-part-height, 28px) / 2)); }",
         "  :where([data-scope=\"tabs\"][data-part=\"tab\"] [data-scope=\"tabs\"][data-part=\"closer\"]) { border-radius: min(0px, 50%); }",
+        "  :where([data-scope=\"table\"][data-part=\"root\"] [data-scope=\"table\"][data-part=\"rule\"]) { background-color: var(--border-subtle); }",
         "  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-grow: 1; --tabs-basis: 0px; --tabs-divider: 1px; }",
         "  :where([data-scope=\"tabs\"][data-part=\"layout\"]) { --tabs-gap: 0; }",
         "  :where([data-scope=\"status-item\"][data-part=\"root\"][data-variant=\"accent\"]) { color: var(--text-primary); }",

@@ -115,6 +115,10 @@
 @import "./ui/empty-state/empty-state.css" layer(components);
 @import "./ui/status/status.css" layer(components);
 @import "./ui/harness-icon/harness-icon.css" layer(components);
+@import "./ui/card/card.css" layer(components);
+@import "./ui/notice/notice.css" layer(components);
+@import "./ui/badge/badge.css" layer(components);
+@import "./ui/separator/separator.css" layer(components);
 @import "./ui/dialog/dialog.css" layer(components);
 @import "./ui/tabs/tabs.css" layer(components);
 @import "./ui/rail/rail.css" layer(components);
@@ -128,6 +132,7 @@
 /* @families: every other src/ui/<family>/<family>.css, by name */
 /* A chat's pane places the families inside it: the band, the header, the terminal (#3142). */
 @import "./paneFrame.css" layer(components);
+@import "./ui/tree/tree.css" layer(components);
 @import "./primitives/text.css" layer(components);
 @import "./theme/forced-colors.css" layer(forced);
 

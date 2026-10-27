@@ -35,6 +35,7 @@ import {
   type AwayRefusal,
   type ByHand,
   type ChatSkills,
+  type HarnessKind,
   type ChatWorktree,
   type HarnessGlance,
   type HarnessSetupFound,
@@ -214,7 +215,8 @@ import {
   type Toggled,
   type ViewId,
 } from "./regions";
-import type { ViewPlace } from "./sideViews";
+import { drawnOnlyPresent, NO_PREVIEWS, PREVIEWED_VIEWS, type ViewPlace } from "./sideViews";
+import { SkillsView, type FrontChat } from "./SkillsView";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
@@ -305,12 +307,13 @@ import {
   browserView,
   goWhenShown,
   browsersLetGo,
+  browsersShown,
   chatBrowserTitle,
   isBrowser,
   openBrowserBeside,
 } from "./browsers";
 import { sendToDriven } from "./browserDriving";
-import { programsOf, useChatBrowsers } from "./chatBrowsers";
+import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import type { BrowserShown } from "./ChatBrowsersShown";
 
@@ -411,7 +414,7 @@ import type {
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
 import { useSkillStudioOn } from "./skillStudio";
-import { SkillRunsHere, skillOfRun, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
+import { SkillRunsHere, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -865,6 +868,8 @@ export const PlaneView = memo(function PlaneView({
   /** The chat Use skill… is open for (#2775), with its skills once they are read. */
   const [usingSkill, setUsingSkill] = useState<{
     session: number;
+    /** The skill it opens on, where one was asked for: the Skills view's Use in this chat. */
+    picks?: string;
     skills?: ChatSkills;
     trouble?: string;
     busy: boolean;
@@ -1258,6 +1263,16 @@ export const PlaneView = memo(function PlaneView({
       requestAnimationFrame(() => giveViewTheKeyboard(view));
     },
     [searchHere, showSide],
+  );
+  /** **Show in Explorer's ask** (#3266, the Skills view): the folder, with a count that moves on
+   *  each ask, so asking for the same folder again shows it again. */
+  const [explorerReveal, setExplorerReveal] = useState<{ folder: string; asked: number }>();
+  const revealInExplorer = useCallback(
+    (folder: string) => {
+      setExplorerReveal((was) => ({ folder, asked: (was?.asked ?? 0) + 1 }));
+      showSideView("explorer");
+    },
+    [showSideView],
   );
   /** "Move to panel" or "Move to sidebar" (#1740): the view moved, open where it went, and the
    *  keyboard in it, as its key leaves it — the icon the menu was opened on is gone from its
@@ -1828,6 +1843,21 @@ export const PlaneView = memo(function PlaneView({
     },
     [sidebar],
   );
+  /** **The program chat `session` runs** (#3266), as the plane's chats say it: one the Skill
+   *  studio knows the own skills of, or `undefined` (a shell, or another program). */
+  const harnessOf = useCallback(
+    (session: number): HarnessKind | undefined => {
+      for (const chats of [
+        ...(sidebar?.workspaces.map((ws) => ws.chats) ?? []),
+        sidebar?.unfiled ?? [],
+      ]) {
+        const found = chats.find((chat) => chat.session === session);
+        if (found) return HARNESS_KINDS.find((kind) => kind === found.harness);
+      }
+      return undefined;
+    },
+    [sidebar],
+  );
   /** How much chat `session`'s sandbox holds (#2071), as the plane's chats say it, or `null`. */
   const sandboxOf = useCallback(
     (session: number | undefined): SandboxSaid | null => {
@@ -2317,12 +2347,32 @@ export const PlaneView = memo(function PlaneView({
   const sidePanelsNow = attentionPanels(workspaceState, contributed);
   const [sidePanels, setSidePanels] = useState(sidePanelsNow);
   if (!samePanels(sidePanels, sidePanelsNow)) setSidePanels(sidePanelsNow);
+  /** **The views behind a preview that is on** (#3266): Skills while the Skill studio's is. One
+   *  left out is drawn nowhere, and its side opens on its first view until it is back. */
+  const previews = studioOn ? PREVIEWED_VIEWS : NO_PREVIEWS;
+  /** Every view drawn only while it is present: the extensions' panels contributed now, and the
+   *  views behind a preview that is on. */
+  const presentViews = useMemo(
+    () => [...sidePanels.map((one) => one.view), ...previews],
+    [sidePanels, previews],
+  );
+  /** **Whether the Skills view has been shown** (#3266): it reads nothing until it is first
+   *  opened, as Search draws nothing until then, and is kept after. */
+  const [skillsDrawn, setSkillsDrawn] = useState(false);
+  if (
+    !skillsDrawn &&
+    studioOn &&
+    arrangement.some((one) => !one.collapsed && viewOpenIn(one, presentViews) === "skills")
+  )
+    setSkillsDrawn(true);
+  /** Whether `view` can be shown now: one drawn only while present is only then. */
+  const drawable = useCallback(
+    (view: ViewId) => !drawnOnlyPresent(view) || presentViews.includes(view),
+    [presentViews],
+  );
   /** The regions put away, and the Panel while no half of it is drawn now (#1737, #1752), for
    *  the palette's rows: a half holding only panels no extension contributes now is not drawn. */
-  const awayNames = putAway(
-    arrangement,
-    sidePanels.map((one) => one.view),
-  ).join(" ");
+  const awayNames = putAway(arrangement, presentViews).join(" ");
   const away = useMemo(
     () => (awayNames === "" ? [] : (awayNames.split(" ") as Toggled[])),
     [awayNames],
@@ -2331,12 +2381,8 @@ export const PlaneView = memo(function PlaneView({
    *  the Panel counts as drawn only where a half is drawn now, as the palette's title says
    *  (#1752), so a half holding only panels no extension contributes now hides nothing. */
   const toggleRegion = useCallback(
-    (id: Toggled) =>
-      toggle(
-        id,
-        sidePanels.map((one) => one.view),
-      ),
-    [toggle, sidePanels],
+    (id: Toggled) => toggle(id, presentViews),
+    [toggle, presentViews],
   );
   /**
    * **A region's key or row while focus mode is on** (#2921, D-2921-19): it leaves focus mode
@@ -2366,7 +2412,7 @@ export const PlaneView = memo(function PlaneView({
   /** Where each side's view lives now (#1752): its move as a palette row, and the region rows'
    *  notes naming the views there. Held by what it says, so a resize or a view picked, which
    *  change the arrangement and not where a view lives, does not build the catalogue again. */
-  const placesSaid = JSON.stringify(placesOf(arrangement, sidePanels));
+  const placesSaid = JSON.stringify(placesOf(arrangement, sidePanels, previews));
   const places = useMemo(() => JSON.parse(placesSaid) as ViewPlaced[], [placesSaid]);
   /** The focused workspace's open todos, for the Todos tab's count (#1678, B-8). */
   const openTodos = todoCount(workspaceState);
@@ -2477,7 +2523,9 @@ export const PlaneView = memo(function PlaneView({
   /** The view open on the left, or nothing while the side is away. */
   const leftOpen = (() => {
     const navigation = arrangement.find((one) => one.id === "navigation");
-    return navigation === undefined || navigation.collapsed ? undefined : viewOpenIn(navigation);
+    return navigation === undefined || navigation.collapsed
+      ? undefined
+      : viewOpenIn(navigation, presentViews);
   })();
   // The Search view's first question when it comes back open from the layout file: as narrow
   // as the focus. Every other way of opening it asks one (`searchHere`).
@@ -2493,13 +2541,11 @@ export const PlaneView = memo(function PlaneView({
         searchHere();
         requestAnimationFrame(() => giveViewTheKeyboard(view));
       }
-      // The extension panels present now: a panel's view is picked only while it is there (#1678).
-      pick(
-        view,
-        sidePanels.map((one) => one.view),
-      );
+      // The extension panels present now: a panel's view is picked only while it is there (#1678),
+      // and a view behind a preview only while the preview is on (#3266).
+      pick(view, presentViews);
     },
-    [leftOpen, pick, searchHere, sidePanels],
+    [leftOpen, pick, searchHere, presentViews],
   );
   /** The files git has uncommitted in the focused workspace's clones: the Changes tab's count. */
   const changedFiles = uncommitted(workspaceState);
@@ -3702,6 +3748,14 @@ export const PlaneView = memo(function PlaneView({
     kept: keptBrowsers,
     read: chatBrowsersRead,
   } = useChatBrowsers(plane);
+  /** The person's own browsers a crash of the window left running, each back in a view tab of
+   *  its own (#2025). */
+  const showTakenBack = useCallback(
+    (program: string) => showView(browserView(program), BROWSER_TITLE),
+    [showView],
+  );
+  // Once the record's tabs are adopted, which lays the strip out afresh.
+  useBrowsersTakenBack(plane, settled ? showTakenBack : undefined);
   /** Their programs: a tab showing one closes only its view, since it ends with its chat, and
    *  one pinned past its chat ends only when the person stops it (#2022). */
   const chatPrograms = useMemo(
@@ -3719,8 +3773,16 @@ export const PlaneView = memo(function PlaneView({
   useEffect(() => {
     for (const program of browsersLetGo(browsersBefore.current, tabs, chatProgramsNow.current))
       void commands.closeBrowser(program);
+    // Which browsers a view tab of its own shows, for the core to note: a crash of the window
+    // brings those tabs back (#2025).
+    const was = browsersShown(browsersBefore.current);
+    const now = browsersShown(tabs);
+    for (const program of now)
+      if (!was.has(program)) void commands.browserViewed(plane, program, true);
+    for (const program of was)
+      if (!now.has(program)) void commands.browserViewed(plane, program, false);
     browsersBefore.current = tabs;
-  }, [tabs]);
+  }, [tabs, plane]);
 
   /**
    * Closes the tab showing `view` — a vault or a persona that was just deleted — **when that tab
@@ -3784,14 +3846,7 @@ export const PlaneView = memo(function PlaneView({
   useInboxOpenTold(
     plane,
     inFront &&
-      arrangement.some(
-        (one) =>
-          !one.collapsed &&
-          viewOpenIn(
-            one,
-            sidePanels.map((panel) => panel.view),
-          ) === "inbox",
-      ),
+      arrangement.some((one) => !one.collapsed && viewOpenIn(one, presentViews) === "inbox"),
   );
 
   /** A file ⌘P found here (FM-7), opened in its file tab the way the explorer opens one. */
@@ -5785,7 +5840,7 @@ export const PlaneView = memo(function PlaneView({
     );
     forgetAsked.current = {
       notice,
-      band: notice?.closest(".notice-list") ?? null,
+      band: notice?.closest('[data-scope="notice-list"]') ?? null,
       forgot: false,
     };
     setForgetting({ id, name, busy: false });
@@ -6029,8 +6084,8 @@ export const PlaneView = memo(function PlaneView({
    * is typed until one is picked.
    */
   const openUseSkill = useCallback<OpenUseSkill>(
-    (session) => {
-      setUsingSkill({ session, busy: false });
+    (session, picks) => {
+      setUsingSkill({ session, picks, busy: false });
       void commands
         .chatSkills(plane, session)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
@@ -7569,12 +7624,10 @@ export const PlaneView = memo(function PlaneView({
       showView(activityView(session), activityTitle(nameOfNow.current(session)));
   });
   const activityFromChip = useCallback((session: number) => activityNow.current(session), []);
-  /** Opens a skill's tab on run `run`, from the chip of the run open in a tab's chat (SK-3). */
+  /** Opens the tab of skill `skill` on run `run`, from the chip of the run open in a tab's chat
+   *  (SK-3): the skill by its own name, as the core counts the run (#3385). */
   const openSkillRun = useCallback(
-    (used: string, run: string) => {
-      const skill = skillOfRun(used);
-      showView(skillView(skill, run), skill);
-    },
+    (skill: string, run: string) => showView(skillView(skill, run), skill),
     [showView],
   );
 
@@ -7715,6 +7768,8 @@ export const PlaneView = memo(function PlaneView({
       const which = sideKeyOf(e, mac);
       if (which === undefined) return;
       if (pressed(e, SIDE_KEY_IDS, { mac }) === undefined) return;
+      // A view behind a preview that is off is nowhere to show (#3266): its key is not claimed.
+      if ("show" in which && !drawable(which.show)) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
@@ -7723,7 +7778,7 @@ export const PlaneView = memo(function PlaneView({
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [inFront, showSideViewSeen, toggleRegionSeen]);
+  }, [drawable, inFront, showSideViewSeen, toggleRegionSeen]);
 
   /**
    * A pane's own button: that pane becomes the focused one, and then the row runs.
@@ -8575,6 +8630,19 @@ export const PlaneView = memo(function PlaneView({
     </>
   );
 
+  /** **The chat in front, for the Skills view's Only this chat's** (#3266): the one shown in the
+   *  pane with the keyboard, never a shell's, which runs no tool with skills. */
+  const frontWorkspace = frontSession === undefined ? undefined : filedIn(frontSession);
+  const skillsChat: FrontChat | undefined =
+    frontSession === undefined || shells.has(frontSession)
+      ? undefined
+      : {
+          session: frontSession,
+          workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
+          persona: personaOf(frontSession),
+          harness: harnessOf(frontSession),
+        };
+
   const view = (
     <Lent
       chats={chats}
@@ -8632,6 +8700,8 @@ export const PlaneView = memo(function PlaneView({
           onSplit={splitHalves}
           // F6 between the regions (P-13, #1741) is the project in front's, as its side keys are.
           keyboard={inFront}
+          // Skills while the Skill studio's preview is on (#3266).
+          previews={previews}
           /* **The navigation region's views** (ADR 0038 as amended 2026-10-10, #1673): Chats and
            Explorer, one at a time, switched by the activity bar at the side's edge. Both stay
            mounted when the other is open or the side is away, so neither loses its folds. */
@@ -8707,6 +8777,8 @@ export const PlaneView = memo(function PlaneView({
                     onAddToChat={setAddingToChat}
                     // A workspace's repo pressed in the plane root's files (issue 1916).
                     onGoToWorkspace={focusWorkspace}
+                    // The Skills view's Show in Explorer (#3266).
+                    reveal={explorerReveal}
                   />
                 )}
               />
@@ -8746,6 +8818,18 @@ export const PlaneView = memo(function PlaneView({
                 view={sideSearch}
                 onAsk={(_, to) => setSideSearch(to)}
                 takesKeyboard={false}
+              />
+            ),
+            // **Skills** (#3266): this workspace's skills by level, from the Skill studio's own
+            // answer, drawn only while its preview is on; the side falls back to Chats meanwhile.
+            skills: studioOn && skillsDrawn && (
+              <SkillsView
+                plane={plane}
+                workspace={ofWorkspace}
+                chat={skillsChat}
+                onOpenView={showView}
+                onUseSkill={openUseSkill}
+                onShowInExplorer={revealInExplorer}
               />
             ),
             // **Changes** (#1676, B-7): what the bottom region drew, the same content.
@@ -9302,8 +9386,15 @@ export const PlaneView = memo(function PlaneView({
           {usingSkill && (
             <UseSkill
               // Another chat's Use skill… is a new dialog: its filter and boxes start empty.
-              key={usingSkill.session}
+              // Opened on one skill, it is drawn again once the chat's skills are read: what it
+              // starts with is decided from them (`UseSkill`'s `picks`).
+              key={
+                usingSkill.picks === undefined
+                  ? usingSkill.session
+                  : `${usingSkill.session}\u0000${usingSkill.picks}\u0000${usingSkill.skills === undefined ? "reading" : "read"}`
+              }
               chat={nameOf(usingSkill.session)}
+              picks={usingSkill.picks}
               skills={usingSkill.skills}
               trouble={usingSkill.trouble}
               busy={usingSkill.busy}
@@ -9978,6 +10069,9 @@ const CLOSE_HANDED_NOT_HERE =
 const MORE_THAN_ONE_CHAT =
   "This tab holds more than one chat, and a session record is one chat's. Smart close each from its own pane.";
 
+/** The programs the Skill studio lists the own skills of, by the word the project calls each. */
+const HARNESS_KINDS: readonly HarnessKind[] = ["claude", "opencode", "codex"];
+
 /** A view tab the core put back, as the view it names. */
 function refOf(view: ViewTab): ViewRef {
   return { from: view.from, view: view.view, key: view.key };
@@ -9993,7 +10087,10 @@ function giveViewTheKeyboard(view: ViewId): void {
   const panel = `[role="tabpanel"][data-view="${view}"]`;
   (view === "search"
     ? document.querySelector<HTMLElement>(`${panel} input[type="search"]`)
-    : (document.querySelector<HTMLElement>(`${panel} [role="tree"] [tabindex="0"]`) ??
+    : // A tree of the tree family is its own stop until a row has had the keyboard (#2911).
+      (document.querySelector<HTMLElement>(
+        `${panel} :is([role="tree"] [tabindex="0"], [role="treegrid"][tabindex="0"], [role="treegrid"] [tabindex="0"])`,
+      ) ??
       // The Inbox's first ask, past the scope switch above its list (qw359).
       document.querySelector<HTMLElement>(`${panel} .inbox-list [tabindex="0"]`) ??
       document.querySelector<HTMLElement>(`${panel} [tabindex="0"]`))

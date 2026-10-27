@@ -398,6 +398,14 @@ pub const PAIRS: &[Pair] = &[
     //   accent's wash laid on the frame, and on the stronger wash under the pointer.
     p("text.primary", "accent.wash", TEXT).over("surface.deep"),
     p("text.primary", "accent.wash-hover", TEXT).over("surface.deep"),
+    // - What waits on the person said in a badge or a count, in the waiting colour on the amber
+    //   wash, on a panel (#2912, R66: "Waiting for you").
+    p("state.waiting", "wash.warning", TEXT).over("surface.raised"),
+    p("state.waiting", "wash.warning", TEXT).over("surface.base"),
+    // - What is settled said in a badge ("Confirmed", R66): the success colour as words, on the
+    //   window and on a popover's surface (the raised one is held above).
+    p("state.success", "surface.base", TEXT),
+    p("state.success", "surface.overlay", TEXT),
     // - What a dialog is honest about (`.honest`): its words at the opacity it fades them to.
     p("text.primary", "surface.overlay", TEXT).faded(0.8),
     // - A task that is away draws its words on the terminal's own background.

@@ -43,6 +43,7 @@ fn a_sandbox_compiled_for_one_harness_arms_no_chat_of_any_other() {
         binary: std::path::Path::new("/bin/charter"),
         plugin: Some(&plugin),
         persona: None,
+        graded: false,
     };
     let mut pairs = 0;
     for from in Harness::ALL {
@@ -321,6 +322,7 @@ fn kit(binary: &str) -> Kit<'_> {
         binary: std::path::Path::new(binary),
         plugin: Some(std::path::Path::new("/app/plugin")),
         persona: None,
+        graded: false,
     }
 }
 
@@ -1321,6 +1323,7 @@ fn without_the_bundled_plugin_a_claude_code_chat_is_armed_with_nothing() {
             binary: std::path::Path::new("/bin/charter"),
             plugin: None,
             persona: None,
+            graded: false,
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -1755,6 +1758,7 @@ fn opencode_hooks(binary: &str) -> (tempfile::TempDir, StateHooks) {
             binary: std::path::Path::new(binary),
             plugin: Some(plugin.path()),
             persona: None,
+            graded: false,
         },
         None,
         &BTreeMap::from([("some-plugin".to_owned(), false)]).into(),
@@ -1818,6 +1822,7 @@ fn a_codex_chat_is_started_with_the_skills_its_briefing_lists() {
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(&plugin),
             persona: None,
+            graded: false,
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -1840,6 +1845,7 @@ fn only_a_harness_that_cannot_load_the_skills_is_briefed_on_them() {
         binary: std::path::Path::new("/bin/charter"),
         plugin: Some(&plugin),
         persona: None,
+        graded: false,
     };
     for harness in [Harness::ClaudeCode, Harness::Opencode] {
         let env =
@@ -1861,6 +1867,7 @@ fn an_opencode_chat_is_told_the_set_s_folder_of_the_bundled_skills_through_the_s
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(&plugin),
             persona: None,
+            graded: false,
         },
         None,
         &crate::harness_plugin::Chosen::new(),
@@ -1889,6 +1896,7 @@ fn without_the_shim_an_opencode_chat_is_armed_with_nothing() {
             binary: std::path::Path::new("/bin/charter"),
             plugin: Some(plugin.path()),
             persona: None,
+            graded: false,
         },
         None,
         &crate::harness_plugin::Chosen::new(),

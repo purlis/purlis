@@ -108,8 +108,9 @@ pub enum State {
     Focused,
     Disabled,
     Open,
-    /// A box whose value is refused (#3110): the select's and the combobox's, whose wrappers mark
-    /// it. A colour, never a size, as every state.
+    /// A box whose value is refused (#3110, #3323): the text input's, the textarea's, the
+    /// select's and the combobox's, whose wrappers mark it. A colour, never a size, as every
+    /// state.
     Invalid,
 }
 
@@ -440,6 +441,16 @@ pub enum Consent {
     Grants,
     /// What cannot be undone: its danger colour contrasts with its fill.
     Danger,
+    /// A card that asks the person something (#2912): its waiting edge stays, 3:1 on its fill,
+    /// whatever the theme says, as an ask contrasts with its surface (ADR 0097 §6).
+    Asks,
+}
+
+impl Consent {
+    /// Whether its root keeps its edge: an answer that grants, and an ask.
+    fn keeps_edge(self) -> bool {
+        matches!(self, Self::Grants | Self::Asks)
+    }
 }
 
 /// One variant of a family.
@@ -514,6 +525,11 @@ pub struct Family {
     /// The fill of a part that is not the root's, by the part's name: an activity item's count on
     /// its own pill (#2917). Its words are held to this fill, and a fallback draws it again.
     fills: &'static [(&'static str, &'static str)],
+    /// The ground a part's words are read on where the part paints none of its own and it is
+    /// not the root's, by the part's name (#3099): a tab's count on the counts button its parent
+    /// paints, a switcher's row on the popover it is drawn in. Its words are held to this ground,
+    /// but a fallback never paints it, since the part does not.
+    under: &'static [(&'static str, &'static str)],
 }
 
 impl Family {
@@ -553,6 +569,18 @@ impl Family {
     #[cfg(test)]
     pub(super) fn own_words_of(&self, part: usize) -> Option<&'static str> {
         self.own_words(part)
+    }
+
+    /// What `part`'s words are read on by default, when it is not the root's fill: its own fill,
+    /// or the ground it stands on ([`Family::under`]).
+    fn own_ground(&self, part: usize) -> Option<&'static str> {
+        let name = self.parts.get(part)?.name;
+        self.own_fill(part).or_else(|| {
+            self.under
+                .iter()
+                .find(|(one, _)| *one == name)
+                .map(|(_, token)| *token)
+        })
     }
 
     /// The colour `part`'s words are drawn in by default, when it is not the root's.
@@ -689,7 +717,6 @@ const CONTROL_GROUNDS: &[&str] = &[
     "layer.project",
     "layer.workspace",
     "layer.chat",
-    "layer.selected",
     "terminal.background",
 ];
 
@@ -738,6 +765,14 @@ fn own_states(family: &Family) -> &'static [(State, &'static str)] {
 #[path = "state_words_tests.rs"]
 mod state_words_tests;
 
+#[cfg(test)]
+#[path = "part_fills_tests.rs"]
+mod part_fills_tests;
+
+#[cfg(test)]
+#[path = "surface_grounds_tests.rs"]
+mod surface_grounds_tests;
+
 /// **A field's colours as `app/src/ui/field/field.css` draws them**: no ground and no edge of
 /// its own, its label in the primary tier. Its help's and its error's words are the family's
 /// `words`.
@@ -749,11 +784,11 @@ fn field_look(_variant: &str, _states: &[State]) -> Look {
     }
 }
 
-/// **A text input's and a textarea's colours as `app/src/ui/field/field.css` draws them**: the
-/// sunken ground behind the control's edge (`border.control`, none in Purlis), in every state; the keyboard's ring and a refused value's
-/// danger edge are drawn by the family, outside the parts. A select and a combobox draw the same
-/// box, and a refused one (`invalid`, #3110) is a state of their parts: the danger colour on the
-/// same edge, inside the box, as `app/src/ui/select/select.css` draws it.
+/// **A text input's, a textarea's, a select's and a combobox's colours** as
+/// `app/src/ui/field/field.css` and `app/src/ui/select/select.css` draw them: the sunken ground
+/// behind the control's edge (`border.control`, none in Purlis), in every state but refused; the
+/// keyboard's ring is drawn by the family, outside the parts. A refused box (`invalid`, #3110,
+/// #3323) draws the danger colour on the same edge, inside the box.
 fn box_look(_variant: &str, states: &[State]) -> Look {
     Look {
         fill: "surface.sunken",
@@ -948,10 +983,10 @@ pub(super) const SEEN: f64 = 0.02;
 const NO_NEARER: f64 = 0.005;
 
 /// **How far apart two looks are drawn**, in OKLab, on what a person reads as the look: the
-/// fills as each shows on every ground the family is drawn on, the nearest ground counting; the
-/// edges only where they stand out at a glance ([`super::ALLOW_APART`]), since a hairline that
-/// differs less reads as the same edge; and, with `words`, the words.
-fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, words: bool) -> f64 {
+/// fills as each shows on every ground `on` it is drawn on ([`grounds`]), the nearest ground
+/// counting; the edges only where they stand out at a glance ([`super::ALLOW_APART`]), since a
+/// hairline that differs less reads as the same edge; and, with `words`, the words.
+fn look_apart(theme: &ResolvedTheme, on: &[String], a: &Drawn, b: &Drawn, words: bool) -> f64 {
     let one = |x: &str, y: &str| match (hex(theme, x), hex(theme, y)) {
         (None, None) => 0.0,
         (Some(_), Some(_)) => apart(theme, x, y).unwrap_or(1.0),
@@ -960,7 +995,7 @@ fn look_apart(theme: &ResolvedTheme, family: &Family, a: &Drawn, b: &Drawn, word
     let shown = |fill: &str, ground: &str| {
         hex(theme, fill).map_or_else(|| ground.to_owned(), |fill| onto(fill, ground))
     };
-    let fills = grounds(theme, family)
+    let fills = on
         .iter()
         .filter_map(|ground| {
             let (x, y) = (shown(a.fill, ground), shown(b.fill, ground));
@@ -1042,7 +1077,7 @@ pub(super) fn allow_from_primary(theme: &ResolvedTheme) -> Vec<AllowLook> {
             }
             found.push(AllowLook {
                 state,
-                apart: look_apart(theme, family, &allow, &primary, false),
+                apart: look_apart(theme, &grounds(theme, family), &allow, &primary, false),
                 fills: [primary.fill, allow.fill],
             });
             seen.push((allow, primary));
@@ -1515,7 +1550,9 @@ pub(super) fn read(
         };
         match value(&key, raw) {
             Ok(parsed) => {
-                if let Some(said) = edge_removed(&key, &parsed) {
+                if let Some(said) =
+                    edge_removed(&key, &parsed).or_else(|| off_the_grounds(&key, &parsed))
+                {
                     complaints.push(Complaint::said(said));
                     continue;
                 }
@@ -1564,7 +1601,8 @@ fn joined(parts: &mut Parts) {
     }
 }
 
-/// Why `key` would take a consent part's mark away, if it would: a border width of 0 on Allow.
+/// Why `key` would take a consent part's mark away, if it would: a border width of 0 on Allow,
+/// or on an ask (#2912).
 fn edge_removed(key: &Key, value: &PartValue) -> Option<String> {
     if key.property != Prop::BorderWidth || *value != PartValue::Length(Length::Number(0.0)) {
         return None;
@@ -1573,10 +1611,14 @@ fn edge_removed(key: &Key, value: &PartValue) -> Option<String> {
         .variant
         .and_then(|name| variant(key.family, name))
         .and_then(|one| one.consent);
-    if consent == Some(Consent::Grants) {
+    if let Some(consent) = consent.filter(|one| one.keeps_edge()) {
+        let what = if consent == Consent::Asks {
+            "an ask keeps its waiting edge"
+        } else {
+            "an answer that grants keeps its accent edge and its lock"
+        };
         return Some(format!(
-            "parts.{key} is refused: an answer that grants keeps its accent edge and its lock, \
-             so a theme can never disguise a consent decision"
+            "parts.{key} is refused: {what}, so a theme can never disguise a consent decision"
         ));
     }
     // A refused box says so by its edge (#3110), and a state never sets a width, so a box with
@@ -1584,11 +1626,38 @@ fn edge_removed(key: &Key, value: &PartValue) -> Option<String> {
     family(key.family)
         .filter(|one| one.states.contains(&State::Invalid) && key.part == one.parts[0].name)
         .map(|_| {
+            let root = format!("{}.{}", key.family, key.part);
             format!(
-                "parts.{key} is refused: a box that can be refused keeps its edge, which is how \
-                 it shows a value is refused"
+                "parts.{key} is refused: a box that can be refused shows it by its edge, so its \
+                 edge keeps a width; for no edge at rest, set {root}.border-colour to \
+                 \"transparent\", and the refused box draws {root}.invalid.border-colour"
             )
         })
+}
+
+/// Why `key` would stand answers on a ground they are not measured on, if it would (#2912): a
+/// card's or a Notice's fill is one of the grounds the button family is held on, so an answer
+/// that grants stays apart from the primary wherever it is drawn (ADR 0103 §7).
+fn off_the_grounds(key: &Key, value: &PartValue) -> Option<String> {
+    let PartValue::Colour(token) = value else {
+        return None;
+    };
+    if key.part != "root"
+        || key.property != Prop::Fill
+        || !content::HOLDS_ANSWERS.contains(&key.family)
+        || *token == TRANSPARENT
+    {
+        return None;
+    }
+    let held = family("button")?.grounds;
+    (!held.contains(token)).then(|| {
+        format!(
+            "parts.{key} is refused: {token} is not a ground the answers a {} holds are measured \
+             on, so an Allow on it could not be held apart from the primary; name one of {}",
+            key.family,
+            held.join(", ")
+        )
+    })
 }
 
 /// The floor a refused box breaks when its edge is gone, or drawn as the edge it has while it is
@@ -1823,12 +1892,15 @@ struct Rule {
 }
 
 impl Rule {
-    /// The order the stylesheet writes rules in: the later wins.
-    fn order(&self) -> (bool, bool, bool, usize) {
+    /// The order the stylesheet writes rules in: the later wins. A refused box's fallback comes
+    /// after every other fallback, so its danger edge wins over a hover's or a focus's default
+    /// written after it (#3382's review, B1).
+    fn order(&self) -> (bool, bool, bool, bool, usize) {
         (
             self.state.is_some(),
             self.variant.is_some(),
             self.fallback,
+            self.fallback && self.state == Some(State::Invalid),
             self.part,
         )
     }
@@ -1944,7 +2016,7 @@ fn drawn(rules: &[Rule], family: &Family, variant: &str, states: &[State]) -> Dr
                     return fill;
                 }
                 part_fill(rules, family, part, variant, states)
-                    .or_else(|| family.own_fill(part))
+                    .or_else(|| family.own_ground(part))
                     .unwrap_or(fill)
             })
             .collect(),
@@ -2026,11 +2098,10 @@ fn grounds(theme: &ResolvedTheme, family: &Family) -> Vec<String> {
     drawn
 }
 
-/// The lowest contrast `front` has on `fill` over each of the family's grounds.
-fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Option<f64> {
+/// The lowest contrast `front` has on `fill` over each ground `on` ([`grounds`]).
+fn lowest(theme: &ResolvedTheme, on: &[String], fill: &str, front: &str) -> Option<f64> {
     let front = hex(theme, front)?;
-    grounds(theme, family)
-        .iter()
+    on.iter()
         .map(|ground| {
             let back = hex(theme, fill).map_or_else(|| ground.clone(), |f| onto(f, ground));
             contrast(&onto(front, &back), &back)
@@ -2039,15 +2110,20 @@ fn lowest(theme: &ResolvedTheme, family: &Family, fill: &str, front: &str) -> Op
         .map(|ratio| (ratio * 100.0).floor() / 100.0)
 }
 
-/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for a mark (an icon, a
-/// select's chevron).
-fn floor_of(part: &Part) -> f64 {
-    if is_mark(part) { 3.0 } else { 4.5 }
+/// **The parts whose words are a mark, not words** (#3099): a tab's ×, and the title bar's ⌄
+/// and pin, each a glyph to be told apart, held at 3:1 (WCAG 1.4.11) in the faint tier
+/// ([`super::check::FAINT`]), as an icon and a select's chevron are.
+const MARK_WORDS: &[(&str, &str)] = &[("tabs", "closer"), ("titlebar", "all"), ("titlebar", "pin")];
+
+/// Whether `part` of `family` draws a mark rather than words: an icon, the chevron of a select
+/// or a combobox, or one of [`MARK_WORDS`].
+fn is_mark(family: &Family, part: &Part) -> bool {
+    matches!(part.name, "icon" | "chevron") || MARK_WORDS.contains(&(family.name, part.name))
 }
 
-/// Whether a part is a mark and not words: an icon, or the chevron of a select or a combobox.
-fn is_mark(part: &Part) -> bool {
-    matches!(part.name, "icon" | "chevron")
+/// The floor a part's words or marks are held to: 4.5:1 for words, 3:1 for a mark.
+fn floor_of(family: &Family, part: &Part) -> f64 {
+    if is_mark(family, part) { 3.0 } else { 4.5 }
 }
 
 /// **What a look of a family drawn in marks breaks** (#3143), if anything: each part it draws,
@@ -2093,7 +2169,7 @@ fn faint_mark(
         } else {
             look.marks[0]
         };
-        if let Some(ratio) = lowest(theme, family, on, look.marks[at])
+        if let Some(ratio) = lowest(theme, &grounds(theme, family), on, look.marks[at])
             && ratio < floor
         {
             return Some((
@@ -2168,6 +2244,7 @@ fn edge(rules: &[Rule], family: &Family, variant: &str, look: &Drawn) -> Option<
 /// fill; with more contrast asked for, each raised as [`super::Least::floor`] raises it (#2925).
 fn unreadable(
     theme: &ResolvedTheme,
+    on: &[String],
     rules: &[Rule],
     family: &Family,
     variant: &str,
@@ -2176,11 +2253,15 @@ fn unreadable(
 ) -> Option<(String, Option<f64>)> {
     for (at, part) in family.parts.iter().enumerate() {
         // With more contrast asked for, the reading floors are raised (#2925).
-        let floor = theme.least.floor(floor_of(part));
-        if let Some(ratio) = lowest(theme, family, look.grounds[at], look.words[at])
+        let floor = theme.least.floor(floor_of(family, part));
+        if let Some(ratio) = lowest(theme, on, look.grounds[at], look.words[at])
             && ratio < floor
         {
-            let what = if is_mark(part) { "marks" } else { "words" };
+            let what = if is_mark(family, part) {
+                "marks"
+            } else {
+                "words"
+            };
             return Some((
                 format!(
                     "the {}'s {what} contrast {floor}:1 with its fill",
@@ -2197,13 +2278,13 @@ fn unreadable(
         let on_its_ground = states.contains(&State::Invalid)
             || fill.is_none_or(|fill| {
                 !is_opaque(fill)
-                    || grounds(theme, family)
+                    || on
                         .iter()
                         .any(|ground| ground.eq_ignore_ascii_case(&solid(fill)))
             });
         let floor = theme.least.floor(3.0);
         if on_its_ground
-            && let Some(ratio) = lowest(theme, family, look.fill, border)
+            && let Some(ratio) = lowest(theme, on, look.fill, border)
             && ratio < floor
         {
             return Some((
@@ -2227,6 +2308,7 @@ enum Consented {
 
 fn consent_broken(
     theme: &ResolvedTheme,
+    on: &[String],
     rules: &[Rule],
     family: &Family,
     variant: &Variant,
@@ -2239,12 +2321,12 @@ fn consent_broken(
     // Parts never bring a consent variant nearer the primary than the family's defaults are, in
     // this same drawn theme: the farthest of its fill, its edge and (for danger) its words.
     let words = variant.consent == Some(Consent::Danger);
-    let nearer = look_apart(theme, family, &look, &primary, words)
-        < look_apart(theme, family, &default_look, &default_primary, words) - NO_NEARER;
+    let nearer = look_apart(theme, on, &look, &primary, words)
+        < look_apart(theme, on, &default_look, &default_primary, words) - NO_NEARER;
     match variant.consent? {
         Consent::Grants => {
             let own = edge(rules, family, variant.name, &look);
-            let ratio = own.and_then(|border| lowest(theme, family, look.fill, border));
+            let ratio = own.and_then(|border| lowest(theme, on, look.fill, border));
             if ratio.is_none_or(|ratio| ratio < 3.0) {
                 return Some(Consented::Own(
                     "an answer that grants keeps its accent edge, 3:1 on its fill".to_owned(),
@@ -2282,6 +2364,29 @@ fn consent_broken(
                 return Some(Consented::Both(
                     "Allow never takes the primary look".to_owned(),
                     PRIMARY,
+                ));
+            }
+        }
+        Consent::Asks => {
+            let own = edge(rules, family, variant.name, &look);
+            let ratio = own.and_then(|border| lowest(theme, on, look.fill, border));
+            if ratio.is_none_or(|ratio| ratio < 3.0) {
+                return Some(Consented::Own(
+                    "an ask keeps its waiting edge, 3:1 on its fill".to_owned(),
+                    ratio,
+                ));
+            }
+            // It reads as waiting, never as the accent the primary is drawn in: never nearer the
+            // accent than the family's own edge is, once near it.
+            let from_accent = |border: &str| apart(theme, border, "accent.base");
+            let theirs = edge(&[], family, variant.name, &default_look).and_then(from_accent);
+            if let Some(distance) = own.and_then(from_accent)
+                && distance < super::DANGER_APART
+                && theirs.is_none_or(|theirs| distance < theirs - NO_NEARER)
+            {
+                return Some(Consented::Own(
+                    "an ask's waiting edge stays apart from the accent".to_owned(),
+                    None,
                 ));
             }
         }
@@ -2339,6 +2444,16 @@ pub(super) fn held_again(theme: &ResolvedTheme) -> Vec<Fell> {
     again[before..].to_vec()
 }
 
+/// Whether `family`'s root, as the theme's held rules draw it while `states` (with
+/// [`State::Invalid`] among them) hold, tells the refusal apart from the same box not refused.
+#[cfg(test)]
+pub(super) fn refusal_shown(theme: &ResolvedTheme, family_name: &str, states: &[State]) -> bool {
+    let family = family(family_name).expect("a family of the manifest");
+    let rules = &held_once(theme).0;
+    let look = drawn(rules, family, "", states);
+    !refusal_hidden(theme, rules, family, "", states, &look)
+}
+
 /// [`held`], from `rules` and what already `fell`.
 fn held_from(
     theme: &ResolvedTheme,
@@ -2357,6 +2472,9 @@ fn held_from(
     let consents = MANIFEST.iter().any(|family| {
         family.variants.iter().any(|one| one.consent.is_some())
             && rules.iter().any(|rule| std::ptr::eq(rule.family, family))
+            // Built only for a family measured in them (#2912): one measured as written alone
+            // needs none.
+            && (colours(theme, &rules, family) || every_tint())
     });
     if consents && !theme.tint.tabs().is_empty() {
         drawn_in.extend(
@@ -2374,11 +2492,12 @@ fn held_from(
         if !rules.iter().any(|rule| std::ptr::eq(rule.family, family)) {
             continue;
         }
-        // A theme that turns borders off still draws the edge of an answer that grants.
+        // A theme that turns borders off still draws the edge of an answer that grants, and an
+        // ask's.
         for variant in family
             .variants
             .iter()
-            .filter(|one| one.consent == Some(Consent::Grants))
+            .filter(|one| one.consent.is_some_and(Consent::keeps_edge))
         {
             if !has_border(&rules, family, variant.name) {
                 rules.push(Rule {
@@ -2394,6 +2513,16 @@ fn held_from(
                 });
             }
         }
+        // **A family whose rules set no colour is measured as written alone** (#2912): its
+        // consent variants are drawn in the family's own colours in every tint, which the
+        // token-level floors hold in each tint (`floors.rs`, #2526), and what the theme sets (an
+        // edge's width, a size) is the same in every tint. A family whose rules set a colour is
+        // measured in every tint, as before.
+        let drawn_in: &[ResolvedTheme] = if colours(theme, &rules, family) || every_tint() {
+            &drawn_in
+        } else {
+            &drawn_in[..1]
+        };
         // At rest and in each state the family names but disabled: a disabled control is
         // exempt, as WCAG has it, and cannot be answered.
         let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
@@ -2413,7 +2542,7 @@ fn held_from(
                 held.readable(theme, states);
             }
             for states in &singles {
-                held.consented(&drawn_in, states);
+                held.consented(drawn_in, states);
             }
             // Then each set of states that hold at once whose look no state alone, nor another
             // set already measured, draws. A fallback can name a state, so the sets are read
@@ -2439,7 +2568,7 @@ fn held_from(
                 }
                 for states in &next {
                     held.readable(theme, states);
-                    held.consented(&drawn_in, states);
+                    held.consented(drawn_in, states);
                 }
             }
             if held.rules.len() == written {
@@ -2447,7 +2576,282 @@ fn held_from(
             }
         }
     }
+    // A surface's fill the theme sets is a ground of every family drawn on it (#3099, from
+    // #3083): held until no surface falls back, since each that does draws its own fill again.
+    while held_on_surfaces(theme, &mut drawn_in, &mut rules, &mut fell) {}
+    #[cfg(test)]
+    DRAWN_IN.with(|it| it.set(drawn_in.len()));
     (rules, fell)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Set by a test: every family is measured in every tint, skip or none.
+    static EVERY_TINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether every family is measured in every tint: only ever, in a test, to hold the skip to it.
+fn every_tint() -> bool {
+    #[cfg(test)]
+    {
+        EVERY_TINT.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        false
+    }
+}
+
+/// **What falls of `theme` with every family measured in every tint**, for the test that holds a
+/// family measured as written alone to the same.
+#[cfg(test)]
+pub(super) fn fallen_in_every_tint(theme: &ResolvedTheme) -> Vec<Fell> {
+    EVERY_TINT.with(|one| one.set(true));
+    let fell = held(theme).1;
+    EVERY_TINT.with(|one| one.set(false));
+    fell
+}
+
+/// **Whether a rule's colour only takes an edge off a variant that carries no consent**: the same
+/// in every tint, and it only stands that variant further from the answers the floors hold apart
+/// from it (#2912).
+/// **Whether `family`'s rules set a colour a tint can change what its consent floors read**: any
+/// colour but an edge taken off a variant with no consent ([`edge_taken_off`]) and an untinted
+/// ground of a family that holds answers ([`ground_held`]).
+fn colours(theme: &ResolvedTheme, rules: &[Rule], family: &Family) -> bool {
+    rules.iter().any(|rule| {
+        std::ptr::eq(rule.family, family)
+            && !rule.fallback
+            && rule.values.iter().any(|(property, value)| {
+                property.is_colour()
+                    && !edge_taken_off(rule, *property, *value)
+                    && !ground_held(theme, rule, *property, *value)
+            })
+    })
+}
+
+/// **Whether a rule only sets a ground no tint reaches, of a family that holds answers** (a
+/// card's or a Notice's fill, #2912): its token, and each of the surfaces the family stands on,
+/// is outside the theme's tint recipe, so every tint draws the ground and what it is laid over as
+/// written, and what the family's consent floors read there is what they read as written. The
+/// ground is one of the button family's own (a key naming another is refused), on which the floors
+/// hold Allow apart from the primary in every tint already. A tinted ground, or one over a tinted
+/// surface, is measured in every tint: a translucent ground laid over a surface, or two colours
+/// near each other, need not keep their contrast when a tint turns them.
+fn ground_held(theme: &ResolvedTheme, rule: &Rule, property: Prop, value: PartValue) -> bool {
+    let PartValue::Colour(token) = value else {
+        return false;
+    };
+    let tinted = theme.tint.tabs();
+    property == Prop::Fill
+        && rule.part == 0
+        && rule.state.is_none()
+        && content::HOLDS_ANSWERS.contains(&rule.family.name)
+        && !tinted.contains(&token)
+        && rule
+            .family
+            .grounds
+            .iter()
+            .all(|ground| !tinted.contains(ground))
+}
+
+fn edge_taken_off(rule: &Rule, property: Prop, value: PartValue) -> bool {
+    property == Prop::BorderColour
+        && value == PartValue::Colour(TRANSPARENT)
+        && rule
+            .variant
+            .and_then(|name| variant(rule.family.name, name))
+            .is_some_and(|one| one.consent.is_none())
+}
+
+/// A surface's look whose fill a theme sets: the surface, its variant, its default fill and the
+/// fill drawn in its place.
+type SurfaceSet = (&'static Family, &'static str, &'static str, &'static str);
+
+/// **The fills a theme's parts set on the surfaces other families are drawn on**: each surface's
+/// look whose root draws, at rest, another fill than its family default's, with that default and
+/// the fill drawn in its place. A family drawn on the default is drawn on the fill set.
+fn surfaces_set(rules: &[Rule]) -> Vec<SurfaceSet> {
+    let mut found = Vec::new();
+    for surface in MANIFEST {
+        if !surface.parts[0].properties.contains(&Prop::Fill)
+            || !rules.iter().any(|rule| std::ptr::eq(rule.family, surface))
+        {
+            continue;
+        }
+        for variant in surface.looks() {
+            let default = (surface.defaults)(variant, &[]).fill;
+            let set = drawn(rules, surface, variant, &[]).fill;
+            if default != TRANSPARENT && set != TRANSPARENT && set != default {
+                found.push((surface, variant, default, set));
+            }
+        }
+    }
+    found
+}
+
+/// **The surfaces each family with a consent variant is drawn on** (#3083): a button stands on
+/// a panel, in a popover and in a dialog, and a menu's row in the popover a menu is. A ground
+/// token a family names can be more than one surface's (the overlay is a popover's and a
+/// dialog's), so where a family stands is said here, not read from its grounds.
+const STANDS_ON: &[(&str, &[&str])] = &[
+    ("panel", &["button"]),
+    ("popover", &["button", "menu"]),
+    ("dialog", &["button"]),
+    // A card's ask and a Notice hold answers (#2912, `content::HOLDS_ANSWERS`).
+    ("card", &["button"]),
+    ("notice", &["button"]),
+];
+
+/// **The fill-taking families no consent family stands on**, each with why (#3083 review): a
+/// family whose root takes a fill and whose default fill is a ground a family with a consent
+/// variant names is in [`STANDS_ON`] or here, and a test holds every one to one list or the
+/// other, so a new Allow or danger answer on a filled surface cannot go unmeasured unseen.
+/// Every family is measured on a filled surface once #3268 lands.
+#[cfg(test)]
+pub(super) const HOLDS_NO_CONSENT: &[(&str, &str)] = &[
+    (
+        "text-input",
+        "a field's box holds the words typed into it, never an answer",
+    ),
+    (
+        "textarea",
+        "a field's box holds the words typed into it, never an answer",
+    ),
+    (
+        "editor",
+        "its toolbar holds ghost and plain buttons, never an Allow or a danger answer (#3268)",
+    ),
+    ("tooltip", "it holds words only"),
+    (
+        "separator",
+        "it is a line between two groups, and holds nothing",
+    ),
+    ("select", "a control's box holds its value and its chevron"),
+    (
+        "combobox",
+        "a control's box holds its value and its chevron",
+    ),
+    (
+        "option-card",
+        "a choice holds its title, its detail and its check, never an answer",
+    ),
+];
+
+/// The families drawn on `surface` whose grounds name its `default` fill but not `set`: what a
+/// surface whose fill a theme turns from `default` to `set` brings a new ground under.
+fn drawn_on(
+    surface: &'static Family,
+    default: &str,
+    set: &str,
+) -> impl Iterator<Item = &'static Family> {
+    let on: &[&str] = STANDS_ON
+        .iter()
+        .find(|(name, _)| *name == surface.name)
+        .map_or(&[], |(_, families)| *families);
+    MANIFEST.iter().filter(move |family| {
+        on.contains(&family.name)
+            && family.grounds.contains(&default)
+            && !family.grounds.contains(&set)
+    })
+}
+
+/// `set` as `theme` draws it under what stands on `surface`: laid over each ground the surface
+/// itself is drawn on, for a fill with alpha.
+fn surface_ground(theme: &ResolvedTheme, surface: &Family, set: &str) -> Vec<String> {
+    let Some(fill) = hex(theme, set) else {
+        return grounds(theme, surface);
+    };
+    if is_opaque(fill) {
+        return vec![solid(fill)];
+    }
+    grounds(theme, surface)
+        .iter()
+        .map(|under| onto(fill, under))
+        .collect()
+}
+
+/// **The floor a family breaks on a surface's fill a theme sets**, if any: each of its looks
+/// at rest and in each state but disabled, held to the reading floors as written, and its
+/// consent variants to the consent floors in every drawn theme, on that fill alone.
+fn broken_on(
+    theme: &ResolvedTheme,
+    drawn_in: &[ResolvedTheme],
+    rules: &[Rule],
+    family: &Family,
+    surface: &Family,
+    set: &str,
+) -> Option<(String, Option<f64>)> {
+    let singles: Vec<Vec<State>> = std::iter::once(Vec::new())
+        .chain(states_of(family).into_iter().map(|one| vec![one]))
+        .collect();
+    let on = surface_ground(theme, surface, set);
+    for states in &singles {
+        for variant in family.looks() {
+            let look = drawn(rules, family, variant, states);
+            if let Some(broken) = unreadable(theme, &on, rules, family, variant, states, &look) {
+                return Some(broken);
+            }
+        }
+    }
+    for one in drawn_in {
+        let on = surface_ground(one, surface, set);
+        for states in &singles {
+            for variant in family.variants.iter().filter(|one| one.consent.is_some()) {
+                match consent_broken(one, &on, rules, family, variant, states) {
+                    Some(Consented::Own(floor, ratio)) => return Some((floor, ratio)),
+                    Some(Consented::Both(floor, _)) => return Some((floor, None)),
+                    None => {}
+                }
+            }
+        }
+    }
+    None
+}
+
+/// **Each surface whose fill a theme sets, held under what is drawn on it** (#3099, from
+/// #3083): every family drawn on the surface's default ground is measured on the fill set in its
+/// place, and a surface under which one breaks a floor draws its family default there, said in
+/// a [`Fell`] that names the family. Whether one fell, so the hold is asked again.
+fn held_on_surfaces(
+    theme: &ResolvedTheme,
+    drawn_in: &mut Vec<ResolvedTheme>,
+    rules: &mut Vec<Rule>,
+    fell: &mut Vec<Fell>,
+) -> bool {
+    let before = fell.len();
+    for (surface, variant, default, set) in surfaces_set(rules) {
+        for family in drawn_on(surface, default, set) {
+            // The consent floors hold in every tint, a surface's fill under a consent variant
+            // included (ADR 0097 §6), as they do where a theme's parts reach the family itself.
+            let consent = family.variants.iter().any(|one| one.consent.is_some());
+            if consent && drawn_in.len() == 1 && !theme.tint.tabs().is_empty() {
+                drawn_in.extend(
+                    theme
+                        .tint
+                        .hues
+                        .iter()
+                        .map(|one| tint::tinted(theme, one.name)),
+                );
+                drawn_in.extend((0..360).map(|degree| tint::tinted_at(theme, f64::from(degree))));
+            }
+            if let Some((floor, ratio)) = broken_on(theme, drawn_in, rules, family, surface, set) {
+                Held {
+                    family: surface,
+                    rules: &mut *rules,
+                    fell: &mut *fell,
+                }
+                .fall(
+                    variant,
+                    &[],
+                    format!("what a {} draws on it: {floor}", family.name),
+                    ratio,
+                );
+                break;
+            }
+        }
+    }
+    fell.len() > before
 }
 
 /// The states `family` names but disabled, in the order the stylesheet writes them.
@@ -2528,6 +2932,18 @@ impl Held<'_> {
                 && refusal_hidden(theme, self.rules, self.family, variant, states, &look)
             {
                 self.fall(variant, states, REFUSAL_HIDDEN.to_owned(), None);
+                // The refused default is the edge the theme already draws when the box is not
+                // refused (a danger edge at rest): then that edge draws its default too, so the
+                // two are told apart again (#3382's review, B1).
+                let redrawn = drawn(self.rules, self.family, variant, states);
+                if refusal_hidden(theme, self.rules, self.family, variant, states, &redrawn) {
+                    let valid: Vec<State> = states
+                        .iter()
+                        .copied()
+                        .filter(|one| *one != State::Invalid)
+                        .collect();
+                    self.fall(variant, &valid, REFUSAL_HIDDEN.to_owned(), None);
+                }
                 continue;
             }
             if look == drawn(&[], self.family, variant, states) {
@@ -2536,7 +2952,8 @@ impl Held<'_> {
             let broken = if marked(self.family).is_some() {
                 faint_mark(theme, self.rules, self.family, variant, states, &look)
             } else {
-                unreadable(theme, self.rules, self.family, variant, states, &look)
+                let on = grounds(theme, self.family);
+                unreadable(theme, &on, self.rules, self.family, variant, states, &look)
             };
             if let Some((floor, ratio)) = broken {
                 self.fall(variant, states, floor, ratio);
@@ -2553,7 +2970,8 @@ impl Held<'_> {
                 // fallback would change nothing, so what it is held apart from falls back.
                 let own_default = drawn(self.rules, family, variant.name, states)
                     == drawn(&[], family, variant.name, states);
-                match consent_broken(one, self.rules, family, variant, states) {
+                let on = grounds(one, family);
+                match consent_broken(one, &on, self.rules, family, variant, states) {
                     None => {}
                     Some(Consented::Own(floor, ratio)) => {
                         if !own_default {
@@ -2564,7 +2982,7 @@ impl Held<'_> {
                         if !own_default {
                             self.fall(variant.name, states, floor.clone(), None);
                         }
-                        if consent_broken(one, self.rules, family, variant, states).is_some() {
+                        if consent_broken(one, &on, self.rules, family, variant, states).is_some() {
                             self.fall(other, states, floor, None);
                         }
                     }
@@ -2830,6 +3248,16 @@ fn written_to(rule: &Rule, property: Prop) -> Option<&'static str> {
 fn targets(rule: &Rule, property: Prop, sized: bool) -> Vec<String> {
     let own = selector(rule, sized);
     let part = rule.family.parts[rule.part].name;
+    // **A chat pane's band draws its Notices' ground and words itself** (#3142, #2912): the
+    // state washes, never tinted, and the primary tier on them. A theme's Notice colours reach a
+    // Notice anywhere else, so none can draw a band Notice in the terminal's own fill.
+    if rule.family.name == "notice" && matches!(property, Prop::Fill | Prop::Text) {
+        return vec![own.replacen(
+            "[data-part=\"root\"]",
+            "[data-part=\"root\"]:not([data-placement=\"pane\"])",
+            1,
+        )];
+    }
     if (rule.family.name, part, property) != ("tabs", "tab", Prop::Fill) {
         return vec![own];
     }
@@ -3129,6 +3557,57 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
             }
         }
     }
+    // **The separator's colour reaches every line between groups** (#2912): the other families'
+    // own lines (a menu's rule, a dialog's footer rule, the status bar's line), written before
+    // the families' rules so a family's own key for its line wins, and the hairlines a
+    // stylesheet draws as a row's edge, which read `--separator-fill`.
+    if let Some(PartValue::Colour(token)) = rules
+        .iter()
+        .rev()
+        .filter(|rule| rule.family.name == "separator" && rule.part == 0 && rule.state.is_none())
+        .find_map(|rule| rule.values.get(&Prop::Fill))
+    {
+        let fill = if *token == TRANSPARENT {
+            TRANSPARENT.to_owned()
+        } else {
+            var(token)
+        };
+        let _ = writeln!(
+            sheet,
+            "  :where({}) {{ background-color: {fill}; }}",
+            SEPARATOR_LINES.join(", ")
+        );
+        let _ = writeln!(sheet, "  :root {{ --separator-fill: {fill}; }}");
+    }
+    // **The card's ground and edge width reach the Inbox's list of Notices** (#2912, #3177): the
+    // list is a card of rows, so a theme that draws its cards on another ground, or with no
+    // hairline, draws the list so. Only a ground the Notices' own words are measured on (or none)
+    // reaches it: its rows hold Allow, and a news row never takes another tone's ground. The
+    // card's edge width also reaches a Notice alone on a page, whose subtle hairline is an
+    // inline surface's edge, not the waiting edge an ask keeps.
+    for property in [Prop::Fill, Prop::BorderWidth] {
+        let Some(rule) = rules.iter().rev().find(|rule| {
+            rule.family.name == "card"
+                && rule.part == 0
+                && rule.variant.is_none()
+                && rule.state.is_none()
+                && rule.values.contains_key(&property)
+        }) else {
+            continue;
+        };
+        let value = rule.values[&property];
+        let reaches = match (property, value) {
+            (Prop::Fill, PartValue::Colour(token)) => (token == TRANSPARENT
+                || content::NOTICE.grounds.contains(&token))
+            .then_some(CARD_EDGED),
+            (Prop::BorderWidth, _) => Some(CARD_EDGED_TOO),
+            _ => None,
+        };
+        if let Some(reaches) = reaches {
+            let said = declarations(rule, property, value);
+            let _ = writeln!(sheet, "  :where({reaches}) {{ {said} }}");
+        }
+    }
     for rule in &rules {
         for sized in [false, true] {
             // Each target with what is drawn on it, in the order the properties are written.
@@ -3159,6 +3638,24 @@ pub fn stylesheet(theme: &ResolvedTheme) -> String {
     sheet.push_str("}\n");
     sheet
 }
+
+/// The other families' lines between groups, which the separator part's colour reaches too.
+const SEPARATOR_LINES: &[&str] = &[
+    "[data-scope=\"popover\"][data-part=\"rule\"]",
+    "[data-scope=\"dialog\"][data-part=\"separator\"]",
+    "[data-scope=\"status-bar\"][data-part=\"separator\"]",
+];
+
+/// **What takes the card's ground and edge width** (#3177): the Inbox's list of Notices, a card of rows, in
+/// the Inbox and on the page a window with no project shows (not its band or its lines, which
+/// draw no box).
+const CARD_EDGED: &str =
+    "[data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"])";
+
+/// **What takes the card's edge width alone**: the list, and a Notice alone on a page, an inline
+/// surface whose hairline is decorative (#3177, the operator's no-hairline ruling).
+const CARD_EDGED_TOO: &str = "[data-scope=\"notice-list\"][data-part=\"root\"]:is([data-at=\"inbox\"], [data-at=\"page\"]), \
+     [data-scope=\"notice\"][data-part=\"root\"][data-placement=\"alone\"]";
 
 // --- The manifest as JSON ----------------------------------------------------------------------
 

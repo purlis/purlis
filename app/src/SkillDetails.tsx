@@ -9,6 +9,7 @@ import {
   type SkillCopy,
   type SkillDetails,
   type SkillDiff,
+  type SkillLevel,
   type SkillLifecycle,
   type SkillVersion,
   type StatsRow,
@@ -17,8 +18,17 @@ import { counted, saidAt } from "./dispatches";
 import { Notice } from "./Notice";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import { TextField } from "./ui/field/Field";
 import { SkillPinnedBy } from "./SkillPins";
+import { SkillGrade } from "./SkillGrade";
+
+/** A version's newest grade, as its row says it (SK-16): the trigger tests that passed with it. */
+export function gradeSaid(version: SkillVersion): string {
+  const grade = version.grade;
+  if (grade === null) return "Not graded";
+  return `${grade.passed} of ${counted(grade.fixtures, "trigger test", "trigger tests")} passed`;
+}
 
 /** A copy's state, as its tab says it in one line. */
 export function lifecycleSaid(name: string, lifecycle: SkillLifecycle): string {
@@ -71,10 +81,17 @@ export function SkillDetailsPanel({
   plane,
   name,
   changed,
+  onGraded,
+  onCopy,
 }: {
   plane: string;
   name: string;
   changed: number;
+  /** Told when a grade of the skill ended (SK-16), so the tab reads its grades again. */
+  onGraded?: () => void;
+  /** Told the level of the copy shown, each time it is read or picked: the tab's Grades panel
+   * shows that copy's grades alone (#3353). */
+  onCopy?: (level: SkillLevel) => void;
 }) {
   const [page, setPage] = useState<SkillDetails>();
   const [refused, setRefused] = useState<string>();
@@ -96,6 +113,11 @@ export function SkillDetailsPanel({
     };
   }, [plane, name, changed, done]);
 
+  const shown = page?.copies[Math.min(picked, page.copies.length - 1)];
+  useEffect(() => {
+    if (shown !== undefined) onCopy?.(shown.level);
+  }, [shown, onCopy]);
+
   if (refused !== undefined)
     return (
       <EmptyState
@@ -112,7 +134,7 @@ export function SkillDetailsPanel({
       </p>
     );
 
-  const copy: SkillCopy | undefined = page.copies[Math.min(picked, page.copies.length - 1)];
+  const copy: SkillCopy | undefined = shown;
   const change = (label: string, act: () => Promise<Changed>) => {
     setBusy(true);
     void act().then((answer) => {
@@ -177,6 +199,14 @@ export function SkillDetailsPanel({
               commands.skillOwners(plane, copy.level, name, owners),
             )
           }
+        />
+      )}
+      {copy !== undefined && (
+        <SkillGrade
+          plane={plane}
+          name={name}
+          level={copy.level}
+          onGraded={onGraded ?? (() => setDone((n) => n + 1))}
         />
       )}
       {copy !== undefined && (
@@ -344,19 +374,16 @@ function History({
           testid="skill-history-empty"
         />
       ) : (
-        <table className="ui-table" aria-label={`History of ${name}`}>
-          <thead>
-            <tr>
-              <th scope="col">Saved</th>
-              <th scope="col">By</th>
-              <th scope="col">Change</th>
-              <th scope="col">Runs on it</th>
-              <th scope="col">
-                <span className="visually-hidden">Actions</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table aria-label={`History of ${name}`}>
+          <TableHeader>
+            <TableColumn isRowHeader>Saved</TableColumn>
+            <TableColumn>By</TableColumn>
+            <TableColumn>Change</TableColumn>
+            <TableColumn>Runs on it</TableColumn>
+            <TableColumn>Grade</TableColumn>
+            <TableColumn hideName>Actions</TableColumn>
+          </TableHeader>
+          <TableBody>
             {copy.versions.map((version, at) => (
               <VersionRow
                 key={version.commit}
@@ -375,8 +402,8 @@ function History({
                 onCancel={() => setAsked(undefined)}
               />
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
       {copy.uncommitted.runs > 0 && (
         <p className="honest" data-testid="skill-uncommitted-runs">
@@ -412,12 +439,17 @@ function VersionRow({
 }) {
   return (
     <>
-      <tr data-testid={`skill-version-${version.commit}`}>
-        <td>{saidAt(version.at)}</td>
-        <td>{version.author}</td>
-        <td>{version.subject}</td>
-        <td>{runsSaid(version.runs)}</td>
-        <td>
+      <TableRow
+        id={version.commit}
+        textValue={saidAt(version.at)}
+        data-testid={`skill-version-${version.commit}`}
+      >
+        <TableCell>{saidAt(version.at)}</TableCell>
+        <TableCell>{version.author}</TableCell>
+        <TableCell>{version.subject}</TableCell>
+        <TableCell>{runsSaid(version.runs)}</TableCell>
+        <TableCell>{gradeSaid(version)}</TableCell>
+        <TableCell>
           <Button size="sm" variant="ghost" aria-expanded={open} onPress={onShow}>
             {open ? "Hide changes" : "Show changes"}
           </Button>
@@ -426,11 +458,15 @@ function VersionRow({
               Revert to this
             </Button>
           )}
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
       {asked !== undefined && (
-        <tr data-testid="skill-revert-confirm">
-          <td colSpan={5}>
+        <TableRow
+          id={`${version.commit}:revert`}
+          textValue="Revert to this version"
+          data-testid="skill-revert-confirm"
+        >
+          <TableCell colSpan={6}>
             <p>Put the skill back as this version had it? The revert is saved as a new version.</p>
             {asked.widens === undefined ? (
               <p className="pending" aria-busy="true">
@@ -455,12 +491,12 @@ function VersionRow({
             <Button size="sm" variant="ghost" onPress={onCancel}>
               Cancel
             </Button>
-          </td>
-        </tr>
+          </TableCell>
+        </TableRow>
       )}
       {open && (
-        <tr>
-          <td colSpan={5}>
+        <TableRow id={`${version.commit}:changes`} textValue="What it changed">
+          <TableCell colSpan={6}>
             {diff === undefined ? (
               <p className="pending" aria-busy="true">
                 <LoaderCircle className="node-icon spinning" />
@@ -492,8 +528,8 @@ function VersionRow({
                 )}
               </>
             )}
-          </td>
-        </tr>
+          </TableCell>
+        </TableRow>
       )}
     </>
   );

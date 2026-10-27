@@ -1,0 +1,28 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, issues: Create an issue comment (a pull request is an issue)",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "method": "POST",
+            "path": "repos/acme/api/issues/12/comments"
+          }
+        },
+        "fields": [
+          {
+            "text": [
+              "body",
+              "Browser proof"
+            ]
+          }
+        ]
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"id\": 99, \"html_url\": \"https://github.com/acme/api/pull/12#issuecomment-99\", \"body\": \"Browser proof\"}",
+        "err": ""
+      }
+    }
+  ]
+}

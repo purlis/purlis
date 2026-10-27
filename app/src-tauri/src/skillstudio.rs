@@ -363,6 +363,9 @@ pub struct StudioClash {
     pub outside: Level,
     pub owner: Owner,
     pub outcome: ClashOutcome,
+    /// What the row of the plane's copy says of it, in the core's words
+    /// (`purlis_core::skills::clash_said`, SK-46): the same line `purlis skill list` prints.
+    pub said: String,
 }
 
 /// What came of a clash.
@@ -376,6 +379,125 @@ pub enum ClashOutcome {
     /// Both load under one name, and the chat may use either: a copy named as one of purlis's
     /// own skills where the program reads every skill by its bare name.
     EitherOne,
+}
+
+/// Each pinner a chat in `workspace` on `persona` reads, with the pins it has written (SK-15d).
+fn pinners_of(
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> Vec<(purlis_core::skills::PinnedBy, Vec<String>)> {
+    workspace
+        .map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned()))
+        .into_iter()
+        .chain(persona.map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned())))
+        .map(|by| {
+            let pins = purlis_core::skills::pins_written(root, &by);
+            (by, pins)
+        })
+        .collect()
+}
+
+/// Which of `pinners` pin the skill `name` (SK-15d).
+fn pinned_by_of(
+    pinners: &[(purlis_core::skills::PinnedBy, Vec<String>)],
+    name: &str,
+) -> Vec<crate::skillchange::SkillPinner> {
+    pinners
+        .iter()
+        .filter(|(_, pins)| pins.iter().any(|one| one == name))
+        .map(|(by, _)| by.clone().into())
+        .collect()
+}
+
+/// **One of the plane's or the built-in skills' rows, for the window**, for a chat at the root or
+/// in `workspace`, which turned off the project skills `off` and is pinned by `pinned_by`
+/// (SK-15d): its grant, and where the grant does not reach the workspace, why. The studio's rows
+/// and each persona's (#3266) alike.
+fn plane_shown(
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    off: &[String],
+    pinned_by: Vec<crate::skillchange::SkillPinner>,
+    row: purlis_core::skills::StudioRow,
+) -> StudioSkill {
+    let grant = (row.origin == purlis_core::skills::Origin::Project).then(|| {
+        purlis_core::skills::grant_of(&root.join(&row.folder))
+            .unwrap_or(purlis_core::skills::Grant::Root)
+    });
+    let not_granted = match (&grant, workspace) {
+        (Some(grant), Some(ws)) if !grant.reaches(ws) => {
+            Some(purlis_core::skills::not_granted(&row.name, ws, grant, true))
+        }
+        _ => None,
+    };
+    StudioSkill {
+        granted: grant.map(Into::into),
+        not_granted,
+        turned_off: row.origin == purlis_core::skills::Origin::Project && off.contains(&row.name),
+        name: row.name,
+        level: row.origin.into(),
+        label: purlis_core::skills::level_shown(row.origin, row.local),
+        local: row.local,
+        grant: row.grant,
+        on: row.left_out.is_none(),
+        accept: row.accept,
+        left_out: row.left_out,
+        description: row.description,
+        folder: row.folder,
+        written: row.written,
+        named: row.named,
+        unchecked: row
+            .unchecked
+            .then(|| purlis_core::skills::UNCHECKED.to_owned()),
+        owner: None,
+        switch: None,
+        compat: row.compat.iter().map(Into::into).collect(),
+        lint: row.lint,
+        hidden: row.hidden.iter().map(Into::into).collect(),
+        pinned: row.pinned,
+        pinned_by,
+    }
+}
+
+/// **One persona's own skills** (#3266), as the Skills view lists them: the rows of its own
+/// level, for a chat as it in the workspace the view shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct PersonaSkills {
+    pub persona: String,
+    pub skills: Vec<StudioSkill>,
+}
+
+/// Every persona's own skills in the project at `root`, for a chat in `workspace` or at the
+/// root: nothing while the flag is off (`purlis_core::skills::persona_rows`).
+pub(crate) fn persona_skills(
+    root: &std::path::Path,
+    built_in: Option<&std::path::Path>,
+    on: bool,
+    workspace: Option<&str>,
+) -> Vec<PersonaSkills> {
+    if !on {
+        return Vec::new();
+    }
+    let off = workspace
+        .map(|ws| purlis_core::skills::turned_off(root, ws))
+        .unwrap_or_default();
+    purlis_core::skills::persona_rows(built_in, root, workspace)
+        .into_iter()
+        .map(|(persona, rows)| {
+            let pinners = pinners_of(root, workspace, Some(&persona));
+            PersonaSkills {
+                skills: rows
+                    .into_iter()
+                    .map(|row| {
+                        let by = pinned_by_of(&pinners, &row.name);
+                        plane_shown(root, workspace, &off, by, row)
+                    })
+                    .collect(),
+                persona,
+            }
+        })
+        .collect()
 }
 
 /// What the studio shows: whether it is on, whose chat it shows, and its skills by name.
@@ -467,30 +589,11 @@ pub(crate) fn studio(
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
     // Each pinner the studio is filtered to, with what it has written (SK-15d).
-    let pinners: Vec<(purlis_core::skills::PinnedBy, Vec<String>)> = workspace
-        .as_deref()
-        .map(|ws| purlis_core::skills::PinnedBy::Workspace(ws.to_owned()))
-        .into_iter()
-        .chain(
-            persona
-                .as_deref()
-                .map(|p| purlis_core::skills::PinnedBy::Persona(p.to_owned())),
-        )
-        .map(|by| {
-            let pins = purlis_core::skills::pins_written(root, &by);
-            (by, pins)
-        })
-        .collect();
+    let pinners = pinners_of(root, workspace.as_deref(), persona.as_deref());
     let pins_refused = pinners
         .iter()
         .find_map(|(by, _)| crate::skillchange::pins_refused(root, by));
-    let pinned_by = |name: &str| {
-        pinners
-            .iter()
-            .filter(|(_, pins)| pins.iter().any(|one| one == name))
-            .map(|(by, _)| by.clone().into())
-            .collect()
-    };
+    let pinned_by = |name: &str| pinned_by_of(&pinners, name);
     let purlis_core::skills::StudioList {
         rows,
         harnesses: all,
@@ -505,45 +608,8 @@ pub(crate) fn studio(
     let skills = rows
         .into_iter()
         .map(|row| {
-            let grant = (row.origin == purlis_core::skills::Origin::Project).then(|| {
-                purlis_core::skills::grant_of(&root.join(&row.folder))
-                    .unwrap_or(purlis_core::skills::Grant::Root)
-            });
-            let not_granted = match (&grant, workspace.as_deref()) {
-                (Some(grant), Some(ws)) if !grant.reaches(ws) => {
-                    Some(purlis_core::skills::not_granted(&row.name, ws, grant, true))
-                }
-                _ => None,
-            };
-            (row, grant, not_granted)
-        })
-        .map(|(row, grant, not_granted)| StudioSkill {
-            granted: grant.map(Into::into),
-            not_granted,
-            turned_off: row.origin == purlis_core::skills::Origin::Project
-                && off.contains(&row.name),
-            level: row.origin.into(),
-            label: purlis_core::skills::level_shown(row.origin, row.local),
-            local: row.local,
-            grant: row.grant,
-            on: row.left_out.is_none(),
-            accept: row.accept,
-            left_out: row.left_out,
-            description: row.description,
-            folder: row.folder,
-            written: row.written,
-            named: row.named,
-            unchecked: row
-                .unchecked
-                .then(|| purlis_core::skills::UNCHECKED.to_owned()),
-            owner: None,
-            switch: None,
-            compat: row.compat.iter().map(Into::into).collect(),
-            lint: row.lint,
-            hidden: row.hidden.iter().map(Into::into).collect(),
-            pinned: row.pinned,
-            pinned_by: pinned_by(&row.name),
-            name: row.name,
+            let by = pinned_by(&row.name);
+            plane_shown(root, workspace.as_deref(), &off, by, row)
         })
         .collect();
     let (harnesses, clashes) = harnesses(&all);
@@ -623,6 +689,7 @@ fn harnesses(
                         purlis_core::skills::Outcome::RepoWins => ClashOutcome::RepoWins,
                         purlis_core::skills::Outcome::EitherOne => ClashOutcome::EitherOne,
                     },
+                    said: purlis_core::skills::clash_said(one.harness, clash),
                 });
             }
             StudioHarness {
@@ -678,6 +745,8 @@ pub enum RunStart {
     Curation,
     /// A trigger sent the prompt.
     Trigger,
+    /// A grade sent the prompt: a trigger test's chat.
+    Grade,
     /// A start a newer purlis wrote.
     Unknown,
 }
@@ -692,6 +761,7 @@ impl From<purlis_core::skills::runs::StartedBy> for RunStart {
             StartedBy::UseSkill => RunStart::UseSkill,
             StartedBy::Curation => RunStart::Curation,
             StartedBy::Trigger => RunStart::Trigger,
+            StartedBy::Grade => RunStart::Grade,
             _ => RunStart::Unknown,
         }
     }
@@ -920,6 +990,7 @@ pub(crate) async fn skill_runs(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum SkillPanelKey {
+    Grades,
     Runs,
     Extension { extension: String, panel: String },
 }
@@ -931,6 +1002,7 @@ impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
     fn from(key: purlis_core::skills::studio::PanelKey) -> SkillPanelKey {
         use purlis_core::skills::studio::PanelKey;
         match key {
+            PanelKey::Grades => SkillPanelKey::Grades,
             PanelKey::Runs => SkillPanelKey::Runs,
             PanelKey::Extension { extension, panel } => {
                 SkillPanelKey::Extension { extension, panel }
@@ -939,8 +1011,8 @@ impl From<purlis_core::skills::studio::PanelKey> for SkillPanelKey {
     }
 }
 
-/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
-/// then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+/// **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
+/// panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
 /// or refused with the core's sentence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct SkillPanel {
@@ -953,16 +1025,17 @@ pub struct SkillPanel {
     pub refused: Option<String>,
 }
 
-/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`.
+/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`, the Grades
+/// panel of the copy at `level` (#3353).
 pub(crate) fn panels(
     root: &std::path::Path,
     skill: &str,
+    level: Option<&purlis_core::skills::verbs::Level>,
     studio: Option<purlis_core::skills::studio::Studio<'_>>,
 ) -> Vec<SkillPanel> {
-    use purlis_core::skills::studio::{Answered, RunsPanel};
     let answered = match studio {
-        Some(studio) => studio.panels(root, skill),
-        None => vec![Answered::of(&RunsPanel { plane: root }, skill)],
+        Some(studio) => studio.panels(root, skill, level),
+        None => purlis_core::skills::studio::own_panels(root, skill, level),
     };
     answered
         .into_iter()
@@ -985,8 +1058,9 @@ pub(crate) fn panels(
         .collect()
 }
 
-/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
-/// run of the skill, newest first, then each extension's. None while the flag is off. On a
+/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
+/// `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
+/// every run of the skill, newest first, then each extension's. None while the flag is off. On a
 /// blocking thread, as it reads the project's skill log and asks each extension.
 #[tauri::command]
 #[specta::specta]
@@ -995,6 +1069,7 @@ pub(crate) async fn skill_panels(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     skill: String,
+    level: Option<crate::skillchange::SkillLevel>,
 ) -> Result<Vec<SkillPanel>, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
@@ -1005,7 +1080,10 @@ pub(crate) async fn skill_panels(
         Ok(purlis_core::skills::studio::with_studio(
             &executor,
             held.root(),
-            |studio| panels(held.root(), &skill, studio),
+            |studio| {
+                let level = level.as_ref().map(purlis_core::skills::verbs::Level::from);
+                panels(held.root(), &skill, level.as_ref(), studio)
+            },
         ))
     })
     .await
@@ -1057,6 +1135,30 @@ pub(crate) async fn skill_studio(
             workspace.as_deref(),
             persona.as_deref(),
             &purlis_core::harness_plugin::Env::of(&[]),
+        ))
+    })
+    .await
+}
+
+/// **Every persona's own skills** (#3266): what the Skills view lists under Personas, for a chat
+/// in `workspace` or at the root, in one read rather than one studio per persona. On a blocking
+/// thread, as it reads the project's skill folders.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_persona_skills(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    workspace: Option<String>,
+) -> Result<Vec<PersonaSkills>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading the personas' skills", move || {
+        let built_in =
+            crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
+        Ok(persona_skills(
+            held.root(),
+            built_in.as_deref(),
+            purlis_core::skills::studio_on_here(),
+            workspace.as_deref(),
         ))
     })
     .await

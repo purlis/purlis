@@ -687,21 +687,28 @@ function tintedAs(
   if (known !== undefined) return known;
   const hue = hueIn(theme, colour);
   if (hue === undefined) return theme;
-  const rules = theme.tint.apart
+  const held = theme.tint.apart
     .map((rule) => ({
-      token: theme.values[rule.token as Token],
-      tokenTinted: tokens.includes(rule.token),
-      from: theme.values[rule.from as Token],
-      fromTinted: tokens.includes(rule.from),
-      distance: rule.distance,
+      alone: rule.alone === true,
+      rule: {
+        token: theme.values[rule.token as Token],
+        tokenTinted: tokens.includes(rule.token),
+        from: theme.values[rule.from as Token],
+        fromTinted: tokens.includes(rule.from),
+        distance: rule.distance,
+      },
     }))
-    .filter((rule) => rule.tokenTinted || rule.fromTinted);
-  const most = apartChroma(rules, hue);
+    .filter(({ rule }) => rule.tokenTinted || rule.fromTinted);
+  // The rules every held token gives way to, then those held alone too (`tint::Most`, #3130).
+  const shared = held.filter((one) => !one.alone).map((one) => one.rule);
+  const most = apartChroma(shared, hue);
+  const all = held.map((one) => one.rule);
+  const alone = shared.length === all.length ? most : apartChroma(all, hue);
   const values = { ...theme.values };
   for (const one of tokens) {
     const value = theme.values[one as Token];
     // Only the sides of a rule are held to `most`; a side no amount holds is drawn untinted.
-    const chroma = chromaFor(one, most, theme.tint.apart);
+    const chroma = chromaFor(one, most, theme.tint.apart, alone);
     // Only a colour turns: a value left to the platform (`platform`) is drawn as it is.
     if (chroma !== undefined && typeof value === "string" && value.startsWith("#"))
       values[one as Token] = tintHex(value, hue, chroma);

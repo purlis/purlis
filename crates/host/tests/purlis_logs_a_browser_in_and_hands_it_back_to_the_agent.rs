@@ -53,6 +53,7 @@ fn login() -> LogIn {
         user: Some(Secret::new("fixture-user".into())),
         password: Secret::new("fixture-word".into()),
         keep: None,
+        identity: None,
     }
 }
 

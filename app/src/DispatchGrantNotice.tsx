@@ -8,6 +8,7 @@ import { useDispatchesHeld } from "./dispatchesHeld";
 import { Notice, NoticeOf, type NoticeAction } from "./Notice";
 import { useReadOnlySaid } from "./ReadOnlyLine";
 import { Choice } from "./settings/components";
+import { Card } from "./ui/card/Card";
 
 /** About how many lines the brief's box shows before it scrolls (`App.css`,
  *  `.block-report-brief`). */
@@ -306,7 +307,7 @@ export function DispatchGrantNotice({
   );
 
   const brief = (
-    <div className="block-report ui-inline-surface" id={id}>
+    <Card className="block-report" id={id}>
       {first.task !== null && (
         // The task's name is the chat's text too (#1456): drawn apart from purlis's words.
         <p>
@@ -328,7 +329,7 @@ export function DispatchGrantNotice({
         </p>
       )}
       {first.brief_cut && <p>The brief is longer than purlis shows here. The rest is not shown.</p>}
-    </div>
+    </Card>
   );
 
   if (first.locked !== null)

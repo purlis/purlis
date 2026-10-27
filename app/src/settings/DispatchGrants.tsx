@@ -16,7 +16,16 @@ import {
 import { listen } from "../here";
 import { Notice } from "../Notice";
 import { useReadOnlySaid } from "../ReadOnlyLine";
-import { ColumnHeading } from "./ColumnHeading";
+import {
+  ControlBody,
+  ControlCell,
+  ControlColumn,
+  ControlGroupHeading,
+  ControlHead,
+  ControlRow,
+  ControlRowHeading,
+  ControlTable,
+} from "../ui/table/ControlTable";
 import { Choice, type RowIds } from "./components";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
@@ -1119,9 +1128,9 @@ export function DispatchGrantsList({
    *  width, under the row it is about. It never widens a column or re-flows the rows above. */
   const question = (line: string) =>
     asking?.line === line && (
-      <tr className="dispatch-confirm-row">
-        <td colSpan={4}>{confirmation(asking)}</td>
-      </tr>
+      <ControlRow className="dispatch-confirm-row">
+        <ControlCell colSpan={4}>{confirmation(asking)}</ControlCell>
+      </ControlRow>
     );
 
   /** The form's word for "any workspace": no workspace's name can be it. */
@@ -1267,27 +1276,23 @@ export function DispatchGrantsList({
     const span = lines.length + (lines.some((line) => asking?.line === line.key) ? 1 : 0);
     return lines.map((line, at) => (
       <Fragment key={line.key}>
-        <tr className={line.dormant ? "dispatch-dormant" : undefined}>
-          {at === 0 && (
-            <th scope="row" rowSpan={span}>
-              {name}
-            </th>
-          )}
+        <ControlRow className={line.dormant ? "dispatch-dormant" : undefined}>
+          {at === 0 && <ControlRowHeading rowSpan={span}>{name}</ControlRowHeading>}
           {/* Each cell carries its column's whole words, which the stacked form shows above
-              it where the table is narrow (#1865, `.ui-table-stacks`). */}
-          <td data-heading="Where it comes from">
+              it where the table is narrow (#1865, the table family's `stacks`). */}
+          <ControlCell heading="Where it comes from">
             <span>{line.says}</span>
             {line.note !== undefined && <span className="granted-note"> {line.note}</span>}
-          </td>
-          <td data-heading="In which workspace">{workspaceCell(line)}</td>
-          <td data-heading="Action">
+          </ControlCell>
+          <ControlCell heading="In which workspace">{workspaceCell(line)}</ControlCell>
+          <ControlCell heading="Action">
             {line.offers.length === 0 ? (
               <span className="granted-note">{line.fixed ?? ""}</span>
             ) : (
               buttons(line.key, line.offers)
             )}
-          </td>
-        </tr>
+          </ControlCell>
+        </ControlRow>
         {question(line.key)}
       </Fragment>
     ));
@@ -1365,118 +1370,118 @@ export function DispatchGrantsList({
           ) : (
             // Stacks into a form where Settings is narrow, as the limits table does (#1865): each
             // row's target above its cells, each under its column's whole words.
-            <div className="ui-table-room">
-              <table className="ui-table ui-table-fixed ui-table-stacks dispatch-table">
-                <caption>Who may dispatch to whom, and where each grant comes from</caption>
-                <thead>
-                  <tr>
-                    {/* Shortened where a column is too narrow for its words (DS-9). */}
-                    <ColumnHeading words="Dispatch to" full="May dispatch to" />
-                    <th scope="col">Where it comes from</th>
-                    <ColumnHeading words="Workspace" full="In which workspace" />
-                    <th scope="col">Action</th>
-                  </tr>
-                </thead>
-                {groups.map((group) => {
-                  const persona = group.persona;
-                  const here = persona !== undefined && isPersona(persona);
-                  const back = persona !== undefined && here && standing.back.includes(persona);
-                  const anys = persona === undefined ? [] : anyLines(persona);
-                  const heading = `heading:${group.key}`;
-                  return (
-                    <tbody
-                      key={group.key}
-                      className={persona !== undefined && !here ? "dispatch-dormant" : undefined}
-                    >
-                      <tr>
-                        <th colSpan={4} scope="rowgroup" className="dispatch-grant-group">
-                          <span>{group.heading}</span>
-                          {persona !== undefined && hasTab(persona) && (
-                            // A persona stays in its own tab, and the table links to it (#1388).
-                            <OutLink
-                              plane={plane}
-                              action={showPersona(persona)}
-                              label={`Show ${persona}: the persona ${persona}`}
-                            >
-                              {`Show ${persona}`}
-                            </OutLink>
-                          )}
-                          {persona !== undefined && !here && (
+            <ControlTable
+              className="dispatch-table"
+              fixed
+              stacks
+              caption="Who may dispatch to whom, and where each grant comes from"
+            >
+              <ControlHead>
+                {/* Shortened where a column is too narrow for its words (DS-9). */}
+                <ControlColumn whole="May dispatch to">Dispatch to</ControlColumn>
+                <ControlColumn>Where it comes from</ControlColumn>
+                <ControlColumn whole="In which workspace">Workspace</ControlColumn>
+                <ControlColumn>Action</ControlColumn>
+              </ControlHead>
+              {groups.map((group) => {
+                const persona = group.persona;
+                const here = persona !== undefined && isPersona(persona);
+                const back = persona !== undefined && here && standing.back.includes(persona);
+                const anys = persona === undefined ? [] : anyLines(persona);
+                const heading = `heading:${group.key}`;
+                return (
+                  <ControlBody
+                    key={group.key}
+                    className={persona !== undefined && !here ? "dispatch-dormant" : undefined}
+                  >
+                    <ControlRow>
+                      <ControlGroupHeading colSpan={4} className="dispatch-grant-group">
+                        <span>{group.heading}</span>
+                        {persona !== undefined && hasTab(persona) && (
+                          // A persona stays in its own tab, and the table links to it (#1388).
+                          <OutLink
+                            plane={plane}
+                            action={showPersona(persona)}
+                            label={`Show ${persona}: the persona ${persona}`}
+                          >
+                            {`Show ${persona}`}
+                          </OutLink>
+                        )}
+                        {persona !== undefined && !here && (
+                          <span className="granted-note">
+                            {" "}
+                            Not a persona of this project now, so nothing here allows anything.
+                          </span>
+                        )}
+                        {back && persona !== undefined && (
+                          <>
                             <span className="granted-note">
                               {" "}
-                              Not a persona of this project now, so nothing here allows anything.
+                              An earlier persona had this name. What it was allowed does not count
+                              for this one until you give it back.
                             </span>
-                          )}
-                          {back && persona !== undefined && (
-                            <>
-                              <span className="granted-note">
-                                {" "}
-                                An earlier persona had this name. What it was allowed does not count
-                                for this one until you give it back.
-                              </span>
-                              {buttons(heading, [giveBack(persona)])}
-                            </>
-                          )}
-                          {here &&
-                            wantsOf(standing.wants.find((one) => one.persona === persona)?.wants)}
-                        </th>
-                      </tr>
-                      {question(heading)}
-                      {group.targets.length === 0 && here && (
-                        <tr>
-                          <td colSpan={4} className="granted-note">
-                            No grant names a persona. Its first dispatch to one asks you.
-                          </td>
-                        </tr>
-                      )}
-                      {group.targets.map((target) =>
-                        rows(
-                          isPersona(target.name) ? (
-                            <>
-                              {target.name}{" "}
-                              {hasTab(target.name) && (
-                                <OutLink
-                                  plane={plane}
-                                  action={showPersona(target.name)}
-                                  label={`Show ${target.name}: the persona ${group.persona ?? "a chat on no persona"} may dispatch to`}
-                                >
-                                  {`Show ${target.name}`}
-                                </OutLink>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              {target.name} <span className="granted-note">(not a persona)</span>
-                            </>
-                          ),
-                          target.lines,
-                        ),
-                      )}
-                      {anys.length > 0 && rows("Any persona", anys)}
-                    </tbody>
-                  );
-                })}
-                {standing.dormant.length > 0 && (
-                  <tbody className="dispatch-dormant">
-                    <tr>
-                      <th colSpan={4} scope="rowgroup" className="dispatch-grant-group">
-                        <span>Set aside</span>
-                        <span className="granted-note">
-                          {" "}
-                          Grants an earlier persona of a name had. They allow nothing.
-                        </span>
-                      </th>
-                    </tr>
-                    {standing.dormant.map((one) =>
+                            {buttons(heading, [giveBack(persona)])}
+                          </>
+                        )}
+                        {here &&
+                          wantsOf(standing.wants.find((one) => one.persona === persona)?.wants)}
+                      </ControlGroupHeading>
+                    </ControlRow>
+                    {question(heading)}
+                    {group.targets.length === 0 && here && (
+                      <ControlRow>
+                        <ControlCell colSpan={4} className="granted-note">
+                          No grant names a persona. Its first dispatch to one asks you.
+                        </ControlCell>
+                      </ControlRow>
+                    )}
+                    {group.targets.map((target) =>
                       rows(
-                        one.any ? `${one.asking} to any persona` : `${one.asking} to ${one.target}`,
-                        [dormantLine(one)],
+                        isPersona(target.name) ? (
+                          <>
+                            {target.name}{" "}
+                            {hasTab(target.name) && (
+                              <OutLink
+                                plane={plane}
+                                action={showPersona(target.name)}
+                                label={`Show ${target.name}: the persona ${group.persona ?? "a chat on no persona"} may dispatch to`}
+                              >
+                                {`Show ${target.name}`}
+                              </OutLink>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {target.name} <span className="granted-note">(not a persona)</span>
+                          </>
+                        ),
+                        target.lines,
                       ),
                     )}
-                  </tbody>
-                )}
-              </table>
-            </div>
+                    {anys.length > 0 && rows("Any persona", anys)}
+                  </ControlBody>
+                );
+              })}
+              {standing.dormant.length > 0 && (
+                <ControlBody className="dispatch-dormant">
+                  <ControlRow>
+                    <ControlGroupHeading colSpan={4} className="dispatch-grant-group">
+                      <span>Set aside</span>
+                      <span className="granted-note">
+                        {" "}
+                        Grants an earlier persona of a name had. They allow nothing.
+                      </span>
+                    </ControlGroupHeading>
+                  </ControlRow>
+                  {standing.dormant.map((one) =>
+                    rows(
+                      one.any ? `${one.asking} to any persona` : `${one.asking} to ${one.target}`,
+                      [dormantLine(one)],
+                    ),
+                  )}
+                </ControlBody>
+              )}
+            </ControlTable>
           )}
           {addForm()}
           {locks && held.locked_pairs.length > 0 && (

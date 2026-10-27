@@ -882,6 +882,133 @@ fn a_key_where_the_tree_shows_no_focus_but_the_page_has_one_is_dropped_once_a_fr
     assert!(engine.sent("Input.dispatchKeyEvent").is_empty());
 }
 
+fn release(aim: &Aim, x: f64, y: f64) -> PersonInput {
+    let PersonInput::Mouse { aim, x, y, .. } = press(aim, x, y) else {
+        unreachable!()
+    };
+    PersonInput::Mouse {
+        aim,
+        kind: MouseKind::Released,
+        x,
+        y,
+        button: MouseButton::Left,
+        clicks: 1,
+        modifiers: 0,
+        delta_x: 0.0,
+        delta_y: 0.0,
+    }
+}
+
+/// The type, point, button and buttons held of each mouse event the engine was sent.
+fn mouse_events(engine: &super::Engine) -> Vec<(String, f64, f64, String, i64)> {
+    engine
+        .sent("Input.dispatchMouseEvent")
+        .iter()
+        .map(|s| {
+            (
+                s.params["type"].as_str().unwrap_or_default().to_owned(),
+                s.params["x"].as_f64().unwrap_or_default(),
+                s.params["y"].as_f64().unwrap_or_default(),
+                s.params["button"].as_str().unwrap_or_default().to_owned(),
+                s.params["buttons"].as_i64().unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_release_dropped_after_its_press_reached_the_page_lets_the_button_go_at_the_press() {
+    // #2989: the press reached the page; the page moved on before the release, which is
+    // dropped. The engine is not left holding the button.
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    browser.person_input(&press(&aim, 42.0, 17.5)).unwrap();
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+
+    let released = browser.person_input(&release(&aim, 60.0, 30.0));
+
+    assert_eq!(released, Err(Refusal::Missed));
+    assert_eq!(
+        mouse_events(&engine),
+        [
+            ("mousePressed".into(), 42.0, 17.5, "left".into(), 1),
+            ("mouseReleased".into(), 42.0, 17.5, "left".into(), 0),
+        ]
+    );
+}
+
+#[test]
+fn the_persons_next_press_after_a_dropped_release_reaches_the_page_as_a_single_click() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    browser.person_input(&press(&aim, 42.0, 17.5)).unwrap();
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+    let _ = browser.person_input(&release(&aim, 60.0, 30.0));
+
+    let now = aim_now(&browser);
+    browser.person_input(&press(&now, 80.0, 40.0)).unwrap();
+    browser.person_input(&release(&now, 80.0, 40.0)).unwrap();
+
+    let events = mouse_events(&engine);
+    assert_eq!(
+        events[2..],
+        [
+            ("mousePressed".into(), 80.0, 40.0, "left".into(), 1),
+            ("mouseReleased".into(), 80.0, 40.0, "left".into(), 0),
+        ]
+    );
+    let pressed = &engine.sent("Input.dispatchMouseEvent")[2];
+    assert_eq!(pressed.params["clickCount"], 1);
+}
+
+#[test]
+fn a_dropped_release_of_a_button_never_pressed_on_the_page_sends_nothing() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    the_payment_frame_moves_on(&browser, &engine, &aim);
+
+    let released = browser.person_input(&release(&aim, 60.0, 30.0));
+
+    assert_eq!(released, Err(Refusal::Missed));
+    assert!(engine.sent("Input.dispatchMouseEvent").is_empty());
+}
+
+#[test]
+fn the_hand_back_lets_go_of_a_button_still_held() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    browser.person_input(&press(&aim, 42.0, 17.5)).unwrap();
+
+    browser.hand_back();
+
+    assert_eq!(
+        mouse_events(&engine),
+        [
+            ("mousePressed".into(), 42.0, 17.5, "left".into(), 1),
+            ("mouseReleased".into(), 42.0, 17.5, "left".into(), 0),
+        ]
+    );
+    let released = &engine.sent("Input.dispatchMouseEvent")[1];
+    assert_eq!(released.session.as_deref(), Some("S-PAGE-1"));
+}
+
+#[test]
+fn the_hand_back_sends_no_release_when_no_button_is_held() {
+    let (browser, engine) = browser();
+    browser.take_over();
+    let aim = aim_now(&browser);
+    browser.person_input(&press(&aim, 42.0, 17.5)).unwrap();
+    browser.person_input(&release(&aim, 42.0, 17.5)).unwrap();
+
+    browser.hand_back();
+
+    assert_eq!(engine.sent("Input.dispatchMouseEvent").len(), 2);
+}
+
 #[test]
 fn a_click_while_a_frame_of_the_page_went_is_dropped() {
     // Where a frame went, the page around it may have moved: what is under the point now is

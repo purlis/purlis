@@ -1,0 +1,35 @@
+{
+  "source": "GitHub REST API version 2022-11-28, docs.github.com/en/rest, git: Get a reference, Get a commit object, Get a tree; a branch of the proof's name somebody else pushed, whose last commit is a merge",
+  "exchanges": [
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "path": "repos/acme/api/git/ref/heads/purlis/browser-proof/pr-12"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"ref\": \"refs/heads/purlis/browser-proof/pr-12\", \"object\": {\"type\": \"commit\", \"sha\": \"3333333333333333333333333333333333333333\"}}",
+        "err": ""
+      }
+    },
+    {
+      "call": {
+        "endpoint": {
+          "rest": {
+            "path": "repos/acme/api/git/commits/3333333333333333333333333333333333333333"
+          }
+        },
+        "fields": []
+      },
+      "reply": {
+        "code": 0,
+        "out": "{\"sha\": \"3333333333333333333333333333333333333333\", \"tree\": {\"sha\": \"4444444444444444444444444444444444444444\"}, \"parents\": [{\"sha\": \"1111111111111111111111111111111111111111\"}, {\"sha\": \"2222222222222222222222222222222222222222\"}]}",
+        "err": ""
+      }
+    }
+  ]
+}

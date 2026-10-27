@@ -88,17 +88,25 @@ fn a_call_that_failed_while_it_waited_to_be_written_is_never_written() {
             Duration::from_millis(100),
         );
     });
-    // Long enough for the large call to be made and its writing to have filled the pipe.
-    std::thread::sleep(Duration::from_millis(500));
+    // The large call's message has begun to reach the engine: its writing holds the writer, as
+    // the pipe cannot take the rest of it while nobody reads (#3401). A fixed wait raced the
+    // large call on a busy runner: made late, it let the small call be written first.
+    let mut from_purlis = std::io::BufReader::new(unread);
+    let mut head = [0; 64];
+    std::io::Read::read_exact(&mut from_purlis, &mut head).unwrap();
+    assert!(
+        String::from_utf8_lossy(&head).contains("\"Page.setDocumentContent\""),
+        "{}",
+        String::from_utf8_lossy(&head)
+    );
     let failed =
         connection.call_within("Purlis.never", json!({}), None, Duration::from_millis(100));
     assert!(matches!(failed, Err(CallError::TimedOut)), "{failed:?}");
 
-    // The engine reads again, everything that reaches it.
+    // The engine reads again, everything that reaches it (the rest of the large call first).
     let (read, methods) = mpsc::channel();
     std::thread::spawn(move || {
         use std::io::BufRead;
-        let mut from_purlis = std::io::BufReader::new(unread);
         loop {
             let mut message = Vec::new();
             if from_purlis.read_until(0, &mut message).unwrap_or(0) == 0 {

@@ -77,8 +77,8 @@ describe("Settings › Theme › Options (#2325, #2331)", () => {
     const accent = await screen.findByText(/^Accent: Teal/);
     expect(accent.textContent).toContain("Workspace");
     expect(
-      accent.querySelector(".ui-setting-badge")
-        ? tipOf(accent.querySelector(".ui-setting-badge"))
+      accent.querySelector("[data-scope=badge]")
+        ? tipOf(accent.querySelector("[data-scope=badge]"))
         : undefined,
     ).toBe("Accent is drawn as your choice for this workspace on this machine has it.");
   });
@@ -89,8 +89,8 @@ describe("Settings › Theme › Options (#2325, #2331)", () => {
     const accent = await screen.findByText(/^Accent: Teal/);
     expect(accent.textContent).toContain("Team");
     expect(
-      accent.querySelector(".ui-setting-badge")
-        ? tipOf(accent.querySelector(".ui-setting-badge"))
+      accent.querySelector("[data-scope=badge]")
+        ? tipOf(accent.querySelector("[data-scope=badge]"))
         : undefined,
     ).toBe("Accent is drawn as this project's committed default has it.");
   });

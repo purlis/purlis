@@ -192,33 +192,91 @@ fn laid_out_on(
     )
 }
 
-/// **The skills a chat starts without** (SK-5, #2768; SK-8, #2771), where the Skill studio's
-/// flag is `on`: the chat in `root` started in `cwd` on `harness` as `persona` (or on none),
-/// whose environment is `env` ([`crate::skills::not_here`]). What its tab's Notice says. `None`
-/// otherwise, and where it has every one.
+/// **Where a chat's plane skills come from, read once at its start** (#3234): what arms it
+/// ([`Arming::skills`]) and what its tab's Notice says it starts without ([`skills_not_here`])
+/// are both worked out from this one value, so the two never disagree.
+#[derive(Debug, Clone, Default)]
+pub struct ChatSkills {
+    /// Whether the plane's skills reach the chat: the Skill studio's flag, once the project
+    /// requires them (`skills::reach_chats`, #2784).
+    pub on: bool,
+    /// The project the plane's skills are read from: the chat's, or a Try it's own scope (SK-9).
+    pub root: PathBuf,
+    /// A Try it's scratch chat: the draft alone, with no workspace's, persona's or harness's.
+    pub tried: bool,
+    /// The workspace the chat works in, and the persona whose skills it gets; neither for a
+    /// Try it's chat.
+    pub workspace: Option<String>,
+    pub persona: Option<String>,
+    /// The repo skills of the clone the chat works in (SK-6), as its harness reads them:
+    /// nothing where the plane's skills do not reach it, or it works in no clone.
+    pub repo: Vec<crate::skills::OutsideSkill>,
+}
+
+impl ChatSkills {
+    /// **The chat in the project at `root`, started in `cwd` on `harness` as `persona`**, with
+    /// the plane's skills reaching it where `on` says so: its scope, its workspace and the repo
+    /// skills of its clone, each read here once.
+    pub fn read(
+        on: bool,
+        root: &Path,
+        harness: Option<Harness>,
+        cwd: Option<&Path>,
+        persona: Option<&str>,
+    ) -> Self {
+        // A Try it's scratch chat (SK-9, #2772): its project skills are the one skill its try
+        // laid out, at a root of its own, so it gets the built-in skills and the draft alone.
+        let scope = crate::skills::verbs::drafts::scope_of(root, cwd.filter(|_| on));
+        let (workspace, persona) = if scope.tried {
+            (None, None)
+        } else {
+            (
+                cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd)),
+                persona.map(str::to_owned),
+            )
+        };
+        // The repo skills of the clone it works in, so a narrower repo copy of a plane skill is
+        // the one its harness gets where purlis builds what it is handed (SK-6).
+        let repo = match (on, harness, workspace.as_deref(), cwd) {
+            (true, Some(harness), Some(ws), Some(cwd)) => {
+                crate::skills::repo_skills_of_chat(harness, root, ws, cwd)
+            }
+            _ => Vec::new(),
+        };
+        ChatSkills {
+            on,
+            root: scope.root,
+            tried: scope.tried,
+            workspace,
+            persona,
+            repo,
+        }
+    }
+}
+
+/// **The skills a chat starts without** (SK-5, #2768; SK-8, #2771), where the plane's skills
+/// reach it: the chat whose skills are `skills`, on `harness` with the environment `env`
+/// ([`crate::skills::not_here_beside`]), beside the very repo skills it was armed with (#3234).
+/// What its tab's Notice says. `None` otherwise, and where it has every one.
 pub fn skills_not_here(
-    on: bool,
-    root: &Path,
+    skills: &ChatSkills,
     kit: &Kit,
     harness: Option<Harness>,
-    cwd: Option<&Path>,
-    persona: Option<&str>,
     env: &[(String, String)],
 ) -> Option<crate::skills::NotHere> {
-    if !on {
+    if !skills.on {
         return None;
     }
     let harness = harness?;
-    let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
-    crate::skills::not_here(
-        root,
-        workspace.as_deref(),
-        persona,
+    crate::skills::not_here_beside(
+        &skills.root,
+        skills.workspace.as_deref(),
+        skills.persona.as_deref(),
         built_in.as_deref(),
         harness,
         &crate::harness_plugin::Env::of(env),
-        cwd,
+        &skills.repo,
     )
 }
 
@@ -374,6 +432,13 @@ pub fn compose_ready(
             tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
         }
     }
+    let skills = ChatSkills::read(
+        crate::skills::reach_chats_here(root),
+        root,
+        ready.harness,
+        Some(&cwd),
+        persona.as_deref(),
+    );
     let armed = armed(&Arming {
         root,
         kit,
@@ -383,6 +448,9 @@ pub fn compose_ready(
         sandbox,
         persona: persona.as_deref(),
         env: &ready.env,
+        // The host starts no grade's chat: a grade is the window's (SK-16).
+        graded: false,
+        skills: &skills,
     })?;
     let (hooks, armed_env) = armed;
     // No watcher of the project's own settings runs here, so a sandboxed Claude Code chat is
@@ -457,6 +525,21 @@ pub fn compose_ready(
         && let Err(why) = crate::sandbox::local::count(root, counted)
     {
         tracing::warn!("purlis: a composed chat was not counted ({why})");
+    }
+    // What its sandbox armed here, for a `secret exec` its desktop sends the values of (#2047);
+    // a chat started without one leaves no record of an earlier chat under its number.
+    match sandbox {
+        None => crate::hostedchats::forget(root, starting.number),
+        Some(applied) => crate::hostedchats::record(
+            root,
+            starting.number,
+            crate::hostedchats::Composed {
+                persona: persona.clone(),
+                folder: cwd.clone(),
+                harness: ready.harness,
+                confines: applied.confines().clone(),
+            },
+        ),
     }
     Ok(Launch {
         program,
@@ -738,13 +821,6 @@ pub fn sweep_settings(root: &Path, open: &[String]) {
 /// What arms a chat's harness: the arguments its adapter adds, and the variables.
 pub type Armed = (Vec<String>, Vec<(String, String)>);
 
-/// **What arms a chat's harness** for this session alone: the arguments and the variables its
-/// adapter adds, as the window arms it. **Fail closed**: a sandbox compiled for another harness,
-/// or one the harness cannot be armed to carry here, refuses the chat.
-pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
-    armed_as(crate::skills::reach_chats_here(arming.root), arming)
-}
-
 /// What [`armed`] arms a chat from, as one value.
 #[derive(Clone, Copy)]
 pub struct Arming<'a> {
@@ -758,11 +834,20 @@ pub struct Arming<'a> {
     /// The chat's own variables, as its profile sets them: where its harness keeps its own
     /// config (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`), which a Try it's turn-offs are read from.
     pub env: &'a [(String, String)],
+    /// **Whether it is a grade's chat** (SK-16): the start's own word, the record's `graded`,
+    /// which decides its MCP limits. A start that says so in a folder that is no grade's arm,
+    /// or one in a grade's arm that does not, is refused: the two never disagree in a chat that
+    /// starts (the review of #3229).
+    pub graded: bool,
+    /// Where its plane skills come from, read once at its start ([`ChatSkills::read`], #3234):
+    /// what its tab's Notice is worked out from too.
+    pub skills: &'a ChatSkills,
 }
 
-/// [`armed`], with the Skill studio's flag `studio` as given rather than as this machine and
-/// this process say it.
-pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, String> {
+/// **What arms a chat's harness** for this session alone: the arguments and the variables its
+/// adapter adds, as the window arms it. **Fail closed**: a sandbox compiled for another harness,
+/// or one the harness cannot be armed to carry here, refuses the chat.
+pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     let Arming {
         root,
         kit,
@@ -772,7 +857,14 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
         sandbox,
         persona,
         env,
+        graded,
+        skills,
     } = *arming;
+    // Read for this very chat: its persona, unless a Try it's, which has none (#3234).
+    debug_assert!(
+        skills.tried || skills.persona.as_deref() == persona,
+        "a chat is armed with the skills read for it"
+    );
     let not_carried = |then: &str| {
         crate::sandbox::under_policy(
             &crate::sandbox::policy::Locks::of(root),
@@ -788,6 +880,26 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     {
         return Err(not_carried("."));
     }
+    // A grade's chat (SK-16): its MCP servers and tools held to purlis's read tools, as its
+    // start says, and only where its folder is a grade's arm and its harness can be held so.
+    let in_an_arm = cwd.is_some_and(|cwd| crate::skills::verbs::drafts::graded_piece(root, cwd));
+    if graded != in_an_arm {
+        return Err(if graded {
+            "A grade's chat starts only in the folder a grade laid out for it, so nothing was \
+             started."
+        } else {
+            "This folder is a grade's, and only a grade's chat starts in it, so nothing was \
+             started."
+        }
+        .to_owned());
+    }
+    if graded && (harness != Some(Harness::ClaudeCode) || kit.binary.is_none()) {
+        return Err(
+            "A grade's chat starts on Claude Code alone, as only there can purlis hold it to a \
+             grade's limits, so nothing was started."
+                .to_owned(),
+        );
+    }
     let (Some(harness), Some(binary)) = (harness, kit.binary.as_deref()) else {
         return match sandbox {
             Some(_) => Err(not_carried(": purlis's own binary was not found.")),
@@ -797,52 +909,40 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
     // The plane's skills, where they reach the project's chats: while the Skill studio's flag is
     // on, and once the project requires them (`skills::reach_chats`, #2784): their
     // folder of links laid out here, by the host, as the git hooks are, so the adapter only
-    // turns the set into words (ADR 0063 as amended 2026-10-20).
-    let workspace = cwd.and_then(|cwd| crate::active::workspace_of_tree(root, cwd));
-    let on = studio;
-    // A Try it's scratch chat (SK-9, #2772): its project skills are the one skill its try laid
-    // out, at a root of its own, so it gets the built-in skills and the draft alone.
-    let scope = crate::skills::verbs::drafts::scope_of(root, cwd.filter(|_| on));
-    let skills_root = scope.root.as_path();
-    let (workspace, skills_persona) = if scope.tried {
-        (None, None)
-    } else {
-        (workspace, persona)
-    };
-    // And every harness skill and plugin off, so the draft is tried alone.
+    // turns the set into words (ADR 0063 as amended 2026-10-20). Its scope, workspace and repo
+    // skills were read once at its start (`ChatSkills::read`).
+    let on = skills.on;
+    let skills_root = skills.root.as_path();
+    let workspace = skills.workspace.as_deref();
+    // A Try it's scratch chat: every harness skill and plugin off, so the draft is tried alone.
     let alone;
-    let plugins = if scope.tried {
+    let plugins = if skills.tried {
         alone =
             crate::skills::verbs::drafts::alone_on(harness, &crate::harness_plugin::Env::of(env));
         &alone
     } else {
         plugins
     };
-    // And the repo skills of the clone it works in, read here too, so a narrower repo copy of a
-    // plane skill is the one its harness gets where purlis builds what it is handed (SK-6).
-    let repo = match (on, workspace.as_deref(), cwd) {
-        (true, Some(ws), Some(cwd)) => crate::skills::repo_skills_of_chat(harness, root, ws, cwd),
-        _ => Vec::new(),
-    };
     let linked = laid_out_on(
         on,
         skills_root,
-        workspace.as_deref(),
-        skills_persona,
+        workspace,
+        skills.persona.as_deref(),
         kit,
         harness,
-        &repo,
+        &skills.repo,
     );
     let skills = on.then_some(crate::skills::PlaneSkills {
         plane: skills_root,
-        workspace: workspace.as_deref(),
-        repo: &repo,
+        workspace,
+        repo: &skills.repo,
     });
     let armed = crate::harness::Kit {
         binary,
         plugin: kit.plugin.as_deref(),
         persona: persona.map(|persona| crate::harness::As { root, persona }),
         skills,
+        graded,
         laid_out: linked.as_deref(),
     };
     // Which folder the chat is handed, for its terminal to note while it runs (SK-24).
@@ -857,7 +957,8 @@ pub(crate) fn armed_as(studio: bool, arming: &Arming<'_>) -> Result<Armed, Strin
             env.extend(held);
             Ok((args, env))
         }
-        StateHooks::None if sandbox.is_some() => Err(not_carried(
+        // A grade's chat is never started without its limits.
+        StateHooks::None if sandbox.is_some() || graded => Err(not_carried(
             ": purlis's plugin, which carries it, was not found.",
         )),
         StateHooks::None => Ok((Vec::new(), Vec::new())),

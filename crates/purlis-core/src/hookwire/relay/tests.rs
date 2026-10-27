@@ -16,7 +16,7 @@ use crate::state::Event;
 
 /// What the window's hearing was handed, in order.
 #[derive(Default)]
-struct Window {
+pub(super) struct Window {
     heard: Mutex<Vec<String>>,
 }
 
@@ -31,7 +31,7 @@ impl Window {
 }
 
 /// The link to the host the lines come over, and the one a host started again comes over.
-const LINK: u64 = 1;
+pub(super) const LINK: u64 = 1;
 const AGAIN: u64 = 2;
 
 /// The chat whose `secret exec` the window's hearing ends without reading its input.
@@ -77,7 +77,7 @@ fn allow() -> Choice {
 /// What the window's permission hearer holds: the sender of each ask's option, and how each
 /// ask it held was let go of.
 #[derive(Default)]
-struct Holding {
+pub(super) struct Holding {
     options: Mutex<Vec<mpsc::Sender<Choice>>>,
     left: Mutex<Vec<Left>>,
 }
@@ -86,7 +86,7 @@ struct Holding {
 /// answers an ask with a ticket naming its connection, holds every permission ask for a
 /// minute, and runs a `secret exec` that writes back each input line it reads, unless it is
 /// [`ENDS_UNREAD`]'s, which ends without reading any.
-fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
+pub(super) fn the_windows(window: &Arc<Window>, holding: &Arc<Holding>) -> Hearing {
     Hearing {
         each: {
             let window = Arc::clone(window);
@@ -202,7 +202,7 @@ fn unheard() -> Hearing {
     Relaying::new(Box::new(|_, _| false)).hearing(Arc::new(ChatTokens::default()))
 }
 
-fn a_window() -> (Arc<Window>, Arc<Holding>) {
+pub(super) fn a_window() -> (Arc<Window>, Arc<Holding>) {
     (Arc::default(), Arc::default())
 }
 
@@ -307,6 +307,7 @@ fn a_secret_exec_runs_in_the_window_on_what_its_asker_types() {
                 brokered::Ask {
                     chat: 3,
                     secret_exec: Default::default(),
+                    ..Default::default()
                 },
                 Box::new(Cursor::new(b"one\ntwo\n".to_vec())),
                 Box::new(Shared(written)),
@@ -345,6 +346,7 @@ fn an_exec_heard_on(heeding: &Arc<Heeding>, link: u64, id: u64, chat: u32) -> Ve
         let exec = Heard::SecretExec(brokered::Ask {
             chat,
             secret_exec: Default::default(),
+            ..Default::default()
         });
         heeding.hear(link, id, exec, reply);
     });
@@ -370,6 +372,7 @@ fn an_exec(chat: u32) -> Heard {
     Heard::SecretExec(brokered::Ask {
         chat,
         secret_exec: Default::default(),
+        ..Default::default()
     })
 }
 
@@ -451,6 +454,7 @@ fn when_the_link_ends_no_secret_execs_input_is_kept() {
             let exec = Heard::SecretExec(brokered::Ask {
                 chat: ECHOES,
                 secret_exec: Default::default(),
+                ..Default::default()
             });
             heeding.hear(LINK, 6, exec, reply);
         }
@@ -546,6 +550,7 @@ fn an_exec_from_the_link_before_ending_late_does_not_end_one_under_its_number_no
             let exec = Heard::SecretExec(brokered::Ask {
                 chat: ECHOES,
                 secret_exec: Default::default(),
+                ..Default::default()
             });
             heeding.hear(AGAIN, 1, exec, reply);
         }
@@ -998,7 +1003,7 @@ fn the_window_is_told_an_asker_hung_up_until_its_ask_is_answered() {
 }
 
 /// A writer a test reads back.
-struct Shared(Arc<Mutex<Vec<u8>>>);
+pub(super) struct Shared(pub(super) Arc<Mutex<Vec<u8>>>);
 
 impl Write for Shared {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -1494,7 +1499,7 @@ fn one_chat_cannot_crowd_out_anothers_logins_that_wait() {
     let login =
         |chat: u32, name: &str| a_browse(chat, "c-1", Browsing::LogIn { login: name.into() });
 
-    for n in 0..MOST_LOGINS_WAITING_FOR_A_CHAT {
+    for n in 0..MOST_WAITING_FOR_A_CHAT {
         let _ = (host.answer)(40, login(3, &format!("login-{n}")));
     }
     let past = said_of(&(host.answer)(40, login(3, "one-more")));
@@ -1514,7 +1519,7 @@ fn the_same_login_asked_again_while_away_waits_once_and_only_so_many_wait() {
         let _ = (host.answer)(40 + n, a_login(3, &format!("c-{n}")));
     }
     let mut last = Answer::No { why: String::new() };
-    for chat in 0..(MOST_LOGINS_WAITING as u32 + 1) {
+    for chat in 0..(MOST_WAITING as u32 + 1) {
         last = (host.answer)(60, a_login(100 + chat, "c-x"));
     }
     here.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1562,7 +1567,7 @@ fn a_login_that_waited_too_long_is_let_go_of_and_its_chat_told() {
     let Ask::Browse(browse) = a_login(3, "c-1") else {
         unreachable!()
     };
-    let long_ago = Instant::now() - A_LOGIN_WAITS_AT_MOST - Duration::from_secs(1);
+    let long_ago = Instant::now() - A_HANDED_LINE_WAITS_AT_MOST - Duration::from_secs(1);
     assert!(relaying.waits(42, *browse, long_ago));
 
     here.store(true, std::sync::atomic::Ordering::SeqCst);

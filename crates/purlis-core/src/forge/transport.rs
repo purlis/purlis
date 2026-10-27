@@ -60,6 +60,11 @@ pub enum Field {
     /// Typed, so `true` is a boolean and `12` a number. Only for values charter writes itself.
     /// The CLI transport sends it with `-F`.
     Typed(String, String),
+    /// A file: its field name, its file name and its bytes in standard base64. A call with one
+    /// is sent as `multipart/form-data` (GitLab's uploads, #2026). Only the native transport
+    /// sends it: the CLI's `-F name=@path` would read a path from disk, so the CLI transport
+    /// refuses a call with a file rather than write one.
+    File(String, String, String),
 }
 
 impl Field {
@@ -69,6 +74,16 @@ impl Field {
 
     pub fn typed(name: &str, value: &str) -> Field {
         Field::Typed(name.to_string(), value.to_string())
+    }
+
+    /// A file field named `name`, sent as `file_name` with `bytes`.
+    pub fn file(name: &str, file_name: &str, bytes: &[u8]) -> Field {
+        use base64::Engine as _;
+        Field::File(
+            name.to_string(),
+            file_name.to_string(),
+            base64::engine::general_purpose::STANDARD.encode(bytes),
+        )
     }
 }
 

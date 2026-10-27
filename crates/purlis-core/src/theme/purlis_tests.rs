@@ -696,7 +696,9 @@ fn a_pick_that_cannot_be_drawn_draws_the_default_for_the_contrast_asked() {
 /// colour, the most chroma the accent and its kin are given to stay apart from danger
 /// (`apart_chroma`: no limit, an amount, or `None`, drawn untinted), the accent drawn, and the
 /// workspace strip's shade, which keeps the colour's full hue whatever the accent is given. A
-/// change to Purlis's tokens has to say here what it does to workspace colours.
+/// change to Purlis's tokens has to say here what it does to workspace colours. Since #3130 the
+/// accent gives way alone to the waiting amber: light yellow, and high contrast's yellow and
+/// green, draw it as written, since no amount of colour holds it apart there.
 #[test]
 fn purlis_draws_each_workspace_colour_as_these_numbers_and_every_strip_keeps_its_hue() {
     let want: &[(&str, &str, Option<f64>, &str, &str)] = &[
@@ -710,7 +712,7 @@ fn purlis_draws_each_workspace_colour_as_these_numbers_and_every_strip_keeps_its
         ("dark", "pink", Some(0.015), "#afa4a9", "#23121b"),
         ("light", "red", None, "#554691", "#fef6f4"),
         ("light", "orange", None, "#554691", "#fff6f0"),
-        ("light", "yellow", Some(f64::INFINITY), "#625001", "#fdf8e1"),
+        ("light", "yellow", Some(f64::INFINITY), "#554691", "#fdf8e1"),
         ("light", "green", Some(f64::INFINITY), "#165e20", "#eafdea"),
         ("light", "teal", Some(f64::INFINITY), "#015b59", "#e0fefa"),
         ("light", "blue", Some(f64::INFINITY), "#1d5291", "#f3f8ff"),
@@ -722,14 +724,14 @@ fn purlis_draws_each_workspace_colour_as_these_numbers_and_every_strip_keeps_its
             "dark-high-contrast",
             "yellow",
             Some(f64::INFINITY),
-            "#d1c183",
+            "#c3baf5",
             "#1c1706",
         ),
         (
             "dark-high-contrast",
             "green",
             Some(f64::INFINITY),
-            "#9ecd9d",
+            "#c3baf5",
             "#0e1a0f",
         ),
         (

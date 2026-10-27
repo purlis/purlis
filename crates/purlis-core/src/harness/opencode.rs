@@ -214,6 +214,12 @@ impl HarnessAdapter for Opencode {
         true
     }
 
+    /// No grade runs here until purlis can hold its chats to the grade's limits and read their
+    /// spend on this harness (#3272).
+    fn can_grade(&self) -> bool {
+        false
+    }
+
     /// The wrap's program first, with the profile written for where the chat opens, then the
     /// chat's whole line. Its traffic is pointed at charter's egress proxy, the only place the
     /// profile lets it connect, and its temp directory is its own.
@@ -337,6 +343,7 @@ mod tests {
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(bundle.path()),
                 persona: None,
+                graded: false,
             },
             None,
             &crate::harness_plugin::Chosen::new(),
@@ -389,6 +396,7 @@ mod tests {
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(bundle.path()),
                 persona: None,
+                graded: false,
             },
             None,
             &chosen,
@@ -432,6 +440,7 @@ mod tests {
                     binary: std::path::Path::new("/bin/charter"),
                     plugin: Some(bundle.path()),
                     persona: None,
+                    graded: false,
                 },
                 None,
                 &crate::harness_plugin::Chosen::new(),

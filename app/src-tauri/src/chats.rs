@@ -184,6 +184,8 @@ pub struct ChatForSkills {
     pub persona: Option<String>,
     /// Its harness, `None` for a shell or a program purlis has no adapter for.
     pub harness: Option<Harness>,
+    /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
+    pub salt: Option<purlis_core::skillspan::PromptSalt>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -440,6 +442,9 @@ pub struct SkillsMissing {
     pub broken: Vec<SkillBroken>,
     /// The project's skills the repo the chat works in leaves out, each with why (SK-53).
     pub by_a_repo: Vec<SkillBroken>,
+    /// The repo's own skills named like one of purlis's built-in skills, which the chat's
+    /// program loads beside purlis's (SK-37).
+    pub beside_a_built_in: Vec<String>,
 }
 
 /// A skill a chat would have loaded that could not be loaded (SK-8): the core's `Broken`, for
@@ -1364,9 +1369,16 @@ impl Chats {
     /// `persona` is the persona the chat runs as, which a harness that can is handed the MCP
     /// servers and the denied tools of (#1451, `purlis_core::personaverbs::chatstart`).
     ///
+    /// `graded` is whether it is a grade's chat (SK-16), as its record says: what holds it to
+    /// purlis's server and read tools alone (`purlis_core::hoststart::Arming::graded`).
+    ///
+    /// `skills` is where its plane skills come from, read once at its start
+    /// (`purlis_core::hoststart::ChatSkills::read`, #3234), as its tab's Notice reads them.
+    ///
     /// **Fail closed.** A sandbox compiled for another harness, or one the harness is not armed
     /// to carry here (the app shipped without its plugin or its binary), refuses the chat rather
     /// than starting it without the sandbox.
+    #[allow(clippy::too_many_arguments)]
     fn state_hooks(
         &self,
         harness: Option<Harness>,
@@ -1375,6 +1387,8 @@ impl Chats {
         sandbox: Option<&purlis_core::sandbox::Applied>,
         persona: Option<&str>,
         env: &[(String, String)],
+        graded: bool,
+        skills: &purlis_core::hoststart::ChatSkills,
     ) -> Result<Armed, String> {
         purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
             root: &self.project,
@@ -1385,6 +1399,8 @@ impl Chats {
             sandbox,
             persona,
             env,
+            graded,
+            skills,
         })
     }
 
@@ -2148,6 +2164,13 @@ impl Chats {
 
     /// Whether a session of the chat whose id is `id` is open: what its grants last as long
     /// as (D-1348-1).
+    /// **Chat `session`'s identity** (ADR 0066), where it is open and its record has one.
+    pub fn id_of(&self, session: u32) -> Option<String> {
+        lock(&self.open)
+            .get(&session)
+            .and_then(|one| one.chat.identity.id.clone())
+    }
+
     pub fn id_is_open(&self, id: &str) -> bool {
         lock(&self.open)
             .values()
@@ -3152,6 +3175,15 @@ impl Chats {
             && self
                 .sessions
                 .composes_its_harness_chats_in(workspace.as_deref());
+        // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
+        // composes its own line, and would start it with none of them.
+        if on_the_runner && chat.graded {
+            return Err(
+                "A grade's chat runs on this machine alone, and this project's chats are started \
+                 by a runner, so nothing was started."
+                    .to_owned(),
+            );
+        }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
         let alone = sandbox
@@ -3268,28 +3300,35 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
+        // arms it below and what its tab's Notice says are both worked out from this.
+        let skills = if on_the_runner {
+            purlis_core::hoststart::ChatSkills::default()
+        } else {
+            purlis_core::hoststart::ChatSkills::read(
+                purlis_core::skills::reach_chats_here(&self.project),
+                &self.project,
+                harness,
+                chat.cwd.as_deref(),
+                runs_as.as_deref(),
+            )
+        };
         // A skill its persona names that this machine does not have (SK-5, #2768), or one it
         // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
         // tab's Notice says which, never a silent drop.
         let skills_missing = if reattaching || on_the_runner {
             None
         } else {
-            purlis_core::hoststart::skills_not_here(
-                purlis_core::skills::reach_chats_here(&self.project),
-                &self.project,
-                &self.kit(harness),
-                harness,
-                chat.cwd.as_deref(),
-                runs_as.as_deref(),
-                &env,
+            purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
+                |not| SkillsMissing {
+                    persona: runs_as.clone(),
+                    missing: not.missing,
+                    no_built_in: not.no_built_in,
+                    broken: not.broken.into_iter().map(SkillBroken::from).collect(),
+                    by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
+                    beside_a_built_in: not.beside_a_built_in,
+                },
             )
-            .map(|not| SkillsMissing {
-                persona: runs_as.clone(),
-                missing: not.missing,
-                no_built_in: not.no_built_in,
-                broken: not.broken.into_iter().map(SkillBroken::from).collect(),
-                by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
-            })
         };
         // A sandboxed Claude Code chat whose project's own settings it does not load says which
         // keys, in the window only (ADR 0067 as amended 2026-10-15). Its arming read the same
@@ -3387,6 +3426,9 @@ impl Chats {
                 sandbox,
                 runs_as.as_deref(),
                 &env,
+                // A grade's chat, as its record says (SK-16): the one word its limits take.
+                chat.graded,
+                &skills,
             )?
         };
         let hooks = match &settings_watched {
@@ -3840,6 +3882,14 @@ impl Chats {
             return Err(LETTING_GO.to_owned());
         }
         Ok((session, failed))
+    }
+
+    /// **Whether chat `session` is a grade's** (SK-16), which the window draws nowhere: its
+    /// record's [`purlis_core::reopen::Chat::graded`].
+    pub fn kept_from_the_window(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|one| one.chat.graded)
     }
 
     /// Ends a chat. It is no longer one a quit would record.
@@ -4704,6 +4754,12 @@ impl Chats {
             workspace: running.workspace.clone(),
             persona: running.persona().started_as,
             harness: running.harness,
+            salt: running
+                .chat
+                .identity
+                .id
+                .as_deref()
+                .and_then(purlis_core::skillspan::PromptSalt::of_chat),
         })
     }
 
@@ -5091,6 +5147,9 @@ impl Chats {
         let chats: Vec<(Chat, Why)> = record
             .chats
             .iter()
+            // A grade's chat is never started again: its grade ended with the run it was in
+            // (SK-16). Its throwaway piece goes once no chat stands in it.
+            .filter(|chat| !chat.graded)
             .map(|chat| match &chat.identity.id {
                 Some(id) if seen.insert(id.clone()) => (chat.clone(), Why::Relaunch),
                 _ => (
@@ -5166,6 +5225,13 @@ impl Chats {
     /// chat put back reattached is closed (#2006): once a put back has settled.
     pub(crate) fn close_what_was_not_reattached(&self) {
         self.sessions.close_what_was_not_reattached();
+    }
+
+    /// **The browsers the session host still runs, or ran, in this project from before this
+    /// window** (#2025), each once: what the project's put back takes back with their chats, or
+    /// ends.
+    pub(crate) fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
+        self.sessions.browsers_left()
     }
 
     /// The second half of putting a record back: **starts** what

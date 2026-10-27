@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { ChangesView, leftOutSaid, uncommitted } from "./ChangesView";
 import { catalogue, catalogued, type Catalogued } from "./actions";
@@ -76,7 +76,18 @@ function state(on: Partial<WorkspaceState> = {}): WorkspaceState {
  *  drew. */
 const NO_MENUS: Catalogued = new Map();
 
-const row = (name: string) => screen.getByTestId(`repo-${name}`);
+/** A repo's heading row. */
+const heading = (name: string) => screen.getByTestId(`repo-${name}`);
+/** A repo's rows, its heading first: a tree's rows are drawn one after another, each at its
+ *  level, and every row about a repo says which (`data-repo`). */
+const rowsOf = (name: string) =>
+  screen.getAllByRole("row").filter((one) => one.dataset.repo === name);
+/** What a repo's rows say, together. */
+const saidOf = (name: string) =>
+  rowsOf(name)
+    .map((one) => one.textContent)
+    .join(" ")
+    .replace(/\s+/g, " ");
 const ci = (name: string) => screen.getByTestId(`ci-${name}`);
 
 describe("the Changes view", () => {
@@ -105,11 +116,11 @@ describe("the Changes view", () => {
       />,
     );
 
-    expect(row("svc")).toHaveTextContent("main");
-    expect(row("svc")).toHaveTextContent("origin/main");
-    expect(row("svc")).toHaveTextContent("2 ahead, 1 behind");
-    expect(row("svc")).toHaveTextContent("3 changed, 1 untracked");
-    expect(row("tool")).toHaveTextContent("clean");
+    expect(saidOf("svc")).toContain("main");
+    expect(saidOf("svc")).toContain("origin/main");
+    expect(saidOf("svc")).toContain("2 ahead, 1 behind");
+    expect(saidOf("svc")).toContain("3 changed, 1 untracked");
+    expect(saidOf("tool")).toContain("clean");
   });
 
   it("shows a runner chat's branch as fetched from its pool, with what is new here (#2046)", () => {
@@ -145,7 +156,7 @@ describe("the Changes view", () => {
     );
     expect(screen.queryByTestId(/^runner-tool-/)).toBeNull();
     // A row of the tree like every other: the keys reach it.
-    expect(there).toHaveAttribute("role", "treeitem");
+    expect(there).toHaveAttribute("role", "row");
   });
 
   it("draws a runner's branch name inertly, so it cannot turn its line around (#2046)", () => {
@@ -197,7 +208,7 @@ describe("the Changes view", () => {
     const left = screen.getByTestId("left-out-svc");
     expect(left).toHaveTextContent("Not sent to the runner");
     expect(left).toHaveTextContent(".env, notes\\u202e.txt");
-    expect(left).toHaveAttribute("role", "treeitem");
+    expect(left).toHaveAttribute("role", "row");
     expect(screen.queryByTestId("left-out-tool")).toBeNull();
   });
 
@@ -234,9 +245,9 @@ describe("the Changes view", () => {
       />,
     );
 
-    expect(row("svc")).toHaveTextContent("could not read");
-    expect(row("svc").querySelector(".dirt")).toBeNull();
-    expect(within(row("svc")).getByRole("alert")).toBeInTheDocument();
+    expect(saidOf("svc")).toContain("could not read");
+    expect(rowsOf("svc").some((one) => one.querySelector(".dirt"))).toBe(false);
+    expect(rowsOf("svc").some((one) => within(one).queryByRole("alert"))).toBe(true);
   });
 
   it("says a branch has no commits yet rather than drawing it like any other", () => {
@@ -255,7 +266,7 @@ describe("the Changes view", () => {
       />,
     );
 
-    expect(row("svc")).toHaveTextContent("no commits yet");
+    expect(saidOf("svc")).toContain("no commits yet");
   });
 
   it("names the commit a detached checkout sits on", () => {
@@ -274,7 +285,7 @@ describe("the Changes view", () => {
       />,
     );
 
-    expect(row("svc")).toHaveTextContent("detached at 1a2b3c4");
+    expect(saidOf("svc")).toContain("detached at 1a2b3c4");
   });
 
   it("says the git answer is still coming rather than drawing a repo as unread", () => {
@@ -287,7 +298,7 @@ describe("the Changes view", () => {
       />,
     );
 
-    expect(row("svc")).toHaveTextContent("reading…");
+    expect(saidOf("svc")).toContain("reading…");
   });
 
   // ---------------------------------------------------------------------------------------
@@ -514,7 +525,7 @@ describe("the Changes view", () => {
       />,
     );
 
-    expect(row("later")).toHaveTextContent("not cloned here");
+    expect(saidOf("later")).toContain("not cloned here");
   });
 
   it("says when the core refused the workspace outright", () => {
@@ -555,7 +566,7 @@ describe("the Changes view", () => {
     expect(screen.getByTestId("changes-empty")).toHaveTextContent(
       /the branch it is on, its changes/,
     );
-    expect(screen.queryByRole("tree")).not.toBeInTheDocument();
+    expect(screen.queryByRole("treegrid")).not.toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------------------
@@ -581,18 +592,19 @@ describe("the Changes view", () => {
 
     // An editor's source-control view (#1701), and not a table that scrolls sideways in a side:
     // one heading per repo, and what is true of it as rows under it.
-    const tree = screen.getByRole("tree", { name: "Repos of alpha" });
+    const tree = screen.getByRole("treegrid", { name: "Repos of alpha" });
     const headings = within(tree)
-      .getAllByRole("treeitem")
+      .getAllByRole("row")
       .filter((item) => item.getAttribute("aria-level") === "1");
     expect(headings.map((one) => one.querySelector(".repo")?.textContent)).toEqual(["svc", "tool"]);
     expect(headings[0].querySelector(".branch")).toHaveTextContent("main");
     expect(headings[0].querySelector(".upstream")).toHaveTextContent("origin/main");
     expect(within(tree).queryAllByRole("columnheader")).toEqual([]);
 
-    const under = within(row("svc"))
-      .getAllByRole("treeitem")
-      .map((item) => [item.getAttribute("aria-level"), item.className.split(" ")[0]]);
+    const under = rowsOf("svc").map((item) => [
+      item.getAttribute("aria-level"),
+      item.className.split(" ")[0],
+    ]);
     expect(under).toEqual([
       ["1", "repo-row"],
       ["2", "changes"],
@@ -600,7 +612,7 @@ describe("the Changes view", () => {
       ["3", "piece"],
       ["2", "ci"],
     ]);
-    expect(within(row("svc")).getAllByRole("treeitem")[1]).toHaveTextContent("3 changed");
+    expect(rowsOf("svc")[1]).toHaveTextContent("3 changed");
   });
 
   it("draws every repo's rows whatever charter could read of it", () => {
@@ -622,11 +634,11 @@ describe("the Changes view", () => {
 
     // A repo git has not answered for yet still says so on each of its rows; one nobody
     // cloned is a heading that says it, with nothing under it to read.
-    expect(row("gone")).toHaveTextContent("not read");
+    expect(saidOf("gone")).toContain("not read");
     expect(screen.getByTestId("ci-gone")).toHaveTextContent("not read");
-    expect(row("tool")).toHaveTextContent("could not read it");
-    expect(within(row("later")).getAllByRole("treeitem")).toHaveLength(1);
-    expect(row("later")).toHaveTextContent("not cloned here");
+    expect(saidOf("tool")).toContain("could not read it");
+    expect(rowsOf("later")).toHaveLength(1);
+    expect(saidOf("later")).toContain("not cloned here");
   });
 
   it("draws a clone's worktrees as rows under its Branches row, each with its branch and state", () => {
@@ -649,12 +661,11 @@ describe("the Changes view", () => {
       />,
     );
 
-    const tree = screen.getByTestId("worktree-tree-svc");
-    // The shared tree's level (#1682): a `role="group"` under the row it hangs from, whose
-    // guides are the shared tree row's (`.ui-tree`, DS-12) and never the bottom bar's elbows.
-    expect(tree).toHaveAttribute("role", "group");
-    expect(tree.closest(".ui-tree")).not.toBeNull();
-    const rows = within(tree).getAllByRole("treeitem");
+    // The tree's own level (#1682): one level under the Branches row they hang from, whose
+    // guides are the tree family's (`ui/tree`) and never the bottom bar's elbows.
+    const rows = rowsOf("svc").filter((one) => one.dataset.pieceOf === "svc");
+    expect(rows.map((one) => one.getAttribute("aria-level"))).toEqual(["3", "3", "3"]);
+    expect(screen.getByTestId("worktrees-svc")).toHaveAttribute("aria-expanded", "true");
     expect(rows.map((one) => one.querySelector(".piece-name")?.textContent)).toEqual([
       "one",
       "two",
@@ -668,7 +679,8 @@ describe("the Changes view", () => {
     expect(rows[2]).toHaveTextContent("stale");
     expect(rows[2]).not.toHaveTextContent("unwired");
     // A clone with nothing cut off it has no rows under Branches — that row says "no branches".
-    expect(screen.queryByTestId("worktree-tree-tool")).not.toBeInTheDocument();
+    expect(rowsOf("tool").filter((one) => one.dataset.pieceOf === "tool")).toEqual([]);
+    expect(screen.getByTestId("worktrees-tool")).not.toHaveAttribute("aria-expanded");
   });
 
   // ---------------------------------------------------------------------------------------
@@ -688,11 +700,16 @@ describe("the Changes view", () => {
       />,
     );
 
-    // `giveViewTheKeyboard` focuses the tree's `[tabindex="0"]`: there is exactly one.
-    const tree = screen.getByRole("tree");
-    const stops = tree.querySelectorAll('[tabindex="0"]');
-    expect(stops).toHaveLength(1);
-    expect(stops[0]).toBe(within(row("svc")).getAllByRole("treeitem")[0]);
+    // `giveViewTheKeyboard` focuses the tree's one `[tabindex="0"]`: the tree itself until a row
+    // has had the keyboard, which hands it to its first row.
+    const tree = screen.getByRole("treegrid");
+    const stops = [tree, ...tree.querySelectorAll("[tabindex]")].filter(
+      (one) => one.getAttribute("tabindex") === "0",
+    );
+    expect(stops).toEqual([tree]);
+    act(() => tree.focus());
+    expect(rowsOf("svc")[0]).toHaveFocus();
+    expect(rowsOf("svc")[0]).toHaveAttribute("tabindex", "0");
   });
 
   it("steps down the rows, into a repo's rows and back out to its heading", async () => {
@@ -707,7 +724,7 @@ describe("the Changes view", () => {
         })}
       />,
     );
-    const items = within(row("svc")).getAllByRole("treeitem");
+    const items = rowsOf("svc");
 
     await userEvent.tab();
     expect(items[0]).toHaveFocus();
@@ -721,7 +738,9 @@ describe("the Changes view", () => {
     expect(screen.getByTestId("ci-tool")).toHaveFocus();
     // And Tab leaves: the tree is one stop, not one per row.
     await userEvent.tab();
-    expect(screen.getByRole("tree")).not.toContainElement(document.activeElement as HTMLElement);
+    expect(screen.getByRole("treegrid")).not.toContainElement(
+      document.activeElement as HTMLElement,
+    );
   });
 
   it.each([
@@ -903,7 +922,7 @@ describe("a repo row's menu", () => {
   it("offers the clone's own rows, which are the explorer's clone rows", async () => {
     bar();
 
-    rightClick(within(row("svc")).getByText("svc"));
+    rightClick(within(heading("svc")).getByText("svc"));
 
     const menu = await screen.findByRole("menu");
     expect(
@@ -917,7 +936,7 @@ describe("a repo row's menu", () => {
     const pressed: string[] = [];
     bar((id) => pressed.push(id));
 
-    rightClick(within(row("tool")).getByText("tool"));
+    rightClick(within(heading("tool")).getByText("tool"));
     await screen.findByRole("menu");
     await userEvent.click(screen.getByRole("menuitem", { name: "New tab" }));
 
@@ -928,7 +947,7 @@ describe("a repo row's menu", () => {
     const pressed: string[] = [];
     bar((id) => pressed.push(id));
 
-    rightClick(within(row("later")).getByText("later"));
+    rightClick(within(heading("later")).getByText("later"));
     await screen.findByRole("menu");
     await userEvent.click(screen.getByRole("menuitem", { name: "Clone" }));
 
@@ -938,7 +957,7 @@ describe("a repo row's menu", () => {
   it("has none on the worktrees under a repo", () => {
     bar();
 
-    rightClick(within(screen.getByTestId("worktree-tree-svc")).getByRole("treeitem"));
+    rightClick(screen.getByTestId("changes-piece-svc-one"));
 
     expect(screen.queryByRole("menu")).toBeNull();
   });
@@ -947,7 +966,7 @@ describe("a repo row's menu", () => {
     bar();
 
     await userEvent.tab();
-    expect(within(row("svc")).getAllByRole("treeitem")[0]).toHaveFocus();
+    expect(rowsOf("svc")[0]).toHaveFocus();
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
 
     expect(
@@ -1042,7 +1061,7 @@ describe("a refused read's menu (#1244)", () => {
     ).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
 
-    rightClick(within(row("svc")).getByText("could not read the tree"));
+    rightClick(screen.getByText("could not read the tree"));
     expect(
       within(await screen.findByRole("menu")).getByRole("menuitem", {
         name: "Read the workspace again",
@@ -1060,7 +1079,7 @@ describe("a refused read's menu (#1244)", () => {
       />,
     );
 
-    rightClick(within(row("svc")).getByText("svc"));
+    rightClick(within(heading("svc")).getByText("svc"));
     const menu = await screen.findByRole("menu");
     expect(within(menu).queryByRole("menuitem", { name: "Read the workspace again" })).toBeNull();
   });
@@ -1087,10 +1106,8 @@ describe("an extension's repo columns (charter-app#340)", () => {
     );
 
     expect(screen.getByTestId("fact-prs-open-svc")).toHaveTextContent("PRs 2");
-    expect(screen.getByTestId("fact-prs-open-svc")).toHaveAttribute("role", "treeitem");
-    expect(tipOf(within(screen.getByTestId("fact-prs-open-svc")).getByText("PRs"))).toEqual(
-      "From the extension prs",
-    );
+    expect(screen.getByTestId("fact-prs-open-svc")).toHaveAttribute("role", "row");
+    expect(tipOf(screen.getByTestId("fact-prs-open-svc"))).toEqual("From the extension prs");
     // A repo the file did not name has no row, never a borrowed value.
     expect(screen.queryByTestId("fact-prs-open-tool")).not.toBeInTheDocument();
   });
@@ -1114,7 +1131,7 @@ describe("an extension's repo columns (charter-app#340)", () => {
   it("draws the rows it always drew when no extension adds one", () => {
     render(<ChangesView offers={NO_MENUS} onPress={() => {}} workspace="alpha" state={state()} />);
 
-    expect(within(row("svc")).getAllByRole("treeitem")).toHaveLength(4);
+    expect(rowsOf("svc")).toHaveLength(4);
   });
 });
 

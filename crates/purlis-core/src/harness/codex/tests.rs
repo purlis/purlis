@@ -54,6 +54,7 @@ fn kit() -> Kit<'static> {
         binary: std::path::Path::new("/bin/charter"),
         plugin: Some(std::path::Path::new("/app/plugin")),
         persona: None,
+        graded: false,
     }
 }
 

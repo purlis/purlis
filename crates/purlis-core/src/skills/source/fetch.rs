@@ -91,9 +91,9 @@ pub(super) fn handing(plane: &Path, source: &Source) -> Result<Handing, String> 
         format!("{source} signs in, and only an https:// source with a plain host may")
     })?;
     let ctx = Vaults::new(plane, Env::from_process());
-    let vault = cmd::provider(&ctx, &sign_in.vault).map_err(|e| e.message)?;
+    let vault = cmd::provider(&ctx, &sign_in.vault).map_err(|e| e.message.to_string())?;
     if let Some(why) = brokered::refused_in_this_chat(&ctx, &vault, brokered::Reader::Exec) {
-        return Err(why);
+        return Err(why.to_string());
     }
     let request = exec::Request {
         vault: sign_in.vault.clone(),

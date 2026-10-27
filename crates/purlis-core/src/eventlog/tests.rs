@@ -3523,6 +3523,11 @@ fn a_load_through_mcp_opens_a_run_recorded_as_one_and_ends_with_the_turn() {
 
 // ---- a skill Use skill… typed (SK-12, #2775) ----------------------------------------------
 
+/// Chat 3's salt, its hook's and the window's alike.
+fn salt_of_3() -> crate::skillspan::PromptSalt {
+    crate::skillspan::PromptSalt::of_chat("01JB00000000000000000000C3").unwrap()
+}
+
 /// What Use skill… holds for chat 3 as it types `text` for `skill`.
 fn typed_skill(
     skill: &str,
@@ -3534,7 +3539,7 @@ fn typed_skill(
         run: ulid::Ulid::generate(),
         workspace: None,
         level: None,
-        text: crate::skillspan::PromptMarks::digest(text),
+        text: crate::skillspan::PromptMarks::digest(text, &salt_of_3()),
         confirmed,
     }
 }
@@ -3542,7 +3547,7 @@ fn typed_skill(
 /// Chat 3 sends a prompt whose text is `text`.
 fn sent(text: &str) -> crate::hookwire::Report {
     let mut sent = report(3, crate::state::Event::UserPromptSubmit);
-    sent.detail.prompt_marks = crate::skillspan::PromptMarks::of(text);
+    sent.detail.prompt_marks = crate::skillspan::PromptMarks::of(text, &salt_of_3());
     sent
 }
 
@@ -3682,6 +3687,7 @@ fn a_curation_prompt_held_before_its_chat_begins_makes_the_skill_its_turn_starts
             prompted: crate::skillspan::Prompted::of(
                 purlis_skills::runs::StartedBy::Curation,
                 CURATION,
+                &salt_of_3(),
             ),
         })
         .unwrap();

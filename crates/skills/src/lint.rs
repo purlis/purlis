@@ -12,6 +12,8 @@
 //! - **Keys nothing reads**, and keys that would widen a chat ([`crate::compat`]).
 //! - **Broken skill references**: a `skills:<name>` or `purlis:<name>` in its text that names no
 //!   skill there is.
+//! - **A built-in skill's name** (SK-37, #3027): a harness or repo skill named like one of
+//!   purlis's, which its program loads beside purlis's, so a chat may use either.
 //! - **Tools this machine lacks** (decision 30): a program a `` !`command` `` in its text or one
 //!   of its scripts calls that this machine does not have. No requirement system: a warning.
 //!
@@ -55,6 +57,9 @@ pub enum Lint {
         name: String,
         project: bool,
     },
+    /// A harness or repo skill with the name of one of purlis's built-in skills (SK-37): its
+    /// program loads it beside purlis's, and purlis cannot stop it.
+    BuiltInName,
     /// A program it calls that this machine does not have, and where it calls it.
     Missing { tool: String, place: Place },
     /// What another lint said, a line of its own words, and whose lint it is: an extension that
@@ -138,6 +143,9 @@ impl Finding {
                     "purlis has"
                 }
             ),
+            Lint::BuiltInName => "it has the name of one of purlis's built-in skills, so a chat \
+                                  gets purlis's too and may use either: rename it"
+                .to_owned(),
             Lint::Said { by, says } => format!("{by}: {says}"),
             Lint::Missing { tool, place } => format!(
                 "{} calls {tool}, which this machine does not have",
@@ -162,6 +170,9 @@ pub struct SkillFiles<'a> {
     /// Where it comes from: purlis hands a built-in or a plane skill over, and a harness reads
     /// a harness or repo skill where it lies ([`crate::Origin::handed`]).
     pub origin: crate::Origin,
+    /// The plugin a harness skill comes in, which the harness knows it by the name of
+    /// (`<plugin>:<name>`), or `None` for any other skill.
+    pub plugin: Option<&'a str>,
 }
 
 /// **A lint of a skill's files** (the SkillLint capability, ADR 0101): what the live lint asks, of
@@ -184,6 +195,9 @@ pub struct BuiltInLints<'a> {
     pub plane: &'a std::collections::HashSet<String>,
     /// The names of the built-in skills.
     pub built_in: &'a std::collections::HashSet<String>,
+    /// The names the program a skill from outside the plane is read by knows purlis's own
+    /// skills by ([`crate::Route::built_in_names`]): what such a skill named so loads beside.
+    pub known_as: &'a std::collections::HashSet<String>,
     /// Whether this machine has the program named, on its `PATH` or at the path given.
     pub has: &'a (dyn Fn(&str) -> bool + 'a),
 }
@@ -194,6 +208,7 @@ impl std::fmt::Debug for BuiltInLints<'_> {
             .field("namespace", &self.namespace)
             .field("plane", &self.plane)
             .field("built_in", &self.built_in)
+            .field("known_as", &self.known_as)
             .finish_non_exhaustive()
     }
 }
@@ -213,6 +228,7 @@ impl SkillLint for BuiltInLints<'_> {
             return out;
         }
         out.extend(short_description(skill.text));
+        out.extend(built_in_name(skill, self.known_as));
         out.extend(keys(skill));
         out.extend(references(skill, self));
         out.extend(tools_missing(skill, self.has));
@@ -237,6 +253,18 @@ fn short_description(text: &str) -> Option<Finding> {
         .filter(|value| !value.is_empty())?;
     let length = description.chars().count();
     (length < FEWEST_DESCRIPTION).then(|| warns(Lint::ShortDescription(length)))
+}
+
+/// A skill purlis does not hand, named as its program knows one of purlis's own skills
+/// (`known_as`): it reads it beside purlis's, which no copy replaces and purlis never turns off
+/// ([`crate::SkillSet::with_outside`]). A plugin's skill is known by its plugin's name too, so
+/// it never takes one of those names.
+fn built_in_name(
+    skill: &SkillFiles<'_>,
+    known_as: &std::collections::HashSet<String>,
+) -> Option<Finding> {
+    (!skill.origin.handed() && skill.plugin.is_none() && known_as.contains(skill.name))
+        .then(|| warns(Lint::BuiltInName))
 }
 
 /// What its frontmatter, read as YAML, says: refused where purlis cannot read it (which blocks a

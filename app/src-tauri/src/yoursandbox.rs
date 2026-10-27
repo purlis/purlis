@@ -62,7 +62,7 @@ pub async fn plain_file_vaults(
         let ctx = Ctx::new(&root, Env::from_process());
         tokeyring::plain_file_vaults(&ctx)
             .map(listed)
-            .map_err(|why| why.message)
+            .map_err(|why| why.message.to_string())
     })
     .await
     .map_err(|err| format!("reading the vaults did not finish: {err}"))?
@@ -81,7 +81,7 @@ pub async fn move_vault_to_keychain(
         let ctx = Ctx::new(&root, Env::from_process());
         tokeyring::move_to_keyring(&ctx, &name)
             .map(|moved| said(&name, &moved))
-            .map_err(|why| why.message)
+            .map_err(|why| why.message.to_string())
     })
     .await
     .map_err(|err| format!("moving the vault did not finish: {err}"))?

@@ -959,6 +959,7 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
         user: Some(Secret::new("ada@shop.example.test".into())),
         password: Secret::new("correct horse battery staple".into()),
         keep: None,
+        identity: None,
     };
     Driver::log_in(&browsers, &program, login).unwrap();
 
@@ -974,10 +975,14 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
     let typed = |by| Said::Typed {
         browser: program.clone(),
         by,
+        origin: None,
     };
     assert_eq!(
         said.iter().map(|(_, one)| one.clone()).collect::<Vec<_>>(),
         [
+            Said::Opened {
+                browser: program.clone()
+            },
             drives(Drives::Person),
             typed(Typist::Person),
             drives(Drives::Agent),
@@ -1004,7 +1009,7 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
             .unwrap();
     }
     let written = std::fs::read_to_string(log.path().join(purlis_core::eventlog::FILE)).unwrap();
-    assert_eq!(written.lines().count(), 6);
+    assert_eq!(written.lines().count(), 7);
     for never in [
         "KeyQ",
         "\"Q\"",
@@ -1050,7 +1055,13 @@ fn a_person_sending_their_browser_to_an_address_hands_it_back_in_the_log() {
     };
     assert_eq!(
         *said.lock().unwrap(),
-        [driver(Drives::Person), driver(Drives::Agent)]
+        [
+            Said::Opened {
+                browser: program.clone()
+            },
+            driver(Drives::Person),
+            driver(Drives::Agent)
+        ]
     );
 }
 
@@ -1074,6 +1085,7 @@ fn a_window_started_again_says_nothing_of_a_login_the_host_refuses_as_the_person
         user: None,
         password: Secret::new("correct horse battery staple".into()),
         keep: None,
+        identity: None,
     };
     let refused = Driver::log_in(&again, &program, login);
 
@@ -1275,4 +1287,194 @@ fn a_runner_chats_browser_is_never_opened_from_a_kept_login() {
         .expect("it starts, from no kept login");
 
     assert_eq!(with.on_the_runner.started()[0].shown().kept, None);
+}
+
+#[test]
+fn typing_is_said_on_the_origin_of_the_page_and_the_log_holds_no_path_query_or_value() {
+    // #2842: the person types on a page whose view was told where it is, and purlis logs in on
+    // a page it answers with; the log names each page by its origin alone.
+    use crate::chatbrowsers::Driver;
+    use purlis_core::eventlog::browsing::{Said, Typist};
+    use purlis_core::eventlog::{ArgsKey, Entry, Log, Recorder};
+    use purlis_session_protocol::browsing::{Browsed, LogIn, PageSaid, Secret};
+
+    let Window {
+        browsers,
+        started,
+        root,
+        _dirs,
+        _runtime,
+    } = window();
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let program = browsers.open(&root).unwrap();
+    let screen = started.started()[0].clone();
+    screen.shown().address = "https://shop.example.test/basket?item=42#pay".into();
+    let origins: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+    let heard = Arc::clone(&origins);
+    browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Box::new(move |origin| heard.lock().unwrap().push(origin)),
+            Arc::new(|_| {}),
+        )
+        .unwrap();
+    until("the view hears where its page is", || {
+        screen.makes(b"frame");
+        !origins.lock().unwrap().is_empty()
+    });
+    let aim = format!("p1:{}", screen.shown().document);
+    browsers.take_over(&program).unwrap();
+    let typed = browsers
+        .input(
+            &program,
+            BrowserInput::Key {
+                aim,
+                action: KeyAct::Down,
+                key: "h".into(),
+                physical: "KeyH".into(),
+                key_code: 72,
+                modifiers: 0,
+            },
+        )
+        .unwrap();
+    assert_eq!(typed, InputOutcome::Taken);
+    browsers.hand_back(&program).unwrap();
+    screen.answers(Ok(Browsed {
+        settled: true,
+        page: Some(PageSaid {
+            page: "p1".into(),
+            address: "https://accounts.example.test:8443/welcome?session=s3cret".into(),
+            title: "Welcome, Ada".into(),
+            current: true,
+        }),
+        ..Browsed::default()
+    }));
+    let login = LogIn {
+        address: "https://accounts.example.test:8443/login?next=%2Fbasket".into(),
+        user: Some(Secret::new("ada@shop.example.test".into())),
+        password: Secret::new("correct horse battery staple".into()),
+        keep: None,
+        identity: None,
+    };
+    Driver::log_in(&browsers, &program, login).unwrap();
+
+    let said = said.lock().unwrap().clone();
+    let typing: Vec<&Said> = said
+        .iter()
+        .filter(|one| matches!(one, Said::Typed { .. }))
+        .collect();
+    assert_eq!(
+        typing,
+        [
+            &Said::Typed {
+                browser: program.clone(),
+                by: Typist::Person,
+                origin: Some("https://shop.example.test".into()),
+            },
+            &Said::Typed {
+                browser: program.clone(),
+                by: Typist::Purlis,
+                origin: Some("https://accounts.example.test:8443".into()),
+            },
+        ]
+    );
+
+    // Written and read back: no path, query, fragment, title or value is in the log.
+    let log = tempfile::tempdir().unwrap();
+    let mut recorder = Recorder::new(
+        Log::open(log.path(), "01J9ZZDEVICE0000000000000").unwrap(),
+        ArgsKey::open(log.path()).unwrap(),
+    );
+    for said in said {
+        recorder
+            .apply(Entry::Browser {
+                plane: root.clone(),
+                number: None,
+                said,
+            })
+            .unwrap();
+    }
+    let written = std::fs::read_to_string(log.path().join(purlis_core::eventlog::FILE)).unwrap();
+    assert!(
+        written.contains("\"origin\":\"https://shop.example.test\""),
+        "{written}"
+    );
+    for never in [
+        "/basket",
+        "item=42",
+        "#pay",
+        "/welcome",
+        "session=s3cret",
+        "/login",
+        "next=",
+        "Welcome, Ada",
+        "ada@",
+        "correct horse",
+        "KeyH",
+        "\"h\"",
+    ] {
+        assert!(
+            !written.contains(never),
+            "{never:?} is in the log: {written}"
+        );
+    }
+}
+
+#[test]
+fn a_browsers_end_the_window_did_not_ask_for_is_said_crashed_and_one_it_asked_for_is_not() {
+    // #2842: a chat's close and the kill switch are ends the window asked for; an engine that
+    // ends by itself crashed.
+    use crate::chatbrowsers::Driver;
+    use purlis_core::eventlog::browsing::{Closer, Said};
+    use purlis_session_protocol::session::Exit;
+
+    let Window {
+        browsers,
+        started,
+        root,
+        _dirs,
+        _runtime,
+    } = window();
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let closed = browsers.open(&root).unwrap();
+    let crashing = browsers.open(&root).unwrap();
+    let stopped = browsers.open(&root).unwrap();
+    let screens = started.started();
+
+    Driver::close(&browsers, &closed).unwrap();
+    screens[1].ends(Exit::Signal("SIGSEGV".into()));
+    until("the crash is said", || {
+        said.lock()
+            .unwrap()
+            .iter()
+            .any(|one| matches!(one, Said::Crashed { .. }))
+    });
+    browsers.stop_every_browser();
+    // Long enough for an end the host tells of to be said, were it said.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let ends: Vec<Said> = said
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|one| !matches!(one, Said::Opened { .. }))
+        .cloned()
+        .collect();
+    assert_eq!(
+        ends,
+        [
+            Said::Crashed { browser: crashing },
+            Said::Closed {
+                browser: stopped,
+                by: Closer::KillSwitch
+            },
+        ],
+        "a close the window asked for is said by whoever asked it, never as a crash"
+    );
 }

@@ -97,6 +97,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
             workspace: Some(WORKSPACE),
             repo: &[],
         }),
+        graded: false,
         laid_out: linked.as_deref(),
     };
     let cwd = here.plane.join("workspaces").join(WORKSPACE);
@@ -272,6 +273,7 @@ fn a_harness_skill_the_persona_names_and_this_machine_lacks_is_said_on_the_tab()
             no_built_in: Vec::new(),
             broken: Vec::new(),
             by_a_repo: Vec::new(),
+            beside_a_built_in: Vec::new(),
         })
     );
 

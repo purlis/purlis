@@ -12,8 +12,8 @@
 //! the run was and on whichever machine, a teammate's that pulled the version later included.
 //! A run on a folder with changes not committed is counted apart, as on changes not committed.
 //! The runs are totalled by the one reading of the log ([`crate::skilluse::stats`], by
-//! [`crate::skilluse::By::Version`]). Grades join each version when grading lands (SK-16,
-//! #2779), tied to its commit; until then the slot is empty.
+//! [`crate::skilluse::By::Version`]). Grades join each version the same way (SK-16, #2779): a
+//! grade in the eval record says the tree its copy's folder held ([`super::grades`]).
 //!
 //! What git says is read, never trusted: a commit is taken only as a whole hex id, a diff is cut
 //! at [`MOST_DIFF`] bytes, and a character that draws as nothing is shown by its code point and
@@ -31,8 +31,8 @@ pub const MOST_VERSIONS: usize = 100;
 /// The most bytes of one version's diff shown: past this the diff is cut, and says so.
 pub const MOST_DIFF: usize = 256 * 1024;
 
-/// A version's grade, once grading lands (SK-16, #2779): how many of its fixtures passed. The
-/// slot is typed now so the tab and the command line have one place for it; nothing fills it yet.
+/// **A version's grade** (SK-16, #2779): how many of its trigger tests passed with the skill in
+/// its newest grade, of those that ran.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct Grade {
     pub passed: u32,
@@ -54,7 +54,8 @@ pub struct Version {
     pub tree: String,
     /// What the runs that started on it add up to.
     pub runs: Totals,
-    /// Its grade, once grading lands (SK-16). Always `None` for now.
+    /// Its newest grade, where it was graded (SK-16): the eval record's row whose folder held
+    /// this version's tree.
     pub grade: Option<Grade>,
 }
 
@@ -130,7 +131,26 @@ pub fn history(plane: &Path, level: &Level, name: &str) -> Result<History, Strin
         uncommitted: Totals::default(),
     };
     count_runs(plane, level, name, &mut history);
+    join_grades(plane, level, name, &mut history.versions);
     Ok(history)
+}
+
+/// Gives each of `versions` of the copy of `name` at `level` its newest grade: the eval record's
+/// row whose folder held the version's tree.
+fn join_grades(plane: &Path, level: &Level, name: &str, versions: &mut [Version]) {
+    if versions.is_empty() {
+        return;
+    }
+    let grades = super::grades::grades_of(plane, name, Some(level));
+    for version in versions {
+        version.grade = grades
+            .iter()
+            .find(|graded| graded.tree == version.tree)
+            .map(|graded| {
+                let (passed, fixtures) = graded.report.passed_with();
+                Grade { passed, fixtures }
+            });
+    }
 }
 
 /// Fills each version's [`Version::tree`]: the tree git holds of the folder at `folder_rel` at

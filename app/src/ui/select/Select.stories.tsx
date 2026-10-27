@@ -220,27 +220,23 @@ export const Unavailable: Story = {
   },
 };
 
-/** **Refused** (#3110): the form will not take what it holds. The danger colour on its edge, inside
- *  the box as a text field's, and nothing moves; the words that say why are its description, heard
- *  with it, and it still opens from the keyboard. */
+/** **Refused** (#3110, #3334): the form will not take what it holds. The danger colour on its edge,
+ *  inside the box as a text field's, and nothing moves; the words that say why are the field's
+ *  error line under it, heard as they land and with it, and it still opens from the keyboard. */
 export const Refused: Story = {
   render: () => {
     function Refusing() {
       const [value, setValue] = useState("");
       return (
-        <div style={{ display: "grid", gap: "var(--space-2)", inlineSize: "20rem" }}>
+        <div style={{ display: "grid", inlineSize: "20rem" }}>
           <Select
             aria-label="Harness"
-            aria-describedby="harness-why"
             value={value}
             options={HARNESSES}
             placeholder="Pick a harness"
-            isInvalid={value === ""}
+            error={value === "" ? "A persona needs a harness to run." : undefined}
             onValueChange={setValue}
           />
-          <p id="harness-why" style={{ margin: 0, color: "var(--danger-text)" }}>
-            {value === "" ? "A persona needs a harness to run." : ""}
-          </p>
         </div>
       );
     }
@@ -250,6 +246,10 @@ export const Refused: Story = {
     const select = theSelect(canvas, "Harness");
     await expect(select).toHaveAttribute("aria-invalid", "true");
     await expect(select).toHaveAccessibleDescription("A persona needs a harness to run.");
+    // Why is the field's error part, a live region, under the box.
+    const line = canvas.getByRole("alert");
+    await expect(line).toHaveAttribute("data-part", "error");
+    await expect(line).toHaveAttribute("aria-live", "assertive");
     const box = select.getBoundingClientRect();
     await userEvent.tab();
     await untilFocused(() => select, "Refused: Tab onto the select");
@@ -389,9 +389,9 @@ export const UnavailableSuggestions: Story = {
   },
 };
 
-/** **A refused combobox** (#3110): what is typed is not one it allows. The danger colour on its
- *  edge, as a text field's, the words that say why its description, and its suggestions still
- *  open from the keyboard. */
+/** **A refused combobox** (#3110, #3334): what is typed is not one it allows. The danger colour on
+ *  its edge, as a text field's, the words that say why the field's error line, heard as they land
+ *  while the person types, and its suggestions still open from the keyboard. */
 export const RefusedSuggestions: Story = {
   render: () => {
     function Box() {
@@ -399,18 +399,14 @@ export const RefusedSuggestions: Story = {
       const [value, setValue] = useState("no-such-skill");
       const refused = value !== "" && !SKILLS.includes(value);
       return (
-        <div style={{ display: "grid", gap: "var(--space-2)", inlineSize: "20rem" }}>
+        <div style={{ display: "grid", inlineSize: "20rem" }}>
           <ComboBox
             label="Add a skill"
             suggestions={SKILLS}
             value={value}
             onChange={setValue}
-            isInvalid={refused}
-            aria-describedby="skill-why"
+            error={refused ? "ops has no skill by that name." : undefined}
           />
-          <p id="skill-why" style={{ margin: 0, color: "var(--danger-text)" }}>
-            {refused ? "ops has no skill by that name." : ""}
-          </p>
         </div>
       );
     }
@@ -420,6 +416,8 @@ export const RefusedSuggestions: Story = {
     const box = canvas.getByRole("combobox", { name: "Add a skill" });
     await expect(box).toHaveAttribute("aria-invalid", "true");
     await expect(box).toHaveAccessibleDescription("ops has no skill by that name.");
+    const line = canvas.getByRole("alert");
+    await expect(line).toHaveAttribute("data-part", "error");
     const root = box.closest('[data-scope="combobox"][data-part="root"]') as HTMLElement;
     await expect(root).toHaveAttribute("data-invalid");
     const before = root.getBoundingClientRect();

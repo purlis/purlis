@@ -78,7 +78,8 @@ let timeline: TimelineMoment[] = [];
 /** The core, with chats 1 and 2 open in alpha and `browsers` as their browsers. */
 function core(browsers: ChatBrowser[]) {
   const asked: Asked[] = [];
-  const listeners = new Map<string, number>();
+  // Every listener of each event: more than one part of the window hears an event.
+  const listeners = new Map<string, number[]>();
   const views = new Map<string, Channel<BrowserFrame>>();
   let view = 0;
   const open = [{ ...chat(1), id: CHAT_1 }, chat(2)];
@@ -87,12 +88,13 @@ function core(browsers: ChatBrowser[]) {
     asked.push({ cmd, args: a });
     if (cmd === "plugin:event|listen") {
       const { event, handler } = args as { event: string; handler: number };
-      listeners.set(event, handler);
+      listeners.set(event, [...(listeners.get(event) ?? []), handler]);
       return 1;
     }
     if (cmd === "plane_at_launch") return { plane: PLANE, from: PLANE, why: null };
     if (cmd === "opened_chats") return open;
     if (cmd === "chat_browsers") return browsers;
+    if (cmd === "browsers_taken_back") return takenBack.splice(0, takenBack.length);
     if (cmd === "chat_browser_timeline") return a.chat === CHAT_1 ? timeline : [];
     if (cmd === "chat_browser_timeline_shot") return "iVBORw==";
     if (cmd === "watch_browser") {
@@ -150,14 +152,15 @@ function core(browsers: ChatBrowser[]) {
     /** The core says this project's chats' browsers came or went. */
     listed: (now: ChatBrowser[]) => {
       browsers.splice(0, browsers.length, ...now);
-      const handler = listeners.get("chat-browsers-listed");
-      if (handler === undefined) throw new Error("the window is not listening for browsers");
+      const handlers = listeners.get("chat-browsers-listed") ?? [];
+      if (handlers.length === 0) throw new Error("the window is not listening for browsers");
       act(() => {
-        window.__TAURI_INTERNALS__.runCallback(handler, {
-          event: "chat-browsers-listed",
-          id: 1,
-          payload: { plane: PLANE },
-        });
+        for (const handler of handlers)
+          window.__TAURI_INTERNALS__.runCallback(handler, {
+            event: "chat-browsers-listed",
+            id: 1,
+            payload: { plane: PLANE },
+          });
       });
     },
     /** The view of `program` attached as `role` is told its page's origin (#2300). */
@@ -202,6 +205,8 @@ const B9: ChatBrowser = {
 
 /** Where the project's browsers were at the last quit, as the core says (#2022). */
 let atQuit: string[] = [];
+/** The person's own browsers a crash of the window left running, until the window asks (#2025). */
+let takenBack: string[] = [];
 
 const tabNames = () =>
   within(stripNamed("Tabs"))
@@ -219,6 +224,7 @@ async function fromThePalette(row: string) {
 
 beforeEach(() => {
   atQuit = [];
+  takenBack = [];
   timeline = [];
   globalThis.localStorage.clear();
   forgetThisLaunch();
@@ -366,7 +372,7 @@ describe("a chat's browsers counted on its tab", () => {
     await opened();
 
     const count = await screen.findByRole("img", { name: "2 browsers" });
-    expect(count).toHaveClass("count-pill");
+    expect(count).toHaveAttribute("data-scope", "count");
     expect(count.closest(".tab")).not.toBeNull();
   });
 });
@@ -760,5 +766,69 @@ describe("a chat's browser timeline (#2017)", () => {
       }),
     );
     await waitFor(() => expect(painted.length).toBeGreaterThan(0));
+  });
+});
+
+describe("the person's own browser after a crash of the window (#2025)", () => {
+  it("comes back in a view tab of its own, drawn from its next frame", async () => {
+    takenBack = ["B5"];
+    const host = core([]);
+    await opened();
+
+    await waitFor(() => expect(tabNames()).toContain("Browser"));
+    await waitFor(() =>
+      expect(host.asked("watch_browser")).toContainEqual(
+        expect.objectContaining({ program: "B5", role: "focused" }),
+      ),
+    );
+    await act(async () => {
+      host.frame("B5", "focused", "/9j/");
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(painted.length).toBeGreaterThan(0));
+  });
+
+  it("comes back once a project's put back settles, when the core says browsers came", async () => {
+    const host = core([]);
+    await opened();
+    await chatsTree();
+    expect(tabNames()).not.toContain("Browser");
+
+    takenBack.push("B6");
+    host.listed([]);
+
+    await waitFor(() => expect(tabNames()).toContain("Browser"));
+    expect(host.asked("watch_browser")).toContainEqual(
+      expect.objectContaining({ program: "B6", role: "focused" }),
+    );
+  });
+});
+
+describe("a browser's view tab, told to the core (#2025)", () => {
+  it("says the tab shows it as it opens, and no longer as it closes", async () => {
+    const host = core([B7]);
+    await opened();
+    const browsers = within(await chatsTree()).getByRole("group", {
+      name: "Browsers of steward 1",
+    });
+
+    await userEvent.click(within(browsers).getByRole("button", { name: /Browser b1/ }));
+
+    await waitFor(() =>
+      expect(host.asked("browser_viewed")).toContainEqual({
+        plane: PLANE,
+        program: "B7",
+        viewed: true,
+      }),
+    );
+    await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 1"));
+    await fromThePalette("Close this view");
+    await waitFor(() =>
+      expect(host.asked("browser_viewed")).toContainEqual({
+        plane: PLANE,
+        program: "B7",
+        viewed: false,
+      }),
+    );
   });
 });

@@ -538,7 +538,7 @@ describe("a vault's own tab (charter-app#235)", () => {
   async function openOps() {
     const panel = await showThePanel("Vaults");
     await userEvent.click(await within(panel).findByRole("row", { name: /ops/ }));
-    return screen.findByRole("table", { name: "Secrets in ops" });
+    return screen.findByRole("grid", { name: "Secrets in ops" });
   }
 
   it("opens from the Vaults panel in front, and is brought forward rather than opened twice", async () => {
@@ -583,7 +583,7 @@ describe("a vault's own tab (charter-app#235)", () => {
     });
     render(<App />);
 
-    expect(await screen.findByRole("table", { name: "Secrets in ops" })).toBeInTheDocument();
+    expect(await screen.findByRole("grid", { name: "Secrets in ops" })).toBeInTheDocument();
     expect(tabNames()).toEqual(["steward 1", "ops"]);
   });
 
@@ -610,7 +610,7 @@ describe("a vault's own tab (charter-app#235)", () => {
     expect(asked.some((one) => one.cmd === "vault_open")).toBe(false);
 
     await userEvent.click(read);
-    expect(await screen.findByRole("table", { name: "Secrets in ops" })).toBeInTheDocument();
+    expect(await screen.findByRole("grid", { name: "Secrets in ops" })).toBeInTheDocument();
     expect(asked.filter((one) => one.cmd === "vault_open")).toHaveLength(1);
   });
 
@@ -669,7 +669,7 @@ describe("a vault's own tab (charter-app#235)", () => {
     const picker = await screen.findByRole("dialog", { name: "Open vault" });
     await userEvent.click(within(picker).getByRole("row", { name: /ops/ }));
 
-    expect(await screen.findByRole("table", { name: "Secrets in ops" })).toBeInTheDocument();
+    expect(await screen.findByRole("grid", { name: "Secrets in ops" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Open vault" })).toBeNull();
   });
 });

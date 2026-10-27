@@ -24,6 +24,7 @@
     "e2e:layout": "wdio run e2e/wdio.layout.conf.ts",
     "e2e:picked": "wdio run e2e/wdio.picked.conf.ts",
     "e2e:rail": "wdio run e2e/wdio.rail.conf.ts",
+    "e2e:browser": "wdio run e2e/wdio.browser.conf.ts",
     "e2e:upgrade": "wdio run e2e/wdio.upgrade.conf.ts"
   },
   "dependencies": {

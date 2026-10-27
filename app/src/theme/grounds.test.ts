@@ -648,17 +648,11 @@ const CLASSLESS: readonly string[] = [
   // The band a chat row takes for a moment once it is revealed (`revealTask.ts` sets the
   // attribute as it runs); the row is a `.ui-row`, which holds no button.
   ".chats-section [data-revealed]",
-  // A selected or current table row's cells: the one table whose rows are current (a wanted
-  // skill's row, `SkillTab.tsx`, set by an expression) holds no button.
-  '.ui-table tbody tr:is([aria-selected="true"], [aria-current]:not([aria-current="false"])) > *',
   // Selected words, not a box anything stands on.
   ':root[data-theme-draws~="selection.background"] :not(.cm-editor, .cm-editor *)::selection',
   // The line between the bottom panel's halves, a handle the panel library draws, which holds
   // nothing.
   ".panel-halves > [data-separator]",
-  // A region panel's ground (`ui/panel`, #2913), set by the family's attributes on a library's
-  // panel: `surface.base`, the window's own, which the button family already lists.
-  '[data-scope="panel"][data-part="root"]',
   // The editor's toolbar (`ui/tabs`, #2914): its attributes are spread by `editorToolbar`, and its
   // ground is listed by class in ENGINE_GROUNDS.
   '[data-scope="editor"][data-part="toolbar"]',
@@ -666,6 +660,10 @@ const CLASSLESS: readonly string[] = [
   // family's (`tabPart`), and it holds no button.
   '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:hover',
   '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"][data-keeps]:hover',
+  // A card's ground (`ui/card`, #2912), set by the family's attributes on the element a screen
+  // asks for: `surface.raised`, which the button family lists, and in Purlis `surface.base`
+  // (its `card.root.fill`), which the engine holds to the button's grounds.
+  '[data-scope="card"][data-part="root"]',
 ];
 
 /**
