@@ -251,8 +251,8 @@ pub struct Chat {
     /// flag as the window that started it read it (`purlis_core::skills::reach_chats_here`). A
     /// chat reattached from the session host (#2006) takes this, not the flag as read at its
     /// reattach, so its arming, its Notice, its stamp and Use skill… keep its start's word.
-    /// `None` is a chat not started yet, and every record written before this field: a reattach
-    /// then reads the flag again, as before. Not a format change, for [`Self::pinned`]'s reason.
+    /// `None` is a chat whose start in this launch has not returned or did not happen, and every
+    /// record written before this field: a reattach then reads the flag again, as before. Not a format change, for [`Self::pinned`]'s reason.
     pub plane_skills: Option<bool>,
 }
 

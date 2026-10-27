@@ -428,9 +428,10 @@ fn plane_skills_at_start(
     recorded: Option<bool>,
     read: impl FnOnce() -> bool,
 ) -> bool {
-    match recorded.filter(|_| reattaching) {
-        Some(flag) => flag,
-        None => read(),
+    if reattaching {
+        recorded.unwrap_or_else(read)
+    } else {
+        read()
     }
 }
 
@@ -3947,6 +3948,9 @@ impl Chats {
                 unsandboxed.is_some()
             },
             identity,
+            // The Skill studio's flag this start took (#3466): what its record keeps, and what
+            // a later reattach of it takes.
+            plane_skills: Some(plane_skills),
             ..chat.clone()
         };
         // What a start says on its tab was said at the start it reattached to (#2006); what
@@ -5175,6 +5179,8 @@ impl Chats {
             .map(|chat| Chat {
                 pid: None,
                 model: None,
+                // Not started this launch, so no flag of a start of its (#3466).
+                plane_skills: None,
                 ..chat.clone()
             })
             .collect();
@@ -5209,6 +5215,9 @@ impl Chats {
                     active: front == Some(session),
                     pid: None,
                     model: None,
+                    // Its start is under way, and the flag it takes is not known yet (#3466):
+                    // a later reattach reads it again rather than take an earlier run's.
+                    plane_skills: None,
                     ..one.chat.clone()
                 });
             };
@@ -5228,8 +5237,6 @@ impl Chats {
                 // What its harness said this program runs on (#1021), and nothing a record put
                 // back carried from an earlier run.
                 model: models.get(&session).cloned(),
-                // The Skill studio's flag its start read (#3466): what a reattach keeps.
-                plane_skills: Some(running.plane_skills),
                 ..chat.clone()
             })
         }));

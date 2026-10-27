@@ -8252,3 +8252,24 @@ fn a_reattached_chat_keeps_the_studio_flag_its_start_read_3466() {
     // A start that is not a reattach reads the flag now, whatever the record said.
     assert!(!plane_skills_at_start(false, Some(true), || false));
 }
+
+#[test]
+fn the_flag_a_chat_started_with_is_what_its_record_keeps_3466() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, _wrote) = recorded();
+    // A record put back from an earlier run says the opposite of what this start reads: a fresh
+    // start reads the flag, and the record keeps that.
+    let first = chats
+        .start(&chat(&a_claude(dir.path()), "ide.6", None), SIZE)
+        .unwrap();
+    let now = lock(&chats.open)[&first].plane_skills;
+    let _ = chats.close(first);
+    let put_back = Chat {
+        plane_skills: Some(!now),
+        ..chat(&a_claude(dir.path()), "ide.7", Some(ID))
+    };
+    let session = chats.start(&put_back, SIZE).unwrap();
+    assert_eq!(lock(&chats.open)[&session].plane_skills, now);
+    assert_eq!(chats.record().chats[0].plane_skills, Some(now));
+    let _ = chats.close(session);
+}
