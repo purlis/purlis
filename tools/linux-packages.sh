@@ -30,6 +30,12 @@
 #   - With `--cache DIR`, after an install from the mirror it copies into DIR the .deb files
 #     of exactly the versions now installed, and writes `save=true` to $GITHUB_OUTPUT.
 #
+# Before a second attempt it moves the first mirror of the image's list (LINUX_PACKAGES_MIRRORS,
+# default /etc/apt/apt-mirrors.txt, which GitHub's ubuntu images read through apt's `mirror+file:`)
+# to its end: apt leaves a mirror only when it errors, never when it is slow, and on 2026-10-27
+# azure's stalled mid-download in every failed run while 635 of 645 good installs took under a
+# minute. An image without that list is retried as it is.
+#
 # Seams for tools/linux-packages.test.mjs: LINUX_PACKAGES_SUDO (default `sudo`),
 # LINUX_PACKAGES_ARCHIVES (default /var/cache/apt/archives), LINUX_PACKAGES_PAUSE (seconds
 # between attempts, default 10).
@@ -49,6 +55,7 @@ ATTEMPTS=2
 SUDO=${LINUX_PACKAGES_SUDO-sudo}
 ARCHIVES=${LINUX_PACKAGES_ARCHIVES:-/var/cache/apt/archives}
 PAUSE=${LINUX_PACKAGES_PAUSE:-10}
+MIRRORS=${LINUX_PACKAGES_MIRRORS:-/etc/apt/apt-mirrors.txt}
 OUTPUT=${GITHUB_OUTPUT:-/dev/null}
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 
@@ -170,7 +177,16 @@ while :; do
     say "The install failed after $(elapsed) s: apt-get $why on each of $ATTEMPTS attempts, so the mirror is slow or down."
     exit 1
   fi
-  echo "::warning title=Linux packages::apt-get $why on attempt $attempt of $ATTEMPTS; trying once more"
+  moved=""
+  if [ -s "$MIRRORS" ] && [ "$(grep -c . "$MIRRORS")" -gt 1 ]; then
+    # Read whole before it is written: `tee` empties the file as it opens it.
+    first=$(grep -m 1 . "$MIRRORS")
+    rest=$(grep . "$MIRRORS" | tail -n +2)
+    if printf '%s\n%s\n' "$rest" "$first" | $SUDO tee "$MIRRORS" > /dev/null; then
+      moved=", asking the next mirror first (${first%%[[:space:]]*} moved last)"
+    fi
+  fi
+  echo "::warning title=Linux packages::apt-get $why on attempt $attempt of $ATTEMPTS; trying once more$moved"
   attempt=$((attempt + 1))
   sleep "$PAUSE"
 done

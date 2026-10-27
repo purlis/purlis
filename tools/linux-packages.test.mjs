@@ -88,6 +88,7 @@ exit 0`,
         LINUX_PACKAGES_SUDO: "",
         LINUX_PACKAGES_ARCHIVES: archives,
         LINUX_PACKAGES_PAUSE: "0",
+        LINUX_PACKAGES_MIRRORS: join(root, "apt-mirrors.txt"),
       },
     });
     return {
@@ -221,6 +222,34 @@ test("files from another image that do not fit are not kept with the new image's
   const r = run("install", "--cache", cache, "socat");
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(readdirSync(cache).sort(), ["libbar_1%3a2.0_amd64.deb", "libfoo_1.0-1_amd64.deb"]);
+});
+
+test("the attempt after a stalled one asks the next mirror first", () => {
+  // GitHub's image lists its mirrors in priority order and apt leaves one only when it errors,
+  // never when it is slow: on 2026-10-27 azure's stalled mid-download in every failed run while
+  // 635 of 645 good installs took under a minute.
+  const { root, run } = machine({ failInstalls: 1 });
+  const mirrors = join(root, "apt-mirrors.txt");
+  writeFileSync(
+    mirrors,
+    "http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\nhttps://security.ubuntu.com/ubuntu/\tpriority:3\n",
+  );
+  const r = run("install", "socat");
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(readFileSync(mirrors, "utf8").trim().split("\n").map((l) => l.split("\t")[0]), [
+    "https://archive.ubuntu.com/ubuntu/",
+    "https://security.ubuntu.com/ubuntu/",
+    "http://azure.archive.ubuntu.com/ubuntu/",
+  ]);
+  assert.match(r.stdout + r.stderr, /::warning[^\n]*next mirror first/);
+  assert.equal(r.apt.filter((l) => l.startsWith("apt-get") && l.includes("update")).length, 2);
+});
+
+test("an image with no mirror list is retried as it is", () => {
+  const { root, run } = machine({ failInstalls: 1 });
+  const r = run("install", "socat");
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!existsSync(join(root, "apt-mirrors.txt")));
 });
 
 test("a mirror that hangs once is tried once more", () => {
