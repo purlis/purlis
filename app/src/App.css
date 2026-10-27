@@ -2889,6 +2889,77 @@ body {
   margin-block-end: var(--space-3);
 }
 
+/* **Explorer as a view** (#3343, the sidebar-views prototype's Q2 A): the panel family's view
+   frame draws the top (its title line, the filter, the scope and the Search link) held at the
+   top on the panel's fill, so the region keeps no padding of its own above it; the tree and
+   what follows it keep the room at the sides the rows had. */
+.explorer.explorer-view {
+  padding: 0 0 var(--space-4);
+}
+.explorer.explorer-view [data-frame] > :not([data-part="top"]) {
+  margin-inline: var(--space-2);
+}
+.explorer.explorer-view [data-part="top"] .files-filter {
+  margin-block-end: 0;
+}
+/* What stands beside the title (the one repo and its branch) and a repo row's branch: in the
+   code face, quiet, as the prototype's `.branch`. */
+.explorer .head-beside,
+.view-actions > .head-beside,
+.explorer .repo-branch {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.explorer .repo-branch {
+  margin-inline-start: auto;
+  padding-inline-start: var(--space-4);
+}
+/* On a region's head, the title gives way so what stands beside it sits right after it, and
+   the view's actions go to the end. */
+.side-head:has(> .view-actions:not([hidden]) > .head-beside) > h2 {
+  flex: 0 1 auto;
+}
+.view-actions:has(> .head-beside) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.view-actions > .head-beside {
+  margin-inline-end: auto;
+}
+[data-part="head"] > .head-beside {
+  margin-inline-end: auto;
+}
+.explorer .files-scope-note,
+.explorer .files-search-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.explorer .files-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-base);
+  font-family: var(--font-mono);
+}
+.explorer .files-search-key {
+  font-family: var(--font-mono);
+}
+/* The repo the filter's *Selected* scope is of: the chosen wash, without the chosen edge. */
+.explorer [data-scope="tree"][data-part="root"][data-in-scope]:not([data-selected]) {
+  color: var(--text-primary);
+  background-color: var(--list-selected);
+}
+/* The letters of a found file's name the filter matched (#3343). */
+.explorer .found-match {
+  background: none;
+  color: var(--accent-text);
+}
+
 /* The branch cockpit (FM-5): a breadcrumb back out, then the branch's state with Merge and
    Done, above the branch's own chats and files. Sentences here wrap; the rows below do not. */
 /* The crumbs back out are small ghost buttons (a small ghost `Button`). */
@@ -3077,12 +3148,6 @@ body {
   flex: 1;
   min-width: 0;
   white-space: nowrap;
-}
-.explorer .explorer-section-head .section-of {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-transform: none;
-  letter-spacing: normal;
 }
 .explorer .explorer-section-head .twisty {
   flex: none;
