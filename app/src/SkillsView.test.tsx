@@ -367,6 +367,32 @@ describe("a row's menu", () => {
     );
   });
 
+  it("says a pin this workspace's chats read none of is not used, and the core's why (#3432)", async () => {
+    core(() =>
+      studio([skill("deploy", { pinned: true, pinned_by: [{ at: "workspace", name: "ops" }] })], {
+        pins_refused: {
+          by: { at: "workspace", name: "ops" },
+          why: "the list holds more than 64 pins",
+          bad: null,
+          file: "workspaces/ops/skills.pins",
+        },
+      }),
+    );
+    view();
+    await list();
+    await waitFor(() => expect(rowOf("deploy")).toBeInTheDocument());
+
+    fireEvent.contextMenu(rowOf("deploy"));
+    const menu = await screen.findByRole("menu", { name: "deploy" });
+    const unpin = within(menu).getByRole("menuitem", { name: "Unpin from this workspace" });
+    // Said under the row, and as its description, not only on hover.
+    expect(unpin).toHaveTextContent("Pinned, not used: the list holds more than 64 pins.");
+    expect(unpin).toHaveAccessibleDescription(
+      "Pinned, not used: the list holds more than 64 pins.",
+    );
+    expect(unpin).not.toHaveAttribute("aria-disabled", "true");
+  });
+
   it("says the core's refusal where a pin is refused", async () => {
     const asked: Asked[] = [];
     mockIPC((cmd, args) => {

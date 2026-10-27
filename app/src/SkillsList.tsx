@@ -209,6 +209,9 @@ export function SkillMenu({
         } satisfies Offer,
         said: one.title,
         danger: false,
+        // A pin no chat reads (#3432): said under the row while it can run, and as its
+        // description, never only on hover.
+        ...(available && one.note !== undefined ? { warns: one.note } : {}),
       };
     }),
   };

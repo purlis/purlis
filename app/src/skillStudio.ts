@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { commands, PERSONA_SCOPE_KEY, SKILL_STUDIO_IN, type SkillPinner } from "./bindings";
+import {
+  commands,
+  PERSONA_SCOPE_KEY,
+  SKILL_STUDIO_IN,
+  type SkillPinner,
+  type SkillPinsRefused,
+} from "./bindings";
 import type { ViewRef } from "./tabs";
 
 /**
@@ -247,6 +253,12 @@ export function scopeOfPinner(by: SkillPinner): StudioScope {
 /** A pinner as a sentence names it: `workspace ops`, `persona reviewer`. */
 export function pinnerSaid(by: SkillPinner): string {
   return `${by.at} ${by.name}`;
+}
+
+/** Why a chat reads none of a pinner's pins, in one sentence: `workspace ops's pins aren't
+ *  used: …`. The studio's Pin switch and the Skills view's menu both say it. */
+export function pinsRefusedSaid(refused: SkillPinsRefused): string {
+  return `${pinnerSaid(refused.by)}'s pins aren't used: ${refused.why}.`;
 }
 
 /** **The pinner the studio of `scope` pins for**, or `null` at the project's root (SK-15d). */

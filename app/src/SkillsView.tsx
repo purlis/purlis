@@ -6,6 +6,7 @@ import {
   commands,
   type ChatSkill,
   type HarnessKind,
+  type SkillPinsRefused,
   type StudioFirst,
   type StudioLevel,
 } from "./bindings";
@@ -53,7 +54,14 @@ export type FrontChat = {
 /** What the view read: its rows, what the studio offers to start from, and the levels a new
  *  skill can land at; or the core's refusal. */
 type Read =
-  { rows: ListedSkill[]; first: StudioFirst; levels: StudioLevel[] } | { refused: string };
+  | {
+      rows: ListedSkill[];
+      first: StudioFirst;
+      levels: StudioLevel[];
+      /** Why the workspace's chats read none of its pins, where they read none (#3432). */
+      pinsRefused: SkillPinsRefused | null;
+    }
+  | { refused: string };
 
 /** A command's answer, or its refusal, thrown or said, as a sentence. */
 async function answered<T>(
@@ -81,6 +89,7 @@ async function readSkills(plane: string, workspace: string | undefined): Promise
     rows: [...listedOf(base.ok), ...("ok" in personas ? personaRowsOf(personas.ok) : [])],
     first: base.ok.first,
     levels: base.ok.levels,
+    pinsRefused: base.ok.pins_refused,
   };
 }
 
@@ -227,7 +236,12 @@ export function SkillsView({
         menu: () => (
           <SkillMenu
             row={row}
-            at={{ workspace: place, chat: chat !== undefined, explorer: workspace }}
+            at={{
+              workspace: place,
+              chat: chat !== undefined,
+              explorer: workspace,
+              pinsRefused: read.pinsRefused,
+            }}
             busy={busy}
             onAct={(what) => act(row, what)}
           />
