@@ -142,19 +142,13 @@ pub fn pinned_skills(root: &Path, name: &str) -> Vec<String> {
     own_list(root, name, crate::skills::persona::PINS_KEY)
 }
 
-/// The persona's OWN `key:`, comma-separated, in order, blanks dropped.
+/// The persona's OWN `key:`, in order, blanks dropped: a comma list or a YAML list, read as the
+/// YAML its frontmatter is (#3244). It fails closed: a definition that does not load, or whose
+/// frontmatter is no YAML purlis reads, lists none.
 fn own_list(root: &Path, name: &str, key: &str) -> Vec<String> {
-    let Some(meta) = own_meta(root, name) else {
-        return Vec::new();
-    };
-    let raw = meta
-        .get(key)
-        .map(|s| crate::memstore::py_strip(s))
-        .unwrap_or("");
-    raw.split(',')
-        .map(|t| crate::memstore::py_strip(t).to_string())
-        .filter(|t| !t.is_empty())
-        .collect()
+    crate::personas::load_text(root, name)
+        .and_then(|text| crate::personas::frontmatter::list(&text, key).ok())
+        .unwrap_or_default()
 }
 
 /// The secrets registry as these commands read it: the tree's committed half

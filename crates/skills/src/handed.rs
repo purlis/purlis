@@ -87,7 +87,7 @@ impl std::fmt::Display for Refusal {
 
 /// A value of a YAML document, as purlis read it: no anchors, aliases or tags.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Node {
+pub(crate) enum Node {
     /// A scalar and whether it was written plain (so `true` is a boolean).
     Scalar {
         text: String,
@@ -247,6 +247,11 @@ pub const MOST_BYTES: u64 = 256 * 1024;
 /// line that is `---`, each on its own line, and where the body after it starts. `None` where
 /// there is none.
 fn fenced(text: &str) -> Option<(&str, usize)> {
+    fence(text).map(|(yaml, body)| (&text[yaml], body))
+}
+
+/// [`fenced`], as byte offsets: where the YAML is in `text`, and where the body starts.
+pub(crate) fn fence(text: &str) -> Option<(std::ops::Range<usize>, usize)> {
     let text_start = text.strip_prefix('\u{feff}').map_or(0, |_| 3);
     let mut lines = text[text_start..].split_inclusive('\n');
     let first = lines.next()?;
@@ -257,7 +262,7 @@ fn fenced(text: &str) -> Option<(&str, usize)> {
     let mut at = yaml_start;
     for line in lines {
         if line.trim_end() == "---" {
-            return Some((&text[yaml_start..at], at + line.len()));
+            return Some((yaml_start..at, at + line.len()));
         }
         at += line.len();
     }
@@ -392,7 +397,7 @@ fn keys_once(node: &Node) -> bool {
 
 /// The node `event` starts, `depth` lists and mappings in, reading the rest of it with `next`:
 /// refused for an alias, an anchor or a tag, and past [`MOST_NESTED`].
-fn node(
+pub(crate) fn node(
     event: Event,
     next: &mut dyn FnMut() -> Result<Event, Refusal>,
     depth: usize,

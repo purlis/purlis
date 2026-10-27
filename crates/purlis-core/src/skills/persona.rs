@@ -99,14 +99,9 @@ fn write(plane: &Path, persona: &str, key: &str, entries: &[String]) -> Result<(
     crate::contain::writable(plane, &file).map_err(|refused| refused.to_string())?;
     let text = crate::contain::read_text_no_link(plane, &file)
         .map_err(|why| format!("purlis could not read {}: {why}", file.display()))?;
-    let line = entries.join(", ");
-    let Some(next) = crate::personas::with_key(&text, key, (!line.is_empty()).then_some(&line))
-    else {
-        return Err(format!(
-            "{} has no frontmatter to hold a `{key}:` line, so nothing was written.",
-            file.display()
-        ));
-    };
+    // Read and written as the YAML it is, every other line kept as written (#3244).
+    let next = crate::personas::frontmatter::with_list(&text, key, entries)
+        .map_err(|why| format!("{} {why}, so nothing was written.", file.display()))?;
     if next == text {
         return Ok(());
     }
