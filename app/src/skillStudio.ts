@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { commands, PERSONA_SCOPE_KEY, SKILL_STUDIO_IN, type SkillPinner } from "./bindings";
+import {
+  commands,
+  PERSONA_SCOPE_KEY,
+  SKILL_STUDIO_IN,
+  type SkillPinner,
+  type SkillPinsRefused,
+} from "./bindings";
 import type { ViewRef } from "./tabs";
 
 /**
@@ -131,6 +137,9 @@ export function isSkillStudio(view: ViewRef): boolean {
 
 /** What this machine said of the flag, once asked, and who is drawn from it. */
 let said: boolean | undefined;
+/** Whether the last ask was refused or failed: the preview counts as off until an ask is
+ *  answered, so nothing waits on it (#3308). */
+let unanswered = false;
 let asking = false;
 const listeners = new Set<() => void>();
 
@@ -145,8 +154,11 @@ function ask() {
     .skillStudioOn()
     .then((answer) => {
       if (answer.status === "ok") said = answer.data;
+      unanswered = answer.status !== "ok";
     })
-    .catch(() => undefined)
+    .catch(() => {
+      unanswered = true;
+    })
     .finally(() => {
       asking = false;
       told();
@@ -164,6 +176,13 @@ function subscribe(listener: () => void) {
 /** Whether the Skill studio is on in this window: `false` until the core has said. */
 export function useSkillStudioOn(): boolean {
   return useSyncExternalStore(subscribe, () => said ?? false);
+}
+
+/** What the core said of the Skill studio's preview: `undefined` until it has, which a view
+ *  that would otherwise draw something else for a moment holds on (#3308); `false` where it
+ *  could not say, as the preview is then drawn off. */
+export function useSkillStudioSaid(): boolean | undefined {
+  return useSyncExternalStore(subscribe, () => said ?? (unanswered ? false : undefined));
 }
 
 /** **Turns the Skill studio's preview on or off on this machine** (Settings › You ›
@@ -234,6 +253,12 @@ export function scopeOfPinner(by: SkillPinner): StudioScope {
 /** A pinner as a sentence names it: `workspace ops`, `persona reviewer`. */
 export function pinnerSaid(by: SkillPinner): string {
   return `${by.at} ${by.name}`;
+}
+
+/** Why a chat reads none of a pinner's pins, in one sentence: `workspace ops's pins aren't
+ *  used: …`. The studio's Pin switch and the Skills view's menu both say it. */
+export function pinsRefusedSaid(refused: SkillPinsRefused): string {
+  return `${pinnerSaid(refused.by)}'s pins aren't used: ${refused.why}.`;
 }
 
 /** **The pinner the studio of `scope` pins for**, or `null` at the project's root (SK-15d). */

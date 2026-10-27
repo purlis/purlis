@@ -668,3 +668,50 @@ describe("a file or folder row's menu (FM-10)", () => {
     ]);
   });
 });
+
+describe("Show in Explorer in a workspace (#3308)", () => {
+  /** The explorer on `spot`, then asked to show a repo skill's folder of the `svc` clone. */
+  function revealing(spot: Spot | undefined, onPick = vi.fn()) {
+    const drawn = (reveal?: { repo: string; folder: string; asked: number }) => (
+      <ChatsHere.Provider value={fixedChats(nothingKnown)}>
+        <Explorer
+          plane={PLANE}
+          workspace="alpha"
+          state={STATE}
+          chats={[]}
+          spot={spot}
+          onPick={onPick}
+          offers={new Map()}
+          onPress={() => {}}
+          onReadAgain={() => {}}
+          reveal={reveal}
+        />
+      </ChatsHere.Provider>
+    );
+    const { rerender } = render(drawn());
+    rerender(drawn({ repo: "svc", folder: ".claude/skills/lint-rs", asked: 1 }));
+    return onPick;
+  }
+
+  it("opens the clone's folders down to a repo skill's, and gives its row the keyboard", async () => {
+    const asked = core({
+      ":": [entry(".claude", { kind: "folder" })],
+      ":.claude": [entry("skills", { kind: "folder" })],
+      ":.claude/skills": [entry("lint-rs", { kind: "folder" })],
+    });
+    revealing(undefined);
+
+    await vi.waitFor(() => expect(row("file:svc/:.claude/skills/lint-rs")).toHaveFocus());
+    expect(asked).toEqual(expect.arrayContaining([":", ":.claude", ":.claude/skills"]));
+  });
+
+  it("picks the workspace itself first where Files are of another branch", async () => {
+    core({ "one:": [] });
+    const onPick = revealing(PICKED);
+    await vi.waitFor(() => expect(onPick).toHaveBeenCalledWith(undefined));
+    // Once: the person staying on their branch is not undone again on each draw.
+    await userEvent.click(tree());
+    await new Promise((settle) => setTimeout(settle, 50));
+    expect(onPick).toHaveBeenCalledTimes(1);
+  });
+});

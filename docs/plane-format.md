@@ -3177,7 +3177,9 @@ curation actions is offered.
       keys and the body there. A file that relied on that (a closing `---` with more on its
       line, such as `role: r---`) now reads as unclosed.
     - The same rule cuts every line-format frontmatter purlis reads: a `SKILL.md`'s `name:`
-      and `description:`, a curation action, a session record.
+      and `description:`, a curation action, a session record, and a workspace memory's
+      frontmatter where `purlis memory` shows a line of its body under a hit (#3482). A memory
+      whose frontmatter is never closed shows no line there.
   - Each frontmatter line: skipped if it has no `:`; `key, _, value = line.partition(":")`;
     both sides `.strip()`ed; empty key skipped (`charter/persona.py:261`-`:267`). Quotes are
     **kept** as part of the value (`charter/persona.py:95`).

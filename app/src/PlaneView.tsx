@@ -217,8 +217,9 @@ import {
   type Toggled,
   type ViewId,
 } from "./regions";
-import { drawnOnlyPresent, NO_PREVIEWS, PREVIEWED_VIEWS, type ViewPlace } from "./sideViews";
+import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
 import { SkillsView, type FrontChat } from "./SkillsView";
+import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
@@ -415,7 +416,7 @@ import type {
 } from "./bindings";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
-import { skillStudioTitle, skillStudioView, useSkillStudioOn } from "./skillStudio";
+import { skillStudioTitle, skillStudioView, useSkillStudioSaid } from "./skillStudio";
 import { SkillRunsHere, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
@@ -1010,8 +1011,10 @@ export const PlaneView = memo(function PlaneView({
    *  again after a write — a vault's own tab (charter-app#235). */
   const vaults = useVaults(plane);
   const vaultNames = useMemo(() => vaults.vaults?.map((one) => one.name), [vaults.vaults]);
-  // Whether the Skill studio's flag is on (#2765): its palette row is offered only then.
-  const studioOn = useSkillStudioOn();
+  // Whether the Skill studio's flag is on (#2765): its palette row is offered only then. What
+  // the core said of it, `undefined` until it has, holds a side left on Skills (#3308).
+  const studioSaid = useSkillStudioSaid();
+  const studioOn = studioSaid === true;
   /** Every chat open here, by session, in strip order: whose skill budgets the window holds. */
   const chatSessions = useMemo(
     () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
@@ -1295,12 +1298,13 @@ export const PlaneView = memo(function PlaneView({
     },
     [searchHere, showSide],
   );
-  /** **Show in Explorer's ask** (#3266, the Skills view): the folder, with a count that moves on
-   *  each ask, so asking for the same folder again shows it again. */
-  const [explorerReveal, setExplorerReveal] = useState<{ folder: string; asked: number }>();
+  /** **Show in Explorer's ask** (#3266, #3308, the Skills view): the folder, in the project's own
+   *  files or a clone's, with a count that moves on each ask, so asking for the same folder
+   *  again shows it again. */
+  const [explorerReveal, setExplorerReveal] = useState<ExplorerPlace & { asked: number }>();
   const revealInExplorer = useCallback(
-    (folder: string) => {
-      setExplorerReveal((was) => ({ folder, asked: (was?.asked ?? 0) + 1 }));
+    (place: ExplorerPlace) => {
+      setExplorerReveal((was) => ({ ...place, asked: (was?.asked ?? 0) + 1 }));
       showSideView("explorer");
     },
     [showSideView],
@@ -2379,8 +2383,13 @@ export const PlaneView = memo(function PlaneView({
   const [sidePanels, setSidePanels] = useState(sidePanelsNow);
   if (!samePanels(sidePanels, sidePanelsNow)) setSidePanels(sidePanelsNow);
   /** **The views behind a preview that is on** (#3266): Skills while the Skill studio's is. One
-   *  left out is drawn nowhere, and its side opens on its first view until it is back. */
-  const previews = studioOn ? PREVIEWED_VIEWS : NO_PREVIEWS;
+   *  left out is drawn nowhere, and its side opens on its first view until it is back. Until the
+   *  core has said, a side left on Skills is held there, drawn empty (#3308). */
+  const pickedViews = arrangement.map((one) => one.view).join(" ");
+  const previews = useMemo(
+    () => previewsDrawn(studioSaid, pickedViews.split(" ")),
+    [studioSaid, pickedViews],
+  );
   /** Every view drawn only while it is present: the extensions' panels contributed now, and the
    *  views behind a preview that is on. */
   const presentViews = useMemo(
@@ -6595,6 +6604,14 @@ export const PlaneView = memo(function PlaneView({
   /** The Chats list's rows: a task that ended keeps its row until its finished row is read,
    *  so the rows below it move once and not up and then down (`useRowsUntilRead`). */
   const listRows = useRowsUntilRead(chatRows, finishedSettled);
+  /** Each persona's chats, by number (#3341): what a persona's row in the Personas view reads
+   *  its state from. */
+  const personaChats = useMemo(() => {
+    const of = new Map<string, number[]>();
+    for (const row of listRows)
+      if (row.persona !== null) of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
+    return of;
+  }, [listRows]);
   /**
    * **How long each chat has been in its state, as this window saw it** (`stateClock.ts`): one
    * clock for the project, held here so it runs whether or not the Chats list is drawn, and
@@ -9020,6 +9037,7 @@ export const PlaneView = memo(function PlaneView({
                       onAddTodo={edits.addTodo}
                       atRoot={focused === OUTSIDE}
                       rootPanels={rootPanels?.contributed}
+                      personaChats={personaChats}
                     />
                   )}
                 />,

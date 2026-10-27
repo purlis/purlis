@@ -41,8 +41,8 @@
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -50,8 +50,9 @@ use serde_json::{Value, json};
 use super::super::kept::Kept;
 use super::super::keys::{command_of, is_modifier};
 use super::super::tree::{FrameAx, NodeKey, Snapshot};
+use super::reading::{Next, Slot};
 use super::{ACTIVE_ELEMENT, FOCUSED_HERE, READ_VALUE};
-use super::{Browser, Session, read_trees, refusal};
+use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
     ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PersonInput, Refusal,
@@ -97,29 +98,11 @@ pub(crate) struct Typing {
     focus: Option<Focused>,
     /// The read of a page's trees under way for the person's keys, or come and not yet used:
     /// every key that waits for the page waits on this one read (#3043).
-    reading: Option<Arc<Reading>>,
-}
-
-/// A read of every frame's tree of a page for the person's keys (#3043): its page's target, the
-/// lease's epoch and the page's document number when it began, and its answer once it came.
-struct Reading {
-    target: String,
-    epoch: u64,
-    shows: u64,
-    /// The answer, and when it came.
-    answer: Mutex<Option<(Instant, ReadAnswer)>>,
-    came: Condvar,
-}
-
-/// What a read of a page's trees for the person's keys came to (#3043).
-type ReadAnswer = Result<Arc<Vec<FrameAx>>, Refusal>;
-
-impl Reading {
-    /// The read's answer is `answer`: every key waiting on it is told.
-    fn answered(&self, answer: ReadAnswer) {
-        *lock(&self.answer) = Some((Instant::now(), answer));
-        self.came.notify_all();
-    }
+    reading: Slot,
+    /// The read of each page (by target) the last field the person typed into on it was
+    /// blanked from, until the hand-back: where a read of the page as their input is kept out
+    /// does not come in time, the groups of boxes on it are found in this one (#3277).
+    last_read: HashMap<String, Arc<Snapshot>>,
 }
 
 /// Whether input lands on what the person saw (#2638), with what judging it read: the page's
@@ -232,6 +215,8 @@ impl Browser {
         // A field blanked in an earlier turn is asked about again from the page itself, and
         // the page read again.
         lock(&self.typing).forget_reads();
+        // No read the agent's calls left is kept past a change of hands (#3277).
+        lock(&self.reading).forget();
         // Whatever waits for the page wakes now, and finds itself cut.
         self.inner.changed.notify_all();
         epoch
@@ -246,7 +231,12 @@ impl Browser {
             return self.epoch();
         }
         self.keep_typing_out();
-        lock(&self.typing).forget_reads();
+        {
+            let mut typing = lock(&self.typing);
+            typing.forget_reads();
+            typing.last_read.clear();
+        }
+        lock(&self.reading).forget();
         // A button the person still holds is let go before the agent has the page (#2989).
         self.let_go_of_held(None);
         // What a login the person cut had filled is emptied before the agent has the page.
@@ -455,7 +445,7 @@ impl Browser {
                 // A key that may move the focus (Tab, an arrow) leaves a read made before it
                 // for no later key (#3043).
                 if *down && !edits && !is_modifier(key) {
-                    lock(&self.typing).reading = None;
+                    lock(&self.typing).reading.forget();
                 }
                 let field = if edits {
                     // The field the last key went to, still focused, is blanked already: only
@@ -477,11 +467,14 @@ impl Browser {
                                 let shows = lock(&self.inner.state)
                                     .page(&target)
                                     .map_or(0, |page| page.shows);
-                                lock(&self.typing).focus = Some(Focused {
+                                let mut typing = lock(&self.typing);
+                                typing.last_read.insert(target.clone(), Arc::clone(&read));
+                                typing.focus = Some(Focused {
                                     field: field.clone(),
                                     read: std::sync::Arc::clone(&read),
                                     shows,
                                 });
+                                drop(typing);
                                 Some((field, read))
                             }
                             (Err(Refusal::NothingFocused), _) => {
@@ -628,7 +621,13 @@ impl Browser {
 
     /// Reads every page and every field the person typed into again, and keeps what they hold
     /// and each run of characters the person typed out of every later answer about every page.
+    /// The fields, then the pages, are read within
+    /// [`Limits::key_reads_within`](crate::drive::Limits) in all, each call of theirs by then
+    /// (#3277): where a field's read does not come it keeps what it was last read to hold, and
+    /// where a page's does not, the groups of boxes on it are found in the read the last field
+    /// the person typed into on it was blanked from, and the log says so.
     fn keep_typing_out(&self) {
+        let by = Instant::now() + self.inner.limits.key_reads_within;
         let (dirty, runs, touched) = {
             let mut typing = lock(&self.typing);
             // Each run is kept out once: a run still growing is a run a press of the mouse or
@@ -643,26 +642,47 @@ impl Browser {
         };
         let mut held = Kept::default();
         held.run(&runs);
-        let mut reads = Vec::new();
-        for target in dirty {
-            if let Ok(read) = self.snapshot_of(&target) {
-                reads.push(read);
-            }
-            if let Some(page) = lock(&self.inner.state).page(&target) {
-                held.take_in(&page.scrubbed);
-            }
-        }
-        // Each field is read last, from the field itself: what it holds now is the latest of
-        // its values, whatever its page's tree read before. So are the groups of boxes.
+        // Each field is read from the field itself, first: what it holds now is the latest of its
+        // values, whatever its page's tree reads. So are the groups of boxes. The pages' trees
+        // have what is left of the time.
         let mut latest = HashMap::new();
         let mut order = Vec::new();
         for field in &touched {
             // A field that cannot be read now keeps what it was last read to hold.
-            let Ok(now) = self.field_holds(field) else {
+            let Ok(now) = self.field_holds_by(field, Some(by)) else {
                 continue;
             };
             held.field(&field.1, &[&now]);
             (latest, order) = lock(&self.typing).read(&field.1, &now);
+        }
+        let mut reads = Vec::new();
+        for target in dirty {
+            match self.trees_by(&target, by) {
+                Ok(trees) => reads.push(Arc::new(self.snapshot_from(&target, &trees))),
+                Err(why) => {
+                    let page = lock(&self.inner.state)
+                        .page(&target)
+                        .map_or_else(String::new, |page| format!(" {}", page.id));
+                    match lock(&self.typing).last_read.get(&target) {
+                        Some(read) => {
+                            tracing::warn!(
+                                "purlis: page{page} could not be read as the person's input \
+                                 was kept out ({why}), so the groups of boxes on it were \
+                                 rebuilt from the page as the person's last key read it"
+                            );
+                            reads.push(Arc::clone(read));
+                        }
+                        None => tracing::warn!(
+                            "purlis: page{page} could not be read as the person's input was \
+                             kept out ({why}), so no group of boxes on it was rebuilt: what \
+                             each field holds, and each run typed, is kept out"
+                        ),
+                    }
+                }
+            }
+            if let Some(page) = lock(&self.inner.state).page(&target) {
+                held.take_in(&page.scrubbed);
+            }
         }
         for read in &reads {
             for (first, joined) in read.groups_holding(&latest, &order) {
@@ -674,7 +694,24 @@ impl Browser {
 
     /// What `field` holds now, read from the field itself; empty where it is gone (it, or its
     /// frame). Refused [`Refusal::FieldUnread`] where it is there and cannot be read.
-    fn field_holds(&self, (target, key): &(String, NodeKey)) -> Result<String, Refusal> {
+    fn field_holds(&self, field: &(String, NodeKey)) -> Result<String, Refusal> {
+        self.field_holds_by(field, None)
+    }
+
+    /// [`Browser::field_holds`], every call of it made by `by` where it is given (#3277).
+    fn field_holds_by(
+        &self,
+        (target, key): &(String, NodeKey),
+        by: Option<Instant>,
+    ) -> Result<String, Refusal> {
+        let within = || {
+            by.map_or(crate::cdp::CALL_TIMEOUT, |by| {
+                crate::cdp::CALL_TIMEOUT.min(by.saturating_duration_since(Instant::now()))
+            })
+        };
+        if within().is_zero() {
+            return Err(Refusal::FieldUnread);
+        }
         let session = {
             let state = lock(&self.inner.state);
             match state
@@ -688,16 +725,17 @@ impl Browser {
         let on = Some(session.as_str());
         // Read in the world the field was resolved into, by its unique id: an element of any
         // other world is refused by the engine.
-        let read = self.in_world(&session, &key.frame, |world| {
-            let resolved = self.devtools().call(
+        let run = |world: &super::world::World| {
+            let resolved = self.devtools().call_within(
                 "DOM.resolveNode",
                 json!({ "backendNodeId": key.backend, "executionContextId": world.id }),
                 on,
+                within(),
             )?;
             let Some(object) = resolved.pointer("/object/objectId").and_then(Value::as_str) else {
                 return Ok(Value::Null);
             };
-            let read = self.devtools().call(
+            let read = self.devtools().call_within(
                 "Runtime.callFunctionOn",
                 json!({
                     "uniqueContextId": world.unique,
@@ -706,12 +744,20 @@ impl Browser {
                     "returnByValue": true,
                 }),
                 on,
+                within(),
             );
-            let _ =
-                self.devtools()
-                    .call("Runtime.releaseObject", json!({ "objectId": object }), on);
+            let _ = self.devtools().call_within(
+                "Runtime.releaseObject",
+                json!({ "objectId": object }),
+                on,
+                within(),
+            );
             read
-        });
+        };
+        let read = match by {
+            Some(by) => self.in_world_by(&session, &key.frame, by, run),
+            None => self.in_world(&session, &key.frame, run),
+        };
         match read {
             Ok(read) => read
                 .pointer("/result/value")
@@ -1050,95 +1096,43 @@ impl Browser {
         let shows = lock(&self.inner.state)
             .page(target)
             .map_or(0, |page| page.shows);
-        let (reading, begun) = {
-            let mut typing = lock(&self.typing);
-            match &typing.reading {
-                // Under way, or come and not used yet: every key waits on the one read.
-                Some(reading)
-                    if reading.target == target
-                        && reading.epoch == epoch
-                        && reading.shows == shows =>
-                {
-                    (Arc::clone(reading), false)
+        let (reading, begun) = loop {
+            // Under way, or come and not used yet: every key waits on the one read.
+            let next = lock(&self.typing)
+                .reading
+                .next(target, epoch, shows, |_| true);
+            match next {
+                Next::Join(reading) => break (reading, false),
+                Next::Begin(reading) => {
+                    reading.begin(
+                        Arc::clone(&self.inner.devtools),
+                        self.frames_to_read(target),
+                        self.inner.limits.tree_reads_within,
+                        self.inner.limits.most_tree_read_bytes,
+                        Refusal::PageUnreadInTime,
+                    );
+                    break (reading, true);
                 }
-                _ => {
-                    let reading = Arc::new(Reading {
-                        target: target.to_owned(),
-                        epoch,
-                        shows,
-                        answer: Mutex::new(None),
-                        came: Condvar::new(),
-                    });
-                    typing.reading = Some(Arc::clone(&reading));
-                    (reading, true)
+                // The engine still reads the page for a read no key will use: another is asked
+                // for once it has ended, never beside it (#3277).
+                Next::After(running) => {
+                    if running.wait(by, || false).is_none() {
+                        return Err(Refusal::PageUnreadInTime);
+                    }
                 }
             }
         };
-        if begun {
-            self.begin_reading(target, &reading);
-        }
-        let (came, answer) = {
-            let mut answer = lock(&reading.answer);
-            loop {
-                if let Some((came, answer)) = answer.as_ref() {
-                    break (*came, answer.clone());
-                }
-                let left = by.saturating_duration_since(Instant::now());
-                if left.is_zero() {
-                    return Err(Refusal::PageUnreadInTime);
-                }
-                answer = reading
-                    .came
-                    .wait_timeout(answer, left)
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .0;
-            }
+        let Some((came, answer)) = reading.wait(by, || false) else {
+            return Err(Refusal::PageUnreadInTime);
         };
         // Used, or failed: the next key that needs the page reads it anew.
-        {
-            let mut typing = lock(&self.typing);
-            if typing
-                .reading
-                .as_ref()
-                .is_some_and(|kept| Arc::ptr_eq(kept, &reading))
-            {
-                typing.reading = None;
-            }
-        }
+        lock(&self.typing).reading.used(&reading);
         let trees = answer?;
         // A read that came long before the key that would use it is not the page now.
         if came.elapsed() > self.inner.limits.tree_read_kept_for {
             return Err(Refusal::PageUnreadInTime);
         }
         Ok((trees.as_ref().clone(), !begun))
-    }
-
-    /// Begins `reading` of every frame's tree of `target`'s page, on a thread of its own, each
-    /// frame's within [`Limits::tree_reads_within`](crate::drive::Limits) (#3043). A read past
-    /// that limit, or one that cannot begin, holds the keys waiting on it back.
-    fn begin_reading(&self, target: &str, reading: &Arc<Reading>) {
-        let frames = match self.frames_to_read(target) {
-            Ok(frames) => frames,
-            Err(why) => return reading.answered(Err(why)),
-        };
-        let devtools = Arc::clone(&self.inner.devtools);
-        let within = self.inner.limits.tree_reads_within;
-        let told = Arc::clone(reading);
-        let begun = std::thread::Builder::new()
-            .name("purlis-tree-read".into())
-            .spawn(move || {
-                told.answered(
-                    read_trees(&*devtools, frames, within)
-                        .map(Arc::new)
-                        .map_err(|why| match why {
-                            CallError::TimedOut => Refusal::PageUnreadInTime,
-                            other => refusal(other),
-                        }),
-                );
-            });
-        if begun.is_err() {
-            reading.answered(Err(Refusal::PageUnreadInTime));
-        }
     }
 
     /// Whether the document of `frame` on `session` has an element focused (or one inside a
@@ -1172,7 +1166,7 @@ impl Typing {
     /// asked anew at the next key.
     fn forget_reads(&mut self) {
         self.focus = None;
-        self.reading = None;
+        self.reading.forget();
     }
 
     /// The field `key` holds `now`, as read from the field itself: answers what every field
