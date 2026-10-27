@@ -156,7 +156,7 @@ describe("a read the explorer was refused", () => {
     await userEvent.click(within(notice).getByRole("button", { name: "Read again" }));
 
     await waitFor(() => expect(count(asked, "worktree_list")).toBeGreaterThan(before));
-    await within(explorer()).findByRole("treeitem", { name: /^one/ });
+    await within(explorer()).findByRole("row", { name: /^one/ });
     expect(within(explorer()).queryByText(/through a symlink/)).toBeNull();
   });
 });
