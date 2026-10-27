@@ -53,7 +53,13 @@ async function days(): Promise<{ day: string; rows: { text: string; hover: strin
     if (!list) return [];
     const every = [...list.querySelectorAll(".panel-row")];
     return [...list.querySelectorAll('[data-part="section"]')].map((group) => ({
-      day: group.querySelector('[data-part="header"]')?.textContent ?? "",
+      // The day's name, without the count a view draws at its end (#3340).
+      day: (() => {
+        const header = group.querySelector('[data-part="header"]');
+        const count = header?.querySelector("[data-count]")?.textContent ?? "";
+        const said = header?.textContent ?? "";
+        return said.slice(0, said.length - count.length);
+      })(),
       rows: [...group.querySelectorAll(".panel-row")].map((row) => ({
         text: row.querySelector(".row-text")?.textContent ?? "",
         at: every.indexOf(row),

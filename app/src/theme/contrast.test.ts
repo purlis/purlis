@@ -93,9 +93,14 @@ const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "uns
  *   family default's `surface.base`, or the token a theme's `panel.root.fill` names. Its words
  *   (primary, secondary, muted) are held on `surface.base` and `surface.raised`, the two fills
  *   the built-in themes give a panel, in `PAIRS`.
+ * - A view's top and its groups' names (`ui/panel/panel.css`, #3340) are drawn on the same
+ *   fill. What stands on them is a row's words and a group's name, held on both grounds in the
+ *   engine's `PAIRS` (`text.secondary`, `text.quiet` on `surface.base` and `surface.raised`).
  */
 const READ_BY_HAND: readonly string[] = [
   ".chats-head | background: var(--panel-fill, var(--surface-base))",
+  '[data-scope="panel-section"][data-part="top"] | background-color: var(--panel-fill)',
+  '[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] | background-color: var(--panel-fill)',
 ];
 
 /** The parts of a selector that say a state, not what is drawn: the pointer on it, the

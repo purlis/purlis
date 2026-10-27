@@ -259,9 +259,10 @@ describe("the table of who may dispatch to whom", () => {
     render(<Table />);
 
     const whole = await table();
-    // The shared table's stacking form, in the room it measures (`primitives/collections.css`).
-    expect(whole).toHaveClass("ui-table", "ui-table-stacks");
-    expect(whole.closest(".ui-table-room")).not.toBeNull();
+    // The table family's stacking form, in the frame it measures (`ui/table/table.css`).
+    expect(whole).toHaveAttribute("data-scope", "table");
+    expect(whole).toHaveAttribute("data-stacks");
+    expect(whole.closest('[data-part="frame"][data-stacks]')).not.toBeNull();
     const mine = rowOf(
       screen.getByRole("button", { name: "Revoke: my grant for steward to devops" }),
     );
@@ -1272,7 +1273,7 @@ describe("with the keyboard, and to a screen reader", () => {
     // a shortened heading's words come first, so their tooltip can be read (DS-9).
     const controls = [
       ...document.querySelectorAll<HTMLElement>(
-        'button, .ui-table-tip, select:not([data-testid="hidden-select-container"] select)',
+        'button, [data-part="head-tip"], select:not([data-testid="hidden-select-container"] select)',
       ),
     ];
     const buttons = screen
@@ -2012,7 +2013,8 @@ describe("the grants table's look (DS-9, #1841)", () => {
     render(<Table />);
     const whole = await table();
 
-    expect(whole).toHaveClass("ui-table", "ui-table-fixed");
+    expect(whole).toHaveAttribute("data-scope", "table");
+    expect(whole).toHaveAttribute("data-fixed");
     const headings = within(whole).getAllByRole("columnheader");
     expect(headings.map((one) => one.textContent)).toEqual([
       "Dispatch to",
@@ -2067,7 +2069,7 @@ describe("the grants table's look (DS-9, #1841)", () => {
     // A table cell, never the Dispatches tab's inline persona mark.
     expect(group).not.toHaveClass("dispatch-persona");
     expect(drawnWith(group, "display")).toBeUndefined();
-    expect(drawnWith(group, "padding-block")).toBe("var(--ui-cell-pad-block)");
+    expect(drawnWith(group, "padding-block")).toBe("var(--space-4)");
     expect(drawnWith(group.querySelector("span") as HTMLElement, "font-weight")).toBe(
       "var(--font-weight-strong)",
     );

@@ -1372,6 +1372,9 @@ impl Chats {
     /// `graded` is whether it is a grade's chat (SK-16), as its record says: what holds it to
     /// purlis's server and read tools alone (`purlis_core::hoststart::Arming::graded`).
     ///
+    /// `skills` is where its plane skills come from, read once at its start
+    /// (`purlis_core::hoststart::ChatSkills::read`, #3234), as its tab's Notice reads them.
+    ///
     /// **Fail closed.** A sandbox compiled for another harness, or one the harness is not armed
     /// to carry here (the app shipped without its plugin or its binary), refuses the chat rather
     /// than starting it without the sandbox.
@@ -1385,6 +1388,7 @@ impl Chats {
         persona: Option<&str>,
         env: &[(String, String)],
         graded: bool,
+        skills: &purlis_core::hoststart::ChatSkills,
     ) -> Result<Armed, String> {
         purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
             root: &self.project,
@@ -1396,6 +1400,7 @@ impl Chats {
             persona,
             env,
             graded,
+            skills,
         })
     }
 
@@ -3295,29 +3300,35 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
+        // arms it below and what its tab's Notice says are both worked out from this.
+        let skills = if on_the_runner {
+            purlis_core::hoststart::ChatSkills::default()
+        } else {
+            purlis_core::hoststart::ChatSkills::read(
+                purlis_core::skills::reach_chats_here(&self.project),
+                &self.project,
+                harness,
+                chat.cwd.as_deref(),
+                runs_as.as_deref(),
+            )
+        };
         // A skill its persona names that this machine does not have (SK-5, #2768), or one it
         // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
         // tab's Notice says which, never a silent drop.
         let skills_missing = if reattaching || on_the_runner {
             None
         } else {
-            purlis_core::hoststart::skills_not_here(
-                purlis_core::skills::reach_chats_here(&self.project),
-                &self.project,
-                &self.kit(harness),
-                harness,
-                chat.cwd.as_deref(),
-                runs_as.as_deref(),
-                &env,
+            purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
+                |not| SkillsMissing {
+                    persona: runs_as.clone(),
+                    missing: not.missing,
+                    no_built_in: not.no_built_in,
+                    broken: not.broken.into_iter().map(SkillBroken::from).collect(),
+                    by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
+                    beside_a_built_in: not.beside_a_built_in,
+                },
             )
-            .map(|not| SkillsMissing {
-                persona: runs_as.clone(),
-                missing: not.missing,
-                no_built_in: not.no_built_in,
-                broken: not.broken.into_iter().map(SkillBroken::from).collect(),
-                by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
-                beside_a_built_in: not.beside_a_built_in,
-            })
         };
         // A sandboxed Claude Code chat whose project's own settings it does not load says which
         // keys, in the window only (ADR 0067 as amended 2026-10-15). Its arming read the same
@@ -3417,6 +3428,7 @@ impl Chats {
                 &env,
                 // A grade's chat, as its record says (SK-16): the one word its limits take.
                 chat.graded,
+                &skills,
             )?
         };
         let hooks = match &settings_watched {

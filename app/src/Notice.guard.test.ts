@@ -584,6 +584,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: "a field's error line under its box, why its value is refused, in either of the family's boxes (#2905)",
   },
+  "ui/table/TableBar.tsx": {
+    count: 1,
+    why: "how many rows of a table are chosen, a live value said as it changes (#2911)",
+  },
 };
 
 /**

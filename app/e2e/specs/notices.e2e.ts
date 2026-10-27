@@ -168,7 +168,7 @@ describe("a pin to a workspace that is gone", function () {
       const line = [...document.querySelectorAll<HTMLElement>("[data-cause]")].find(
         (one) => one.dataset.cause === wanted,
       );
-      const says = line?.querySelector<HTMLElement>(".notice-says");
+      const says = line?.querySelector<HTMLElement>("[data-scope=notice][data-part=message]");
       if (line === undefined || says === null || says === undefined) return undefined;
       const short = line.getBoundingClientRect().height;
       const word = document.createElement("span");

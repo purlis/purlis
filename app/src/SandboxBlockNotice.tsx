@@ -25,6 +25,7 @@ import { moreRefusedSaid, useRefusedMore } from "./refusedMore";
 import { RestartEndsLine } from "./RestartEnds";
 import { Field, SettingRow } from "./settings/components";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Card } from "./ui/card/Card";
 
 /**
  * **What a chat's sandbox blocked, on its tab** (#1338): the operation and the kind of path or
@@ -262,7 +263,7 @@ export function SandboxBlockNotice({
 
   const under =
     draft === undefined ? undefined : (
-      <div className="block-report ui-inline-surface" id={id}>
+      <Card className="block-report" id={id}>
         <p>
           Nothing is sent until you press File report. It would be filed on {draft.repository} as
           you, with purlis&apos;s sign-in to GitHub.
@@ -280,7 +281,7 @@ export function SandboxBlockNotice({
             Cancel
           </Button>
         </ButtonRow>
-      </div>
+      </Card>
     );
 
   return (
@@ -395,7 +396,7 @@ function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () =>
       .finally(() => setBusy(false));
   };
   return (
-    <div className="block-kubectl ui-inline-surface" id={id}>
+    <Card className="block-kubectl" id={id}>
       {pointed ? null : contexts === undefined ? (
         <ButtonRow size="sm">
           <Button size="sm" isDisabled={busy} onPress={list}>
@@ -425,7 +426,7 @@ function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () =>
         </>
       )}
       {said !== undefined && <p>{said}</p>}
-    </div>
+    </Card>
   );
 }
 

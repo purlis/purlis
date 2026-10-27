@@ -314,6 +314,30 @@ impl HarnessAdapter for ClaudeCode {
         false
     }
 
+    /// Yes (SK-16): a grade's chat is armed with purlis's MCP server alone and its read tools
+    /// (`--strict-mcp-config`), is denied the tools that start a sub-agent, and says what it
+    /// spent, so purlis holds it to the grade's limits.
+    fn can_grade(&self) -> bool {
+        true
+    }
+
+    /// The person's own settings that start every chat with its prompts off, or that purlis
+    /// cannot read; a command that turns them off ([`crate::dispatchunattended::bypass_in`]);
+    /// and a command that starts the chat in any mode but the two that ask (#3352), as the
+    /// command's `--permission-mode` outranks the one a grade's session settings pin.
+    fn grade_refused(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        if let Some(why) = settings_keep_a_grade_from_running(env) {
+            return Some(why);
+        }
+        crate::dispatchunattended::bypass_in(command)
+            .or_else(|| mode_that_does_not_ask(command))
+            .map(|flag| prompts_off_by(&flag))
+    }
+
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
     /// `armed`), beside the project settings its arming decided to load ([`project`], ADR 0067
     /// as amended 2026-10-15), and there it is allowed the chat's hook socket, which only the
@@ -647,13 +671,13 @@ const DEFAULT_MODE: &str = "default";
 const BYPASS_MODE: &str = "bypassPermissions";
 
 /// The most of a person's own Claude Code settings read.
-pub const MOST_SETTINGS_BYTES: usize = 1024 * 1024;
+const MOST_SETTINGS_BYTES: usize = 1024 * 1024;
 
 /// **Whether a person's own Claude Code settings, `text`, start every chat with its permission
 /// prompts off** (`permissions.defaultMode: bypassPermissions`), read with a JSON parser. `None`
 /// for a text that does not read as Claude Code's settings, which a caller refuses on: what it
 /// says cannot be known (the review of #3229).
-pub fn bypass_by_default(text: &str) -> Option<bool> {
+fn bypass_by_default(text: &str) -> Option<bool> {
     if text.len() > MOST_SETTINGS_BYTES {
         return None;
     }
@@ -669,6 +693,92 @@ pub fn bypass_by_default(text: &str) -> Option<bool> {
         None => Some(false),
         Some(serde_json::Value::String(mode)) => Some(mode == BYPASS_MODE),
         Some(_) => None,
+    }
+}
+
+/// **Why a grade's chat may not start on a profile whose command holds `flag`**: one that keeps
+/// the chat from ever asking. The one sentence each such flag is refused with.
+fn prompts_off_by(flag: &str) -> String {
+    format!(
+        "This profile's command turns the program's permission prompts off ({}), and a grade \
+         never runs on one: pick another profile.",
+        crate::shown::one_line(flag, 60)
+    )
+}
+
+/// **Claude Code's permission modes a grade's chat may start in** (#3352): each asks before a
+/// tool its rules do not allow, so a grade's "end at the first ask" fires. Every other mode
+/// (`acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`, and any a later version adds) is
+/// refused.
+const GRADED_MODES: [&str; 2] = [DEFAULT_MODE, PLAN_MODE];
+
+/// Claude Code's permission mode that plans and asks before it acts.
+const PLAN_MODE: &str = "plan";
+
+/// **The `--permission-mode` in `command` that names a mode a grade's chat may not start in**,
+/// as it is written, or `None`: read in each spelling [`crate::dispatchunattended::bypass_in`]
+/// reads (`--permission-mode <mode>`, `--permission-mode=<mode>`, the mode quoted or spaced),
+/// every one of them, and one with no mode after it, which takes the next word purlis adds.
+fn mode_that_does_not_ask(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command.iter().enumerate().find_map(|(at, word)| {
+        if !is_flag(word) {
+            return None;
+        }
+        let (flag, attached) = split(word);
+        if flag != PERMISSION_MODE_FLAG {
+            return None;
+        }
+        let value = attached.or_else(|| command.get(at + 1).map(String::as_str));
+        let plain = value.map(|value| value.replace(['"', '\'', ' '], ""));
+        if plain.is_some_and(|mode| GRADED_MODES.contains(&mode.as_str())) {
+            return None;
+        }
+        Some(match (attached, value) {
+            (None, Some(value)) => format!("{flag} {value}"),
+            _ => word.clone(),
+        })
+    })
+}
+
+/// The flag Claude Code starts a chat in a permission mode by.
+const PERMISSION_MODE_FLAG: &str = "--permission-mode";
+
+/// Why a grade cannot know whether a chat keeps its permission prompts: the person's Claude Code
+/// settings are not where purlis can read them.
+const SETTINGS_UNREAD: &str = "purlis could not read this profile's Claude Code settings, so it \
+     cannot tell whether its chats keep their permission prompts, and a grade never runs on one \
+     that does not.";
+
+/// **Why the person's own Claude Code settings, as the chat's environment `env` finds them, keep
+/// a grade from running**, or `None`: settings that start every chat with its permission prompts
+/// off, or settings purlis cannot find or read, as what they say cannot be known (the review of
+/// #3229). No settings file is none of either.
+fn settings_keep_a_grade_from_running(env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+    let unreadable = || Some(SETTINGS_UNREAD.to_owned());
+    let Some(dir) = env.dir("CLAUDE_CONFIG_DIR", ".claude") else {
+        return unreadable();
+    };
+    let file = dir.join("settings.json");
+    let text = match std::fs::metadata(&file) {
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(_) => return unreadable(),
+        Ok(meta) if !meta.is_file() || meta.len() > MOST_SETTINGS_BYTES as u64 => {
+            return unreadable();
+        }
+        Ok(_) => match std::fs::read_to_string(&file) {
+            Ok(text) => text,
+            Err(_) => return unreadable(),
+        },
+    };
+    match bypass_by_default(&text) {
+        Some(false) => None,
+        Some(true) => Some(
+            "Your Claude Code settings start every chat with its permission prompts off, and a \
+             grade never runs on one: turn that off in Claude Code's settings first."
+                .to_owned(),
+        ),
+        None => unreadable(),
     }
 }
 

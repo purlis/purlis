@@ -13,10 +13,20 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import clsx from "clsx";
 import { PersonaMark } from "./PersonaMark";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import { Button, ButtonRow } from "./ui/button/Button";
+import {
+  NoticeBox,
+  NoticeListBox,
+  NoticeMessage,
+  NoticeMoreSays,
+  NoticeRow,
+  NoticeStack,
+  NoticeUnder,
+  NoticeWhose,
+  type NoticeListAt,
+} from "./ui/notice/Notice";
 
 /**
  * **A Notice: a standing line in a project's window about something true now** (CONTEXT.md,
@@ -47,10 +57,14 @@ import { Button, ButtonRow } from "./ui/button/Button";
  *
  * **A Notice in a pane fits its pane, whatever it says** (#1481). It began as one short line;
  * it now also carries a long sentence, three long buttons and what one of them opens. So
- * `at="pane"` draws one box (`notice-pane-box`) holding the line and, under it, what a way out
- * opened. The sentence has the row; the ways out share it only when all of it fits unwrapped,
- * and otherwise go under the sentence; nothing is ever wider or taller than the pane
- * (`App.css`, `.pane-notices`).
+ * `at="pane"` draws one box holding the line and, under it, what a way out opened. The sentence
+ * has the row; the ways out share it only when all of it fits unwrapped, and otherwise go under
+ * the sentence; nothing is ever wider or taller than the pane.
+ *
+ * **It is drawn by the notice family** (#2912, `ui/notice`): its box, its line, what it says and
+ * what a way out opened are the family's parts, its tone the box's variant and where it stands
+ * its placement, and each way out is a button of the button family that says which it is
+ * (`data-way`: `go`, `fix`, `link`, `copy`, `dismiss`; a pane row's `more`).
  *
  * `guard.test` in this folder fails on a standing line built any other way, so a new dead end
  * cannot come back in.
@@ -153,23 +167,13 @@ export function Notice(props: NoticeProps) {
     () => (stacked ? list.register(id, { cause, tone, host }) : undefined),
     [list, cause, host, id, stacked, tone],
   );
-  // The line is a row of its ways out that wraps (`ButtonRow`, #1855), every one small. Standing alone (a
-  // Notice on a Settings page) it is the inline surface itself; in a pane the box is, and in the
-  // Inbox the list's row is.
-  const alone = at === "inbox" && !stacked;
-  const classes = [
-    "notice",
-    `notice-${at}`,
-    tone === "trouble" ? "notice-trouble" : "",
-    alone ? "ui-inline-surface" : "",
-    alone && tone === "trouble" ? "ui-inline-surface-trouble" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  // The line is a row of its ways out that wraps (`ButtonRow`, #1855), every one small. Its box is
+  // the notice family's root: in a pane the box itself, in the Inbox the list's row, and alone
+  // (a Notice on a Settings page) the inline surface.
+  const placement = at === "pane" ? "pane" : stacked ? "inbox" : "alone";
   const line = (
     <ButtonRow
       size="sm"
-      className={classes}
       role="status"
       aria-label={of === null || label === undefined ? label : `${of.whose}: ${label}`}
       data-cause={cause}
@@ -177,14 +181,14 @@ export function Notice(props: NoticeProps) {
       {/* In a pane the mark is the sentence's first word, so it is never left alone on a row
           above a sentence that takes the next one whole (#1481). */}
       {persona != null && at !== "pane" && <PersonaMark persona={persona} />}
-      <div className="notice-says">
+      <NoticeMessage>
         {persona != null && at === "pane" && <PersonaMark persona={persona} />}
-        {of !== null && <strong className="notice-whose">{of.whose}: </strong>}
+        {of !== null && <NoticeWhose>{of.whose}: </NoticeWhose>}
         {children}
-      </div>
+      </NoticeMessage>
       {/* The way to the chat it is about, first: its other ways out answer for that chat. */}
       {of !== null && (
-        <Button size="sm" onPress={of.onGo} className="notice-link notice-go">
+        <Button size="sm" onPress={of.onGo} data-way="go">
           Go to it
         </Button>
       )}
@@ -193,7 +197,7 @@ export function Notice(props: NoticeProps) {
           key={fix.label}
           size="sm"
           variant={fix.allows === true ? "grants" : "secondary"}
-          className="notice-fix"
+          data-way="fix"
           aria-expanded={fix.opens?.open}
           aria-controls={fix.opens?.open ? fix.opens.id : undefined}
           aria-disabled={fix.busy || fix.off !== undefined || undefined}
@@ -211,7 +215,7 @@ export function Notice(props: NoticeProps) {
         </Button>
       ))}
       {link && (
-        <Button size="sm" onPress={link.onPress} className="notice-link">
+        <Button size="sm" onPress={link.onPress} data-way="link">
           {link.label}
         </Button>
       )}
@@ -220,7 +224,7 @@ export function Notice(props: NoticeProps) {
           size="sm"
           tooltip={copy}
           onPress={() => void navigator.clipboard?.writeText(copy).catch(() => undefined)}
-          className="notice-copy"
+          data-way="copy"
         >
           Copy command
         </Button>
@@ -231,7 +235,7 @@ export function Notice(props: NoticeProps) {
           variant="ghost"
           tooltip={dismissSays}
           onPress={onDismiss}
-          className="notice-dismiss"
+          data-way="dismiss"
         >
           Dismiss
         </Button>
@@ -239,33 +243,22 @@ export function Notice(props: NoticeProps) {
     </ButtonRow>
   );
   // What a way out opened is drawn after the line, never inside it: the line is a live region,
-  // and a form in one would be read out again on every keystroke and every refusal.
-  const opened =
-    under === undefined ? null : <div className={`notice-under notice-under-${at}`}>{under}</div>;
-  // **In a pane's corner the line and what it opened are one box** (#1481): the corner lays its
-  // Notices out one under another, and a box of its own is what keeps what a way out opened
-  // under its line and at its width, whatever the pane's width. In the Inbox the two stay
-  // siblings, as the list moves them.
-  const drawn =
-    at === "pane" ? (
-      <div
-        className={clsx(
-          "notice-pane-box ui-inline-surface ui-inline-surface-waiting",
-          opened !== null && "notice-opened",
-        )}
-        // What the pane's row stands first (`NoticePaneRow`): a Notice with something to do
-        // about it, before one whose only way out is to put it away.
-        data-asks={fixes !== undefined || link !== undefined ? "" : undefined}
-      >
-        {line}
-        {opened}
-      </div>
-    ) : (
-      <>
-        {line}
-        {opened}
-      </>
-    );
+  // and a form in one would be read out again on every keystroke and every refusal. **The line
+  // and what it opened are one box** (#1481): what keeps what a way out opened under its line
+  // and at its width, whatever the pane's width; the Inbox's list moves the box whole.
+  const drawn = (
+    <NoticeBox
+      tone={tone}
+      placement={placement}
+      opened={under !== undefined}
+      // What the pane's row stands first (`NoticePaneRow`): a Notice with something to do
+      // about it, before one whose only way out is to put it away.
+      asks={fixes !== undefined || link !== undefined}
+    >
+      {line}
+      {under !== undefined && <NoticeUnder>{under}</NoticeUnder>}
+    </NoticeBox>
+  );
   return stacked ? createPortal(drawn, host) : drawn;
 }
 
@@ -376,19 +369,20 @@ const Listed = createContext<{
  * `into` is where the list is drawn, when that is not where it is written: the window's own
  * lines are written once, and drawn at the top of the page a window with no project shows
  * (D-LB-1). Moving it there moves no Notice's state, since each stays where it is written.
+ * `at` says which of those places it is drawn in (`NoticeListAt`), for its box.
  */
 export function NoticeList({
   children,
   onCount,
   onAnswer,
   into,
-  className,
+  at = "inbox",
 }: {
   children: ReactNode;
   onCount?: (counted: number, listed: number) => void;
   onAnswer?: () => void;
   into?: Element | null;
-  className?: string;
+  at?: NoticeListAt;
 }) {
   const [entries, setEntries] = useState<ReadonlyMap<string, Entry>>(() => new Map());
   // State, not a ref: the list's element changes when it is drawn somewhere else (`into`), and
@@ -450,13 +444,7 @@ export function NoticeList({
     if (arrived) onAnswer?.();
   }, [ordered, onAnswer]);
 
-  const drawn = (
-    <div
-      className={className === undefined ? "notice-list" : `notice-list ${className}`}
-      ref={setListAt}
-      hidden={ordered.length === 0}
-    />
-  );
+  const drawn = <NoticeListBox at={at} ref={setListAt} hidden={ordered.length === 0} />;
   return (
     <Listed.Provider value={list}>
       {children}
@@ -465,9 +453,9 @@ export function NoticeList({
   );
 }
 
-/** **Whether a pane's row of Notices is drawn**: not while it holds none (`.pane-notice-row-empty`
+/** **Whether a pane's row of Notices is drawn**: not while it holds none (the row's `data-empty`
  *  is `display: none`), which is how it starts, until it has counted what it holds (#3302). */
-const rowDrawn = (row: HTMLElement) => !row.classList.contains("pane-notice-row-empty");
+const rowDrawn = (row: HTMLElement) => !row.hasAttribute("data-empty");
 
 /**
  * **A pane's Notices: a row of their own at the top of the pane, above its terminal** (#1647).
@@ -513,7 +501,7 @@ export function NoticePaneRow({
   // Nothing behind it: the list closes, so the next one to fall behind does not open it again.
   if (behind === 0 && open) setOpen(false);
 
-  // Each Notice is one element of the stack (`notice-pane-box`). Read off the stack itself, so
+  // Each Notice is one element of the stack (the notice family's root). Read off the stack itself, so
   // a Notice is counted however deep in the pane's components it is written.
   useLayoutEffect(() => {
     const stack = stackAt.current;
@@ -641,16 +629,16 @@ export function NoticePaneRow({
   }, [open, rowAt]);
 
   return (
-    <div
-      className={count === 0 ? "pane-notice-row pane-notice-row-empty" : "pane-notice-row"}
+    <NoticeRow
+      empty={count === 0}
       // The pane's warnings, named as one place (#3142), while it has any.
       role={count === 0 ? undefined : "region"}
       aria-label={count === 0 ? undefined : "Warnings for this pane"}
       ref={rowAt}
     >
-      <div className="pane-notices" ref={stackAt}>
+      <NoticeStack ref={stackAt}>
         <NoticeWayGuard value={allows}>{children}</NoticeWayGuard>
-      </div>
+      </NoticeStack>
       {said !== undefined && (
         <p className="inbox-refused" role="status">
           {said}
@@ -662,20 +650,12 @@ export function NoticePaneRow({
           ref={moreAt}
           aria-expanded={open}
           onPress={() => setOpen((was) => !was)}
-          className="notice-more-pane"
+          data-way="more"
         >
-          {/* Open, it says how to close it again (#3142). Both are drawn in one cell, the one
-              not said hidden, so the button is as wide as the longer whichever it says. */}
-          <span className="notice-more-says">
-            <span aria-hidden={open || undefined} data-off={open || undefined}>
-              +{behind} more
-            </span>
-            <span aria-hidden={!open || undefined} data-off={!open || undefined}>
-              Show fewer
-            </span>
-          </span>
+          {/* Open, it says how to close it again (#3142). */}
+          <NoticeMoreSays open={open} closed={`+${behind} more`} opened="Show fewer" />
         </Button>
       )}
-    </div>
+    </NoticeRow>
   );
 }

@@ -356,7 +356,11 @@ describe("the Skill studio", () => {
 
     const notice = await screen.findByRole("status", { name: /Skill delete cut short/ });
     expect(notice).toHaveTextContent(line);
-    expect(notice).not.toHaveClass("notice-trouble");
+    // The notice family's box says its tone (#2912).
+    expect(notice.closest('[data-scope="notice"][data-part="root"]')).toHaveAttribute(
+      "data-variant",
+      "news",
+    );
     await waitFor(() =>
       expect(calls.filter((cmd) => cmd === "skill_studio").length).toBeGreaterThanOrEqual(2),
     );
@@ -375,7 +379,10 @@ describe("the Skill studio", () => {
     const notice = await screen.findByRole("status", {
       name: /A skill delete could not be finished/,
     });
-    expect(notice).toHaveClass("notice-trouble");
+    expect(notice.closest('[data-scope="notice"][data-part="root"]')).toHaveAttribute(
+      "data-variant",
+      "trouble",
+    );
     expect(notice).toHaveTextContent(`${failed} ${finished}`);
   });
 
@@ -598,6 +605,7 @@ function withClaudeCode(offLangfuse: boolean) {
         outside: "repo",
         owner: { kind: "repo", name: "api" },
         outcome: "both-load",
+        said: "the repo api has a skill of this name too, and a chat there gets both",
       },
     ],
     harnesses: [
@@ -809,9 +817,35 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     ).toBeInTheDocument();
   });
 
-  it("says a Codex or opencode chat in the repo gets the repo's copy alone", async () => {
+  it("marks no clash on a copy left out, which no chat gets (SK-46)", async () => {
     const studio = withClaudeCode(false);
-    studio.clashes = [{ ...studio.clashes[0], harness: "opencode", outcome: "repo-wins" }];
+    answering({
+      ...studio,
+      skills: [
+        {
+          ...studio.skills[0],
+          on: false,
+          left_out: "hidden by another project skill of this name",
+        },
+        ...studio.skills.slice(1),
+      ],
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+
+    await screen.findByTestId("skill-review");
+    expect(screen.queryByTestId("clash-review")).toBeNull();
+  });
+
+  it("marks a clash in the core's words, as `purlis skill list` says it (SK-46)", async () => {
+    const studio = withClaudeCode(false);
+    studio.clashes = [
+      {
+        ...studio.clashes[0],
+        harness: "opencode",
+        outcome: "repo-wins",
+        said: "the repo api has a skill of this name too, and opencode chats there get the repo's copy alone",
+      },
+    ];
     answering(studio);
     render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
 

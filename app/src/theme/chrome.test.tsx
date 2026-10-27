@@ -1395,7 +1395,7 @@ const DIALOGS: Opened[] = [
 
 /** Opens the menu of the vault tab's row for `key` and picks `item`. */
 async function fromTheMenuOf(key: string, item: string) {
-  await userEvent.click(await screen.findByRole("button", { name: key }));
+  await userEvent.click(await screen.findByRole("button", { name: `More for ${key}` }));
   await userEvent.click(await screen.findByRole("menuitem", { name: item }));
 }
 

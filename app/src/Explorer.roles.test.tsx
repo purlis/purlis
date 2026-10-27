@@ -169,8 +169,8 @@ describe("the Explorer's words, each on its text role", () => {
 
     const clone = within(drawn).getByTestId("clone-svc");
     wears(clone.querySelector(".repo"), "body", "a repo's name", true);
-    // A count is meta at the strong weight (T5).
-    wears(clone.querySelector(".piece-count"), "meta", "how many branches", true);
+    // A count is the count family's pill (#2912), its number at the strong weight (T5).
+    expect(clone.querySelector(".piece-count")).toHaveAttribute("data-scope", "count");
     drawnAs(clone.querySelector(".spot .spot-name"), "body", "a branch's name");
     wears(clone.querySelector(".spot-in"), "secondary", "the repo a branch is in");
     wears(clone.querySelector(".worktree"), "meta", "a branch's marks");

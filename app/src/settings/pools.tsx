@@ -10,6 +10,7 @@ import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
+import { Badge } from "../ui/badge/Badge";
 
 /**
  * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
@@ -153,7 +154,7 @@ function PoolEntry({
       <Tooltip tip={pool.image}>
         <span className="ui-machine-path">{limitsSaid(pool)}</span>
       </Tooltip>
-      <span className="ui-setting-badge">{linkSaid(link)}</span>
+      <Badge variant="accent">{linkSaid(link)}</Badge>
       <Button
         size="sm"
         aria-label={removing ? `Removing pool ${pool.name}` : `Remove pool ${pool.name}`}

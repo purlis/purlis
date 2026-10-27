@@ -27,6 +27,15 @@ import { ChatMark } from "../../NeedsYou";
 import { SettingGroup, SettingsLayout } from "../../settings/components";
 import { useTabIds, StripTablist } from "../../StripTablist";
 import { Button } from "../button/Button";
+import {
+  ControlBody,
+  ControlCell,
+  ControlColumn,
+  ControlHead,
+  ControlRow,
+  ControlRowHeading,
+  ControlTable,
+} from "../table/ControlTable";
 import { panelRoot } from "../panel/Panel";
 import { editorToolbar, TabCell, tabPart, tabsPart, ToolbarFile } from "./Tabs";
 import { expectFocusInSight } from "../../stories.testkit";
@@ -222,28 +231,28 @@ function Body({ shown }: { shown: Shown }): ReactNode {
       );
     case "vault":
       return (
-        <table className="ui-table">
-          <thead>
-            <tr>
-              <th scope="col">Key</th>
-              <th scope="col">Value</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
+        <ControlTable aria-label="Secrets in forge">
+          <ControlHead>
+            <ControlColumn>Key</ControlColumn>
+            <ControlColumn>Value</ControlColumn>
+            <ControlColumn actions>Actions</ControlColumn>
+          </ControlHead>
+          <ControlBody>
             {MANY.map((_, at) => `SECRET_${at + 1}`).map((key) => (
-              <tr key={key}>
-                <td>
+              <ControlRow key={key}>
+                <ControlRowHeading>
                   <code>{key}</code>
-                </td>
-                <td>••••••••</td>
-                <td style={{ textAlign: "end" }}>
-                  <Button size="sm">Copy</Button>
-                </td>
-              </tr>
+                </ControlRowHeading>
+                <ControlCell>••••••••</ControlCell>
+                <ControlCell actions>
+                  <Button size="sm" aria-label={`Copy ${key}`}>
+                    Copy
+                  </Button>
+                </ControlCell>
+              </ControlRow>
             ))}
-          </tbody>
-        </table>
+          </ControlBody>
+        </ControlTable>
       );
     case "persona":
       return (

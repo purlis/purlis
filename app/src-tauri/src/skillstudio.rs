@@ -363,6 +363,9 @@ pub struct StudioClash {
     pub outside: Level,
     pub owner: Owner,
     pub outcome: ClashOutcome,
+    /// What the row of the plane's copy says of it, in the core's words
+    /// (`purlis_core::skills::clash_said`, SK-46): the same line `purlis skill list` prints.
+    pub said: String,
 }
 
 /// What came of a clash.
@@ -686,6 +689,7 @@ fn harnesses(
                         purlis_core::skills::Outcome::RepoWins => ClashOutcome::RepoWins,
                         purlis_core::skills::Outcome::EitherOne => ClashOutcome::EitherOne,
                     },
+                    said: purlis_core::skills::clash_said(one.harness, clash),
                 });
             }
             StudioHarness {
@@ -1021,15 +1025,17 @@ pub struct SkillPanel {
     pub refused: Option<String>,
 }
 
-/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`.
+/// The panels on skill `skill`'s tab in the project at `root`, asked with `studio`, the Grades
+/// panel of the copy at `level` (#3353).
 pub(crate) fn panels(
     root: &std::path::Path,
     skill: &str,
+    level: Option<&purlis_core::skills::verbs::Level>,
     studio: Option<purlis_core::skills::studio::Studio<'_>>,
 ) -> Vec<SkillPanel> {
     let answered = match studio {
-        Some(studio) => studio.panels(root, skill),
-        None => purlis_core::skills::studio::own_panels(root, skill),
+        Some(studio) => studio.panels(root, skill, level),
+        None => purlis_core::skills::studio::own_panels(root, skill, level),
     };
     answered
         .into_iter()
@@ -1052,8 +1058,9 @@ pub(crate) fn panels(
         .collect()
 }
 
-/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
-/// run of the skill, newest first, then each extension's. None while the flag is off. On a
+/// **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
+/// `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
+/// every run of the skill, newest first, then each extension's. None while the flag is off. On a
 /// blocking thread, as it reads the project's skill log and asks each extension.
 #[tauri::command]
 #[specta::specta]
@@ -1062,6 +1069,7 @@ pub(crate) async fn skill_panels(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     skill: String,
+    level: Option<crate::skillchange::SkillLevel>,
 ) -> Result<Vec<SkillPanel>, String> {
     let held = planes.held(&plane)?;
     let executor = views.executor();
@@ -1072,7 +1080,10 @@ pub(crate) async fn skill_panels(
         Ok(purlis_core::skills::studio::with_studio(
             &executor,
             held.root(),
-            |studio| panels(held.root(), &skill, studio),
+            |studio| {
+                let level = level.as_ref().map(purlis_core::skills::verbs::Level::from);
+                panels(held.root(), &skill, level.as_ref(), studio)
+            },
         ))
     })
     .await

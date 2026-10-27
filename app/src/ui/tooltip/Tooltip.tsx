@@ -145,6 +145,17 @@ export function onTooltipEscape(dismiss: () => void): () => void {
 /** The elements that take the keyboard of their own. */
 const NATIVELY_FOCUSED = new Set(["button", "a", "input", "select", "textarea", "summary"]);
 
+/** The family components that draw words and nothing a keyboard takes (a badge, #2912): a hint
+ *  on one makes it a Tab stop, as on a `span`. */
+const WORDS = new WeakSet<object>();
+
+/** Says that `component` draws words, handing its props and its ref to its element: a hint on it
+ *  makes it a Tab stop. */
+export function drawsWords<T extends object>(component: T): T {
+  WORDS.add(component);
+  return component;
+}
+
 /** A hint: words, or what a hint must show beyond words (a path set as code). */
 export type Tip = ReactNode;
 
@@ -309,7 +320,10 @@ function Target({
     String(props["aria-hidden"]) === "true";
   // Only words are made a Tab stop: a control takes the keyboard already, and a component (a
   // Radix radio, a menu's row) keeps the place in the Tab order its own focus gives it.
-  const words = typeof children.type === "string" && !NATIVELY_FOCUSED.has(children.type);
+  const words =
+    typeof children.type === "string"
+      ? !NATIVELY_FOCUSED.has(children.type)
+      : WORDS.has(children.type as object);
   const { tabIndex, onFocus, onBlur, ...rest } = focusableProps;
   // The keyboard's focus opens no tooltip that only repeats what the element says.
   const focusable = theirs ? rest : { ...rest, onFocus, onBlur };

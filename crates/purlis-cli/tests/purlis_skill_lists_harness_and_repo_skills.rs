@@ -453,7 +453,7 @@ fn skill_list_says_under_codex_and_opencode_which_skills_a_repo_leaves_out_and_w
         assert_eq!(row(&lost, "SKILL"), "SKILL LEVEL STATE", "{text}");
         assert_eq!(
             row(&lost, "deploy"),
-            "deploy workspace left out: hidden by the repo skill of this name",
+            "deploy workspace left out: hidden by the skill of this name in the repo app",
             "{text}"
         );
     }
@@ -477,6 +477,87 @@ fn skill_list_says_under_codex_and_opencode_which_skills_a_repo_leaves_out_and_w
     assert_eq!(codex["repo_left_out"][0]["level"], "workspace");
     assert_eq!(
         codex["repo_left_out"][0]["left_out"],
-        "hidden by the repo skill of this name"
+        "hidden by the skill of this name in the repo app"
+    );
+}
+
+#[test]
+fn skill_list_marks_a_project_skill_a_repo_has_a_copy_of_as_the_studio_does() {
+    // SK-46 (#3149), decision 51: the clone `app` has its own `deploy` for every program, so the
+    // project's `deploy` clashes on each, and the list says so on its row, in the studio's words.
+    let project = Project::new();
+    let root = project.at.join("plane");
+    // Granted to `alpha`, so a chat there gets the project's copy.
+    std::fs::write(root.join("skills/deploy.toml"), "grant = \"all\"\n").unwrap();
+    write_skill(&project.clone_skills(), "deploy", "The repo's deploy.");
+    write_skill(
+        &root.join("workspaces/alpha/app/.agents/skills"),
+        "deploy",
+        "The repo's deploy, for Codex and opencode.",
+    );
+
+    let out = project.run(&["skill", "list", "-w", "alpha"]);
+    let json = project.run(&["skill", "list", "-w", "alpha", "--json"]);
+    let show = project.run(&["skill", "show", "deploy", "-w", "alpha"]);
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    let deploy = row(&text.lines().collect::<Vec<_>>(), "deploy");
+    let both = "the repo app has a skill of this name too, and a chat there gets both";
+    let alone = |title: &str| {
+        format!(
+            "the repo app has a skill of this name too, and {title} chats there get the repo's copy alone"
+        )
+    };
+    let squeezed = |said: &str| said.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        deploy.starts_with(&format!("deploy project on; also: {both}")),
+        "{text}"
+    );
+    for title in ["Codex", "opencode"] {
+        assert!(deploy.contains(&squeezed(&alone(title))), "{text}");
+    }
+
+    assert!(json.status.success(), "{}", stderr(&json));
+    let doc: serde_json::Value = serde_json::from_str(&stdout(&json)).unwrap();
+    let deploy = doc["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|skill| skill["name"] == "deploy")
+        .expect("the project's deploy listed");
+    let clashes = deploy["clashes"].as_array().unwrap();
+    let claude = clashes
+        .iter()
+        .find(|one| one["harness"] == "claude")
+        .unwrap_or_else(|| panic!("a Claude Code clash: {deploy}"));
+    assert_eq!(claude["outcome"], "both-load");
+    assert_eq!(claude["outside"], "repo");
+    assert_eq!(
+        claude["owner"],
+        serde_json::json!({"kind": "repo", "name": "app"})
+    );
+    assert_eq!(claude["said"], both);
+    let codex = clashes
+        .iter()
+        .find(|one| one["harness"] == "codex")
+        .unwrap_or_else(|| panic!("a Codex clash: {deploy}"));
+    assert_eq!(codex["outcome"], "repo-wins");
+    assert_eq!(codex["said"], alone("Codex"));
+    assert!(
+        doc["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|skill| skill["name"] != "deploy")
+            .all(|skill| skill["clashes"] == serde_json::json!([])),
+        "only deploy clashes: {doc}"
+    );
+
+    assert!(show.status.success(), "{}", stderr(&show));
+    assert!(
+        stdout(&show).contains(&format!("  also: {both}\n")),
+        "{}",
+        stdout(&show)
     );
 }

@@ -24,6 +24,8 @@
      system's pair for what is marked, apart from every plain count.
    - **What ends or destroys** (a danger button, a danger row, a ground that says something is
      wrong) is outlined dashed, so it is told from its neighbours by a shape.
+   - **A refused box** (a text input, a textarea, a select, a combobox, #3335) draws its own edge
+     dashed, so it is told from a box whose value is taken by a shape.
    - **What is opened over the window** (a dialog, a menu, a list, a tip) is outlined, because
      the shadow that lifted it is gone.
 
@@ -45,14 +47,16 @@
   [data-scope="menu"][data-part="root"][data-focused]:not([data-disabled]),
   [data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled]),
   [data-scope="menu"][data-part="root"][data-open],
-  [data-scope="list"][data-part="root"][data-selected] {
+  [data-scope="list"][data-part="root"][data-selected],
+  [data-scope="tree"][data-part="root"][data-selected] {
     forced-color-adjust: none;
     color: SelectedItemText;
     background-color: SelectedItem;
   }
 
-  /* A chosen row of a list keeps its edge down its start: its shape (#2911). */
-  [data-scope="list"][data-part="root"][data-selected] {
+  /* A chosen row of a list or a tree keeps its edge down its start: its shape (#2911). */
+  [data-scope="list"][data-part="root"][data-selected],
+  [data-scope="tree"][data-part="root"][data-selected] {
     box-shadow: inset 2px 0 0 SelectedItemText;
   }
 
@@ -78,6 +82,7 @@
   [data-scope="menu"][data-part="root"][data-disabled],
   [data-scope="menu"][data-part="root"][data-unavailable],
   [data-scope="list"][data-part="root"][data-disabled],
+  [data-scope="tree"][data-part="root"][data-disabled],
   [data-scope="checkbox"][data-part="root"][data-disabled],
   [data-scope="radio"][data-part="root"][data-disabled],
   [data-scope="switch"][data-part="root"][data-disabled],
@@ -159,9 +164,8 @@
   }
 
   /* What needs you: the system's pair for what is marked. */
-  .count-pill-needs,
-  .show-more-needs,
   [data-scope="activity"][data-part="count"][data-tone="needs-you"],
+  [data-scope="count"][data-part="root"][data-variant="hot"],
   [data-scope="status-item"][data-variant="waiting"] > [data-part="count"],
   .repo-instruction-text .invisible-char {
     forced-color-adjust: none;
@@ -175,11 +179,25 @@
   [data-scope="menu"][data-part="root"][data-variant="danger"],
   [data-scope="status-item"][data-part="root"][data-tone="danger"],
   .trouble,
-  .ui-inline-surface-trouble,
-  .notice-list .notice-inbox.notice-trouble,
+  [data-scope="notice"][data-part="root"][data-variant="trouble"],
   .ui-setting-error p {
     outline: 2px dashed CanvasText;
     outline-offset: -2px;
+  }
+
+  /* A refused box: its own edge dashed, in the words' colour (#3335). The edge it has already,
+     the same width, so nothing moves; and not an outline, which a text box's focus ring is. A
+     theme's colour is replaced here anyway, and a theme cannot take the edge's width away. A
+     refused box that is also unavailable keeps this edge in CanvasText rather than GrayText: it
+     is still refused, and its words are GrayText by the rule above. */
+  :is(
+      [data-scope="text-input"],
+      [data-scope="textarea"],
+      [data-scope="select"],
+      [data-scope="combobox"]
+    )[data-part="root"][data-invalid] {
+    border-style: dashed;
+    border-color: CanvasText;
   }
 
   /* What is opened over the window, outlined in place of the shadow that lifted it. An outline

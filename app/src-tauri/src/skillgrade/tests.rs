@@ -34,7 +34,10 @@ fn planned(query: &str) -> Planned {
         } else {
             Vec::new()
         },
-        left_out: vec![(1, "it starts with a dash".into())],
+        left_out: vec![grades::LeftOut {
+            at: 1,
+            why: "it starts with a dash".into(),
+        }],
         cap: grades::cap::Cap {
             tokens: 50_000,
             from: grades::cap::From::Yours,
@@ -58,7 +61,10 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     assert_eq!(plan.tests[0].query, "ship it⟦U+202E⟧now");
     assert_eq!(
         plan.left_out,
-        vec!["Test 2: it starts with a dash".to_owned()]
+        vec![GradeLeftOut {
+            at: 1,
+            why: "it starts with a dash".to_owned()
+        }]
     );
     assert_eq!(
         plan.outcomes_refused.as_deref(),
@@ -93,4 +99,32 @@ fn a_grade_that_is_not_running_cannot_be_stopped() {
     let plane = PlaneId::for_tests(std::path::Path::new("/planes/p"));
     let said = tauri::async_runtime::block_on(skill_grade_stop(plane, "nope".into()));
     assert!(said.is_err());
+}
+
+/// #3353 (L3): a panic inside a grade ends it as failed, and it is not running after.
+#[test]
+fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
+    let plane: PlaneId = serde_json::from_value(serde_json::json!("plane-of-a-panic")).unwrap();
+    for (grade, panics) in [("panics", true), ("ends", false)] {
+        running().insert(
+            grade.to_owned(),
+            Running {
+                plane: plane.clone(),
+                skill: "deploy".into(),
+                stop: Arc::new(AtomicBool::new(false)),
+            },
+        );
+        let failed = std::cell::Cell::new(false);
+        held_to_its_end(
+            grade,
+            || {
+                if panics {
+                    panic!("a fault in the grade");
+                }
+            },
+            || failed.set(true),
+        );
+        assert_eq!(failed.get(), panics, "{grade}");
+        assert_eq!(running_of(&plane, "deploy"), None, "{grade} is not running");
+    }
 }
