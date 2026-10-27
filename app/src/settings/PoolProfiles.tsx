@@ -36,11 +36,19 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
   if (rows === undefined || rows === "asking") {
     return <p className="ui-setting-help">Asking the runner about this machine&apos;s profiles…</p>;
   }
+  const again = (
+    <Button size="sm" onPress={() => void askProfiles(pool)}>
+      Ask again
+    </Button>
+  );
   if (!Array.isArray(rows)) {
     return (
-      <p className="ui-setting-help" role="alert">
-        {rows.trouble}
-      </p>
+      <>
+        <p className="ui-setting-help" role="alert">
+          {rows.trouble}
+        </p>
+        {again}
+      </>
     );
   }
   if (rows.length === 0) {
@@ -85,9 +93,7 @@ export function PoolProfiles({ pool, plane }: { pool: string; plane: string | un
           </li>
         ))}
       </ul>
-      <Button size="sm" onPress={() => void askProfiles(pool)}>
-        Ask again
-      </Button>
+      {again}
     </>
   );
 }

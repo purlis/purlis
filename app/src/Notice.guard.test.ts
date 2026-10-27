@@ -537,6 +537,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". The Pools group's read refusing (#2679), in the core's words: the group is read again " +
       "as it comes on screen. A runner whose key changed has a Notice of its own",
   },
+  "settings/PoolProfiles.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on",
+  },
   "settings/accounts.tsx": {
     count: 2,
     why:
