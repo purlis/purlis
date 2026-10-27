@@ -1320,6 +1320,20 @@ const STATES: State[] = [
     drawn: /holds no program/,
   },
   {
+    name: "a browser's DevTools, open",
+    view: { from: null, view: "devtools", key: "01J9ZQ8000000000000000000D" },
+    answers: {
+      watch_inspector: { view: 5, width: 1000, height: 700, person_drives: true, pool: null },
+    },
+    drawn: /DevTools of this browser's page/,
+  },
+  {
+    name: "a browser's DevTools, closed",
+    view: { from: null, view: "devtools", key: "01J9ZQ8000000000000000000D" },
+    answers: { watch_inspector: new Error("no DevTools are open for this browser") },
+    drawn: /DevTools are closed/,
+  },
+  {
     name: "a workspace's changes, a landing refused",
     view: CHANGES,
     answers: {

@@ -331,7 +331,9 @@ impl Browser {
         let front_end = devtools
             .call(
                 "Target.createTarget",
-                json!({ "url": "about:blank", "browserContextId": context }),
+                // A window of its own, so it paints beside the page it inspects, each in front in
+                // its own window: a headless engine paints only the page in front.
+                json!({ "url": "about:blank", "browserContextId": context, "newWindow": true }),
                 None,
             )
             .map_err(refusal)?["targetId"]

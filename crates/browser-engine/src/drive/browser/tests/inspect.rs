@@ -112,6 +112,10 @@ fn the_front_end_runs_the_engines_own_devtools_in_a_context_of_its_own_that_is_n
     assert!(browser.inspecting());
     let made = engine.sent("Target.createTarget");
     assert_eq!(made[0].params["browserContextId"], "CONTEXT-DEVTOOLS");
+    assert_eq!(
+        made[0].params["newWindow"], true,
+        "in front in a window of its own"
+    );
     let went = engine.sent("Page.navigate");
     let front = went
         .iter()
