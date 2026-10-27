@@ -16,9 +16,10 @@
 
 use std::path::{Path, PathBuf};
 
+use purlis_skills::held::{Follow, Folder, Opened};
 use purlis_skills::{Origin, OutsideSkill, Owner, Skill, Switch, Unread};
 
-use super::{Adapter, Child, Choices, Env, Folder, SkillsAt};
+use super::{Adapter, Choices, Env, SkillsAt};
 
 /// One skill [`skills_in`] found: the skill, the root its `SKILL.md` is read from, and why
 /// purlis did not read it, where it did not.
@@ -44,7 +45,7 @@ pub fn harness_skills(
 ) -> Vec<OutsideSkill> {
     let mut out: Vec<OutsideSkill> = Vec::new();
     for (dir, plugin) in roots(&adapter.skills_at(env)) {
-        let Some(held) = Folder::open(&dir, true) else {
+        let Some(held) = Folder::open(&dir, Follow::Link) else {
             continue;
         };
         // The person's own folder is read as it is, a link an installer left included.
@@ -68,7 +69,7 @@ pub fn repo_skills(
 ) -> Vec<OutsideSkill> {
     let mut out = Vec::new();
     for clone in clones {
-        let Some(top) = Folder::open(&clone.path, false) else {
+        let Some(top) = Folder::open(&clone.path, Follow::NoLink) else {
             continue;
         };
         for rel in adapter.repo_skill_dirs() {
@@ -152,9 +153,9 @@ fn roots(at: &[SkillsAt]) -> Vec<(PathBuf, Option<String>)> {
 /// The folder `rel` (`a/b`) under `top`, opened one step at a time and never through a link.
 fn walk(top: &Folder, rel: &str) -> Option<Folder> {
     let mut steps = rel.split('/');
-    let step = |at: &Folder, name: &str| match at.child(name, false) {
-        Child::Folder(next) => Some(next),
-        Child::Link | Child::Absent => None,
+    let step = |at: &Folder, name: &str| match at.child(name, Follow::NoLink) {
+        Opened::Folder(next) => Some(next),
+        Opened::Link | Opened::Absent => None,
     };
     let mut at = step(top, steps.next()?)?;
     for name in steps {
@@ -185,7 +186,7 @@ fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<Found
         };
         (skill, root.to_path_buf(), Some(why))
     };
-    let mut names = match dir.names() {
+    let names = match dir.names() {
         Ok(names) => names,
         Err(why) => {
             let skill = Skill {
@@ -194,14 +195,13 @@ fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<Found
                     .map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
                 description: format!(
                     "{}, so none of its skills is read here. A chat still finds them.",
-                    capitalized(&why.said())
+                    capitalized(&why.to_string())
                 ),
                 path: shown.join(purlis_skills::FILE),
             };
             return vec![(skill, root.to_path_buf(), Some(Unread::Crowded))];
         }
     };
-    names.sort();
     let refused = format!(
         "purlis does not read a SKILL.md that is a link{} or larger than {} KiB, so it is not \
          checked here. A chat still loads it.",
@@ -212,11 +212,16 @@ fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<Found
         purlis_skills::MOST_BYTES / 1024
     );
     let mut out = Vec::new();
-    for name in names {
+    // A name that is no text names no skill a harness loads by it.
+    for name in names.into_iter().filter_map(|name| name.into_string().ok()) {
         let path = shown.join(&name).join(purlis_skills::FILE);
-        match dir.child(&name, links == Links::Followed) {
-            Child::Folder(_) => {}
-            Child::Link => {
+        let follow = match links {
+            Links::Followed => Follow::Link,
+            Links::Named => Follow::NoLink,
+        };
+        match dir.child(&name, follow) {
+            Opened::Folder(_) => {}
+            Opened::Link => {
                 out.push(unread(
                     &name,
                     "A link purlis does not follow, so what it holds is not read here. A chat in \
@@ -226,7 +231,7 @@ fn skills_in(dir: &Folder, shown: &Path, links: Links, root: &Path) -> Vec<Found
                 ));
                 continue;
             }
-            Child::Absent => continue,
+            Opened::Absent => continue,
         }
         let (root, origin) = match links {
             Links::Named => (root.to_path_buf(), Origin::Repo),

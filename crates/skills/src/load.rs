@@ -204,7 +204,7 @@ impl SkillFolder {
 
     /// Its `SKILL.md`, read as [`crate::read_skill_md`] reads one.
     pub fn skill_md(&self) -> Result<String, crate::Refusal> {
-        crate::handed::read_held(&self.0, crate::FILE.as_ref())
+        crate::handed::read_held(&self.0, crate::FILE)
     }
 
     /// Its `SKILL.md`, read as [`crate::read_skill_md_of`] reads one of a skill from `origin`.
@@ -214,7 +214,7 @@ impl SkillFolder {
         } else {
             crate::held::HardLinks::Refused
         };
-        crate::handed::read_held_as(&self.0, crate::FILE.as_ref(), hard_links)
+        crate::handed::read_held_as(&self.0, crate::FILE, hard_links)
     }
 
     /// **Every folder and plain file under it but a `SKILL.md`**, by its path inside it, each
@@ -241,14 +241,14 @@ impl SkillFolder {
             Some(std::path::Component::Normal(part)) => part,
             Some(_) => return None,
         };
-        let Opened::Folder(mut at) = self.0.child(first) else {
+        let Opened::Folder(mut at) = self.0.child(first, crate::held::Follow::NoLink) else {
             return None;
         };
         for part in parts {
             let std::path::Component::Normal(part) = part else {
                 return None;
             };
-            let Opened::Folder(next) = at.child(part) else {
+            let Opened::Folder(next) = at.child(part, crate::held::Follow::NoLink) else {
                 return None;
             };
             at = next;
@@ -276,8 +276,9 @@ fn walk(
     entries: &mut Vec<Entry>,
     files: &mut usize,
 ) {
-    use crate::held::{Kind, Opened};
-    for name in dir.names() {
+    use crate::held::{Follow, Kind, Opened};
+    // A folder of more names than purlis reads of one lists none of them (SK-52).
+    for name in dir.names().unwrap_or_default() {
         if *files >= MOST_FILES {
             return;
         }
@@ -288,7 +289,7 @@ fn walk(
                 *files += 1;
             }
             Some(Kind::Folder) if depth + 1 < MOST_DEPTH => {
-                if let Opened::Folder(inner) = dir.child(&name) {
+                if let Opened::Folder(inner) = dir.child(&name, Follow::NoLink) {
                     entries.push(Entry::Folder(path.clone()));
                     walk(&inner, &path, depth + 1, entries, files);
                 }

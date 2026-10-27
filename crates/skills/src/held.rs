@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **Folders held open and read by name through their handle, never through a link** (SK-36,
-//! #3017): the one way purlis reads a skill's folder, its `SKILL.md` and the files beside it.
+//! #3017): the one way purlis reads a skill's folder, its `SKILL.md` and the files beside it, and
+//! the one folder-handle reader of the workspace (SK-52, #3205): purlis-core lists a harness's
+//! configs and plugin folders, and the folders of skills from outside the plane, through it too.
+//!
+//! **Following a link is the caller's choice at each step** ([`Follow`]): a folder a chat can
+//! write is read with no link followed, and the person's own folders (their skills, opencode's
+//! global directory) the way their harness reads them. **Each folder's names are read whole or
+//! not at all**, at most [`MOST_NAMES`] of them ([`Folder::names`]).
 //!
 //! A chat can write the plane's skills, so purlis never asks about a path and then opens it
 //! again. A level's folder is reached from a folder purlis trusts (the plane's root, the bundle's
@@ -16,7 +23,7 @@ use std::path::{Component, Path, PathBuf};
 
 /// Why [`read_plain`] or [`Folder::read`] read nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum NotRead {
+pub enum NotRead {
     /// It could not be read: what the system said.
     Unreadable(String),
     /// It is a link, a hard link (a file with another name too), or no plain file, or it changed
@@ -28,7 +35,7 @@ pub(crate) enum NotRead {
 
 /// Whether a file with a second name (a hard link) is read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HardLinks {
+pub enum HardLinks {
     /// Refused: it reaches past its folder as a link does. A folder a chat can write.
     Refused,
     /// Read: the person's own folders, where the Nix store, `cp -al` and `rsync --link-dest`
@@ -50,7 +57,7 @@ impl std::fmt::Display for NotRead {
 
 /// What a name in a [`Folder`] is, never following a link to say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Kind {
+pub enum Kind {
     Folder,
     File,
     /// A link, and whether it leads to a folder.
@@ -60,8 +67,66 @@ pub(crate) enum Kind {
     Other,
 }
 
+/// Whether a step opens a folder through a link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Follow {
+    /// Through a link, as the person's own harness reads their folders.
+    Link,
+    /// Never through a link: a folder a chat can write. A link there is [`Opened::Link`].
+    NoLink,
+}
+
+/// **The most names purlis reads of one folder** (SK-44, #3133; SK-52, #3205): a clone's skills
+/// folder, a plane level and a project's plugin folder are a chat's to fill, and each name read
+/// is opened, read and linted. A folder holding more is read for none of them ([`NotListed`]).
+pub const MOST_NAMES: usize = 2000;
+
+/// Why a folder's names are not listed whole ([`Folder::names`]): nothing of it is read then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotListed {
+    /// It holds more than [`MOST_NAMES`].
+    Crowded,
+    /// Reading it failed, at its start or partway.
+    Unreadable,
+}
+
+/// What is said of a folder purlis did not list: "a folder of more than 2000 names, the most
+/// purlis reads of one", or "a folder purlis could not read whole".
+impl std::fmt::Display for NotListed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Crowded => write!(
+                f,
+                "a folder of more than {MOST_NAMES} names, the most purlis reads of one"
+            ),
+            Self::Unreadable => f.write_str("a folder purlis could not read whole"),
+        }
+    }
+}
+
+/// **A folder's names, whole or not at all**, by name: [`NotListed::Crowded`] past
+/// [`MOST_NAMES`], read no further than one past them, and [`NotListed::Unreadable`] where an
+/// entry could not be read, so a short list is never taken for the whole.
+fn names_whole<E>(
+    names: impl Iterator<Item = Result<OsString, E>>,
+) -> Result<Vec<OsString>, NotListed> {
+    let mut out = Vec::new();
+    for name in names {
+        let name = name.map_err(|_| NotListed::Unreadable)?;
+        if name == "." || name == ".." {
+            continue;
+        }
+        if out.len() == MOST_NAMES {
+            return Err(NotListed::Crowded);
+        }
+        out.push(name);
+    }
+    out.sort();
+    Ok(out)
+}
+
 /// What opening a folder came to.
-pub(crate) enum Opened {
+pub enum Opened {
     Folder(Folder),
     /// A link where a folder should be: never opened through.
     Link,
@@ -144,8 +209,9 @@ pub(crate) fn read_plain(path: &Path, most: u64) -> Result<String, NotRead> {
     read_opened(file, most, HardLinks::Refused)
 }
 
-/// A folder held open, and the path it is shown at.
-pub(crate) struct Folder {
+/// **A folder held open, and the path it is shown at**: everything in it is opened relative to
+/// that one handle, so a link put in place after it was opened is never read through.
+pub struct Folder {
     #[cfg(unix)]
     fd: rustix::fd::OwnedFd,
     shown: PathBuf,
@@ -153,23 +219,31 @@ pub(crate) struct Folder {
 
 impl Folder {
     /// The path it is shown at: where a skill's files are said to be.
-    pub(crate) fn shown(&self) -> &Path {
+    pub fn shown(&self) -> &Path {
         &self.shown
+    }
+
+    /// **The folder at `path`**, through a link at its last step only where `follow` says, and
+    /// as it is above it: for a folder whose path purlis trusts up to its last part (a
+    /// workspace's folder, a clone, the person's own folders). `None` where nothing there opens
+    /// as a folder so.
+    pub fn open(path: &Path, follow: Follow) -> Option<Self> {
+        Self::open_at(path, follow)
     }
 
     /// **`rel` under `root`**: `root` opened as it is (the plane's root, the bundle's plugin
     /// folder, which may sit under links of the person's own), then each part of `rel` through
     /// the handle of the one above, never following a link. [`Opened::Link`] where any part is
     /// one.
-    pub(crate) fn walk(root: &Path, rel: &Path) -> Opened {
+    pub fn walk(root: &Path, rel: &Path) -> Opened {
         let Some(parts) = parts(rel) else {
             return Opened::Absent;
         };
-        let Some(mut at) = Self::open_root(root) else {
+        let Some(mut at) = Self::open_at(root, Follow::Link) else {
             return Opened::Absent;
         };
         for part in parts {
-            at = match at.child(part) {
+            at = match at.child(part, Follow::NoLink) {
                 Opened::Folder(next) => next,
                 other => return other,
             };
@@ -177,20 +251,31 @@ impl Folder {
         Opened::Folder(at)
     }
 
-    /// Every name in it but `.` and `..`, by name.
-    pub(crate) fn names(&self) -> Vec<OsString> {
-        let mut names = self.listed();
-        names.sort();
-        names
+    /// **Every name in it but `.` and `..`, by name**, whole or not at all: at most
+    /// [`MOST_NAMES`] ([`NotListed`]).
+    pub fn names(&self) -> Result<Vec<OsString>, NotListed> {
+        self.listed()
     }
 
-    /// The child folder `name`, never through a link.
-    pub(crate) fn child(&self, name: &OsStr) -> Opened {
-        match self.open_child(name) {
+    /// **The child folder `name`**, through a link only where `follow` says: [`Opened::Link`]
+    /// where it is a link and none is followed.
+    pub fn child(&self, name: impl AsRef<OsStr>, follow: Follow) -> Opened {
+        let name = name.as_ref();
+        match self.open_child(name, follow) {
             Some(fd) => Opened::Folder(fd),
-            None if matches!(self.kind(name), Some(Kind::Link { .. })) => Opened::Link,
+            None if follow == Follow::NoLink
+                && matches!(self.kind(name), Some(Kind::Link { .. })) =>
+            {
+                Opened::Link
+            }
             None => Opened::Absent,
         }
+    }
+
+    /// **The text of the plain file `name` in it**, of at most `most` bytes, never through a
+    /// link, and a hard link refused ([`Self::read_as`]).
+    pub fn read(&self, name: impl AsRef<OsStr>, most: u64) -> Result<String, NotRead> {
+        self.read_as(name, most, HardLinks::Refused)
     }
 }
 
@@ -206,20 +291,24 @@ impl Folder {
         }
     }
 
-    fn open_root(root: &Path) -> Option<Self> {
-        rustix::fs::open(root, Self::folder_flags(true), rustix::fs::Mode::empty())
-            .ok()
-            .map(|fd| Self {
-                fd,
-                shown: root.to_path_buf(),
-            })
+    fn open_at(root: &Path, follow: Follow) -> Option<Self> {
+        rustix::fs::open(
+            root,
+            Self::folder_flags(follow == Follow::Link),
+            rustix::fs::Mode::empty(),
+        )
+        .ok()
+        .map(|fd| Self {
+            fd,
+            shown: root.to_path_buf(),
+        })
     }
 
-    fn open_child(&self, name: &OsStr) -> Option<Self> {
+    fn open_child(&self, name: &OsStr, follow: Follow) -> Option<Self> {
         rustix::fs::openat(
             &self.fd,
             name,
-            Self::folder_flags(false),
+            Self::folder_flags(follow == Follow::Link),
             rustix::fs::Mode::empty(),
         )
         .ok()
@@ -229,20 +318,20 @@ impl Folder {
         })
     }
 
-    fn listed(&self) -> Vec<OsString> {
+    fn listed(&self) -> Result<Vec<OsString>, NotListed> {
         use std::os::unix::ffi::OsStrExt as _;
         let Ok(dir) = rustix::fs::Dir::read_from(&self.fd) else {
-            return Vec::new();
+            return Err(NotListed::Unreadable);
         };
-        dir.filter_map(Result::ok)
-            .map(|entry| OsStr::from_bytes(entry.file_name().to_bytes()).to_owned())
-            .filter(|name| name != "." && name != "..")
-            .collect()
+        names_whole(dir.map(|entry| {
+            entry.map(|entry| OsStr::from_bytes(entry.file_name().to_bytes()).to_owned())
+        }))
     }
 
     /// What `name` is, never following a link to say.
-    pub(crate) fn kind(&self, name: &OsStr) -> Option<Kind> {
+    pub fn kind(&self, name: impl AsRef<OsStr>) -> Option<Kind> {
         use rustix::fs::{AtFlags, FileType};
+        let name = name.as_ref();
         let of = |flags| {
             rustix::fs::statat(&self.fd, name, flags)
                 .ok()
@@ -259,19 +348,15 @@ impl Folder {
     }
 
     /// **The text of the plain file `name` in it**, of at most `most` bytes, never through a
-    /// link, and a hard link refused ([`read_opened`]).
-    pub(crate) fn read(&self, name: &OsStr, most: u64) -> Result<String, NotRead> {
-        self.read_as(name, most, HardLinks::Refused)
-    }
-
-    /// [`Self::read`], a hard link read or refused as `hard_links` says.
-    pub(crate) fn read_as(
+    /// link, a hard link read or refused as `hard_links` says ([`read_opened`]).
+    pub fn read_as(
         &self,
-        name: &OsStr,
+        name: impl AsRef<OsStr>,
         most: u64,
         hard_links: HardLinks,
     ) -> Result<String, NotRead> {
         use rustix::fs::OFlags;
+        let name = name.as_ref();
         let opened = rustix::fs::openat(
             &self.fd,
             name,
@@ -288,28 +373,29 @@ impl Folder {
 
 #[cfg(not(unix))]
 impl Folder {
-    fn open_root(root: &Path) -> Option<Self> {
-        root.is_dir().then(|| Self {
+    fn open_at(root: &Path, follow: Follow) -> Option<Self> {
+        let opens = match follow {
+            Follow::Link => root.is_dir(),
+            Follow::NoLink => is_plain_dir(root),
+        };
+        opens.then(|| Self {
             shown: root.to_path_buf(),
         })
     }
 
-    fn open_child(&self, name: &OsStr) -> Option<Self> {
-        let path = self.shown.join(name);
-        is_plain_dir(&path).then_some(Self { shown: path })
+    fn open_child(&self, name: &OsStr, follow: Follow) -> Option<Self> {
+        Self::open_at(&self.shown.join(name), follow)
     }
 
-    fn listed(&self) -> Vec<OsString> {
-        std::fs::read_dir(&self.shown)
-            .into_iter()
-            .flatten()
-            .filter_map(Result::ok)
-            .map(|entry| entry.file_name())
-            .collect()
+    fn listed(&self) -> Result<Vec<OsString>, NotListed> {
+        let Ok(entries) = std::fs::read_dir(&self.shown) else {
+            return Err(NotListed::Unreadable);
+        };
+        names_whole(entries.map(|entry| entry.map(|entry| entry.file_name())))
     }
 
-    pub(crate) fn kind(&self, name: &OsStr) -> Option<Kind> {
-        let path = self.shown.join(name);
+    pub fn kind(&self, name: impl AsRef<OsStr>) -> Option<Kind> {
+        let path = self.shown.join(name.as_ref());
         let meta = std::fs::symlink_metadata(&path).ok()?;
         let kind = meta.file_type();
         Some(if kind.is_symlink() {
@@ -325,16 +411,12 @@ impl Folder {
         })
     }
 
-    pub(crate) fn read(&self, name: &OsStr, most: u64) -> Result<String, NotRead> {
-        read_plain(&self.shown.join(name), most)
-    }
-
-    pub(crate) fn read_as(
+    pub fn read_as(
         &self,
-        name: &OsStr,
+        name: impl AsRef<OsStr>,
         most: u64,
         _hard_links: HardLinks,
     ) -> Result<String, NotRead> {
-        read_plain(&self.shown.join(name), most)
+        read_plain(&self.shown.join(name.as_ref()), most)
     }
 }
