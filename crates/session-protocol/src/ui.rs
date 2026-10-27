@@ -290,6 +290,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Starts again.
     "restart_chat_without_sandbox",
     "restart_chat",
+    // A chat moved to or from a pool's runner (#2048): a new run where it moves.
+    "move_chat",
+    "move_chat_now",
     "start_chat_fresh",
     "ask_chat_restart",
     // Reads what a chat was sent or said to another.

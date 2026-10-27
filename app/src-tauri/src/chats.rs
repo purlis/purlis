@@ -2569,6 +2569,27 @@ impl Chats {
         }
     }
 
+    /// **Starts chat `session` again on its conversation, where its workspace's chats run
+    /// now** (#2048): what a move ends with, once the chat's work and conversation are there.
+    /// The old run stays until the new one has started, as [`Self::restart`]'s does; ending it
+    /// is the caller's next step. A person's opt-out is never carried: it starts sandboxed.
+    pub fn start_again_where_it_runs(&self, session: u32, size: Size) -> Result<u32, String> {
+        self.claim(session)?;
+        let started = self.again_on_its_conversation(session).and_then(|again| {
+            if again.resume.is_none() {
+                return Err(no_conversation(session));
+            }
+            self.start_recorded_told(&again, size, Why::Relaunch, None, None)
+        });
+        match started {
+            Ok(started) => self.restarted(session, started, true),
+            Err(why) => {
+                self.unclaim(session);
+                Err(why)
+            }
+        }
+    }
+
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.
     fn claim(&self, session: u32) -> Result<(), String> {
         if lock(&self.restarting).insert(session) {

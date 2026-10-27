@@ -454,6 +454,17 @@ import {
   type FailedBelow,
   type State,
 } from "./chatState";
+import {
+  askMove,
+  chatMovesOf,
+  forgetMove,
+  heardMove,
+  moveOffers,
+  movesDue,
+  useChatMoves,
+  useChatMovesHeard,
+} from "./chatMoves";
+import { usePools } from "./pools";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
@@ -5649,6 +5660,69 @@ export const PlaneView = memo(function PlaneView({
   /** Whether a chat has a Restart chat row: not a shell, which has no conversation. */
   const restartable = useCallback((session: number) => !shells.has(session), [shells]);
   /**
+   * **Move to runner and Move here** (#2048): where each chat can move, by what the core said of
+   * it as it started (its harness, the pool it runs on) and the pools this machine keeps. A
+   * chat already moving is offered nothing until its move is over or put away.
+   */
+  useChatMovesHeard(plane);
+  const chatMoves = useChatMoves(plane);
+  const poolsHeld = usePools();
+  const poolNames = useMemo(
+    () =>
+      poolsHeld.read.state === "read" ? poolsHeld.read.shown.pools.map((pool) => pool.name) : [],
+    [poolsHeld],
+  );
+  const movesTo = useCallback(
+    (session: number) => {
+      const moving = chatMoves[session];
+      if (moving !== undefined && moving.stage !== "failed") return [];
+      return moveOffers(
+        reopened.find((one) => one.session === session),
+        poolNames,
+      );
+    },
+    [chatMoves, poolNames, reopened],
+  );
+  const moveTab = useCallback(
+    (tab: number, to: string | null) => {
+      const session = chatOf(now.current, tab);
+      if (session !== undefined) void askMove(plane, session, to);
+    },
+    [plane],
+  );
+  /**
+   * **A prepared move switches at its chat's next pause** (#2048), as an owed restart does: the
+   * chat then runs where it moved, in its place. The core asks the board again, so a turn is
+   * never cut off; a switch that fails is said on the pane, and the chat runs where it was.
+   */
+  const movingNow = useRef(new Set<number>());
+  useEffect(() => {
+    const drive = () => {
+      const states = chats.store.statesFor(chats.plane);
+      for (const session of movesDue(chatMovesOf(plane), (one) => stateOf(states, one))) {
+        if (movingNow.current.has(session)) continue;
+        movingNow.current.add(session);
+        const to = chatMovesOf(plane)[session]?.to ?? null;
+        void commands
+          .moveChatNow(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows)
+          .then((done) => {
+            if (done.status === "error")
+              heardMove(plane, { session, to, stage: "failed", why: done.error });
+            else if (done.data.chat !== null) {
+              forgetMove(plane, session);
+              chatRestarted(session, done.data.chat);
+            }
+          })
+          .catch((err: unknown) =>
+            heardMove(plane, { session, to, stage: "failed", why: String(err) }),
+          )
+          .finally(() => movingNow.current.delete(session));
+      }
+    };
+    drive();
+    return chats.store.subscribe(drive);
+  }, [chatMoves, chats, plane, chatRestarted]);
+  /**
    * The chats open, as one word, for a read that follows it: those on the strip and those the
    * Chats list holds, so a task with no tab starting or ending moves it too (#1462), as it
    * moves the core's answer.
@@ -6243,6 +6317,7 @@ export const PlaneView = memo(function PlaneView({
       unlinkWorkItem,
       startFresh: askStartFresh,
       restartChat: restartTab,
+      moveChat: moveTab,
       restartListed,
       askPersona,
       useSkill,
@@ -6364,6 +6439,7 @@ export const PlaneView = memo(function PlaneView({
       toggleRegionSeen,
       moveSideView,
       restartTab,
+      moveTab,
       restartListed,
       linkWorkItem,
       unlinkWorkItem,
@@ -7150,6 +7226,7 @@ export const PlaneView = memo(function PlaneView({
             linkable: (session) => filedIn(session) !== OUTSIDE,
             planeUpdated: planeUpdates,
             restartable,
+            movesTo,
             ask: askOffer,
             // Not from a shell: it is on no harness profile to start the persona's chat on.
             askable: (session) => !shells.has(session),
@@ -7214,6 +7291,7 @@ export const PlaneView = memo(function PlaneView({
       filedIn,
       planeUpdates,
       restartable,
+      movesTo,
       askOffer,
       shells,
       nearBranch,

@@ -113,7 +113,7 @@ fn a_shape_that_is_not_the_declarations_file_is_refused_whatever_it_climbs_to() 
         format!("{{config}}/projects/../{ID}.jsonl"),
         format!("{{config}}/projects/{{cwd_key}}/../../{ID}.jsonl"),
         format!("{{config}}/projects/-some-dir/{ID}.jsonl"),
-        format!("{{config}}/projects/{{cwd_key}}/other.jsonl"),
+        "{config}/projects/{cwd_key}/other.jsonl".to_owned(),
         format!("{{data}}/projects/{{cwd_key}}/{ID}.jsonl"),
         format!("{{config}}/settings/{{cwd_key}}/{ID}.jsonl"),
         format!("{{config}}/projects/{{cwd_key}}/{ID}.jsonl/x"),

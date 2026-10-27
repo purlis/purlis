@@ -141,6 +141,18 @@ pub struct Composed {
     pub ran: Option<purlis_session_protocol::session::RunSandbox>,
 }
 
+/// **A chat that moves between this machine and a runner** (#2048): where it works, the profile
+/// it runs on, and the conversation it is in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Moving {
+    pub workspace: String,
+    pub profile: String,
+    pub conversation: String,
+}
+
+/// What a host that moves no chat says.
+pub const MOVES_NO_CHAT: &str = "chats do not move to or from where this one runs";
+
 /// Why a chat by what it is named alone is not started in the window's own process.
 pub const NOT_COMPOSED_HERE: &str =
     "a chat in the window is started from what the window composed, never by its names alone";
@@ -263,6 +275,30 @@ pub trait SessionHost: Send + Sync {
     fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
         let _ = (workspace, pool);
         Vec::new()
+    }
+
+    /// **Readies the runner of `pool` for a chat in `workspace` to move there** (#2048): the
+    /// project held there, and each clone's branch sent ahead, while the chat keeps working
+    /// here. Refused in a sentence where chats cannot move to it.
+    fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {
+        let _ = (pool, workspace);
+        Err(MOVES_NO_CHAT.to_owned())
+    }
+
+    /// **Moves `chat`'s work and conversation to the runner of `pool`** (#2048), at its pause:
+    /// each clone's work tree taken over there, and its conversation kept in its profile's
+    /// harness folder there. Refused, in a sentence, where any of it does not move.
+    fn move_in(&self, pool: &str, chat: &Moving) -> Result<(), String> {
+        let _ = (pool, chat);
+        Err(MOVES_NO_CHAT.to_owned())
+    }
+
+    /// **Moves `chat`'s work and conversation back from the runner of `pool`** (#2048), at its
+    /// pause: each clone's work tree here taken over onto the runner's, and its conversation kept
+    /// in its profile's harness folder here.
+    fn move_out(&self, pool: &str, chat: &Moving) -> Result<(), String> {
+        let _ = (pool, chat);
+        Err(MOVES_NO_CHAT.to_owned())
     }
 
     /// Sends what a pane typed to the program: bytes, written to its pty as they are. Text is
@@ -632,6 +668,8 @@ pub(crate) mod pretend {
         /// Each fetch back it was asked for, by workspace and pool, and how many ran at once
         /// at most (#2046).
         fetched: Mutex<Vec<(String, String)>>,
+        /// Each move asked of it (#2048): `ahead`, `in` or `out`, the pool and the workspace.
+        moved: Mutex<Vec<(&'static str, String, String)>>,
         fetching: AtomicU32,
         most_fetching: AtomicU32,
         /// Each chat started by its names, its number, and whether its hearing asks.
@@ -648,6 +686,11 @@ pub(crate) mod pretend {
         }
 
         /// Each fetch back it was asked for, by workspace and pool, in order.
+        /// Each move asked of it (#2048).
+        pub fn moved(&self) -> Vec<(&'static str, String, String)> {
+            lock(&self.seen.moved).clone()
+        }
+
         pub fn fetched(&self) -> Vec<(String, String)> {
             lock(&self.seen.fetched).clone()
         }
@@ -895,6 +938,18 @@ pub(crate) mod pretend {
                     ))
                 }),
             })
+        }
+        fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {
+            lock(&self.seen.moved).push(("ahead", pool.to_owned(), workspace.to_owned()));
+            Ok(())
+        }
+        fn move_in(&self, pool: &str, chat: &super::Moving) -> Result<(), String> {
+            lock(&self.seen.moved).push(("in", pool.to_owned(), chat.workspace.clone()));
+            Ok(())
+        }
+        fn move_out(&self, pool: &str, chat: &super::Moving) -> Result<(), String> {
+            lock(&self.seen.moved).push(("out", pool.to_owned(), chat.workspace.clone()));
+            Ok(())
         }
         fn fetch_back(&self, workspace: &str, pool: &str) -> Vec<String> {
             let now = self.seen.fetching.fetch_add(1, Ordering::SeqCst) + 1;

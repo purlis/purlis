@@ -40,6 +40,9 @@ impl Compose for Echo {
 /// bundle's bytes where one came, and the refs named.
 type Taken = (PathBuf, String, Option<Vec<u8>>, Vec<CodeRef>);
 
+/// One conversation the runner's binary kept: what it was carried as, and its bytes.
+type KeptConversation = (Carried, Vec<u8>);
+
 /// What the runner's binary was handed: each take.
 #[derive(Default, Clone)]
 struct Recorded {
@@ -47,7 +50,7 @@ struct Recorded {
     /// Each work tree taken over: the branch it went onto (1.42).
     taken_over: Arc<Mutex<Vec<String>>>,
     /// Each conversation kept: what it was carried as, and its bytes (1.42).
-    conversations: Arc<Mutex<Vec<(Carried, Vec<u8>)>>>,
+    conversations: Arc<Mutex<Vec<KeptConversation>>>,
 }
 
 const CONVERSATION: &[u8] = b"{\"said\":\"the runner's conversation\"}\n";

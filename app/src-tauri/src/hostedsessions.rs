@@ -512,6 +512,34 @@ impl Connection {
     }
 }
 
+/// What a moving chat's conversation is named by on a link (#2048).
+fn carried(chat: &crate::host::Moving, file: &str) -> purlis_host::Carried {
+    purlis_host::Carried {
+        workspace: chat.workspace.clone(),
+        profile: chat.profile.clone(),
+        conversation: chat.conversation.clone(),
+        file: file.to_owned(),
+    }
+}
+
+/// A moving chat's conversation as this machine keeps it, in the project at `root`.
+fn of_a_chat<'a>(
+    root: &'a Path,
+    chat: &'a crate::host::Moving,
+) -> purlis_core::conversationmove::OfAChat<'a> {
+    purlis_core::conversationmove::OfAChat {
+        root,
+        workspace: &chat.workspace,
+        profile: &chat.profile,
+        conversation: &chat.conversation,
+    }
+}
+
+/// A transfer's command, as it goes to the host and is answered.
+type Transferred<T> = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<T, session::CallError>> + Send + 'static>,
+>;
+
 /// What a transfer says when the host answered without opening its code stream.
 fn no_code_stream() -> String {
     "the host did not open a stream for the code".to_owned()
@@ -943,45 +971,60 @@ impl HostLink {
         if self.version() < MOVES_CODE {
             return Err(moves_no_code());
         }
-        let transfer = self.next_transfer();
-        let stream = self.stream_for(transfer);
-        let client = Arc::clone(&self.client);
-        let most = self.most_bundle_bytes;
-        let (project, repo, bundle) = (
-            project.to_owned(),
-            repo.to_owned(),
-            bundle.map(Path::to_path_buf),
-        );
-        self.transfer(transfer, async move {
-            let asked = client.take_code(&project, &repo, transfer, refs, checkout);
-            let writing = async move {
-                let mut stream = stream.await.map_err(|_| no_code_stream())?;
-                if let Some(bundle) = bundle {
-                    let mut file = tokio::fs::File::open(&bundle)
-                        .await
-                        .map_err(|why| format!("the bundle could not be read: {why}"))?;
-                    purlis_session_protocol::code::copy_held_to(&mut file, &mut stream, most)
-                        .await
-                        .map_err(|why| why.to_string())?;
-                }
-                tokio::io::AsyncWriteExt::shutdown(&mut stream)
+        let (project, repo) = (project.to_owned(), repo.to_owned());
+        self.write_on_a_stream(bundle, move |client, transfer| {
+            Box::pin(async move {
+                client
+                    .take_code(&project, &repo, transfer, refs, checkout)
                     .await
-                    .map_err(|why| format!("the code stream broke: {why}"))
-            };
-            // The host's answer comes as soon as it refuses, stream or none: a refusal is
-            // said at once, never after the bound on a transfer.
-            tokio::pin!(asked, writing);
-            tokio::select! {
-                answered = &mut asked => {
-                    let heads = answered.map_err(code_refused)?;
-                    writing.await?;
-                    Ok(heads)
-                }
-                written = &mut writing => {
-                    written?;
-                    asked.await.map_err(code_refused)
-                }
-            }
+            })
+        })
+    }
+
+    /// **Has the host take a moving chat's work tree over** (1.42, #2048): `refs`, the branch
+    /// `checkout` and its snapshot, from the bundle at `bundle`. Refused in purlis's words by a
+    /// host before 1.42, which would not read it as a move.
+    pub(crate) fn send_work(
+        &self,
+        project: &str,
+        repo: &str,
+        refs: Vec<session::CodeRef>,
+        checkout: String,
+        bundle: Option<&Path>,
+    ) -> Result<Vec<session::CodeRef>, String> {
+        self.moves_chats()?;
+        let (project, repo) = (project.to_owned(), repo.to_owned());
+        self.write_on_a_stream(bundle, move |client, transfer| {
+            Box::pin(async move {
+                client
+                    .take_work(&project, &repo, transfer, refs, checkout)
+                    .await
+            })
+        })
+    }
+
+    /// **Has the host keep a moving chat's conversation** (1.42, #2048), from `file`.
+    pub(crate) fn send_conversation(
+        &self,
+        project: &str,
+        carried: &purlis_host::Carried,
+        file: &Path,
+    ) -> Result<(), String> {
+        self.moves_chats()?;
+        let (project, carried) = (project.to_owned(), carried.clone());
+        self.write_on_a_stream(Some(file), move |client, transfer| {
+            Box::pin(async move {
+                client
+                    .take_conversation(
+                        &project,
+                        transfer,
+                        &carried.workspace,
+                        &carried.profile,
+                        &carried.conversation,
+                        &carried.file,
+                    )
+                    .await
+            })
         })
     }
 
@@ -998,13 +1041,127 @@ impl HostLink {
         if self.version() < MOVES_CODE {
             return Err(moves_no_code());
         }
+        let (project, repo) = (project.to_owned(), repo.to_owned());
+        self.read_from_a_stream(into, move |client, transfer| {
+            Box::pin(async move { client.give_code(&project, &repo, transfer, have).await })
+        })
+        .map(|(heads, read)| (heads, read > 0))
+    }
+
+    /// [`Self::fetch_code`], with the work tree's uncommitted work as its branch's snapshot, as
+    /// a chat moves off the host (1.42, #2048).
+    pub(crate) fn fetch_work(
+        &self,
+        project: &str,
+        repo: &str,
+        have: Vec<String>,
+        into: &Path,
+    ) -> Result<(Vec<session::CodeRef>, bool), String> {
+        self.moves_chats()?;
+        let (project, repo) = (project.to_owned(), repo.to_owned());
+        self.read_from_a_stream(into, move |client, transfer| {
+            Box::pin(async move { client.give_work(&project, &repo, transfer, have).await })
+        })
+        .map(|(heads, read)| (heads, read > 0))
+    }
+
+    /// **Has the host write a moving chat's conversation into `into`** (1.42, #2048). Answers
+    /// where its harness keeps it there.
+    pub(crate) fn fetch_conversation(
+        &self,
+        project: &str,
+        carried: &purlis_host::Carried,
+        into: &Path,
+    ) -> Result<String, String> {
+        self.moves_chats()?;
+        let (project, carried) = (project.to_owned(), carried.clone());
+        self.read_from_a_stream(into, move |client, transfer| {
+            Box::pin(async move {
+                client
+                    .give_conversation(
+                        &project,
+                        transfer,
+                        &carried.workspace,
+                        &carried.profile,
+                        &carried.conversation,
+                    )
+                    .await
+            })
+        })
+        .map(|(file, _)| file)
+    }
+
+    /// Refused in purlis's words where the host is before 1.42 and moves no chat.
+    pub(crate) fn moves_chats(&self) -> Result<(), String> {
+        if self.version() < session::MOVES_CHATS {
+            return Err(format!(
+                "the host this chat would move to or from is from a purlis before session \
+                 protocol {}.{}, which moves no chat. Update it to this purlis's version.",
+                session::MOVES_CHATS.major,
+                session::MOVES_CHATS.minor
+            ));
+        }
+        Ok(())
+    }
+
+    /// One transfer the client writes: `ask` names it, and `file`'s bytes, where there is one,
+    /// go on the code stream the host opens for it, at most the link's bound.
+    fn write_on_a_stream<T: Send + 'static>(
+        &self,
+        file: Option<&Path>,
+        ask: impl FnOnce(Arc<Client>, u64) -> Transferred<T>,
+    ) -> Result<T, String> {
         let transfer = self.next_transfer();
         let stream = self.stream_for(transfer);
-        let client = Arc::clone(&self.client);
         let most = self.most_bundle_bytes;
-        let (project, repo, into) = (project.to_owned(), repo.to_owned(), into.to_path_buf());
+        let asked = ask(Arc::clone(&self.client), transfer);
+        let file = file.map(Path::to_path_buf);
         self.transfer(transfer, async move {
-            let asked = client.give_code(&project, &repo, transfer, have);
+            let writing = async move {
+                let mut stream = stream.await.map_err(|_| no_code_stream())?;
+                if let Some(file) = file {
+                    let mut file = tokio::fs::File::open(&file)
+                        .await
+                        .map_err(|why| format!("the bundle could not be read: {why}"))?;
+                    purlis_session_protocol::code::copy_held_to(&mut file, &mut stream, most)
+                        .await
+                        .map_err(|why| why.to_string())?;
+                }
+                tokio::io::AsyncWriteExt::shutdown(&mut stream)
+                    .await
+                    .map_err(|why| format!("the code stream broke: {why}"))
+            };
+            // The host's answer comes as soon as it refuses, stream or none: a refusal is
+            // said at once, never after the bound on a transfer.
+            tokio::pin!(asked, writing);
+            tokio::select! {
+                answered = &mut asked => {
+                    let answer = answered.map_err(code_refused)?;
+                    writing.await?;
+                    Ok(answer)
+                }
+                written = &mut writing => {
+                    written?;
+                    asked.await.map_err(code_refused)
+                }
+            }
+        })
+    }
+
+    /// One transfer the host writes: `ask` names it, and the bytes the host writes on the code
+    /// stream it opens for it go into `into`, at most the link's bound. Answers the host's
+    /// answer and how many bytes came.
+    fn read_from_a_stream<T: Send + 'static>(
+        &self,
+        into: &Path,
+        ask: impl FnOnce(Arc<Client>, u64) -> Transferred<T>,
+    ) -> Result<(T, u64), String> {
+        let transfer = self.next_transfer();
+        let stream = self.stream_for(transfer);
+        let most = self.most_bundle_bytes;
+        let asked = ask(Arc::clone(&self.client), transfer);
+        let into = into.to_path_buf();
+        self.transfer(transfer, async move {
             let reading = async move {
                 let mut stream = stream.await.map_err(|_| no_code_stream())?;
                 let mut file = tokio::fs::File::create(&into)
@@ -1022,13 +1179,13 @@ impl HostLink {
             tokio::pin!(asked, reading);
             tokio::select! {
                 answered = &mut asked => {
-                    let heads = answered.map_err(code_refused)?;
-                    Ok((heads, reading.await? > 0))
+                    let answer = answered.map_err(code_refused)?;
+                    Ok((answer, reading.await?))
                 }
                 read = &mut reading => {
                     let read = read?;
-                    let heads = asked.await.map_err(code_refused)?;
-                    Ok((heads, read > 0))
+                    let answer = asked.await.map_err(code_refused)?;
+                    Ok((answer, read))
                 }
             }
         })
@@ -1761,6 +1918,17 @@ impl HostedSessions {
     /// The link, with this project held on it.
     fn link(&self) -> Result<(Arc<HostLink>, String), String> {
         held_on(&self.holding())
+    }
+
+    /// The link a chat moves over (#2048): this project held on a pool's runner that keeps it,
+    /// of a purlis that moves chats.
+    fn moving_link(&self) -> Result<(Arc<HostLink>, String), String> {
+        if !self.kept_on_the_runner {
+            return Err(crate::host::MOVES_NO_CHAT.to_owned());
+        }
+        let (link, project) = self.link()?;
+        link.moves_chats()?;
+        Ok((link, project))
     }
 
     /// What holds this project on its own link to the host.
@@ -2782,6 +2950,50 @@ impl SessionHost for HostedSessions {
             }
             Err(why) => vec![why],
         }
+    }
+
+    /// The project held on the pool's runner, and each clone of `workspace` sent ahead
+    /// (#2048). Only where the runner keeps the project and moves chats.
+    fn move_ahead(&self, _pool: &str, workspace: &str) -> Result<(), String> {
+        let (link, project) = self.moving_link()?;
+        crate::runnercode::send_ahead(&link, &project, &self.root, workspace, &self.sent)
+    }
+
+    fn move_in(&self, _pool: &str, chat: &crate::host::Moving) -> Result<(), String> {
+        let (link, project) = self.moving_link()?;
+        crate::runnercode::move_workspace_to(
+            &link,
+            &project,
+            &self.root,
+            &chat.workspace,
+            &self.sent,
+        )?;
+        let here = of_a_chat(&self.root, chat);
+        let found = here
+            .find()
+            .map_err(|why| format!("its conversation did not move to the runner: {why}"))?;
+        link.send_conversation(&project, &carried(chat, &found.shape), &found.path)
+            .map_err(|why| format!("its conversation did not move to the runner: {why}"))
+    }
+
+    fn move_out(&self, pool: &str, chat: &crate::host::Moving) -> Result<(), String> {
+        let (link, project) = self.moving_link()?;
+        let scratch = tempfile::Builder::new()
+            .prefix("purlis-conversation-")
+            .tempdir()
+            .map_err(|why| {
+                format!("there is no room on this machine for its conversation: {why}")
+            })?;
+        let came = scratch.path().join("conversation");
+        // The conversation first: where it does not come, nothing of this machine's clones has
+        // changed, and the chat stays on the runner as it was.
+        let shape = link
+            .fetch_conversation(&project, &carried(chat, ""), &came)
+            .map_err(|why| format!("its conversation did not come back: {why}"))?;
+        crate::runnercode::move_workspace_back(&link, &project, &self.root, &chat.workspace, pool)?;
+        of_a_chat(&self.root, chat)
+            .keep(&shape, &came)
+            .map_err(|why| format!("its conversation could not be kept here: {why}"))
     }
 
     /// Saved in the session host, where this project's chats run: the window starts no worker

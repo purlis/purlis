@@ -382,6 +382,29 @@ pub fn set_chats_run_on_at(
     chats_run_on_at(config, plane, workspace)
 }
 
+/// **Sets where `workspace` of the plane at `plane` runs its chats** to `place` (#2048), as a
+/// chat of it moves there: the setting the person can change in the workspace's settings.
+#[cfg(unix)]
+pub(crate) fn run_chats_on(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: &str,
+    place: &Option<String>,
+) -> Result<(), String> {
+    set_chats_run_on_at(config, plane, workspace, place.as_deref()).map(|_| ())
+}
+
+/// No pool runs chats here.
+#[cfg(not(unix))]
+pub(crate) fn run_chats_on(
+    _config: &std::path::Path,
+    _plane: &std::path::Path,
+    _workspace: &str,
+    _place: &Option<String>,
+) -> Result<(), String> {
+    Err("Pools run chats on macOS and Linux only.".to_owned())
+}
+
 /// **Where a workspace's chats run** (#2046), as its settings show it.
 #[tauri::command]
 #[specta::specta]
