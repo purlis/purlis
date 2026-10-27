@@ -430,6 +430,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "vault_remove",
     "vault_secret_delete",
     "todo_forget",
+    "todo_forget_done",
     "clear_finished_tasks",
     // Grant commands (#1927): a consent given, answered or taken back.
     "allow_refused_vault",
@@ -1110,6 +1111,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "todo_add",
     "todo_done",
     "todo_read",
+    "todo_reopen",
     "unwatch_session",
     "update_channel",
     "use_built_in_theme",

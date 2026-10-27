@@ -502,6 +502,8 @@ macro_rules! app_commands {
                 todos::todo_add,
                 todos::todo_done,
                 todos::todo_forget,
+                todos::todo_forget_done,
+                todos::todo_reopen,
                 todos::todo_read,
                 worklinks::chat_work_link,
                 worklinks::chat_work_unlink,

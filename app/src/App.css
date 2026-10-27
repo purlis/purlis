@@ -4997,6 +4997,24 @@ body {
   color: var(--danger-base);
 }
 
+/* **The Todos view's tabs** (#3358, the prototype's Q1 A): Open, Done and All across the view's
+   width under the box that adds one, each segment an equal share. */
+.todo-tabs {
+  display: flex;
+  inline-size: 100%;
+  margin-block: var(--space-2);
+}
+.todo-tabs > [data-scope="segment"] {
+  flex: 1 1 0;
+}
+
+/* **A done todo stays, struck through** (R131, ADR 0106): its box ticked, its words in the quiet
+   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. */
+.panel-row.is-checked .row-text {
+  color: var(--text-quiet);
+  text-decoration: line-through;
+}
+
 /* **The search, once there is more than a page** — and it stays once it is there, because a
    box that vanished when a search narrowed the list would take away the control in use. */
 /* The box is the field family's (#2905), the list's width. */

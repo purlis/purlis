@@ -162,6 +162,7 @@
   --color-accent-base: var(--accent-base);
   --color-accent-surface: var(--accent-surface);
   --color-accent-wash: var(--accent-wash);
+  --color-accent-wash-hover: var(--accent-wash-hover);
   --color-accent-text: var(--accent-text);
   --color-accent-fill: var(--accent-fill);
   --color-accent-fill-hover: var(--accent-fill-hover);
