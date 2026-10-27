@@ -48,11 +48,14 @@ export type GroupId =
   | `program:${string}`
   | "not-in-chat";
 
+/**
+ * **A group, under its heading.** Every heading is drawn as purlis's own words are, a program's
+ * too (#3308): a program's title is the name purlis's adapter gives it (`Claude Code`), not data
+ * a person wrote, so it heads its group as Built-in and Project do.
+ */
 export type SkillGroup = {
   id: GroupId;
   title: string;
-  /** The title is data (a program's name), drawn as it is written. */
-  named: boolean;
   rows: ListedSkill[];
 };
 
@@ -206,15 +209,10 @@ export function groupsOf(
     .flatMap((id): SkillGroup[] => {
       const listed = by.get(id);
       if (listed === undefined || listed.length === 0) return [];
-      const program = id.startsWith("program:");
-      return [
-        {
-          id,
-          title: program ? id.slice("program:".length) : TITLES[id as keyof typeof TITLES],
-          named: program,
-          rows: listed,
-        },
-      ];
+      const title = id.startsWith("program:")
+        ? id.slice("program:".length)
+        : TITLES[id as keyof typeof TITLES];
+      return [{ id, title, rows: listed }];
     });
 }
 
@@ -363,6 +361,8 @@ export type SkillMenuRow = { act: SkillAct; title: string; available: boolean; r
 const EXPLORER_AT_THE_ROOT =
   "Explorer shows this workspace's repos. The skill's folder is in the project's own files, which Explorer shows at the project's root.";
 const NOT_IN_THE_PROJECT = "Its folder is not one of the project's files.";
+const CLONE_IN_A_WORKSPACE =
+  "Its folder is in a workspace's clone, which Explorer shows in that workspace. Pick it in the title bar.";
 const NOT_THIS_CHATS = "The chat in front does not get it.";
 
 /** The levels a skill can be pinned at (SK-15d): the project's. A built-in skill is always
@@ -399,13 +399,34 @@ export function pinOf(row: ListedSkill, workspace: string | undefined): Change {
 const PIN_HERE = "Pin to this workspace";
 const UNPIN_HERE = "Unpin from this workspace";
 
-/** **Whether a skill's folder is one of the project's own files**, which Explorer can show. */
-function inTheProject(skill: StudioSkill): boolean {
-  return (
-    (skill.level === "project" || skill.level === "workspace" || skill.level === "persona") &&
-    skill.folder !== "" &&
-    !skill.folder.startsWith("/")
-  );
+/**
+ * **Where Show in Explorer shows a skill's folder** (#3266, #3308): in the project's own files
+ * (`repo` `""`), or inside one clone of the workspace Explorer shows, by the folder's path in it.
+ */
+export type ExplorerPlace = { repo: string; folder: string };
+
+/**
+ * **Where Explorer can show a skill's folder**, from the workspace it shows (`shown`, the title
+ * bar's): a project, workspace or persona skill's folder in the project's own files, which
+ * Explorer shows at the project's root; a repo skill's in its clone, which Explorer shows in the
+ * clone's workspace. Else why not.
+ */
+export function explorerPlaceOf(
+  skill: StudioSkill,
+  shown: string | undefined,
+): ExplorerPlace | { reason: string } {
+  const { folder } = skill;
+  if (folder === "" || folder.startsWith("/")) return { reason: NOT_IN_THE_PROJECT };
+  if (skill.level === "project" || skill.level === "workspace" || skill.level === "persona")
+    return shown === undefined ? { repo: "", folder } : { reason: EXPLORER_AT_THE_ROOT };
+  if (skill.level !== "repo") return { reason: NOT_IN_THE_PROJECT };
+  if (shown === undefined) return { reason: CLONE_IN_A_WORKSPACE };
+  // `workspaces/<workspace>/<clone>/…`, as the core says a clone's folder (`worktree::clone_dir`).
+  const [top, workspace, repo, ...rest] = folder.split("/");
+  if (top !== "workspaces" || repo === undefined || repo === "" || rest.length === 0)
+    return { reason: NOT_IN_THE_PROJECT };
+  if (workspace !== shown) return { reason: CLONE_IN_A_WORKSPACE };
+  return { repo, folder: rest.join("/") };
 }
 
 /** A change's row of the menu: what it says, or, where it cannot run, `title` and why. */
@@ -415,23 +436,26 @@ function changeRow(act: SkillAct, change: Change, title: string): SkillMenuRow {
     : { act, title, available: false, reason: change.reason };
 }
 
+/** **Where a row's menu acts**: the workspace whose chats the switch and the pin are for
+ *  (`undefined` at the project's root), whether a chat is in front, and the workspace Explorer
+ *  shows, the title bar's, where it is not that one (the list narrowed to a chat elsewhere). */
+export type MenuAt = {
+  workspace: string | undefined;
+  chat: boolean;
+  explorer?: string | undefined;
+};
+
 /**
  * **A row's menu, in its order**: Use in this chat while a chat is in front (`chat`), the
  * switch, Pin to this workspace (Unpin while it pins it), and Show in Explorer. A row that cannot run says why: Use in this chat, on a skill
  * the chat does not get.
  */
-export function menuRowsOf(
-  row: ListedSkill,
-  at: { workspace: string | undefined; chat: boolean },
-): SkillMenuRow[] {
+export function menuRowsOf(row: ListedSkill, at: MenuAt): SkillMenuRow[] {
   const { skill } = row;
   const turn = turnOf(skill, at.workspace);
   const pin = pinOf(row, at.workspace);
-  const explorer = !inTheProject(skill)
-    ? NOT_IN_THE_PROJECT
-    : at.workspace !== undefined
-      ? EXPLORER_AT_THE_ROOT
-      : "";
+  const place = explorerPlaceOf(skill, "explorer" in at ? at.explorer : at.workspace);
+  const explorer = "reason" in place ? place.reason : "";
   const mark = markOf(row);
   const usable = mark !== "left-out" && mark !== "off" && mark !== "needs-review";
   return [

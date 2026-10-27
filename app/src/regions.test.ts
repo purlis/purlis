@@ -34,7 +34,7 @@ import {
   tabsOf,
   type Arrangement,
 } from "./regions";
-import type { ViewId } from "./sideViews";
+import { previewsDrawn, type ViewId } from "./sideViews";
 import { setYourEditor } from "./yourEditor";
 import {
   aboutThisMachine,
@@ -958,6 +958,25 @@ describe("the Skills view, behind the Skill studio's preview (#3266)", () => {
     expect(picked.view).toBe("skills");
     // On again: the pick is back.
     expect(openView(picked, ON)).toBe("skills");
+  });
+
+  it("holds a side left on it until the window has heard whether the preview is on (#3308)", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+    act(() => result.current.pick("skills", ON));
+    const picked = navigation(result.current.arrangement);
+    const views = result.current.arrangement.map((one) => one.view);
+    // Not yet heard: the side stays on Skills, not Chats for a moment.
+    expect(openView(picked, previewsDrawn(undefined, views))).toBe("skills");
+    // A window left on Chats shows no Skills icon for a moment where the preview may be off.
+    expect(
+      previewsDrawn(
+        undefined,
+        DEFAULT_ARRANGEMENT.map((one) => one.view),
+      ),
+    ).toEqual([]);
+    // Heard: on keeps it, off falls back to Chats.
+    expect(openView(picked, previewsDrawn(true, views))).toBe("skills");
+    expect(openView(picked, previewsDrawn(false, views))).toBe("chats");
   });
 
   it("is named for the palette only while it is drawn", () => {

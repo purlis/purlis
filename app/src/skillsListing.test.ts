@@ -11,6 +11,7 @@ import type { ChatSkill, StudioSkill } from "./bindings";
 import { skill, studio } from "./skillsListing.testkit";
 import {
   BUILT_IN_STAYS,
+  explorerPlaceOf,
   groupsOf,
   listedOf,
   markOf,
@@ -20,6 +21,7 @@ import {
   tipOf,
   turnOf,
   type ListedSkill,
+  type MenuAt,
 } from "./skillsListing";
 
 const row = (one: StudioSkill, more: Partial<ListedSkill> = {}): ListedSkill => ({
@@ -153,9 +155,6 @@ describe("the list's groups", () => {
       ["Local", ["mine"]],
       ["Claude Code", ["pdf"]],
     ]);
-    // A program's name is data; purlis's own words are not.
-    expect(groups.find((one) => one.title === "Claude Code")?.named).toBe(true);
-    expect(groups.find((one) => one.title === "Project")?.named).toBe(false);
   });
 
   it("draw no Needs you while nothing needs the person", () => {
@@ -440,6 +439,33 @@ describe("a row's menu", () => {
     expect(at("ops")).toMatchObject({ available: false, reason: expect.stringMatching(/root/) });
     expect(at(undefined, skill("secrets", { level: "built-in", folder: "/app/x" }))).toMatchObject({
       available: false,
+      reason: "Its folder is not one of the project's files.",
+    });
+  });
+
+  it("shows a repo skill in its clone, in the workspace Explorer shows (#3308)", () => {
+    const lint = skill("lint-rs", {
+      level: "repo",
+      folder: "workspaces/ops/api/.claude/skills/lint-rs",
+      owner: { kind: "repo", name: "api" },
+    });
+    expect(explorerPlaceOf(lint, "ops")).toEqual({ repo: "api", folder: ".claude/skills/lint-rs" });
+    const at = (where: MenuAt) => menuRowsOf(row(lint), where).find((r) => r.act === "explorer");
+    expect(at({ workspace: "ops", chat: false })).toMatchObject({ available: true });
+    // Narrowed to a chat in ops while the title bar, and so Explorer, is on web.
+    expect(at({ workspace: "ops", chat: true, explorer: "web" })).toMatchObject({
+      available: false,
+      reason: expect.stringMatching(/Pick it in the title bar/),
+    });
+    expect(at({ workspace: undefined, chat: false })).toMatchObject({ available: false });
+    // A project skill at a workspace is still the root's to show.
+    expect(explorerPlaceOf(skill("deploy"), undefined)).toEqual({
+      repo: "",
+      folder: "skills/deploy",
+    });
+    expect(explorerPlaceOf(skill("deploy"), "ops")).toMatchObject({ reason: expect.any(String) });
+    // A program's own skill is nowhere in the project.
+    expect(explorerPlaceOf(skill("pdf", { level: "installed", folder: "" }), "ops")).toMatchObject({
       reason: "Its folder is not one of the project's files.",
     });
   });

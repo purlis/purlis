@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   commands,
   type ChatSkill,
@@ -24,15 +24,18 @@ import {
 } from "./skillStudio";
 import { SkillMenu, SkillsList } from "./SkillsList";
 import {
+  explorerPlaceOf,
   groupsOf,
   listedOf,
   narrowedTo,
   personaRowsOf,
   pinOf,
   turnOf,
+  type ExplorerPlace,
   type ListedSkill,
   type SkillAct,
 } from "./skillsListing";
+import { useOnlyThisChat } from "./skillsViewPrefs";
 import type { ViewRef } from "./tabs";
 import { useListFilter } from "./ui/list/ListFilter";
 
@@ -46,26 +49,6 @@ export type FrontChat = {
   /** The program it runs, by the word the project calls it: whose own skills it gets. */
   harness: HarnessKind | undefined;
 };
-
-/** **Whether the list is narrowed to the chat in front** (the amendment's (c)): one switch for
- *  the window, whichever project is in front, kept while the window is open. */
-let onlyThisChat = false;
-const onlyListeners = new Set<() => void>();
-
-function useOnlyThisChat(): [boolean, (only: boolean) => void] {
-  const only = useSyncExternalStore(
-    (listener) => {
-      onlyListeners.add(listener);
-      return () => void onlyListeners.delete(listener);
-    },
-    () => onlyThisChat,
-  );
-  const set = useCallback((to: boolean) => {
-    onlyThisChat = to;
-    for (const one of onlyListeners) one();
-  }, []);
-  return [only, set];
-}
 
 /** What the view read: its rows, what the studio offers to start from, and the levels a new
  *  skill can land at; or the core's refusal. */
@@ -108,7 +91,8 @@ async function readSkills(plane: string, workspace: string | undefined): Promise
  *
  * Every act is one the window already has: a row opens the skill's tab, Use in this chat is
  * Use skill… opened on it, the switch and the pin are the studio's, Show in Explorer opens
- * Explorer on its folder, and New skill is the studio's three starts.
+ * Explorer on its folder (a repo skill's in its clone), and New skill is the studio's three
+ * starts. Only this chat's is kept in the layout file (`skillsViewPrefs.ts`).
  */
 export function SkillsView({
   plane,
@@ -126,8 +110,9 @@ export function SkillsView({
   onOpenView: (view: ViewRef, title: string) => void;
   /** Opens Use skill… for chat `session` on `skill`. */
   onUseSkill: (session: number, skill: string) => void;
-  /** Opens Explorer on `folder`, one of the project's own files. */
-  onShowInExplorer: (folder: string) => void;
+  /** Opens Explorer on a skill's folder: one of the project's own files, or in a clone of the
+   *  title bar's workspace. */
+  onShowInExplorer: (place: ExplorerPlace) => void;
 }) {
   const [only, setOnly] = useOnlyThisChat();
   const narrowed = only && chat !== undefined ? chat : undefined;
@@ -203,7 +188,9 @@ export function SkillsView({
       return;
     }
     if (what === "explorer") {
-      onShowInExplorer(row.skill.folder);
+      // Explorer shows the title bar's workspace, whichever chat the list is narrowed to.
+      const shown = explorerPlaceOf(row.skill, workspace);
+      if (!("reason" in shown)) onShowInExplorer(shown);
       return;
     }
     const change = what === "pin" ? pinOf(row, place) : turnOf(row.skill, place);
@@ -240,7 +227,7 @@ export function SkillsView({
         menu: () => (
           <SkillMenu
             row={row}
-            at={{ workspace: place, chat: chat !== undefined }}
+            at={{ workspace: place, chat: chat !== undefined, explorer: workspace }}
             busy={busy}
             onAct={(what) => act(row, what)}
           />

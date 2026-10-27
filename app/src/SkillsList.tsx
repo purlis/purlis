@@ -19,6 +19,7 @@ import {
   menuRowsOf,
   tipOf,
   type ListedSkill,
+  type MenuAt,
   type SkillAct,
   type SkillGroup,
 } from "./skillsListing";
@@ -85,7 +86,9 @@ export function SkillsList({
           <Button variant="ghost" icon={<Plus aria-hidden="true" />} isDisabled={busy}>
             {NEW_SKILL_MENU}
           </Button>
+          {/* From the button's end, so at the side's width it opens inside the view (#3308). */}
           <Menu
+            align="end"
             aria-label="Ways to start a skill"
             onAction={(key) => onStart(String(key) as SkillStart)}
           >
@@ -138,7 +141,7 @@ export function SkillsList({
         }
       >
         {groups.map((group) => (
-          <ListRowSection key={group.id} id={group.id} title={group.title} named={group.named}>
+          <ListRowSection key={group.id} id={group.id} title={group.title}>
             {group.rows.map((row) => {
               const mark = markOf(row);
               const tip = tipOf(row);
@@ -186,7 +189,7 @@ export function SkillMenu({
   onAct,
 }: {
   row: ListedSkill;
-  at: { workspace: string | undefined; chat: boolean };
+  at: MenuAt;
   busy: boolean;
   onAct: (what: SkillAct) => void;
 }) {
