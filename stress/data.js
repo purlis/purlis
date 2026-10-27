@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793119303486,
+  "lastUpdate": 1793123381295,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -15974,6 +15974,42 @@ window.BENCHMARK_DATA = {
             "value": 679.7,
             "unit": "MB",
             "extra": "median of 6 samples: 647.1, 667.7, 677.6, 681.9, 682.4, 738.3 MB; window 406.3 MB, session host 274.1 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "00e3a5996e8f7364ca8b98e73947759d8746279c",
+          "message": "Skills view tidy-ups: reveal in a workspace, a kept toggle, no flash; say an unused pin (#3308, #3432) (#3463)\n\n* Skills view tidy-ups: reveal in a workspace, a kept toggle, no start-up flash (#3308)\n\n- Show in Explorer reveals a repo skill in its clone from the workspace Explorer\n  shows (the title bar's): the clone's folders open down to it and its row takes\n  the keyboard; where Files are of another branch, the workspace itself is picked\n  first (or the cockpit left). `explorerPlaceOf` says where, or why not.\n- Only this chat's is kept in the layout file under `skills`\n  (`{ \"onlyThisChat\": true }`, `skillsViewPrefs.ts`), beside the window's other\n  choices, so it survives a restart.\n- A side left on Skills is held there until the core has said whether the Skill\n  studio's preview is on (`previewsDrawn`), instead of showing Chats for a moment.\n- The header's New skill... menu opens from the button's end, inside the view.\n- A program's group heading (\"Claude Code\") is drawn as the other headings are:\n  its title is purlis's adapter's name, not data a person wrote.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills view: say a workspace pin that no chat reads is not used (#3432)\n\nThe view keeps the studio's `pins_refused` from its read. Where this\nworkspace's chats read none of its pins (more than 64, or an entry that is no\nskill's name), Unpin from this workspace says under it, and as its\ndescription, \"Pinned, not used: <the core's why>.\" Pin to this workspace waits,\nsaying the studio's sentence (`pinsRefusedSaid`, now in `skillStudio.ts` for\nboth) and how to put the list right, since one more pin would be read no more\nthan the rest. Another workspace's refusal says nothing here. A story pictures\nthe menu.\n\nAlso from review: `MenuAt.explorer` is required, so \"the same workspace\" and\n\"the root\" cannot be told apart by a key left out.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SkillsList stories: baselines for the program heading and a pin no chat reads (#3308, #3432)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills view: New skill...'s menu narrow enough to stay over the view (#3308)\n\nThe stories' picture showed the menu, opened from the button's end, still\nwider than an 18rem sidebar. It now takes at most 256px and its lines wrap.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SkillsList story: wait for the row's focus before checking it is in sight\n\nWebKit (purlis_dark_compact) gave the focus back a frame after the menu had\ngone, so the check ran while nothing held it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SkillsList stories: New skill...'s menu baselines, inside the view (#3308)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Explorer: Show in Explorer waits for the row the tree draws (#3308)\n\nSince the whole Explorer moved onto the tree family (#3194), a folder's rows\nare drawn in the tree's own commit after this view's, once the folder is\nread. The reveal looked for its row only on Explorer's own draws, so a row\ndrawn later was never given the keyboard. It now watches the view's DOM until\nthe row is drawn.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Cockpit window test: press Esc once the Files tree is drawn and holds the keyboard\n\nSince #3194 the tree family draws a folder's rows in a commit after the\ncockpit's, so the test's one querySelector often found no row and pressed Esc\ninto nothing (6 of 12 runs failed on main under load). It now waits for the\nfolder's rows and for a focused row first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T13:26:35Z",
+          "tree_id": "5cc0e4864ca4a4c8d5082fa105e0f89059f554df",
+          "url": "https://github.com/purlis/purlis/commit/00e3a5996e8f7364ca8b98e73947759d8746279c"
+        },
+        "date": 1793123376171,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1747.2,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1554.5, 1747.2, 1909.5 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 715,
+            "unit": "MB",
+            "extra": "median of 6 samples: 683.2, 701.7, 712.6, 717.4, 722.3, 804.9 MB; window 417.5 MB, session host 299 MB"
           }
         ]
       }
