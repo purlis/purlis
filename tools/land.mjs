@@ -6,18 +6,22 @@
 // The judgement around it (review, what goes in one pull request, a drop from the queue) is the
 // `landing-a-pr` skill (`docs/agents/skills/landing-a-pr/SKILL.md`); this holds the mechanics.
 //
-//   node tools/land.mjs <pull request> [--sha <reviewed sha>] [--jump] [--watch] [--repo <owner>/<repo>]
+//   node tools/land.mjs <pull request> --sha <reviewed sha> [--watch] [--repo <owner>/<repo>]
 //
 // In order, it:
-//   1. refuses unless the pull request is open and its base is `main`;
-//   2. refuses when its head is not `--sha`, the commit the review approved, when one is given;
-//   3. refuses while the newest `ci` run of main's head is red, unless the pull request carries
-//      the `fixes-main` label, which is also enqueued at the front (`jump`), as `--jump` is;
+//   1. refuses unless the pull request is open, from a branch of this repository (approving a
+//      fork's runs is a person's call), and based on `main`;
+//   2. refuses when its head is not `--sha`, the commit the review approved;
+//   3. refuses while main is red: the newest finished `ci` run of a push to main failed. A pull
+//      request labelled `fixes-main` lands past a red main, and only it goes to the front of the
+//      queue (`jump`), since a jump restarts every group being built;
 //   4. reruns the runs of the head that wait on approval (`action_required`): gh counts those as
-//      failing checks, so they are rerun before the checks are read;
+//      failing checks, so they are rerun, and given a moment to start, before the checks are read;
 //   5. reads the required checks: with `--watch` it waits for them to finish, and without it,
 //      it refuses while any is pending; either way it refuses while any failed, naming each;
-//   6. marks a draft ready (`gh pr ready`) and waits for the checks that starts;
+//   6. marks a draft ready (`gh pr ready`), which the queue needs, and reads the checks again. No
+//      workflow here starts on `ready_for_review` today; the second read is a safety net for one
+//      that does;
 //   7. reads main once more, then enqueues through GraphQL `enqueuePullRequest` with the head it
 //      checked as `expectedHeadOid`, so a push since is refused by GitHub;
 //   8. prints the queue position, and with `--watch` waits until the pull request merges, or
@@ -40,33 +44,39 @@ export const REPO = "purlis/purlis";
 export const FIXES_MAIN = "fixes-main";
 
 const USAGE =
-  "usage: land.mjs <pull request number> [--sha <reviewed sha>] [--jump] [--watch] [--repo <owner>/<repo>]";
+  "usage: land.mjs <pull request number> --sha <reviewed sha> [--watch] [--repo <owner>/<repo>]";
 
 /** The options `argv` (after the script) asks for, or `{ usage }` when it is not a valid call. */
 export function parseArgs(argv) {
-  const options = { pr: undefined, sha: undefined, jump: false, watch: false, repo: REPO };
+  const options = { pr: undefined, sha: undefined, watch: false, repo: REPO };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--jump") options.jump = true;
-    else if (arg === "--watch") options.watch = true;
-    else if (arg === "--sha") options.sha = argv[++i];
-    else if (arg === "--repo") options.repo = argv[++i];
-    else if (/^\d+$/.test(arg) && options.pr === undefined) options.pr = arg;
+    if (arg === "--watch") options.watch = true;
+    else if (arg === "--sha" || arg === "--repo") {
+      const value = argv[++i];
+      if (value === undefined || value.startsWith("--"))
+        return { usage: `${USAGE}\n${arg} needs a value` };
+      options[arg.slice(2)] = value;
+    } else if (/^\d+$/.test(arg) && options.pr === undefined) options.pr = arg;
     else return { usage: `${USAGE}\nunexpected argument: ${arg}` };
   }
   if (options.pr === undefined) return { usage: USAGE };
-  if (options.sha !== undefined && !/^[0-9a-f]{40}$/.test(options.sha))
+  if (options.sha === undefined)
+    return { usage: `${USAGE}\n--sha names the commit the review approved, and is required` };
+  if (!/^[0-9a-f]{40}$/.test(options.sha))
     return { usage: `${USAGE}\n--sha takes the full 40-character commit the review approved` };
-  if (!/^[\w.-]+\/[\w.-]+$/.test(options.repo ?? "")) return { usage: USAGE };
+  if (!/^[\w.-]+\/[\w.-]+$/.test(options.repo)) return { usage: USAGE };
   return options;
 }
 
 /** Why the pull request `pr` (gh's `pr view` JSON) cannot land as it stands, or `undefined`. */
 export function refusal(pr, sha) {
   if (pr.state !== "OPEN") return `pull request #${pr.number} is ${pr.state.toLowerCase()}`;
+  if (pr.isCrossRepository)
+    return `pull request #${pr.number} is from a fork: a maintainer reviews and approves its runs, and lands it, by hand`;
   if (pr.baseRefName !== "main")
     return `pull request #${pr.number} is based on ${pr.baseRefName}: only a pull request to main lands through its queue`;
-  if (sha !== undefined && pr.headRefOid !== sha)
+  if (pr.headRefOid !== sha)
     return `pull request #${pr.number}'s head is ${pr.headRefOid}, not the reviewed ${sha}: review the new head first`;
   return undefined;
 }
@@ -79,15 +89,16 @@ export function fixesMain(pr) {
 const RED = new Set(["failure", "timed_out", "startup_failure"]);
 
 /**
- * The red `ci` run of main's head, of `runs` (the `ci` workflow's runs of that commit), or
- * `undefined`: only the newest run counts, so a rerun that went green clears it, and a run still
- * going is not red.
+ * The run that makes main red, of `runs` (the `ci` workflow's runs of pushes to main), or
+ * `undefined`. Main's colour is its newest *finished* push run: a run still going says nothing
+ * yet, so a red main stays red until a run goes green, however busy the queue is. A rerun that
+ * went green clears it, and a nightly or merge-queue run is not main's.
  */
 export function redRun(runs) {
   const newest = [...runs]
-    .filter((run) => run.event === "push")
+    .filter((run) => run.event === "push" && run.status === "completed")
     .sort((a, b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt)[0];
-  return newest && newest.status === "completed" && RED.has(newest.conclusion) ? newest : undefined;
+  return newest && RED.has(newest.conclusion) ? newest : undefined;
 }
 
 /**
@@ -105,6 +116,16 @@ const named = (checks) =>
   checks.map((check) => `  ${check.name}: ${check.state}${check.link ? ` ${check.link}` : ""}`);
 
 /**
+ * GitHub's reason the pull request last left the queue, of `events` (its
+ * `RemovedFromMergeQueueEvent`s), counting only one at or after `since` (when this enqueue was
+ * made): an older one is from an earlier time in the queue.
+ */
+export function dropReason(events, since) {
+  const fresh = (events ?? []).filter((event) => event && event.createdAt >= since);
+  return fresh.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.reason;
+}
+
+/**
  * The runs of a merge-group commit to read when pull request `number` left the queue unmerged,
  * of `runs` (the repository's `merge_group` runs): those of the newest group it was tested in.
  */
@@ -120,10 +141,11 @@ const seconds = (name, fallback) => {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && process.env[name] !== "" ? value : fallback;
 };
-// How often a wait reads again, and how long the checks a `gh pr ready` starts take to appear.
-// The tests set both to 0.
+// How often a wait reads again, and how long a change GitHub has just been told of takes to show:
+// a rerun's checks to start, a ready pull request's, or a merge to land after the queue lets the
+// entry go. The tests set both to 0.
 const POLL = seconds("LAND_POLL_SECONDS", 60);
-const SETTLE = seconds("LAND_SETTLE_SECONDS", 20);
+const SETTLE = seconds("LAND_SETTLE_SECONDS", 30);
 // How long a wait lasts before it gives up: the checks, then the queue.
 const CHECKS_FOR = 120 * 60;
 const QUEUE_FOR = 240 * 60;
@@ -165,7 +187,7 @@ function main(options) {
       "--repo",
       repo,
       "--json",
-      "number,id,state,baseRefName,headRefOid,isDraft,labels",
+      "number,id,state,baseRefName,headRefOid,isDraft,isCrossRepository,labels",
     ]);
 
   // 1, 2. The pull request itself.
@@ -174,21 +196,23 @@ function main(options) {
   if (why) stop(why);
   const head = pr.headRefOid;
   const fixing = fixesMain(pr);
-  const jump = options.jump || fixing;
 
   // 3. Main.
   const mainGate = () => {
     if (fixing) return;
-    const mainHead = gh(["api", `repos/${repo}/commits/main`, "--jq", ".sha"], false);
     const runs = gh([
       "api",
       "-X",
       "GET",
       `repos/${repo}/actions/workflows/ci.yml/runs`,
       "-f",
-      `head_sha=${mainHead}`,
+      "branch=main",
       "-f",
-      "per_page=20",
+      "event=push",
+      "-f",
+      "status=completed",
+      "-f",
+      "per_page=1",
       "--jq",
       ".workflow_runs",
     ]);
@@ -220,6 +244,8 @@ function main(options) {
     gh(["run", "rerun", String(run.id), "--repo", repo], false);
     console.log(`reran ${run.name} (${run.html_url}), which waited on approval`);
   }
+  // Until the rerun starts, gh still reads its old check as failed.
+  if ((waiting ?? []).length > 0) pause(SETTLE);
 
   // 5, 6. The required checks.
   const readChecks = () => {
@@ -233,8 +259,9 @@ function main(options) {
       "--json",
       "name,state,bucket,link",
     ]);
-    // gh exits non-zero while a check is pending or failed, and prints them all the same; with
-    // none reported yet it prints nothing, which is a check still to come.
+    // The checks are read from what gh prints, whatever its exit status: with --json, gh 2.83
+    // exits 0 even with a check failed, and older ones exit 1 or 8 while one is failed or
+    // pending. With none reported yet it prints nothing, which is a check still to come.
     if (done.stdout) return sortChecks(JSON.parse(done.stdout));
     if (/no (required )?checks reported/i.test(done.stderr))
       return {
@@ -276,7 +303,7 @@ function main(options) {
 
   if (pr.isDraft) {
     gh(["pr", "ready", options.pr, "--repo", repo], false);
-    console.log(`marked #${options.pr} ready for review; waiting for the checks that starts`);
+    console.log(`marked #${options.pr} ready for review; reading its checks again`);
     pause(SETTLE);
     checksGate(true);
   }
@@ -287,13 +314,13 @@ function main(options) {
     "api",
     "graphql",
     "-f",
-    "query=mutation($id: ID!, $head: GitObjectID!, $jump: Boolean) { enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $head, jump: $jump}) { mergeQueueEntry { state position } } }",
+    "query=mutation($id: ID!, $head: GitObjectID!, $jump: Boolean) { enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $head, jump: $jump}) { mergeQueueEntry { state position enqueuedAt } } }",
     "-f",
     `id=${pr.id}`,
     "-f",
     `head=${head}`,
     "-F",
-    `jump=${jump}`,
+    `jump=${fixing}`,
     "--jq",
     ".data.enqueuePullRequest.mergeQueueEntry",
   ]);
@@ -301,16 +328,16 @@ function main(options) {
 
   // 8. Where it stands.
   console.log(
-    `#${options.pr} enqueued at ${head}${jump ? " at the front" : ""}: position ${entry.position}, ${entry.state.toLowerCase()}`,
+    `#${options.pr} enqueued at ${head}${fixing ? " at the front" : ""}: position ${entry.position}, ${entry.state.toLowerCase()}`,
   );
   if (!options.watch) return;
 
-  for (let waited = 0; ; waited += Math.max(POLL, 1)) {
-    const now = gh([
+  const read = () =>
+    gh([
       "api",
       "graphql",
       "-f",
-      "query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { state mergeQueueEntry { state position } timelineItems(itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT], last: 1) { nodes { ... on RemovedFromMergeQueueEvent { reason } } } } } }",
+      "query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { state mergeQueueEntry { state position } timelineItems(itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT], last: 5) { nodes { ... on RemovedFromMergeQueueEvent { reason createdAt } } } } } }",
       "-f",
       `owner=${owner}`,
       "-f",
@@ -320,9 +347,18 @@ function main(options) {
       "--jq",
       ".data.repository.pullRequest",
     ]);
+  for (let waited = 0; ; waited += Math.max(POLL, 1)) {
+    let now = read();
+    // While a merge lands, the entry can be gone a moment before the pull request reads MERGED:
+    // only an entry still gone after a pause is a drop.
+    if (now.state === "OPEN" && !now.mergeQueueEntry) {
+      pause(SETTLE);
+      now = read();
+    }
     if (now.state === "MERGED") return console.log(`#${options.pr} merged`);
     if (now.state === "CLOSED") stop(`#${options.pr} was closed before it merged`);
-    if (!now.mergeQueueEntry) return dropped(now.timelineItems?.nodes?.[0]?.reason);
+    if (!now.mergeQueueEntry)
+      return dropped(dropReason(now.timelineItems?.nodes, entry.enqueuedAt ?? ""));
     if (waited >= QUEUE_FOR)
       stop(`#${options.pr} is still in the queue after ${QUEUE_FOR / 60} minutes`);
     pause(POLL);
@@ -331,6 +367,9 @@ function main(options) {
   /** Says why the pull request left the queue unmerged, from the annotations of its queue run. */
   function dropped(reason) {
     const lines = [`#${options.pr} left the merge queue unmerged${reason ? `: ${reason}` : ""}`];
+    // The newest 50 merge-group runs of the whole repository: with at most five groups building
+    // and a few workflows each, that holds the group this pull request just left, read within a
+    // poll of it leaving. Keep it at 50 or more.
     const runs = gh([
       "api",
       "-X",

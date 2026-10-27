@@ -16,7 +16,7 @@ A small fix after approval lands on that approval when the new commits only answ
 
 ## 2. Shaped
 
-- Related tickets travel together: one pull request, one commit per ticket, a `Closes #n` for each (ruling 2026-10-26). A risky part (consent, security, a public key) gets a pull request of its own.
+- Tickets that touch the same area or the same files travel together: one pull request, one commit per ticket, a `Closes #n` for each, so they share one CI run and one landing on a moving main. A risky part (consent, security, a public key), or one that would hold the rest back, gets a pull request of its own.
 - Every design choice the author settled is a numbered D-line (`D-<ticket>-n`) in the body.
 - Every leftover is a ticket in the milestone, linked from the body.
 

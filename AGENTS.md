@@ -159,5 +159,4 @@ Single-context: `CONTEXT.md` and `docs/adr/` at the root. See `docs/agents/domai
 
 ### Landing a pull request
 
-The `landing-a-pr` skill (`docs/agents/skills/landing-a-pr/SKILL.md`), with `tools/land.mjs` for
-every mechanical step.
+See `docs/agents/skills/landing-a-pr/SKILL.md`; `tools/land.mjs` does the mechanics.
