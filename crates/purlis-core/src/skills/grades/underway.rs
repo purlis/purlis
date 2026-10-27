@@ -12,6 +12,13 @@
 //!
 //! **Tier:** Clone state, never committed: what this machine was doing, read back by this machine
 //! alone, each file at most [`MOST_FILE_BYTES`] and read through no link.
+//!
+//! **A grade holds its file's lock while it runs** (#3466): [`began`] answers a [`Marker`] whose
+//! `flock` on the file lasts as long as the grade holds it, and goes with its process however
+//! that ends. A start reads a file whose lock another holds as running, whatever process number
+//! it names, so a crashed grade whose number another process took is recorded all the same, and
+//! a running one is never recorded on a system where a process number says nothing. Where the
+//! lock cannot be asked, the file's process number is read as before.
 
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -19,6 +26,38 @@ use std::path::{Path, PathBuf};
 use purlis_skills::grade::{self, GradeEnd, GradeReport};
 
 use super::{Graded, Level, MOST_FILES, Spent, is_local, plain, record_to};
+
+/// **A grade's file under way, and its lock, held while the grade runs** (#3466): dropped once it
+/// ends, after [`ended`] took the file away.
+#[derive(Debug)]
+pub struct Marker {
+    path: PathBuf,
+    /// `None` where the file could not be locked: a start then reads its process number.
+    _lock: Option<crate::filelock::Held>,
+}
+
+impl Marker {
+    /// The file's path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// The file's path, its lock let go of, as a crash lets go of it.
+    #[cfg(test)]
+    pub fn into_path(self) -> PathBuf {
+        let Marker { path, .. } = self;
+        path
+    }
+}
+
+#[cfg(test)]
+impl std::ops::Deref for Marker {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.path
+    }
+}
 
 /// The folder of this machine's state the grades under way are held in.
 pub const DIR: &str = "grades-under-way";
@@ -34,6 +73,11 @@ struct UnderWay {
     pid: u32,
     /// Whether its copy is this machine's alone, so its row goes to this machine's record.
     local: bool,
+    /// Whether the grade holds the file's lock while it runs ([`Marker`], #3466): where it does
+    /// not, a lock no other holds says nothing, and its process number is read instead. `false`
+    /// in a file written before this field.
+    #[serde(default)]
+    locked: bool,
     /// Its row as it would be recorded had it ended now: no chat scored, interrupted.
     graded: Graded,
 }
@@ -68,15 +112,16 @@ pub fn interrupted_report(
 
 /// **Holds `graded`, a grade of the copy at `level` starting in the project at `root`, as under
 /// way**: its row, with its report set to [`interrupted_report`] and nothing spent, in a private
-/// file of this machine's state, opened following no link. The grade's id names the file, so an
-/// id that is not a plain name is refused.
-pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<PathBuf> {
+/// file of this machine's state, opened following no link, and locked before it is in its place
+/// ([`Marker`]). The grade's id names the file, so an id that is not a plain name is refused.
+pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Marker> {
     if !plain(&graded.grade) {
         return Err(std::io::Error::other("the grade's id is not a plain name"));
     }
-    let held = UnderWay {
+    let mut held = UnderWay {
         pid: std::process::id(),
         local: is_local(root, level),
+        locked: false,
         graded: Graded {
             report: interrupted_report(
                 graded.report.cap.unwrap_or_default(),
@@ -105,15 +150,30 @@ pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Pat
     }
     let written = (|| {
         let mut file = crate::contain::nofollow(&mut options).open(&partial)?;
+        // Locked before it is written and renamed, so no start ever finds it in its place
+        // unlocked, and the file says whether it is: the lock is the file's, and the rename
+        // keeps the file.
+        held.locked = match file.try_lock() {
+            Ok(()) => true,
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: grade {} under way is not locked ({why}): its process number says \
+                     whether it runs",
+                    graded.grade
+                );
+                false
+            }
+        };
         let text = serde_json::to_string(&held).map_err(std::io::Error::other)?;
         file.write_all(text.as_bytes())?;
         file.sync_all()?;
-        std::fs::rename(&partial, &path)
+        std::fs::rename(&partial, &path)?;
+        Ok(held.locked.then(|| crate::filelock::Held::locked(file)))
     })();
     if written.is_err() {
         let _ = std::fs::remove_file(&partial);
     }
-    written.map(|()| path)
+    written.map(|lock| Marker { path, _lock: lock })
 }
 
 /// **The grade `grade` ended**, recorded or not: it is no longer held as under way.
@@ -125,8 +185,9 @@ pub fn ended(root: &Path, grade: &str) {
 
 /// **Records every grade under way in the project at `root` that no running purlis holds, as
 /// interrupted**, and holds it under way no more: what a project's start does (#3353). A file
-/// whose process still runs is left as it is, unless it is this process and `runs_here` says this
-/// process runs no such grade; a file that is a link, too large, or not a sound row is taken away
+/// whose lock another holds is left as it is ([`Marker`], #3466); where its lock cannot be asked,
+/// one whose process still runs is, unless it is this process and `runs_here` says this process
+/// runs no such grade; a file that is a link, too large, or not a sound row is taken away
 /// unrecorded. `device` names this machine's committed record file, and is asked only for a
 /// grade recorded there: a start with no grade under way reads nothing of this machine's store
 /// (a fenced test's start among them). A file of a newer purlis is left for it, and one whose row could not be written
@@ -150,6 +211,12 @@ pub fn interrupted(
         if path.extension().is_none_or(|ext| ext != "json") {
             continue;
         }
+        // The lock first: a file another holds is never read, as its lock may keep it from
+        // being read on some systems, and an unread file would be taken away.
+        let locked = locked_by_another(&path);
+        if locked == Some(true) {
+            continue;
+        }
         let held = match read(&path) {
             Held::Sound(held) => *held,
             Held::Newer => continue,
@@ -158,10 +225,11 @@ pub fn interrupted(
                 continue;
             }
         };
-        let held_by_a_running_purlis = if held.pid == std::process::id() {
-            runs_here(&held.graded.grade)
-        } else {
-            crate::process::alive(held.pid)
+        // A lock no other holds says the grade ended only where the grade took it.
+        let held_by_a_running_purlis = match locked.filter(|_| held.locked) {
+            Some(locked) => locked,
+            None if held.pid == std::process::id() => runs_here(&held.graded.grade),
+            None => crate::process::alive(held.pid),
         };
         if held_by_a_running_purlis {
             continue;
@@ -173,6 +241,23 @@ pub fn interrupted(
         let _ = std::fs::remove_file(&path);
     }
     out
+}
+
+/// **Whether another holds the lock of the grade's file at `path`** ([`Marker`]), or `None` where
+/// that cannot be asked (the file will not open, or its system has no such lock). A lock this
+/// call takes is let go of at once.
+fn locked_by_another(path: &Path) -> Option<bool> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    let file = crate::contain::nofollow(&mut options).open(path).ok()?;
+    match file.try_lock() {
+        Ok(()) => {
+            let _ = file.unlock();
+            Some(false)
+        }
+        Err(std::fs::TryLockError::WouldBlock) => Some(true),
+        Err(std::fs::TryLockError::Error(_)) => None,
+    }
 }
 
 /// What one file of the folder holds.

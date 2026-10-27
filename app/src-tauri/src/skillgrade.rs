@@ -476,16 +476,22 @@ pub(crate) async fn skill_grade_start(
                 limits.priced.clone(),
             ),
         };
-        if let Err(why) = grades::underway::began(&root, &level, &under_way) {
-            tracing::warn!(
-                "purlis: grade {grade} is not held as under way ({why}): a crash before it ends \
-                 loses it"
-            );
-        }
+        // Its lock is held while the grade runs (#3466): what tells a start it runs.
+        let marker = match grades::underway::began(&root, &level, &under_way) {
+            Ok(marker) => Some(marker),
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: grade {grade} is not held as under way ({why}): a crash before it \
+                     ends loses it"
+                );
+                None
+            }
+        };
         let held_at = root.clone();
         std::thread::Builder::new()
             .name("purlis-grade".to_owned())
             .spawn(move || {
+                let marker = std::cell::RefCell::new(marker);
                 let tell = |ran: u32,
                             tokens: Option<u64>,
                             ended: Option<GradeEnded>,
@@ -535,6 +541,7 @@ pub(crate) async fn skill_grade_start(
                         &purlis_core::machine::this_log_name(),
                     );
                     grades::underway::ended(&root, &grade);
+                    drop(marker.borrow_mut().take());
                     running().remove(&grade);
                     let said = match (&graded.report.not_started, recorded) {
                         (Some(why), _) => Some(why.clone()),
@@ -559,6 +566,8 @@ pub(crate) async fn skill_grade_start(
                 };
                 held_to_its_end(&grade, run, || {
                     // Recorded as interrupted, unless the fault came once it was recorded whole.
+                    // Its lock let go of first: a start reads a held lock as a grade that runs.
+                    drop(marker.borrow_mut().take());
                     let said = if record_interrupted(&root).contains(&grade) {
                         FAILED
                     } else {

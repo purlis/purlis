@@ -7217,13 +7217,16 @@ rewritten.
 
 ### `<state>/grades-under-way/<grade>.json`
 - **Format:** one JSON object per grade running on this machine (#3353): `pid`, the process that
-  runs it; `local`, whether its copy is this machine's alone; and `graded`, its eval record row as
+  runs it; `local`, whether its copy is this machine's alone; `locked`, whether the grade holds the
+  file's lock (#3466, `false` where absent); and `graded`, its eval record row as
   it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
   nothing spent). Written `0600` through no link when a grade starts
-  (`grades::underway::began`) and removed when it ends (`grades::underway::ended`). At the
-  project's next start, each file whose process no longer runs is recorded as it is, interrupted,
-  and removed (`grades::underway::interrupted`): so a crash, a fault or a quit never leaves a grade
-  running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
+  (`grades::underway::began`) and removed when it ends (`grades::underway::ended`). The grade
+  holds the file's `flock` while it runs, taken before the file is in its place, so the lock goes
+  with its process however that ends (#3466). At the project's next start, each file whose lock no
+  other holds, of a grade that took it, is recorded as it is, interrupted, and removed (`grades::underway::interrupted`),
+  whatever process number it names; where the lock cannot be asked, one whose process no longer
+  runs is: so a crash, a fault or a quit never leaves a grade running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
   sound row is removed unrecorded.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state, transient — it lasts as long as its grade.
