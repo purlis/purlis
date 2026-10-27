@@ -88,11 +88,12 @@ const FIELD_ROLES: &[&str] = &["textbox", "searchbox", "combobox", "spinbutton",
 pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
   // The engine may install its embedder interface before this runs or after: either way, what
   // the front end reads is the wrapped one.
+  const refusedNames = new Set();
   const wrap = (native) => {
     const allowed = new Set(EMBEDDER_ALLOWED);
     const refuse = (message) => {
       let id;
-      try { id = JSON.parse(message).id; } catch (e) { return; }
+      try { const asked = JSON.parse(message); id = asked.id; if (refusedNames.size < 64) refusedNames.add(String(asked.method).slice(0, 64)); } catch (e) { return; }
       if (typeof id !== 'number') return;
       setTimeout(() => {
         const api = globalThis.DevToolsAPI;
@@ -156,7 +157,7 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
       }
     }
   };
-  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver }), writable: false, configurable: false });
+  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver, refused: () => [...refusedNames] }), writable: false, configurable: false });
 })()";
 
 /// **What the front end may ask of the engine's embedder interface** (#2028), where the engine
@@ -197,6 +198,7 @@ pub(crate) const DELIVER: &str =
 const HOSTED: &str = r"JSON.stringify({
   host: typeof globalThis.DevToolsHost,
   wrapped: !!(globalThis.DevToolsHost && globalThis.DevToolsHost.__purlisWrapped),
+  refused: (globalThis.__purlisInspector && globalThis.__purlisInspector.refused) ? globalThis.__purlisInspector.refused() : null,
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
 })";
 
@@ -1004,6 +1006,21 @@ fn run(weak: &Weak<Inner>, open: &Arc<Inspection>, todo: &Receiver<Work>) {
     }
 }
 
+/// Notes how the front end runs, for the host's log and the tests: whether the engine's
+/// embedder interface reaches it, wrapped, and which of its asks were answered with nothing.
+fn probe(inner: &Inner, open: &Inspection) {
+    let found = inner.devtools.call(
+        "Runtime.evaluate",
+        json!({ "expression": HOSTED, "returnByValue": true }),
+        Some(&open.front_session),
+    );
+    if let Ok(found) = found
+        && let Some(found) = found.pointer("/result/value").and_then(Value::as_str)
+    {
+        open.noted(&format!("front end: {found}"));
+    }
+}
+
 /// Whether `event` tells of one of purlis's own worlds in the page: kept, and never told to
 /// DevTools.
 fn ours(open: &Inspection, event: &crate::cdp::Event) -> bool {
@@ -1097,6 +1114,9 @@ fn front_end_event(
                 json!({ "sessionId": ack }),
                 Some(&open.front_session),
             );
+            if ack < 4 {
+                probe(inner, open);
+            }
         }
         "Page.frameNavigated" if params.pointer("/frame/parentId").is_none() => {
             open.shows.fetch_add(1, Ordering::SeqCst);
@@ -1109,17 +1129,7 @@ fn front_end_event(
                     Some(&open.front_session),
                 );
             }
-            // Whether the front end runs as a hosted one, for the host's log and the tests.
-            let found = inner.devtools.call(
-                "Runtime.evaluate",
-                json!({ "expression": HOSTED, "returnByValue": true }),
-                Some(&open.front_session),
-            );
-            if let Ok(found) = found
-                && let Some(found) = found.pointer("/result/value").and_then(Value::as_str)
-            {
-                open.noted(&format!("front end: {found}"));
-            }
+            probe(inner, open);
         }
         "Target.detachedFromTarget"
             if params["sessionId"].as_str() == Some(open.front_session.as_str()) =>
