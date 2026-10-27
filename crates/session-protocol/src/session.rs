@@ -284,9 +284,23 @@ use crate::view::{Limits, Views};
 /// version, and nothing of the desktop's folder), and answers `profile_kept` with whether its
 /// harness says it is signed in there. A host before 1.43 refuses it `unknown_command`, and its
 /// pool's chats run on the profiles the runner has of its own.
+///
+/// 1.44 added Inspect (#2028): `inspect` opens the real DevTools of the page a browser the person
+/// drives shows, its front end `width` by `height`, answered `done`, or refused `not_driving`;
+/// sent again while open, it only sizes them. A view of the kind `inspector` is DevTools' frames,
+/// as a browser view's are, and `inspector_input` is one event of the person's into them,
+/// refused `not_driving` or `input_missed` as `browser_input` is. The hand-back closes them. The
+/// window's alone, on its own host ([`crate::grants::Power::Inspect`]): never relayed, and never
+/// any other scope's. A host before 1.44 refuses `inspect` `unknown_command`.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 43,
+    minor: 44,
+};
+
+/// The version that first opens DevTools for the person (#2028).
+pub const KNOWS_INSPECT: Version = Version {
+    major: 1,
+    minor: 44,
 };
 
 /// The version that first pushes a host's own event log to a link that asks with a cursor for its
@@ -664,6 +678,23 @@ pub enum Command {
         program: String,
         width: u16,
         height: u16,
+    },
+    /// The person opens the real DevTools of the page browser `program` shows (1.44, #2028),
+    /// their front end `width` by `height` CSS pixels: refused [`NOT_DRIVING`] unless they drive
+    /// it; sent again while open, it only sizes them. They close as the browser is handed back.
+    /// Watched through a view of the kind [`ViewKind::Inspector`]. Answered [`Answer::Done`].
+    /// The window's alone ([`crate::grants::Power::Inspect`]).
+    Inspect {
+        program: String,
+        width: u16,
+        height: u16,
+    },
+    /// One event of the person's into browser `program`'s open DevTools (1.44), aimed at what a
+    /// frame of them showed: refused [`NOT_DRIVING`] unless they drive it, and [`INPUT_MISSED`]
+    /// where DevTools are not open or have moved on.
+    InspectorInput {
+        program: String,
+        input: crate::browsing::Input,
     },
     /// purlis performs a login in browser `program` (1.18, #2016): it takes the browser from the
     /// agent, goes to the login's address, fills it only on that address's origin, submits,
@@ -1157,6 +1188,9 @@ pub enum ViewKind {
     /// after it, each one whole ([`crate::view::frames`]). Frames are made only while a browser
     /// view is attached.
     Browser,
+    /// The frames of a browser's open DevTools (1.44, #2028), as a browser view's are: the
+    /// window's alone ([`crate::grants::Power::Inspect`]), and only while they are open.
+    Inspector,
 }
 
 /// What a browser view is to the person (1.6): it decides how many frames a second it is sent
@@ -1574,6 +1608,8 @@ wire_words!(Command {
     HandBack => "hand_back",
     BrowserInput => "browser_input",
     SizeBrowser => "size_browser",
+    Inspect => "inspect",
+    InspectorInput => "inspector_input",
     LogIn => "log_in",
     TakeBack => "take_back",
     NameWindow => "name_window",
@@ -1627,6 +1663,7 @@ impl Command {
             | Command::SizeBrowser { .. }
             | Command::CancelEngineDownload { .. } => Power::Browser,
             Command::LogIn { .. } => Power::LogIn,
+            Command::Inspect { .. } | Command::InspectorInput { .. } => Power::Inspect,
             Command::ProgramsOf { .. } | Command::NoteProgram { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
@@ -2182,7 +2219,9 @@ impl Lane {
             Command::TakeOver { program }
             | Command::HandBack { program }
             | Command::BrowserInput { program, .. }
-            | Command::SizeBrowser { program, .. } => Some(Lane::Program(program.clone())),
+            | Command::SizeBrowser { program, .. }
+            | Command::Inspect { program, .. }
+            | Command::InspectorInput { program, .. } => Some(Lane::Program(program.clone())),
         }
     }
 }
@@ -2298,6 +2337,17 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
             code: NOT_ALLOWED.into(),
             why: format!(
                 "a program's note is kept for purlis's window only, and this link is `{scope}`"
+            ),
+        });
+    }
+    if matches!(command, Command::AttachView { kind: ViewKind::Inspector, .. })
+        && !scope.may(Power::Inspect)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "DevTools are opened and watched from purlis's window on its own device only, and \
+                 this link is `{scope}`"
             ),
         });
     }
@@ -3006,6 +3056,45 @@ impl Client {
             height,
         })
         .await
+    }
+
+    /// The person opens the DevTools of the page browser `program` shows, `width` by `height`
+    /// (1.44, #2028), or sizes them where they are open.
+    pub async fn inspect(&self, program: &str, width: u16, height: u16) -> Result<(), CallError> {
+        self.done(Command::Inspect {
+            program: program.into(),
+            width,
+            height,
+        })
+        .await
+    }
+
+    /// One event of the person's into browser `program`'s open DevTools (1.44).
+    pub async fn inspector_input(
+        &self,
+        program: &str,
+        input: crate::browsing::Input,
+    ) -> Result<(), CallError> {
+        self.done(Command::InspectorInput {
+            program: program.into(),
+            input,
+        })
+        .await
+    }
+
+    /// Attach a view of browser `program`'s open DevTools (1.44): its stream of whole frames
+    /// comes on the [`Acceptor`] [`Client::new`] gave.
+    pub async fn attach_inspector_view(&self, program: &str) -> Result<Attached, CallError> {
+        let attach = Command::AttachView {
+            program: program.into(),
+            kind: ViewKind::Inspector,
+            role: Some(ViewRole::Focused),
+            rate: None,
+        };
+        match self.call(attach).await? {
+            Answer::Attached(attached) => Ok(attached),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// Close a view this client attached. The program keeps running.

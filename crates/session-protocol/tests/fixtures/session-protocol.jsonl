@@ -162,3 +162,8 @@
 {"call":{"id":157,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":4,"ends_with_its_window":true}}
 {"call":{"id":158,"command":"keep_profile","name":"work","harness":"claude","sandbox_only":true,"pinned":"2.1.300"}}
 {"reply":{"re":158,"ok":{"profile_kept":{"standing":"signed_in"}}}}
+{"call":{"id":160,"command":"inspect","program":"01J9ZQ8000000000000000000D","width":1000,"height":600}}
+{"reply":{"re":160,"ok":"done"}}
+{"call":{"id":161,"command":"attach_view","program":"01J9ZQ8000000000000000000D","kind":"inspector","role":"focused"}}
+{"call":{"id":162,"command":"inspector_input","program":"01J9ZQ8000000000000000000D","input":{"kind":"key","aim":{"page":"devtools","document":1},"action":"down","key":"d","physical":"KeyD","key_code":68}}}
+{"reply":{"re":162,"refused":{"code":"input_missed","why":"the page changed before this input reached it, so it was dropped"}}}

@@ -419,6 +419,33 @@ fn every_command() -> Vec<Command> {
         },
         // Where the host's own event log ends (1.41, #3393): the window's, and relayed.
         Command::LogEnd,
+        // The person's DevTools of a browser they drive (1.44, #2028): the window's alone, on its
+        // own host, never relayed.
+        Command::Inspect {
+            program: CHAT.into(),
+            width: 1000,
+            height: 600,
+        },
+        Command::AttachView {
+            program: CHAT.into(),
+            kind: session::ViewKind::Inspector,
+            role: None,
+            rate: None,
+        },
+        Command::InspectorInput {
+            program: CHAT.into(),
+            input: purlis_session_protocol::browsing::Input::Key {
+                aim: purlis_session_protocol::browsing::Aim {
+                    page: "devtools".into(),
+                    document: 1,
+                },
+                action: purlis_session_protocol::browsing::KeyAction::Down,
+                key: "a".into(),
+                physical: "KeyA".into(),
+                key_code: 65,
+                modifiers: 0,
+            },
+        },
     ]
 }
 
@@ -482,6 +509,9 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "take_code",
             "give_code",
             "log_end",
+            "inspect",
+            "attach_view", // DevTools' frames
+            "inspector_input",
         ],
         Scope::Terminal => &[
             "list",
