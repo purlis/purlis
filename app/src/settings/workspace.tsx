@@ -14,13 +14,7 @@ import {
   type SettingsChange,
   type WorkspaceSettings,
 } from "../bindings";
-import {
-  EXTENSIONS,
-  NO_EXTENSIONS,
-  themeGroup,
-  type Control,
-  type Shown,
-} from "./fileControls";
+import { EXTENSIONS, NO_EXTENSIONS, themeGroup, type Control, type Shown } from "./fileControls";
 import { EXTENSIONS_LINK } from "./links";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
 import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "./driver";

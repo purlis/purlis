@@ -85,8 +85,8 @@ export function ProposedChangeTab({ plane, id }: { plane: PlaneId; id: number })
         </p>
       ) : (
         <p>
-          Chat {read.session} proposes this change to <code>{read.path}</code>. It may not write
-          the file itself, so only you apply it; it is told what you did on its next turn.
+          Chat {read.session} proposes this change to <code>{read.path}</code>. It may not write the
+          file itself, so only you apply it; it is told what you did on its next turn.
         </p>
       )}
       {read.why !== null && read.why !== undefined ? (

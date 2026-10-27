@@ -11,8 +11,7 @@ import { askOpenProposal } from "./proposedChangeOpen";
 import { inertly } from "./sandboxBlocks";
 
 /** Whether this page may answer the Notice: the window may, a link may not. */
-export const mayAnswerOldPlugins = (): boolean =>
-  inTheWindow(commands, "removeOldHarnessPlugins");
+export const mayAnswerOldPlugins = (): boolean => inTheWindow(commands, "removeOldHarnessPlugins");
 
 /**
  * **The old `[harness_plugins]` keys, said once** (#3467): purlis no longer turns other

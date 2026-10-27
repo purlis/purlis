@@ -332,14 +332,7 @@ describe("the Workspace level", () => {
     await at();
 
     await waitFor(() =>
-      expect(groups()).toEqual([
-        "Live",
-        "Repos",
-        "Dispatch",
-        "Extensions",
-        "Theme",
-        "Appearance",
-      ]),
+      expect(groups()).toEqual(["Live", "Repos", "Dispatch", "Extensions", "Theme", "Appearance"]),
     );
     expect(asked("workspace_settings")).toContainEqual({ plane: PLANE, workspace: "alpha" });
     expect(asked("project_extensions")).toContainEqual({ plane: PLANE, workspace: "alpha" });
