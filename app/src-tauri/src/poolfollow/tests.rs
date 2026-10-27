@@ -82,6 +82,14 @@ fn a_pool_draining(machine: &Machine) {
     .unwrap();
 }
 
+/// Whether docker was asked nothing but to look at a container, if anything.
+fn only_looked(config: &std::path::Path) -> bool {
+    std::fs::read_to_string(config.join("log"))
+        .unwrap_or_default()
+        .lines()
+        .all(|line| line.starts_with("container inspect "))
+}
+
 fn names(machine: &Machine) -> Vec<String> {
     runners::read(&machine.config)
         .unwrap()
@@ -146,8 +154,9 @@ fn a_pool_already_of_this_versions_image_or_of_a_teams_own_is_left_as_it_is() {
     let said = follow_and_drain(&machine, Some(&Image::pinned(NEW).unwrap()), &|_| Ok(2));
 
     assert!(said.is_empty(), "{said:?}");
+    // Asking whether a draining runner's container runs (#2051) is all docker was asked.
     assert!(
-        !config.path().join("log").exists(),
+        only_looked(config.path()),
         "docker was asked to make something"
     );
 }
@@ -168,8 +177,9 @@ fn a_release_with_no_runner_image_leaves_the_pools_where_they_are() {
 
     assert_eq!(runners::read(&machine.config).unwrap(), before);
     assert_eq!(runners::pools(&machine.config).unwrap(), pools);
+    // Asking whether a draining runner's container runs (#2051) is all docker was asked.
     assert!(
-        !config.path().join("log").exists(),
+        only_looked(config.path()),
         "docker was asked to do something"
     );
 
@@ -215,4 +225,37 @@ fn a_removed_pools_waiting_chats_are_let_go_of() {
 
     forget_waiting(&machine.config, "first");
     assert_eq!(waiting_on(&machine.config, "first"), 0);
+}
+
+/// A machine in `config` whose `docker` says every container is stopped, as a suspended
+/// runner's is, and removes whatever it is asked to.
+fn a_machine_whose_runners_are_suspended(config: &std::path::Path) -> Machine {
+    let machine = a_machine(config);
+    std::fs::write(
+        config.join("docker"),
+        format!(
+            "#!/bin/sh\necho \"$*\" >> '{}'\ncase \"$1 $2\" in\n  'container inspect') \
+             echo '[{{\"State\":{{\"Running\":false}}}}]' ;;\nesac\nexit 0\n",
+            config.join("log").display()
+        ),
+    )
+    .unwrap();
+    machine
+}
+
+/// A suspended draining runner runs no chat (#2051): it is removed without being woken to ask.
+/// Seen red: with the look at its container taken out, the runner is asked.
+#[test]
+fn a_suspended_draining_runner_is_removed_without_being_asked() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine_whose_runners_are_suspended(config.path());
+    a_pool_draining(&machine);
+
+    let said = follow_and_drain(&machine, None, &|_| {
+        panic!("a suspended runner is not asked")
+    });
+
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+    let log = std::fs::read_to_string(config.path().join("log")).unwrap();
+    assert!(!log.contains("start "), "{log}");
 }

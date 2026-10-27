@@ -23,6 +23,7 @@
  *   `data-scope="notice-row"`) stands above the terminal and takes the height it leaves. Both are
  *   layout, drawn here and themed through the Notices they hold.
  */
+import { CircleAlert, CircleCheck } from "lucide-react";
 import type { ComponentPropsWithRef, ReactNode, Ref } from "react";
 
 /** The family's variants, in the order the manifest names them. */
@@ -38,8 +39,13 @@ export function NoticeBox({
   placement,
   opened,
   asks,
+  layout,
   children,
 }: {
+  /** **`card`** (#3344, the sidebar-views prototype's Q3 A): its mark at the start, its title
+   *  with its × at the top right, its sentence, its ways on a row of their own and what a way
+   *  out opened inside it. Without, the line. */
+  layout?: "card";
   tone: NoticeTone;
   placement: NoticePlacement;
   /** A way out opened something under the line: in a pane the box takes a sentence's width. */
@@ -56,18 +62,54 @@ export function NoticeBox({
       data-placement={placement}
       data-opened={opened ? "" : undefined}
       data-asks={asks ? "" : undefined}
+      data-layout={layout}
     >
       {children}
     </div>
   );
 }
 
-/** **What a Notice says**: its sentence, and anything it says before its ways out. */
-export function NoticeMessage({ children }: { children: ReactNode }) {
+/** **What a Notice says**: its sentence, and anything it says before its ways out. A card's is
+ *  its live region (`live`), unless it is a copy of one already said. */
+export function NoticeMessage({
+  children,
+  live,
+  cause,
+}: {
+  children: ReactNode;
+  live?: boolean;
+  /** What a card is about, stably, for a test to name it by (`src/Notice.tsx`). */
+  cause?: string;
+}) {
   return (
-    <div data-scope="notice" data-part="message">
+    <div
+      data-scope="notice"
+      data-part="message"
+      role={live === true ? "status" : undefined}
+      data-cause={cause}
+    >
       {children}
     </div>
+  );
+}
+
+/** **A card's mark** (#3344): a check for news, an alert for trouble; decoration, its tone said
+ *  in words inside the message. */
+export function NoticeMark({ tone }: { tone: NoticeTone }) {
+  const Mark = tone === "trouble" ? CircleAlert : CircleCheck;
+  return (
+    <span data-scope="notice" data-part="mark" aria-hidden="true">
+      <Mark />
+    </span>
+  );
+}
+
+/** **A card's title** (#3344): what happened, before its one sentence. */
+export function NoticeTitle({ children }: { children: ReactNode }) {
+  return (
+    <strong data-scope="notice" data-part="title">
+      {children}
+    </strong>
   );
 }
 

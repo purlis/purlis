@@ -61,13 +61,14 @@ import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import { useWayPlaces } from "./wayPlaces";
 import { useProjectShown } from "./projectShown";
 import { capMarks } from "./combiningMarks";
-import { marksIn, markOf } from "./invisible";
+import { blankOf, marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card } from "./ui/card/Card";
 import { Form, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { RESULTS } from "./ActionResultNotice";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /** What an empty Inbox says (I-12). */
@@ -232,6 +233,9 @@ export function Inbox({
   // so it gives its place up as it leaves the front and hands it over again as it comes back.
   const shown = useProjectShown();
   const placeWindowLines = shown ? windowLines?.at : undefined;
+  // The results the window keeps (#3344), under the Notices, in the same place-giving way.
+  const placeResults = shown ? windowLines?.resultsAt : undefined;
+  const resultsCount = windowLines?.results ?? 0;
   const asking = elsewhere?.asking ?? [];
   const quiet = elsewhere?.quiet ?? [];
   // Named only where the window can bring the project forward.
@@ -471,7 +475,7 @@ export function Inbox({
             <section
               className="inbox-notices"
               aria-label={NOTICES}
-              hidden={noticed === 0 && windowLinesCount === 0}
+              hidden={noticed === 0 && windowLinesCount === 0 && resultsCount === 0}
               ref={noticesAt}
             >
               <PanelSectionTitle level={3} className="inbox-chain">
@@ -490,6 +494,16 @@ export function Inbox({
                   )}
                 </NoticeList>
               </NoticeWayGuard>
+              {/* **Results** (#3344): what the person's actions answered, newest first, each the
+              notice that stood at the top of the content, with the same ways on. */}
+              {placeResults !== undefined && (
+                <section aria-label={RESULTS} hidden={resultsCount === 0}>
+                  <PanelSectionTitle level={3} className="inbox-chain">
+                    {RESULTS}
+                  </PanelSectionTitle>
+                  <div className="inbox-results" ref={placeResults} />
+                </section>
+              )}
             </section>
           )}
           {updates !== undefined && <UpdateList updates={updates} stops={stops} />}
@@ -505,6 +519,10 @@ export type WindowLines = {
   at: (element: HTMLDivElement | null) => void;
   /** How many lines the window lists now. */
   count: number;
+  /** Handed the element the window's kept results are drawn into, under the Notices (#3344). */
+  resultsAt?: (element: HTMLDivElement | null) => void;
+  /** How many results the window keeps for this project. */
+  results?: number;
 };
 
 /**
@@ -597,12 +615,22 @@ function shapeOf(
  * (`hooked::shown_in_full`), and the registry writes each character it hides as its mark
  * (`asking::said_inertly`), a `⟦` the chat wrote itself as `⟦U+27E6⟧`. So any mark but that one
  * on the line is a character the action holds that reads otherwise here: a no-break or an en
- * space that looks like a space, a control, a bidi override.
+ * space that looks like a space, a control, a bidi override. Where it holds several, the row
+ * names the one that misleads most (#3470): a line break, which can hide a second command, then
+ * any other hidden character, then a blank that looks like a space.
  */
 function withheldFor(line: string): string | undefined {
-  return marksIn(line)
+  const marks = marksIn(line)
     .map((one) => one.mark)
-    .find((one) => one !== markOf("\u27E6"));
+    .filter((one) => one !== markOf("\u27E6"));
+  const rank = (mark: string) => {
+    const kind = blankOf(mark);
+    return kind === "break" ? 0 : kind === "blank" ? 2 : 1;
+  };
+  return marks.reduce<string | undefined>(
+    (best, one) => (best === undefined || rank(one) < rank(best) ? one : best),
+    undefined,
+  );
 }
 
 /** An ask's line, each mark on it drawn as one (`invisible-char`), apart from the words. Its
@@ -672,9 +700,16 @@ function WithWrites({
   );
 }
 
-/** Why a permission holding `mark` offers no Allow (SK-51, #3202). */
+/** What the row says a hidden character does, by the kind of blank it is (#3470). */
+const DOES = {
+  break: "that breaks the line here",
+  blank: "that looks like another one here",
+  hidden: "a reader does not see here",
+} as const;
+
+/** Why a permission holding `mark` offers no Allow (SK-51, #3202; #3470). */
 export const hiddenSaid = (mark: string) =>
-  `Allow is not offered. It holds ${mark}, a character that looks like another one here.`;
+  `Allow is not offered. It holds ${mark}, a character ${DOES[blankOf(mark) ?? "hidden"]}.`;
 
 /** What a row says of where it waits. */
 const SOURCE_SAID: Record<Shown["source"], string> = {

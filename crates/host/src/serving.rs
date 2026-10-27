@@ -256,6 +256,28 @@ impl session::Host for PairedLink {
         command: session::Command,
         peer: &session::Peer,
     ) -> Result<session::Answer, session::Refusal> {
+        // The desktop's stop and re-arm are journalled on the runner by the link (#2051).
+        let switching = match command {
+            session::Command::StopAll => Some(false),
+            session::Command::Rearm => Some(true),
+            _ => None,
+        };
+        if let Some(rearm) = switching {
+            let answer = session::Host::call(&self.hosting, command, peer).await;
+            if let Ok(session::Answer::KillSwitch(switch)) = &answer {
+                let changed = if rearm {
+                    !switch.stopped
+                } else {
+                    switch.stopped && !switch.already
+                };
+                if changed {
+                    self.hosting
+                        .switched_by_a_link(rearm, &self.desktop.device)
+                        .await;
+                }
+            }
+            return answer;
+        }
         if command != session::Command::Unpair {
             return session::Host::call(&self.hosting, command, peer).await;
         }

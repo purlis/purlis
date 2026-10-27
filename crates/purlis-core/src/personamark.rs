@@ -286,7 +286,12 @@ pub fn set(
         )
     };
     let text = crate::contain::read_text_no_link(root, &file).map_err(could_not)?;
-    let next = with_keys(&text, &[(ICON, icon), (COLOR, colour)]);
+    let next = with_keys(&text, &[(ICON, icon), (COLOR, colour)]).map_err(|why| {
+        format!(
+            "{} {why}, so its icon and colour are as they were.",
+            file.display()
+        )
+    })?;
     if next == text {
         return Ok(());
     }
@@ -296,55 +301,25 @@ pub fn set(
 
 /// `text` with each of `keys` set to its value in the frontmatter, or taken out for `None`.
 ///
-/// The frontmatter is cut where [`personas::frontmatter`] cuts it, so the writer and the
-/// reader agree on what a key's line is. A key already there keeps its place; a new one goes
-/// last. A text with no frontmatter gains one, and stays all body below it.
-fn with_keys(text: &str, keys: &[(&str, Option<&str>)]) -> String {
-    let cut = text
-        .strip_prefix("---")
-        .and_then(|rest| rest.find("---").map(|end| (&rest[..end], &rest[end..])));
-    let (block, after) = match cut {
-        Some(cut) => cut,
-        None if keys.iter().all(|(_, value)| value.is_none()) => return text.to_owned(),
-        None => ("\n", ""),
-    };
-    let key_of = |line: &str| {
-        line.split_once(':')
-            .map(|(key, _)| crate::memstore::py_strip(key).to_owned())
-    };
-    let mut lines: Vec<String> = block.lines().map(str::to_owned).collect();
-    for (key, value) in keys {
-        let said = value.map(|value| format!("{key}: {value}"));
-        let at = lines
-            .iter()
-            .position(|line| key_of(line).as_deref() == Some(*key));
-        // A repeated key: the last line wins for a reader, so every one of them goes and the
-        // one written stands where the first was.
-        lines.retain({
-            let mut seen = false;
-            move |line| {
-                let mine = key_of(line).as_deref() == Some(*key);
-                let keep = !mine || (!seen && said.is_some());
-                seen |= mine;
-                keep
-            }
-        });
-        match (at, value) {
-            (Some(at), Some(value)) => lines[at] = format!("{key}: {value}"),
-            (None, Some(value)) => lines.push(format!("{key}: {value}")),
-            (_, None) => {}
+/// Written by the line format's one writer ([`purlis_skills::fence::with_keys`]), so the writer
+/// and [`personas::frontmatter`] agree on where the frontmatter is and what a key's line is. A
+/// key already there keeps its place; a new one goes last. A text with no frontmatter gains
+/// one, and stays all body below it; one whose frontmatter no `---` line closes is refused a
+/// pick, as a frontmatter added above it would make the person's keys body.
+fn with_keys(
+    text: &str,
+    keys: &[(&str, Option<&str>)],
+) -> Result<String, purlis_skills::fence::Unwritten> {
+    use purlis_skills::fence::{self, Unwritten};
+    match fence::with_keys(text, keys) {
+        // Nothing to take out of a text whose frontmatter reads as none.
+        Err(Unwritten::NoFrontmatter(_) | Unwritten::Unclosed(_))
+            if keys.iter().all(|(_, value)| value.is_none()) =>
+        {
+            Ok(text.to_owned())
         }
-    }
-    let mut block = lines.join("\n");
-    if !block.starts_with('\n') {
-        block.insert(0, '\n');
-    }
-    if !block.ends_with('\n') {
-        block.push('\n');
-    }
-    match cut {
-        Some(_) => format!("---{block}{after}"),
-        None => format!("---{block}---\n{text}"),
+        Err(Unwritten::NoFrontmatter(_)) => fence::with_keys(&format!("---\n---\n{text}"), keys),
+        written => written,
     }
 }
 
@@ -625,6 +600,43 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(dir.join("persona.md")).expect("the file"),
             "---\nicon: star\n---\n# plain\n"
+        );
+    }
+
+    #[test]
+    fn a_pick_is_read_back_the_same_beside_a_value_holding_three_dashes() {
+        // #3460: the writer cuts where the reader cuts, so `---` inside a value is kept as text
+        // and the pick lands in the frontmatter, not below a `---` that only looked like a fence.
+        let plane = plane();
+        let text = "---\nrole: Ops --- nights\n---\n# ops\n";
+        let dir = persona(plane.path(), "ops", text);
+
+        set(plane.path(), "ops", Some("rocket"), Some("#ff0000")).expect("written");
+
+        let written = std::fs::read_to_string(dir.join("persona.md")).expect("the file");
+        assert_eq!(
+            written,
+            "---\nrole: Ops --- nights\nicon: rocket\ncolor: #ff0000\n---\n# ops\n"
+        );
+        let mark = mark(plane.path(), "ops");
+        assert_eq!(
+            (mark.icon, mark.colour.as_deref()),
+            (Some("rocket"), Some("#ff0000"))
+        );
+        assert_eq!(crate::personas::charter_body(&written), "# ops");
+    }
+
+    #[test]
+    fn a_frontmatter_no_fence_closes_is_refused_and_nothing_is_written() {
+        let plane = plane();
+        let dir = persona(plane.path(), "open", "---\nrole: Open\n");
+
+        let refused = set(plane.path(), "open", Some("star"), None).unwrap_err();
+
+        assert!(refused.contains("no `---` line closes"), "{refused}");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("persona.md")).expect("the file"),
+            "---\nrole: Open\n"
         );
     }
 

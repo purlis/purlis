@@ -152,7 +152,7 @@ describe("the explorer", () => {
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 
-  it("is the Files section alone in the window's Explorer view, named for the workspace", () => {
+  it("is the files alone in the window's Explorer view, titled for the workspace, with no fold (#3343)", () => {
     render(
       <ChatsHere.Provider value={fixedChats(nothingKnown)}>
         <Explorer
@@ -175,11 +175,9 @@ describe("the explorer", () => {
         one.getAttribute("data-section"),
       ),
     ).toEqual(["files"]);
-    // The heading keeps naming whose files they are.
-    expect(screen.getByRole("button", { name: "Files alpha" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    // The view's title names whose files they are; *Files* is no fold (#3343).
+    expect(screen.getByRole("heading", { name: "alpha" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Files/ })).toBeNull();
     expect(screen.getByRole("treegrid", { name: "Files of alpha" })).toBeInTheDocument();
   });
 
@@ -210,10 +208,11 @@ describe("the explorer", () => {
     // The strip moved to beta: the same view, beta's files, and nothing of alpha's.
     rerender(of("beta", ["web"]));
 
-    expect(screen.getByRole("button", { name: "Files beta" })).toBeInTheDocument();
+    // One repo is its tree, open at once (#3343): its own folder's rows, here none read yet.
+    expect(screen.getByRole("heading", { name: "beta" })).toBeInTheDocument();
     expect(screen.getByRole("treegrid", { name: "Files of beta" })).toBeInTheDocument();
     expect(screen.queryByRole("treegrid", { name: "Files of alpha" })).toBeNull();
-    expect(names()).toEqual(["web"]);
+    expect(names()).not.toContain("svc");
   });
 
   it("draws no chat, wherever it works: the Chats view lists them (#1673)", () => {
@@ -415,17 +414,15 @@ describe("the explorer", () => {
   // Nothing to explore
   // ---------------------------------------------------------------------------------------
 
-  it("names the plane root in the Files heading when the strip is on it, and reads no folder without a project (#1916)", () => {
+  it("titles the plane root's files when the strip is on it, and reads no folder without a project (#1916)", () => {
     draw({ workspace: undefined });
 
     const explorer = screen.getByTestId("explorer");
     // Still a files browser with its heading, never a list of workspaces to pick from, and
     // no sentence in place of the tree: with a project, the tree is the whole project's
     // (`ExplorerSections.window.test.tsx`).
-    expect(screen.getByRole("button", { name: "Files Plane root" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    expect(screen.getByRole("heading", { name: "Plane root" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Files/ })).toBeNull();
     expect(explorer).not.toHaveTextContent(/is not a workspace/);
     expect(screen.queryByRole("tree")).toBeNull();
     expect(explorer.querySelector('[data-section="workspaces"]')).toBeNull();

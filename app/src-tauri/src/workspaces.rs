@@ -62,6 +62,7 @@ use crate::planes::{PlaneId, Planes};
 const CREATING: &str = "creating the workspace";
 const READING_RISK: &str = "reading what the workspace holds";
 const REMOVING: &str = "removing the workspace";
+const RECORDING_VISION: &str = "recording the workspace's vision";
 
 /// One reason a workspace holds work that deleting it would discard.
 ///
@@ -183,6 +184,36 @@ pub async fn workspace_create(
         Event::WorkspaceCreated { workspace: name },
     );
     Ok(said)
+}
+
+/// **Record a workspace's vision**: what `purlis workspace vision "<the goal>"` writes, the
+/// `## Vision` of its `workspace.md`, from the window's Add a vision (#3344). The core's own
+/// brokered write decides everything, as it does for a chat's `workspace_vision`: an empty
+/// vision, a line that would start a section of its own, a workspace that is not there, a file
+/// over its budget. Its refusal is the core's sentence. It answers with the sentence the window
+/// says.
+// Its plane is a `PlaneId` the registry vouches for; see `workspace_create`.
+#[tauri::command]
+#[specta::specta]
+pub async fn workspace_vision(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    vision: String,
+) -> Result<String, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    // Off the window's thread (#1007, #1949): it reads and writes the workspace's file.
+    crate::off_the_window(RECORDING_VISION, move || {
+        vision_in(&root, &workspace, &vision)
+    })
+    .await
+}
+
+/// The vision written, against a root the registry has already vouched for.
+fn vision_in(root: &Path, workspace: &str, vision: &str) -> Result<String, String> {
+    let place = purlis_core::active::Place::Workspace(workspace.to_owned());
+    let written = purlis_core::brokered::set_vision(root, &place, "this window", vision)?;
+    Ok(format!("{} has a vision now.", written.to))
 }
 
 /// A workspace for another module's test, as the window would make it: LOCAL.

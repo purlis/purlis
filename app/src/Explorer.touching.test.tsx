@@ -135,8 +135,9 @@ const markOn = (id: string) =>
 
 /** The live mark on the Files section's heading, which stands for the branch's own folder. */
 const markOnTheBranch = () =>
-  document.querySelector('[data-section="files"] h2 .touch-mark')?.getAttribute("aria-label") ??
-  undefined;
+  document
+    .querySelector('[data-section="files"] .head-beside .touch-mark')
+    ?.getAttribute("aria-label") ?? undefined;
 
 async function openSrc() {
   await userEvent.click(await within(document.body).findByRole("row", { name: /^src/ }));

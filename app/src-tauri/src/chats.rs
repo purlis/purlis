@@ -184,6 +184,9 @@ pub struct ChatForSkills {
     pub persona: Option<String>,
     /// Its harness, `None` for a shell or a program purlis has no adapter for.
     pub harness: Option<Harness>,
+    /// Where its plane skills came from, as its start read them (#3234): what its set is routed
+    /// from again (#3245).
+    pub start: purlis_core::hoststart::ChatSkills,
     /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
     pub salt: Option<purlis_core::skillspan::PromptSalt>,
     /// The folder it was started in: which of its workspace's clones it works in (#3462).
@@ -404,6 +407,10 @@ struct Running {
     /// change to them: what [`Chats::skills_changed`] compares with the skills now. `None` for a
     /// chat that runs no harness.
     skills: Option<purlis_core::skills::Stamp>,
+    /// **Where its plane skills came from, read once at its start** (#3234): what its restart's
+    /// stamp and Use skill… route it from again, so neither reads its clone a second time and
+    /// both see the set it was handed (#3245).
+    skills_read: purlis_core::hoststart::ChatSkills,
 }
 
 /// **The personas a chat is named by** (#2691), from one read of the app's record of its run
@@ -2811,6 +2818,7 @@ impl Chats {
             Option<String>,
             Option<String>,
             Harness,
+            purlis_core::hoststart::ChatSkills,
             purlis_core::skills::Stamp,
         );
         let started: Vec<Started> = lock(&self.open)
@@ -2821,6 +2829,7 @@ impl Chats {
                     running.workspace.clone(),
                     running.chat.persona.clone(),
                     running.harness?,
+                    running.skills_read.clone(),
                     running.skills.clone()?,
                 ))
             })
@@ -2828,14 +2837,16 @@ impl Chats {
         let built_in = built_in_skills_here();
         let mut changed: Vec<u32> = started
             .into_iter()
-            .filter(|(_, workspace, persona, harness, then)| {
-                purlis_core::skills::stamp_of(
-                    &self.project,
-                    workspace.as_deref(),
-                    persona.as_deref(),
-                    *harness,
-                    built_in.as_deref(),
-                ) != *then
+            .filter(|(_, workspace, persona, harness, start, then)| {
+                purlis_core::skills::stamp_of(&purlis_core::skills::Running {
+                    plane: &self.project,
+                    workspace: workspace.as_deref(),
+                    persona: persona.as_deref(),
+                    harness: *harness,
+                    built_in: built_in.as_deref(),
+                    plane_skills: true,
+                    start: Some(start),
+                }) != *then
             })
             .map(|(session, ..)| session)
             .collect();
@@ -3812,14 +3823,16 @@ impl Chats {
         }
         let workspace = workspace_at_start(Some(&self.project), under.cwd.as_deref());
         // Read before any lock is taken: a stamp is a read of the plane's skill folders.
-        let skills = harness.map(|harness| {
-            purlis_core::skills::stamp_now(
-                &self.project,
-                workspace.as_deref(),
-                under.persona.as_deref(),
+        let stamp = harness.map(|harness| {
+            purlis_core::skills::stamp_now(&purlis_core::skills::Running {
+                plane: &self.project,
+                workspace: workspace.as_deref(),
+                persona: under.persona.as_deref(),
                 harness,
-                built_in_skills_here().as_deref(),
-            )
+                built_in: built_in_skills_here().as_deref(),
+                plane_skills: true,
+                start: Some(&skills),
+            })
         });
         // A start under this number has been told nothing yet (#1450).
         lock(&self.told).remove(&session);
@@ -3841,7 +3854,8 @@ impl Chats {
                 ran,
                 composed_by_its_host: on_the_runner,
                 grants_as: grants_persona_of(chat, &self.project),
-                skills,
+                skills: stamp,
+                skills_read: skills,
             },
         );
         lock(&self.sizes).insert(session, size);
@@ -4760,6 +4774,7 @@ impl Chats {
             workspace: running.workspace.clone(),
             persona: running.persona().started_as,
             harness: running.harness,
+            start: running.skills_read.clone(),
             salt: running
                 .chat
                 .identity

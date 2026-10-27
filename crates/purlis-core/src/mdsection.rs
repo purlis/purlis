@@ -8,50 +8,14 @@
 //! line-splitting, because Python's `str.splitlines()` breaks on characters Rust's `lines()`
 //! does not, and the difference decides where a section ends.
 
-/// Split as Python's `str.splitlines()` does, dropping the separators.
+/// Split as Python's `str.splitlines()` does, dropping the separators: the line format's one
+/// copy (`purlis_skills::fence`, #3482).
 ///
 /// Python breaks on far more than `\n`: `\r`, `\r\n`, vertical tab, form feed, the file/group/
 /// record separators, NEL, and the Unicode line and paragraph separators. A `## ` after one of
 /// those starts a new section to charter, and joining the parts back with `\n` is what turns
 /// the separator into a newline on disk.
-pub fn split_lines(text: &str) -> Vec<&str> {
-    fn is_break(c: char) -> bool {
-        matches!(
-            c,
-            '\n' | '\r'
-                | '\u{b}'
-                | '\u{c}'
-                | '\u{1c}'
-                | '\u{1d}'
-                | '\u{1e}'
-                | '\u{85}'
-                | '\u{2028}'
-                | '\u{2029}'
-        )
-    }
-
-    let mut lines = Vec::new();
-    let mut start = 0;
-    let mut it = text.char_indices().peekable();
-    while let Some((i, c)) = it.next() {
-        if !is_break(c) {
-            continue;
-        }
-        lines.push(&text[start..i]);
-        // `\r\n` is one break, not two.
-        if c == '\r' && it.peek().is_some_and(|&(_, next)| next == '\n') {
-            it.next();
-            start = i + 2;
-        } else {
-            start = i + c.len_utf8();
-        }
-    }
-    // Python yields no trailing empty line for a text that ends in a break.
-    if start < text.len() {
-        lines.push(&text[start..]);
-    }
-    lines
-}
+pub use purlis_skills::fence::split_lines;
 
 /// Replace the body under `## <header>` (to the next line starting `## `, or the end),
 /// keeping the header line. A section that is not there is appended.
