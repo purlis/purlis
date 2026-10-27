@@ -97,7 +97,7 @@ fn codex_and_opencode_conversations_do_not_move_yet_and_say_why() {
     for harness in ["codex", "opencode"] {
         let found = find(&declared(harness), &Folders::config(here.path()), &id);
         assert!(
-            matches!(&found, Err(Refused::DoesNotMove(why)) if why.contains("does not")),
+            matches!(&found, Err(Refused::DoesNotMove(why)) if why.contains("moves only a conversation kept as one file")),
             "{harness}: {found:?}"
         );
     }

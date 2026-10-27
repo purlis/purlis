@@ -133,13 +133,13 @@ fn one_file(declaration: &Declaration) -> Result<&str, Refused> {
             with_forked_from: false,
         }) => Ok(file),
         Some(Conversation::File { .. }) => Err(Refused::DoesNotMove(format!(
-            "{} keeps a conversation with the one it was forked from, and purlis does not move \
-             such a conversation yet",
+            "{} keeps a conversation with the one it was forked from, and purlis moves only \
+             a conversation kept as one file",
             declaration.title
         ))),
         Some(Conversation::Export { .. }) => Err(Refused::DoesNotMove(format!(
-            "{} moves a conversation through its own export and import, which purlis does not \
-             run yet",
+            "{} moves a conversation through its own export and import, and purlis moves only a \
+             conversation kept as one file",
             declaration.title
         ))),
         None => Err(Refused::DoesNotMove(format!(
