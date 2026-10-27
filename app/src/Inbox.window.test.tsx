@@ -293,7 +293,7 @@ describe("the asks, grouped by chat", () => {
   it("says nothing of a ⟦ the command wrote itself, which keeps its Allow (SK-51, #3202)", () => {
     core();
     draw([permission(3, "lb", ["steward 3"], "Run a command: echo ⟦U+27E6⟧U+00A0⟧")]);
-    expect(screen.queryByText(/No Allow here/)).toBeNull();
+    expect(screen.queryByText(/Allow is not offered/)).toBeNull();
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Allow",
       "Deny",

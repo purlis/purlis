@@ -209,7 +209,8 @@ export function heldFor(blocks: Blocks, session: number, shown: BlockShown): Hel
  * **A block's target, drawn safely** (#1688, I-1; SK-51, #3202): a folder's name as the chat's
  * sandbox met it, with every character purlis's one rule hides on a line (one that turns the
  * text around, hides what follows, moves the cursor or only looks like a space) written as its
- * mark, `⟦U+XXXX⟧`, as the registry writes an ask's line (`asking::said_inertly`). A `⟦` the
+ * mark, `⟦U+XXXX⟧`, the core's one mark. A target is one line, so a line end or a tab in it is
+ * marked too, where the registry's ask line folds it into a space (`asking::said_inertly`). A `⟦` the
  * name holds itself is marked too, `⟦U+27E6⟧`, so a name cannot spell a mark
  * (`dispatchgrant::inert`). What an Allow names is still the target itself: this is only what
  * is drawn.

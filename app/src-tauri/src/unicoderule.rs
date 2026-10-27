@@ -134,7 +134,8 @@ fn cases() -> String {
             texts.push(format!("{letter}{virama}\u{200D}a"));
         }
     }
-    texts.dedup();
+    let mut seen = std::collections::HashSet::new();
+    texts.retain(|text| seen.insert(text.clone()));
     let mut out = String::from("[\n");
     for (n, text) in texts.iter().enumerate() {
         let case = serde_json::json!({
@@ -165,7 +166,8 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(CASES).unwrap_or_default(),
             cases(),
-            "{CASES} is out of date: run `cargo test -p purlis-app -- --ignored`"
+            "{CASES} is out of date: run \
+             `cargo test -p purlis-app -- --ignored regenerate_the_windows_unicode_cases`"
         );
     }
 

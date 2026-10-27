@@ -3,7 +3,7 @@
 
 import { commands, type ExtensionTheme, type ProjectExtension } from "../bindings";
 import { BUILT_IN_ICONS, DEFAULT_ICONS, ICON_THEME_ALIASES } from "../theme/icons";
-import { unhidden } from "../invisible";
+import { flagged } from "../invisible";
 import { key, textAt, valueAt, shown, type Control, type Shown } from "./fileControls";
 
 /**
@@ -39,11 +39,13 @@ const LONGEST_NAME = 64;
 
 /**
  * `text`, which an extension or a file wrote, as one short line of plain text: without any
- * character purlis's one rule hides on a line (`purlis_unicode::unhidden`: a control, a bidi
- * override, a line end), and cut to `most` characters.
+ * character purlis's one rule hides on a line (a control, a bidi override), each white space
+ * among them (a line end, a no-break space) drawn as a space, and cut to `most` characters.
  */
 export function plainLine(text: string, most: number = LONGEST_NAME): string {
-  const plain = [...unhidden(text, "marked")];
+  const plain = flagged(text, "marked").flatMap(({ ch, hidden }) =>
+    !hidden ? [ch] : /^\s$/u.test(ch) ? [" "] : [],
+  );
   return plain.length > most ? `${plain.slice(0, most - 1).join("")}…` : plain.join("");
 }
 

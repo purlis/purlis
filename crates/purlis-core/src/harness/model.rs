@@ -345,8 +345,8 @@ pub const VAULT_VALUE: &str = "vault value";
 
 impl Summary {
     /// `text` on one line (its spaces, tabs and line ends collapsed; a blank that only looks like
-    /// a space kept, for the window to mark), cut to [`SUMMARY_WIDTH`], with each credential shape, as written and
-    /// through its escapes ([`crate::secretshape::leak_spans`], overlapping ones joined),
+    /// a space kept, for the window to mark), cut to [`SUMMARY_WIDTH`], with each credential
+    /// shape, as written and through its escapes ([`crate::secretshape::leak_spans`], overlapping ones joined),
     /// replaced by a mask that names its kind.
     ///
     /// **And each value this process read from a vault or stored in one**

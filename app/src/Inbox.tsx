@@ -61,7 +61,7 @@ import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import { useWayPlaces } from "./wayPlaces";
 import { useProjectShown } from "./projectShown";
 import { capMarks } from "./combiningMarks";
-import { MARK, markOf } from "./invisible";
+import { marksIn, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -599,24 +599,27 @@ function shapeOf(
  * space that looks like a space, a control, a bidi override.
  */
 function withheldFor(line: string): string | undefined {
-  return Array.from(line.matchAll(MARK), (one) => one[0]).find((one) => one !== markOf("\u27E6"));
+  return marksIn(line)
+    .map((one) => one.mark)
+    .find((one) => one !== markOf("\u27E6"));
 }
 
-/** An ask's line, each mark on it drawn as one (`invisible-char`), apart from the words. */
-function MarkedLine({ line }: { line: string }) {
+/** An ask's line, each mark on it drawn as one (`invisible-char`), apart from the words. Its
+ *  parts, not a component of its own, so the tooltip still reads the words it repeats. */
+function markedLine(line: string): ReactNode[] {
   const parts: ReactNode[] = [];
   let at = 0;
-  for (const one of line.matchAll(MARK)) {
-    parts.push(line.slice(at, one.index));
+  for (const { mark, at: from } of marksIn(line)) {
+    parts.push(line.slice(at, from));
     parts.push(
-      <mark key={one.index} className="invisible-char">
-        {one[0]}
+      <mark key={from} className="invisible-char">
+        {mark}
       </mark>,
     );
-    at = one.index + one[0].length;
+    at = from + mark.length;
   }
   parts.push(line.slice(at));
-  return <>{parts}</>;
+  return parts;
 }
 
 /** The stops of one ask's row, in the order it draws them. */
@@ -670,7 +673,7 @@ function WithWrites({
 
 /** Why a permission holding `mark` offers no Allow (SK-51, #3202). */
 export const hiddenSaid = (mark: string) =>
-  `No Allow here: it holds ${mark}, a character that reads otherwise, so what would run is not what you read.`;
+  `Allow is not offered. It holds ${mark}, a character that looks like another one here.`;
 
 /** What a row says of where it waits. */
 const SOURCE_SAID: Record<Shown["source"], string> = {
@@ -876,7 +879,7 @@ function Ask({
               id={`${id}-says`}
               className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
             >
-              <MarkedLine line={shape.line} />
+              {markedLine(shape.line)}
             </span>
           </Tooltip>
           <Tooltip tip={SOURCE_SAID[ask.source]}>

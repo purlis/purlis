@@ -57,8 +57,13 @@ export function markOf(ch: string): string {
   return `⟦U+${code}⟧`;
 }
 
-/** A mark as the core or this module writes it, where it stands in a text. */
-export const MARK = /⟦U\+[0-9A-F]{4,6}⟧/gu;
+/** Each mark the core or this module wrote in `text` (`⟦U+XXXX⟧`), with where it stands. */
+export function marksIn(text: string): { mark: string; at: number }[] {
+  return Array.from(text.matchAll(/⟦U\+[0-9A-F]{4,6}⟧/gu), (one) => ({
+    mark: one[0],
+    at: one.index,
+  }));
+}
 
 /** Each character of `text`, with whether it is hidden there (`purlis_unicode::hidden`): every
  *  invisible one, but a joiner or a presentation selector doing its one job, the selector or
@@ -83,16 +88,6 @@ export function hides(text: string, breaks: Breaks): boolean {
 export function marked(text: string, breaks: Breaks): string {
   return flagged(text, breaks)
     .map((one) => (one.hidden ? markOf(one.ch) : one.ch))
-    .join("");
-}
-
-/** **`text` without what a reader would not see there** (`purlis_unicode::unhidden`): each
- *  hidden character dropped. Only for a text that is only ever drawn (a label), never one a
- *  person decides on, which is `marked` instead. */
-export function unhidden(text: string, breaks: Breaks): string {
-  return flagged(text, breaks)
-    .filter((one) => !one.hidden)
-    .map((one) => one.ch)
     .join("");
 }
 
