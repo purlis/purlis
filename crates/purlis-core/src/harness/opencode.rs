@@ -388,6 +388,7 @@ mod tests {
                 "purlis-secrets".to_owned(),
             ]
             .into(),
+            own_index: false,
         };
         let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
             Kit {

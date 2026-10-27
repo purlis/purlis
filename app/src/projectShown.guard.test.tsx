@@ -42,6 +42,8 @@ const KINDS: Record<string, "over" | "says nothing to answer" | "in place"> = {
 
 /** The files that put something outside where they are drawn, by React's own portal. */
 const PORTALS = [
+  // What stands beside the Files view's title and its actions, into its region's head (#3343).
+  "Explorer.tsx",
   // Into the pane's own stack and the Inbox's place for the window's lines.
   "Notice.tsx",
   // Into the Panel's half the section is in.

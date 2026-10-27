@@ -19,7 +19,7 @@
 
 use std::path::Path;
 
-use purlis_session_protocol::session::Exit;
+use purlis_session_protocol::session::{Exit, Pushed};
 
 use crate::hostrecord::Started;
 
@@ -70,6 +70,31 @@ pub trait Record: Send + Sync + 'static {
     fn left_by_its_last_host(&self, left: &Started) {
         let _ = left;
     }
+
+    /// **Where this machine's event log ends now** (1.41, #3393): its device and the `seq` of
+    /// its last line, 0 for none; or why there is no log to say it of.
+    fn log_end(&self) -> Result<(String, u64), String> {
+        Err(NO_LOG.into())
+    }
+
+    /// **A reader of this machine's event log from `after`** (1.41, #3393): each of its lines
+    /// after that `seq`, then each as it is written, as the session protocol pushes them. Called
+    /// off the host's runtime.
+    fn read_log(&self, after: u64) -> Result<Box<dyn ReadsLog>, String> {
+        let _ = after;
+        Err(NO_LOG.into())
+    }
+}
+
+/// What a host whose binary keeps no event log says when it is asked for its log.
+const NO_LOG: &str = "this session host keeps no event log";
+
+/// **One reader of the host's own event log, from its cursor** (1.41, #3393): the binary's.
+pub trait ReadsLog: Send + 'static {
+    /// What was written since the last read, in order, each line once: each as
+    /// [`Pushed::Event`], and a gap as [`Pushed::Missed`]. Never blocks on what is not written
+    /// yet: nothing new is an empty answer.
+    fn read(&mut self) -> Result<Vec<Pushed>, String>;
 }
 
 /// A host whose binary keeps no event log: every `record` is refused with a sentence, and a

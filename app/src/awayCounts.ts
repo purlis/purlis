@@ -73,7 +73,9 @@ export type AwayGo =
   | { to: "finished"; task: FinishedTask }
   /** A dispatch refused while nobody was there: the Inbox, where it is an update and is
    *  answered. */
-  | { to: "inbox" };
+  | { to: "inbox" }
+  /** A runner's branch ready to push (#2051): Changes, with its workspace in front. */
+  | { to: "changes"; workspace: string };
 
 /** One thing a part counts, and what its line in the part's list says. */
 export type AwayItem = { key: string; says: string; go: AwayGo };

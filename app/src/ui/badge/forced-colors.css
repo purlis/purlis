@@ -1,0 +1,17 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The badge and count family in forced colours** (#2328, #3387): what `theme/forced-colors.css` says of the
+   window, said of this family's own parts, in the system's palette alone. The window imports it
+   into the `forced` layer before that sheet (`ui/stylesheets.ts`), so the window's focus ring is
+   still drawn over it. */
+
+@media (forced-colors: active) {
+  /* A count of what needs you: the system's pair for what is marked, apart from every plain
+     count. */
+  [data-scope="count"][data-part="root"][data-variant="hot"] {
+    forced-color-adjust: none;
+    color: MarkText;
+    background-color: Mark;
+  }
+}

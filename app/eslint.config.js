@@ -5,41 +5,20 @@ import js from "@eslint/js";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
-import { purlisUi } from "./eslint.ui-rules.js";
+import { purlisUi, rawButtons, stillOff } from "./eslint.ui-rules.js";
 
 /** The primitives library, which only its wrappers in `src/ui` import (#2904, ADR 0104). */
 const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
 
 /**
- * **The families a raw `<button>` may still belong to** (#2904, D-2904-9): the tabs and strips,
- * the list and tree rows, the menu rows, the activity items, the
- * title bar's workspace chips, the cards and the settings nav. Each by
- * the role its button says, or by its family's class. The status items and the title bar's status
- * pills have moved (#2913), and so have the choices (#2907). A menu's rows are the menu family's since #2909, and no button says
- * their role.
+ * **The raw `<button>`s that are no family's yet** (#2904, D-2904-9): the settings nav and the
+ * files a settings page is edited as, and a link drawn as a button, each by its class or its
+ * role. A family's own still-hand-drawn buttons are in its folder (`rawButtons`, in
+ * `src/ui/<family>/lint.js`, #3387); `eslint.ui-rules.js` gathers them with these.
  */
-const OTHER_FAMILIES = {
-  roles: ["tab", "treeitem", "link"],
-  classes: [
-    // Rows of a list or a tree; a line's name in the Activity tab.
-    "ui-row",
-    "ui-tree-row",
-    "vault-secret",
-    // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
-    "closer",
-    "crumb",
-    "tab-tasks-hand",
-    "tab-tasks-counts",
-    // The title bar's workspace chips, and a needs-you mark on a row.
-    "needs-you-mark",
-    "plane-root",
-    // The cards: the welcome's doors, a recent project, a repo.
-    "welcome-door",
-    "repo-card",
-    // The settings nav, and the files a settings page is edited as.
-    "ui-settings-nav-item",
-    "ui-settings-raw-file",
-  ],
+const UNFAMILIED = {
+  roles: ["link"],
+  classes: ["ui-settings-nav-item", "ui-settings-raw-file"],
 };
 
 export default tseslint.config(
@@ -75,60 +54,14 @@ export default tseslint.config(
           })),
         },
       ],
+      // Every family's rule (`src/ui/<family>/lint.js`, #3387), an error.
+      ...Object.fromEntries(Object.keys(purlisUi.rules).map((name) => [`purlis/${name}`, "error"])),
       // A raw `<button>` left is a control of a family that has not moved yet (D-2904-9), said
-      // by its role or its class; each family's ticket takes its own out of these lists.
-      "purlis/button-family": ["error", { otherFamilies: OTHER_FAMILIES }],
-      // A box a person types in is the field family's, since #2905.
-      "purlis/field-family": "error",
-      // A select and a box with suggestions are the select and combobox families', since #2906.
-      "purlis/select-family": "error",
-      // A checkbox, a radio, a switch, a segmented control, a slider: the choice families (#2907).
-      "purlis/choice-family": "error",
-      // The menu, context menu and popover families have moved (#2909).
-      "purlis/menu-family": "error",
-      "purlis/dialog-family": "error",
-      "purlis/tooltip-family": "error",
-      "purlis/panel-family": "error",
-      "purlis/panel-section-family": "error",
-      "purlis/empty-state-family": "error",
-      "purlis/status-item-family": "error",
-      "purlis/rail-family": "error",
-      "purlis/activity-family": "error",
-      // Every list is the list family's, since #2911.
-      "purlis/list-family": "error",
-      // Every table is the table family's, since #2911.
-      "purlis/table-family": "error",
-      // A tablist is the tabs family's, on React Aria, since #3042.
-      "purlis/tabs-family": "error",
-      "purlis/titlebar-family": "error",
-      // Every tree is the tree family's, on React Aria, since #2911 (the trees below aside).
-      "purlis/tree-family": "error",
-      // The card, notice, badge and count, and separator families have moved (#2912).
-      "purlis/card-family": "error",
-      "purlis/notice-family": "error",
-      "purlis/badge-family": "error",
-      "purlis/separator-family": "error",
-      "purlis/panel-separator-family": "error",
+      // by its role or its class: each family's own (`rawButtons`), and the ones no family has.
+      "purlis/button-family": ["error", { otherFamilies: rawButtons(UNFAMILIED) }],
     },
   },
-  // **The tablists still drawn by hand**, each until the ticket that moves it onto the tabs
-  // family (#3042): the workspace strip (#2916), the activity bars (#2917), the project rail's
-  // tablist (#2915's rail family, whose projects are tabs), and the strip's old hand-made tablist
-  // they share.
-  {
-    files: [
-      "src/WorkspaceStrip.tsx",
-      "src/ActivityBar.tsx",
-      "src/ProjectRail.tsx",
-      "src/StripTablist.tsx",
-    ],
-    rules: { "purlis/tabs-family": "off" },
-  },
-  // **The trees still drawn by hand** (the shared tree's classes and roles), each until its lane
-  // moves it onto the tree family (#2911): the Chats list with the browsers and finished tasks
-  // under a chat (#3198).
-  {
-    files: ["src/ChatsSection.tsx", "src/ChatBrowsersShown.tsx", "src/FinishedTasks.tsx"],
-    rules: { "purlis/tree-family": "off" },
-  },
+  // **What each family's rule is still off in** (a family's `off`, in its `lint.js`), each
+  // until the lane that moves it.
+  ...stillOff,
 );

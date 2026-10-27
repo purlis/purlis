@@ -98,7 +98,13 @@ enum Command {
     /// under the runtime directory, a fresh credential for each of its clients' scopes, and the
     /// session protocol. The app starts its own; this is the same host for a machine with no
     /// window, such as a runner.
-    Serve,
+    Serve {
+        /// A paired runner's host suspends itself after a day with no link from its desktop: it
+        /// stops serving, every chat ends, and its container stops with its home kept (#2051).
+        /// What a Docker pool's runner is made with; without it, a host never suspends.
+        #[arg(long)]
+        suspends_unlinked: bool,
+    },
     /// On a runner: join this standard input and output to the session host's link socket,
     /// for the connector the desktop runs (ADR 0078 §2). It holds no key and decides nothing.
     Bridge {
@@ -814,7 +820,7 @@ fn emit(report: &purlis_core::news::Report) -> ExitCode {
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(not(unix))]
-fn serve() -> ExitCode {
+fn serve(_suspends_unlinked: bool) -> ExitCode {
     voice::err("the session host runs on macOS and Linux only");
     ExitCode::FAILURE
 }
@@ -822,7 +828,7 @@ fn serve() -> ExitCode {
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(unix)]
-fn serve() -> ExitCode {
+fn serve(suspends_unlinked: bool) -> ExitCode {
     // A service: its standard error is its log, the journal or the container's (#2753), so the
     // core's `info` is said there too, redacted as the app's log is.
     purlis_core::applog::widen_for_a_service();
@@ -884,6 +890,7 @@ fn serve() -> ExitCode {
                 ))
             },
             pairing,
+            suspends_unlinked.then_some(purlis_host::UNLINKED_FOR),
         ))
         .unwrap_or(1),
     )
@@ -3243,7 +3250,7 @@ fn run(command: Command) -> Result<u8, String> {
         // Answered in `main`, before this: it is the one command whose exit code is not a
         // plain success or failure, and clap must never be allowed to exit 2 in front of it.
         Command::Hook { .. }
-        | Command::Serve
+        | Command::Serve { .. }
         | Command::Bridge { .. }
         | Command::Init(_)
         | Command::Reinit
@@ -4285,8 +4292,8 @@ fn main() -> ExitCode {
         return scan::run(*explain);
     }
     // Needs no project: one host serves every project of this user on this device (ADR 0068).
-    if let Command::Serve = &cli.command {
-        return serve();
+    if let Command::Serve { suspends_unlinked } = &cli.command {
+        return serve(*suspends_unlinked);
     }
     // Needs no project: a runner's bridge to its own host, or its pairing (ADR 0078 §2, §3).
     if let Command::Bridge {

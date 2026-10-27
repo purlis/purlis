@@ -93,16 +93,22 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". Add a Docker pool's refusal (#2679), in the core's words, under the form it refused; " +
       "the form, kept as it was typed, and Add pool are the way on",
   },
+  "ui/notice/Notice.tsx": {
+    count: 1,
+    why:
+      "the notice family's message part, the live region of a card Notice (#3344): drawn live " +
+      "only by `Notice.tsx`, which this guard holds as the one way to draw a standing line",
+  },
+  "AddVision.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "AnswerQuestion.tsx": {
     count: 2,
     why:
       "the refusal of the person's answer to a task's question (#1496), in the core's sentence " +
       "under the box, with what was typed kept: Send is the retry. And, where the form was " +
       "opened for a task that asks nothing now, the sentence that says so, beside Close",
-  },
-  "App.tsx": {
-    count: 1,
-    why: "what the last action answered: replaced by the next action, not about something true now",
   },
   "AskPersona.tsx": {
     count: 1,
@@ -175,11 +181,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "(FX-1): inside the dialog, over the rows it changed",
   },
   "Explorer.tsx": {
-    count: 2,
+    count: 3,
     why:
       "a folder of a branch's tree that could not be read, in the tree where its entries go: a " +
-      "row's own refusal, and opening the folder again reads it again (NO-4); and how many file " +
-      "rows are picked, a live count read out as it changes (#1151)",
+      "row's own refusal, and opening the folder again reads it again (NO-4); a branch the " +
+      "filter could not find files in by name, said where the files found go, and typing again " +
+      "asks again (#3343); and how many file rows are picked, a live count read out as it " +
+      "changes (#1151)",
   },
   "ExtensionAction.tsx": {
     count: 1,
@@ -712,7 +720,11 @@ describe("the window's standing lines", () => {
     const counted: Record<string, number> = {};
     for (const { name, text } of sources()) {
       if (name === "Notice.tsx") continue;
-      const n = tags(text, (tag) => tag !== "Notice").filter(({ attrs }) => live(attrs)).length;
+      // A card's message drawn `live` is a live region too (#3344): only Notice may draw one.
+      const n = tags(text, (tag) => tag !== "Notice").filter(
+        ({ tag, attrs }) =>
+          live(attrs) || (tag === "NoticeMessage" && /\blive\b/.test(ownAttributes(attrs))),
+      ).length;
       if (n > 0) counted[name] = n;
     }
     const listed = Object.fromEntries(

@@ -17,6 +17,7 @@ import { forgetTextSizes, onTextSizes, textSizes, type TextSizes } from "./textS
 import { CHATS_LIST, type ChatsListPrefs } from "./chatsListPrefs";
 import { YOUR_EDITOR } from "./yourEditor";
 import { RAIL_MODE } from "./railMode";
+import { SKILLS_VIEW } from "./skillsViewPrefs";
 import { APPEARANCE, type Appearance } from "./appearance";
 import { NOTIFICATIONS, type NotificationPrefs } from "./notificationPrefs";
 import { STATUS_BAR, type StatusBarPrefs } from "./statusBarPrefs";
@@ -542,6 +543,7 @@ const LAYOUT_PREFS = [
   NOTIFICATIONS,
   STATUS_BAR,
   RAIL_MODE,
+  SKILLS_VIEW,
 ] as const satisfies readonly {
   readonly key: PrefField;
 }[];
@@ -584,6 +586,8 @@ type Document = {
   status?: StatusBarPrefs;
   /** The project rail hiding itself (`railMode.ts`, #2915), while it does. */
   rail?: "auto";
+  /** The Skills view narrowed to the chat in front (`skillsViewPrefs.ts`, #3308), while it is. */
+  skills?: { onlyThisChat: true };
 };
 
 /** One project's entry: its own arrangement, once it has one, and what its views keep

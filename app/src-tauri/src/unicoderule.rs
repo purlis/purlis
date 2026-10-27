@@ -32,6 +32,17 @@ pub struct UnicodeRule {
     /// [`tables::EMOJI_SEQUENCES`]: the keycaps and RGI tag flags, spelled with their
     /// selector or tags.
     pub emoji_sequences: Vec<Vec<u32>>,
+    /// [`tables::BRAHMIC_LETTER`]: the letters of Devanagari to Malayalam a joiner may stand
+    /// between, so the window does not ask its own engine's `\p{Alphabetic}` (#3470).
+    pub brahmic_letter: Vec<(u32, u32)>,
+    /// [`tables::ARABIC_LETTER`]: the Arabic letters a ZWNJ may stand between.
+    pub arabic_letter: Vec<(u32, u32)>,
+    /// [`tables::VIRAMA`]: the viramas of those Brahmic blocks.
+    pub virama: Vec<(u32, u32)>,
+    /// [`tables::LINE_BREAK`]: the blanks that break a line, for what the window says of one.
+    pub line_break: Vec<(u32, u32)>,
+    /// [`tables::BLANK`]: the blanks that look like a space, for what the window says of one.
+    pub blank: Vec<(u32, u32)>,
 }
 
 /// The one rule's tables, from `purlis_unicode`'s generated statics.
@@ -44,6 +55,11 @@ pub fn rule() -> UnicodeRule {
             .iter()
             .map(|sequence| sequence.iter().map(|&ch| u32::from(ch)).collect())
             .collect(),
+        brahmic_letter: tables::BRAHMIC_LETTER.to_vec(),
+        arabic_letter: tables::ARABIC_LETTER.to_vec(),
+        virama: tables::VIRAMA.to_vec(),
+        line_break: tables::LINE_BREAK.to_vec(),
+        blank: tables::BLANK.to_vec(),
     }
 }
 
@@ -134,6 +150,22 @@ fn cases() -> String {
             texts.push(format!("{letter}{virama}\u{200D}a"));
         }
     }
+    // Each end of every letter range, and the codepoint just past it, beside a joiner (#3470).
+    let ends = |table: &[(u32, u32)]| -> Vec<char> {
+        table
+            .iter()
+            .flat_map(|&(lo, hi)| [lo.wrapping_sub(1), lo, hi, hi + 1])
+            .filter_map(at)
+            .collect()
+    };
+    for ch in ends(&tables::BRAHMIC_LETTER) {
+        texts.push(format!("\u{0915}\u{094D}\u{200D}{ch}"));
+        texts.push(format!("{ch}\u{200C}\u{0915}"));
+    }
+    for ch in ends(&tables::ARABIC_LETTER) {
+        texts.push(format!("{ch}\u{200C}\u{0645}"));
+        texts.push(format!("\u{0645}\u{200C}{ch}"));
+    }
     let mut seen = std::collections::HashSet::new();
     texts.retain(|text| seen.insert(text.clone()));
     let mut out = String::from("[\n");
@@ -178,5 +210,10 @@ mod tests {
         assert_eq!(rule.extended_pictographic, tables::EXTENDED_PICTOGRAPHIC);
         assert_eq!(rule.emoji_modifier, tables::EMOJI_MODIFIER);
         assert_eq!(rule.emoji_sequences.len(), tables::EMOJI_SEQUENCES.len());
+        assert_eq!(rule.brahmic_letter, tables::BRAHMIC_LETTER);
+        assert_eq!(rule.arabic_letter, tables::ARABIC_LETTER);
+        assert_eq!(rule.virama, tables::VIRAMA);
+        assert_eq!(rule.line_break, tables::LINE_BREAK);
+        assert_eq!(rule.blank, tables::BLANK);
     }
 }

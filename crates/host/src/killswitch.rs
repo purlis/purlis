@@ -35,6 +35,15 @@ pub trait StopsElsewhere: Send + Sync + 'static {
     /// The newest stop the files hold, named so that each stop written is told from the one
     /// before; `None` while they say every agent may run.
     fn last_stop(&self) -> Option<String>;
+
+    /// **A runner's desktop stopped or re-armed this host over its link** (#2051, ADR 0071 as
+    /// amended): written where a stop elsewhere is written, by the link, and the event log's
+    /// entry recording it with the desktop's `device`, for the host to record. Nothing, for a
+    /// binary that keeps no such files.
+    fn link_switched(&self, rearm: bool, device: &str) -> Option<serde_json::Value> {
+        let _ = (rearm, device);
+        None
+    }
 }
 
 /// What a host is given when its binary gives it nothing to read: it hears only `stop_all`.
@@ -101,6 +110,11 @@ impl Switch {
         }
     }
 
+    /// The host's own folder the switch is kept in, where it is kept.
+    pub(crate) fn folder(&self) -> Option<&Path> {
+        self.kept.as_deref()
+    }
+
     pub(crate) fn is_stopped(&self) -> bool {
         self.held().stopped
     }
@@ -111,6 +125,7 @@ impl Switch {
         KillSwitch {
             stopped: held.stopped,
             why: held.why.clone(),
+            ..Default::default()
         }
     }
 
@@ -140,6 +155,7 @@ impl Switch {
         KillSwitch {
             stopped: true,
             why: held.why.clone(),
+            ..Default::default()
         }
     }
 
@@ -154,6 +170,7 @@ impl Switch {
         Ok(KillSwitch {
             stopped: false,
             why: None,
+            ..Default::default()
         })
     }
 

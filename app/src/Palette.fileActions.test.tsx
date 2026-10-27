@@ -110,13 +110,15 @@ describe("⌘P's file rows", () => {
 
     await userEvent.keyboard("{Shift>}{Alt>}r{/Alt}{/Shift}");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "src/login.ts is not in the branch any more",
+    // Said as a polite status, as the result's notice is (#3344).
+    const said = (await screen.findByText(/src\/login\.ts is not in the branch any more/)).closest(
+      '[role="status"]',
     );
+    expect(said).not.toBeNull();
     expect(asked.map((one) => one.cmd)).toEqual(["reveal_branch_path"]);
     // A new query is a new question: the old answer goes.
     await userEvent.keyboard("x");
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/src\/login\.ts is not in the branch any more/)).toBeNull();
   });
 
   it("say their keys while a file is aimed, and only then", async () => {

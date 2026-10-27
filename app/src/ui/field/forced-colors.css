@@ -1,0 +1,18 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The field family in forced colours** (#2328, #3387): what `theme/forced-colors.css` says of the
+   window, said of this family's own parts, in the system's palette alone. The window imports it
+   into the `forced` layer before that sheet (`ui/stylesheets.ts`), so the window's focus ring is
+   still drawn over it. */
+
+@media (forced-colors: active) {
+  /* A refused box: its own edge dashed, in the words' colour (#3335). The edge it has already,
+     the same width, so nothing moves; and not an outline, which a text box's focus ring is. A
+     refused box that is also unavailable keeps this edge in CanvasText rather than GrayText: it
+     is still refused. */
+  :is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-invalid] {
+    border-style: dashed;
+    border-color: CanvasText;
+  }
+}

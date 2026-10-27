@@ -259,6 +259,12 @@
   padding-block-end: var(--space-3);
 }
 
+/* **A tree's row the keyboard comes to is scrolled into sight below the top** (WCAG 2.4.11), as
+   a list's row is: a tree in a view (Explorer's files, #3343) scrolls under the held top too. */
+[data-scope="panel-section"][data-frame] [data-scope="tree"][data-part="root"] {
+  scroll-margin-block-start: var(--panel-section-top-size);
+}
+
 /* **A view's rows are 30px** (the prototype's `.row`): the control's height and a step, with 8
    at the sides and 8 between their marks and words. */
 [data-scope="panel-section"][data-frame] [data-scope="list"][data-part="root"] {

@@ -6,7 +6,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { PlaneId } from "./bindings";
-import { FORGE_LOGIN, RepoPicker, type LoginAsk } from "./RepoPicker";
+import { FORGE_LOGIN, RepoPicker, typableLogin, type LoginAsk } from "./RepoPicker";
 
 afterEach(() => {
   cleanup();
@@ -61,6 +61,34 @@ describe("the repo picker", () => {
     await screen.findByRole("checkbox", { name: "api" });
     await userEvent.type(screen.getByRole("textbox", { name: "Filter repos" }), "zzz");
     expect(screen.getByText("No repo you can reach matches zzz.")).toBeInTheDocument();
+  });
+
+  it("types a login line only where it holds nothing the one rule hides (#3470)", () => {
+    // A control (a newline is a Return, an escape moves the cursor), DEL and the C1 controls,
+    // as before, and now every other character a reader does not see on one line.
+    expect(typableLogin("gh auth login --hostname github.com")).toBe(true);
+    expect(typableLogin("glab auth login --hostname gitlab.example.com")).toBe(true);
+    for (const hidden of [
+      "\n",
+      "\r",
+      "\t",
+      "\u0000",
+      "\u001b",
+      "\u007f",
+      "\u0085",
+      "\u009b",
+      "\u000b",
+      "\u2028",
+      "\u202e",
+      "\u200b",
+      "\u00a0",
+      "\ufeff",
+    ]) {
+      expect(
+        typableLogin(`gh auth login${hidden} --hostname github.com`),
+        JSON.stringify(hidden),
+      ).toBe(false);
+    }
   });
 
   describe("a forge that did not answer (NO-8, #1233)", () => {
