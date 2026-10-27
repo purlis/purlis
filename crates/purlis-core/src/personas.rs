@@ -291,35 +291,16 @@ pub fn reserved_refusal(name: &str) -> Option<String> {
 }
 
 /// `text`, a persona's definition, with its `key:` line saying `value`, or without one for
-/// `None`. Every other line is left as written. The first such line is rewritten where it
-/// stands, and any later one goes, since a later line would answer instead of it. `None` when
-/// `text` has no frontmatter to hold the line.
-pub(crate) fn with_key(text: &str, key: &str, value: Option<&str>) -> Option<String> {
-    let rest = text.strip_prefix("---")?;
-    let end = rest.find("---")?;
-    let (block, after) = rest.split_at(end);
-    let mut lines: Vec<String> = Vec::new();
-    let mut placed = false;
-    for line in block.split_inclusive('\n') {
-        let is_key = line
-            .split_once(':')
-            .is_some_and(|(written, _)| written.trim() == key);
-        if !is_key {
-            lines.push(line.to_owned());
-            continue;
-        }
-        if let (Some(value), false) = (value, placed) {
-            lines.push(format!("{key}: {value}\n"));
-            placed = true;
-        }
-    }
-    if let (Some(value), false) = (value, placed) {
-        if lines.last().is_some_and(|last| !last.ends_with('\n')) {
-            lines.push("\n".to_owned());
-        }
-        lines.push(format!("{key}: {value}\n"));
-    }
-    Some(format!("---{}{after}", lines.concat()))
+/// `None`, through the line format's one writer ([`purlis_skills::fence::with_keys`]): every
+/// other line is left as written, the first such line is rewritten where it stands, and any later
+/// one goes, since a later line would answer instead of it. Refused where `text` has no
+/// frontmatter to hold the line, or where `value` would not read back as itself.
+pub(crate) fn with_key(
+    text: &str,
+    key: &str,
+    value: Option<&str>,
+) -> Result<String, purlis_skills::fence::Unwritten> {
+    purlis_skills::fence::with_keys(text, &[(key, value)])
 }
 
 /// The definition file: `personas/<name>/persona.md`, else the legacy flat
@@ -338,9 +319,10 @@ pub fn def_path(root: &Path, name: &str) -> PathBuf {
 
 /// The frontmatter's `key: value` pairs, in file order — `persona._frontmatter`.
 ///
-/// Line-based, no quote stripping and no nesting: the text between the first two `---`,
-/// stripped, each line holding a `:` split at the first one, both halves stripped, and a
-/// pair kept only when its key is not empty.
+/// Line-based, no quote stripping and no nesting: the lines between the opening `---` line
+/// and the next `---` line ([`purlis_skills::fence::Fence`], so a `---` inside a value is
+/// text), each line holding a `:` split at the first one, both halves stripped, and a pair
+/// kept only when its key is not empty.
 ///
 /// The one rule a `SKILL.md`'s frontmatter is read by too, so it is
 /// [`purlis_skills::frontmatter`]'s.
@@ -358,6 +340,12 @@ pub fn load(root: &Path, name: &str) -> Option<Vec<(String, String)>> {
 /// [`load`], and the charter body beside the pairs — `persona.load`'s `meta` and `charter`,
 /// from one read of the file so the two cannot describe different versions of it.
 pub fn load_with_charter(root: &Path, name: &str) -> Option<(Vec<(String, String)>, String)> {
+    load_text(root, name).map(|text| (frontmatter(&text), charter_body(&text)))
+}
+
+/// A persona's own definition as text, or `None` when it does not load, by the rule [`load`]
+/// loads it by: what `persona lint` reads to say why its frontmatter reads as none.
+pub fn load_text(root: &Path, name: &str) -> Option<String> {
     if !valid_name(name) {
         return None;
     }
@@ -369,20 +357,17 @@ pub fn load_with_charter(root: &Path, name: &str) -> Option<(Vec<(String, String
     if crate::contain::readable(root, parent).is_err() || !memstore::readable_file(root, &path) {
         return None;
     }
-    memstore::read_text(&path).map(|text| (frontmatter(&text), charter_body(&text)))
+    memstore::read_text(&path)
 }
 
 /// The charter below the frontmatter, stripped — `persona._frontmatter`'s second answer.
 ///
-/// Python splits on the first two `---` (`text.split("---", 2)`), wherever the second one
-/// falls, and takes everything after it; a text that does not open with `---`, or has no
-/// second one, is all body. The same cut as [`frontmatter`], so the pairs and the body are
-/// never read off two different boundaries.
+/// Everything below the closing `---` line ([`purlis_skills::fence::Fence`]); a text with no
+/// frontmatter, whose first line is no `---` or which no later `---` line closes, is all body.
+/// The same cut as [`frontmatter`], so the pairs and the body are never read off two different
+/// boundaries.
 pub fn charter_body(text: &str) -> String {
-    let after = text
-        .strip_prefix("---")
-        .and_then(|rest| rest.find("---").map(|end| &rest[end + 3..]))
-        .unwrap_or(text);
+    let after = purlis_skills::fence::Fence::find(text).map_or(text, |fence| fence.body());
     memstore::py_strip(after).to_string()
 }
 

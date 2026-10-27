@@ -124,6 +124,29 @@ A family's ticket (spec #2897) is done when it ships:
 - every call site moved to it, with the lint rule for it at error;
 - the operator's before and after look at the screens it changes.
 
+### How to add a family
+
+A pull request that adds a family touches its own folders and no line another family's pull
+request touches (operator ruling 2026-10-26, #3386, #3387). Each shared list is found from the
+files below, so nothing is added to `eslint.config.js`, `eslint.ui-rules.js`, `styles.css`, a
+theme test's list or an ADR's index:
+
+| What | Where | Found by |
+| --- | --- | --- |
+| its parts and their tests | `crates/purlis-core/src/theme/parts_<family>.rs`, `parts_<family>_tests.rs` | `build.rs` |
+| its stylesheet | `app/src/ui/<family>/<family>.css` | `styles.css`'s `@families` line |
+| its forced colours | `app/src/ui/<family>/forced-colors.css`, one `@media (forced-colors: active)` block | `styles.css`'s `@forced` line, before `theme/forced-colors.css` |
+| its lint rules | `app/src/ui/<family>/lint.js`: `rules`; `off`, the files a rule is still off in; `rawButtons`, its controls still drawn as a raw `<button>` | `eslint.ui-rules.js`, every rule an error |
+| its lint tests | `app/src/ui/<family>/lint.test.ts`, on `../lint.testkit` | required beside `lint.js` (`ui/lint.test.ts`) |
+| what the theme tests hold it to | `app/src/ui/<family>/theme.testkit.ts`: `faint`, `quiet`, `spreadGrounds`, `classless`, `groundParts`, and `forced` (what its forced sheet draws) | `theme/families.testkit.ts` |
+| the cascade tests | nothing: `cascade.testkit.ts` reads what `styles.css` imports, as built | `ui/stylesheets.ts` |
+| an ADR amendment | `docs/adr/<nnnn>/<yyyy-mm-dd>-<slug>.md` | the folder; no index is kept |
+
+The files written again from the manifest (the schema, the docs family table, the stories'
+theme copy) are generated one entry per line in the families' order, so git merges two
+families' additions; on a conflict, take main's and write them again. One shared list is left:
+the forced-colours end-to-end probe (`app/e2e/specs/forced-colors.e2e.ts`), #3481.
+
 ## Running them
 
 ```bash

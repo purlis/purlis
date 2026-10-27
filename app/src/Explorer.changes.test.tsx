@@ -155,10 +155,11 @@ describe("what a branch changed, in the explorer", () => {
     expect(await named("^README.md")).toHaveAccessibleName("README.md changed");
     expect(await named("^new.rs")).toHaveAccessibleName("new.rs renamed from lib/old.rs");
     expect(await named("^src")).toHaveAccessibleName("src 2 changes");
-    // The branch's own folder is the section's heading, and carries its count.
-    expect(screen.getByRole("button", { name: /^Files/ })).toHaveAccessibleName(
-      "Files one in svc 4 changes",
-    );
+    // The branch's own folder is the view's title, and what stands beside it carries its count
+    // (#3343).
+    const beside = document.querySelector('[data-section="files"] .head-beside');
+    expect(beside).toHaveTextContent("svc · one");
+    expect(beside?.querySelector(".change-mark")).toHaveAccessibleName("4 changes");
     expect(row("file:svc/one:src/keep.rs")).toHaveAccessibleName("keep.rs");
   });
 
@@ -265,6 +266,13 @@ describe("a path the branch changed that purlis names and does not read (#704)",
     await userEvent.type(screen.getByLabelText("Filter files"), "readme");
 
     await waitFor(() => expect(refusedRows()).toHaveLength(0));
+    // On a picked branch the box narrows its tree (D-3343-1): the file that matches is still a
+    // row of it, the folders that hold none are gone, and the tree's toggles stay.
+    expect(await named("^README.md")).toBeInTheDocument();
+    expect(row("file:svc/one:README.md")).toBeInTheDocument();
+    expect(tree().querySelector('[data-row="file:svc/one:lib"]')).toBeNull();
+    expect(screen.queryByRole("grid", { name: "Files found" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Changed only" })).toBeInTheDocument();
   });
 
   it("draws the first fifty and counts the rest", async () => {

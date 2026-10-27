@@ -16,7 +16,8 @@ export const REFUSED_DRAWN = 50;
  * **A line of the tree, never a row to act on** (`TreeLine`, #2911): it has no tree entry to hang
  * on (a refused path is not a folder listing's entry), and nothing opens, compares, stages,
  * drags or picks it, so it holds no button or link; the arrows read it in its place, as every
- * line of a tree is read. Narrowed by the *Filter files* box as file rows are.
+ * line of a tree is read. Narrowed by the *Filter files* box as file rows are, where the box
+ * narrows the tree (a picked branch, the cockpit); where it finds files by name, no tree is drawn.
  */
 export function namedNotRead(
   refused: readonly RefusedFile[],

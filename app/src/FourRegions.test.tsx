@@ -1135,11 +1135,8 @@ describe("the Panel", () => {
     const explorer = await showTheExplorer();
     await within(reposView()).findByTestId("clone-svc");
 
-    expect(
-      within(explorer)
-        .getAllByRole("heading")
-        .map((one) => one.textContent),
-    ).toEqual([expect.stringMatching(/^Files/)]);
+    // No heading of its own: *Files* is no fold, and the view's title is its region's (#3343).
+    expect(within(explorer).queryAllByRole("heading")).toEqual([]);
     expect(within(explorer).queryByRole("treegrid", { name: "Repos and branches" })).toBeNull();
     expect(within(reposView()).getByRole("treegrid", { name: "Repos and branches" })).toBeVisible();
   });

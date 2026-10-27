@@ -33,8 +33,9 @@ purlis persona log devops "<note>"        # note to this session's activity; no 
 
 `create` writes `personas/<name>/persona.md` as a **draft** (`draft: true`), with its
 `memory/` and `refs/`. `--delegate-when` is required unless `--extends` names a parent to
-inherit it from; a value holding a line break or `---` is refused, because each is written as
-one frontmatter line. While the draft line is there no chat is dispatched to the persona:
+inherit it from; a value holding a line break is refused, because each is written as one
+frontmatter line. A `---` inside a value is text: only a line that is `---` ends the
+frontmatter (`docs/plane-format.md`, 2026-10-27). While the draft line is there no chat is dispatched to the persona:
 write what it owns, then drop the line. `--with-vault` registers its vault as `purlis vault
 add <vault> --persona <name>` would, and `--use` selects it.
 

@@ -17,6 +17,7 @@ import App from "./App";
 import type { OpenChat } from "./bindings";
 import type { WindowSaid } from "./windows";
 import { stripNamed } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * A project tab split into an OS window of its own, and moved back (charter#126; ADR 0033,
@@ -200,7 +201,7 @@ describe("a project moved into a window of its own", () => {
 
     await fromTheMenu("two", "Move to a new window");
 
-    expect(await screen.findByText("purlis could not make a window: no display")).toBeVisible();
+    expect(await findResult("purlis could not make a window: no display")).toBeVisible();
     expect(projectTabs()).toEqual(["one*", "two"]);
   });
 
