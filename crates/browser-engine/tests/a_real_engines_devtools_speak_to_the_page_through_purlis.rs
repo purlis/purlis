@@ -68,9 +68,15 @@ fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purli
                 .any(|method| method == "DOM.getDocument")
         },
     );
-    wait_for("DevTools were painted", Duration::from_secs(20), || {
-        !frames.lock().unwrap().is_empty()
-    });
+    let start = Instant::now();
+    while frames.lock().unwrap().is_empty() {
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "DevTools were never painted; the engine told of their page: {:?}",
+            browser.inspector_told()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
     let first = frames.lock().unwrap()[0].clone();
     assert_eq!(
         &first.jpeg[..2],

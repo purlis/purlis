@@ -200,10 +200,13 @@ pub(crate) struct Inspection {
     shows: AtomicU64,
     ended: AtomicBool,
     behind: AtomicBool,
-    told: Mutex<Option<Told>>,
+    tell: Mutex<Option<Told>>,
     /// The methods the front end asked of the page, by name alone, the first
     /// [`MOST_HEARD`] of them.
     heard: Mutex<Vec<String>>,
+    /// What the engine told of the front end's own page, by method, and which of the driver's
+    /// calls on it the engine refused, by method: the first [`MOST_HEARD`], each once.
+    told: Mutex<Vec<String>>,
 }
 
 /// How many of the front end's methods are kept to say what it asked.
@@ -212,6 +215,7 @@ const MOST_HEARD: usize = 256;
 impl Inspection {
     /// Takes in an event of the front end's own session, from the driver's event reader.
     pub(crate) fn front_end_event(&self, method: &str, params: &Value) {
+        self.noted(method);
         match method {
             "Runtime.bindingCalled" if params["name"] == BINDING => {
                 if let Some(payload) = params["payload"].as_str() {
@@ -257,6 +261,19 @@ impl Inspection {
         }
     }
 
+    /// Notes `what` once, among the first [`MOST_HEARD`].
+    fn noted(&self, what: &str) {
+        let mut told = lock(&self.told);
+        if told.len() < MOST_HEARD && !told.iter().any(|one| one == what) {
+            told.push(what.to_owned());
+        }
+    }
+
+    /// What the engine told of the front end's own page, and which calls on it it refused.
+    pub(crate) fn told(&self) -> Vec<String> {
+        lock(&self.told).clone()
+    }
+
     /// The methods the front end asked of the page so far, by name.
     pub(crate) fn heard(&self) -> Vec<String> {
         lock(&self.heard).clone()
@@ -286,7 +303,7 @@ impl Browser {
                     Some(&open.front_session),
                 )
                 .map_err(refusal)?;
-            *lock(&open.told) = Some(ended);
+            *lock(&open.tell) = Some(ended);
             return Ok(());
         }
         let inspected = self.target(None)?;
@@ -410,8 +427,9 @@ impl Browser {
             shows: AtomicU64::new(0),
             ended: AtomicBool::new(false),
             behind: AtomicBool::new(false),
-            told: Mutex::new(Some(ended)),
+            tell: Mutex::new(Some(ended)),
             heard: Mutex::new(Vec::new()),
+            told: Mutex::new(Vec::new()),
         });
         let tapping = Arc::downgrade(&inspection);
         let tap = devtools.tap(
@@ -438,6 +456,10 @@ impl Browser {
             .name("browser-inspect".to_owned())
             .spawn(move || run(&weak, &theirs, &todo))
             .map_err(|e| Refusal::Engine(e.to_string()))?;
+        // In front in its own window: a headless engine paints only a page in front.
+        if devtools.call("Page.bringToFront", json!({}), on).is_err() {
+            inspection.noted("Page.bringToFront refused");
+        }
         devtools
             .call("Page.navigate", json!({ "url": FRONT_END }), on)
             .map_err(refusal)?;
@@ -454,6 +476,15 @@ impl Browser {
         lock(&self.inner.inspection)
             .as_ref()
             .map(|open| open.heard())
+            .unwrap_or_default()
+    }
+
+    /// What the engine told of the open DevTools' own page, by method, and which of purlis's
+    /// calls on it it refused: for the host's log and the tests, never anything they showed.
+    pub fn inspector_told(&self) -> Vec<String> {
+        lock(&self.inner.inspection)
+            .as_ref()
+            .map(|open| open.told())
             .unwrap_or_default()
     }
 
@@ -623,7 +654,7 @@ impl Inner {
             state.inspecting.contexts.remove(&open.context);
             state.inspecting.front_ends.remove(&open.front_end);
         }
-        if let Some(tell) = lock(&open.told).take() {
+        if let Some(tell) = lock(&open.tell).take() {
             tell(why);
         }
     }
@@ -683,11 +714,14 @@ fn run(weak: &Weak<Inner>, open: &Arc<Inspection>, todo: &Receiver<Work>) {
                     );
                 }
                 Work::Show => {
-                    let _ = inner.devtools.call(
+                    let started = inner.devtools.call(
                         "Page.startScreencast",
                         json!({ "format": "jpeg", "quality": super::super::screencast::QUALITY, "everyNthFrame": 1 }),
                         Some(&open.front_session),
                     );
+                    if started.is_err() {
+                        open.noted("Page.startScreencast refused");
+                    }
                 }
                 Work::Hide => {
                     let _ = inner.devtools.call(
