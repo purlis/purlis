@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793082070785,
+  "lastUpdate": 1793084280518,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26502,6 +26502,48 @@ window.BENCHMARK_DATA = {
             "value": 104.0021165,
             "unit": "ms",
             "extra": "median of 5 runs: 103.480, 103.645, 104.002, 105.256, 105.913 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "99b7ea1c9818c5a6c19aa30879c8c16db30bc8f3",
+          "message": "titlebar: the chosen workspace chip on the accent's wash (#3345) (#3354)\n\n* titlebar: the chosen workspace chip on the accent's wash (#3345)\n\nR101 as amended by the sidebar-views prototype's Q4 A: the chosen chip\ndraws the accent's wash with the primary words, a hovered chip keeps the\ncard's fill, and the chosen chip under the pointer takes the stronger\nwash, a new token `accent.wash-hover` (KIN-followed from `tab.active`).\nOnly a fill changes; the chip keeps one box in every state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* theme: the schema and Classic's digests carry accent.wash-hover (#3345)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: the chosen-states story moves the pointer off before the chosen chip (#3345)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: the chosen-states story starts with the pointer off the bar (#3345)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: the chosen-states story points until the chip hears it (#3345)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: the chosen-states story compares the fills as drawn (#3345)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: the chosen-states story reads each colour once its change has run (#3345)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: the chosen-states story reads a chip as the pointer reaches it (#3345)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Theme parts: a family is its own file, and no list two family PRs share\n\nTwo pull requests that add two families no longer touch the same lines\n(operator ruling 2026-10-26, ADR 0103 amended 2026-10-26):\n\n- build.rs reads crates/purlis-core/src/theme/parts_*.rs and writes each\n  family file's module, each parts_<family>_tests.rs test module, and\n  MANIFEST, which parts.rs and theme.rs include. The families parts.rs\n  held itself move to parts_button.rs, parts_fields.rs, parts_tabs.rs and\n  parts_tooltip.rs.\n- The manifest's order is a rule: what versions 1 to 12 shipped, frozen\n  in their order (version 12's digest is unchanged), then by since and\n  name, NEXT last.\n- The schema's part keys and docs/themes.md's family table (now written\n  from the manifest and held to it by a test) are in name order.\n- The stories' copy of the built-in themes keeps each parts stylesheet a\n  rule a line.\n- styles.css's @families line takes every family stylesheet it does not\n  name, by name, as Vite builds the window and the stories.\n- The core, tabs and CLI tests derive their family lists from MANIFEST.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Family files: review round (#3386)\n\n- The docs table test writes the next release's number as VERSION + 1:\n  `u64::from(parts::NEXT)` would be `u64::from(13)` after the release\n  step's rewrite and not compile. A release-script test runs the rewrite\n  on the repository and refuses any NEXT passed to `from(...)`.\n- One helper, `builtStyles()` in `app/src/ui/stylesheets.ts`, expands\n  `@families` for the Vite plugin and for every test that reads\n  styles.css's imports (contrast, literals, stylesheets), so no guard\n  skips a family brought in by the marker.\n- The Vite plugin compares normalized paths, and the dev server reloads\n  when a family stylesheet is added or removed.\n- build.rs refuses a family declared in a shape it cannot read.\n- grounds.test.ts reads each family's own file, resolving a shared list\n  there before parts.rs.\n- The order test derives the released prefix from VERSION.\n- The ADR amendment says how name/since are found, and that the stories'\n  snapshot can still meet on adjacent rules.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Theme floors: hold the chosen chip's waiting count on its wash (#3345)\n\nMain's guard (#3375) holds every state colour a part draws as words at the\ntext floor. The chosen title-bar chip now stands on the accent's wash, so its\nwaiting count (state.waiting on wash.warning) is held over accent.wash and\naccent.wash-hover, each laid on the frame.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: the waiting count stands on the bar's own ground on every chip (#3345)\n\nD-3345-3: on a chosen chip the count's amber wash is laid on surface.deep,\nthe bar's ground, not on the accent's wash, so it reads the same at rest,\nunder the pointer and chosen, and no theme colour changes. The state-words\nguard reads a part's wash on its own ground where it has one (PART_LAID_ON);\nits pair is the one over surface.deep. The story measures the count on the\nchosen chip. Reverts the pairs over the accent's wash, which Purlis Classic\nheld only at 4.27:1.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* titlebar: the count's ground is held as a pair, and the story names no colour (#3345)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* titlebar: the count's ground is an element of its own under its wash (#3345)\n\nAfter the families bundle, a part's fill is read from its own rule: the count\npaints the amber wash, and a ground element under it paints the bar's colour,\nso the count reads the same on every chip (D-3345-5). The pair over the\npopover's surface stays for the badge and count families.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-27T06:18:07Z",
+          "tree_id": "909c625adfe712f71cac9cdd28d8a8dc8cb86b45",
+          "url": "https://github.com/purlis/purlis/commit/99b7ea1c9818c5a6c19aa30879c8c16db30bc8f3"
+        },
+        "date": 1793084276813,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5378134999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.519, 0.535, 0.538, 0.539, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0109905,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.319, 16.530, 17.011, 17.055, 17.207 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.9097825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.662, 103.724, 105.910, 106.108, 106.131 ms"
           }
         ]
       }
