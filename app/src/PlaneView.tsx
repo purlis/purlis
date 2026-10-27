@@ -8241,6 +8241,7 @@ export const PlaneView = memo(function PlaneView({
    *  so a project behind another has its own summary when the person switches to it. */
   const { away: awayOn } = useChatsListPrefs();
   const awayNow = useAwaySummary({
+    plane,
     chats,
     on: awayOn,
     finished: finishedTasks,
@@ -8390,6 +8391,15 @@ export const PlaneView = memo(function PlaneView({
   ]);
   /** The Inbox, shown: where the away summary's refused dispatches are answered (#1693). */
   const showInbox = useCallback(() => showSideView("inbox"), [showSideView]);
+  /** A runner's branch ready to push, from the away summary (#2051): its workspace in front,
+   *  and Changes, where it is taken here and pushed. */
+  const showChangesOf = useCallback(
+    (workspace: string) => {
+      focusWorkspace(workspace);
+      showSideView("changes");
+    },
+    [focusWorkspace, showSideView],
+  );
   /**
    * **An answer given on a pane is listed in the Inbox once its ask goes** (#1700, 2026-10-10
    * 21:09 item 2), as one given in the Inbox is: a pane's Notice says the words pressed and the
@@ -8702,6 +8712,7 @@ export const PlaneView = memo(function PlaneView({
         onShowChat={showChat}
         onShowFinished={showFinished}
         onShowInbox={showInbox}
+        onShowChanges={showChangesOf}
       />
       {alerts !== undefined && (
         <InboxAlerts

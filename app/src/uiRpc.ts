@@ -432,6 +432,12 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**
+	 *  **Each runner of `plane`'s chats, for the away summary** (#2051): of `sessions`, the chats
+	 *  that run on each pool's runner, and the branches each runner has, as this machine last
+	 *  fetched them. A pool none of them runs on and no workspace names is not said.
+	 */
+	runnersAway: (plane: PlaneId, sessions: number[]) => typedError<RunnerAway[], string>(__TAURI_INVOKE("runners_away", { plane, sessions })),
 	/**  Whether the session host is failing, and what the window says of it. */
 	sessionHostFailing: () => __TAURI_INVOKE<{
 	/**  How many unexpected exits tripped the breaker. */
@@ -801,6 +807,13 @@ export const commands = {
 	agentsStopped: () => __TAURI_INVOKE<boolean>("agents_stopped"),
 	stopEveryAgent: __WINDOW_ONLY_RESULT,
 	rearmAgents: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **The runners the re-arm re-arms beside this machine** (#2051, ADR 0071 as amended: *"The
+	 *  window's re-arm lists the runners it will re-arm"*): what the session host's stop stopped,
+	 *  read from the host as the title bar draws a stopped switch. None where chats do not run in a
+	 *  host, or it cannot say.
+	 */
+	runnersARearmReaches: () => typedError<string[], string>(__TAURI_INVOKE("runners_a_rearm_reaches")),
 	/**  Hides the window, which is what its close button does. Every session keeps running. */
 	hideWindow: () => __TAURI_INVOKE<void>("hide_window"),
 	/**  Whether the window is on screen. The scenario tests ask; nothing in the UI does. */
@@ -2867,6 +2880,14 @@ export type BranchStatus = {
 	more: number,
 	/**  The branch the changes are counted against; `null` when against the last commit. */
 	base: string | null,
+};
+
+/**  One clone's branches on a runner, as this machine last fetched them (#2046). */
+export type BranchesOfAClone = {
+	workspace: string,
+	/**  The clone's folder name in the workspace. */
+	repo: string,
+	branches: RunnerBranch[],
 };
 
 /**  Which task's brief is asked for. */
@@ -7446,7 +7467,12 @@ export type PoolLink =
 /**  It answered with another key: it is refused, and the window offers to remove it. */
 { state: "key_changed" } | 
 /**  It did not answer, and why. */
-{ state: "down"; why: string };
+{ state: "down"; why: string } | 
+/**
+ *  It suspended itself, a day without a link (#2051): its container is stopped, its home
+ *  kept, and the window's next chat there starts it again. A check never wakes it.
+ */
+{ state: "suspended" };
 
 /**  One pool, as its row draws it. */
 export type PoolRow = {
@@ -8548,6 +8574,24 @@ export type RunEnd =
 /**  An end a newer purlis wrote. */
 "unknown";
 
+/**  How a run ended, as the runner's log says it: any other word is not held. */
+export type RunEnded = "completed" | "failed" | "stopped";
+
+/**  One run of a chat that ended on a runner, as the runner recorded it (#3393). */
+export type RunEndedOnARunner = {
+	/**  The chat, by its number in the plane. */
+	chat: number,
+	/**  How it ended. */
+	ended: RunEnded,
+	/**
+	 *  When the runner wrote it, in seconds since 1970: the window says it in the person's time
+	 *  zone.
+	 */
+	at: number,
+	/**  The device that wrote it: the runner's. */
+	device: string,
+};
+
 /**  What started a skill run, as the Runs panel draws it. */
 export type RunStart = 
 /**  The chat's own Skill tool. */
@@ -8567,6 +8611,26 @@ export type RunStart =
 /**  A start a newer purlis wrote. */
 "unknown";
 
+/**  One runner of a project, as the away summary reads it. */
+export type RunnerAway = {
+	/**  The pool whose runner it is. */
+	pool: string,
+	/**  Of the chats asked about, those that run on it, by their number in the plane. */
+	chats: number[],
+	/**
+	 *  Its branches, as this machine last fetched them, by the clone of a workspace that runs on
+	 *  it.
+	 */
+	branches: BranchesOfAClone[],
+	/**  How the window reads what it records now (#3393). */
+	log: RunnerLogRead,
+	/**
+	 *  The runs of this project's chats that ended there, as it recorded them, oldest first:
+	 *  what the window read since it linked.
+	 */
+	ended: RunEndedOnARunner[],
+};
+
 /**  One branch of a pool's runner, as this machine last fetched it (#2046). */
 export type RunnerBranch = {
 	pool: string,
@@ -8577,6 +8641,17 @@ export type RunnerBranch = {
 	 */
 	ahead: number,
 };
+
+/**  How the window reads what a runner records (#3393). */
+export type RunnerLogRead = 
+/**  Over the link, which is up. */
+"read" | 
+/**  Over the link, which is down: what happened there since is not known yet. */
+"link_down" | 
+/**  Some of it was not kept for the window: what it says is not all that happened. */
+"partly" | 
+/**  Not at all: no link to it is open, or the runner is from a purlis before 1.41. */
+"not_read";
 
 /**
  *  **A held write whole, as its own tab draws it**: what it would do with every text whole, and

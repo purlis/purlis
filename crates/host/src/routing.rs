@@ -127,8 +127,10 @@ impl Routed {
         };
         let relay = match relayed {
             Ok((keep, resolved)) => {
-                *lock(&self.runner) = Some(resolved);
-                Relay::kept(keep).claiming(self.hosting.claimed())
+                *lock(&self.runner) = Some(resolved.clone());
+                Relay::kept(keep)
+                    .claiming(self.hosting.claimed())
+                    .stopping_first(self.hosting.stop_first(resolved))
             }
             Err(why) => {
                 *lock(&self.route) = Route::Undecided;

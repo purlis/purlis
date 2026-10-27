@@ -3795,3 +3795,48 @@ fn a_run_let_go_of_from_what_the_writer_remembers_is_still_not_taken_again() {
 
     assert!(!host.never_held(&first));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_runners_desktop_stop_and_re_arm_are_journalled_by_the_link_and_name_its_device() {
+    // ADR 0071 and ADR 0075 as amended (#2051): a link's stop is unattributed, its re-arm a
+    // person's, each `by: link`, and the event names the desktop's device id.
+    use purlis_host::StopsElsewhere;
+    let (config, data) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let on_disk = crate::halt::OnDisk(config.path().to_path_buf());
+    let mut host = Recorder::open_in(config.path(), data.path()).unwrap();
+    let dir = host.dir().to_path_buf();
+    let desktop = "01JA0DESKT0P00000000000000";
+
+    for rearm in [false, true] {
+        let entry: Entry =
+            serde_json::from_value(on_disk.link_switched(rearm, desktop).unwrap()).unwrap();
+        host.apply(entry).unwrap();
+    }
+
+    let events = kill_switch_events(&dir);
+    assert_eq!(
+        events
+            .iter()
+            .map(|(kind, actor, by, _)| (kind.as_str(), actor.as_str(), by.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("killswitch.stop", "unattributed", "link"),
+            ("killswitch.rearm", "human", "link")
+        ]
+    );
+    assert!(
+        read(&dir)
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind.starts_with("killswitch."))
+            .all(|event| event.body["device"] == desktop)
+    );
+    assert!(!crate::halt::stopped_on_disk(config.path()), "re-armed");
+    let journal = crate::halt::journal(config.path());
+    assert!(
+        journal
+            .iter()
+            .all(|line| line.by == crate::halt::Actor::Link)
+    );
+}
