@@ -238,10 +238,14 @@ impl Browser {
         if self.driver() != Driver::Person {
             return self.epoch();
         }
-        // DevTools are the person's while they drive (#2028): what they put into the page's
-        // fields is read and kept out as typing is, and nothing set in them outlives the lease.
-        self.devtools_touched_every_field();
-        self.stop_inspecting();
+        // An Inspect under way never finishes opening from here on (#2028).
+        {
+            let _lease = lock(&self.lease);
+            self.inspect_cut.fetch_add(1, Ordering::SeqCst);
+        }
+        // DevTools are the person's while they drive (#2028): nothing set in them outlives the
+        // lease, and what they wrote, and every field, is kept out as typing is.
+        self.after_devtools();
         lock(&self.typing).end_run(super::inspect::INSPECTOR_PAGE);
         self.keep_typing_out();
         {

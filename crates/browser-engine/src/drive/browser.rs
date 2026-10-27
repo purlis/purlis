@@ -474,8 +474,9 @@ struct State {
 struct Inspecting {
     /// The contexts DevTools' front ends run in.
     contexts: HashSet<String>,
-    /// The front ends' own targets.
-    front_ends: HashSet<String>,
+    /// Each context's front end (or blank page of DevTools'), by context: every other page of
+    /// that context is closed at once.
+    front_ends: HashMap<String, String>,
     /// The pages a session is being made on for DevTools to speak to them.
     bridging: HashSet<String>,
 }
@@ -489,7 +490,7 @@ impl Inspecting {
             || info
                 .get("targetId")
                 .and_then(Value::as_str)
-                .is_some_and(|target| self.front_ends.contains(target))
+                .is_some_and(|target| self.front_ends.values().any(|one| one == target))
     }
 }
 
@@ -893,6 +894,10 @@ pub(crate) struct Inner {
     pub(crate) devtools: Arc<dyn DevTools>,
     /// The person's open DevTools, if any (#2028).
     inspection: Mutex<Option<Arc<inspect::Inspection>>>,
+    /// Whether DevTools were open while the person drove, since they last handed it back.
+    devtools_opened: AtomicBool,
+    /// What DevTools wrote into pages since then, kept out at the hand-back.
+    devtools_writes: Mutex<Vec<String>>,
     state: Mutex<State>,
     changed: Condvar,
     limits: Limits,
@@ -970,6 +975,9 @@ pub struct Browser {
     lease: Mutex<Lease>,
     /// The epoch of the lease the call now acting was made under.
     acting_epoch: AtomicU64,
+    /// Counts the hand-backs, each under the lease's lock: an Inspect that began before one
+    /// never finishes opening (#2028).
+    inspect_cut: AtomicU64,
     /// What the person typed while driving, kept out of later answers (#2014).
     typing: Mutex<Typing>,
     /// What each login the person cut by taking the browser over filled, cleared as they hand
@@ -1025,6 +1033,8 @@ impl Browser {
         let inner = Arc::new(Inner {
             devtools,
             inspection: Mutex::new(None),
+            devtools_opened: AtomicBool::new(false),
+            devtools_writes: Mutex::new(Vec::new()),
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
             limits: limits.clone(),
@@ -1135,6 +1145,7 @@ impl Browser {
             inputs: AtomicU64::new(0),
             lease: Mutex::new(Lease::default()),
             acting_epoch: AtomicU64::new(0),
+            inspect_cut: AtomicU64::new(0),
             typing: Mutex::new(Typing::default()),
             to_clear: Mutex::new(Vec::new()),
             read_last: changes::ReadLast::default(),
@@ -3638,17 +3649,12 @@ impl Inner {
         state.page(current)?.session.clone()
     }
 
-    /// Whether `event` says the open Inspect's front end went: its session detached, or its
-    /// target was destroyed.
+    /// Why the open Inspect ends, where `event` says it does: its front end's target went, or
+    /// the page it inspects did.
     fn inspection_gone(&self, event: &Event) -> Option<inspect::InspectEnded> {
-        let open = lock(&self.inspection).clone()?;
+        let open = self.inspection()?;
         let target = event.params["targetId"].as_str();
         match event.method.as_str() {
-            "Target.detachedFromTarget"
-                if event.params["sessionId"].as_str() == Some(open.front_session.as_str()) =>
-            {
-                Some(inspect::InspectEnded::Ended)
-            }
             "Target.targetDestroyed" | "Target.targetCrashed"
                 if target == Some(open.front_end.as_str()) =>
             {
@@ -3658,7 +3664,7 @@ impl Inner {
             "Target.targetDestroyed" | "Target.targetCrashed"
                 if target == Some(open.inspected.as_str()) =>
             {
-                self.stop_inspecting(inspect::InspectEnded::PageGone);
+                open.ends(inspect::InspectEnded::PageGone);
                 None
             }
             _ => None,
@@ -3668,15 +3674,16 @@ impl Inner {
     /// Takes in one event from the engine.
     fn take_in(&self, event: &Event) {
         // The front end of the person's DevTools is DevTools' own, never one of the browser's
-        // pages (#2028).
+        // pages (#2028): its session is tapped, so nothing of it is the driver's.
         if let Some(session) = event.session_id.as_deref()
-            && let Some(open) = self.inspection_on(session)
+            && self.inspection_on(session).is_some()
         {
-            open.front_end_event(&event.method, &event.params);
             return;
         }
-        if let Some(why) = self.inspection_gone(event) {
-            self.stop_inspecting(why);
+        if let Some(why) = self.inspection_gone(event)
+            && let Some(open) = self.inspection()
+        {
+            open.ends(why);
             return;
         }
         if event.method == "Page.screencastFrame" {
@@ -3706,18 +3713,32 @@ impl Inner {
                 "Target.targetCreated" | "Target.targetInfoChanged"
                     if state.inspecting.owns(&params["targetInfo"]) =>
                 {
-                    // A page DevTools' context opened that is not its front end goes at once.
-                    if let Some(target) = text("/targetInfo/targetId")
-                        && !state.inspecting.front_ends.is_empty()
-                        && !state.inspecting.front_ends.contains(&target)
-                    {
-                        follow.push(FollowUp::Close(target));
+                    let target = text("/targetInfo/targetId").unwrap_or_default();
+                    let front = text("/targetInfo/browserContextId")
+                        .and_then(|context| state.inspecting.front_ends.get(&context).cloned());
+                    match front {
+                        // A page DevTools' context opened that is not its front end goes at once.
+                        Some(front) if front != target => follow.push(FollowUp::Close(target)),
+                        // The front end stays at its own page: one that leaves it is closed.
+                        Some(_) => {
+                            let url = text("/targetInfo/url").unwrap_or_default();
+                            if !inspect::front_end_may_show(&url)
+                                && let Some(open) = lock(&self.inspection)
+                                    .clone()
+                                    .filter(|open| open.front_end == target)
+                            {
+                                open.ends(inspect::InspectEnded::Moved);
+                            }
+                        }
+                        None => {}
                     }
                 }
+                "Target.attachedToTarget" if state.inspecting.owns(&params["targetInfo"]) => {}
+                // The session made for DevTools to speak to the page on: theirs, and the mark
+                // goes as it is heard.
                 "Target.attachedToTarget"
-                    if state.inspecting.owns(&params["targetInfo"])
-                        || text("/targetInfo/targetId")
-                            .is_some_and(|target| state.inspecting.bridging.contains(&target)) => {}
+                    if text("/targetInfo/targetId")
+                        .is_some_and(|target| state.inspecting.bridging.remove(&target)) => {}
                 "Target.targetCreated" | "Target.targetInfoChanged" => {
                     let info = &params["targetInfo"];
                     if info.get("type").and_then(Value::as_str) == Some("page")
@@ -3890,8 +3911,13 @@ impl Inner {
                 }
                 // The front end loads its own files alone: what it asks of the web fails (#2028).
                 "Fetch.requestPaused"
-                    if text("/frameId")
-                        .is_some_and(|frame| state.inspecting.front_ends.contains(&frame)) =>
+                    if text("/frameId").is_some_and(|frame| {
+                        state
+                            .inspecting
+                            .front_ends
+                            .values()
+                            .any(|one| *one == frame)
+                    }) =>
                 {
                     if let Some(request) = text("/requestId") {
                         follow.push(FollowUp::Refuse(request));

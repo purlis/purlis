@@ -80,6 +80,11 @@ impl Worlds {
         lock(&self.0).retain(|(on, _), _| on != session);
     }
 
+    /// Every world is forgotten: the next use of each frame makes a fresh one (#2028).
+    pub(super) fn forget_all(&self) {
+        lock(&self.0).clear();
+    }
+
     /// `frame` loaded another document, or went: its worlds, on any session, are gone.
     pub(super) fn left(&self, frame: &str) {
         lock(&self.0).retain(|(_, of), _| of != frame);

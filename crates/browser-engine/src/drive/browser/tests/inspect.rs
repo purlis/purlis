@@ -58,6 +58,12 @@ fn inspected(browser: &super::Browser, engine: &super::Engine) -> Ends {
             Box::new(move |why| told.lock().unwrap().push(why)),
         )
         .expect("the person may inspect a browser they drive");
+    // The front end's own main world, where its stand-in runs.
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context":{"id":1,"origin":"devtools://devtools","name":"","uniqueId":"FRONT-WORLD","auxData":{"isDefault":true,"type":"default","frameId":"FRONT-1"}}}),
+        Some("S-FRONT-1"),
+    );
     ends
 }
 
@@ -73,21 +79,21 @@ fn front_end_sends(engine: &super::Engine, message: &Value) {
 /// Every message handed to the front end so far, in order.
 fn handed_to_the_front_end(engine: &super::Engine) -> Vec<Value> {
     engine
-        .sent("Runtime.evaluate")
+        .sent("Runtime.callFunctionOn")
         .into_iter()
         .filter(|s| s.session.as_deref() == Some("S-FRONT-1"))
         .flat_map(|s| {
-            let expression = s.params["expression"].as_str().unwrap().to_owned();
-            let literal = expression
-                .strip_prefix("globalThis.__purlisInspector.deliver(")
-                .and_then(|rest| rest.strip_suffix(')'))
-                .expect("only the stand-in's deliver is run in the front end")
-                .to_owned();
-            let batch: String = serde_json::from_str(&literal).unwrap();
-            serde_json::from_str::<Vec<String>>(&batch)
+            assert_eq!(
+                s.params["functionDeclaration"],
+                super::super::inspect::DELIVER,
+                "only the stand-in's deliver is run in the front end"
+            );
+            assert_eq!(s.params["executionContextId"], 1, "in its own main world");
+            s.params["arguments"][0]["value"]
+                .as_array()
                 .unwrap()
-                .into_iter()
-                .map(|m| serde_json::from_str::<Value>(&m).unwrap())
+                .iter()
+                .map(|m| serde_json::from_str::<Value>(m.as_str().unwrap()).unwrap())
                 .collect::<Vec<_>>()
         })
         .collect()
@@ -497,4 +503,221 @@ fn devtools_watched_before_their_page_has_loaded_are_cast_once_it_has() {
     wait_for("the front end is cast again once loaded", || {
         asked() > before
     });
+}
+
+/// The page shows `said` in its text, as a page that DevTools wrote into does.
+fn the_page_shows(engine: &super::Engine, said: &str) {
+    let mut model = super::super::lock(&engine.model);
+    let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+    let line = nodes.iter_mut().find(|n| n["nodeId"] == "16").unwrap();
+    line["name"]["value"] = json!(said);
+}
+
+#[test]
+fn devtools_that_leave_their_own_page_close() {
+    let (browser, engine) = browser();
+    let ends = inspected(&browser, &engine);
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"FRONT-1","type":"page","title":"","url":"chrome://settings/","attached":true,"browserContextId":"CONTEXT-DEVTOOLS"}}),
+        None,
+    );
+    wait_for("DevTools close", || !browser.inspecting());
+    assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Moved]);
+}
+
+#[test]
+fn devtools_at_their_own_page_stay_open() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"FRONT-1","type":"page","title":"DevTools","url":super::super::inspect::FRONT_END,"attached":true,"browserContextId":"CONTEXT-DEVTOOLS"}}),
+        None,
+    );
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(browser.inspecting());
+}
+
+#[test]
+fn what_devtools_put_into_a_field_is_kept_out_even_when_they_closed_before_the_hand_back() {
+    let (browser, engine) = browser();
+    let ends = inspected(&browser, &engine);
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.value = "console-set-Secret8".into();
+        let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+        let field = nodes.iter_mut().find(|n| n["nodeId"] == "8").unwrap();
+        field["value"]["value"] = json!("console-set-Secret8");
+    }
+    // The engine says DevTools' session on the page went: they close before Done.
+    engine.emit(
+        "Target.detachedFromTarget",
+        json!({"sessionId": "S-INSPECTED"}),
+        None,
+    );
+    wait_for("DevTools close", || !browser.inspecting());
+    assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::PageGone]);
+    browser.hand_back();
+    let read = snapshot(&browser, 2);
+    assert!(!read.contains("console-set-Secret8"), "{read}");
+}
+
+#[test]
+fn what_devtools_wrote_outside_a_field_is_kept_out_after_the_hand_back() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    front_end_sends(
+        &engine,
+        &json!({"id": 3, "method": "Runtime.evaluate", "params": {"expression": "document.body.append('devtools-wrote-Q7')"}}),
+    );
+    wait_for("the call reaches the page", || {
+        !engine
+            .sent("Runtime.evaluate")
+            .iter()
+            .all(|s| s.session.as_deref() != Some("S-INSPECTED"))
+    });
+    browser.hand_back();
+    the_page_shows(&engine, "devtools-wrote-Q7");
+    let read = snapshot(&browser, 2);
+    assert!(!read.contains("devtools-wrote-Q7"), "{read}");
+}
+
+#[test]
+fn the_engines_clipboard_is_emptied_once_devtools_were_open_and_the_browser_is_handed_back() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    browser.hand_back();
+    assert!(engine.sent("Runtime.evaluate").iter().any(|s| {
+        s.params["expression"] == super::super::inspect::EMPTY_CLIPBOARD
+            && s.params["userGesture"] == true
+    }));
+}
+
+#[test]
+fn purlis_own_world_in_the_page_is_never_told_to_devtools_nor_reached_by_them() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context":{"id":9,"origin":"http://fixture.test","name":"purlis","uniqueId":"PURLIS-9","auxData":{"isDefault":false,"type":"isolated","frameId":"PAGE-1"}}}),
+        Some("S-INSPECTED"),
+    );
+    engine.emit("DOM.documentUpdated", json!({}), Some("S-INSPECTED"));
+    front_end_sends(
+        &engine,
+        &json!({"id": 4, "method": "Runtime.evaluate", "params": {"expression": "1", "contextId": 9}}),
+    );
+    wait_for("the call is answered", || {
+        handed_to_the_front_end(&engine)
+            .iter()
+            .any(|m| m["id"] == 4)
+    });
+    let handed = handed_to_the_front_end(&engine);
+    assert!(
+        handed
+            .iter()
+            .all(|m| m["method"] != "Runtime.executionContextCreated"),
+        "{handed:?}"
+    );
+    assert!(handed.iter().any(|m| m["method"] == "DOM.documentUpdated"));
+    assert!(
+        handed
+            .iter()
+            .find(|m| m["id"] == 4)
+            .unwrap()
+            .get("error")
+            .is_some()
+    );
+}
+
+#[test]
+fn purlis_own_worlds_are_made_afresh_after_devtools_were_open() {
+    let (browser, engine) = browser();
+    snapshot(&browser, 1);
+    let made = engine.sent("Page.createIsolatedWorld").len();
+    let _ends = inspected(&browser, &engine);
+    browser.hand_back();
+    snapshot(&browser, 2);
+    assert!(engine.sent("Page.createIsolatedWorld").len() > made);
+}
+
+#[test]
+fn a_message_of_another_world_of_the_front_end_is_not_its_own() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    engine.emit(
+        "Runtime.bindingCalled",
+        json!({ "name": "__purlisInspect", "payload": json!({"id": 5, "method": "DOM.getDocument"}).to_string(), "executionContextId": 77 }),
+        Some("S-FRONT-1"),
+    );
+    front_end_sends(&engine, &json!({"id": 6, "method": "DOM.enable"}));
+    wait_for("its own is answered", || {
+        handed_to_the_front_end(&engine)
+            .iter()
+            .any(|m| m["id"] == 6)
+    });
+    assert!(engine.sent("DOM.getDocument").is_empty());
+}
+
+#[test]
+fn a_message_too_large_on_devtools_sessions_closes_devtools_alone() {
+    let (browser, engine) = browser();
+    let ends = inspected(&browser, &engine);
+    let sink = super::super::lock(&engine.taps)
+        .iter()
+        .find(|(_, sessions, _)| sessions.contains("S-INSPECTED"))
+        .map(|(_, _, sink)| Arc::clone(sink))
+        .unwrap();
+    sink(crate::cdp::Tapped::TooLarge);
+    wait_for("DevTools close", || !browser.inspecting());
+    assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::TooLarge]);
+    // The browser answers on.
+    browser.hand_back();
+    snapshot(&browser, 2);
+}
+
+#[test]
+fn an_inspect_under_way_never_finishes_opening_once_the_browser_is_handed_back() {
+    let (browser, engine) = browser();
+    let browser = Arc::new(browser);
+    answers_devtools(&engine);
+    let (reached, waits) = std::sync::mpsc::channel::<()>();
+    let (go, gate) = std::sync::mpsc::channel::<()>();
+    let gate = Mutex::new(gate);
+    let reached = Mutex::new(reached);
+    let devtools = Arc::clone(&engine);
+    engine.on(move |sent, engine| {
+        if sent.method == "Runtime.addBinding" {
+            let _ = reached.lock().unwrap().send(());
+            let _ = gate.lock().unwrap().recv_timeout(Duration::from_secs(1));
+        }
+        let _ = &devtools;
+        match sent.method.as_str() {
+            "Target.createBrowserContext" => Some(Ok(json!({ "browserContextId": "CONTEXT-DEVTOOLS" }))),
+            "Target.createTarget" => {
+                engine.emit(
+                    "Target.targetCreated",
+                    json!({"targetInfo":{"targetId":"FRONT-1","type":"page","title":"","url":"about:blank","attached":false,"browserContextId":"CONTEXT-DEVTOOLS"}}),
+                    None,
+                );
+                Some(Ok(json!({ "targetId": "FRONT-1" })))
+            }
+            "Target.attachToTarget" if sent.params["targetId"] == "PAGE-1" => {
+                Some(Ok(json!({ "sessionId": "S-INSPECTED" })))
+            }
+            _ => None,
+        }
+    });
+    browser.take_over();
+    let opening = Arc::clone(&browser);
+    let opened = std::thread::spawn(move || opening.inspect(1000, 600, Box::new(|_| {})));
+    waits.recv_timeout(Duration::from_secs(5)).unwrap();
+    // Handed back, and taken over again, while it was opening: the person drives again, under
+    // another lease.
+    browser.hand_back();
+    browser.take_over();
+    go.send(()).unwrap();
+    assert_eq!(opened.join().unwrap(), Err(Refusal::NotDriving));
+    assert!(!browser.inspecting());
 }

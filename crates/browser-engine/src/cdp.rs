@@ -64,6 +64,22 @@ pub const MAX_MESSAGE_BYTES: usize = 64 << 20;
 /// How much of a message past its bound is kept, to tell which call it answers.
 const HEAD_BYTES: usize = 64;
 
+/// How much of the end of a message past its bound is kept, to tell which session an event is
+/// on (#2028).
+const TAIL_BYTES: usize = 256;
+
+/// The session a message names at its end (`,"sessionId":"S"}`), as the engine writes an event.
+fn session_at_end(tail: &[u8]) -> Option<&str> {
+    const KEY: &[u8] = br#""sessionId":""#;
+    let at = tail.windows(KEY.len()).rposition(|w| w == KEY)? + KEY.len();
+    let rest = &tail[at..];
+    let end = rest.iter().position(|&b| b == b'"')?;
+    if rest.get(end + 1..) != Some(b"}".as_slice()) {
+        return None;
+    }
+    std::str::from_utf8(&rest[..end]).ok()
+}
+
 /// How many events wait for the broker before more are dropped (and counted).
 pub const MAX_QUEUED_EVENTS: usize = 1024;
 
@@ -176,6 +192,9 @@ pub enum Tapped {
         id: u64,
         outcome: Result<Value, Value>,
     },
+    /// A message of the tapped session went past its bound: it was read past, and the tap
+    /// ends, never the connection.
+    TooLarge,
 }
 
 /// Where a tap's messages go: false when it takes no more, which ends the tap.
@@ -561,7 +580,19 @@ fn method_name(method: &str) -> Option<String> {
 /// A message past its bound, which began `head`: the call it answers fails, alone, and an
 /// answer to no call waiting, or an event that may be dropped, is dropped. Any other event
 /// ends the connection, and why is said: false.
-fn too_large(shared: &Shared, head: &[u8]) -> bool {
+fn too_large(shared: &Shared, head: &[u8], tail: &[u8]) -> bool {
+    // An event names its session at its end: one of a tap's ends the tap alone (#2028).
+    if id_of(head).is_none()
+        && let Some(session) = session_at_end(tail)
+    {
+        let mut taps = lock(&shared.taps);
+        if let Some(at) = taps.iter().position(|one| one.sessions.contains(session)) {
+            let gone = taps.remove(at);
+            drop(taps);
+            (gone.sink)(Tapped::TooLarge);
+            return true;
+        }
+    }
     if let Some(id) = id_of(head)
         && tapped_answer(
             shared,
@@ -711,11 +742,12 @@ fn read_until_ended(from_engine: impl Read, shared: &Shared, events: &SyncSender
         };
         let message = match frame {
             Frame::Whole(message) => message,
-            Frame::Over { head } if too_large(shared, &head) => continue,
+            Frame::Over { head, tail } if too_large(shared, &head, &tail) => continue,
             Frame::Over { .. } => break,
         };
         if message.len() > most_for(shared, &message) {
-            if too_large(shared, &message[..message.len().min(HEAD_BYTES)]) {
+            let tail = &message[message.len().saturating_sub(TAIL_BYTES)..];
+            if too_large(shared, &message[..message.len().min(HEAD_BYTES)], tail) {
                 continue;
             }
             break;
@@ -871,6 +903,8 @@ enum Frame {
     /// Past its bound: only its first [`HEAD_BYTES`] were kept.
     Over {
         head: Vec<u8>,
+        /// Its last [`TAIL_BYTES`], where an event names its session.
+        tail: Vec<u8>,
     },
 }
 
@@ -926,6 +960,13 @@ impl<R: Read> Frames<R> {
                 "a message from the engine past the bound is no DevTools message",
             )));
         }
+        let mut tail = Vec::new();
+        let keep = |tail: &mut Vec<u8>, read: &[u8]| {
+            tail.extend_from_slice(read);
+            let cut = tail.len().saturating_sub(TAIL_BYTES);
+            tail.drain(..cut);
+        };
+        keep(&mut tail, &self.buffer);
         // What was held of the message is let go, not kept as capacity.
         self.buffer = Vec::new();
         self.scanned = 0;
@@ -936,9 +977,11 @@ impl<R: Read> Frames<R> {
                 Err(why) => return Some(Err(why)),
             }
             if let Some(at) = self.buffer.iter().position(|&b| b == 0) {
+                keep(&mut tail, &self.buffer[..at]);
                 self.buffer.drain(..=at);
-                return Some(Ok(Frame::Over { head }));
+                return Some(Ok(Frame::Over { head, tail }));
             }
+            keep(&mut tail, &self.buffer);
             self.buffer.clear();
         }
     }

@@ -99,6 +99,28 @@ fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purli
         "a frame of DevTools is a JPEG"
     );
     assert_eq!(first.aim.page.as_str(), "devtools");
+    // The front end runs as a hosted one: the engine's embedder interface is out of its reach.
+    let start = Instant::now();
+    while !browser
+        .inspector_told()
+        .iter()
+        .any(|told| told.starts_with("front end: "))
+    {
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "the front end was never asked how it runs: {:?}",
+            browser.inspector_told()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let found = browser
+        .inspector_told()
+        .into_iter()
+        .find(|told| told.starts_with("front end: "))
+        .unwrap();
+    // Said in the CI log, where the D-line reads it.
+    println!("{found}");
+    assert!(found.contains(r#""host":"undefined""#), "{found}");
     assert!(
         ends.lock().unwrap().is_empty(),
         "{:?}",
@@ -110,4 +132,20 @@ fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purli
     assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Closed]);
     // DevTools were never one of the browser's pages: it lists the pages it listed before.
     assert_eq!(pages_of(&browser, "after"), before);
+    // The agent's page answers on its own session after DevTools have gone.
+    let read = browser
+        .call(
+            &CallId::new("snapshot").unwrap(),
+            Call::Snapshot {
+                page: None,
+                within: None,
+                from: 1,
+                lines: None,
+            },
+        )
+        .expect("the agent's page answers after DevTools have gone");
+    let Content::Text(text) = read.content else {
+        panic!("a snapshot is text");
+    };
+    assert!(!text.is_empty(), "the page's tree is read");
 }

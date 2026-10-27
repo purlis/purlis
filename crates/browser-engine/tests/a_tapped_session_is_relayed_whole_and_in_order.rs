@@ -181,3 +181,39 @@ fn an_untapped_session_goes_back_to_the_driver_and_a_tap_that_takes_nothing_more
     assert_eq!(driver.session_id.as_deref(), Some("FULL"));
     assert!(connection.closed().is_none());
 }
+
+#[test]
+fn a_tapped_event_past_its_bound_ends_the_tap_alone_and_the_connection_reads_on() {
+    let (connection, events, mut engine) = connect();
+    let (sink, tapped) = tap_sink();
+    let _tap = connection.tap("INSPECT", sink);
+    // An event of a kind the driver reads, on the tapped session, past the bound: its session
+    // is named only at its end.
+    let mut huge =
+        br#"{"method":"DOM.attributeModified","params":{"nodeId":1,"name":"x","value":""#.to_vec();
+    huge.resize(
+        huge.len() + purlis_browser_engine::cdp::MAX_MESSAGE_BYTES,
+        b'a',
+    );
+    huge.extend_from_slice(br#""},"sessionId":"INSPECT"}"#);
+    huge.push(0);
+    engine.to_purlis.write_all(&huge).unwrap();
+    assert_eq!(next(&tapped), Tapped::TooLarge, "the tap is told, and ends");
+    engine.send(json!({"method": "Page.loadEventFired", "params": {}, "sessionId": "DRIVER"}));
+    assert_eq!(
+        events.recv_timeout(Duration::from_secs(10)).unwrap().method,
+        "Page.loadEventFired",
+        "the connection reads on"
+    );
+    assert!(connection.closed().is_none());
+    engine.send(json!({"method": "DOM.documentUpdated", "params": {}, "sessionId": "INSPECT"}));
+    assert_eq!(
+        events
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .session_id
+            .as_deref(),
+        Some("INSPECT"),
+        "the tap has ended"
+    );
+}
