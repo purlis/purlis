@@ -67,8 +67,6 @@ function core({
           return { shared: files.shared, local: files.local };
         case "project_extensions":
           return { extensions: [], local_left_out: null };
-        case "project_harness_plugins":
-          return [];
         case "extensions_on":
           return [];
         case "save_project_settings": {

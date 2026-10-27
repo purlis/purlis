@@ -514,10 +514,6 @@ describe("Only this chat's", () => {
     const program = (harness: "claude" | "codex", title: string, skills: StudioSkill[]) => ({
       harness,
       title,
-      unsupported: null,
-      only_off: null,
-      trouble: null,
-      plugins: [],
       skills,
       repo_left_out: [],
     });

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type HarnessPlugins, type PlaneId } from "../bindings";
+import { commands, type PlaneId } from "../bindings";
 import { counted } from "../dispatches";
 import { usePlaneChanged } from "../planeChanged";
-import { SKILL_STUDIO_IN, SKILL_STUDIO_SHOW } from "../skillStudio";
+import { SKILL_STUDIO_IN } from "../skillStudio";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
@@ -70,62 +70,4 @@ function summarySetting(plane: PlaneId, workspace: string): LiveSetting {
       };
     },
   };
-}
-
-/**
- * **Settings' Plugins, once the Skill studio is on** (SK-6, #2769; spec #2762, decision 35):
- * every harness plugin choice is the studio's, so the group is one summary row, counted from
- * what the core surveyed, and the link that opens the studio on the same chats. `workspace` is
- * `null` at the Project level.
- */
-export function pluginsSummaryGroup(
-  id: "project.plugins" | "workspace.plugins",
-  harnesses: readonly HarnessPlugins[],
-  workspace: string | null,
-): SettingsGroup {
-  return {
-    id,
-    label: "Plugins",
-    help: "The plugins the chats started here have on. They are chosen in the Skill studio.",
-    settings: [
-      {
-        id: `${id}.summary`,
-        label: "In its chats",
-        help: "Counted from this machine's installs and the project's choices, as a chat starting here gets them.",
-        writes: "nothing",
-        useControl: () => ({
-          control: (ids) => (
-            <p
-              id={ids.id}
-              aria-describedby={ids.describedBy}
-              className="honest"
-              data-testid={`${id}-summary`}
-            >
-              {pluginsSummary(harnesses)}
-            </p>
-          ),
-        }),
-      },
-    ],
-    links: [
-      {
-        label: "Open in Skill studio",
-        action: workspace === null ? SKILL_STUDIO_SHOW : `${SKILL_STUDIO_IN}${workspace}`,
-      },
-    ],
-  };
-}
-
-/** The one line the Plugins summary says: for each program, how many of its plugins this
- *  project turned on and off, and how many it leaves to the program. */
-export function pluginsSummary(harnesses: readonly HarnessPlugins[]): string {
-  const lines = harnesses.map((harness) => {
-    const chosen = harness.plugins.filter((it) => it.installed && it.pinned === null);
-    const on = chosen.filter((it) => it.state === "on").length;
-    const off = chosen.filter((it) => it.state === "off").length;
-    const left = chosen.length - on - off;
-    if (chosen.length === 0) return `${harness.title}: none installed.`;
-    return `${harness.title}: ${counted(on, "turned on", "turned on")}, ${counted(off, "turned off", "turned off")}, ${counted(left, "left to it", "left to it")}.`;
-  });
-  return lines.join(" ");
 }

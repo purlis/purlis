@@ -10,8 +10,8 @@
 //! `settings.extensions.<id>.enabled` is `[extensions.<id>] enabled`. So the JSON is read as the
 //! TOML table it mirrors ([`table_in`]) and handed to the same reader,
 //! `extension::project`, which refuses it in the same words. A table a later reader takes is
-//! one more name in [`READ`] and one more reader asked here: `harness_plugins`
-//! (charter-app#282) is read by `harness_plugin`, whose `Choices::read_in` takes this layer, and
+//! one more name in [`READ`] and one more reader asked here: `harness_skills`
+//! (SK-6, #2769) is read by `harness_plugin`, whose `Choices::read_in` takes this layer, and
 //! `theme` (charter-app#281) by `extension::project::theme`, which also reads the workspace's
 //! colour from it.
 //!
@@ -40,7 +40,6 @@ pub const KEY: &str = "settings";
 /// The tables a workspace's settings may hold: the ones something reads.
 pub const READ: &[&str] = &[
     project::TABLE,
-    crate::harness_plugin::TABLE,
     crate::harness_plugin::SKILLS_TABLE,
     project::theme::TABLE,
     SKILLS,
@@ -303,6 +302,9 @@ pub fn standing(text: &str, workspace: &str) -> Vec<Refusal> {
     let mut out: Vec<Refusal> = settings
         .keys()
         .filter(|key| !READ.contains(&key.as_str()))
+        // Read by nothing since #3467, and said once by its own Notice rather than refused: a
+        // manifest that still holds it saves as it did.
+        .filter(|key| key.as_str() != crate::harness_plugin::old::TABLE)
         .map(|key| {
             Refusal::at(
                 format!(

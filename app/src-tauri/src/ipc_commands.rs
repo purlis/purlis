@@ -532,7 +532,6 @@ macro_rules! app_commands {
                 extensions::project_extensions,
                 extensions::extensions_on,
                 extensions::extension_facts,
-                harness_plugins::project_harness_plugins,
                 extensions::project_theme,
                 extensions::project_theme_drawn,
                 extensions::project_icons_drawn,

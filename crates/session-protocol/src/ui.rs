@@ -1030,7 +1030,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "plane_sidebar",
     "planes_to_restore",
     "project_extensions",
-    "project_harness_plugins",
     "project_icons_drawn",
     "project_saving_in_force",
     "project_settings",

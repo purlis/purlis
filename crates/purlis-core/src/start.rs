@@ -609,10 +609,9 @@ fn ready_given(
         ));
         env.sort();
     }
-    // Listed from the chat's OWN environment: a profile that points its harness at another
-    // account's directory (`CLAUDE_CONFIG_DIR`) is listed against that account. A chat in a
-    // workspace — by its directory, which is how the window files it under one — also takes
-    // that workspace's choices, between Shared and Local (charter-app#282).
+    // purlis's pins, and the harness's own skills the project turned off (#3467: no other
+    // plugin). A chat in a workspace — by its directory, which is how the window files it under
+    // one — also takes that workspace's choices, between Shared and Local (charter-app#282).
     // Asked only for a kind that has an adapter: any other is handed nothing either way.
     let workspace = match &standing {
         Standing::Workspace(name) if crate::harness_plugin::adapter(&profile.kind).is_some() => {
@@ -620,12 +619,7 @@ fn ready_given(
         }
         _ => None,
     };
-    let plugins = crate::harness_plugin::for_start(
-        &profile.kind,
-        root,
-        workspace,
-        &crate::harness_plugin::Env::of(&env),
-    );
+    let plugins = crate::harness_plugin::for_start(&profile.kind, root, workspace);
     // The profile's own words stay together and in front; charter's go after them and after
     // whatever arms the harness. [`Ready::command_line`] is where the order is decided.
     Ok(Ready {

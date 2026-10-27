@@ -48,7 +48,6 @@ import { DRAFT, forgetDrafts, wantEdit } from "../memories";
 import type {
   Activity,
   DispatchRow,
-  HarnessPlugins,
   InstructionFile,
   MemoryView,
   PanelRow,
@@ -415,19 +414,6 @@ const SAVING_IN_FORCE: SavingInForce = {
   repos_left_out: null,
 };
 
-const HARNESSES: HarnessPlugins[] = [
-  {
-    harness: "claude",
-    title: "Claude Code",
-    unsupported: null,
-    only_off: null,
-    record: "~/.claude/plugins/installed_plugins.json",
-    trouble: null,
-    plugins: [],
-    local_left_out: null,
-  },
-];
-
 const VAULT: VaultContents = {
   name: "ops",
   provider: "keyring",
@@ -687,7 +673,6 @@ const ORDINARY: Answers = {
   vault_secret_reveal: "postgres://db.internal/app",
   project_settings: SETTINGS,
   project_extensions: { extensions: [], local_left_out: null },
-  project_harness_plugins: HARNESSES,
   project_saving_in_force: SAVING_IN_FORCE,
   project_theme: THEME,
   project_theme_drawn: null,

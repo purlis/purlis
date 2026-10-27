@@ -69,7 +69,6 @@ mod getproject;
 mod gitbroker;
 mod goingaway;
 mod handoff;
-mod harness_plugins;
 mod harnessdecls;
 mod harnessicon;
 mod heard;

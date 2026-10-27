@@ -6891,10 +6891,10 @@ fn a_wrapper_profile_keeps_its_own_words_first_and_the_apps_come_after_them() {
 }
 
 #[test]
-fn a_claude_code_chat_runs_with_the_plugins_its_project_chose() {
-    // charter-app#274: the words the program actually received. The project turns one of
-    // the account's installed plugins off; the other is left to Claude Code, and the two
-    // pins ride beside it as they always have.
+fn a_claude_code_chat_runs_with_purlis_s_pins_alone_whatever_the_old_keys_say() {
+    // #3467: the words the program actually received. The project's old key turns one of the
+    // account's installed plugins off, and it is ignored: every plugin but purlis's is left to
+    // Claude Code, and the pins ride as they always have.
     let (argv, _) = argv_of_a_chat_in(
         &["claude"],
         "[harness_plugins.claude]\n\"figma@official\" = false\n",
@@ -6926,7 +6926,6 @@ fn a_claude_code_chat_runs_with_the_plugins_its_project_chose() {
             "charter@inline": false,
             "charter-app@inline": false,
             "charter@charter-app": false,
-            "figma@official": false,
         }),
         "{argv:?}"
     );

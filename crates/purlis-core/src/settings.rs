@@ -23,7 +23,7 @@
 //! schema refusals, and the settings it reads as absent) and [`crate::profiles`] for the
 //! Local one — asked of the text about to be written rather than of the file on disk
 //! ([`crate::profiles::derive_from`]) — and, in either file, `[extensions]` is asked of the one
-//! reader of it, [`crate::extension::project::refusals`], as `[harness_plugins]` is of
+//! reader of it, [`crate::extension::project::refusals`], as `[harness_skills]` is of
 //! [`crate::harness_plugin::refusals`]. Two more refusals are a writer's, because only a writer
 //! can cause them: a Local file git would commit ([`crate::profiles::ignore_check_before_writing`],
 //! whose sentences are the loader's too), and a secret-shaped value in either file
@@ -179,7 +179,7 @@ impl LayerText {
 /// ([`profiles::ignore_check`]): the Local file is this machine's say only while git leaves it
 /// alone, and one that reaches every clone would change plane policy with no trace in git. The
 /// profiles loader has refused its profiles on that check since ADR 0022; this is the same check
-/// for every other table in the file, so `[extensions]`, `[theme]` and `[harness_plugins]` are
+/// for every other table in the file, so `[extensions]`, `[theme]` and `[harness_skills]` are
 /// not read from it either.
 ///
 /// **Every reader of the two files reads them here**, and nowhere else, so a reader added later
@@ -471,7 +471,8 @@ fn keyed_read_refusals(root: &Path, which: Which, text: &str) -> Vec<Refusal> {
     // both, so it is refused in that reader's words in both — with its keys, since an id may
     // hold a dot (#1292).
     out.extend(crate::extension::project::keyed(text, file));
-    // And `[harness_plugins]` (charter-app#274), the same way.
+    // And `[harness_skills]` (SK-6, #2769), the same way. The old `[harness_plugins]` is refused
+    // nothing: it is ignored, and said once (#3467).
     out.extend(crate::harness_plugin::keyed(text, file));
     // And `[theme]` (charter-app#273), read by one reader in both too.
     out.extend(crate::extension::project::theme::keyed(text, file));

@@ -612,28 +612,7 @@ function withClaudeCode(offLangfuse: boolean) {
       {
         harness: "claude",
         title: "Claude Code",
-        unsupported: null,
-        only_off: null,
         repo_left_out: [],
-        trouble: null,
-        plugins: [
-          {
-            id: "figma@official",
-            name: "figma",
-            origin: "official, user",
-            installed: true,
-            state: "not-set",
-            pinned: null,
-          },
-          {
-            id: "purlis@inline",
-            name: "purlis",
-            origin: "",
-            installed: false,
-            state: "on",
-            pinned: "purlis@inline is always on: it is purlis's own plugin",
-          },
-        ],
         skills: [
           {
             ...ROW,
@@ -667,7 +646,7 @@ function withClaudeCode(offLangfuse: boolean) {
             owner: { kind: "plugin", name: "figma" },
             switch: {
               kind: "not",
-              why: "Claude Code turns a plugin's skill off only with the whole plugin, figma",
+              why: "it comes with the plugin figma, which Claude Code turns on or off itself: purlis shows a plugin's skills and does not switch them",
             },
           },
           {
@@ -690,11 +669,7 @@ function withClaudeCode(offLangfuse: boolean) {
       {
         harness: "opencode",
         title: "opencode",
-        unsupported: "plugins for opencode are not supported yet — it has no switch",
-        only_off: null,
         repo_left_out: [],
-        trouble: null,
-        plugins: [],
         skills: [],
       },
     ],
@@ -702,7 +677,7 @@ function withClaudeCode(offLangfuse: boolean) {
 }
 
 describe("each program's own skills in the Skill studio (SK-6)", () => {
-  it("lists them read only with whose each is, and says plainly where one cannot be switched", async () => {
+  it("lists them with whose each is, and shows a plugin's skills read-only, naming the plugin", async () => {
     answering(withClaudeCode(false));
     render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
 
@@ -713,21 +688,15 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     expect(within(own).getByRole("button", { name: "Turn off" })).toBeInTheDocument();
     const plugin = within(claude).getByTestId("found-claude-figma:frame");
     expect(within(plugin).queryByRole("button")).toBeNull();
+    expect(within(plugin).getByText("Plugin figma")).toBeInTheDocument();
     expect(
-      within(plugin).getByText(
-        /Claude Code turns a plugin's skill off only with the whole plugin, figma/,
-      ),
+      within(plugin).getByText(/it comes with the plugin figma, which Claude Code turns on or off/),
     ).toBeInTheDocument();
     expect(
       within(within(claude).getByTestId("found-claude-review")).getByText("Repo api"),
     ).toBeInTheDocument();
-    const pinned = within(claude).getByTestId("plugin-claude-purlis@inline");
-    expect(within(pinned).queryByRole("button")).toBeNull();
-    expect(
-      within(screen.getByTestId("skill-studio-opencode")).getByText(
-        /plugins for opencode are not supported yet/,
-      ),
-    ).toBeInTheDocument();
+    // #3467: no plugin of a program's is listed to switch, purlis's own included.
+    expect(within(claude).queryByRole("table", { name: "Claude Code plugins" })).toBeNull();
   });
 
   it("marks a project skill a repo also has, and says a built-in skill is always on", async () => {
@@ -767,7 +736,7 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
       ).toBeInTheDocument(),
     );
     expect(asked).toEqual([
-      { plane: "p", workspace: null, harness: "claude", what: "skill", id: "langfuse", on: false },
+      { plane: "p", workspace: null, harness: "claude", id: "langfuse", on: false },
     ]);
   });
 
@@ -778,42 +747,10 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
       throw new Error(`unexpected ${cmd}`);
     });
     render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
-    const plugin = await screen.findByTestId("plugin-claude-figma@official");
-    within(plugin).getByRole("button", { name: "Turn off" }).click();
+    const own = await screen.findByTestId("found-claude-langfuse");
+    within(own).getByRole("button", { name: "Turn off" }).click();
     expect(
       await screen.findByText("Claude Code turns it off only with its plugin"),
-    ).toBeInTheDocument();
-  });
-
-  it("offers Codex a plugin's way back as Leave to Codex, saying its own config decides", async () => {
-    const studio = withClaudeCode(false);
-    const codexHarness = {
-      harness: "codex",
-      title: "Codex",
-      unsupported: null,
-      only_off: "Codex is handed a plugin only to turn it off",
-      repo_left_out: [],
-      trouble: null,
-      plugins: [
-        {
-          id: "zp@zmkt",
-          name: "zp",
-          origin: "zmkt, on in config.toml",
-          installed: true,
-          state: "off",
-          pinned: null,
-        },
-      ],
-      skills: [],
-    };
-    answering({ ...studio, harnesses: [...studio.harnesses, codexHarness] });
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
-
-    const codex = await screen.findByTestId("skill-studio-codex");
-    const plugin = within(codex).getByTestId("plugin-codex-zp@zmkt");
-    expect(within(plugin).getByRole("button", { name: "Leave to Codex" })).toBeInTheDocument();
-    expect(
-      within(codex).getByText(/Codex's own config decides whether a plugin is on/),
     ).toBeInTheDocument();
   });
 

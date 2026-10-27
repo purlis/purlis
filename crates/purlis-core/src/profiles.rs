@@ -536,8 +536,9 @@ pub fn derive_with(
         // `[theme]` is the same kind of choice (charter-app#273): which theme this machine draws
         // the project in, read by `extension::project::theme`.
         //
-        // `[harness_plugins]` is the same kind of choice among what this machine's harnesses
-        // have installed (charter-app#274, ADR 0050), read by `harness_plugin`.
+        // `[harness_plugins]` was the same kind of choice among what this machine's harnesses
+        // have installed (charter-app#274); read by nothing since #3467, it is let through and
+        // said once by its own Notice (`harness_plugin::old`).
         //
         // `[plane]` and `[repos]` are how far this machine's saves go (charter-app#292, ADR
         // 0051), read by `planesave`; every surface that shows one names this file.
@@ -577,7 +578,8 @@ pub fn derive_with(
         if key != "harness"
             && key != crate::extension::project::TABLE
             && key != crate::extension::project::theme::TABLE
-            && key != crate::harness_plugin::TABLE
+            // Ignored since #3467, and said once by its own Notice, never as unknown here.
+            && key != crate::harness_plugin::old::TABLE
             && key != crate::harness_plugin::SKILLS_TABLE
             && key != "plane"
             && key != "repos"
