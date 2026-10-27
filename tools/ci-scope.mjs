@@ -23,7 +23,12 @@
 // 1. A file under `.github/`, a lockfile, the toolchain, a manifest or a shared config: every
 //    scope. So is a doc that code reads (`READ_BY_CODE`): it is compiled into a build or a test
 //    holds it.
-// 2. `docs/`, `site/`, `changes/` and a Markdown file at the root: the docs alone.
+// 2. `docs/`, `site/`, `changes/`, and `AGENTS.md` and `CLAUDE.md` (an agent's steering, which no
+//    test reads): the docs alone. Every other file at the root runs everything: tests read them
+//    by name (`community.test.ts` holds `README.md`, `CONTRIBUTING.md`, `SUPPORT.md`,
+//    `CODE_OF_CONDUCT.md` and the `SECURITY.md` they link to; `app/src-tauri` reads `LICENSE`
+//    and `NOTICE`), and a manifest or a lockfile is read by every build. A file deleted from
+//    `docs/` runs everything too: a root file a test holds may link to it.
 // 3. A file under `tools/` that CI runs (`ciTools`): every scope. So is a file deleted from
 //    `tools/` (a rename is a deletion and an addition): what named it may name it still, and a
 //    deleted file can no longer be read for what it names. Any other file there, a tool a person
@@ -88,6 +93,10 @@ export const WHOLE_TREE_GUARDS = [
   { crate: "purlis-core", test: "no_tracked_file_is_one_a_sandboxed_chat_may_not_write" },
 ];
 
+// The files at the root a change to which runs the docs alone: what an agent reads to steer
+// itself, which no test reads. Every other root file runs everything.
+export const AGENT_STEERING = new Set(["AGENTS.md", "CLAUDE.md"]);
+
 const readByCode = (path) =>
   READ_BY_CODE.some((doc) => (doc.endsWith("/") ? path.startsWith(doc) : path === doc));
 
@@ -100,7 +109,7 @@ export function scopesOfPath(path, ciToolNames) {
     // `vite.config.ts`, eslint and prettier), its `src-tauri`, icons, pages and `.storybook`.
     return ALL;
   }
-  if (/^(docs|site|changes)\//.test(path) || /^[^/]+\.md$/.test(path)) return DOCS;
+  if (/^(docs|site|changes)\//.test(path) || AGENT_STEERING.has(path)) return DOCS;
   if (path.startsWith("tools/")) {
     const name = path.slice("tools/".length);
     // A folder of tools' data (`ucd/`, `licence-texts/`) or a probe of its own is CI's.
@@ -119,7 +128,7 @@ export function scopesOf({ event, paths, ciToolNames, deleted = new Set() }) {
   const why = [];
   for (const path of paths) {
     const needs =
-      path.startsWith("tools/") && deleted.has(path) ? ALL : scopesOfPath(path, ciToolNames);
+      /^(tools|docs)\//.test(path) && deleted.has(path) ? ALL : scopesOfPath(path, ciToolNames);
     if (needs === ALL) why.push(path);
     for (const scope of needs) scopes.add(scope);
   }

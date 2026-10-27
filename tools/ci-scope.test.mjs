@@ -10,6 +10,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  AGENT_STEERING,
   READ_BY_CODE,
   SCOPES,
   WHOLE_TREE_GUARDS,
@@ -41,7 +42,7 @@ test("a docs-, skills- and tools-only change runs the docs and tools' tests, not
     of(["docs/adr/0001-x.md", "site/astro.config.mjs", "changes/a-fix.md"]),
     docsOnly,
   );
-  assert.deepEqual(of(["README.md", "CONTRIBUTING.md"]), docsOnly);
+  assert.deepEqual(of(["CLAUDE.md"]), docsOnly);
 });
 
 test("a change to tools/ always runs the tools' own tests", () => {
@@ -95,6 +96,28 @@ test("code runs everything", () => {
   ]) {
     assert.deepEqual(of([path]), all, path);
   }
+});
+
+test("every file at the root runs everything but an agent's steering", () => {
+  // `community.test.ts` reads README.md, CONTRIBUTING.md, SUPPORT.md, CODE_OF_CONDUCT.md and the
+  // SECURITY.md they link to; the app's tests read LICENSE and NOTICE.
+  for (const path of git("ls-files").filter((p) => !p.includes("/"))) {
+    const want = AGENT_STEERING.has(path) ? docsOnly : all;
+    assert.deepEqual(of([path]), want, path);
+  }
+  for (const path of ["README.md", "CONTRIBUTING.md", "SUPPORT.md", "CODE_OF_CONDUCT.md"]) {
+    assert.deepEqual(of([path]), all, path);
+  }
+  assert.deepEqual(of(["SECURITY.md", "LICENSE", "NOTICE", "CONTEXT.md"]), all);
+  assert.deepEqual(of(["AGENTS.md", "CLAUDE.md"]), docsOnly);
+});
+
+test("a doc deleted or renamed runs everything: a root file a test holds may link to it", () => {
+  const paths = ["docs/platforms.md", "docs/supported-platforms.md"];
+  const deleted = new Set(["docs/platforms.md"]);
+  const scopes = scopesOf({ event: "pull_request", paths, ciToolNames: CI_TOOLS, deleted });
+  assert.deepEqual([...scopes.scopes].sort(), all);
+  assert.deepEqual(of(["docs/platforms.md"]), docsOnly, "an edit stays narrow");
 });
 
 test("an unknown path runs everything", () => {
@@ -227,11 +250,6 @@ test("in this repository, the tools CI runs are found, and a hand-run tool is no
 // A doc the code reads by a relative path: `include_str!("../../docs/x.md")`,
 // `join("..", "docs", "x.md")`, or a root Markdown file the same ways. A comment's link to a doc
 // reads nothing, so comment lines are left out.
-const FIXTURES_NOT_READS = new Set([
-  // Paths a test refuses as outside a piece's folder; nothing reads the repository's README.
-  "README.md",
-]);
-
 test("every doc the code reads by a relative path runs everything", () => {
   const lines = git(
     "grep",
@@ -260,7 +278,7 @@ test("every doc the code reads by a relative path runs everything", () => {
   assert.ok(read.has("CHANGELOG.md"), "the search finds include_str!(\"../../../CHANGELOG.md\")");
   assert.ok(read.has("docs/design-system.md"), "and join(.., \"docs\", ..)");
   for (const path of read) {
-    if (FIXTURES_NOT_READS.has(path) || !tracked.has(path)) continue;
+    if (!tracked.has(path)) continue;
     assert.deepEqual(
       [...scopesOfPath(path, new Set())].sort(),
       all,
@@ -270,39 +288,88 @@ test("every doc the code reads by a relative path runs everything", () => {
   assert.ok(READ_BY_CODE.length > 0);
 });
 
+// A file of code or tests that holds the repository's root: it names a place it is anchored at
+// (`CARGO_MANIFEST_DIR`, `import.meta.url`, `process.cwd()`) and climbs from it to the root
+// itself, not into a folder below it: `"../.."` or `"../../"` (a `.join` on the next line, a
+// `resolve(…, "../..")`, a root held in a variable), `"..", ".."` with nothing after it,
+// `process.cwd(), ".."` from `app/`, or `import.meta.glob("../../*…")`.
+const ANCHORED = /CARGO_MANIFEST_DIR|import\.meta\.url|process\.cwd\(\)/;
+const CLIMBS = new RegExp(
+  [
+    String.raw`"\.\./\.\./?"`,
+    String.raw`"\.\.", *"\.\."(?!, *")`,
+    String.raw`process\.cwd\(\), *"\.\."\s*\)`,
+    String.raw`glob\(\s*\[?\s*"\.\./\.\./\*`,
+  ].join("|"),
+);
+const WALKS = /read_dir|"ls-files"|readdirSync|import\.meta\.glob/;
+const SOURCE = /\.(rs|ts|tsx|js|mjs)$/;
+const rootedFiles = () =>
+  git("ls-files", "--", "crates", "app", "tests")
+    .filter((p) => SOURCE.test(p))
+    .filter((p) => {
+      const text = read(p);
+      return ANCHORED.test(text) && CLIMBS.test(text);
+    });
+
+// A file that holds the root and names an agent's steering file by its bare name, with the
+// reason it is not a read of the repository's own (a fixture's file of that name). None today.
+const STEERING_NOT_READ = {};
+
+test("no file that holds the repository's root reads an agent's steering file by name", () => {
+  const naming = [];
+  for (const path of rootedFiles()) {
+    const text = read(path);
+    for (const name of AGENT_STEERING) {
+      if (text.includes(`"${name}"`) || text.includes(`'${name}'`)) naming.push(path);
+    }
+  }
+  for (const path of Object.keys(STEERING_NOT_READ)) {
+    assert.ok(naming.includes(path), `${path} no longer names one: take it out`);
+  }
+  for (const path of naming) {
+    assert.ok(
+      path in STEERING_NOT_READ,
+      `${path} holds the root and names an agent's steering file: if it reads the ` +
+        "repository's own, take it out of AGENT_STEERING in tools/ci-scope.mjs",
+    );
+  }
+});
+
 // A test that walks the repository from its root reads files of every scope: it is either a
 // whole-tree guard, which `recorded` runs on every change, or it is named here as walking only
 // code (whose changes run every scope).
 const WALK_ONLY_CODE = {
   "app/src-tauri/src/savefix/tests.rs": "crates/ and app/src-tauri/ sources",
   "app/src-tauri/src/tests.rs": "reads LICENSE and NOTICE, which run everything",
+  "app/src/community.test.ts": "root files and .github/, which run everything",
+  "app/src/copy.rust.test.ts": "crates/purlis-core/src and app/src-tauri/src",
+  "app/src/theme/themeIds.test.ts": "app/src and app/e2e (both run web)",
+  "crates/purlis-cli/tests/every_command_charter_names_is_one_it_has.rs":
+    "crates/*/src, app/src-tauri/src and the plugin's skills",
   "crates/purlis-core/src/doctor/shadowed/tests.rs": "a plane's docs/; purlis's own is exempt",
   "crates/purlis-core/tests/every_deferral_names_its_ticket.rs": "crates/, app/src-tauri, app/src",
+  "crates/purlis-core/tests/every_git_call_goes_through_the_runner.rs":
+    "crates/ and app/src-tauri/",
   "crates/purlis-core/tests/four_unsafe_blocks.rs": "crates/ and app/src-tauri/ Rust",
+  "crates/purlis-core/tests/no_old_name_is_spelled_in_the_window_or_its_assets.rs":
+    "app/src and the plugin",
+  "crates/purlis-core/tests/only_the_resolver_builds_the_native_transport.rs": "shipped Rust",
   "crates/purlis-core/tests/only_the_updater_and_report_name_charters_own_address.rs":
     "shipped Rust",
+  "crates/purlis-core/tests/shipped_literals/mod.rs": "crates/ and app/src-tauri/ Rust",
   "crates/purlis-core/tests/the_local_layer_has_one_reader.rs": "crates/ and app/src-tauri/ Rust",
-  "app/src/theme/consentToggles.test.ts": "app/src/",
-  "app/src/theme/geometry.test.ts": "app/src/",
-  "app/src/theme/grounds.test.ts": "app/src/",
-  "app/src/ui/field/refusingFields.guard.test.ts": "app/src/",
-  "app/src/ui/menu/submenuRows.guard.test.ts": "app/src/",
-  "app/e2e/harness.ts": "the built app in target/",
-  "app/.storybook/handed.plugin.ts": "crates/purlis-core/src/theme/built-in/",
 };
 
 test("a test that walks the repository from its root is a whole-tree guard or walks code", () => {
-  const rootward = [
-    String.raw`CARGO_MANIFEST_DIR"\)\)?\.join\("\.\./\.\."\)`,
-    String.raw`process\.cwd\(\), *"\.\."`,
-    String.raw`URL\("\.\./\.\.`,
-  ].join("|");
-  const rooted = git("grep", "-l", "-E", rootward, "--", "crates", "app", "tests", ":!*.md");
-  const walkers = rooted.filter((p) => /read_dir|"ls-files"|readdirSync/.test(read(p)));
+  const walkers = rootedFiles().filter((p) => WALKS.test(read(p)));
   const guards = new Set(
     WHOLE_TREE_GUARDS.map(({ crate, test }) => `crates/${crate}/tests/${test}.rs`),
   );
   for (const path of guards) assert.ok(walkers.includes(path), `${path} is found as a walker`);
+  for (const path of Object.keys(WALK_ONLY_CODE)) {
+    assert.ok(walkers.includes(path), `${path} no longer walks from the root: take it out`);
+  }
   for (const path of walkers) {
     assert.ok(
       guards.has(path) || path in WALK_ONLY_CODE,
