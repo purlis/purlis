@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// #3514 demo 2: a tools-only change. Never merged.
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
@@ -674,3 +673,4 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(1);
   });
 }
+// #3514 demo 2: a tools-only change, after the header this time. Never merged.
