@@ -216,7 +216,7 @@ fn it_adds_a_template_a_lint_a_panel_and_a_source() {
     );
 
     // A panel on a skill's tab, after purlis's own Grades and Runs panels.
-    let panels = studio.panels(&probe.plane(), "deploy");
+    let panels = studio.panels(&probe.plane(), "deploy", None);
     let keys: Vec<PanelKey> = panels.iter().map(|it| it.key.clone()).collect();
     assert_eq!(
         keys,

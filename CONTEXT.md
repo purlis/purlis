@@ -1714,7 +1714,7 @@ _Avoid_: test run, preview chat
 
 **Throwaway piece**:
 A folder made for one chat, ignored by git and never saved, and removed when that chat closes. Try it
-starts its scratch chat in one, and grading's chats will too. On screen it is a **throwaway
+starts its scratch chat in one, and a grade starts each of its chats in one. On screen it is a **throwaway
 folder**.
 _Avoid_: scratch workspace, sandbox (for this), worktree (it is no branch)
 
@@ -1775,11 +1775,12 @@ A pluggable way of grading a skill. purlis ships one; others arrive as extension
 _Avoid_: eval engine, judge
 
 **Trigger test**:
-A grade of whether a harness picks the skill when it should and leaves it alone when it should
-not.
+A fixture of a skill's that tests whether a harness picks the skill when it should and leaves it
+alone when it should not. A **grade** runs each one as real chats.
 
 **Outcome eval**:
-A grade of how well a skill does its job on fixture tasks.
+A fixture of a skill's that tests how well the skill does its job on a task. A **grade** counts
+them now, and grades them later (#3235).
 
 **Grade** (of a skill):
 One run of a grading framework on a copy of a skill: its trigger tests (and, later, its outcome

@@ -294,7 +294,8 @@ fn a_theme_of_one_colour_everywhere_is_drawn_clearing_every_consent_floor() {
                 Floor::Danger,
                 Floor::DangerApart,
                 Floor::StateMarks,
-                Floor::AllowNotPrimary
+                Floor::AllowNotPrimary,
+                Floor::WaitingApart,
             ]
         );
         let drawn = drawn.theme.expect("drawn");
@@ -510,4 +511,95 @@ fn a_state_colour_drawn_as_a_button_s_words_is_held_as_words_and_falls_back() {
     assert_eq!(held.floors, [Floor::StateMarks]);
     assert_eq!(held.tokens, ["state.waiting"]);
     assert_eq!(consent_failures(&drawn), []);
+}
+
+// ---------------------------------------------------------------------------------------
+// Waiting is distinguishable from the accent (#3130)
+// ---------------------------------------------------------------------------------------
+
+/// How near the waiting colour comes to the accent and the edges drawn in it in `theme`, in
+/// OKLab.
+fn waiting_from_accent(theme: &ResolvedTheme) -> f64 {
+    tint::WAITING_KIN
+        .iter()
+        .map(|token| {
+            tint::distance(
+                tint::oklab_of(theme.value("state.waiting")).expect("a colour"),
+                tint::oklab_of(theme.value(token)).expect("a colour"),
+            )
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+#[test]
+fn every_built_in_keeps_waiting_apart_from_the_accent_in_every_tint() {
+    let all: Vec<&ResolvedTheme> = built_ins().iter().chain(&purlis().appearances).collect();
+    for theme in all {
+        let label = format!("{} {}", theme.name, theme.id);
+        assert!(
+            waiting_from_accent(theme) >= WAITING_APART,
+            "{label} as written"
+        );
+        for one in &theme.tint.hues {
+            let tinted = tint::tinted(theme, one.name);
+            assert!(
+                waiting_from_accent(&tinted) >= WAITING_APART,
+                "{label} in the {} tint: {}",
+                one.name,
+                waiting_from_accent(&tinted)
+            );
+        }
+        for degree in 0..360 {
+            let tinted = tint::tinted_at(theme, f64::from(degree));
+            assert!(
+                waiting_from_accent(&tinted) >= WAITING_APART,
+                "{label} at {degree}°: {}",
+                waiting_from_accent(&tinted)
+            );
+        }
+        assert_eq!(draw(theme).held, None, "{label} is drawn unchanged");
+    }
+}
+
+#[test]
+fn purlis_light_s_accent_in_a_yellow_workspace_gives_way_to_the_waiting_amber() {
+    // Before #3130 the yellow tint turned Purlis light's accent to #625001, 0.085 from its
+    // waiting amber #523601. No amount of colour holds it 0.1 apart there and from danger too,
+    // so the accent and its edges are drawn as the theme writes them, while its washes keep the
+    // workspace's yellow.
+    let light = purlis()
+        .appearances
+        .iter()
+        .find(|one| one.id == "light")
+        .expect("Purlis light");
+    let yellow = tint::tinted(light, "yellow");
+    for token in tint::WAITING_KIN {
+        assert_eq!(yellow.value(token), light.value(token), "{token}");
+    }
+    assert_eq!(yellow.value("accent.base"), "#554691");
+    assert!(waiting_from_accent(&yellow) >= WAITING_APART);
+    assert_ne!(
+        yellow.value("accent.surface"),
+        light.value("accent.surface")
+    );
+    // A blue workspace's accent is far from amber, and takes the tint.
+    let blue = tint::tinted(light, "blue");
+    assert_ne!(blue.value("accent.base"), light.value("accent.base"));
+}
+
+#[test]
+fn a_waiting_colour_drawn_in_the_accent_is_drawn_in_purlis_s_waiting() {
+    let mine = theme("Same", json!({ "state.waiting": ours("accent.base") }));
+    let (drawn, held) = drawn_of(&mine);
+    assert_eq!(drawn.value("state.waiting"), ours("state.waiting"));
+    assert_eq!(drawn.value("accent.base"), ours("accent.base"));
+    let held = held.expect("the floor was held");
+    assert!(
+        held.floors.contains(&Floor::WaitingApart),
+        "{:?}",
+        held.floors
+    );
+    assert!(held.tokens.contains(&"state.waiting"), "{:?}", held.tokens);
+    assert!(held.said().contains(Floor::WaitingApart.says()));
+    assert!(waiting_from_accent(&drawn) >= WAITING_APART);
 }

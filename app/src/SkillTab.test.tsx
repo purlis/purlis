@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillTab, groupSaid } from "./SkillTab";
 import type { Offer } from "./actions";
@@ -268,5 +268,50 @@ describe("a skill's totals", () => {
     expect(groupSaid({ kind: "named", name: "ops" }, "No persona")).toBe("ops");
     expect(groupSaid({ kind: "none" }, "No persona")).toBe("No persona");
     expect(groupSaid({ kind: "not-recorded" }, "No persona")).toBe("Not recorded");
+  });
+});
+
+describe("a skill's Grades panel", () => {
+  it("is of the copy the tab shows: the first, then the one picked (#3353)", async () => {
+    const copy = (label: string, local: boolean) => ({
+      level: { at: "project", local },
+      label,
+      lifecycle: { state: "active" },
+      unread: false,
+      owners: [],
+      unused_days: null,
+      versions: [],
+      uncommitted: {
+        group: { kind: "none" },
+        runs: 0,
+        ended: 0,
+        tool_calls: 0,
+        tool_errors: 0,
+        refusals: 0,
+        asks: 0,
+        tokens: null,
+        ms: 0,
+      },
+    });
+    const levels: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "skill_grade_plan") return { running: null };
+      if (cmd === "skill_details")
+        return {
+          ...EMPTY_PAGE,
+          copies: [copy("project", false), copy("project, this machine", true)],
+        };
+      if (cmd === "skill_stats") return NO_TOTALS;
+      if (cmd === "skill_panels") {
+        levels.push((args as { level: unknown }).level);
+        return [runsPanel([])];
+      }
+      return null;
+    });
+    render(<SkillTab plane="p" name="deploy" changed={0} />);
+
+    await waitFor(() => expect(levels).toContainEqual({ at: "project", local: false }));
+    fireEvent.click(await screen.findByRole("button", { name: "project, this machine" }));
+    await waitFor(() => expect(levels.at(-1)).toEqual({ at: "project", local: true }));
   });
 });

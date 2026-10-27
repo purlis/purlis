@@ -65,6 +65,7 @@ import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
 import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Count } from "./ui/badge/Badge";
 import { HeadActions } from "./viewHead";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
@@ -1390,12 +1391,8 @@ function PieceCount({ pieces, refused }: { pieces?: readonly unknown[]; refused?
     );
   if (pieces === undefined) return <span className="piece-count pending ui-text-meta">…</span>;
   return (
-    <span
-      className="piece-count ui-text-meta ui-text-strong"
-      aria-label={`${pieces.length} branches`}
-    >
-      {pieces.length}
-    </span>
+    // Its number is the row's name's last word, as it always was: the tree row says the rest.
+    <Count className="piece-count">{pieces.length}</Count>
   );
 }
 

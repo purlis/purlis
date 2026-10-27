@@ -45,16 +45,16 @@ describe("the count pill", () => {
   it("draws the chats alone, in the neutral segment, where none needs you", () => {
     render(<CountPill chats={3} needs={0} />);
     const pill = screen.getByRole("img", { name: "3 chats" });
-    expect(pill.querySelector(".count-pill-chats")?.textContent).toBe("3");
-    expect(pill.querySelector(".count-pill-needs")).toBeNull();
+    expect(pill.querySelector("[data-scope=count][data-variant=neutral]")?.textContent).toBe("3");
+    expect(pill.querySelector("[data-scope=count][data-variant=hot]")).toBeNull();
   });
 
   it("draws both in one pill with one name, the second segment in the needs-you colour", () => {
     render(<CountPill chats={3} needs={1} />);
     const pill = screen.getByRole("img", { name: "3 chats, 1 needs you" });
     expect(screen.getAllByRole("img")).toHaveLength(1);
-    expect(pill.querySelector(".count-pill-chats")?.textContent).toBe("3");
-    expect(pill.querySelector(".count-pill-needs")?.textContent).toBe("1");
+    expect(pill.querySelector("[data-scope=count][data-variant=neutral]")?.textContent).toBe("3");
+    expect(pill.querySelector("[data-scope=count][data-variant=hot]")?.textContent).toBe("1");
     // The digits are the pill's drawing: its one name is what a screen reader is told.
     for (const part of pill.querySelectorAll("span"))
       expect(part.getAttribute("aria-hidden")).toBe("true");
@@ -64,14 +64,14 @@ describe("the count pill", () => {
   it("never hides a chat that needs you behind there being no tab to count", () => {
     render(<CountPill chats={0} needs={2} />);
     const pill = screen.getByRole("img", { name: "2 chats need you" });
-    expect(pill.querySelector(".count-pill-chats")).toBeNull();
-    expect(pill.querySelector(".count-pill-needs")?.textContent).toBe("2");
+    expect(pill.querySelector("[data-scope=count][data-variant=neutral]")).toBeNull();
+    expect(pill.querySelector("[data-scope=count][data-variant=hot]")?.textContent).toBe("2");
   });
 
   it("draws the needs-you segment alone on a surface that counts no chats", () => {
     render(<CountPill needs={1} />);
     const pill = screen.getByRole("img", { name: "1 chat needs you" });
-    expect(pill.querySelector(".count-pill-chats")).toBeNull();
+    expect(pill.querySelector("[data-scope=count][data-variant=neutral]")).toBeNull();
     expect(pill.dataset.needs).toBe("1");
   });
 

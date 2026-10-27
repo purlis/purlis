@@ -1044,6 +1044,30 @@
     "token": "accent.fill-edge",
     "from": "danger.base",
     "distance": 0.1
+   },
+   {
+    "token": "accent.base",
+    "from": "state.waiting",
+    "distance": 0.1,
+    "alone": true
+   },
+   {
+    "token": "focus.ring",
+    "from": "state.waiting",
+    "distance": 0.1,
+    "alone": true
+   },
+   {
+    "token": "list.selected-edge",
+    "from": "state.waiting",
+    "distance": 0.1,
+    "alone": true
+   },
+   {
+    "token": "accent.fill-edge",
+    "from": "state.waiting",
+    "distance": 0.1,
+    "alone": true
    }
   ]
  },

@@ -18,10 +18,11 @@
  * - a selector that names a pseudo-element draws something else, and is skipped;
  * - `:hover` and `:focus-visible` match only when the call says the element is in that state;
  * - `primitives/collections.css`, `ui/button/button.css`, `ui/field/field.css`,
- *   `ui/select/select.css`, the window's own
- *   families (`ui/panel`, `ui/empty-state`, `ui/status`), `ui/dialog/dialog.css`,
- *   `primitives/overlays.css`, `ui/tooltip/tooltip.css`, the popover and menu families' sheets and
- *   the list family's are in the `components` layer,
+ *   `ui/select/select.css`, the window's own families (`ui/panel`, `ui/empty-state`,
+ *   `ui/status`), the card, notice, badge and separator families (`ui/card`, `ui/notice`,
+ *   `ui/badge`, `ui/separator`), `ui/dialog/dialog.css`, `primitives/overlays.css`,
+ *   `ui/tooltip/tooltip.css`, the popover and menu families' sheets, the list family's and a
+ *   chat's pane (`paneFrame.css`) are in the `components` layer,
  *   above `App.css`'s `charter` (`styles.css`), so a family's rule beats any of `App.css`'s that
  *   sets the same property, at any specificity;
  * - inside one layer, the winner is the highest specificity, then the last in the file.
@@ -111,7 +112,7 @@ function rulesOf(css: string, layer = 0, from = 0): Rule[] {
 /** The window's cascade: `App.css`, and in the layer above it the collections, the button
  *  family (#2904), the field family (#2905), the select and combobox families
  *  (#2906), the window's own families
- *  (#2913), the harness icon (#2922), the dialog family (#2910), the overlay surface, the tooltip family (#2908), the popover and menu families (#2909), the list family (#2911), a chat's pane (#3142) and then the text roles,
+ *  (#2913), the harness icon (#2922), the dialog family (#2910), the overlay surface, the tooltip family (#2908), the popover and menu families (#2909), the list and table families (#2911), a chat's pane (#3142) and then the text roles,
  *  in the order `styles.css` imports them. */
 const COMPONENTS = [
   "primitives/collections.css",
@@ -122,6 +123,10 @@ const COMPONENTS = [
   "ui/empty-state/empty-state.css",
   "ui/status/status.css",
   "ui/harness-icon/harness-icon.css",
+  "ui/card/card.css",
+  "ui/notice/notice.css",
+  "ui/badge/badge.css",
+  "ui/separator/separator.css",
   "ui/dialog/dialog.css",
   "primitives/overlays.css",
   "ui/tooltip/tooltip.css",
@@ -129,6 +134,8 @@ const COMPONENTS = [
   "ui/menu/menu.css",
   "ui/list/list.css",
   "paneFrame.css",
+  "ui/table/table.css",
+  "ui/tree/tree.css",
   "primitives/text.css",
 ].reduce<Rule[]>((rules, file) => [...rules, ...rulesOf(sheet(file), 1, rules.length)], []);
 const RULES = [...rulesOf(sheet("App.css"), 0), ...COMPONENTS];

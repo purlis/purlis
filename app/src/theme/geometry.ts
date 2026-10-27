@@ -71,6 +71,9 @@ export const GEOMETRY = {
    *  corners, and the hairline between regions. Classic is 0, 0 and 1: flush, as it always
    *  drew. */
   window: ["--window-gutter", "--panel-corner-radius", "--panel-border-width"],
+  /** The separator part's width (#2912): the line between two groups inside a surface, 0 for
+   *  none; its colour is the separator family's. */
+  separator: ["--separator-width"],
   /** The two focus-ring rules: outside a control, inside a row or a tab. */
   focus: ["--focus-ring-width", "--focus-ring-offset", "--focus-ring-inset"],
   /** The line around a pane (#2914): 1px in Classic, none in Purlis. */

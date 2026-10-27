@@ -153,4 +153,7 @@ amendment, named `<yyyy-mm-dd>-<slug>.md`. The latest:
 [2026-10-24, the choice families join the manifest](0103/2026-10-24-the-choice-families-join-the-manifest.md);
 [2026-10-25, one manifest version per release](0103/2026-10-25-one-manifest-version-per-release.md);
 [2026-10-26, a refused box is the `invalid` state](0103/2026-10-26-a-refused-box-is-the-invalid-state.md);
-[2026-10-26, a family is its own file](0103/2026-10-26-a-family-is-its-own-file.md).
+[2026-10-26, a family is its own file](0103/2026-10-26-a-family-is-its-own-file.md);
+[2026-10-26, a glyph a part draws is a mark](0103/2026-10-26-a-glyph-a-part-draws-is-a-mark.md);
+[2026-10-26, a surface falls back for what stands on it](0103/2026-10-26-a-surface-falls-back-for-what-stands-on-it.md).
+Also [2026-10-25, the tree family joins the manifest](0103/2026-10-25-the-tree-family-joins-the-manifest.md).

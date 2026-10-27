@@ -470,14 +470,27 @@ fn classic_keeps_today_s_tint_wherever_the_accent_was_already_apart_from_danger(
             }
         }
     }
-    // Only the light appearance's red, orange and pink brought the accent near danger.
-    assert_eq!(held, ["light red", "light orange", "light pink"]);
+    // The light appearance's red, orange and pink brought the accent near danger, and each
+    // appearance's orange and yellow bring it near the waiting amber (#3130).
+    assert_eq!(
+        held,
+        [
+            "dark orange",
+            "dark yellow",
+            "light red",
+            "light orange",
+            "light yellow",
+            "light pink"
+        ]
+    );
 }
 
 #[test]
 fn a_held_colour_keeps_its_hue_and_gives_only_as_little_colour_as_it_must() {
     let light = classic().of(Appearance::Light).unwrap();
-    for (colour, at) in [("red", 25.0), ("orange", 55.0), ("pink", 350.0)] {
+    // Red and orange are left out: there the accent gives way to the waiting amber too (#3130).
+    {
+        let (colour, at) = ("pink", 350.0);
         let most = apart_chroma(light, at).expect("a chroma apart from danger");
         assert!(most.is_finite(), "{colour}");
         let accent = tinted(light, colour).value("accent.base").to_owned();
@@ -1056,7 +1069,9 @@ fn purlis_classic_s_tints_are_these() {
     // (red) or one less (pink) step of colour apart from danger. The operator ruled for the
     // rounding on 2026-10-19. Since #3034 only the tokens a rule holds apart from danger are
     // given less colour: light red, orange and pink's link and first chart series, which no rule
-    // measures, take the colour's full hue.
+    // measures, take the colour's full hue. Since #3130 the accent and the edges drawn in it
+    // give way alone to the waiting amber: dark orange and yellow and light red, orange and
+    // yellow draw them with less colour, and their washes keep the colour danger leaves them.
     const CLASSIC: [(&str, &str, [&str; 14]); 16] = [
         (
             "purlis-dark",
@@ -1070,16 +1085,16 @@ fn purlis_classic_s_tints_are_these() {
             "purlis-dark",
             "orange",
             [
-                "#eca06b", "#3a271c", "#3a271c", "#3e2d24", "#eca06b", "#eca06b", "#3e2d24",
-                "#352217", "#eca06b", "#eca06b", "#eca06b", "#25150c", "#291910", "#37261c",
+                "#cfaa91", "#3a271c", "#3a271c", "#3e2d24", "#cfaa91", "#cfaa91", "#3e2d24",
+                "#352217", "#cfaa91", "#eca06b", "#eca06b", "#25150c", "#291910", "#37261c",
             ],
         ),
         (
             "purlis-dark",
             "yellow",
             [
-                "#c7b156", "#312b18", "#312b18", "#363020", "#c7b156", "#c7b156", "#363020",
-                "#2c2613", "#c7b156", "#c7b156", "#c7b156", "#1e1808", "#221c0c", "#2f2919",
+                "#bab28d", "#312b18", "#312b18", "#363020", "#bab28d", "#bab28d", "#363020",
+                "#2c2613", "#bab28d", "#c7b156", "#c7b156", "#1e1808", "#221c0c", "#2f2919",
             ],
         ),
         (
@@ -1126,24 +1141,24 @@ fn purlis_classic_s_tints_are_these() {
             "purlis-light",
             "red",
             [
-                "#7b5350", "#fde8e5", "#fde8e5", "#f9dbd6", "#7b5350", "#7b5350", "#f9dbd6",
-                "#fde1df", "#7b5350", "#8b4b47", "#8b4b47", "#feeae7", "#fef4f2", "#ffffff",
+                "#5e5d5e", "#fde8e5", "#fde8e5", "#f9dbd6", "#5e5d5e", "#5e5d5e", "#f9dbd6",
+                "#fde1df", "#5e5d5e", "#8b4b47", "#8b4b47", "#feeae7", "#fef4f2", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "orange",
             [
-                "#7d5438", "#fbe9df", "#fbe9df", "#f5ddcc", "#7d5438", "#7d5438", "#f5ddcc",
-                "#f8e4d5", "#7d5438", "#86502b", "#86502b", "#feebdd", "#fff4ee", "#ffffff",
+                "#5e5d5e", "#fbe9df", "#fbe9df", "#f5ddcc", "#5e5d5e", "#5e5d5e", "#f5ddcc",
+                "#f8e4d5", "#5e5d5e", "#86502b", "#86502b", "#feebdd", "#fff4ee", "#ffffff",
             ],
         ),
         (
             "purlis-light",
             "yellow",
             [
-                "#6d5c18", "#f1edda", "#f1edda", "#e8e2c7", "#6d5c18", "#6d5c18", "#e8e2c7",
-                "#ede8d1", "#6d5c18", "#6d5c18", "#6d5c18", "#f5eed8", "#fbf7df", "#ffffff",
+                "#5e5d5e", "#f1edda", "#f1edda", "#e8e2c7", "#5e5d5e", "#5e5d5e", "#e8e2c7",
+                "#ede8d1", "#5e5d5e", "#6d5c18", "#6d5c18", "#f5eed8", "#fbf7df", "#ffffff",
             ],
         ),
         (

@@ -18,30 +18,33 @@ use std::path::Path;
 pub const EVALS_DIR: &str = "evals";
 
 /// The trigger test file: skill-creator's array of `{query, should_trigger}`.
-pub const TRIGGER_FILE: &str = "triggers.json";
+const TRIGGER_FILE: &str = "triggers.json";
 
 /// The outcome evals: skill-creator's `{skill_name, evals: [...]}`.
-pub const OUTCOME_FILE: &str = "evals.json";
+const OUTCOME_FILE: &str = "evals.json";
 
 /// The most bytes of one fixture file.
-pub const MOST_FIXTURE_BYTES: u64 = 256 * 1024;
+const MOST_FIXTURE_BYTES: u64 = 256 * 1024;
 
 /// The most trigger tests one skill has: skill-creator suggests twenty.
 pub const MOST_TRIGGER_TESTS: usize = 100;
 
 /// The most outcome evals one skill has.
-pub const MOST_OUTCOME_EVALS: usize = 100;
+const MOST_OUTCOME_EVALS: usize = 100;
 
 /// The most bytes of one prompt: a trigger test's query or an outcome eval's prompt. A grade
 /// sends it as a chat's first message, on the chat program's command line.
 pub const MOST_PROMPT_BYTES: usize = 8 * 1024;
 
 /// The most expectations one outcome eval has, and the most bytes of one.
-pub const MOST_EXPECTATIONS: usize = 32;
-pub const MOST_EXPECTATION_BYTES: usize = 2 * 1024;
+const MOST_EXPECTATIONS: usize = 32;
+const MOST_EXPECTATION_BYTES: usize = 2 * 1024;
 
 /// The most input files one outcome eval names.
-pub const MOST_EVAL_FILES: usize = 16;
+const MOST_EVAL_FILES: usize = 16;
+
+/// The longest path an eval's `files` may name, in bytes.
+const MOST_FILE_PATH_BYTES: usize = 512;
 
 /// One trigger test: a prompt, and whether the skill should start on it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -110,6 +113,12 @@ pub enum Wrong {
     /// It could not be read: what the system said.
     Unreadable(String),
     NotJson {
+        line: usize,
+        column: usize,
+    },
+    /// An object names one key twice, so which value it means cannot be known: JSON parsers
+    /// differ on it, and skill-creator's tools may read the other.
+    KeyTwice {
         line: usize,
         column: usize,
     },
@@ -199,6 +208,10 @@ impl Refused {
             Wrong::NotJson { line, column } => {
                 format!("{path} is not JSON purlis can read (line {line}, column {column})")
             }
+            Wrong::KeyTwice { line, column } => format!(
+                "{path} names a key twice in one object (line {line}, column {column}), so which \
+                 value it means cannot be known"
+            ),
             Wrong::NotAList => format!("{path} is not a list of trigger tests"),
             Wrong::NotAnObject => format!("{path} is not an object"),
             Wrong::TooMany { have, most } => {
@@ -268,6 +281,9 @@ impl Refused {
             Wrong::TooLarge => "they are too large to read".to_owned(),
             Wrong::Unreadable(why) => format!("they could not be read ({why})"),
             Wrong::NotJson { line, .. } => format!("they are not written right, at line {line}"),
+            Wrong::KeyTwice { line, .. } => {
+                format!("they say one thing twice, at line {line}")
+            }
             Wrong::NotAList | Wrong::NotAnObject | Wrong::NoEvals => {
                 "they are not in the shape purlis reads".to_owned()
             }
@@ -408,19 +424,90 @@ fn parsed<T>(read: Read<String>, parse: impl FnOnce(&str) -> Result<T, Refused>)
 
 /// The JSON `text` of fixture file `file`, parsed whole. A file is held to
 /// [`MOST_FIXTURE_BYTES`] before it is parsed, and serde_json's own depth limit holds the rest.
+/// An object that names a key twice is refused ([`Wrong::KeyTwice`]), never read last-wins.
 fn json_of(text: &str, file: FixtureFile) -> Result<serde_json::Value, Refused> {
     if text.len() as u64 > MOST_FIXTURE_BYTES {
         return Err(Refused::of(file, Wrong::TooLarge));
     }
-    serde_json::from_str(text).map_err(|why| {
-        Refused::of(
-            file,
-            Wrong::NotJson {
-                line: why.line(),
-                column: why.column(),
-            },
-        )
-    })
+    let refused = |why: serde_json::Error, wrong: fn(usize, usize) -> Wrong| {
+        Refused::of(file, wrong(why.line(), why.column()))
+    };
+    // Its keys first, each once in its object; then the value, as serde_json reads it.
+    serde_json::from_str::<OnceEach>(text).map_err(|why| {
+        // Every JSON value reads, so the one error of the data is a key twice.
+        if why.is_data() {
+            refused(why, |line, column| Wrong::KeyTwice { line, column })
+        } else {
+            refused(why, |line, column| Wrong::NotJson { line, column })
+        }
+    })?;
+    serde_json::from_str(text)
+        .map_err(|why| refused(why, |line, column| Wrong::NotJson { line, column }))
+}
+
+/// **A JSON text whose every object names each key once**: what [`json_of`] checks before it
+/// reads the value. Nothing is built: a number, however serde_json hands it over, is passed by.
+struct OnceEach;
+
+impl<'de> serde::Deserialize<'de> for OnceEach {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(OnceEachVisitor)
+    }
+}
+
+/// [`OnceEach`]'s reader: every value passed by, every object's keys held to once each.
+struct OnceEachVisitor;
+
+impl<'de> serde::de::Visitor<'de> for OnceEachVisitor {
+    type Value = OnceEach;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a JSON value")
+    }
+
+    fn visit_bool<E>(self, _: bool) -> Result<OnceEach, E> {
+        Ok(OnceEach)
+    }
+
+    fn visit_i64<E>(self, _: i64) -> Result<OnceEach, E> {
+        Ok(OnceEach)
+    }
+
+    fn visit_u64<E>(self, _: u64) -> Result<OnceEach, E> {
+        Ok(OnceEach)
+    }
+
+    fn visit_f64<E>(self, _: f64) -> Result<OnceEach, E> {
+        Ok(OnceEach)
+    }
+
+    fn visit_str<E>(self, _: &str) -> Result<OnceEach, E> {
+        Ok(OnceEach)
+    }
+
+    fn visit_unit<E>(self) -> Result<OnceEach, E> {
+        Ok(OnceEach)
+    }
+
+    fn visit_none<E>(self) -> Result<OnceEach, E> {
+        Ok(OnceEach)
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<OnceEach, A::Error> {
+        while seq.next_element::<OnceEach>()?.is_some() {}
+        Ok(OnceEach)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<OnceEach, A::Error> {
+        let mut seen = std::collections::HashSet::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if !seen.insert(key) {
+                return Err(serde::de::Error::custom("a key named twice in one object"));
+            }
+            map.next_value::<OnceEach>()?;
+        }
+        Ok(OnceEach)
+    }
 }
 
 /// `value` as a prompt of at most [`MOST_PROMPT_BYTES`], with something in it, or which of
@@ -519,6 +606,7 @@ fn outcomes_of(text: &str, name: &str) -> Result<Vec<OutcomeEval>, Refused> {
         ));
     }
     let mut out: Vec<OutcomeEval> = Vec::with_capacity(list.len());
+    let mut ids = std::collections::HashSet::with_capacity(list.len());
     for (at, raw) in list.iter().enumerate() {
         let refused = |wrong| Refused::at(FILE, at, wrong);
         let object = raw
@@ -528,7 +616,7 @@ fn outcomes_of(text: &str, name: &str) -> Result<Vec<OutcomeEval>, Refused> {
             .get("id")
             .and_then(serde_json::Value::as_u64)
             .ok_or_else(|| refused(Wrong::NoId))?;
-        if out.iter().any(|one| one.id == id) {
+        if !ids.insert(id) {
             return Err(refused(Wrong::IdTwice { id }));
         }
         let prompt = prompt_of(
@@ -566,8 +654,9 @@ fn outcomes_of(text: &str, name: &str) -> Result<Vec<OutcomeEval>, Refused> {
     Ok(out)
 }
 
-/// An eval's `files`: paths inside the skill's folder, each plain parts with no `..`, no root and
-/// no dot-name, at most [`MOST_EVAL_FILES`].
+/// An eval's `files`: paths inside the skill's folder of at most [`MOST_FILE_PATH_BYTES`], each
+/// plain parts with no `..`, no root, no dot-name and no control character, at most
+/// [`MOST_EVAL_FILES`].
 fn files_of(value: &serde_json::Value) -> Result<Vec<String>, Wrong> {
     let list = value.as_array().ok_or(Wrong::FilesNotAList)?;
     if list.len() > MOST_EVAL_FILES {
@@ -577,10 +666,13 @@ fn files_of(value: &serde_json::Value) -> Result<Vec<String>, Wrong> {
         .map(|one| {
             let path = one.as_str().ok_or(Wrong::FileNotText)?;
             let plain = !path.is_empty()
-                && path.len() <= 512
-                && path
-                    .split('/')
-                    .all(|part| !part.is_empty() && !part.starts_with('.') && !part.contains('\\'));
+                && path.len() <= MOST_FILE_PATH_BYTES
+                && path.split('/').all(|part| {
+                    !part.is_empty()
+                        && !part.starts_with('.')
+                        && !part.contains('\\')
+                        && !part.chars().any(char::is_control)
+                });
             if !plain {
                 return Err(Wrong::FileNotInTheSkill {
                     path: path.chars().take(120).collect(),

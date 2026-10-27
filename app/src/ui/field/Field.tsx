@@ -406,8 +406,10 @@ function joined<T>(...refs: (Ref<T> | undefined)[]): RefCallback<T> {
  *   a screen reader say nothing again. It is the error part too, so a theme's words reach it. Shown
  *   for the keyboard alone, the pointer goes through it to what it covers. An input error is the
  *   one kind of such content WCAG 1.4.13 does not ask to be dismissable.
+ * - **The select family's too** (#3334): a select or a combobox that takes `error` draws this
+ *   line under its box, so its refusal is heard when it lands, as a text field's is.
  */
-function ErrorLine({ id, said }: { id: string; said: string | undefined }) {
+export function ErrorLine({ id, said }: { id: string; said: string | undefined }) {
   const words = useRef<HTMLSpanElement>(null);
   const room = useRef<HTMLDivElement>(null);
   const whole = useRef<HTMLSpanElement>(null);
@@ -464,7 +466,7 @@ function refusable(props: { validate?: unknown; error?: unknown }): boolean {
 }
 
 /** The ids that describe the box: the call's own, and the error's while it says something. */
-function describedBy(own: string | undefined, error: string, said: string | undefined) {
+export function describedBy(own: string | undefined, error: string, said: string | undefined) {
   return [own, said !== undefined ? error : undefined].filter(Boolean).join(" ") || undefined;
 }
 

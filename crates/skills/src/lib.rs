@@ -370,6 +370,13 @@ pub enum Reason {
         /// The clone's name.
         repo: String,
     },
+    /// A plane skill a repo of the chat's clone has a narrower copy of, which the chat gets in
+    /// its place (decision 51, [`Outcome::RepoWins`]): named by the repo, as
+    /// [`Self::RepoUnread`] is (#3234).
+    HiddenByRepo {
+        /// The clone's name.
+        repo: String,
+    },
     /// A plane skill its project archived (SK-19, decision 62): it never loads, takes no name
     /// from another copy, and is restored by making it active again.
     Archived,
@@ -386,18 +393,27 @@ pub enum Reason {
 
 impl Reason {
     /// **Whether a repo of the chat's clone is why** (SK-53, #3213): a narrower repo copy took
-    /// the name ([`Self::NameTaken`] by [`Origin::Repo`], decision 51), or purlis could not read
-    /// a skills folder of the clone whole ([`Self::RepoUnread`]). A plane skill left out so is
-    /// one only a chat in that clone loses, and its tab says so (decision 41).
+    /// the name ([`Self::HiddenByRepo`], decision 51), or purlis could not read a skills folder
+    /// of the clone whole ([`Self::RepoUnread`]). A plane skill left out so is one only a chat in
+    /// that clone loses, and its tab says so (decision 41).
     pub fn of_a_repo(&self) -> bool {
-        matches!(
-            self,
-            Self::RepoUnread { .. }
-                | Self::NameTaken {
-                    by: Origin::Repo,
-                    ..
-                }
-        )
+        matches!(self, Self::RepoUnread { .. } | Self::HiddenByRepo { .. })
+    }
+
+    /// **Why, as the tab of a chat in that repo says it** (#3234): a reason [`Self::of_a_repo`]
+    /// in words that read for the chat it happened to, after the tab's "because of the repo it
+    /// works in"; any other reason as [`std::fmt::Display`] says it everywhere.
+    pub fn to_its_chat(&self) -> String {
+        match self {
+            Self::HiddenByRepo { repo } => {
+                format!("the repo {repo} has its own copy, which loads in its place")
+            }
+            Self::RepoUnread { repo } => format!(
+                "purlis could not read the skills folder of {repo} whole, so it is left out in \
+                 case the repo has its own"
+            ),
+            other => other.to_string(),
+        }
     }
 }
 
@@ -486,6 +502,9 @@ impl std::fmt::Display for Reason {
                 "purlis could not read the skills folder of {repo} whole, so a copy of this \
                  skill may be there, and a chat in that repo would get that one"
             ),
+            Self::HiddenByRepo { repo } => {
+                write!(f, "hidden by the skill of this name in the repo {repo}")
+            }
             Self::Archived => {
                 f.write_str("archived: it never loads until it is restored from its tab")
             }
@@ -872,6 +891,12 @@ impl SkillSet {
                     outcome,
                 });
                 if outcome == Outcome::RepoWins {
+                    // A repo copy is always a clone's ([`Owner::Repo`]), which its reason names.
+                    debug_assert!(matches!(one.owner, Owner::Repo(_)), "{:?}", one.owner);
+                    let repo = match &one.owner {
+                        Owner::Repo(repo) => repo.clone(),
+                        Owner::You | Owner::Plugin(_) => String::new(),
+                    };
                     let hidden = self.effective.remove(at);
                     self.left_out.push(LeftOut {
                         name: hidden.skill.name,
@@ -883,10 +908,7 @@ impl SkillSet {
                             .parent()
                             .map(Path::to_path_buf)
                             .unwrap_or_default(),
-                        reason: Reason::NameTaken {
-                            by: Origin::Repo,
-                            local: false,
-                        },
+                        reason: Reason::HiddenByRepo { repo },
                     });
                 }
             }

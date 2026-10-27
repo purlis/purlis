@@ -32,6 +32,18 @@ fn call(chat: u32, id: &str, skill: Option<&str>) -> ToolCall {
     }
 }
 
+/// A skill call that starts `skill`, which the hook found is the copy at `origin`.
+fn call_of(chat: u32, skill: &str, origin: purlis_core::skills::Origin) -> ToolCall {
+    let mut call = call(chat, "toolu_1", Some(skill));
+    if let Some(started) = call.skill.as_mut() {
+        started.level = Some(purlis_core::skills::runs::Level {
+            origin,
+            local: false,
+        });
+    }
+    call
+}
+
 fn report(chat: u32, event: Event) -> Report {
     Report {
         chat,
@@ -67,6 +79,7 @@ fn a_skill_started_puts_its_run_on_the_chats_tab_counting_its_tool_calls_until_t
     let open = |tool_calls| {
         Some(OpenRun {
             skill: "deploy".to_owned(),
+            name: "deploy".to_owned(),
             id: RUN.to_owned(),
             tool_calls,
         })
@@ -141,11 +154,38 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
     let open = |tool_calls| {
         Some(OpenRun {
             skill: "deploy".to_owned(),
+            name: "deploy".to_owned(),
             id: RUN.to_owned(),
             tool_calls,
         })
     };
     assert_eq!(said, vec![open(0), open(1), None]);
+}
+
+#[test]
+fn a_runs_chip_opens_the_skill_the_core_counts_it_a_run_of_never_a_second_parsing_of_its_name() {
+    use purlis_core::skills::Origin;
+    let (runs, _told) = listening();
+    // opencode is handed the built-in `secrets` as `purlis-secrets` (#3279).
+    runs.heard(&call_of(4, "purlis-secrets", Origin::BuiltIn));
+    // A plane skill whose own name starts so is its own.
+    runs.heard(&call_of(5, "purlis-notes", Origin::Project));
+    // Claude Code starts a built-in under purlis's plugin.
+    runs.heard(&call_of(6, "purlis:secrets", Origin::BuiltIn));
+
+    let named: Vec<_> = runs
+        .now([4, 5, 6])
+        .into_iter()
+        .filter_map(|told| told.run.map(|run| (run.skill, run.name)))
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("purlis-secrets".to_owned(), "secrets".to_owned()),
+            ("purlis-notes".to_owned(), "purlis-notes".to_owned()),
+            ("purlis:secrets".to_owned(), "secrets".to_owned()),
+        ]
+    );
 }
 
 /// SK-16 (#2779): a grade watching a chat is told each skill that starts in it once, and the end

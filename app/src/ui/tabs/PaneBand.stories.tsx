@@ -360,10 +360,12 @@ function rowsOf(canvas: HTMLElement, name = "steward 2") {
   const frame = canvas.querySelector(`[data-testid="pane ${name}"]`) as HTMLElement;
   return {
     frame,
-    band: frame.querySelector(".pane-notice-row"),
+    band: frame.querySelector('[data-scope="notice-row"][data-part="root"]'),
     head: frame.querySelector(".pane-head"),
     terminal: frame.querySelector(".pane"),
-    warnings: [...frame.querySelectorAll(".pane-notices > :not([hidden])")],
+    warnings: [
+      ...frame.querySelectorAll('[data-scope="notice-row"][data-part="stack"] > :not([hidden])'),
+    ],
   };
 }
 
@@ -552,7 +554,7 @@ export const ConsentClamped: Story = {
     allowed.length = 0;
     const vault = await canvas.findByRole("status", { name: "Vault" });
     const allow = within(vault).getByRole("button", { name: "Allow steward to use this vault" });
-    const stack = vault.closest(".pane-notices") as HTMLElement;
+    const stack = vault.closest('[data-scope="notice-row"][data-part="stack"]') as HTMLElement;
     // The clamp alone, and no re-wrap: the band keeps its scrollbar's room whether it overflows
     // or not, so its words are as wide before the dismiss as after it.
     stack.style.scrollbarGutter = "stable";

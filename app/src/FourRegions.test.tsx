@@ -919,7 +919,9 @@ describe("the Search and Changes views", () => {
     expect(screen.getByTestId("region-panel")).toContainElement(view);
     const state = within(view).getByLabelText("Repository state");
     await waitFor(() => expect(within(state).getByTestId("repo-svc")).toHaveTextContent("main"));
-    expect(within(state).getByTestId("repo-svc")).toHaveTextContent("3 changed, 1 untracked");
+    expect(
+      within(state).getByRole("row", { name: "changes: 3 changed, 1 untracked" }),
+    ).toBeInTheDocument();
     expect(within(state).getByTestId("ci-svc")).toHaveTextContent("not fetched");
   });
 

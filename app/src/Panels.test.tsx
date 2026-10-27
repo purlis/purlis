@@ -8,6 +8,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { attentionPanels, Panels } from "./Panels";
+import { HeadActions } from "./viewHead";
 import { drawnWith } from "./cascade.testkit";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { wears } from "./textRoles.testkit";
@@ -427,11 +428,12 @@ describe("a panel", () => {
 
     const sections = screen.getByTestId("panels").querySelectorAll(".panels > section");
     expect(sections).toHaveLength(4);
+    // One heading each: a view's own title (#3340), or the section label where it is not one.
     for (const section of sections) {
-      expect(within(section as HTMLElement).getByRole("heading", { level: 2 })).toHaveAttribute(
-        "data-part",
-        "title",
-      );
+      const heading = within(section as HTMLElement).getByRole("heading", { level: 2 });
+      if (section.hasAttribute("data-frame"))
+        expect(heading).toHaveClass("ui-text-body", "ui-text-strong");
+      else expect(heading).toHaveAttribute("data-part", "title");
     }
   });
 
@@ -567,13 +569,16 @@ describe("rows on the right are one line (#1674)", () => {
     expect(within(todos).getByRole("rowgroup", { name: "Yesterday" })).toContainElement(todo);
   });
 
-  it("draws a memory as its title, its date on hover, under the day it was written", () => {
+  it("draws a memory as its title and its date short at its end, under the day it was written", () => {
     draw({ state: withMemory(), offers: crudOffers() });
 
     const memory = within(screen.getByTestId("panel-memory")).getByRole("row", {
       name: "The API returns 418 on Mondays",
     });
-    expect(memory).toHaveTextContent(/^The API returns 418 on Mondays$/);
+    // Its title, and its date short at its end (#3340, the prototype's Q1 A); the whole date is
+    // its hover.
+    expect(memory).toHaveTextContent(/^The API returns 418 on Mondays03-02$/);
+    expect(memory.querySelector(".row-date")).toHaveTextContent("03-02");
     expect(tipOf(memory)).toEqual("2026-03-02 09:12");
     expect(
       within(screen.getByTestId("panel-memory")).getByRole("rowheader", { name: "Yesterday" }),
@@ -1049,11 +1054,15 @@ describe("a panel's words, each on its text role (#1920)", () => {
     wears(steward.querySelector(".row-text"), "body", "the default persona's name", true);
   });
 
-  it("heads a section with the one section label, and whose panel it is beside it as data", () => {
+  it("heads a section with its title, and whose panel it is beside it as data", () => {
     draw({ contributed: [contributedPanel()] });
 
+    // A view's title is a strong body, as the prototype's Q1 A draws it (#3340); a section that
+    // is not a view keeps the one section label.
     for (const heading of screen.getByTestId("panels").querySelectorAll(".panels h2"))
-      wears(heading, "label", `the heading ${heading.textContent}`);
+      if (heading.closest("[data-frame]") !== null)
+        wears(heading, "body", `the heading ${heading.textContent}`, true);
+      else wears(heading, "label", `the heading ${heading.textContent}`);
     wears(
       screen.getByTestId("panels").querySelector(".panel-from"),
       "secondary",
@@ -1067,5 +1076,116 @@ describe("a panel's words, each on its text role (#1920)", () => {
     const [empty] = screen.getAllByText("No workspace focused.");
     wears(empty, "secondary", "the empty sentence");
     expect(drawnWith(empty, "opacity")).toBe("1");
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// The sidebar view frame (#3340, the sidebar-views prototype's Q1 A)
+// ---------------------------------------------------------------------------------------
+
+describe("a view on the sidebar view frame (#3340)", () => {
+  /** The view's top: what is held in place while the rows scroll. */
+  const topOf = (testid: string) => {
+    const top = screen.getByTestId(testid).querySelector<HTMLElement>('[data-part="top"]');
+    if (top === null) throw new Error(`${testid} has no top`);
+    return top;
+  };
+
+  it("draws Memory, Todos and Sessions as views, and leaves the others as they were", () => {
+    const sessions: PanelView = { ...memoryPanel([]), key: "charter/sessions", title: "Sessions" };
+    const memory = memoryPanel([MEMORY_ROW]);
+    const personas = personasPanel(["devops", "steward"], "steward");
+    draw({
+      state: state({
+        panels: { ...PANELS, contributed: [todosPanel([TODO]), memory, personas, sessions] },
+      }),
+    });
+
+    for (const testid of ["panel-memory", "panel-todos", "panel-sessions"]) {
+      expect(screen.getByTestId(testid)).toHaveAttribute("data-frame");
+      expect(screen.getByTestId(testid).closest("aside")).toHaveClass("panels-view");
+    }
+    // Personas, Vaults and the extensions' panels follow (#3341).
+    expect(screen.getByTestId("panel-personas")).toHaveAttribute("data-variant", "default");
+    expect(screen.getByTestId("panel-personas").closest("aside")).not.toHaveClass("panels-view");
+  });
+
+  it("holds the heading, its actions and the search in the top, before the rows", () => {
+    draw({ state: withMemory(), offers: crudOffers() });
+
+    const top = topOf("panel-memory");
+    expect(within(top).getByRole("heading", { name: "Memory" })).toBeInTheDocument();
+    expect(within(top).getByRole("button", { name: "New memory in alpha…" })).toBeInTheDocument();
+    // The search is there from the first row in a view, and it is the list's own box.
+    expect(within(top).getByRole("searchbox", { name: "Search Memory" })).toBeInTheDocument();
+    // The rows are under the top and not in it.
+    const grid = within(screen.getByTestId("panel-memory")).getByRole("grid");
+    expect(top.contains(grid)).toBe(false);
+    expect(top.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("still searches the list from the box in its top", async () => {
+    draw({ state: withMemory(), offers: crudOffers() });
+
+    await userEvent.type(
+      within(topOf("panel-memory")).getByRole("searchbox", { name: "Search Memory" }),
+      "nothing like it",
+    );
+
+    expect(
+      within(screen.getByTestId("panel-memory")).getByText(/Nothing here matches/),
+    ).toBeInTheDocument();
+  });
+
+  it("holds the Todos box in the top, and no search under a page", () => {
+    draw({ onAddTodo: async () => undefined });
+
+    const top = topOf("panel-todos");
+    expect(within(top).getByRole("textbox", { name: "New todo in alpha" })).toBeInTheDocument();
+    expect(within(top).queryByRole("searchbox")).toBeNull();
+  });
+
+  it("reaches the heading's actions, then the field, then the rows, with Tab", async () => {
+    draw({ state: withMemory(), offers: crudOffers() });
+    const memory = screen.getByTestId("panel-memory");
+
+    // From just before the view: its controls come in the order the prototype stacks them.
+    const before = document.createElement("button");
+    memory.before(before);
+    before.focus();
+    const add = within(memory).getByRole("button", { name: "New memory in alpha…" });
+    while (document.activeElement !== add) await userEvent.tab();
+    // Then the heading's other actions (the archive), still on its line.
+    const line = add.closest('[data-part="head"]');
+    while (line?.contains(document.activeElement)) await userEvent.tab();
+    expect(within(memory).getByRole("searchbox", { name: "Search Memory" })).toHaveFocus();
+    await userEvent.tab();
+    expect(document.activeElement?.closest('[role="grid"]')).not.toBeNull();
+    before.remove();
+  });
+
+  it("in a half, gives its actions to the half's line and draws no heading of its own", () => {
+    const line = document.createElement("span");
+    document.body.append(line);
+    render(
+      <HeadActions.Provider value={line}>
+        <Panels
+          view="memory"
+          workspace="alpha"
+          state={withMemory()}
+          offers={crudOffers()}
+          onPress={() => {}}
+          contributed={[]}
+          shownRow={undefined}
+          onShowRow={() => {}}
+        />
+      </HeadActions.Provider>,
+    );
+
+    const top = topOf("panel-memory");
+    expect(within(top).queryByRole("heading")).toBeNull();
+    expect(within(top).getByRole("searchbox", { name: "Search Memory" })).toBeInTheDocument();
+    expect(within(line).getByRole("button", { name: "New memory in alpha…" })).toBeInTheDocument();
+    line.remove();
   });
 });

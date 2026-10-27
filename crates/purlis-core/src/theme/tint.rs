@@ -39,7 +39,7 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use super::floors::{ALLOW_APART, DANGER_APART};
+use super::floors::{ALLOW_APART, DANGER_APART, WAITING_APART};
 use super::vocabulary::{TAB_ONLY, TINTABLE, TINTED, TOKENS, is_colour};
 use super::{Complaint, ResolvedTheme, stringify};
 
@@ -179,25 +179,32 @@ impl Tint {
 }
 
 /// **A rule every tint holds**: `token`, tinted, stays at least `distance` from `from` in OKLab,
-/// `from` as the tint draws it (tinted too when the recipe turns it).
+/// `from` as the tint draws it (tinted too when the recipe turns it). A rule held `alone` gives
+/// less colour only to its own sides (#3130): the accent gives way to the waiting amber, and the
+/// accent's kin beside it keep the colour the other rules give them.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Apart {
     pub token: &'static str,
     pub from: &'static str,
     pub distance: f64,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub alone: bool,
 }
 
 /// **What every tint holds apart**, at every hue, a workspace's own colour included: the accent
 /// from the danger colour (danger is distinguishable from primary), Allow's edge from Keep
 /// blocked's (Allow is distinguishable from Keep blocked), the consent floors of ADR 0097 §6, and
-/// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]).
-pub const APART: [Apart; 9] = [
+/// each accent-hued token drawn beside danger from it as the accent is ([`ACCENT_KIN`]); and the
+/// accent from the waiting colour (waiting is distinguishable from the accent, #3130), so a
+/// yellow or orange workspace's accent never reads as the waiting signal.
+pub const APART: [Apart; 13] = [
     danger_apart("accent.base"),
     // Keep blocked's edge is a plain control's (#3177).
     Apart {
         token: "accent.base",
         from: "border.control",
         distance: ALLOW_APART,
+        alone: false,
     },
     danger_apart(ACCENT_KIN[0]),
     danger_apart(ACCENT_KIN[1]),
@@ -206,7 +213,34 @@ pub const APART: [Apart; 9] = [
     danger_apart(ACCENT_KIN[4]),
     danger_apart(ACCENT_KIN[5]),
     danger_apart(ACCENT_KIN[6]),
+    // The waiting edge of an ask or a Notice never draws in the accent, nor in the edges drawn
+    // in it (#3130): each gives way alone, and the accent's washes keep their colour.
+    waiting_apart(WAITING_KIN[0]),
+    waiting_apart(WAITING_KIN[1]),
+    waiting_apart(WAITING_KIN[2]),
+    waiting_apart(WAITING_KIN[3]),
 ];
+
+/// **The accent and the edges drawn in it** (#3130): the accent, the focus ring, the selected
+/// row's edge and the primary's edge, each a line or a word in the accent's colour that the
+/// waiting edge must not be taken for. The accent's washes (its surface, the primary's fill, the
+/// active tab) are not marks, and keep their colour.
+pub const WAITING_KIN: [&str; 4] = [
+    "accent.base",
+    "focus.ring",
+    "list.selected-edge",
+    "accent.fill-edge",
+];
+
+/// `token` held [`WAITING_APART`] from `state.waiting`, alone.
+const fn waiting_apart(token: &'static str) -> Apart {
+    Apart {
+        token,
+        from: "state.waiting",
+        distance: WAITING_APART,
+        alone: true,
+    }
+}
 
 /// The tokens in the accent's hue that the window draws beside the danger colour: the focus
 /// ring, the selected row's edge, the accent's surface and the active tab (#2526), and the
@@ -229,6 +263,7 @@ const fn danger_apart(token: &'static str) -> Apart {
         token,
         from: "danger.base",
         distance: DANGER_APART,
+        alone: false,
     }
 }
 
@@ -429,10 +464,10 @@ pub(super) fn tinted_at(theme: &ResolvedTheme, hue: f64) -> ResolvedTheme {
     if tokens.is_empty() {
         return theme.clone();
     }
-    let most = apart_chroma(theme, hue);
+    let most = most_at(theme, hue);
     let mut tint = theme.clone();
     for token in tokens {
-        let Some(chroma) = chroma_for(token, most) else {
+        let Some(chroma) = chroma_of(token, most) else {
             continue;
         };
         if let Some(value) = tint.values.get_mut(token) {
@@ -448,6 +483,52 @@ pub fn held_apart(token: &str) -> bool {
     APART
         .iter()
         .any(|rule| rule.token == token || rule.from == token)
+}
+
+/// **Whether `token` is a side of a rule of [`APART`] held alone** (#3130).
+fn held_alone(token: &str) -> bool {
+    APART
+        .iter()
+        .any(|rule| rule.alone && (rule.token == token || rule.from == token))
+}
+
+/// **The most chroma a tint at one hue gives**: `shared`, what [`apart_chroma`] answers, for
+/// every side of a rule of [`APART`]; and `alone`, what every rule together answers, for the
+/// sides of a rule held alone, which give way further on their own (#3130).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Most {
+    pub shared: Option<f64>,
+    pub alone: Option<f64>,
+}
+
+/// [`Most`] for `theme` at `hue`.
+pub fn most_at(theme: &ResolvedTheme, hue: f64) -> Most {
+    most_of(&held_rules(theme), &shared_rules(theme), hue)
+}
+
+/// [`Most`] of every held rule and of the shared ones among them.
+pub(super) fn most_of(all: &[Rule<'_>], shared: &[Rule<'_>], hue: f64) -> Most {
+    let shared_most = apart_chroma_of(shared, hue);
+    let alone = if all.len() == shared.len() {
+        shared_most
+    } else {
+        apart_chroma_of(all, hue)
+    };
+    Most {
+        shared: shared_most,
+        alone,
+    }
+}
+
+/// **The most chroma a tint gives `token`** at a hue whose [`Most`] is `most`: the alone
+/// answer for a side of a rule held alone, else as [`chroma_for`] gives it. `tint.ts`'
+/// `chromaFor` is the same.
+pub fn chroma_of(token: &str, most: Most) -> Option<f64> {
+    if held_alone(token) {
+        most.alone
+    } else {
+        chroma_for(token, most.shared)
+    }
 }
 
 /// **The most chroma a tint gives `token`** when [`apart_chroma`] answers `most` (#3034): `most`
@@ -466,7 +547,7 @@ pub fn chroma_for(token: &str, most: Option<f64>) -> Option<f64> {
 pub(super) fn turned_at(
     theme: &ResolvedTheme,
     hue: f64,
-    most: Option<f64>,
+    most: Most,
     only: &[&'static str],
 ) -> ResolvedTheme {
     let mut tint = theme.clone();
@@ -476,7 +557,7 @@ pub(super) fn turned_at(
         .iter()
         .filter(|token| only.contains(token))
     {
-        let Some(chroma) = chroma_for(token, most) else {
+        let Some(chroma) = chroma_of(token, most) else {
             continue;
         };
         if let Some(value) = tint.values.get_mut(token) {
@@ -541,14 +622,24 @@ impl Rule<'_> {
 /// a theme tints. The window does the same arithmetic (`tint.ts`' `apartChroma`), held to it by
 /// the shared fixture.
 pub fn apart_chroma(theme: &ResolvedTheme, hue: f64) -> Option<f64> {
-    apart_chroma_of(&held_rules(theme), hue)
+    apart_chroma_of(&shared_rules(theme), hue)
 }
 
 /// The rules of [`APART`] as `theme` draws them, each with a side its recipe turns.
 pub(super) fn held_rules(theme: &ResolvedTheme) -> Vec<Rule<'_>> {
+    rules_where(theme, |_| true)
+}
+
+/// [`held_rules`] but those held alone: what every held token gives way to.
+pub(super) fn shared_rules(theme: &ResolvedTheme) -> Vec<Rule<'_>> {
+    rules_where(theme, |rule| !rule.alone)
+}
+
+fn rules_where(theme: &ResolvedTheme, keep: impl Fn(&Apart) -> bool) -> Vec<Rule<'_>> {
     let tokens = theme.tint.tabs();
     APART
         .iter()
+        .filter(|rule| keep(rule))
         .map(|rule| Rule {
             token: theme.value(rule.token),
             token_tinted: tokens.contains(&rule.token),
