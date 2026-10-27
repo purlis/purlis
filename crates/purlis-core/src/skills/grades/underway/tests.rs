@@ -158,7 +158,10 @@ fn a_start_while_another_records_the_folder_waits_its_turn_and_records_once_3443
     });
     std::thread::sleep(std::time::Duration::from_millis(200));
     assert!(!waiting.is_finished(), "it waits for the claim");
-    assert!(held.exists(), "nothing recorded while another holds the claim");
+    assert!(
+        held.exists(),
+        "nothing recorded while another holds the claim"
+    );
 
     drop(theirs);
     assert_eq!(waiting.join().unwrap(), ["g-both"]);
