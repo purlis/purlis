@@ -156,3 +156,8 @@ The five default roles, each label named as its role. See `docs/agents/triage-la
 ### Domain docs
 
 Single-context: `CONTEXT.md` and `docs/adr/` at the root. See `docs/agents/domain.md`.
+
+### Landing a pull request
+
+The `landing-a-pr` skill (`docs/agents/skills/landing-a-pr/SKILL.md`), with `tools/land.mjs` for
+every mechanical step.
