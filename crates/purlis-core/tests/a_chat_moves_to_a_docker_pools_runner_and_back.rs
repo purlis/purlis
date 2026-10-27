@@ -292,7 +292,7 @@ fn a_chat_moved_to_a_pools_runner_and_back_resumes_on_its_conversation_branch_an
                 "git -C {repo} add -A && git -C {repo} -c user.name=Chat \
                  -c user.email=chat@example.invalid -c commit.gpgsign=false commit -q -m work && \
                  echo 'fn log_out() {{}}' > {repo}/logout.rs && \
-                 echo '{{\"said\":\"on the runner\"}}' >> {conversation}"
+                 for kept in {conversation}; do echo '{{\"said\":\"on the runner\"}}' >> \"$kept\"; done"
             ),
         );
 

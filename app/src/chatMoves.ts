@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useSyncExternalStore } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "./here";
 import { commands, type ChatMove, type MoveTold, type OpenChat, type PlaneId } from "./bindings";
 import type { State } from "./chatState";
 
