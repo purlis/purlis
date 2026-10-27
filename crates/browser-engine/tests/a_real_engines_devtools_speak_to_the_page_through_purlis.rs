@@ -30,6 +30,20 @@ fn wait_for(what: &str, within: Duration, mut done: impl FnMut() -> bool) {
     }
 }
 
+/// The browser's pages, by id and address.
+fn pages_of(browser: &purlis_browser_engine::drive::Browser, call: &str) -> Vec<(String, String)> {
+    let listed = browser
+        .call(&CallId::new(call).unwrap(), Call::Pages)
+        .unwrap();
+    let Content::Pages(pages) = listed.content else {
+        panic!("the pages are listed");
+    };
+    pages
+        .into_iter()
+        .map(|page| (page.id.as_str().to_owned(), page.address))
+        .collect()
+}
+
 #[test]
 fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purlis() {
     let Some((browser, _data, _site)) = started() else {
@@ -43,6 +57,7 @@ fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purli
             },
         )
         .unwrap();
+    let before = pages_of(&browser, "before");
     browser.take_over();
     let ends: Arc<Mutex<Vec<InspectEnded>>> = Arc::default();
     let told = Arc::clone(&ends);
@@ -93,16 +108,6 @@ fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purli
     browser.hand_back();
     assert!(!browser.inspecting());
     assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Closed]);
-    // DevTools were never one of the browser's pages.
-    let listed = browser
-        .call(&CallId::new("pages").unwrap(), Call::Pages)
-        .unwrap();
-    let Content::Pages(pages) = listed.content else {
-        panic!("the pages are listed");
-    };
-    assert_eq!(pages.len(), 1, "{pages:?}");
-    assert!(
-        pages[0].address.starts_with("http://fixture.test/"),
-        "{pages:?}"
-    );
+    // DevTools were never one of the browser's pages: it lists the pages it listed before.
+    assert_eq!(pages_of(&browser, "after"), before);
 }
