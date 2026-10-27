@@ -34,7 +34,7 @@ function core(old: OldHarnessPlugins | null) {
   mockIPC((cmd, args) => {
     asked.push({ cmd, args });
     if (cmd === "old_harness_plugins") return old;
-    if (cmd === "remove_old_harness_plugins") return [4];
+    if (cmd === "remove_old_harness_plugins") return [{ id: 4, file: "charter.toml" }];
     return null;
   });
   return (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args);

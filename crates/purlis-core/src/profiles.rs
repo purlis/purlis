@@ -593,7 +593,7 @@ pub fn derive_with(
             set.refused.push(Refused {
                 reason: format!(
                     "[{name}] in charter.local.toml is not read — that file carries \
-                     [harness], [extensions], [theme], [harness_plugins], [plane], [repos], \
+                     [harness], [extensions], [theme], [harness_skills], [plane], [repos], \
                      [chat_env], [sandbox] hosts, [dispatch] limits, [[skill_sources]] and [skill_grades], and nothing else, because an ignored file must not change plane policy \
                      with no trace in git. Put [{name}] in charter.toml."
                 ),

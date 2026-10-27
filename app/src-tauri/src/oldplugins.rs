@@ -69,18 +69,32 @@ fn answer(root: &Path) -> Result<(), String> {
     keep().map_err(|e| format!("purlis could not keep your answer ({e})"))
 }
 
+/// One change Remove held: its proposal's id, and the file it changes.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct HeldRemoval {
+    pub id: u32,
+    pub file: String,
+}
+
 /// **Remove**'s work in the project at `root`: a proposed change per file of its own two that
-/// holds the keys, held in `proposals` at `now` as purlis's. The ids held, in file order. The
-/// Notice is answered with it.
-pub fn removal_held(root: &Path, proposals: &Proposals, now: u64) -> Result<Vec<u32>, String> {
+/// holds the keys, held in `proposals` at `now` as purlis's, in file order. The Notice is
+/// answered only once a change is held, so it never goes with nothing to apply.
+pub fn removal_held(
+    root: &Path,
+    proposals: &Proposals,
+    now: u64,
+) -> Result<Vec<HeldRemoval>, String> {
     let mut held = Vec::new();
     for one in old::found(root).into_iter().filter(|one| one.which.is_some()) {
         let content = old::removed(&one.text)?;
         let base = base_of(Some(one.text.as_bytes()));
         if let Some(id) = proposals.note(BY_PURLIS, &one.file, base, Change::Whole { content }, now)
         {
-            held.push(id);
+            held.push(HeldRemoval { id, file: one.file });
         }
+    }
+    if held.is_empty() {
+        return Err("purlis found no change to propose, so nothing waits for you".to_owned());
     }
     answer(root)?;
     Ok(held)
@@ -101,20 +115,20 @@ pub async fn old_harness_plugins(
     .await
 }
 
-/// **Remove** on the Notice: each file's change held for the person to apply, the ids of the
-/// changes held. Window-only: only the person proposes purlis's own change.
+/// **Remove** on the Notice: each file's change held for the person to apply, each with its
+/// file. Window-only: only the person proposes purlis's own change.
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_old_harness_plugins(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
-) -> Result<Vec<u32>, String> {
+) -> Result<Vec<HeldRemoval>, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("proposing the old keys' removal", move || removed(&held)).await
 }
 
 /// [`remove_old_harness_plugins`]'s work, for project `held`.
-fn removed(held: &Held) -> Result<Vec<u32>, String> {
+fn removed(held: &Held) -> Result<Vec<HeldRemoval>, String> {
     let ids = removal_held(
         held.root(),
         held.proposals(),

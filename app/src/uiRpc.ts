@@ -5431,6 +5431,12 @@ export type HarnessSetupFound = {
 	local_models: LocalModelRow[],
 };
 
+/**  One change Remove held: its proposal's id, and the file it changes. */
+export type HeldRemoval = {
+	id: number,
+	file: string,
+};
+
 /**
  *  The project's hosts as they changed (`sandbox::local::HostsChange`): each spelled as the
  *  sandbox writes it.

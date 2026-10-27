@@ -53,8 +53,11 @@ fn remove_holds_a_change_per_file_and_writes_nothing_until_it_is_applied() {
     assert_eq!(notice_of(&root), None, "Remove answers the notice");
 
     let audit = |_: &purlis_core::proposed::Applied<'_>| Ok(());
-    for id in ids {
-        let one = proposals.get(id).expect("it waits");
+    let files: Vec<&str> = ids.iter().map(|one| one.file.as_str()).collect();
+    assert_eq!(files, ["charter.toml", "charter.local.toml"]);
+    for held in ids {
+        let one = proposals.get(held.id).expect("it waits");
+        assert_eq!(one.path, held.file);
         assert_eq!(one.session, BY_PURLIS, "no chat's");
         apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Tab).expect("applied");
     }
@@ -72,7 +75,7 @@ fn a_change_purlis_proposes_is_stale_once_the_file_moves() {
     let ids = removal_held(&root, &proposals, 7).expect("held");
     std::fs::write(root.join("charter.toml"), "[plane]\nname = \"q\"\n").expect("moved");
     let audit = |_: &purlis_core::proposed::Applied<'_>| Ok(());
-    let one = proposals.get(ids[0]).expect("it waits");
+    let one = proposals.get(ids[0].id).expect("it waits");
     assert_eq!(
         apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Tab),
         Err(crate::proposals::Refusal::Stale)
@@ -92,5 +95,6 @@ fn a_workspaces_old_settings_are_named_and_given_no_change() {
     assert_eq!(notice.files, ["workspaces/alpha/workspace.json"]);
     assert!(!notice.removable);
     let proposals = Proposals::default();
-    assert_eq!(removal_held(&root, &proposals, 1), Ok(Vec::new()));
+    assert!(removal_held(&root, &proposals, 1).is_err());
+    assert!(notice_of(&root).is_some(), "nothing held, so the notice still stands");
 }

@@ -219,6 +219,10 @@ pub fn asked_in(
     if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
         return Err(why);
     }
+    // No chat proposes as purlis itself, whose changes are judged by a wider rule.
+    if ask.chat == BY_PURLIS {
+        return Err(format!("chat {BY_PURLIS} is no chat that proposes"));
+    }
     if ask.change.carried() > proposed::MOST_BYTES {
         return Err(proposed::UNPREPARED.to_owned());
     }

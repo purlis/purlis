@@ -67,8 +67,7 @@ export function OldHarnessPluginsNotice({
         if (done.status !== "ok") return done;
         asksMoved(plane);
         const [first] = done.data;
-        const file = old.files.find((one) => !one.startsWith("workspaces/"));
-        if (first !== undefined && file !== undefined) askOpenProposal(plane, first, file);
+        if (first !== undefined) askOpenProposal(plane, first.id, first.file);
         return { status: "ok" as const };
       }),
     );

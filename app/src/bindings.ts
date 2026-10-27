@@ -823,10 +823,10 @@ export const commands = {
 	removable: boolean,
 } | null, string>(__TAURI_INVOKE("old_harness_plugins", { plane })),
 	/**
-	 *  **Remove** on the Notice: each file's change held for the person to apply, the ids of the
-	 *  changes held. Window-only: only the person proposes purlis's own change.
+	 *  **Remove** on the Notice: each file's change held for the person to apply, each with its
+	 *  file. Window-only: only the person proposes purlis's own change.
 	 */
-	removeOldHarnessPlugins: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("remove_old_harness_plugins", { plane })),
+	removeOldHarnessPlugins: (plane: PlaneId) => typedError<HeldRemoval[], string>(__TAURI_INVOKE("remove_old_harness_plugins", { plane })),
 	/**  **Dismiss** on the Notice: kept, so it is not said again. Window-only. */
 	dismissOldHarnessPlugins: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("dismiss_old_harness_plugins", { plane })),
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
@@ -7326,6 +7326,12 @@ export type HarnessRow = {
 export type HarnessSetupFound = {
 	harnesses: HarnessRow[],
 	local_models: LocalModelRow[],
+};
+
+/**  One change Remove held: its proposal's id, and the file it changes. */
+export type HeldRemoval = {
+	id: number,
+	file: string,
 };
 
 /**
