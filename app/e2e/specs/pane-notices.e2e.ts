@@ -513,8 +513,7 @@ describe("a Notice in a pane", () => {
     });
     await browser.pause(250);
     standingResult = await browser.execute(
-      () =>
-        document.querySelector<HTMLElement>(".window-work > .action-result")?.offsetHeight ?? 0,
+      () => document.querySelector<HTMLElement>(".window-work > .action-result")?.offsetHeight ?? 0,
     );
     await browser.execute(() => {
       for (const close of document.querySelectorAll<HTMLElement>(
