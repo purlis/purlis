@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793064601368,
+  "lastUpdate": 1793066646566,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26334,6 +26334,48 @@ window.BENCHMARK_DATA = {
             "value": 104.14301700000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.850, 102.933, 104.143, 104.943, 105.176 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e64ee499da99cb4bce24fe77d07919628d9ad958",
+          "message": "Grades: SK-16 follow-ups (adapter capability, permission modes, record checks, tidy-ups) (#3435)\n\n* Grades: which programs can grade is a capability the adapter declares (#3310)\n\nThe neutral core no longer names Claude Code. Each harness adapter declares\n`can_grade` (no default), and Claude Code alone says yes until #3272; the\nrefusal sentence is built from the adapters that can. What keeps a Claude\nCode chat from ever asking (the person's settings and the profile's bypass\nflags) moved into the Claude adapter's `grade_refused`, with one sentence\nfor settings purlis cannot find or read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: a graded chat refuses any permission mode but default or plan (#3352)\n\nA `--permission-mode` in the profile's command outranks the `default` mode\na grade's session settings pin, so a mode that asks nobody (acceptEdits,\nauto, dontAsk, or one a later Claude Code adds) would keep \"end at the\nfirst ask\" from ever firing. The Claude adapter now refuses every mode but\n`default` and `plan`, in each spelling the bypass check reads, with the\nbypass flags' sentence. A flag with no mode after it is refused too: it\nwould take the next word purlis adds.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: rows read back are checked whole, and a grade never stays running (#3353)\n\n- L1: `Graded::sound` checks the spend and the report too: a cost below\n  nothing, a grader that is no plain name, a test triggered more often\n  than it ran or run more often than the grade's runs, a rate that is not\n  their share, a pass where nothing ran, a chat that is no plain id, an\n  arm twice, a share or spread out of bounds, a difference past a whole,\n  or a reason holding a control character is skipped.\n- L2: a grade is held under way in `<state>/grades-under-way/<grade>.json`\n  while it runs. At a project's next start each one no running purlis\n  holds is recorded as `interrupted` (a new `GradeEnd`), so a crash or a\n  quit never loses it; its chat is ended with every other chat nothing\n  reattached (#2006).\n- L3: a panic inside a grade takes it out of the running grades, records\n  it as interrupted and tells the window it `failed`. Release builds abort\n  on a panic, so there the next start's record is what holds.\n- L4: the Grades panel reads only the rows of the copy the skill's tab\n  shows: `skill_panels` takes the level, and the tab hands it the copy the\n  details picked (the first copy until they say).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: SK-16 tidy-ups of levels, visibility and docs (#3275)\n\n- The Grades panel shows each copy's grades apart: it is of the copy the\n  skill's tab shows (the #3353 commit makes it so).\n- A plan's left-out trigger tests are `LeftOut { at, why }` in the core and\n  `GradeLeftOut { at, why }` to the window, which words them itself; the\n  terminal says them from the same type.\n- The fixture parser refuses an object that names a key twice (a new\n  `Wrong::KeyTwice`) instead of reading the last; refuses a file path part\n  holding a control character; names its 512-byte path limit\n  (`MOST_FILE_PATH_BYTES`); and checks eval ids with a set.\n- The grade module re-exports only what is used outside it, and\n  `grades::path_for` is private.\n- One refusal for a plan with no tests in `skill_grade_start`.\n- plane-format's `evals/` paragraph states its tier and names #3235;\n  CONTEXT.md's trigger test and outcome eval are fixtures a grade runs,\n  and the throwaway piece says grading's chats start in one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: a project's start names this machine only for a committed interrupted row (#3353)\n\nThe start's sweep of grades under way asked this machine's name (which\nreads its store under the config home) on every start, so a fenced\ntest's start was refused there. The name is now asked only when a row\ngoes to the committed record; a start with nothing under way, or with a\nlocal copy's grade, reads nothing of the machine's store.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T00:47:49Z",
+          "tree_id": "3330ab56de0417a0e4274035dc2eedc69d5fc4f4",
+          "url": "https://github.com/purlis/purlis/commit/e64ee499da99cb4bce24fe77d07919628d9ad958"
+        },
+        "date": 1793066642394,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.519138,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.493, 0.508, 0.519, 0.521, 0.522 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0583585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.935, 17.031, 17.058, 17.110, 17.426 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.3745375,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.499, 103.305, 103.375, 103.935, 104.617 ms"
           }
         ]
       }
