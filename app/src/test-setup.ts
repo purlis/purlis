@@ -52,6 +52,29 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 };
 
+// jsdom has no IntersectionObserver either, and the tree family's loading row (React Aria's
+// `TreeLoadMoreItem`, "Reading…") watches its place with one. Everything it is given is told at
+// once to be in sight, which is what the window takes a webview without one to mean.
+globalThis.IntersectionObserver ??= class {
+  readonly root = null;
+  readonly rootMargin = "";
+  readonly thresholds: readonly number[] = [];
+  constructor(private readonly told: IntersectionObserverCallback) {}
+  observe(target: Element) {
+    const entry = {
+      target,
+      isIntersecting: true,
+      intersectionRatio: 1,
+    } as IntersectionObserverEntry;
+    this.told([entry], this as unknown as IntersectionObserver);
+  }
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+} as unknown as typeof IntersectionObserver;
+
 // jsdom has no layout, so a Range has no client rects. CodeMirror measures one when it scrolls
 // to a line (RC-20 opens a file at a line), and the measure runs after the test that caused it.
 // An empty rect list is what an unlaid-out document would report.

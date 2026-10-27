@@ -46,7 +46,12 @@ export interface RowTipped {
 }
 
 /** The handlers and the drawing of a row's tooltip; nothing at all for a row without one. */
-export function useRowTip(tip: Tip | undefined): RowTipped {
+export function useRowTip(
+  tip: Tip | undefined,
+  /** Shown to the pointer alone: a tip that only repeats the row (a file's path) would be heard
+   *  on every arrow step. Nothing shows it on the keyboard, and so no Esc is spent on it. */
+  pointerOnly = false,
+): RowTipped {
   // Where the pointer rested as the delay ran out (its x in the window), while it is shown.
   const [pointed, setPointed] = useState<number | null>(null);
   const [dismissed, setDismissed] = useState(false);
@@ -71,7 +76,7 @@ export function useRowTip(tip: Tip | undefined): RowTipped {
   return {
     hover: { onPointerEnter, onPointerMove, onPointerLeave },
     drawn: (keyboardOn) =>
-      (pointed !== null || keyboardOn) &&
+      (pointed !== null || (keyboardOn && !pointerOnly)) &&
       !dismissed && (
         <Shown pointer={pointed} onEscape={() => setDismissed(true)}>
           {tip}

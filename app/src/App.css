@@ -2754,8 +2754,6 @@ body {
   padding: var(--space-4);
 }
 
-.explorer .pieces,
-.explorer .files,
 .explorer .absent ul {
   list-style: none;
   margin: 0;
@@ -2775,27 +2773,21 @@ body {
    second — because a run with only one of them in place still looks right.
 
    **Nothing here touches padding, font size or line height**: what this rule is about is
-   wrapping, and a row's metrics are its own rule's. The tree's guides (`.ui-tree`) are straight
-   lines down the group a level is (#1672), so no row's height is a number they are tuned to. */
+   wrapping, and a row's metrics are its own rule's. The tree's guides (`ui/tree`) are straight
+   lines down the rows a level is (#1672), so no row's height is a number they are tuned to. */
 .explorer .spot,
 .explorer .file-node,
-.explorer .clone > summary,
+.explorer .clone,
 .explorer .worktree,
 .explorer .absent-row {
   min-width: max-content;
   white-space: nowrap;
 }
 
-/* **The explorer's rows are the shared tree row** (DS-12, `.ui-row.ui-tree-row` in
-   `primitives/collections.css`): its height, its steps by `aria-level`, its guides, its twist,
-   its hover, its selected look and the keyboard's ring. What a row holds under it (a folder's
-   "Nothing here", a clone's "Asking git…", a branch's marks) stands where the row's children's
-   names start: the element holding it carries the children's level (`heldUnder` in
-   `Explorer.tsx`), and the sentence is drawn one step and a row's padding in from that depth. */
-.explorer .ui-tree :is(.none, .pending, .trouble, .worktree),
-.explorer .ui-tree .pieces > li > .worktree + .label {
-  padding-inline-start: calc((var(--ui-tree-depth) + 1) * var(--ui-tree-step) + var(--space-4));
-}
+/* **The explorer's rows are the tree family's** (#2911, `ui/tree`): its height, its steps by its
+   level, its guides, its twist, its hover, its chosen look and the keyboard's ring. What a row
+   holds under it (a folder's "Nothing here", a clone's "Asking git…") is a line of the tree, one
+   level under it. */
 
 /* An icon per kind of node, which is what tells the two kinds of leaf apart: a worktree is a
    branch and a chat is a terminal, and at four levels of indent the indent alone stopped
@@ -2857,25 +2849,24 @@ body {
 }
 
 /* A spot is what the next chat starts in. The current one is marked with more than colour —
-   a bar down its inline start and its own weight — because "where will this chat open" is
-   the one thing in this region that must never be read wrong. */
-/* Its fill and edge are a selected row's (`.ui-row`); the weight is the spot's own, on top. */
-.explorer .spot[aria-current="true"] {
-  font-weight: var(--font-weight-strong);
-}
+   a bar down its inline start, the tree family's chosen look — because "where will this chat
+   open" is the one thing in this region that must never be read wrong. No weight of its own:
+   a state never changes a row's size (#2800), and a bolder name is a wider one. */
 
 .explorer .explorer-section-head .twisty[data-open] {
   rotate: 90deg;
 }
 
-/* What git ignores, shown on request: there, and plainly not the branch's own work. */
-.explorer [data-ignored] > .file-node {
-  opacity: 0.55;
-}
-
 /* A file charter will not open says so beside it; its name is quieter than an openable one. */
 .explorer .file-node[data-refused] .spot-name {
   color: var(--text-muted);
+}
+
+/* What git ignores, shown on request: there, and plainly not the branch's own work. It never
+   opens, so its name is in the faint tier, a disabled row's (no opacity, #2794·4). After the
+   refused rule, which an ignored file is too. */
+.explorer .file-node[data-ignored] .spot-name {
+  color: var(--text-faint);
 }
 
 /* *Changed only*, *Show ignored files* and the picked rows' buttons: small toggles and buttons
@@ -2951,15 +2942,6 @@ body {
    the same. Added takes `state-success` and deleted `danger-base`, the editor's diff gutters'
    marks; changed takes `state-waiting` and renamed `accent-base`. Each is held on the window,
    the row under the pointer and the selected row in the engine's contrast pairs (#2392). */
-/* **Explorer's tree** (R129, #2917): 14px a level, its twisties in the quiet tier. */
-.explorer .ui-tree {
-  --ui-tree-step: calc(var(--space-5) + var(--space-1));
-}
-
-.explorer .ui-tree-twist {
-  color: var(--text-quiet);
-}
-
 .explorer .change-mark {
   margin-inline-start: auto;
   padding-inline: var(--space-2);
@@ -2969,26 +2951,26 @@ body {
 }
 
 .explorer .change-mark,
-.explorer [data-mark] > .file-node > .spot-name {
+.explorer .file-node[data-mark] .spot-name {
   color: var(--state-waiting);
 }
 
 .explorer .change-mark[data-mark="added"],
-.explorer [data-mark="added"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="added"] .spot-name {
   color: var(--state-success);
 }
 
 .explorer .change-mark[data-mark="deleted"],
-.explorer [data-mark="deleted"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="deleted"] .spot-name {
   color: var(--danger-base);
 }
 
 .explorer .change-mark[data-mark="renamed"],
-.explorer [data-mark="renamed"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="renamed"] .spot-name {
   color: var(--accent-base);
 }
 
-.explorer [data-mark="deleted"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="deleted"] .spot-name {
   text-decoration: line-through;
 }
 
@@ -3009,18 +2991,6 @@ body {
 
 .explorer .touch-mark + .change-mark {
   margin-inline-start: var(--space-2);
-}
-
-/* A clone's heading, a tree row like the others. The default disclosure marker goes, because
-   the platform draws it at its own size in its own glyph and the row has its own twist, which
-   points the way the disclosure went (`aria-expanded`). */
-.explorer .clone > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-.explorer .clone > summary::-webkit-details-marker {
-  display: none;
 }
 
 /* How many pieces a clone has, on its heading. A count is a pill; the two things that are not
@@ -3074,8 +3044,8 @@ body {
   border-color: var(--state-unreadable);
 }
 
-.explorer .none,
-.explorer .pending {
+/* A sentence of the region's. A line of a tree of the tree family is laid out as its rows are. */
+.explorer :where(.none, .pending):not([data-part="root"]) {
   display: flex;
   gap: var(--space-3);
   align-items: center;
@@ -3168,7 +3138,16 @@ body {
   gap: var(--space-3);
   align-items: flex-start;
   color: var(--state-failed);
+}
+
+.explorer .trouble:where(:not([data-part="root"])) {
   margin: var(--space-2) 0;
+}
+
+/* A folder that could not be read, a line of the file tree (#2911): its words and its mark in the
+   failed colour, on the line the tree family draws. */
+.explorer .trouble[data-part="root"] :is([role="alert"], .node-icon) {
+  color: var(--state-failed);
 }
 
 /* The mark is on the sentence's first line, not centred on a paragraph that wraps to three. */
@@ -6065,12 +6044,6 @@ nav.piece-files-head {
 
 .settling {
   animation: charter-settle var(--motion-duration-settle) var(--motion-easing-standard);
-}
-
-/* The explorer's twisty turns with the disclosure: motion that is the direct answer to a click,
-   saying which way the thing just went. */
-.explorer .ui-tree-twist {
-  transition: transform var(--motion-duration-quick) var(--motion-easing-standard);
 }
 
 .explorer .explorer-section-head .twisty {

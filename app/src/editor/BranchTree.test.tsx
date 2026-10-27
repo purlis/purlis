@@ -3,6 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { ASK_AGAIN_MS, BranchTree } from "./BranchTree";
@@ -101,7 +102,7 @@ describe("the file tab's live marker", () => {
   it("marks the file a chat in the branch touches, and the folders above it", async () => {
     const asked = core([chat(3, "fix login", ONE.path)]);
     render(<BranchTree plane={PLANE} place={CUT} onPick={() => {}} />);
-    await screen.findByRole("treeitem", { name: /^README\.md/ });
+    await screen.findByRole("row", { name: /^README\.md/ });
     // Nothing touched yet: nothing asked beyond the tree.
     expect(asked).toEqual([]);
 
@@ -131,7 +132,7 @@ describe("the file tab's live marker", () => {
         <BranchTree plane={PLANE} place={CUT} onPick={() => {}} />
       </ReferenceChats.Provider>,
     );
-    await screen.findByRole("treeitem", { name: /^README\.md/ });
+    await screen.findByRole("row", { name: /^README\.md/ });
 
     await touch(3, "README.md");
 
@@ -141,7 +142,7 @@ describe("the file tab's live marker", () => {
   it("marks a repo's own folder by the clone's path", async () => {
     const asked = core([chat(4, "steward 4", PANELS.paths.svc)]);
     render(<BranchTree plane={PLANE} place={REPO} onPick={() => {}} />);
-    await screen.findByRole("treeitem", { name: /^README\.md/ });
+    await screen.findByRole("row", { name: /^README\.md/ });
 
     await touch(4, "README.md");
 
@@ -152,7 +153,7 @@ describe("the file tab's live marker", () => {
   it("marks nothing for a chat elsewhere or another project's touch", async () => {
     const asked = core([chat(4, "steward 4", "/plane/workspaces/alpha/svc")]);
     render(<BranchTree plane={PLANE} place={CUT} onPick={() => {}} />);
-    await screen.findByRole("treeitem", { name: /^README\.md/ });
+    await screen.findByRole("row", { name: /^README\.md/ });
 
     await touch(3, "README.md", "/another" as unknown as PlaneId);
     expect(asked).toEqual([]);
@@ -186,7 +187,7 @@ describe("the file tab's live marker", () => {
     const open: OpenChat[] = [];
     const asked = core(open);
     render(<BranchTree plane={PLANE} place={CUT} onPick={() => {}} />);
-    await screen.findByRole("treeitem", { name: /^README\.md/ });
+    await screen.findByRole("row", { name: /^README\.md/ });
 
     // The chat touches a file before the list has it.
     await touch(3, "README.md");
@@ -212,7 +213,7 @@ describe("the file tab's live marker", () => {
     const pass = clock();
     const asked = core([chat(3, "fix login", ONE.path)], 1);
     render(<BranchTree plane={PLANE} place={CUT} onPick={() => {}} />);
-    await screen.findByRole("treeitem", { name: /^README\.md/ });
+    await screen.findByRole("row", { name: /^README\.md/ });
 
     await touch(3, "README.md");
     await settle();
@@ -237,27 +238,68 @@ describe("the file tab's live marker", () => {
   });
 });
 
-describe("the file tab's tree, in the window's one tree style (#1672)", () => {
-  it("draws the file it shows selected, and its folders' levels with a guide", async () => {
+describe("the file tab's tree, the tree family's (#2911)", () => {
+  it("draws the file it shows chosen, and its folders' levels with a guide", async () => {
     core([]);
     render(<BranchTree plane={PLANE} place={CUT} picked="README.md" onPick={() => {}} />);
-    const file = await screen.findByRole("treeitem", { name: /^README\.md/ });
-    const tree = screen.getByRole("tree", { name: /^Files of/ });
-    // The shared tree (DS-12, `primitives/collections.css`): rows are its tree rows.
-    expect(tree).toHaveClass("ui-tree");
+    const file = await screen.findByRole("row", { name: /^README\.md/ });
+    const tree = screen.getByRole("treegrid", { name: /^Files of/ });
+    expect(tree).toHaveAttribute("data-scope", "tree");
 
     expect(file.getAttribute("aria-selected")).toBe("true");
-    expect(drawnWith(file, "background")).toBe("var(--list-selected)");
+    expect(drawnWith(file, "background-color")).toBe("var(--list-selected)");
     expect(drawnWith(file, "box-shadow")).toContain("var(--list-selected-edge)");
-    const folder = screen.getByRole("treeitem", { name: /^src/ });
-    expect(drawnWith(folder, "background", { hover: true })).toBe("var(--surface-hover)");
-    // A level is a step in by its `aria-level`, and each level above it draws a guide.
+    const folder = screen.getByRole("row", { name: /^src/ });
+    // A folder is never chosen: a press on it opens or closes it.
+    expect(folder).not.toHaveAttribute("aria-selected", "true");
+    expect(drawnWith(folder, "background-color", { hover: true })).toBe("var(--surface-hover)");
+    // A level is a step in by its depth, and each level above it draws a guide.
     for (const row of [file, folder]) {
-      expect(row).toHaveClass("ui-row", "ui-tree-row");
-      expect(row).toHaveAttribute("aria-level");
-      expect(drawnWith(row, "min-block-size")).toBe("var(--ui-row-height)");
-      expect(drawnWith(row, "padding-inline-start")).toContain("var(--ui-tree-step)");
-      expect(drawnWith(row, "background-image")).toContain("var(--tree-guide)");
+      expect(row).toHaveAttribute("data-scope", "tree");
+      expect(row).toHaveAttribute("aria-level", "1");
+      expect(drawnWith(row, "padding-inline-start")).toContain("var(--tree-step)");
     }
+  });
+
+  it("picks a file on a press and on Enter, and opens a folder on one", async () => {
+    core([]);
+    const picked: string[] = [];
+    render(<BranchTree plane={PLANE} place={CUT} onPick={(path) => picked.push(path)} />);
+    const readme = await screen.findByRole("row", { name: /^README\.md/ });
+    await userEvent.click(readme);
+    expect(picked).toEqual(["README.md"]);
+    // Enter on it picks it too, and Enter on the file shown shows it again.
+    await userEvent.keyboard("{Enter}");
+    expect(readme).toHaveFocus();
+    expect(picked).toEqual(["README.md", "README.md"]);
+    const src = screen.getByRole("row", { name: /^src/ });
+    await userEvent.click(src);
+    expect(src).toHaveAttribute("aria-expanded", "true");
+    expect(picked).toEqual(["README.md", "README.md"]);
+    // Enter on a folder closes it, and picks nothing.
+    await userEvent.keyboard("{Enter}");
+    expect(src).toHaveAttribute("aria-expanded", "false");
+    expect(picked).toEqual(["README.md", "README.md"]);
+  });
+
+  it("shows the file shown again on a press, and stops the Tab on it", async () => {
+    core([]);
+    const picked: string[] = [];
+    render(
+      <BranchTree
+        plane={PLANE}
+        place={CUT}
+        picked="README.md"
+        onPick={(path) => picked.push(path)}
+      />,
+    );
+    const readme = await screen.findByRole("row", { name: /^README\.md/ });
+    await userEvent.tab();
+    expect(readme).toHaveFocus();
+    await userEvent.keyboard("{ArrowUp}");
+    // The arrows never show a file.
+    expect(picked).toEqual([]);
+    await userEvent.click(readme);
+    expect(picked).toEqual(["README.md"]);
   });
 });

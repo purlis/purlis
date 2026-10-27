@@ -65,8 +65,9 @@ import { Tree, TreeRow } from "./ui/tree/Tree";
  * family's — Up, Down, Home and End, Right into a row's first child, Left back to its parent, and
  * type-ahead on a row's words. The stop at rest is the tree, which hands the keyboard to its
  * first row, and is where ⌃⇧G puts it (`giveViewTheKeyboard` lands on a tree's stop). A row the keyboard is on is read,
- * never run: Enter and Space do nothing here. **A row is named by the whole of its words**, its
- * kind first (`changes: 3 changed`): a tree's row is named by what typing finds it by.
+ * never run: Enter and Space do nothing here. **A row is named by the whole of its words**, the
+ * words it shows first and its kind after them where they do not say it (`3 changed, changes`):
+ * a tree's row is named by what typing finds it by, so typing what is seen finds it.
  *
  * **Read-only, and that is asserted rather than described** — `regions.e2e.ts` presses on
  * every control in here and expects to find none. A focusable row is not a control: it is what
@@ -178,6 +179,7 @@ export function ChangesView({
       ) : (
         <Tree
           aria-label={`Repos of ${workspace}`}
+          fit="content"
           data-testid="changes-tree"
           size="sm"
           fixed
@@ -202,7 +204,7 @@ export function ChangesView({
             <TreeRow
               key={`absent-${name}`}
               id={absentRow(name)}
-              textValue={`${name}: ${absentSaid(cloning.get(name))}`}
+              textValue={`${name} ${absentSaid(cloning.get(name))}`}
               className="repo-row absent tree-row"
               data-testid={`repo-${name}`}
               data-repo={name}
@@ -343,13 +345,13 @@ function repoRows({
   const menu = catalogueMenu({ on: "clone", repo: name }, at.offers, at.onPress);
   const head =
     state !== undefined && state.unreadable === null
-      ? [headOf(state), state.upstream, gapOf(state)].filter(Boolean).join(", ")
+      ? [headOf(state), state.upstream, gapOf(state)].filter(Boolean).join(" ")
       : "";
   return (
     <TreeRow
       key={name}
       id={repoRow(name)}
-      textValue={head === "" ? name : `${name}, on ${head}`}
+      textValue={head === "" ? name : `${name} ${head}`}
       className="repo-row tree-row"
       data-testid={`repo-${name}`}
       data-repo={name}
@@ -372,7 +374,7 @@ function repoRows({
     >
       <TreeRow
         id={changesRow(name)}
-        textValue={`changes: ${state === undefined ? unread : (state.unreadable ?? dirtOf(state))}`}
+        textValue={`${state === undefined ? unread : (state.unreadable ?? dirtOf(state))}, changes`}
         className="changes tree-row"
         data-testid={`changes-${name}`}
         data-repo={name}
@@ -398,7 +400,7 @@ function repoRows({
       />
       <TreeRow
         id={branchesRow(name)}
-        textValue={`branches: ${worktreesSaid(pieces, piecesRefused)}`}
+        textValue={worktreesSaid(pieces, piecesRefused)}
         className="worktrees tree-row"
         data-testid={`worktrees-${name}`}
         data-repo={name}
@@ -456,7 +458,7 @@ function repoRows({
         // 2026-10-25): named by path, drawn inertly, so the person knows what stayed here.
         <TreeRow
           id={leftOutRow(name)}
-          textValue={`not sent: ${leftOutSaid(state?.left_out_of_send ?? [])}`}
+          textValue={leftOutSaid(state?.left_out_of_send ?? [])}
           className="runner-left-out tree-row"
           data-testid={`left-out-${name}`}
           data-repo={name}
@@ -471,7 +473,7 @@ function repoRows({
       )}
       <TreeRow
         id={ciRow(name)}
-        textValue={`pipeline: ${state === undefined ? unread : ciSaid(state)}`}
+        textValue={`${state === undefined ? unread : ciSaid(state)}, pipeline`}
         className="ci tree-row"
         data-testid={`ci-${name}`}
         data-repo={name}
@@ -492,7 +494,7 @@ function repoRows({
           <TreeRow
             key={`${column.extension}/${column.id}`}
             id={factRow(name, column)}
-            textValue={`${column.title}: ${cell.value}${cell.stale ? `, ${ago(cell.age_seconds)}` : ""}`}
+            textValue={`${column.title} ${cell.value}${cell.stale ? ` · ${ago(cell.age_seconds)}` : ""}`}
             className={cell.stale ? "fact stale tree-row" : "fact tree-row"}
             data-testid={`fact-${column.extension}-${column.id}-${name}`}
             data-repo={name}
@@ -660,13 +662,13 @@ const CI_MARK: Record<string, { Mark: typeof CircleCheck; moving?: "spinning" | 
 /** What {@link CiWords} says, in words. */
 function ciSaid(state: RepoState): string {
   if (state.ci)
-    return [
-      state.ci,
-      ...(state.change !== null ? [`${state.sigil ?? "#"}${state.change}`] : []),
-      ago(state.fetched_seconds_ago),
-    ].join(", ");
+    return (
+      [state.ci, ...(state.change !== null ? [`${state.sigil ?? "#"}${state.change}`] : [])].join(
+        " ",
+      ) + ` · ${ago(state.fetched_seconds_ago)}`
+    );
   if (state.not_fetched) return `not fetched — ${state.not_fetched}`;
-  return `no pipeline recorded, ${ago(state.fetched_seconds_ago)}`;
+  return `no pipeline recorded · ${ago(state.fetched_seconds_ago)}`;
 }
 
 function CiWords({ state }: { state: RepoState }) {

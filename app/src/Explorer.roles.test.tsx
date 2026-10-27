@@ -118,7 +118,7 @@ describe("the Explorer's words, each on its text role", () => {
   it("heads the Files section with the one section label, and what it is of beside it as data", async () => {
     core({ "one:": [entry("src", { kind: "folder" }), entry("README.md")] });
     const drawn = draw({ spot: PICKED });
-    await screen.findByRole("treeitem", { name: /README\.md/ });
+    await screen.findByRole("row", { name: /README\.md/ });
 
     const head = drawn.querySelector('[data-section="files"] .explorer-section-head');
     wears(head, "label", "the Files heading");
@@ -139,44 +139,63 @@ describe("the Explorer's words, each on its text role", () => {
     });
   });
 
-  it("draws a file's and a folder's name as a body, from the Explorer's root", async () => {
+  it("draws a file's and a folder's name at the body's size, in a tree row's tier", async () => {
     core({ "one:": [entry("src", { kind: "folder" }), entry("README.md")] });
     const drawn = draw({ spot: PICKED });
-    const file = await screen.findByRole("treeitem", { name: /README\.md/ });
-    const folder = await screen.findByRole("treeitem", { name: /^src/ });
+    const file = await screen.findByRole("row", { name: /README\.md/ });
+    const folder = await screen.findByRole("row", { name: /^src/ });
 
     expect(drawn.querySelector(".explorer")).toHaveClass("ui-text-body");
-    drawnAs(file.querySelector(".spot-name"), "body", "a file's name");
-    drawnAs(folder.querySelector(".spot-name"), "body", "a folder's name");
+    // The words are the row's: the body's size and weight from the Explorer's root, in the
+    // secondary tier at rest and the primary once chosen, as every row of a tree (#2911, R19).
+    for (const row of [file, folder]) {
+      expect(row.querySelector(".spot-name")).not.toBeNull();
+      expect(drawnWith(row, "color")).toBe("var(--text-secondary)");
+      expect(drawnWith(row, "font-size")).toBeUndefined();
+    }
   });
 
-  it("says an empty folder as a secondary line, not a dimmed body", async () => {
+  it("says an empty folder as a line of the tree in the quiet tier, not a dimmed body", async () => {
     core({ "one:": [] });
     const drawn = draw({ spot: PICKED });
-    const none = await within(drawn).findByText("Nothing here");
-    wears(none, "secondary", "Nothing here");
-    expect(drawnWith(none, "opacity")).toBeUndefined();
+    const none = (await within(drawn).findByText("Nothing here")).closest<HTMLElement>(
+      '[data-part="root"]',
+    );
+    // Informational words, so the quiet tier (#2911): a line of the tree family.
+    expect(none).toHaveAttribute("data-line");
+    expect(drawnWith(none as HTMLElement, "color")).toBe("var(--text-quiet)");
+    expect(drawnWith(none as HTMLElement, "opacity")).toBeUndefined();
   });
 
   it("draws the Repos view's rows on the roles: names, where, counts and marks", () => {
     core({});
     const drawn = draw({ part: "repos" });
-    const tree = within(drawn).getByRole("tree", { name: "Repos and branches" });
+    const tree = within(drawn).getByRole("treegrid", { name: "Repos and branches" });
 
     wears(drawn.querySelector(".explorer-section-head"), "label", "the Repos title");
     const root = tree.querySelector(".spot-root");
-    drawnAs(root?.querySelector(".spot-name"), "body", "the workspace's name", true);
+    // The workspace's row is the current one here: its name at the body's size, in the primary
+    // tier a chosen row's words take, at no weight of its own (#2911).
+    drawnAs(root?.querySelector(".spot-name"), "body", "the workspace's name");
     wears(root?.querySelector(".spot-what"), "secondary", "the workspace itself");
 
     const clone = within(drawn).getByTestId("clone-svc");
     wears(clone.querySelector(".repo"), "body", "a repo's name", true);
     // A count is the count family's pill (#2912), its number at the strong weight (T5).
     expect(clone.querySelector(".piece-count")).toHaveAttribute("data-scope", "count");
-    drawnAs(clone.querySelector(".spot .spot-name"), "body", "a branch's name");
-    wears(clone.querySelector(".spot-in"), "secondary", "the repo a branch is in");
-    wears(clone.querySelector(".worktree"), "meta", "a branch's marks");
+    // A branch's row: its name at the body's size in a tree row's tier at rest (#2911, R19).
+    const branch = tree.querySelector<HTMLElement>('[data-clone="svc"].spot');
+    if (branch === null) throw new Error("no branch row drawn under svc");
+    expect(branch.querySelector(".spot-name")).not.toBeNull();
+    expect(drawnWith(branch, "color")).toBe("var(--text-secondary)");
+    wears(branch.querySelector(".spot-in"), "secondary", "the repo a branch is in");
+    wears(branch.querySelector(".worktree"), "meta", "a branch's marks");
 
-    wears(within(drawn).getByText("No branches cut here"), "secondary", "No branches cut here");
+    // What a clone holds when it holds nothing: a line of the tree, in the quiet tier.
+    const none = within(drawn)
+      .getByText("No branches cut here")
+      .closest<HTMLElement>("[data-line]");
+    expect(none && drawnWith(none, "color")).toBe("var(--text-quiet)");
   });
 
   it("says there is nothing to list as a secondary sentence, at its full strength", () => {
@@ -195,8 +214,7 @@ describe("the Explorer's words, each on its text role", () => {
       .filter(({ property: name }) => ["font-size", "font-weight", "line-height"].includes(name))
       .map(({ context, property: name, value }) => `${context.join(" ")} | ${name}: ${value}`);
     expect(typed).toEqual([
-      // The current spot's own weight, on the row that names where the next chat starts.
-      '.explorer .spot[aria-current="true"] | font-weight: var(--font-weight-strong)',
+      // No weight for the current spot: a state never changes a row's size (#2800, #2911).
       // A change's letter or count: a meta's size at the strong weight, in its change's colour.
       ".explorer .change-mark | font-size: var(--font-size-xs)",
       ".explorer .change-mark | font-weight: var(--font-weight-strong)",
