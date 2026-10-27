@@ -304,7 +304,16 @@ pub fn runs_here(path: &str) -> bool {
 fn to_watch(repo: &Path, from: &str, to: &str) -> Vec<String> {
     let Ok(changed) = run(
         repo,
-        &["diff-tree", "-r", "-z", "--no-renames", "--diff-filter=AMT", "--raw", from, to],
+        &[
+            "diff-tree",
+            "-r",
+            "-z",
+            "--no-renames",
+            "--diff-filter=AMT",
+            "--raw",
+            from,
+            to,
+        ],
     ) else {
         return Vec::new();
     };

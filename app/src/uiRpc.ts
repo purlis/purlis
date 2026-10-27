@@ -6080,6 +6080,8 @@ export type MoveNow = {
 	chat: OpenChat | null,
 	/**  Why it did not move yet, in a sentence: it moves at a later pause. */
 	not_yet: string | null,
+	/**  What its tab says after the move: what came back that the person is to look at. */
+	notices: string[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */

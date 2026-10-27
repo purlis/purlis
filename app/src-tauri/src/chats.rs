@@ -2598,7 +2598,10 @@ impl Chats {
     /// **Says `note` on chat `session`'s tab** with what its start found to say (#2048): what a
     /// move found that the person is to look at.
     pub fn note_on_its_tab(&self, session: u32, note: String) {
-        lock(&self.late_notes).entry(session).or_default().push(note);
+        lock(&self.late_notes)
+            .entry(session)
+            .or_default()
+            .push(note);
     }
 
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.

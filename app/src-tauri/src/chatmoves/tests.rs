@@ -148,7 +148,10 @@ fn a_tab_names_what_came_back_that_a_local_tool_runs_and_nothing_when_none_did()
     assert_eq!(came_back_said(Some("builds"), &[]), None);
     let said = came_back_said(
         Some("builds"),
-        &["workspaces/app/web/.envrc".into(), "workspaces/app/web/package.json".into()],
+        &[
+            "workspaces/app/web/.envrc".into(),
+            "workspaces/app/web/package.json".into(),
+        ],
     )
     .unwrap();
     assert!(said.contains("pool builds"), "{said}");
