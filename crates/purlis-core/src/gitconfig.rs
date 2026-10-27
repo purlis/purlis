@@ -253,7 +253,8 @@ fn read_bounded(path: &str, limit: u64) -> Option<Vec<u8>> {
 fn pointer_target(dot: &str, base: &str) -> Option<String> {
     let head = read_bounded(dot, MAX_POINTER_BYTES)?;
     let text = String::from_utf8_lossy(&head);
-    let line = py_splitlines(&text).into_iter().next()?;
+    let first = *purlis_skills::fence::lines(&text).first()?;
+    let line = &text[first.start..first.end];
     let (label, target) = line.split_once(':')?;
     if py_strip(label).to_lowercase() != "gitdir" {
         return None;

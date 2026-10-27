@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 pub use purlis_skills::change::{
     BuiltInTemplates, Offer, Problem, SkillTemplate, Template, TemplateId, check,
 };
+/// The line format's one parser, and its `str.strip` and `str.splitlines` (#3482).
+pub use purlis_skills::fence;
 pub use purlis_skills::{
     Argument, At, BUILT_IN_OWN_PREFIX, BUILT_IN_PREFIXES, Budget, Chat, Clash, Compat,
     DIR_IN_BUNDLE, Declared, Effective, Field, Finding, Fit, FromHarness, Given, Grant,
