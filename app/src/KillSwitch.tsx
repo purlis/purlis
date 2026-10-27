@@ -32,6 +32,8 @@ export function KillSwitch() {
   const [stopped, setStopped] = useState(false);
   const [busy, setBusy] = useState(false);
   const [trouble, setTrouble] = useState<string>();
+  /** The runners a re-arm re-arms beside this machine (#2051): named before the press. */
+  const [runners, setRunners] = useState<readonly string[]>([]);
 
   const ask = useCallback(
     () =>
@@ -47,6 +49,21 @@ export function KillSwitch() {
         ),
     [],
   );
+
+  // Read again each time the switch is thrown: which runners its stop stopped is the host's.
+  useEffect(() => {
+    if (!stopped) return;
+    let current = true;
+    commands.runnersARearmReaches().then(
+      (said) => {
+        if (current && said.status === "ok" && Array.isArray(said.data)) setRunners(said.data);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [stopped]);
 
   useEffect(() => {
     let gone = false;
@@ -84,8 +101,14 @@ export function KillSwitch() {
       });
   };
 
+  // An armed switch names none: what was read while it was stopped is not shown.
+  const reaches = stopped ? runners : [];
   const label = stopped
-    ? "Every chat purlis started is stopped — re-arm to let chats start again"
+    ? reaches.length === 0
+      ? "Every chat purlis started is stopped — re-arm to let chats start again"
+      : `Every chat purlis started is stopped — re-arm to let chats start again here and on ${
+          reaches.length === 1 ? "runner" : "runners"
+        } ${reaches.join(", ")}`
     : "Stop every chat and shell purlis started, in every project and window";
   return (
     <>

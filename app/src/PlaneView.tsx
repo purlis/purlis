@@ -104,7 +104,7 @@ import { Menued } from "./Menus";
 import { afterDrop, reslotted } from "./reorder";
 import { stripAccessibility, useStripSensors } from "./sortable";
 import { NewWorkspace } from "./NewWorkspace";
-import { FORGE_LOGIN, type LoginAsk } from "./RepoPicker";
+import { FORGE_LOGIN, typableLogin, type LoginAsk } from "./RepoPicker";
 import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
@@ -217,8 +217,9 @@ import {
   type Toggled,
   type ViewId,
 } from "./regions";
-import { drawnOnlyPresent, NO_PREVIEWS, PREVIEWED_VIEWS, type ViewPlace } from "./sideViews";
+import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
 import { SkillsView, type FrontChat } from "./SkillsView";
+import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
@@ -415,7 +416,7 @@ import type {
 } from "./bindings";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
-import { skillStudioTitle, skillStudioView, useSkillStudioOn } from "./skillStudio";
+import { skillStudioTitle, skillStudioView, useSkillStudioSaid } from "./skillStudio";
 import { SkillRunsHere, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
@@ -499,10 +500,6 @@ import {
 } from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
-
-/** Any C0 or C1 control character, or DEL: what a line typed and left unrun must not hold. */
-// eslint-disable-next-line no-control-regex
-const HAS_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -1012,8 +1009,10 @@ export const PlaneView = memo(function PlaneView({
    *  again after a write — a vault's own tab (charter-app#235). */
   const vaults = useVaults(plane);
   const vaultNames = useMemo(() => vaults.vaults?.map((one) => one.name), [vaults.vaults]);
-  // Whether the Skill studio's flag is on (#2765): its palette row is offered only then.
-  const studioOn = useSkillStudioOn();
+  // Whether the Skill studio's flag is on (#2765): its palette row is offered only then. What
+  // the core said of it, `undefined` until it has, holds a side left on Skills (#3308).
+  const studioSaid = useSkillStudioSaid();
+  const studioOn = studioSaid === true;
   /** Every chat open here, by session, in strip order: whose skill budgets the window holds. */
   const chatSessions = useMemo(
     () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
@@ -1297,12 +1296,13 @@ export const PlaneView = memo(function PlaneView({
     },
     [searchHere, showSide],
   );
-  /** **Show in Explorer's ask** (#3266, the Skills view): the folder, with a count that moves on
-   *  each ask, so asking for the same folder again shows it again. */
-  const [explorerReveal, setExplorerReveal] = useState<{ folder: string; asked: number }>();
+  /** **Show in Explorer's ask** (#3266, #3308, the Skills view): the folder, in the project's own
+   *  files or a clone's, with a count that moves on each ask, so asking for the same folder
+   *  again shows it again. */
+  const [explorerReveal, setExplorerReveal] = useState<ExplorerPlace & { asked: number }>();
   const revealInExplorer = useCallback(
-    (folder: string) => {
-      setExplorerReveal((was) => ({ folder, asked: (was?.asked ?? 0) + 1 }));
+    (place: ExplorerPlace) => {
+      setExplorerReveal((was) => ({ ...place, asked: (was?.asked ?? 0) + 1 }));
       showSideView("explorer");
     },
     [showSideView],
@@ -2381,8 +2381,13 @@ export const PlaneView = memo(function PlaneView({
   const [sidePanels, setSidePanels] = useState(sidePanelsNow);
   if (!samePanels(sidePanels, sidePanelsNow)) setSidePanels(sidePanelsNow);
   /** **The views behind a preview that is on** (#3266): Skills while the Skill studio's is. One
-   *  left out is drawn nowhere, and its side opens on its first view until it is back. */
-  const previews = studioOn ? PREVIEWED_VIEWS : NO_PREVIEWS;
+   *  left out is drawn nowhere, and its side opens on its first view until it is back. Until the
+   *  core has said, a side left on Skills is held there, drawn empty (#3308). */
+  const pickedViews = arrangement.map((one) => one.view).join(" ");
+  const previews = useMemo(
+    () => previewsDrawn(studioSaid, pickedViews.split(" ")),
+    [studioSaid, pickedViews],
+  );
   /** Every view drawn only while it is present: the extensions' panels contributed now, and the
    *  views behind a preview that is on. */
   const presentViews = useMemo(
@@ -3122,9 +3127,13 @@ export const PlaneView = memo(function PlaneView({
       const asked = (event as CustomEvent<LoginAsk>).detail;
       if (asked.plane !== plane || sidebar === undefined) return;
       // "Typed, not run" holds here, not only in the core's host check: a line with a control
-      // character in it (a newline is a Return) is refused and typed nowhere.
-      if (HAS_CONTROL.test(asked.line)) {
-        refusedBy("shell", "purlis will not type a login line that holds a control character");
+      // character in it (a newline is a Return), or any other the one rule hides, is refused
+      // and typed nowhere (#3470).
+      if (!typableLogin(asked.line)) {
+        refusedBy(
+          "shell",
+          "purlis will not type a login line that holds a control or a hidden character. Type the login in a terminal yourself.",
+        );
         return;
       }
       openShell(sidebar.root, OUTSIDE, { line: asked.line, held: true });
@@ -8241,6 +8250,7 @@ export const PlaneView = memo(function PlaneView({
    *  so a project behind another has its own summary when the person switches to it. */
   const { away: awayOn } = useChatsListPrefs();
   const awayNow = useAwaySummary({
+    plane,
     chats,
     on: awayOn,
     finished: finishedTasks,
@@ -8390,6 +8400,15 @@ export const PlaneView = memo(function PlaneView({
   ]);
   /** The Inbox, shown: where the away summary's refused dispatches are answered (#1693). */
   const showInbox = useCallback(() => showSideView("inbox"), [showSideView]);
+  /** A runner's branch ready to push, from the away summary (#2051): its workspace in front,
+   *  and Changes, where it is taken here and pushed. */
+  const showChangesOf = useCallback(
+    (workspace: string) => {
+      focusWorkspace(workspace);
+      showSideView("changes");
+    },
+    [focusWorkspace, showSideView],
+  );
   /**
    * **An answer given on a pane is listed in the Inbox once its ask goes** (#1700, 2026-10-10
    * 21:09 item 2), as one given in the Inbox is: a pane's Notice says the words pressed and the
@@ -8702,6 +8721,7 @@ export const PlaneView = memo(function PlaneView({
         onShowChat={showChat}
         onShowFinished={showFinished}
         onShowInbox={showInbox}
+        onShowChanges={showChangesOf}
       />
       {alerts !== undefined && (
         <InboxAlerts

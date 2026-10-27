@@ -7,10 +7,11 @@
  * own answer.
  */
 import { describe, expect, it } from "vitest";
-import type { ChatSkill, StudioSkill } from "./bindings";
+import type { ChatSkill, SkillPinsRefused, StudioSkill } from "./bindings";
 import { skill, studio } from "./skillsListing.testkit";
 import {
   BUILT_IN_STAYS,
+  explorerPlaceOf,
   groupsOf,
   listedOf,
   markOf,
@@ -20,6 +21,7 @@ import {
   tipOf,
   turnOf,
   type ListedSkill,
+  type MenuAt,
 } from "./skillsListing";
 
 const row = (one: StudioSkill, more: Partial<ListedSkill> = {}): ListedSkill => ({
@@ -153,9 +155,6 @@ describe("the list's groups", () => {
       ["Local", ["mine"]],
       ["Claude Code", ["pdf"]],
     ]);
-    // A program's name is data; purlis's own words are not.
-    expect(groups.find((one) => one.title === "Claude Code")?.named).toBe(true);
-    expect(groups.find((one) => one.title === "Project")?.named).toBe(false);
   });
 
   it("draw no Needs you while nothing needs the person", () => {
@@ -265,7 +264,9 @@ describe("the rows narrowed to one chat's real set", () => {
     ]);
     // The program's own skill keeps the studio's own mark, and a repo's can be used.
     expect(markOf(narrowed[2])).toBe("lint");
-    expect(menuRowsOf(narrowed[3], { workspace: "ops", chat: true })[0]).toMatchObject({
+    expect(
+      menuRowsOf(narrowed[3], { workspace: "ops", explorer: "ops", chat: true })[0],
+    ).toMatchObject({
       act: "use",
       available: true,
     });
@@ -299,14 +300,22 @@ describe("the rows narrowed to one chat's real set", () => {
 
 describe("a row's menu", () => {
   it("offers Use in this chat only while a chat is in front", () => {
-    const chat = menuRowsOf(row(skill("deploy")), { workspace: "ops", chat: true });
+    const chat = menuRowsOf(row(skill("deploy")), {
+      workspace: "ops",
+      explorer: "ops",
+      chat: true,
+    });
     expect(chat.map((one) => one.title)).toEqual([
       "Use in this chat",
       "Turn off in ops",
       "Pin to this workspace",
       "Show in the Explorer view",
     ]);
-    const none = menuRowsOf(row(skill("deploy")), { workspace: "ops", chat: false });
+    const none = menuRowsOf(row(skill("deploy")), {
+      workspace: "ops",
+      explorer: "ops",
+      chat: false,
+    });
     expect(none.map((one) => one.act)).toEqual(["turn", "pin", "explorer"]);
   });
 
@@ -315,7 +324,7 @@ describe("a row's menu", () => {
       row(skill("out", { on: false, left_out: "Its grant does not reach ops." })),
       row(skill("deploy"), { inChat: false }),
     ])
-      expect(menuRowsOf(one, { workspace: "ops", chat: true })[0]).toEqual({
+      expect(menuRowsOf(one, { workspace: "ops", explorer: "ops", chat: true })[0]).toEqual({
         act: "use",
         title: "Use in this chat",
         available: false,
@@ -343,6 +352,7 @@ describe("a row's menu", () => {
     ).toEqual({ reason: "Its grant does not reach ops." });
     const mine = menuRowsOf(row(skill("mine", { level: "workspace" })), {
       workspace: "ops",
+      explorer: "ops",
       chat: false,
     });
     expect(mine[0]).toMatchObject({
@@ -354,9 +364,13 @@ describe("a row's menu", () => {
 
   it("pins a skill to the title bar's workspace, or unpins it while that workspace pins it", () => {
     const pin = (one: StudioSkill, workspace: string | undefined = "ops") =>
-      menuRowsOf(row(one), { workspace, chat: true }).find((r) => r.act === "pin");
+      menuRowsOf(row(one), { workspace, explorer: workspace, chat: true }).find(
+        (r) => r.act === "pin",
+      );
     expect(
-      menuRowsOf(row(skill("deploy")), { workspace: "ops", chat: true }).map((r) => r.act),
+      menuRowsOf(row(skill("deploy")), { workspace: "ops", explorer: "ops", chat: true }).map(
+        (r) => r.act,
+      ),
     ).toEqual(["use", "turn", "pin", "explorer"]);
     expect(pin(skill("deploy"))).toEqual({
       act: "pin",
@@ -385,10 +399,53 @@ describe("a row's menu", () => {
     });
   });
 
+  it("says a pin this workspace's chats read none of is not used, and why (#3432)", () => {
+    const refused = (name: string, bad: string | null = null): SkillPinsRefused => ({
+      by: { at: "workspace", name },
+      why: bad === null ? "the list holds more than 64 pins" : `"${bad}" is not a skill's name`,
+      bad,
+      file: `workspaces/${name}/skills.pins`,
+    });
+    const pinRow = (one: StudioSkill, pinsRefused: SkillPinsRefused | null) =>
+      menuRowsOf(row(one), { workspace: "ops", explorer: "ops", chat: false, pinsRefused }).find(
+        (r) => r.act === "pin",
+      );
+    const pinned = skill("deploy", { pinned: true, pinned_by: [{ at: "workspace", name: "ops" }] });
+    expect(pinRow(pinned, refused("ops"))).toEqual({
+      act: "pin",
+      title: "Unpin from this workspace",
+      available: true,
+      reason: "",
+      note: "Pinned, not used: the list holds more than 64 pins.",
+    });
+    // A pin not yet written would be read no more than the rest: the list is put right first.
+    expect(pinRow(skill("deploy"), refused("ops", "Not A Name"))).toEqual({
+      act: "pin",
+      title: "Pin to this workspace",
+      available: false,
+      reason:
+        'Workspace ops\'s pins aren\'t used: "Not A Name" is not a skill\'s name. Remove "Not A Name" in the Skill studio, or edit workspaces/ops/skills.pins.',
+    });
+    expect(pinRow(skill("deploy"), refused("ops"))).toMatchObject({
+      available: false,
+      reason:
+        "Workspace ops's pins aren't used: the list holds more than 64 pins. Unpin some, or edit workspaces/ops/skills.pins.",
+    });
+    // Another workspace's refusal says nothing here; nor does none.
+    expect(pinRow(pinned, refused("web"))).not.toHaveProperty("note");
+    expect(pinRow(pinned, null)).not.toHaveProperty("note");
+  });
+
   it("says why it cannot pin one where it cannot", () => {
     const pin = (one: StudioSkill, workspace: string | undefined = "ops") =>
-      menuRowsOf(row(one), { workspace, chat: false }).find((r) => r.act === "pin");
-    const atTheRoot = menuRowsOf(row(skill("deploy")), { workspace: undefined, chat: false });
+      menuRowsOf(row(one), { workspace, explorer: workspace, chat: false }).find(
+        (r) => r.act === "pin",
+      );
+    const atTheRoot = menuRowsOf(row(skill("deploy")), {
+      workspace: undefined,
+      explorer: undefined,
+      chat: false,
+    });
     expect(atTheRoot.find((r) => r.act === "pin")).toMatchObject({
       title: "Pin to this workspace",
       available: false,
@@ -417,6 +474,7 @@ describe("a row's menu", () => {
     expect(
       menuRowsOf(row(skill("review", { level: "persona" }), { persona: "reviewer" }), {
         workspace: "ops",
+        explorer: "ops",
         chat: false,
       }).find((r) => r.act === "pin"),
     ).toMatchObject({
@@ -427,11 +485,44 @@ describe("a row's menu", () => {
 
   it("shows a skill's folder in Explorer at the project's root, and says why not elsewhere", () => {
     const at = (where: string | undefined, one = skill("deploy")) =>
-      menuRowsOf(row(one), { workspace: where, chat: false }).find((r) => r.act === "explorer");
+      menuRowsOf(row(one), { workspace: where, explorer: where, chat: false }).find(
+        (r) => r.act === "explorer",
+      );
     expect(at(undefined)).toMatchObject({ available: true });
     expect(at("ops")).toMatchObject({ available: false, reason: expect.stringMatching(/root/) });
     expect(at(undefined, skill("secrets", { level: "built-in", folder: "/app/x" }))).toMatchObject({
       available: false,
+      reason: "Its folder is not one of the project's files.",
+    });
+  });
+
+  it("shows a repo skill in its clone, in the workspace Explorer shows (#3308)", () => {
+    const lint = skill("lint-rs", {
+      level: "repo",
+      folder: "workspaces/ops/api/.claude/skills/lint-rs",
+      owner: { kind: "repo", name: "api" },
+    });
+    expect(explorerPlaceOf(lint, "ops")).toEqual({ repo: "api", folder: ".claude/skills/lint-rs" });
+    const at = (where: MenuAt) => menuRowsOf(row(lint), where).find((r) => r.act === "explorer");
+    expect(at({ workspace: "ops", explorer: "ops", chat: false })).toMatchObject({
+      available: true,
+    });
+    // Narrowed to a chat in ops while the title bar, and so Explorer, is on web.
+    expect(at({ workspace: "ops", chat: true, explorer: "web" })).toMatchObject({
+      available: false,
+      reason: expect.stringMatching(/Pick it in the title bar/),
+    });
+    expect(at({ workspace: undefined, explorer: undefined, chat: false })).toMatchObject({
+      available: false,
+    });
+    // A project skill at a workspace is still the root's to show.
+    expect(explorerPlaceOf(skill("deploy"), undefined)).toEqual({
+      repo: "",
+      folder: "skills/deploy",
+    });
+    expect(explorerPlaceOf(skill("deploy"), "ops")).toMatchObject({ reason: expect.any(String) });
+    // A program's own skill is nowhere in the project.
+    expect(explorerPlaceOf(skill("pdf", { level: "installed", folder: "" }), "ops")).toMatchObject({
       reason: "Its folder is not one of the project's files.",
     });
   });

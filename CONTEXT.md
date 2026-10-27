@@ -1070,7 +1070,10 @@ answered. It counts only what happened while the person was away. It hides nothi
 keeps its row and its **Activity** lines, and every question stays where it was asked. Going to
 a failed task from it marks the failure looked at, as its needs-you item's Go does; dismissing
 it dismisses nothing else. A setting turns it off. Away here is the person away from the window;
-a chat nobody is at is another thing, whatever the window is doing.
+a chat nobody is at is another thing, whatever the window is doing. **What a runner's chats did
+is said runner by runner** after this machine's (#2051, #3393): "On qa's runner: 2 finished, 1
+waiting on you, 1 branch ready to push", with the runs that ended there as the runner recorded
+them, at their time in the person's time zone, and a runner whose link is down said to be.
 _Avoid_: digest, recap, notification
 
 **Ask**:
@@ -1516,6 +1519,15 @@ such as showing a badge or adding a CLI command. It describes purlis's conduct. 
 the extension itself can do only for a **studio capability**, whose extension is confined
 (ADR 0101).
 _Avoid_: permission, grant (that is a runner's **Grant**), power
+
+**Suspend** (a runner):
+A runner that stops itself, or is stopped, keeping its home: a **Docker pool**'s runner left a
+day without a link from its desktop ends every chat it runs and stops its container, and the
+desktop starts it again, checked as it was made, as it next links to it for a chat (#2051). It
+is not the kill switch, which stops chats and keeps the runner running, and not idle, which a
+runner a live chat owns never is (ADR 0089 as amended 2026-10-27). A cluster's claims suspend by
+the cluster operator (#2058).
+_Avoid_: sleep, hibernate, pause
 
 **Studio capability**:
 One of the six capabilities the Skill studio is built from: SkillSource, Grader, SkillLint,

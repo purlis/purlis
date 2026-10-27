@@ -546,13 +546,13 @@ pub(crate) fn left_out_of_send(clone: &Path) -> Vec<String> {
 }
 
 /// One branch of a pool's runner, as this machine last fetched it (#2046).
-#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub(crate) struct RunnerBranch {
-    pool: String,
-    branch: String,
+    pub(crate) pool: String,
+    pub(crate) branch: String,
     /// The commits it has that this machine's branch of that name does not, or what this
     /// checkout is on where there is none.
-    ahead: u32,
+    pub(crate) ahead: u32,
 }
 
 /// Every clone of one workspace, as the panels draw them.

@@ -62,6 +62,7 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link === undefined || link === "asking") return "asking its runner…";
   if (link.state === "linked") return "linked";
   if (link.state === "key_changed") return "key changed";
+  if (link.state === "suspended") return "suspended";
   return "not linked";
 }
 
