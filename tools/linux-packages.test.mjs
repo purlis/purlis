@@ -25,6 +25,7 @@ function machine({
   failOffline = false,
   manyInstalled = false,
   osRelease = "ID=ubuntu\nVERSION_CODENAME=noble\n",
+  offlineHas = "socat bubblewrap",
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), "linux-packages-"));
   const release = join(root, "os-release");
@@ -55,10 +56,18 @@ case $kind in
     # As apt does: a .deb named on the command line counts as downloaded only when it lies in
     # the archives directory. Anywhere else apt queues it as a download, which --no-download
     # drops, and the install fails (#1477: every warm run on 2026-10-10 failed this way).
+    # A package named by name installs offline only when the image has it or its file is in the
+    # archives: offlineHas stands for both.
     for a in "$@"; do
-      case "$a" in *.deb)
-        [ "$(dirname "$a")" = "${archives}" ] && [ -e "$a" ] || {
-          echo "E: Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?" >&2; exit 100; } ;;
+      case "$a" in
+        *.deb)
+          [ "$(dirname "$a")" = "${archives}" ] && [ -e "$a" ] || {
+            echo "E: Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?" >&2; exit 100; } ;;
+        -* | install | *=* | *:*) ;;
+        *)
+          case " ${offlineHas} " in *" $a "*) ;; *)
+            echo "E: Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?" >&2; exit 100 ;;
+          esac ;;
       esac
     done ;;
   install) [ $n -le ${failInstalls} ] && exit 124
@@ -219,6 +228,21 @@ test("where the packages came from is a notice on the run, read without its log"
     machine().run("install", "socat").stdout,
     /^::notice title=Linux packages::1 packages installed in \d+ s from the mirror, on attempt 1 of 2\./m,
   );
+});
+
+test("a restored cache that lacks a package asked for goes to the mirror", () => {
+  // Restored from an older image's key (#3547), the files are what that image lacked: a package it
+  // had preinstalled and this image has not is in none of them, so the offline install must name
+  // the packages too, fail on the missing one, and go on to the mirror.
+  const { root, run } = machine({ offlineHas: "" });
+  const cache = join(root, "cache");
+  mkdirSync(cache);
+  writeFileSync(join(cache, "libfoo_1.0-1_amd64.deb"), "");
+  const r = run("install", "--cache", cache, "socat");
+  assert.equal(r.status, 0, r.stderr);
+  const offline = r.apt.find((l) => l.includes("--no-download"));
+  assert.ok(offline && / socat( |$)/.test(offline), `the offline install did not name socat: ${offline}`);
+  assert.ok(r.apt.some((l) => l.includes("update")), "never went to the mirror");
 });
 
 test("a cache the image no longer fits falls back to the mirror", () => {
