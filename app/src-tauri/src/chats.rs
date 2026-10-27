@@ -3855,7 +3855,7 @@ impl Chats {
                 composed_by_its_host: on_the_runner,
                 grants_as: grants_persona_of(chat, &self.project),
                 skills: stamp,
-                skills_read: skills,
+                skills_read: (*skills).clone(),
             },
         );
         lock(&self.sizes).insert(session, size);
