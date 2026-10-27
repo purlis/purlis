@@ -452,9 +452,9 @@ fn settings(
     graded: bool,
 ) -> String {
     let mut settings = serde_json::Map::new();
-    // The project's own choice of Claude Code's plugins first (charter-app#274, ADR 0050): a
-    // session `enabledPlugins` wins over the project's and the user's for the keys it names,
-    // and leaves every other plugin to them.
+    // What purlis hands this chat first: a Try it's scratch chat's every plugin off. A session
+    // `enabledPlugins` wins over the project's and the user's for the keys it names, and leaves
+    // every other plugin to them, which is every plugin purlis does not pin (#3467).
     let mut enabled: serde_json::Map<String, serde_json::Value> = plugins
         .plugins
         .iter()

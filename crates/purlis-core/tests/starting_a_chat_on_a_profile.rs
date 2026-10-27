@@ -749,7 +749,7 @@ fn a_codex_wrapper_resumes_after_its_own_words_and_the_apps_flags() {
 }
 
 // -------------------------------------------------------------------------------------
-// The project's harness plugins (charter-app#274, ADR 0050)
+// purlis's own plugin, and no other (charter-app#274, ADR 0050 as amended by #3467)
 // -------------------------------------------------------------------------------------
 
 /// A Claude Code config directory, as a fixture, holding `installed`.
@@ -771,13 +771,23 @@ fn claude_config(plane: &Plane, installed: &[&str]) -> PathBuf {
     dir
 }
 
+/// The pins every Claude Code chat the app starts carries, and no other plugin (#3467).
+fn pins_alone() -> serde_json::Value {
+    serde_json::json!({
+        "purlis@inline": true,
+        "charter@charter": false,
+        "charter@inline": false,
+        "charter-app@inline": false,
+        "charter@charter-app": false,
+    })
+}
+
 #[test]
-fn a_claude_code_chat_is_started_with_exactly_the_plugins_its_project_chose() {
+fn a_claude_code_chat_is_started_with_purlis_s_pins_alone_whatever_the_old_keys_say() {
     purlis_core::unsteered!();
-    // Shared turns two off and one on, Local turns one of them back on; the one nobody names is
-    // left to Claude Code, and the one this machine has not installed is handed to nothing. The
-    // listing is read from the chat's own CLAUDE_CONFIG_DIR, so a profile on another account is
-    // listed against that account.
+    // #3467: purlis no longer chooses another plugin per project. Shared, Local and a
+    // workspace's old `harness_plugins` all name installed plugins, and each is ignored: the
+    // chat carries the pins, and Claude Code decides every other plugin itself.
     let plane = Plane::new();
     let config = claude_config(
         &plane,
@@ -785,117 +795,14 @@ fn a_claude_code_chat_is_started_with_exactly_the_plugins_its_project_chose() {
     );
     fs::write(
         plane.root().join("charter.toml"),
-        "[harness_plugins.claude]\n\"figma@official\" = false\n\"serena@official\" = false\n\
-         \"acme@corp\" = true\n",
-    )
-    .unwrap();
-    let bin = plane.harness();
-    plane.profile(
-        "claude",
-        &bin,
-        &format!(
-            "env = {{ CLAUDE_CONFIG_DIR = {:?} }}\n\n[harness_plugins.claude]\n\"serena@official\" = true\n",
-            config.display().to_string()
-        ),
-    );
-
-    let ready = start::ready(&plane.start("work"), plane.root()).expect("it starts");
-    let line = ready.command_line(armed_with(
-        Harness::ClaudeCode,
-        plane.root(),
-        &ready.plugins,
-    ));
-
-    let at = line
-        .iter()
-        .position(|word| word == "--settings")
-        .expect("settings");
-    let settings: serde_json::Value = serde_json::from_str(&line[at + 1]).expect("JSON");
-    assert_eq!(
-        settings["enabledPlugins"],
-        serde_json::json!({
-            "purlis@inline": true,
-            "charter@charter": false,
-            "charter@inline": false,
-            "charter-app@inline": false,
-            "charter@charter-app": false,
-            "figma@official": false,
-            "serena@official": true,
-        })
-    );
-}
-
-#[test]
-fn a_codex_chat_is_started_with_each_plugin_its_project_turned_off() {
-    purlis_core::unsteered!();
-    // codex-cli 0.163.0 takes `-c plugins."<id>".enabled=false` for one session (measured,
-    // SK-6), so the plugin Codex's own record has installed and the project turned off is
-    // turned off for this chat alone.
-    let plane = Plane::new();
-    let home = plane.root().join("codex-home");
-    fs::create_dir_all(&home).unwrap();
-    fs::write(
-        home.join("config.toml"),
-        "[plugins.\"charter@charter\"]\nenabled = true\n",
-    )
-    .unwrap();
-    fs::write(
-        plane.root().join("charter.toml"),
-        "[harness_plugins.codex]\n\"charter@charter\" = false\n",
-    )
-    .unwrap();
-    let bin = plane.harness_as("codex");
-    plane.profile(
-        "codex",
-        &bin,
-        &format!(
-            "env = {{ CODEX_HOME = {:?} }}\n",
-            home.display().to_string()
-        ),
-    );
-
-    // Started without the sandbox: what is asked here is the plugins, and a sandboxed Codex chat
-    // starts only on a profile for sandboxed chats (#2037), wrapped on macOS and Linux (#1040).
-    let start = Start {
-        without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
-        ..plane.start("work")
-    };
-    let ready = start::ready(&start, plane.root()).expect("it starts");
-
-    assert_eq!(
-        ready.plugins.plugins,
-        std::collections::BTreeMap::from([("charter@charter".to_owned(), false)])
-    );
-    let line = ready.command_line(armed_with(Harness::Codex, plane.root(), &ready.plugins));
-    assert!(
-        line.windows(2)
-            .any(|pair| pair[0] == "-c" && pair[1] == "plugins.\"charter@charter\".enabled=false"),
-        "{line:?}"
-    );
-}
-
-#[test]
-fn a_chat_started_in_a_workspace_is_handed_that_workspaces_plugin_choices_between_shared_and_local()
-{
-    purlis_core::unsteered!();
-    // charter-app#282: `settings.harness_plugins` in the workspace's `workspace.json` sits
-    // between charter.toml and charter.local.toml. The chat is in the workspace because its
-    // directory is, which is how the window files it under one.
-    let plane = Plane::new();
-    let config = claude_config(
-        &plane,
-        &["figma@official", "serena@official", "humanizer@h"],
-    );
-    fs::write(
-        plane.root().join("charter.toml"),
-        "[harness_plugins.claude]\n\"figma@official\" = true\n\"serena@official\" = true\n",
+        "[harness_plugins.claude]\n\"figma@official\" = false\n\"purlis@inline\" = false\n",
     )
     .unwrap();
     let alpha = plane.root().join("workspaces/alpha");
     fs::create_dir_all(&alpha).unwrap();
     fs::write(
         alpha.join("workspace.json"),
-        r#"{"name": "alpha", "settings": {"harness_plugins": {"claude": {"figma@official": false, "serena@official": false, "humanizer@h": false}}}}"#,
+        r#"{"name": "alpha", "settings": {"harness_plugins": {"claude": {"humanizer@h": false}}}}"#,
     )
     .unwrap();
     let bin = plane.harness();
@@ -929,32 +836,50 @@ fn a_chat_started_in_a_workspace_is_handed_that_workspaces_plugin_choices_betwee
         settings["enabledPlugins"].clone()
     };
 
-    assert_eq!(
-        enabled(alpha.clone()),
-        serde_json::json!({
-            "purlis@inline": true,
-            "charter@charter": false,
-            "charter@inline": false,
-            "charter-app@inline": false,
-            "charter@charter-app": false,
-            "figma@official": false,
-            "humanizer@h": false,
-            "serena@official": true,
-        }),
-        "the workspace overrides Shared, and Local overrides the workspace"
+    assert_eq!(enabled(plane.root().to_path_buf()), pins_alone());
+    assert_eq!(enabled(alpha), pins_alone(), "in a workspace too");
+}
+
+#[test]
+fn a_codex_chat_is_handed_no_plugin_a_project_named() {
+    purlis_core::unsteered!();
+    // #3467: an old `[harness_plugins.codex]` turns nothing off: Codex's own config decides.
+    let plane = Plane::new();
+    let home = plane.root().join("codex-home");
+    fs::create_dir_all(&home).unwrap();
+    fs::write(
+        home.join("config.toml"),
+        "[plugins.\"zp@zmkt\"]\nenabled = true\n",
+    )
+    .unwrap();
+    fs::write(
+        plane.root().join("charter.toml"),
+        "[harness_plugins.codex]\n\"zp@zmkt\" = false\n",
+    )
+    .unwrap();
+    let bin = plane.harness_as("codex");
+    plane.profile(
+        "codex",
+        &bin,
+        &format!(
+            "env = {{ CODEX_HOME = {:?} }}\n",
+            home.display().to_string()
+        ),
     );
-    assert_eq!(
-        enabled(plane.root().to_path_buf()),
-        serde_json::json!({
-            "purlis@inline": true,
-            "charter@charter": false,
-            "charter@inline": false,
-            "charter-app@inline": false,
-            "charter@charter-app": false,
-            "figma@official": true,
-            "serena@official": true,
-        }),
-        "a chat outside the workspace is not handed its choices"
+
+    // Started without the sandbox: what is asked here is the plugins, and a sandboxed Codex chat
+    // starts only on a profile for sandboxed chats (#2037), wrapped on macOS and Linux (#1040).
+    let start = Start {
+        without_sandbox: Some(purlis_core::sandbox::OptOut { reason: None }),
+        ..plane.start("work")
+    };
+    let ready = start::ready(&start, plane.root()).expect("it starts");
+
+    assert!(ready.plugins.plugins.is_empty(), "{:?}", ready.plugins);
+    let line = ready.command_line(armed_with(Harness::Codex, plane.root(), &ready.plugins));
+    assert!(
+        !line.iter().any(|word| word.starts_with("plugins.")),
+        "{line:?}"
     );
 }
 

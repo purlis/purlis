@@ -52,7 +52,6 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "project.extensions", label: "Extensions" },
     { id: "project.theme", label: "Theme" },
     { id: "project.appearance", label: "Appearance" },
-    { id: "project.plugins", label: "Plugins" },
   ],
   workspace: [
     { id: "workspace.live", label: "Live" },
@@ -63,6 +62,5 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "workspace.appearance", label: "Appearance" },
     // Behind the Skill studio's flag (#2767): offered only while it is on.
     { id: "workspace.skills", label: "Skills" },
-    { id: "workspace.plugins", label: "Plugins" },
   ],
 };

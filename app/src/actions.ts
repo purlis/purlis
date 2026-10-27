@@ -2226,7 +2226,7 @@ export function catalogue(now: Now): Offer[] {
         verb: "openWorkspaceSettings",
         workspace,
       }),
-      note: `${workspace}: Settings at its level — live, repos, extensions, appearance and plugins.`,
+      note: `${workspace}: Settings at its level — live, repos, extensions and appearance.`,
     });
     // Its chats' skills (#2767): the Skill studio on this workspace, behind the studio's flag.
     // The Skills row of its Settings level runs it.

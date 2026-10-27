@@ -6,7 +6,6 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type {
-  HarnessPlugins,
   PlaneId,
   ProjectExtension,
   ProjectTheme,
@@ -99,30 +98,6 @@ const EXTENSIONS: ProjectExtension[] = [
   { id: "linter", name: "Linter", state: "on", source: "default", settings: [], ignored: [] },
 ];
 
-const HARNESSES: HarnessPlugins[] = [
-  {
-    harness: "claude",
-    title: "Claude Code",
-    unsupported: null,
-    only_off: null,
-    record: null,
-    trouble: null,
-    local_left_out: null,
-    plugins: [
-      {
-        id: "review@acme",
-        name: "review",
-        origin: "acme",
-        state: "not-set",
-        source: "default",
-        installed: true,
-        pinned: null,
-        ignored: [],
-      },
-    ],
-  },
-];
-
 const THEME: ProjectTheme = {
   options: [
     { value: "purlis-dark", label: "purlis-dark (built in)" },
@@ -151,8 +126,6 @@ function core() {
           return WORKSPACE;
         case "project_extensions":
           return { extensions: EXTENSIONS, local_left_out: null };
-        case "project_harness_plugins":
-          return HARNESSES;
         case "project_theme":
           return THEME;
         case "project_saving_in_force":

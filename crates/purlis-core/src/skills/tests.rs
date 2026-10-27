@@ -1041,7 +1041,7 @@ fn the_studio_lists_each_harnesss_own_skills_beside_the_projects_and_marks_a_cla
         &Known::of(&plane, None),
     );
 
-    let titles: Vec<&str> = harnesses.iter().map(|h| h.group.adapter.title()).collect();
+    let titles: Vec<&str> = harnesses.iter().map(|h| h.harness.title()).collect();
     assert_eq!(titles, ["Claude Code", "opencode", "Codex"]);
     let on_codex = &harnesses[2];
     assert_eq!(

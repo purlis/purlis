@@ -159,6 +159,9 @@ pub enum AskSource {
     /// A sandboxed Codex chat refused for want of a sandbox-only profile (#2037): answered by
     /// making one and running Codex's own sign-in in it.
     SandboxOnly,
+    /// A project that still holds the old `[harness_plugins]` keys purlis no longer reads
+    /// (#3467): said once, answered by Remove, which proposes the edit, or Dismiss.
+    OldHarnessPlugins,
     /// A chat's first browser call, asking what its browser may reach (#2013).
     Browser,
     /// A chat's browser whose page needs the person (#2015): the chat asked them to take it
@@ -215,6 +218,9 @@ pub enum AnswerPath {
     /// Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
     /// `dismiss_sandbox_only`.
     SandboxOnly,
+    /// `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
+    /// file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
+    OldHarnessPlugins,
     /// `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
     /// Keep off, with the person's reason (#2013).
     Browser,
@@ -1597,6 +1603,34 @@ pub fn sandbox_only(_wait: &purlis_core::profilestore::sandbox_only::Wait) -> Sh
     }
 }
 
+/// The option id of Remove on the Ask about the old `[harness_plugins]` keys (#3467).
+pub const REMOVE_OLD_PLUGINS: &str = "remove";
+
+/// **The old harness plugin keys' adapter** (#3467): a project that still holds
+/// `[harness_plugins]`, which nothing reads now, as one Ask about no chat, said once. It offers
+/// Remove where the project's own files hold the keys, which proposes the edit for the person to
+/// apply, and Dismiss.
+pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown {
+    let mut options = Vec::new();
+    if old.removable {
+        options.push(refuses(REMOVE_OLD_PLUGINS, "Remove"));
+    }
+    options.push(refuses(DISMISS, "Dismiss"));
+    Shown {
+        session: 0,
+        ask: "old-harness-plugins".to_owned(),
+        says: said_inertly(&old.said),
+        options,
+        source: AskSource::OldHarnessPlugins,
+        chain: vec![said_inertly("purlis")],
+        answer: AnswerPath::OldHarnessPlugins,
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+    }
+}
+
 /// How far up who-asked-whom a chain is followed: far past any depth a dispatch is allowed.
 const MOST_CHAIN: usize = 64;
 
@@ -1997,6 +2031,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         asks: derive(&waiting)
             .into_iter()
             .filter(|ask| !chats.kept_from_the_window(ask.session))
+            .chain(crate::oldplugins::notice_of(root).map(|old| old_harness_plugins(&old)))
             .collect(),
     }
 }

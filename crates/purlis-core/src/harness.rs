@@ -333,10 +333,10 @@ impl Harness {
     /// for this chat ([`crate::footerclaim`]). It is the chat's own directory because project
     /// settings are read from the session's own directory and the host does not walk up.
     ///
-    /// `plugins` is the harness's own plugins the project turned on or off for this chat
-    /// ([`crate::harness_plugin::chosen`], charter-app#274), by the harness's id. Only an
-    /// adapter that applies per chat hands it anything, so for Codex it is always empty; it is
-    /// taken here all the same, so no harness can be armed past it.
+    /// `plugins` is purlis's pins for this chat's harness ([`crate::harness_plugin::pins`]), and
+    /// for a Try it's scratch chat every installed plugin off, by the harness's id; no project
+    /// chooses another harness's plugin (#3467). It is taken here for every harness, so no
+    /// harness can be armed past it.
     pub fn state_hooks(
         self,
         kit: Kit<'_>,

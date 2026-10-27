@@ -35,8 +35,9 @@ fn listed(kit: Kit<'_>) -> Vec<(String, String)> {
     env
 }
 
-/// The `-c` flags that hand a Codex chat the plugins and skills the project turned off: one
-/// `plugins."<id>".enabled=false` per plugin, then one `skills.config` holding every skill.
+/// The `-c` flags that hand a Codex chat the plugins and skills purlis turns off for it: one
+/// `plugins."<id>".enabled=false` per plugin (a Try it's scratch chat, which has the draft
+/// alone), then one `skills.config` holding every skill.
 /// Each key and name is quoted as TOML quotes it, so no id can end the value early.
 fn chosen_flags(plugins: &crate::harness_plugin::Chosen, skills_off: &[String]) -> Vec<String> {
     let mut args = Vec::new();
@@ -125,11 +126,11 @@ impl HarnessAdapter for Codex {
     /// Python charter's Codex plugin, and now rides on the same `-c` flags as the state
     /// hooks, from the same registry ([`crate::plugin::CODEX`] out of [`crate::hookreg`]).
     ///
-    /// **A plugin the project turned off, by `-c`** (SK-6, #2769): `-c
+    /// **A plugin purlis turns off for this one chat, by `-c`** (SK-6, #2769): `-c
     /// 'plugins."<id>".enabled=false'` each, which codex-cli 0.163.0 takes for one session
-    /// (measured, [`crate::harness_plugin::CODEX`]); 0.147.0 did not. Only off: Codex takes a
-    /// plugin turned on that way as nothing, so `plugins` holds no `true` for it
-    /// ([`crate::harness_plugin::chosen`]). **And a skill the project turned off**, by one `-c
+    /// (measured, ADR 0050's amendment of 2026-10-21); 0.147.0 did not. Only a Try it's scratch
+    /// chat is handed any (`skills::verbs::drafts::alone_on`): a project chooses no plugin of
+    /// Codex's (#3467). **And a skill the project turned off**, by one `-c
     /// 'skills.config=[{name="<name>",enabled=false},…]'`, which reaches a plugin's skill
     /// (`<plugin>:<skill>`) too, and is added to the entries of the operator's own
     /// `config.toml` rather than replacing them (both measured on 0.163.0, and the second again
