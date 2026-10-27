@@ -543,6 +543,6 @@ fn purlis_writes_a_workspaces_manifest_through_its_own_writer_and_only_unchanged
     std::fs::write(root.join(rel), "{\"name\": \"alpha\", \"moved\": 1}").expect("moved");
     assert_eq!(
         write_by_purlis(&root, rel, base.as_deref(), Some(after), "{}\n"),
-        Err(NotMade::Stale)
+        Err((NotMade::Stale, None))
     );
 }

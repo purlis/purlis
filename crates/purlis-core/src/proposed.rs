@@ -141,11 +141,7 @@ pub fn proposable_by_purlis(root: &Path, path: &Path) -> Result<PathBuf, String>
     ]
     .into_iter()
     .any(|which| rel == Path::new(which.file_at(root)));
-    let manifest = manifest_of(&rel).is_some_and(|workspace| {
-        crate::workspaces::Plane::open(root)
-            .workspaces()
-            .is_ok_and(|names| names.contains(&workspace))
-    });
+    let manifest = manifest_of(root, &rel).is_some();
     if !settings && !manifest {
         return Err(not_proposable(path));
     }
@@ -163,49 +159,37 @@ pub fn proposable_by_purlis(root: &Path, path: &Path) -> Result<PathBuf, String>
     }
 }
 
-/// The workspace whose manifest `rel` names by its words, `workspaces/<ws>/workspace.json`, or
-/// none.
-fn manifest_of(rel: &Path) -> Option<String> {
-    let parts: Vec<&str> = rel
-        .components()
-        .map(|part| match part {
-            Component::Normal(name) => name.to_str(),
-            _ => None,
-        })
-        .collect::<Option<_>>()?;
-    match parts.as_slice() {
-        ["workspaces", workspace, name]
-            if *name == crate::settings::workspace::FILE && !workspace.starts_with('.') =>
-        {
-            Some((*workspace).to_owned())
-        }
-        _ => None,
-    }
+/// The workspace of the plane at `root` whose manifest `rel` names, `workspaces/<ws>/workspace.json`,
+/// or none.
+fn manifest_of(root: &Path, rel: &Path) -> Option<String> {
+    let workspace = crate::workspaces::Plane::open(root).workspace_of(&root.join(rel))?;
+    (Path::new(&crate::settings::workspace::named(&workspace)) == rel).then_some(workspace)
 }
 
 /// **Writes purlis's own change to `rel`** ([`proposable_by_purlis`]) as `after`, only while
 /// the file is still what `base` says, `before` being the text that base was read from: a
 /// workspace's manifest by its own writer ([`crate::settings::workspace::save_text`], #3486),
 /// under its lock and its stamp rule, so a manifest purlis wrote stays purlis's; any other file
-/// as [`write_pinned`] writes a chat's. Nothing is written otherwise.
+/// as [`write_pinned`] writes a chat's. Nothing is written otherwise, and where the manifest's
+/// writer refused, its own sentences say why.
 pub fn write_by_purlis(
     root: &Path,
     rel: &Path,
     base: Option<&str>,
     before: Option<&str>,
     after: &str,
-) -> Result<(), NotMade> {
-    let Some(workspace) = manifest_of(rel) else {
-        return write_pinned(root, rel, base, after);
+) -> Result<(), (NotMade, Option<String>)> {
+    let Some(workspace) = manifest_of(root, rel) else {
+        return write_pinned(root, rel, base, after).map_err(|made| (made, None));
     };
     if base.is_none() || base_of(before.map(str::as_bytes)).as_deref() != base {
-        return Err(NotMade::Unprepared);
+        return Err((NotMade::Unprepared, None));
     }
-    crate::settings::workspace::save_text(root, &workspace, before, after).map_err(|_| {
-        // The writer says why in words; whether it is because the file moved is read here.
+    crate::settings::workspace::save_text(root, &workspace, before, after).map_err(|said| {
+        // Whether it is because the file moved is read here; anything else, in its words.
         match read_pinned(root, rel) {
-            Ok(now) if base_of(now.as_deref()).as_deref() != base => NotMade::Stale,
-            _ => NotMade::Unprepared,
+            Ok(now) if base_of(now.as_deref()).as_deref() != base => (NotMade::Stale, None),
+            _ => (NotMade::Unprepared, Some(said.join(" "))),
         }
     })
 }

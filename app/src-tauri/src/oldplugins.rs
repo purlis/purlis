@@ -80,8 +80,8 @@ pub struct HeldRemoval {
 
 /// **Remove**'s work in the project at `root`: a proposed change per file that holds the keys
 /// (its own two, then each workspace's manifest), held in `proposals` at `now` as purlis's, in
-/// file order. The Ask is answered only once a change is held, so it never goes with nothing to
-/// apply.
+/// file order. A file that cannot be made without them is left out, and the Ask is answered only
+/// once a change is held, so it never goes with nothing to apply.
 pub fn removal_held(
     root: &Path,
     proposals: &Proposals,
@@ -89,7 +89,9 @@ pub fn removal_held(
 ) -> Result<Vec<HeldRemoval>, String> {
     let mut held = Vec::new();
     for one in old::found(root) {
-        let content = one.removed(root)?;
+        let Ok(content) = one.removed(root) else {
+            continue;
+        };
         let base = base_of(Some(one.text.as_bytes()));
         if let Some(id) = proposals.note(BY_PURLIS, &one.file, base, Change::Whole { content }, now)
         {

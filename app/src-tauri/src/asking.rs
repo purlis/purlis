@@ -1608,8 +1608,8 @@ pub const REMOVE_OLD_PLUGINS: &str = "remove";
 
 /// **The old harness plugin keys' adapter** (#3467): a project that still holds
 /// `[harness_plugins]`, which nothing reads now, as one Ask about no chat, said once. It offers
-/// Remove where the project's own files hold the keys, which proposes the edit for the person to
-/// apply, and Dismiss.
+/// Remove where a file holding the keys can be made without them (the project's own two, or a
+/// workspace's manifest, #3486), which proposes the edit for the person to apply, and Dismiss.
 pub fn old_harness_plugins(old: &crate::oldplugins::OldHarnessPlugins) -> Shown {
     let mut options = Vec::new();
     if old.removable {
