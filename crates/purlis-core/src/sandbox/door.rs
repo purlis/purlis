@@ -541,7 +541,6 @@ impl Door {
         let busy = Arc::new(AtomicUsize::new(0));
         for listener in listeners {
             let (stop, jar, busy) = (Arc::clone(&stop), Arc::clone(&jar), Arc::clone(&busy));
-            let folder = folder.clone();
             let socket = socket.to_path_buf();
             std::thread::Builder::new()
                 .name(format!("purlis-door-{port}"))
@@ -557,12 +556,8 @@ impl Door {
                             busy.fetch_sub(1, Ordering::SeqCst);
                             continue;
                         }
-                        let (held_jar, held_busy, socket, folder) = (
-                            Arc::clone(&jar),
-                            Arc::clone(&busy),
-                            socket.clone(),
-                            folder.clone(),
-                        );
+                        let (held_jar, held_busy, socket, folder) =
+                            (Arc::clone(&jar), Arc::clone(&busy), socket.clone(), folder);
                         let spawned = std::thread::Builder::new()
                             .name(format!("purlis-door-{port}-in"))
                             .spawn(move || {
