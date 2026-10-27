@@ -2778,6 +2778,16 @@ export const commands = {
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
 	/**
+	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
+	 *  with the chats and browsers the window has open there, and each pool's limits.
+	 */
+	devices: () => typedError<DevicesShown, string>(__TAURI_INVOKE("devices")),
+	/**
+	 *  **How the runner `runner` of pool `pool` is** (#2052): its container read, and only a running
+	 *  one linked to, asked its version and what it holds. Asked once at a time ([`Joined`]).
+	 */
+	deviceRunner: (pool: string, runner: string) => typedError<RunnerAsked, string>(__TAURI_INVOKE("device_runner", { pool, runner })),
+	/**
 	 *  **The projects a runner would not hold again after a re-link**, each with the runner's words
 	 *  and the pools its chats run on.
 	 */
@@ -4870,6 +4880,32 @@ export type BrowserLimitsShown = {
 	idle_minutes: BrowserLimitShown,
 };
 
+/**  A browser on a device, as its row names it. */
+export type BrowserOnADevice = {
+	plane: PlaneId,
+	/**  The chat it is of. */
+	session: number,
+	/**  Its program in the session host that runs it: what a runner names it by. */
+	program: string,
+	/**  What the chat calls it: `b1`. */
+	name: string,
+	/**  What its chat is called. */
+	chat: string,
+};
+
+/**  A browser on a pool this machine no longer keeps. */
+export type BrowserOnAPoolNotKept = {
+	plane: PlaneId,
+	/**  The chat it is of. */
+	session: number,
+	/**  What the chat calls it: `b1`. */
+	name: string,
+	/**  What its chat is called. */
+	chat: string,
+	/**  The pool its chat runs it on. */
+	pool: string,
+};
+
 /**
  *  The project's browser sites as they changed (`sandbox::browser_sites::Change`, #2443): each
  *  spelled as the sandbox writes a host.
@@ -5194,6 +5230,12 @@ export type ChatDoing = {
 	doing: Doing | null,
 };
 
+/**  A chat the window has open, by its plane and its session. */
+export type ChatHeld = {
+	plane: PlaneId,
+	session: number,
+};
+
 /**  **A chat's Network view** (#1662): what it can reach now and what it was refused. */
 export type ChatNetwork = {
 	/**  Whether the chat is open in this app. A closed one has nothing to say. */
@@ -5221,6 +5263,22 @@ export type ChatNetwork = {
 	 *  where nothing says so.
 	 */
 	local_ports?: string | null,
+};
+
+/**  A chat on a device, as its row names it. */
+export type ChatOnADevice = {
+	plane: PlaneId,
+	session: number,
+	name: string,
+};
+
+/**  A chat on a pool this machine no longer keeps. */
+export type ChatOnAPoolNotKept = {
+	plane: PlaneId,
+	session: number,
+	name: string,
+	/**  The pool its chat was started on, as the router kept it. */
+	pool: string,
 };
 
 /**
@@ -5527,6 +5585,24 @@ export type DeletesCutShort = {
 	settled: string[],
 	/**  Neither finished nor put back: tried again the next time the studio opens. */
 	unsettled: string[],
+};
+
+/**
+ *  **What the Devices view draws first** (#2052): this machine's version, where everything the
+ *  window has open runs, and each pool's limits.
+ */
+export type DevicesShown = {
+	/**  This machine's version. */
+	version: string,
+	/**  Where everything the window has open runs. */
+	placement: Placement,
+	pools: PoolRequests[],
+	/**
+	 *  Whether this machine's Docker pools are shown to be the person's own (D-2050-4): their
+	 *  engine is a local socket on this machine. Only then does the use table name them as the
+	 *  person's.
+	 */
+	owned: boolean,
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */
@@ -8124,6 +8200,19 @@ export type NotASkill = {
 };
 
 /**
+ *  What a runner holds, set against what the window has open: the chats and browsers of its own
+ *  pool it holds, which its row lists by what the runner says rather than where the window
+ *  started them, and how many it holds the window has not open.
+ */
+export type NotOpenHere = {
+	open: ChatHeld[],
+	/**  The browsers, by their programs. */
+	browsers_open: string[],
+	chats: number,
+	browsers: number,
+};
+
+/**
  *  A chat a launch could not start, as the window lists it (NO-3): by its id, which Retry now
  *  and Forget name it by, with its name and why.
  */
@@ -8240,6 +8329,12 @@ export type OfferedSource = {
 export type OlderSandbox = {
 	/**  The chats, by session, lowest first. */
 	chats: OnOlderSandbox[],
+};
+
+/**  What runs on one device, of what the window has open. */
+export type OnADevice = {
+	chats: ChatOnADevice[],
+	browsers: BrowserOnADevice[],
 };
 
 /**  One chat still running under an older sandbox ([`OlderSandbox`]). */
@@ -9065,6 +9160,17 @@ export type Pins = {
 	certain: boolean,
 };
 
+/**
+ *  Where everything the window has open runs: this machine, each runner, and what is on a pool
+ *  no longer kept.
+ */
+export type Placement = {
+	here: OnADevice,
+	runners: RunnerOnTheList[],
+	unkept: ChatOnAPoolNotKept[],
+	unkept_browsers: BrowserOnAPoolNotKept[],
+};
+
 /**  A plain-file vault, and whether this machine may move it. */
 export type PlainFileVault = {
 	name: string,
@@ -9345,6 +9451,15 @@ export type PoolLink =
  */
 { state: "suspended" };
 
+/**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */
+export type PoolRequests = {
+	pool: string,
+	/**  What one runner of it is held to. */
+	limits: PoolLimitsShown,
+	/**  Its CPUs in thousandths, to be added up. */
+	millicpus: number,
+};
+
 /**  One pool, as its row draws it. */
 export type PoolRow = {
 	name: string,
@@ -9580,7 +9695,7 @@ export type ProjectNotHeld = {
 	root: string,
 	/**  What the window calls it: its folder's name. */
 	name: string,
-	/**  What the runner said, as plain text, at most [`MOST_SAID`] characters. */
+	/**  What the runner said, as plain text, at most what the one sanitiser keeps (`crate::devices::MOST_SHOWN`, then `…`). */
 	why: string,
 	/**
 	 *  The pools its workspaces run their chats on, as this machine keeps them: the row the
@@ -10482,6 +10597,29 @@ export type RunStart =
 /**  A start a newer purlis wrote. */
 "unknown";
 
+/**  **How one runner is**, as its row says it once asked (#2052). */
+export type RunnerAsked = {
+	/**
+	 *  Whether its container runs. A suspended runner is told by this alone: nothing links to
+	 *  it, so its `link` is none.
+	 */
+	standing: RunnerStanding,
+	/**
+	 *  What a link to it said; none where nothing linked to it (one suspended, or whose
+	 *  container could not be read).
+	 */
+	link: PoolLink | null,
+	/**  The version it runs, where it answered. */
+	version: string | null,
+	/**
+	 *  When it last answered this window, in seconds since 1970 (good to 2106); none if it has
+	 *  not since the app started.
+	 */
+	contacted: number | null,
+	/**  What it holds, set against what the window has open. */
+	holds: NotOpenHere,
+};
+
 /**  One runner of a project, as the away summary reads it. */
 export type RunnerAway = {
 	/**  The pool whose runner it is. */
@@ -10523,6 +10661,30 @@ export type RunnerLogRead =
 "partly" | 
 /**  Not at all: no link to it is open, or the runner is from a purlis before 1.41. */
 "not_read";
+
+/**  One runner, as its row lists it before it is asked how it is. */
+export type RunnerOnTheList = {
+	pool: string,
+	runner: string,
+	/**
+	 *  It was replaced by a runner of this machine's version: it keeps its chats until they
+	 *  end, then purlis removes it (#2749).
+	 */
+	draining: boolean,
+	on: OnADevice,
+};
+
+/**  Whether a runner's container runs (#2051). */
+export type RunnerStanding = { state: "running" } | 
+/**  Its container stopped, its home kept: it starts again as a chat next needs it. */
+{ state: "suspended" } | 
+/**  Its container could not be read, and why, as Docker said it ([`shown_safely`]). */
+{ state: "unknown"; why: string } | 
+/**
+ *  It was not answered within the time an ask of it waits ([`WAITS_AT_MOST`]): how it is
+ *  is not known.
+ */
+{ state: "unanswered" };
 
 /**
  *  **A held write whole, as its own tab draws it**: what it would do with every text whole, and

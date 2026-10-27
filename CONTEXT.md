@@ -309,6 +309,15 @@ hostname is a label, never a key. The operator on a device is its **local princi
 (`local:<device>/<os-user>`), and purlis never sends it anywhere without an account (ADR 0066).
 _Avoid_: host (that is `purlisd`, the process), machine (in UI text), node
 
+**Devices**:
+The window's view tab of every device this machine knows: itself and each runner it keeps, each
+with its chats and browsers, its version, how it is and when it last answered, and each pool's
+use per person (runners running and suspended, the CPUs and memory they request). Money shows
+only where a pool declares a price per hour. It replaces the **Runners** view tab ADR 0089 §12
+named, and is offered only once this machine keeps a pool. It belongs to **Project**, with the
+devices it lists (spec #2041, #2052).
+_Avoid_: Runners view, fleet, machines (for the view)
+
 **Harness declaration**:
 Data that says how to start one harness, how to name and resume its sessions, which levels it
 offers, what it can do, and what its profiles are: the **sign-in kinds** they support, the
@@ -456,7 +465,7 @@ only that way. It keeps its own device id, event log, audit chain and kill switc
 no server purlis runs. A short-lived runner is owned by the chat that started it, or by its
 workspace when a human started it or **pinned** it there. A runner is a device, so it belongs to
 **Project**; which runner a workspace's chats run on is a **Workspace** setting, and the
-**Runners** view tab shows a workspace's runners (ADR 0072 §2, ADR 0078, ADR 0089).
+**Devices** view tab shows every runner this machine keeps (ADR 0072 §2, ADR 0078, ADR 0089).
 _Avoid_: remote (unqualified), agent host, worker, server (in UI text), sandbox, environment, box,
 belongs to (for the lifecycle sense: say "is owned by")
 

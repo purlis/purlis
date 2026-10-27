@@ -440,6 +440,8 @@ macro_rules! app_commands {
                 dockerpools::remove_docker_pool,
                 dockerpools::docker_pool_link,
                 dockerpools::docker_pool_version,
+                devices::devices,
+                devices::device_runner,
                 notheld::projects_not_held,
                 dockerpools::chats_run_on,
                 runnerwrites::apply_runner_write,

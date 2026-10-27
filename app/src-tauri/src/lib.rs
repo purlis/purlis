@@ -42,6 +42,8 @@ mod chats;
 mod clipath;
 mod createproject;
 mod curation;
+// The Devices view (#2052).
+mod devices;
 mod dispatchaway;
 mod dispatched;
 mod dispatches;

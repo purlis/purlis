@@ -90,6 +90,16 @@ export const SHORTCUTS_VIEW: ViewRef = { from: null, view: "shortcuts", key: "" 
 export const SHORTCUTS_TITLE = "Keyboard shortcuts";
 
 /**
+ * **Devices** (#2052, spec #2041): this machine and every runner it keeps, with what runs on
+ * each, and each pool's use (`DevicesView.tsx`). One per project, about nothing in it: what it
+ * shows is the machine's.
+ */
+export const DEVICES_VIEW: ViewRef = { from: null, view: "devices", key: "" };
+
+/** What the Devices tab is called. */
+export const DEVICES_TITLE = "Devices";
+
+/**
  * **Settings at a workspace's level** (SE-20, #1170; first a page of its own, charter-app#280):
  * the Settings tab keyed by the level and its target — the workspace — so there is one per
  * workspace, deduplicated by the same `viewKey` and filed on that workspace's strip. It keeps the
