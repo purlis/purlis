@@ -86,8 +86,9 @@ const FIELD_ROLES: &[&str] = &["textbox", "searchbox", "combobox", "spinbutton",
 /// embedder interface (`DevToolsHost`), it is wrapped before anything reads it, so only the asks
 /// of [`EMBEDDER_ALLOWED`] reach the engine and every other is answered with nothing.
 pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
-  const native = globalThis.DevToolsHost;
-  if (native) {
+  // The engine may install its embedder interface before this runs or after: either way, what
+  // the front end reads is the wrapped one.
+  const wrap = (native) => {
     const allowed = new Set(EMBEDDER_ALLOWED);
     const refuse = (message) => {
       let id;
@@ -104,7 +105,7 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
       if (allowed.has(method)) native.sendMessageToEmbedder(message);
       else refuse(message);
     };
-    const wrapped = new Proxy(native, {
+    return new Proxy(native, {
       get(target, key) {
         if (key === '__purlisWrapped') return true;
         if (key === 'sendMessageToEmbedder') return toEmbedder;
@@ -114,10 +115,15 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
       set() { return false; },
       defineProperty() { return false; },
     });
-    try {
-      Object.defineProperty(globalThis, 'DevToolsHost', { value: wrapped, writable: false, configurable: false });
-    } catch (e) {}
-  }
+  };
+  let host = globalThis.DevToolsHost ? wrap(globalThis.DevToolsHost) : undefined;
+  try {
+    Object.defineProperty(globalThis, 'DevToolsHost', {
+      get() { return host; },
+      set(native) { if (host === undefined && native) host = wrap(native); },
+      configurable: false,
+    });
+  } catch (e) {}
   const send = globalThis.__purlisInspect;
   const open = [];
   class Socket extends EventTarget {
