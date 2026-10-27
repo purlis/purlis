@@ -205,3 +205,22 @@ fn an_unclosed_frontmatter_is_refused_not_written_over() {
         "{refused}"
     );
 }
+
+#[test]
+fn split_lines_breaks_where_python_s_splitlines_breaks() {
+    // #3482: the one `str.splitlines` every reader of the line format and of a workspace.md asks.
+    assert_eq!(
+        split_lines("a\nb\r\nc\rd\u{b}e\u{c}f\u{1c}g\u{1d}h\u{1e}i\u{85}j\u{2028}k\u{2029}l"),
+        ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"]
+    );
+    assert_eq!(split_lines("a\n\nb\n"), ["a", "", "b"]);
+    assert_eq!(split_lines("\u{1f}a"), ["\u{1f}a"]);
+    assert!(split_lines("").is_empty());
+}
+
+#[test]
+fn py_strip_and_rstrip_trim_python_s_whitespace() {
+    assert_eq!(py_strip("\u{1f}\u{a0} a b\u{3000}\u{1c}\t"), "a b");
+    assert_eq!(py_rstrip(" a \u{1e}\n"), " a");
+    assert!(is_python_space('\u{1d}') && !is_python_space('\u{200b}'));
+}

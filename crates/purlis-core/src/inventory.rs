@@ -90,11 +90,8 @@ pub fn classify_stack(files: &[String]) -> &'static str {
     }
 }
 
-/// Python's `str.strip()`: its whitespace is Unicode's, plus the four information
-/// separators U+001C..U+001F that Rust's `trim` leaves in place.
-pub fn py_strip(text: &str) -> &str {
-    text.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
-}
+/// Python's `str.strip()`: the line format's one copy (`purlis_skills::fence`, #3482).
+pub use purlis_skills::fence::py_strip;
 
 /// The inventory document, or the empty skeleton when there is none. Python's `load`.
 ///

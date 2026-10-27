@@ -7653,6 +7653,12 @@ nav.piece-files-head {
   align-self: flex-start;
 }
 
+/* New skill…'s menu, narrower than the family's widest, so at a sidebar's width it stays over
+   the view and not the editor beside it (#3308); its starts' lines wrap. */
+.skills-view-starts {
+  --menu-max: calc(var(--space-8) * 8);
+}
+
 .skills-view > .skills-view-list {
   flex: 1 1 0;
   min-block-size: 0;

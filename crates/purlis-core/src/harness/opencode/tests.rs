@@ -103,6 +103,7 @@ fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name()
             "purlis-secrets".to_owned(),
         ]
         .into(),
+        own_index: false,
     };
     let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
         Kit {
