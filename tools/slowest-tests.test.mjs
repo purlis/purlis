@@ -10,9 +10,11 @@ import {
   annotations,
   cargoTestAnnotations,
   failureAnnotations,
+  flakyAnnotations,
   readCargoFailures,
   readCases,
   readFailures,
+  readFlaky,
   slowest,
 } from "./slowest-tests.mjs";
 
@@ -235,4 +237,35 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `;
   assert.deepEqual(readCargoFailures(green), []);
   assert.deepEqual(cargoTestAnnotations(green), []);
+});
+
+/** A report in which one test failed once and passed on its retry, as nextest writes it. */
+const flakyReport = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="nextest-run" tests="2" failures="0" errors="0" time="5.0">
+    <testsuite name="purlis-browser-engine::frames" tests="2" disabled="0" errors="0" failures="0">
+        <testcase name="keys_reach_a_field" classname="purlis-browser-engine::frames" time="2.000">
+            <flakyFailure message="test failed" type="test failure">thread 'keys_reach_a_field' panicked at crates/browser-engine/tests/frames.rs:46:39:
+the field read &quot;ab&quot;, not &quot;abc&quot;</flakyFailure>
+        </testcase>
+        <testcase name="steady" classname="purlis-browser-engine::frames" time="1.000">
+        </testcase>
+    </testsuite>
+</testsuites>`;
+
+test("a test that passed only on its retry is read as flaky, and not as failed", () => {
+  assert.deepEqual(readFailures(flakyReport), []);
+  const flaky = readFlaky(flakyReport);
+  assert.equal(flaky.length, 1);
+  assert.equal(flaky[0].binary, "purlis-browser-engine::frames");
+  assert.equal(flaky[0].name, "keys_reach_a_field");
+  assert.equal(flaky[0].retries, 1);
+  assert.match(flaky[0].said.join("\n"), /panicked at crates\/browser-engine\/tests\/frames\.rs:46:39/);
+});
+
+test("each flaky test is a warning on the run, so a retry never hides it", () => {
+  const lines = flakyAnnotations(readFlaky(flakyReport));
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^::warning title=Flaky \(passed on retry 1\)%3A purlis-browser-engine%3A%3Aframes keys_reach_a_field::/);
+  assert.match(lines[0], /frames\.rs%3A46%3A39|frames\.rs:46:39/);
+  assert.deepEqual(flakyAnnotations(readFlaky(report)), []);
 });
