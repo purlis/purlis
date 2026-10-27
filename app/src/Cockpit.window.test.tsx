@@ -137,10 +137,17 @@ describe("the branch cockpit in the window (FM-5)", () => {
     await within(head).findByText("3 ahead, 0 behind main");
     await waitFor(() => expect(said(asked).at(-1)).toEqual(ONE));
 
-    screen
-      .getByRole("treegrid", { name: "Files of one" })
-      .querySelector<HTMLElement>("[data-row]")
-      ?.focus();
+    // The tree family draws its rows in a commit after the cockpit's (#3194): the Esc is
+    // pressed once a row is drawn and holds the keyboard, never into nothing.
+    const files = screen.getByRole("treegrid", { name: "Files of one" });
+    // Its folder read and drawn first, so no later draw takes the keyboard back.
+    await within(files).findByRole("row", { name: /README\.md/ });
+    await waitFor(() => {
+      const first = files.querySelector<HTMLElement>("[data-row]");
+      expect(first).not.toBeNull();
+      first?.focus();
+      expect(first).toHaveFocus();
+    });
     await userEvent.keyboard("{Escape}");
 
     await screen.findByRole("treegrid", { name: "Repos and branches" });
