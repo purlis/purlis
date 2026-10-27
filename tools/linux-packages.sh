@@ -5,7 +5,7 @@
 # The Linux jobs' package install, bounded and cacheable (#1477).
 #
 #   tools/linux-packages.sh key [--tauri] PACKAGE...
-#   tools/linux-packages.sh install [--cache DIR] [--tauri] PACKAGE...
+#   tools/linux-packages.sh install [--cache DIR [--refresh]] [--tauri] PACKAGE...
 #
 # `--tauri` adds Tauri's Linux build dependencies, which this file names once for every job.
 #
@@ -27,6 +27,12 @@
 #     own (UPDATE_SECONDS, INSTALL_SECONDS), and a failed or stuck attempt is tried once more.
 #     On 2026-10-07 the mirror took 1,285 s for an install that takes under 45 s, and a run
 #     sat for over an hour; now the step fails in minutes and says why.
+#   - With `--refresh` as well (the action passes it on `main` when this image's key missed), the
+#     cached files go into apt's archives directory but are not installed as they are: the
+#     install asks the mirror, which downloads only the versions that changed and checks every
+#     file against the signed index, and the cache saved after holds this image's versions. So a
+#     set restored from an older image is renewed on each image's first `main` run, and no
+#     cached .deb outlives one image (#3547).
 #   - On Ubuntu, the second attempt asks another mirror (#3547): the distribution's own
 #     (archive.ubuntu.com and security.ubuntu.com, or ports.ubuntu.com off x86), and those
 #     alone, rather than the image's mirror, which is the one that was slow.
@@ -63,7 +69,7 @@ SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 APT_OPTIONS="-y -q -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60"
 
 usage() {
-  echo "usage: $0 key [--tauri] PACKAGE... | $0 install [--cache DIR] [--tauri] PACKAGE..." >&2
+  echo "usage: $0 key [--tauri] PACKAGE... | $0 install [--cache DIR [--refresh]] [--tauri] PACKAGE..." >&2
   exit 2
 }
 
@@ -73,6 +79,7 @@ shift
 case "$mode" in key | install) ;; *) usage ;; esac
 
 cache=""
+refresh=false
 packages=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -80,6 +87,10 @@ while [ $# -gt 0 ]; do
       [ $# -gt 1 ] || usage
       cache=$2
       shift 2
+      ;;
+    --refresh)
+      refresh=true
+      shift
       ;;
     --tauri)
       packages="$packages $TAURI_PACKAGES"
@@ -162,7 +173,9 @@ other_mirror() {
   } > "$dir/sources.list"
   # An empty parts directory, so the image's own files there are not read.
   mkdir "$dir/parts"
-  sources=(-o "Dir::Etc::SourceList=$dir/sources.list" -o "Dir::Etc::SourceParts=$dir/parts")
+  # And the image's own lists are kept, so a later `apt-get install` in the job still finds them.
+  sources=(-o "Dir::Etc::SourceList=$dir/sources.list" -o "Dir::Etc::SourceParts=$dir/parts"
+    -o APT::Get::List-Cleanup=0)
 }
 
 elapsed() {
@@ -185,6 +198,8 @@ apt() {
 # install fails with "Unable to fetch some archives". Every warm run failed so until 2026-10-10.
 if [ -n "$cache" ] && ls "$cache"/*.deb > /dev/null 2>&1; then
   $SUDO cp "$cache"/*.deb "$ARCHIVES"/
+fi
+if [ "$refresh" = false ] && [ -n "$cache" ] && ls "$cache"/*.deb > /dev/null 2>&1; then
   debs=()
   for deb in "$cache"/*.deb; do
     debs+=("$ARCHIVES/$(basename "$deb")")
@@ -216,8 +231,13 @@ while :; do
     why="failed (exit $status)"
   fi
   if [ "$attempt" -ge "$ATTEMPTS" ]; then
-    echo "::error title=Linux packages::apt-get $why on attempt $attempt of $ATTEMPTS${mirror:+, the last from $mirror}: the distribution's mirrors are slow or down, not the code under test. Re-run the job later."
-    say "The install failed after $(elapsed) s: apt-get $why on each of $ATTEMPTS attempts${mirror:+, the last from $mirror}, so the mirrors are slow or down."
+    if [ -n "$mirror" ]; then
+      down="the image's mirror and $mirror are slow or down"
+    else
+      down="the distribution's mirror is slow or down"
+    fi
+    echo "::error title=Linux packages::apt-get $why on attempt $attempt of $ATTEMPTS${mirror:+, the last from $mirror}: $down, not the code under test. Re-run the job later."
+    say "The install failed after $(elapsed) s: apt-get $why on each of $ATTEMPTS attempts${mirror:+, the last from $mirror}, so $down."
     exit 1
   fi
   other_mirror

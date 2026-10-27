@@ -292,3 +292,56 @@ test("without --cache nothing is kept for a cache and nothing is read from one",
   assert.ok(r.apt.every((l) => !l.includes("--no-download")));
   assert.ok(r.apt.some((l) => l.includes("libwebkit2gtk-4.1-dev")));
 });
+
+test("with --refresh the cached files go to apt's archives but the install asks the mirror, and the set is saved anew", () => {
+  const { root, archives, run } = machine();
+  const cache = join(root, "cache");
+  mkdirSync(cache);
+  writeFileSync(join(cache, "libfoo_0.9-1_amd64.deb"), "");
+  const r = run("install", "--cache", cache, "--refresh", "socat");
+  assert.equal(r.status, 0, r.stderr);
+  const apt = r.apt.filter((l) => l.startsWith("apt-get"));
+  assert.ok(apt.every((l) => !l.includes("--no-download")), apt.join("\n"));
+  assert.ok(apt.some((l) => l.includes("update")));
+  // There for apt to reuse when its version is still the one the index names.
+  assert.ok(existsSync(join(archives, "libfoo_0.9-1_amd64.deb")));
+  assert.match(r.output, /^save=true$/m);
+  assert.deepEqual(readdirSync(cache).sort(), ["libbar_1%3a2.0_amd64.deb", "libfoo_1.0-1_amd64.deb"]);
+  assert.match(r.summary, /from the mirror/);
+});
+
+test("the second attempt keeps the image's own package lists", () => {
+  const { run } = machine({ failUpdates: 1 });
+  const r = run("install", "socat");
+  const update = r.apt.filter((l) => l.startsWith("apt-get") && l.includes("update"))[1];
+  assert.match(update, /-o APT::Get::List-Cleanup=0/);
+});
+
+test("off Ubuntu a failed install blames the one mirror there is", () => {
+  const { run } = machine({ failInstalls: 2, osRelease: null });
+  const r = run("install", "socat");
+  assert.notEqual(r.status, 0);
+  assert.match(r.stdout, /::error[^\n]*the distribution's mirror is slow or down/);
+});
+
+// The action around the script: a pull request cannot run it, so its wiring is read here.
+test("the action restores this image's key, then the old name, then another image's; main refreshes, and saves only what the mirror gave", () => {
+  const action = readFileSync(
+    join(dirname(script), "..", ".github", "actions", "linux-packages", "action.yml"),
+    "utf8",
+  );
+  assert.match(
+    action,
+    /key: \$\{\{ steps\.key\.outputs\.key \}\}\n\s+restore-keys: \|\n\s+\$\{\{ steps\.key\.outputs\.previous \}\}\n\s+\$\{\{ steps\.key\.outputs\.prefix \}\}\n/,
+  );
+  assert.match(
+    action,
+    /REFRESH: \$\{\{ github\.ref == 'refs\/heads\/main' && steps\.restore\.outputs\.cache-hit != 'true' \}\}/,
+  );
+  assert.match(action, /\[ "\$REFRESH" = true \] && args\+=\(--refresh\)/);
+  const save = action.match(/- if: (.*)\n\s+uses: actions\/cache\/save@/)?.[1];
+  assert.equal(
+    save,
+    "github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true' && steps.install.outputs.save == 'true'",
+  );
+});
