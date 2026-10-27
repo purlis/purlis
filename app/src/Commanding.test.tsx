@@ -372,11 +372,14 @@ describe("the palette reaching what the window can do", () => {
 
     await runFromPalette("remove the folder of this chat");
 
-    // Verbatim, beside the rows rather than behind them, and the palette is still up.
-    const alert = await within(
+    // Verbatim, beside the rows rather than behind them, and the palette is still up: a polite
+    // status, told as a refusal in words (#3344).
+    const line = await within(
       await screen.findByRole("dialog", { name: "Command palette" }),
-    ).findByRole("alert");
-    expect(alert).toHaveTextContent(said);
+    ).findByText((text) => text.includes(said));
+    const status = line.closest('[role="status"]');
+    expect(status).toHaveTextContent(said);
+    expect(status).toHaveTextContent(/^Not done:/);
     expect(
       asked.filter(({ cmd }) => cmd === "worktree_remove").map(({ args }) => args),
     ).toMatchObject([{ force: false }]);
@@ -397,8 +400,8 @@ describe("the palette reaching what the window can do", () => {
     await userEvent.keyboard("{Escape}");
 
     await runFromPalette("remove the folder of this chat");
-    await within(await screen.findByRole("dialog", { name: "Command palette" })).findByRole(
-      "alert",
+    await within(await screen.findByRole("dialog", { name: "Command palette" })).findByText(
+      (text) => text.includes("svc/fix-it has uncommitted changes"),
     );
     refuse = false;
     // The palette stayed open, and the answer to the sentence is now a row in it.
