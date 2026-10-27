@@ -3149,12 +3149,6 @@ body {
   min-width: 0;
   white-space: nowrap;
 }
-.explorer .explorer-section-head .section-of {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-transform: none;
-  letter-spacing: normal;
-}
 .explorer .explorer-section-head .twisty {
   flex: none;
 }

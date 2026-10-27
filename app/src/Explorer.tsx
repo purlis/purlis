@@ -244,6 +244,7 @@ export function Explorer({
   onGoToWorkspace,
   reveal,
   onSearchContents,
+  onSearchKey,
 }: {
   /** The project, for reading a branch's folders. Without one no folder is read. */
   plane?: PlaneId;
@@ -296,6 +297,12 @@ export function Explorer({
    * what the filter holds. No link without it.
    */
   onSearchContents?: (kind: "branch" | "workspace", at: Place, query: string) => void;
+  /**
+   * **⌘⇧F does what the Search contents link says** (#3343): while the keyboard is in the files
+   * view (`inside`), the window's key runs `run`, Search on the filter's scope with its words,
+   * instead of Search on the window's focus. Handed over after each render, and taken back.
+   */
+  onSearchKey?: (here: SearchKeyHere | undefined) => void;
 }) {
   const has = (section: SectionId) => PART_SECTIONS[part].includes(section);
   /** Whether this draws the plane root's files (issue 1916): the strip is on the plane root,
@@ -354,9 +361,11 @@ export function Explorer({
   const [chosenRepo, setChosenRepo] = useState<string>();
   /** Whether the filter finds in all the workspace's repos rather than the selected one. */
   const [allRepos, setAllRepos] = useState(false);
-  /** Whether the filter finds files by name (#3343), as it does on a workspace's Files; in the
-   *  cockpit and at the plane root it narrows the tree's rows. */
-  const finds = has("files") && workspace !== undefined && cockpit === undefined;
+  /** Whether the filter finds files by name (#3343), as it does on a workspace's own Files; on a
+   *  branch or repo picked in Repos, in the cockpit and at the plane root it narrows the tree's
+   *  rows, with *Changed only* and *Show ignored files* beside it. */
+  const finds =
+    has("files") && workspace !== undefined && cockpit === undefined && spot === undefined;
   const topFold =
     filesTop === undefined || filesWorkspace === undefined
       ? undefined
@@ -395,7 +404,10 @@ export function Explorer({
     () =>
       new Map(
         [...statuses].flatMap(([key, read]) =>
-          read.status === undefined ? [] : [[key, indexed(read.status)] as const],
+          // A status with nothing in it (a core that answered nothing) indexes nothing.
+          read.status === undefined || read.status === null
+            ? []
+            : [[key, indexed(read.status)] as const],
         ),
       ),
     [statuses],
@@ -487,6 +499,14 @@ export function Explorer({
   /** Opens or closes a clone or a branch's folder: the one fold state of each, whether a click
    *  or a key asked. A clone is open until folded; a folder is closed until opened. */
   const fold = (key: string, open: boolean) => {
+    // A repo of several opened or closed, by a press, a twist or an arrow, is the one the
+    // filter's *Selected* scope is of (#3343), as every open selects in the prototype.
+    if (filesTop === undefined && workspace !== undefined) {
+      const repo = repos.find(
+        (one) => key === fileFold(workspace, { repo: one, piece: null, folder: "" }),
+      );
+      if (repo !== undefined) setChosenRepo(repo);
+    }
     if (key === topFold)
       setShut((was) => {
         if (open !== was.has(key)) return was;
@@ -580,6 +600,34 @@ export function Explorer({
     revealed.current = revealSeen;
     row.scrollIntoView?.({ block: "nearest" });
     row.focus();
+  });
+
+  // ⌘⇧F in the files view searches the filter's scope with its words (#3343): what the link
+  // under the filter does, kept current for the window's key.
+  useEffect(() => {
+    if (onSearchKey === undefined) return;
+    const run =
+      onSearchContents !== undefined &&
+      has("files") &&
+      cockpit === undefined &&
+      selected !== undefined &&
+      workspace !== undefined
+        ? () =>
+            onSearchContents(
+              wide ? "workspace" : "branch",
+              { workspace, ...selected },
+              filter.trim(),
+            )
+        : undefined;
+    onSearchKey(
+      run === undefined
+        ? undefined
+        : {
+            inside: navRef.current?.querySelector<HTMLElement>('[data-section="files"]') ?? null,
+            run,
+          },
+    );
+    return () => onSearchKey(undefined);
   });
 
   /** Steps back out of the cockpit to the whole workspace. */
@@ -707,7 +755,6 @@ export function Explorer({
    *  filter's *Selected* scope. */
   const repoRowOf = (repo: string) => {
     const top: BranchFolderRef = { repo, piece: null, folder: "" };
-    const opens = fileFold(workspace, top);
     const branch = repoBranch(state, repo);
     return (
       <FilesRow
@@ -723,14 +770,7 @@ export function Explorer({
             <span className="repo-branch ui-text-meta">{branch}</span>
           )
         }
-        at={{
-          ...at,
-          place: { workspace, repo, piece: null },
-          fold: (key, open) => {
-            if (key === opens) setChosenRepo(repo);
-            fold(key, open);
-          },
-        }}
+        at={{ ...at, place: { workspace, repo, piece: null } }}
         data-testid={`files-${repo}`}
       />
     );
@@ -940,8 +980,16 @@ export function Explorer({
                 <FilesFilter
                   filter={filter}
                   onFilter={setFilter}
+                  onArrowDown={
+                    finding
+                      ? () =>
+                          navRef.current
+                            ?.querySelector<HTMLElement>('.found-files [role="row"]')
+                            ?.focus()
+                      : undefined
+                  }
                   placeholder={
-                    repos.length === 1
+                    repos.length === 1 || !finds
                       ? "Filter files"
                       : wide
                         ? "Filter all repos"
@@ -949,7 +997,7 @@ export function Explorer({
                   }
                 />
               )}
-              {repos.length > 1 && (
+              {finds && repos.length > 1 && (
                 <ScopeSwitch
                   label="Filter the files of"
                   scopes={[
@@ -998,7 +1046,8 @@ export function Explorer({
             <FoundFiles
               found={found}
               query={filter.trim()}
-              grouped={repos.length > 1}
+              grouped={wide}
+              pieces={pieces}
               icons={icons}
               onOpen={(hit) => onOpenFile?.(placeOf(hit), hit.path)}
             />
@@ -1042,6 +1091,9 @@ export function Explorer({
  */
 export type ExplorerPart = "whole" | "explorer" | "repos";
 
+/** What ⌘⇧F runs while the keyboard is `inside` Explorer's files view (#3343). */
+export type SearchKeyHere = { inside: HTMLElement | null; run: () => void };
+
 const PART_SECTIONS: Record<ExplorerPart, readonly SectionId[]> = {
   whole: ["repos", "files"],
   explorer: ["files"],
@@ -1059,10 +1111,13 @@ const PART_NAMES: Record<ExplorerPart, { label: string; testid: string }> = {
 function FilesFilter({
   filter,
   onFilter,
+  onArrowDown,
   placeholder = "Filter files",
 }: {
   filter: string;
   onFilter: (to: string) => void;
+  /** ↓ from the box: into the files it found (#3343), as the palette's box does. */
+  onArrowDown?: () => void;
   /** What it finds in, said in the box while it is empty: "Filter svc", "Filter all repos". */
   placeholder?: string;
 }) {
@@ -1077,6 +1132,11 @@ function FilesFilter({
       placeholder={placeholder}
       onChange={onFilter}
       onKeyDown={(event) => {
+        if (event.key === "ArrowDown" && onArrowDown !== undefined) {
+          event.preventDefault();
+          onArrowDown();
+          return;
+        }
         if (event.key !== "Escape" || filter === "") return;
         // Taken here: an Esc that cleared the box has done its job, and nothing behind
         // the explorer should act on it too.
@@ -1150,12 +1210,15 @@ function FoundFiles({
   found,
   query,
   grouped,
+  pieces,
   icons,
   onOpen,
 }: {
   found: FilesFoundNow;
   query: string;
   grouped: boolean;
+  /** Each repo's branches, so a group of a branch is headed by its name. */
+  pieces?: WorkspaceState["pieces"];
   icons: IconTheme;
   onOpen: (hit: FoundFile) => void;
 }) {
@@ -1179,7 +1242,8 @@ function FoundFiles({
     );
   const groups = new Map<string, FoundFile[]>();
   for (const hit of found.files) {
-    const at = hit.piece === null ? hit.repo : `${hit.repo} · ${hit.piece}`;
+    const at =
+      hit.piece === null ? hit.repo : `${hit.repo} · ${branchName(pieces?.[hit.repo], hit.piece)}`;
     groups.set(at, [...(groups.get(at) ?? []), hit]);
   }
   const rowOf = (hit: FoundFile) => {

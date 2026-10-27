@@ -11,6 +11,7 @@ import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { GLOBAL } from "./windowprefs";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
+import { selectNamed } from "./ui/select/select.testkit";
 
 /**
  * **Explorer in sections** (#1677, spec #1671 B-12): the focused workspace's repos and branches,
@@ -97,7 +98,16 @@ function core() {
             entries:
               a.piece === "one"
                 ? [{ name: "lib.rs", kind: "file", ignored: false, refused: null }]
-                : [{ name: "README.md", kind: "file", ignored: false, refused: null }],
+                : [
+                    { name: "README.md", kind: "file", ignored: false, refused: null },
+                    // Each workspace's own, so two workspaces' trees are told apart.
+                    {
+                      name: `${String(a.workspace)}.md`,
+                      kind: "file",
+                      ignored: false,
+                      refused: null,
+                    },
+                  ],
             more: 0,
           }
         : { entries: [], more: 0 };
@@ -204,10 +214,14 @@ describe("Explorer in sections (#1677)", () => {
     const alphas = await explorer().findByRole("treegrid", { name: "Files of alpha" });
     expect(await within(alphas).findByRole("row", { name: /^README\.md/ })).toBeVisible();
 
+    expect(await within(alphas).findByRole("row", { name: /^alpha\.md/ })).toBeVisible();
+
     await goTo("beta");
 
     const betas = await explorer().findByRole("treegrid", { name: "Files of beta" });
-    expect(await within(betas).findByRole("row", { name: /^README\.md/ })).toBeVisible();
+    expect(await within(betas).findByRole("row", { name: /^beta\.md/ })).toBeVisible();
+    // Beta's own rows, and none of alpha's.
+    expect(within(betas).queryByRole("row", { name: /^alpha\.md/ })).toBeNull();
     expect(screen.getByRole("heading", { name: "beta" })).toBeVisible();
     expect(explorer().queryByRole("treegrid", { name: "Files of alpha" })).toBeNull();
     await reposView().findByTestId("clone-web");
@@ -403,6 +417,33 @@ describe("Explorer in sections (#1677)", () => {
         }),
       ),
     );
+  });
+});
+
+describe("Search contents from Explorer's filter (#3343)", () => {
+  it("opens Search on the filter's scope with its words by ⌘⇧F in the view, as its link does", async () => {
+    core();
+    render(<App />);
+    await showTheExplorer();
+    const tree = await explorer().findByRole("treegrid", { name: "Files of alpha" });
+    await within(tree).findByRole("row", { name: /^README\.md/ });
+    const box = explorer().getByRole("searchbox", { name: "Filter files" });
+    // Given the keyboard rather than clicked: jsdom lays nothing out, so every box is at 0,0 and a
+    // click there is heard by the resize handles too, which take the keyboard.
+    box.focus();
+    await userEvent.keyboard("read");
+
+    // jsdom is not a Mac, so the key is Ctrl's (`searchKey.ts`).
+    await userEvent.keyboard("{Control>}{Shift>}F{/Shift}{/Control}");
+
+    const search = await screen.findByRole("tabpanel", { name: "Search" });
+    await waitFor(() =>
+      expect(within(search).getByRole("searchbox", { name: "Search the files" })).toHaveValue(
+        "read",
+      ),
+    );
+    // The one repo's own folder: Search's Branch, as the link under the filter says.
+    expect(selectNamed("Where to search", search)).toHaveTextContent("Branch svc");
   });
 });
 

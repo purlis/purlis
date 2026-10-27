@@ -266,6 +266,13 @@ describe("a path the branch changed that purlis names and does not read (#704)",
     await userEvent.type(screen.getByLabelText("Filter files"), "readme");
 
     await waitFor(() => expect(refusedRows()).toHaveLength(0));
+    // On a picked branch the box narrows its tree (D-3343-1): the file that matches is still a
+    // row of it, the folders that hold none are gone, and the tree's toggles stay.
+    expect(await named("^README.md")).toBeInTheDocument();
+    expect(row("file:svc/one:README.md")).toBeInTheDocument();
+    expect(tree().querySelector('[data-row="file:svc/one:lib"]')).toBeNull();
+    expect(screen.queryByRole("grid", { name: "Files found" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Changed only" })).toBeInTheDocument();
   });
 
   it("draws the first fifty and counts the rest", async () => {

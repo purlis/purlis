@@ -125,7 +125,7 @@ import {
   type OpenUseSkill,
   type SkillBudgets,
 } from "./UseSkill";
-import { Explorer, type Spot } from "./Explorer";
+import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import {
   pieceFileTitle,
   pieceFileView,
@@ -1256,6 +1256,11 @@ export const PlaneView = memo(function PlaneView({
       }),
     [],
   );
+  /** What ⌘⇧F runs while the keyboard is in Explorer's files (#3343), kept by Explorer. */
+  const explorerSearchKey = useRef<SearchKeyHere | undefined>(undefined);
+  const keepExplorerSearchKey = useCallback((here: SearchKeyHere | undefined) => {
+    explorerSearchKey.current = here;
+  }, []);
   /** **Search contents, from Explorer's filter** (#3343): the Search view on the scope the filter
    *  found in, Branch or Workspace, with what it held; the switches as they were left. */
   const searchContents = useCallback(
@@ -7796,6 +7801,18 @@ export const PlaneView = memo(function PlaneView({
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
+      // ⌘⇧F in Explorer's files does what its Search contents link says (#3343): Search on the
+      // filter's scope, with its words.
+      const here = explorerSearchKey.current;
+      if (
+        "show" in which &&
+        which.show === "search" &&
+        here !== undefined &&
+        here.inside?.contains(document.activeElement) === true
+      ) {
+        here.run();
+        return;
+      }
       if ("toggle" in which) toggleRegionSeen(which.toggle);
       else showSideViewSeen(which.show);
     };
@@ -8804,6 +8821,7 @@ export const PlaneView = memo(function PlaneView({
                     reveal={explorerReveal}
                     // Search contents (#3343): Search on the filter's scope, with its words.
                     onSearchContents={searchContents}
+                    onSearchKey={keepExplorerSearchKey}
                   />
                 )}
               />
