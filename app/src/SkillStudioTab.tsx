@@ -67,6 +67,14 @@ import { skillView } from "./skillRuns";
 import { BUILT_IN_STAYS, PINNABLE, turnOf } from "./skillsListing";
 import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 import type { ViewRef } from "./tabs";
+import {
+  ControlBody,
+  ControlCell,
+  ControlColumn,
+  ControlHead,
+  ControlRow,
+  ControlTable,
+} from "./ui/table/ControlTable";
 
 /** The light editor, its own chunk (`tools/main-chunk-has-no-codemirror.mjs`). */
 const SkillEditor = lazy(() => import("./SkillEditor"));
@@ -578,23 +586,23 @@ export function SkillStudioTab({
         ))}
       </div>
       {studio.skills.length > 0 && (
-        <table className="ui-table" aria-label="Skills">
-          <thead>
-            <tr>
-              <th scope="col">Skill</th>
-              <th scope="col">Level</th>
-              <th scope="col">Granted to</th>
-              <th scope="col">In a chat</th>
-              <th scope="col">What it does</th>
-              <th scope="col">Works on</th>
-              <th scope="col">Change</th>
-            </tr>
-          </thead>
-          <tbody>
+        // A table of controls: its rows hold pickers (where a skill reaches, where it moves) and are
+        // dragged onto a level, so each control keeps its own keys (#2911).
+        <ControlTable aria-label="Skills">
+          <ControlHead>
+            <ControlColumn>Skill</ControlColumn>
+            <ControlColumn>Level</ControlColumn>
+            <ControlColumn>Granted to</ControlColumn>
+            <ControlColumn>In a chat</ControlColumn>
+            <ControlColumn>What it does</ControlColumn>
+            <ControlColumn>Works on</ControlColumn>
+            <ControlColumn>Change</ControlColumn>
+          </ControlHead>
+          <ControlBody>
             {studio.skills.map((skill) => {
               const level = levelOf(skill, scope);
               return (
-                <tr
+                <ControlRow
                   key={`${skill.level}\u0000${skill.folder}`}
                   data-testid={testid(skill.name)}
                   draggable={level !== null}
@@ -607,7 +615,7 @@ export function SkillStudioTab({
                     event.dataTransfer.effectAllowed = "move";
                   }}
                 >
-                  <td>
+                  <ControlCell>
                     {onOpenView === undefined ? (
                       <code>{skill.name}</code>
                     ) : (
@@ -620,8 +628,8 @@ export function SkillStudioTab({
                         <code>{skill.name}</code>
                       </Button>
                     )}
-                  </td>
-                  <td>
+                  </ControlCell>
+                  <ControlCell>
                     {skill.label}
                     {skill.local && level !== null && (
                       <>
@@ -634,8 +642,8 @@ export function SkillStudioTab({
                         </Button>
                       </>
                     )}
-                  </td>
-                  <td>
+                  </ControlCell>
+                  <ControlCell>
                     {!skill.granted ? (
                       ""
                     ) : (
@@ -651,8 +659,8 @@ export function SkillStudioTab({
                         }
                       />
                     )}
-                  </td>
-                  <td>
+                  </ControlCell>
+                  <ControlCell>
                     {skill.on
                       ? (skill.unchecked ??
                         (skill.hidden.length > 0
@@ -726,12 +734,12 @@ export function SkillStudioTab({
                         }
                       />
                     )}
-                  </td>
-                  <td>{skill.description}</td>
-                  <td>
+                  </ControlCell>
+                  <ControlCell>{skill.description}</ControlCell>
+                  <ControlCell>
                     <SkillCompatBadges name={skill.name} compat={skill.compat} lint={skill.lint} />
-                  </td>
-                  <td>
+                  </ControlCell>
+                  <ControlCell>
                     <SkillRowActions
                       actions={[
                         ...(level === null
@@ -797,12 +805,12 @@ export function SkillStudioTab({
                         )
                       }
                     />
-                  </td>
-                </tr>
+                  </ControlCell>
+                </ControlRow>
               );
             })}
-          </tbody>
-        </table>
+          </ControlBody>
+        </ControlTable>
       )}
       <SkillStudioHarnesses
         plane={plane}

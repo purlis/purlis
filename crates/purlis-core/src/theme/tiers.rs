@@ -124,7 +124,7 @@ fn lowest_at_every_hue(theme: &ResolvedTheme, tier: &str, grounds: &[&'static st
     let mut found = Vec::new();
     for degree in 0..360_u32 {
         let degree = f64::from(degree);
-        let most = tint::apart_chroma(theme, degree);
+        let most = tint::most_at(theme, degree);
         let drawn = tint::turned_at(theme, degree, most, &only);
         found.extend(moving.iter().filter_map(|pair| {
             ratio(&drawn, pair).map(|ratio| (ratio / pair.floor, *pair, ratio))

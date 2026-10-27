@@ -263,13 +263,14 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     fireEvent.keyDown(rowOf(section, "steward 4"), { key: "ArrowLeft" });
 
     wears(section.querySelector(".stopping"), "meta", "Stopping…");
-    // A count is meta at the strong weight, as every count in the window is (the ruling's T5).
+    // A count is the count family's pill (#2912): the counts' 11px at the strong weight, as every
+    // count in the window is (the ruling's T5), on the count's ground.
     const count = section.querySelector(".task-count") as Element;
-    expect([...count.classList]).toEqual(["task-count", "ui-text-meta", "ui-text-strong"]);
+    expect(count).toHaveAttribute("data-scope", "count");
     expect(px(named(drawnWith(count, "font-size")))).toBe(11);
     expect(core.get(named(drawnWith(count, "font-weight")) ?? "")).toBe("600");
-    expect(named(drawnWith(count, "color"))).toBe("--text-quiet");
-    expect(named(drawnWith(count, "line-height"))).toBe("--line-height-tight");
+    expect(named(drawnWith(count, "color"))).toBe("--text-secondary");
+    expect(named(drawnWith(count, "background-color"))).toBe("--control-count");
   });
 
   it("heads a workspace's sessions with the section label, where the list is grouped", () => {
@@ -390,7 +391,7 @@ describe("a Chats row is the shared row's height (#1920)", () => {
     expect(drawnWith(section.querySelector(".at-limit") as Element, "gap")).toBe("var(--space-2)");
     expect(drawnWith(section.querySelector(".restart-said") as Element, "padding")).toBe(under);
     const count = section.querySelector(".task-count") as Element;
-    expect(drawnWith(count, "padding")).toBe("0 var(--space-2)");
-    expect(drawnWith(count, "border-radius")).toBe("var(--radius-sm)");
+    expect(drawnWith(count, "padding-inline")).toBe("var(--space-2)");
+    expect(drawnWith(count, "border-radius")).toBe("var(--radius-full)");
   });
 });

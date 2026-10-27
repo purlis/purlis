@@ -16,6 +16,7 @@ import { counted } from "./dispatches";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
 import { Button } from "./ui/button/Button";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 
 /** Whose a skill from outside the project is, as a row says it. */
 export function ownerShown(owner: Owner | null): string {
@@ -125,22 +126,25 @@ export function SkillStudioHarnesses({
           </p>
           {harness.trouble !== null && <p className="honest">{harness.trouble}</p>}
           {harness.plugins.length > 0 && (
-            <table className="ui-table" aria-label={`${harness.title} plugins`}>
-              <thead>
-                <tr>
-                  <th scope="col">Plugin</th>
-                  <th scope="col">Installed</th>
-                  <th scope="col">In a chat</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table aria-label={`${harness.title} plugins`}>
+              <TableHeader>
+                <TableColumn isRowHeader>Plugin</TableColumn>
+                <TableColumn>Installed</TableColumn>
+                <TableColumn>In a chat</TableColumn>
+              </TableHeader>
+              <TableBody>
                 {harness.plugins.map((plugin) => (
-                  <tr key={plugin.id} data-testid={`plugin-${harness.harness}-${plugin.id}`}>
-                    <td>
+                  <TableRow
+                    key={plugin.id}
+                    id={plugin.id}
+                    textValue={plugin.name}
+                    data-testid={`plugin-${harness.harness}-${plugin.id}`}
+                  >
+                    <TableCell>
                       <code>{plugin.name}</code>
-                    </td>
-                    <td>{plugin.origin}</td>
-                    <td>
+                    </TableCell>
+                    <TableCell>{plugin.origin}</TableCell>
+                    <TableCell>
                       {pluginShown(plugin, harness.title)}
                       {plugin.pinned === null &&
                         harness.unsupported === null &&
@@ -156,11 +160,11 @@ export function SkillStudioHarnesses({
                             )}
                           </>
                         )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
           {harness.unsupported !== null && <p className="honest">{harness.unsupported}.</p>}
           {harness.only_off !== null && (
@@ -169,27 +173,27 @@ export function SkillStudioHarnesses({
           {harness.skills.length === 0 ? (
             <p className="honest">{`${harness.title} has no skills of its own here.`}</p>
           ) : (
-            <table className="ui-table" aria-label={`${harness.title} skills`}>
-              <thead>
-                <tr>
-                  <th scope="col">Skill</th>
-                  <th scope="col">From</th>
-                  <th scope="col">In a chat</th>
-                  <th scope="col">What it does</th>
-                  <th scope="col">Works on</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table aria-label={`${harness.title} skills`}>
+              <TableHeader>
+                <TableColumn isRowHeader>Skill</TableColumn>
+                <TableColumn>From</TableColumn>
+                <TableColumn>In a chat</TableColumn>
+                <TableColumn>What it does</TableColumn>
+                <TableColumn>Works on</TableColumn>
+              </TableHeader>
+              <TableBody>
                 {harness.skills.map((skill) => (
-                  <tr
+                  <TableRow
                     key={`${skill.level}\u0000${skill.folder}`}
+                    id={`${skill.level}\u0000${skill.folder}`}
+                    textValue={skill.name}
                     data-testid={`found-${harness.harness}-${skill.name}`}
                   >
-                    <td>
+                    <TableCell>
                       <code>{skill.name}</code>
-                    </td>
-                    <td>{fromWhom(skill)}</td>
-                    <td>
+                    </TableCell>
+                    <TableCell>{fromWhom(skill)}</TableCell>
+                    <TableCell>
                       {skill.on ? "On" : `Left out: ${skill.left_out ?? ""}`}
                       {skill.switch?.kind === "alone" && (
                         <> {switchFor(harness.harness, "skill", skill.name, skill.on)}</>
@@ -197,51 +201,51 @@ export function SkillStudioHarnesses({
                       {skill.switch?.kind === "not" && (
                         <span className="honest">{` ${skill.switch.why}.`}</span>
                       )}
-                    </td>
-                    <td>{skill.description}</td>
-                    <td>
+                    </TableCell>
+                    <TableCell>{skill.description}</TableCell>
+                    <TableCell>
                       <SkillCompatBadges
                         name={skill.name}
                         compat={skill.compat}
                         lint={skill.lint}
                       />
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
           {harness.repo_left_out.length > 0 && (
             <>
               <p className="honest">
                 {`${harness.title} chats in a repo here start without ${counted(harness.repo_left_out.length, "skill", "skills")} of this project's:`}
               </p>
-              <table
-                className="ui-table"
-                aria-label={`What a repo leaves out of ${harness.title} chats`}
-              >
-                <thead>
-                  <tr>
-                    <th scope="col">Skill</th>
-                    <th scope="col">Level</th>
-                    <th scope="col">Why</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {harness.repo_left_out.map((skill) => (
-                    <tr
-                      key={`${skill.level}\u0000${skill.folder}\u0000${skill.left_out ?? ""}`}
-                      data-testid={`repo-left-out-${harness.harness}-${skill.name}`}
-                    >
-                      <td>
-                        <code>{skill.name}</code>
-                      </td>
-                      <td>{skill.label}</td>
-                      <td>{`Left out: ${skill.left_out ?? ""}`}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <Table aria-label={`What a repo leaves out of ${harness.title} chats`}>
+                <TableHeader>
+                  <TableColumn isRowHeader>Skill</TableColumn>
+                  <TableColumn>Level</TableColumn>
+                  <TableColumn>Why</TableColumn>
+                </TableHeader>
+                <TableBody>
+                  {harness.repo_left_out.map((skill) => {
+                    const id = `${skill.level}\u0000${skill.folder}\u0000${skill.left_out ?? ""}`;
+                    return (
+                      <TableRow
+                        key={id}
+                        id={id}
+                        textValue={skill.name}
+                        data-testid={`repo-left-out-${harness.harness}-${skill.name}`}
+                      >
+                        <TableCell>
+                          <code>{skill.name}</code>
+                        </TableCell>
+                        <TableCell>{skill.label}</TableCell>
+                        <TableCell>{`Left out: ${skill.left_out ?? ""}`}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </>
           )}
         </div>

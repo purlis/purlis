@@ -6,6 +6,7 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { VaultTab } from "./VaultTab";
+import { cellsOf } from "./ui/table/table.testkit";
 import { saidOfTheOldExport } from "./VaultSignIn";
 import type { UnreadFor, VaultContents, VaultSecret } from "./bindings";
 
@@ -66,15 +67,11 @@ function draw(onChanged = vi.fn(), onOpenVault?: (vault: string) => void) {
 
 /** The table's rows, as the text of each cell. */
 function rows(): string[][] {
-  const table = screen.getByRole("table", { name: "Secrets in ops" });
+  const table = screen.getByRole("grid", { name: "Secrets in ops" });
   return within(table)
     .getAllByRole("row")
     .slice(1)
-    .map((row) =>
-      within(row)
-        .getAllByRole("cell")
-        .map((cell) => cell.textContent ?? ""),
-    );
+    .map((row) => cellsOf(row).map((cell) => cell.textContent ?? ""));
 }
 
 /** The document holds no value typed into it: not in the markup, and not in any field. */
@@ -89,7 +86,7 @@ function noValueAnywhere(...values: string[]) {
 
 /** Opens the menu of the row for `key` and picks `item`. */
 async function fromTheMenuOf(key: string, item: string) {
-  await userEvent.click(await screen.findByRole("button", { name: key }));
+  await userEvent.click(await screen.findByRole("button", { name: `More for ${key}` }));
   await userEvent.click(await screen.findByRole("menuitem", { name: item }));
 }
 
@@ -104,15 +101,15 @@ describe("a vault's tab", () => {
     // much it holds stay, as quiet words in its first row.
     expect(await screen.findByText("System keychain · 2 secrets")).toHaveClass("view-head-says");
     expect(screen.queryByRole("heading")).not.toBeInTheDocument();
-    const table = screen.getByRole("table", { name: "Secrets in ops" });
+    const table = screen.getByRole("grid", { name: "Secrets in ops" });
     expect(
       within(table)
         .getAllByRole("columnheader")
         .map((h) => h.textContent),
-    ).toEqual(["Name", "Size", "Updated", ""]);
+    ).toEqual(["Name", "Size", "Updated", "Reveal", "Actions"]);
     expect(rows()).toEqual([
-      ["API_TOKEN", "16–31 bytes", "2026-09-24 11:32 UTC", ""],
-      ["DB_URL", "—", "—", ""],
+      ["API_TOKEN", "16–31 bytes", "2026-09-24 11:32 UTC", "", ""],
+      ["DB_URL", "—", "—", "", ""],
     ]);
     expect(asked).toEqual([{ cmd: "vault_open", args: { plane: PLANE, vault: "ops" } }]);
   });
@@ -129,7 +126,7 @@ describe("a vault's tab", () => {
     core(new Error("vault 'ops' is not registered"));
     draw();
     expect(await screen.findByRole("alert")).toHaveTextContent("vault 'ops' is not registered");
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
   });
 
   it("says why a vault charter cannot read is unhealthy", async () => {
@@ -160,7 +157,7 @@ describe("a vault's tab", () => {
     await userEvent.click(screen.getByRole("button", { name: "Read again" }));
 
     await waitFor(() =>
-      expect(rows()).toEqual([["API_TOKEN", "16–31 bytes", "2026-09-24 11:32 UTC", ""]]),
+      expect(rows()).toEqual([["API_TOKEN", "16–31 bytes", "2026-09-24 11:32 UTC", "", ""]]),
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Read again" })).not.toBeInTheDocument();
@@ -177,7 +174,7 @@ describe("a vault's tab", () => {
 
     await userEvent.clear(search);
     await userEvent.type(search, "nothing-like-it");
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
     expect(screen.getByText(/Nothing in ops matches/)).toBeInTheDocument();
   });
 
@@ -241,7 +238,7 @@ describe("a vault's tab", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Save value" }));
 
     await waitFor(() =>
-      expect(rows()).toEqual([["API_TOKEN", "32–63 bytes", "2026-09-24 11:32 UTC", ""]]),
+      expect(rows()).toEqual([["API_TOKEN", "32–63 bytes", "2026-09-24 11:32 UTC", "", ""]]),
     );
     expect(asked.find((one) => one.cmd === "vault_secret_set")?.args).toEqual({
       plane: PLANE,
@@ -326,11 +323,12 @@ describe("a vault's tab", () => {
   it("is one Tab stop, Up and Down move along the rows, and Enter opens a row's menu", async () => {
     core(contents([secret("A"), secret("B")]));
     draw();
-    const a = await screen.findByRole("button", { name: "A" });
-    const b = screen.getByRole("button", { name: "B" });
-    expect([a, b].map((one) => one.getAttribute("tabindex"))).toEqual(["0", "-1"]);
-
-    a.focus();
+    const a = await screen.findByRole("row", { name: /^A/ });
+    const b = screen.getByRole("row", { name: /^B/ });
+    // Tab from the vault's Add lands on the first row, and Tab again leaves the table.
+    act(() => screen.getByRole("button", { name: "Add" }).focus());
+    await userEvent.tab();
+    expect(a).toHaveFocus();
     await userEvent.keyboard("{ArrowDown}");
     await waitFor(() => expect(b).toHaveFocus());
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -342,6 +340,10 @@ describe("a vault's tab", () => {
         .getAllByRole("menuitem")
         .map((item) => item.textContent),
     ).toEqual(["Edit value…", "Rename…", "Copy", "Delete…"]);
+    // On its first row, as the menu button's does (charter-app#189).
+    await waitFor(() =>
+      expect(within(menu).getByRole("menuitem", { name: "Edit value…" })).toHaveFocus(),
+    );
   });
 });
 
@@ -488,7 +490,7 @@ describe("revealing a value", () => {
     await user.click(await screen.findByRole("button", { name: "Reveal OLD" }));
     await screen.findByText(REVEALED);
 
-    await user.click(screen.getByRole("button", { name: "OLD" }));
+    await user.click(screen.getByRole("button", { name: "More for OLD" }));
     await user.click(await screen.findByRole("menuitem", { name: "Rename…" }));
     const box = within(await screen.findByRole("dialog")).getByLabelText("New name");
     await user.clear(box);
@@ -499,19 +501,20 @@ describe("revealing a value", () => {
     noValueAnywhere(REVEALED);
   });
 
-  it("reaches a row's eye with Right from its name, and comes back with Left", async () => {
+  it("reaches a row's eye and its ⋯ along the row with Right, and comes back with Left", async () => {
     core(contents([secret("A"), secret("B")]));
     draw();
-    const a = await screen.findByRole("button", { name: "A" });
+    const a = await screen.findByRole("row", { name: /^A/ });
     const eye = screen.getByRole("button", { name: "Reveal A" });
-    // The eyes are not Tab stops of their own: the list stays one.
-    expect(eye).toHaveAttribute("tabindex", "-1");
-
-    a.focus();
-    await userEvent.keyboard("{ArrowRight}");
+    const more = screen.getByRole("button", { name: "More for A" });
+    act(() => a.focus());
+    // Its name, its size, when it was written, then its eye and its ⋯.
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}");
     expect(eye).toHaveFocus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(more).toHaveFocus();
     await userEvent.keyboard("{ArrowLeft}");
-    expect(a).toHaveFocus();
+    expect(eye).toHaveFocus();
   });
 });
 
@@ -525,7 +528,7 @@ describe("copying a value", () => {
     const asked = core(contents([secret("API_TOKEN")]));
     draw();
 
-    await user.click(await screen.findByRole("button", { name: "API_TOKEN" }));
+    await user.click(await screen.findByRole("button", { name: "More for API_TOKEN" }));
     await user.click(await screen.findByRole("menuitem", { name: "Copy" }));
 
     expect(await screen.findByRole("status")).toHaveTextContent(
@@ -540,7 +543,7 @@ describe("copying a value", () => {
     const user = onAFakeClock();
     core(contents([secret("API_TOKEN")]));
     draw();
-    await user.click(await screen.findByRole("button", { name: "API_TOKEN" }));
+    await user.click(await screen.findByRole("button", { name: "More for API_TOKEN" }));
     await user.click(await screen.findByRole("menuitem", { name: "Copy" }));
     await screen.findByText(/Copied API_TOKEN/);
 
@@ -556,7 +559,7 @@ describe("copying a value", () => {
       vault_secret_copy: new Error("the clipboard did not take the copy"),
     });
     draw();
-    await user.click(await screen.findByRole("button", { name: "API_TOKEN" }));
+    await user.click(await screen.findByRole("button", { name: "More for API_TOKEN" }));
     await user.click(await screen.findByRole("menuitem", { name: "Copy" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("did not take the copy");
@@ -606,7 +609,7 @@ describe("the note that a vault's items were moved", () => {
 
     noting(2);
     draw();
-    await userEvent.click(await screen.findByRole("button", { name: "API_TOKEN" }));
+    await userEvent.click(await screen.findByRole("button", { name: "More for API_TOKEN" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Copy" }));
     expect(await screen.findByRole("status")).toHaveTextContent(NOTE);
   });
@@ -729,7 +732,7 @@ describe("a 1Password vault's token", () => {
     core(contents([secret("API_TOKEN")]));
     draw();
 
-    await screen.findByRole("table", { name: "Secrets in ops" });
+    await screen.findByRole("grid", { name: "Secrets in ops" });
     expect(
       screen.queryByRole("button", { name: "Put this vault's token in your system keychain" }),
     ).not.toBeInTheDocument();
@@ -790,7 +793,7 @@ describe("a 1Password vault's token", () => {
     expect(screen.getByRole("button", { name: PUT_IT })).toBeEnabled();
     // Nothing that would read as a vault with nothing in it, or offer to write to one.
     expect(screen.queryByTestId("vault-empty")).not.toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
     expect(screen.getByText("1Password")).toHaveClass("view-head-says");
     expect(screen.queryByText(/0 secrets/)).not.toBeInTheDocument();
@@ -808,8 +811,8 @@ describe("a 1Password vault's token", () => {
       cmd: "vault_identity_put",
       args: { plane: PLANE, vault: "ops", token: PUT },
     });
-    expect(await screen.findByRole("table", { name: "Secrets in ops" })).toBeInTheDocument();
-    expect(rows()).toEqual([["DEPLOY", "—", "—", ""]]);
+    expect(await screen.findByRole("grid", { name: "Secrets in ops" })).toBeInTheDocument();
+    expect(rows()).toEqual([["DEPLOY", "—", "—", "", ""]]);
     expect(screen.getByText(/reads \$OP_TEAM_TOKEN from your system keychain/)).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
       "Stored $OP_TEAM_TOKEN in your system keychain. purlis reads it from there, and no chat is given the token.",
@@ -848,7 +851,7 @@ describe("a 1Password vault's token", () => {
     expect(screen.queryByText(/^Stored /)).not.toBeInTheDocument();
     expect(screen.getByText("reading vault 'ops' failed (op exit 1).")).toBeInTheDocument();
     expect(screen.getByLabelText("Token for $OP_TEAM_TOKEN")).toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("grid")).not.toBeInTheDocument();
     noValueAnywhere(PUT);
   });
 
@@ -1008,7 +1011,7 @@ describe("a 1Password vault's token", () => {
   it("does not read again for a store elsewhere when it is read through no token", async () => {
     const asked = core(contents([secret("API_TOKEN")]));
     draw();
-    await screen.findByRole("table", { name: "Secrets in ops" });
+    await screen.findByRole("grid", { name: "Secrets in ops" });
 
     act(() => {
       window.dispatchEvent(
@@ -1068,7 +1071,7 @@ describe("how a 1Password vault signs in, from its tab (#1527)", () => {
   it("offers the change for a 1Password vault only", async () => {
     core(contents([secret("K")]));
     draw();
-    await screen.findByRole("table", { name: "Secrets in ops" });
+    await screen.findByRole("grid", { name: "Secrets in ops" });
     expect(
       screen.queryByRole("button", { name: "Change how this vault signs in" }),
     ).not.toBeInTheDocument();
@@ -1153,7 +1156,7 @@ describe("how a 1Password vault signs in, from its tab (#1527)", () => {
       },
     });
     // The vault is read at once, with no restart, and the person is told what was skipped.
-    expect(await screen.findByRole("table", { name: "Secrets in ops" })).toBeInTheDocument();
+    expect(await screen.findByRole("grid", { name: "Secrets in ops" })).toBeInTheDocument();
     expect(
       screen.getByText("purlis reads this vault's token from your system keychain."),
     ).toBeVisible();
@@ -1300,7 +1303,7 @@ describe("a vault's tab put back by a launch (#1660)", () => {
     await userEvent.click(read);
     expect(onAsk).toHaveBeenCalledOnce();
     view.rerender(<VaultTab plane={PLANE} vault="ops" onChanged={vi.fn()} onAsk={onAsk} />);
-    await screen.findByRole("table", { name: "Secrets in ops" });
+    await screen.findByRole("grid", { name: "Secrets in ops" });
     expect(asked.map((one) => one.cmd)).toEqual(["vault_list", "vault_open"]);
   });
 
@@ -1308,7 +1311,7 @@ describe("a vault's tab put back by a launch (#1660)", () => {
     const asked = core(contents([secret("API_TOKEN")]), { vault_list: listed("keyring", false) });
     drawPutBack();
 
-    await screen.findByRole("table", { name: "Secrets in ops" });
+    await screen.findByRole("grid", { name: "Secrets in ops" });
     expect(screen.queryByTestId("vault-waits")).not.toBeInTheDocument();
     expect(asked.map((one) => one.cmd)).toEqual(["vault_list", "vault_open"]);
   });
@@ -1317,7 +1320,7 @@ describe("a vault's tab put back by a launch (#1660)", () => {
     // A provider this window has never heard of, which the core says reads nothing: read at once.
     const asked = core(contents([secret("API_TOKEN")]), { vault_list: listed("newcomer", false) });
     const first = drawPutBack();
-    await screen.findByRole("table", { name: "Secrets in ops" });
+    await screen.findByRole("grid", { name: "Secrets in ops" });
     expect(asked.map((one) => one.cmd)).toEqual(["vault_list", "vault_open"]);
     first.view.unmount();
 

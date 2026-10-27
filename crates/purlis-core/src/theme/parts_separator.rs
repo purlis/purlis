@@ -62,6 +62,7 @@ pub(super) const PANEL_SEPARATOR: Family = Family {
     corner_most: None,
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **What the panel library marks a handle with in each state** (#3143): under the pointer, and

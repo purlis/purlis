@@ -15,7 +15,15 @@ import {
 } from "../bindings";
 import { Notice } from "../Notice";
 import { useReadOnlySaid } from "../ReadOnlyLine";
-import { ColumnHeading } from "./ColumnHeading";
+import {
+  ControlBody,
+  ControlCell,
+  ControlColumn,
+  ControlHead,
+  ControlRow,
+  ControlRowHeading,
+  ControlTable,
+} from "../ui/table/ControlTable";
 import { Choice, Field, type RowIds } from "./components";
 import { DispatchGrantsList, useDispatchLocks } from "./DispatchGrants";
 import { showPersona } from "./links";
@@ -371,109 +379,101 @@ function useDispatchTable(
     return (
       <div id={ids?.id} className="dispatch-limits" aria-labelledby={ids?.labelledBy}>
         {/* Where its column is narrow, the table stacks into a form: each row's heading, then
-            each box under its limit's whole label (#1859, `.ui-table-stacks`). Between that and
-            its full width it scrolls inside its column, so the notes under it wrap in the column
-            rather than run past it with the table. */}
-        <div className="dispatch-limits-scroll ui-table-room">
-          <table
-            className="ui-table ui-table-stacks"
-            aria-label="Dispatch limits"
-            aria-describedby={ids?.describedBy}
-          >
-            <thead>
-              <tr>
-                <th scope="col">Level</th>
-                {columns.map(({ limit }) => (
-                  <ColumnHeading
-                    key={limit.word}
-                    words={SHORT[limit.word] ?? limit.label}
-                    full={limit.label}
-                    about={limit.help}
-                  />
-                ))}
-                <th scope="col" className="ui-cell-actions" aria-label="" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((one) => {
-                const whose = named(one, held);
-                const removable = one.scope !== "project" && (one.row !== undefined || !held);
-                return (
-                  <tr key={idOf(one)}>
-                    <th scope="row">{heading(one, held)}</th>
-                    {columns.map(({ limit, at }) => (
-                      <td key={limit.word} data-heading={limit.label}>
-                        {limit.persona_only && one.scope !== "persona" ? null : (
-                          <Cell
-                            // A refused write draws the box again from what is on disk.
-                            key={refusals}
-                            limit={limit}
-                            value={one.row?.values[at] ?? null}
-                            beneath={one.row !== undefined ? one.row.beneath[at] : unwritten[at]}
-                            label={`${limit.label} for ${whose}`}
-                            off={offFor(one)}
-                            onWrite={(typed) =>
-                              write(
-                                one.which,
-                                [
-                                  {
-                                    path: pathOf(one, limit.word),
-                                    value:
-                                      typed === ""
-                                        ? null
-                                        : /^\d+$/.test(typed)
-                                          ? { kind: "integer", value: Number(typed) }
-                                          : { kind: "text", value: typed },
-                                  },
-                                ],
-                                // Undo puts back what the box held: its number, or nothing.
-                                [
-                                  {
-                                    path: pathOf(one, limit.word),
-                                    value: whole(one.row?.values[at]),
-                                  },
-                                ],
-                              )
-                            }
-                          />
-                        )}
-                      </td>
-                    ))}
-                    <td className="ui-cell-actions">
-                      {!held &&
-                        one.scope === "persona" &&
-                        offers.some(
-                          (offer) => offer.kind === "persona" && offer.name === one.name,
-                        ) && (
-                          // A persona stays in its own tab, and its row links to it (#1388). Not
-                          // on the persona view, which is that tab.
-                          <OutLink
-                            plane={plane}
-                            action={showPersona(one.name)}
-                            label={
-                              one.which === "shared" ? undefined : `Show ${one.name}: ${whose}`
-                            }
-                          >
-                            {`Show ${one.name}`}
-                          </OutLink>
-                        )}
-                      {removable && (
-                        <Button
-                          aria-label={`Remove the override for ${whose}`}
-                          isDisabled={offFor(one) !== undefined}
-                          tooltip={offFor(one)}
-                          onPress={() => remove(one)}
-                        >
-                          Remove override
-                        </Button>
+            each box under its limit's whole label (#1859, the table family's `stacks`). Between
+            that and its full width it scrolls inside its frame, so the notes under it wrap in the
+            column rather than run past it with the table. */}
+        <ControlTable
+          className="dispatch-limits-scroll"
+          stacks
+          aria-label="Dispatch limits"
+          aria-describedby={ids?.describedBy}
+        >
+          <ControlHead>
+            <ControlColumn>Level</ControlColumn>
+            {columns.map(({ limit }) => (
+              <ControlColumn key={limit.word} whole={limit.label} about={limit.help}>
+                {SHORT[limit.word] ?? limit.label}
+              </ControlColumn>
+            ))}
+            <ControlColumn actions hideName whole="Actions" />
+          </ControlHead>
+          <ControlBody>
+            {rows.map((one) => {
+              const whose = named(one, held);
+              const removable = one.scope !== "project" && (one.row !== undefined || !held);
+              return (
+                <ControlRow key={idOf(one)}>
+                  <ControlRowHeading>{heading(one, held)}</ControlRowHeading>
+                  {columns.map(({ limit, at }) => (
+                    <ControlCell key={limit.word} heading={limit.label}>
+                      {limit.persona_only && one.scope !== "persona" ? null : (
+                        <Cell
+                          // A refused write draws the box again from what is on disk.
+                          key={refusals}
+                          limit={limit}
+                          value={one.row?.values[at] ?? null}
+                          beneath={one.row !== undefined ? one.row.beneath[at] : unwritten[at]}
+                          label={`${limit.label} for ${whose}`}
+                          off={offFor(one)}
+                          onWrite={(typed) =>
+                            write(
+                              one.which,
+                              [
+                                {
+                                  path: pathOf(one, limit.word),
+                                  value:
+                                    typed === ""
+                                      ? null
+                                      : /^\d+$/.test(typed)
+                                        ? { kind: "integer", value: Number(typed) }
+                                        : { kind: "text", value: typed },
+                                },
+                              ],
+                              // Undo puts back what the box held: its number, or nothing.
+                              [
+                                {
+                                  path: pathOf(one, limit.word),
+                                  value: whole(one.row?.values[at]),
+                                },
+                              ],
+                            )
+                          }
+                        />
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </ControlCell>
+                  ))}
+                  <ControlCell actions>
+                    {!held &&
+                      one.scope === "persona" &&
+                      offers.some(
+                        (offer) => offer.kind === "persona" && offer.name === one.name,
+                      ) && (
+                        // A persona stays in its own tab, and its row links to it (#1388). Not
+                        // on the persona view, which is that tab.
+                        <OutLink
+                          plane={plane}
+                          action={showPersona(one.name)}
+                          label={one.which === "shared" ? undefined : `Show ${one.name}: ${whose}`}
+                        >
+                          {`Show ${one.name}`}
+                        </OutLink>
+                      )}
+                    {removable && (
+                      <Button
+                        aria-label={`Remove the override for ${whose}`}
+                        isDisabled={offFor(one) !== undefined}
+                        tooltip={offFor(one)}
+                        onPress={() => remove(one)}
+                      >
+                        Remove override
+                      </Button>
+                    )}
+                  </ControlCell>
+                </ControlRow>
+              );
+            })}
+          </ControlBody>
+        </ControlTable>
         <p className="granted-note">
           {/* Where the limits are kept is the group's to say, once (DS-10, after DS-8); the
               persona view has no group, so it says it here. */}

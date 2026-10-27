@@ -135,6 +135,14 @@ import {
 } from "./planeChanged";
 import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import {
+  Table as DataTable,
+  TableBody,
+  TableCell,
+  TableColumn,
+  TableHeader,
+  TableRow,
+} from "./ui/table/Table";
 
 /** What `workspaceSettingsView` names Settings at a workspace's level (SE-20). */
 const WORKSPACE_SETTINGS = "workspace-settings";
@@ -1311,7 +1319,7 @@ export type TableBlock = Extract<PanelBlock, { kind: "table" }>;
 
 /**
  * **Rows of words under named columns** — `purlis_core::panel::Block::Table`: a skill's Runs
- * panel, and a studio panel's. A `<table>` with headed columns, so a screen reader reads each
+ * panel, and a studio panel's. The table family's data table (`ui/table`), so a screen reader reads each
  * cell with its column; the row the tab was opened on (`current`) is marked and scrolled to.
  * With no rows, the block's own claim and what to do, as a list's empty state says them.
  */
@@ -1357,35 +1365,35 @@ export function Table({
     );
   }
   return (
-    <table className="ui-table" aria-label={table.caption}>
-      <thead>
-        <tr>
-          {table.columns.map((column, at) => (
-            /* By position: two columns may share a heading, and the order is the producer's. */
-            <th key={at} scope="col">
-              {column}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
+    <DataTable aria-label={table.caption}>
+      <TableHeader>
+        {table.columns.map((column, at) => (
+          /* By position: two columns may share a heading, and the order is the producer's. */
+          <TableColumn key={at} id={`column-${at}`} isRowHeader={at === 0}>
+            {column}
+          </TableColumn>
+        ))}
+      </TableHeader>
+      <TableBody>
         {table.rows.map((row) => {
           const isCurrent = current !== undefined && row.key === current;
           return (
-            <tr
+            <TableRow
               key={row.key}
+              id={row.key}
+              textValue={row.cells[0] ?? row.key}
               ref={isCurrent ? shown : undefined}
               data-testid={`table-row-${row.key}`}
-              aria-current={isCurrent || undefined}
+              current={isCurrent}
             >
               {row.cells.map((cell, at) => (
-                <td key={at}>{cell}</td>
+                <TableCell key={at}>{cell}</TableCell>
               ))}
-            </tr>
+            </TableRow>
           );
         })}
-      </tbody>
-    </table>
+      </TableBody>
+    </DataTable>
   );
 }
 

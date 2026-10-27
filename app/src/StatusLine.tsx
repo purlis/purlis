@@ -363,7 +363,7 @@ export function projectName(plane: string): string {
  *
  * The whole directory is the window's tooltip (`ui/tooltip`), which opens under the pointer
  * and on keyboard focus alike, so the path is one Tab away and never only a hover's. Words and
- * no control, as a table's shortened heading is (`settings/ColumnHeading.tsx`): it presses
+ * no control, as a table's shortened heading is (`ControlColumn`, `ui/table/ControlTable.tsx`): it presses
  * nothing, so it is no button. Two projects may share a name; the directory tells them apart,
  * and it is also what `data-directory` hands the scenario specs.
  *

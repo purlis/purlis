@@ -642,7 +642,8 @@ export function plantAssigned(row: HTMLElement) {
     const typed = declarations(readFileSync(join(SRC, "App.css"), "utf8")).filter(
       ({ property: name }) => name in MAY_BE,
     );
-    expect(typed.length).toBeGreaterThan(400);
+    // Fewer as families take their rules out of App.css (the cards, Notices and counts, #2912).
+    expect(typed.length).toBeGreaterThan(350);
     expect(COLOURS.has("--text-muted")).toBe(true);
   });
 });

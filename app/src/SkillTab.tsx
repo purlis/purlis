@@ -15,6 +15,7 @@ import {
 import type { Offer } from "./actions";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import { SkillDetailsPanel } from "./SkillDetails";
 import { AnsweredBlocks } from "./Views";
 
@@ -85,43 +86,43 @@ function SkillTotals({ plane, name, changed }: { plane: string; name: string; ch
     <section aria-labelledby="skill-totals-heading" data-testid="skill-totals">
       <h2 id="skill-totals-heading">Totals</h2>
       {GROUPINGS.map(({ key, heading, column, none }) => (
-        <table
+        <Table
           key={key}
-          className="ui-table"
+          caption={heading}
           aria-label={`Runs of ${name}, ${heading.toLowerCase()}`}
           data-testid={`skill-totals-${key}`}
         >
-          <caption>{heading}</caption>
-          <thead>
-            <tr>
-              <th scope="col">{column}</th>
-              <th scope="col">Runs</th>
-              <th scope="col">Tool calls</th>
-              <th scope="col">Errors</th>
-              <th scope="col">Refused</th>
-              <th scope="col">Asks</th>
-              <th scope="col">Tokens</th>
-              <th scope="col">Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats[key].map((row: StatsRow) => (
-              <tr key={`${row.group.kind}:${row.group.kind === "named" ? row.group.name : ""}`}>
-                <th scope="row">{groupSaid(row.group, none)}</th>
-                <td>
-                  {counted(row.runs, "run", "runs")}
-                  {row.ended < row.runs ? `, ${row.ended} ended` : ""}
-                </td>
-                <td>{row.tool_calls}</td>
-                <td>{row.tool_errors}</td>
-                <td>{row.refusals}</td>
-                <td>{row.asks}</td>
-                <td>{row.tokens ?? "Not reported"}</td>
-                <td>{timeSaid(row.ms)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          <TableHeader>
+            <TableColumn isRowHeader>{column}</TableColumn>
+            <TableColumn>Runs</TableColumn>
+            <TableColumn align="end">Tool calls</TableColumn>
+            <TableColumn align="end">Errors</TableColumn>
+            <TableColumn align="end">Refused</TableColumn>
+            <TableColumn align="end">Asks</TableColumn>
+            <TableColumn align="end">Tokens</TableColumn>
+            <TableColumn align="end">Time</TableColumn>
+          </TableHeader>
+          <TableBody>
+            {stats[key].map((row: StatsRow) => {
+              const id = `${row.group.kind}:${row.group.kind === "named" ? row.group.name : ""}`;
+              return (
+                <TableRow key={id} id={id} textValue={groupSaid(row.group, none)}>
+                  <TableCell>{groupSaid(row.group, none)}</TableCell>
+                  <TableCell>
+                    {counted(row.runs, "run", "runs")}
+                    {row.ended < row.runs ? `, ${row.ended} ended` : ""}
+                  </TableCell>
+                  <TableCell align="end">{row.tool_calls}</TableCell>
+                  <TableCell align="end">{row.tool_errors}</TableCell>
+                  <TableCell align="end">{row.refusals}</TableCell>
+                  <TableCell align="end">{row.asks}</TableCell>
+                  <TableCell align="end">{row.tokens ?? "Not reported"}</TableCell>
+                  <TableCell align="end">{timeSaid(row.ms)}</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       ))}
     </section>
   );

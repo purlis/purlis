@@ -144,6 +144,56 @@ describe("the combobox", () => {
     expect(await screen.findByRole("listbox")).toBeInTheDocument();
   });
 
+  it("says why in the field's error line, kept from the start and heard as it lands (#3334)", async () => {
+    function Refusing() {
+      const [value, setValue] = useState("");
+      const refused = value !== "" && !SKILLS.some((one) => one.startsWith(value));
+      return (
+        <ComboBox
+          label="Add a skill"
+          suggestions={SKILLS}
+          value={value}
+          onChange={setValue}
+          error={refused ? "ops has no skill by that name." : undefined}
+        />
+      );
+    }
+    render(<Refusing />);
+    const field = box().closest('[data-scope="field"][data-part="root"]') as Element;
+    const line = field.querySelector('[data-scope="field"][data-part="error"]') as Element;
+    // The room is there before it says anything, a live region, so the words are heard as they
+    // land and nothing moves.
+    expect(line).toHaveAttribute("aria-live", "assertive");
+    expect(line).not.toHaveAttribute("role");
+    expect(line).toBeEmptyDOMElement();
+    expect(box()).not.toHaveAttribute("aria-invalid");
+    expect(box()).not.toHaveAccessibleDescription();
+    // Refused while the person types, not when they leave.
+    await userEvent.type(box(), "zz");
+    expect(box()).toHaveFocus();
+    expect(field.querySelector('[data-part="error"]')).toBe(line);
+    expect(line).toHaveAttribute("role", "alert");
+    expect(line).toHaveTextContent("ops has no skill by that name.");
+    expect(box()).toHaveAttribute("aria-invalid", "true");
+    expect(box()).toHaveAccessibleDescription("ops has no skill by that name.");
+    const root = box().closest('[data-scope="combobox"][data-part="root"]') as Element;
+    expect(root).toHaveAttribute("data-invalid");
+    // Allowed again: the line empties and stays.
+    await userEvent.clear(box());
+    expect(line).toBeEmptyDOMElement();
+    expect(line).not.toHaveAttribute("role");
+    expect(box()).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("takes a reason with no words as no refusal", () => {
+    render(
+      <ComboBox label="Add a skill" suggestions={SKILLS} value="" onChange={() => {}} error="" />,
+    );
+    expect(box()).not.toHaveAttribute("aria-invalid");
+    expect(box()).not.toHaveAccessibleDescription();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("is not refused unless it is told so", () => {
     render(<Box />);
     expect(box()).not.toHaveAttribute("aria-invalid");

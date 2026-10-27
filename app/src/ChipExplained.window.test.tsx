@@ -242,7 +242,10 @@ const theNotice = () =>
   });
 
 const said = (notice: HTMLElement) =>
-  notice.querySelector(".notice-says")?.textContent?.replace(/\s+/g, " ").trim();
+  notice
+    .querySelector("[data-scope=notice][data-part=message]")
+    ?.textContent?.replace(/\s+/g, " ")
+    .trim();
 
 /** The sessions the panes on screen show, left to right. */
 const onScreen = () =>
@@ -288,7 +291,7 @@ describe("the first dispatch on a machine explains the chip (#1501)", () => {
         "name says whether it is working, waiting, failed or done; press the chip to switch to it.",
     );
     // On the pane of the session that asked: the Notices of a pane are its corner's.
-    expect(notice.closest(".pane-notices")).not.toBeNull();
+    expect(notice.closest("[data-scope=notice-row][data-part=stack]")).not.toBeNull();
     // A Notice is drawn, never focused: the person typing goes on typing.
     expect(notice.contains(document.activeElement)).toBe(false);
     expect(within(notice).getByRole("button", { name: "Show the task" })).toBeInTheDocument();

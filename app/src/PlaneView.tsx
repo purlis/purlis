@@ -5840,7 +5840,7 @@ export const PlaneView = memo(function PlaneView({
     );
     forgetAsked.current = {
       notice,
-      band: notice?.closest(".notice-list") ?? null,
+      band: notice?.closest('[data-scope="notice-list"]') ?? null,
       forgot: false,
     };
     setForgetting({ id, name, busy: false });
@@ -10087,7 +10087,10 @@ function giveViewTheKeyboard(view: ViewId): void {
   const panel = `[role="tabpanel"][data-view="${view}"]`;
   (view === "search"
     ? document.querySelector<HTMLElement>(`${panel} input[type="search"]`)
-    : (document.querySelector<HTMLElement>(`${panel} [role="tree"] [tabindex="0"]`) ??
+    : // A tree of the tree family is its own stop until a row has had the keyboard (#2911).
+      (document.querySelector<HTMLElement>(
+        `${panel} :is([role="tree"] [tabindex="0"], [role="treegrid"][tabindex="0"], [role="treegrid"] [tabindex="0"])`,
+      ) ??
       // The Inbox's first ask, past the scope switch above its list (qw359).
       document.querySelector<HTMLElement>(`${panel} .inbox-list [tabindex="0"]`) ??
       document.querySelector<HTMLElement>(`${panel} [tabindex="0"]`))

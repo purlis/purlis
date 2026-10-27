@@ -99,6 +99,7 @@ pub(super) const ACTIVITY: Family = Family {
     // The count's words and its own pill (R119): read on that pill, never on the item.
     words: &[("count", "text.secondary")],
     fills: &[("count", "surface.hover")],
+    under: &[],
     corner_most: None,
     around: &[],
 };
