@@ -1532,6 +1532,12 @@ fn a_plain_frontmatter_names_its_skill_and_anything_ambiguous_is_refused() {
         ),
         Ok(("deploy".into(), "Ships it.".into()))
     );
+    // A `---` inside a value is text to the line reader as to YAML (#3244): only a `---` line
+    // ends a frontmatter, so the two agree.
+    assert_eq!(
+        super::fetch::identity("---\nname: deploy\ndescription: a---b\n---\n"),
+        Ok(("deploy".into(), "a---b".into()))
+    );
     for bad in [
         // No fence, or no closing one.
         "name: deploy\n",
@@ -1542,8 +1548,6 @@ fn a_plain_frontmatter_names_its_skill_and_anything_ambiguous_is_refused() {
         "---\n\"name\": evil\nname: deploy\ndescription: x\n---\n",
         "---\nname: &a deploy\ndescription: *a\n---\n",
         "---\n{name: evil, description: x}\n---\n",
-        // A `---` inside a value ends the line reader's block early.
-        "---\nname: deploy\ndescription: a---b\n---\n",
         // A value YAML reads otherwise than a line does.
         "---\nname: deploy\ndescription: |\n  evil\n---\n",
         "---\nname: deploy # evil\ndescription: x\n---\n",

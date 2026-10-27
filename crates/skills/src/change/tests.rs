@@ -103,6 +103,17 @@ fn a_rename_changes_the_name_line_and_nothing_else() {
         with_name(crlf, "ship").as_deref(),
         Some("---\r\nname: ship\r\ndescription: d\r\n---\r\n")
     );
+    // A line is what the reader calls one (#3244): a lone `\r` ends one too.
+    let cr = "---\rname: deploy\rdescription: d\r---\r";
+    assert_eq!(
+        with_name(cr, "ship").as_deref(),
+        Some("---\rname: ship\rdescription: d\r---\r")
+    );
+    let dashes = "---\ndescription: a --- b\nname: deploy\n---\n";
+    assert_eq!(
+        with_name(dashes, "ship").as_deref(),
+        Some("---\ndescription: a --- b\nname: ship\n---\n")
+    );
     assert_eq!(with_name("---\ndescription: d\n---\n", "ship"), None);
     assert_eq!(with_name("no frontmatter", "ship"), None);
 }

@@ -520,30 +520,22 @@ fn leftovers(root: &Path, work: &mut Work) {
 }
 
 /// `text`, a persona's definition, with each frontmatter line of `key` replaced by what
-/// `line` makes of its value. Every other byte is left as written.
+/// `line` makes of its value, each line keeping its break. Every other byte is left as
+/// written. The lines are found by the line format's one parser ([`purlis_skills::fence`]),
+/// so a `---` inside a value never moves where the frontmatter ends.
 fn with_line(text: &str, key: &str, line: impl Fn(&str) -> String) -> String {
-    let Some(rest) = text.strip_prefix("---") else {
+    let Some(fence) = purlis_skills::fence::Fence::find(text) else {
         return text.to_owned();
     };
-    let Some(end) = rest.find("---") else {
-        return text.to_owned();
-    };
-    let (block, after) = rest.split_at(end);
-    let rewritten: String = block
-        .split_inclusive('\n')
-        .map(|whole| {
-            let body = whole.trim_end_matches(['\n', '\r']);
-            match body.split_once(':') {
-                Some((k, v)) if crate::memstore::py_strip(k) == key => format!(
-                    "{}{}",
-                    line(crate::memstore::py_strip(v)),
-                    &whole[body.len()..]
-                ),
-                _ => whole.to_owned(),
-            }
-        })
-        .collect();
-    format!("---{rewritten}{after}")
+    let mut out = String::with_capacity(text.len());
+    let mut from = 0;
+    for entry in fence.entries().into_iter().filter(|entry| entry.key == key) {
+        out.push_str(&text[from..entry.line.start]);
+        out.push_str(&line(entry.value));
+        from = entry.line.end;
+    }
+    out.push_str(&text[from..]);
+    out
 }
 
 #[cfg(test)]

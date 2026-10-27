@@ -806,13 +806,8 @@ fn plane_relative(root: &Path, dir: &Path) -> Option<String> {
 
 /// The text after a record's frontmatter, or the whole text where it has none.
 fn after_frontmatter(text: &str) -> &str {
-    let Some(rest) = text.strip_prefix("---\n") else {
-        return text;
-    };
-    match rest.find("\n---\n") {
-        Some(end) => rest[end + 5..].trim_start_matches('\n'),
-        None => text,
-    }
+    purlis_skills::fence::Fence::find(text)
+        .map_or(text, |fence| fence.body().trim_start_matches('\n'))
 }
 
 /// The newest record of `place`, or `None` where it has none.
