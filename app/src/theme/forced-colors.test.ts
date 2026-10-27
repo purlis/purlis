@@ -230,7 +230,7 @@ describe("forced colours", () => {
       ".show-more-needs",
       '[data-scope="activity"][data-part="count"][data-tone="needs-you"]',
       '[data-scope="status-item"][data-variant="waiting"] > [data-part="count"]',
-      ".repo-instruction-text .invisible-char",
+      ".invisible-char",
     ]) {
       const it = drawn(needs);
       expect(it.get("forced-color-adjust"), needs).toBe("none");

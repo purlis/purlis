@@ -2831,6 +2831,11 @@ body {
 .inbox-restart {
   margin: 0;
 }
+/* Why a permission offers no Allow, where a character it holds reads otherwise (SK-51, #3202):
+   a secondary line of the row, as the restart's is. */
+.inbox-hidden {
+  margin: 0;
+}
 .inbox-none {
   margin: var(--space-2) 0;
   color: var(--text-secondary);
@@ -6754,8 +6759,9 @@ nav.piece-files-head {
   border-radius: var(--radius-md);
 }
 
-/* An invisible character in a previewed file, drawn as its code point (FR-18a). */
-.repo-instruction-text .invisible-char {
+/* A character a reader does not see, drawn as its mark, `⟦U+XXXX⟧` (FR-18a; SK-51, #3202): in a
+   previewed file, and in an ask's line. */
+.invisible-char {
   padding: 0 var(--space-1);
   border-radius: var(--radius-sm);
   background: var(--danger-surface);

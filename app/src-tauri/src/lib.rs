@@ -171,6 +171,7 @@ mod themegallery;
 mod themewatch;
 mod thismachine;
 mod todos;
+mod unicoderule;
 mod unstarted;
 mod updates;
 mod usage;
@@ -2927,6 +2928,9 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<skillgrade::SkillGradeStep>()
         .constant("SKILL_GRADE", skillgrade::EVENT)
         .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
+        // The one rule for a character a reader does not see (SK-51, #3202): the window marks
+        // what it draws itself from the core's own tables, never from a list of its own.
+        .constant(unicoderule::UNICODE_RULE, unicoderule::rule())
 }
 
 /// Where the generated TypeScript lives.

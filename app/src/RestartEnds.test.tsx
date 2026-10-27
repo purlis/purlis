@@ -62,7 +62,7 @@ describe("what an Allow that restarts the chat says beforehand (#1986)", () => {
       />,
     );
     const name = container.querySelector("code");
-    expect(name?.textContent).toBe("dev\\u202eserver");
+    expect(name?.textContent).toBe("dev⟦U+202E⟧server");
   });
 
   it("names the chat where it is read away from the chat's own pane", () => {

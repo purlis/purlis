@@ -15,6 +15,7 @@ import {
   NOTHING_WAITS,
   NOTICES,
   UPDATES,
+  hiddenSaid,
   landOnGroup,
   type UpdateRow,
   type Updates,
@@ -67,6 +68,8 @@ const permission = (session: number, ask: string, chain: string[], says = "Run c
     chain,
     answer: { via: "hook" },
   }) satisfies Shown;
+
+const deny = () => ({ id: "deny", label: "Deny", allows: false });
 
 const HOST: Shown = {
   session: 5,
@@ -266,6 +269,33 @@ describe("the asks, grouped by chat", () => {
     // What is drawn is not what would run, so nothing that lets it run is offered here
     // (`hooked::shown_in_full`'s rule): Deny, and the chat's own pane, which shows it whole.
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Deny",
+      "Go to chat",
+    ]);
+  });
+
+  it("marks a no-break space in a command, and says why only Deny is offered (SK-51, #3202)", () => {
+    core();
+    // The core offers no Allow on it (`hooked::shown_in_full`), and writes the character as its
+    // mark (`asking::said_inertly`): the window draws the mark apart and says what it costs.
+    const said = "Run a command: git⟦U+00A0⟧commit -m wip";
+    draw([{ ...permission(3, "nb", ["steward 3"], said), options: [deny()] }]);
+    const mark = screen.getByText("⟦U+00A0⟧");
+    expect(mark.tagName).toBe("MARK");
+    expect(mark).toHaveClass("invisible-char");
+    expect(screen.getByText(hiddenSaid("⟦U+00A0⟧"))).toBeTruthy();
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Deny",
+      "Go to chat",
+    ]);
+  });
+
+  it("says nothing of a ⟦ the command wrote itself, which keeps its Allow (SK-51, #3202)", () => {
+    core();
+    draw([permission(3, "lb", ["steward 3"], "Run a command: echo ⟦U+27E6⟧U+00A0⟧")]);
+    expect(screen.queryByText(/No Allow here/)).toBeNull();
+    expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Allow",
       "Deny",
       "Go to chat",
     ]);

@@ -61,6 +61,7 @@ import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
 import { useWayPlaces } from "./wayPlaces";
 import { useProjectShown } from "./projectShown";
 import { capMarks } from "./combiningMarks";
+import { MARK, markOf } from "./invisible";
 import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
@@ -530,6 +531,9 @@ type Shape = {
   line: string;
   /** The answers drawn: none that allows, where the line is not what the ask said whole. */
   offers: readonly Offered[];
+  /** The first character the line marks as one a reader does not see (`⟦U+XXXX⟧`), where that
+   *  is why the core offers no Allow on a permission (SK-51, #3202). */
+  hidden?: string;
   /** Its answers are buttons here. */
   answers: boolean;
   /** It gets a reply box. */
@@ -557,13 +561,18 @@ function shapeOf(
   const { text: line, capped } = capMarks(why ?? ask.says);
   // An edit whose change is not shown is never allowed from here (#1146), whatever it offers.
   const unshown = ask.writes?.kind === "not-shown";
+  const offers =
+    (capped && why === undefined) || unshown
+      ? ask.options.filter((one) => !one.allows)
+      : ask.options;
   return {
     why,
     line,
-    offers:
-      (capped && why === undefined) || unshown
-        ? ask.options.filter((one) => !one.allows)
-        : ask.options,
+    offers,
+    hidden:
+      ask.source === "permission" && why === undefined && !offers.some((one) => one.allows)
+        ? withheldFor(line)
+        : undefined,
     answers:
       ask.source !== "dispatch" && ask.options.length > 0 && ask.answer.via !== "in-its-pane",
     // A chat that both asked and has a reason (a report with nowhere to go, say) still asked:
@@ -579,6 +588,35 @@ function shapeOf(
     ignore: waits && onIgnore !== undefined,
     go: ask.source !== "sign-in" && ask.source !== "sandbox-only",
   };
+}
+
+/**
+ * **The mark that keeps a permission's Allow away** (SK-51, #3202): the core offers Allow only
+ * on a line that says its action word for word and hides nothing by purlis's one rule
+ * (`hooked::shown_in_full`), and the registry writes each character it hides as its mark
+ * (`asking::said_inertly`), a `⟦` the chat wrote itself as `⟦U+27E6⟧`. So any mark but that one
+ * on the line is a character the action holds that reads otherwise here: a no-break or an en
+ * space that looks like a space, a control, a bidi override.
+ */
+function withheldFor(line: string): string | undefined {
+  return Array.from(line.matchAll(MARK), (one) => one[0]).find((one) => one !== markOf("\u27E6"));
+}
+
+/** An ask's line, each mark on it drawn as one (`invisible-char`), apart from the words. */
+function MarkedLine({ line }: { line: string }) {
+  const parts: ReactNode[] = [];
+  let at = 0;
+  for (const one of line.matchAll(MARK)) {
+    parts.push(line.slice(at, one.index));
+    parts.push(
+      <mark key={one.index} className="invisible-char">
+        {one[0]}
+      </mark>,
+    );
+    at = one.index + one[0].length;
+  }
+  parts.push(line.slice(at));
+  return <>{parts}</>;
 }
 
 /** The stops of one ask's row, in the order it draws them. */
@@ -629,6 +667,10 @@ function WithWrites({
     </AskWrites>
   );
 }
+
+/** Why a permission holding `mark` offers no Allow (SK-51, #3202). */
+export const hiddenSaid = (mark: string) =>
+  `No Allow here: it holds ${mark}, a character that reads otherwise, so what would run is not what you read.`;
 
 /** What a row says of where it waits. */
 const SOURCE_SAID: Record<Shown["source"], string> = {
@@ -834,7 +876,7 @@ function Ask({
               id={`${id}-says`}
               className={`ask-says inbox-primary ui-text-body ui-text-strong${whole ? "" : " inbox-clamped"}`}
             >
-              {shape.line}
+              <MarkedLine line={shape.line} />
             </span>
           </Tooltip>
           <Tooltip tip={SOURCE_SAID[ask.source]}>
@@ -846,6 +888,10 @@ function Ask({
             </span>
           </Tooltip>
         </p>
+        {/* Why its Allow is missing, where a character it holds reads otherwise (SK-51). */}
+        {shape.hidden !== undefined && shape.answers && (
+          <p className="inbox-hidden ui-text-secondary">{hiddenSaid(shape.hidden)}</p>
+        )}
         {/* A folder or something on this machine reaches the chat only by its restart (#1986):
             what that ends is said before an Allow here, naming the chat. */}
         {(ask.source === "sandbox-write" || ask.source === "sandbox-local") &&

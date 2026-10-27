@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "./here";
 import { asksMoved } from "./asks";
+import { marked, markOf } from "./invisible";
 import { commands, type BlockShown, type ChatBlocked, type PlaneId, type Shown } from "./bindings";
 
 /** The most blocks one chat holds at once. */
@@ -204,23 +205,20 @@ export function heldFor(blocks: Blocks, session: number, shown: BlockShown): Hel
   return hostsOf(block).length > 0 ? listing(block, [shown.target]) : block;
 }
 
-/** One code point as an escape no other can spell: `\\uXXXX`, or `\\UXXXXXXXX` past U+FFFF. */
-const escapeOf = (cp: number) =>
-  cp <= 0xffff
-    ? `\\u${cp.toString(16).padStart(4, "0")}`
-    : `\\U${cp.toString(16).padStart(8, "0")}`;
-
 /**
- * **A block's target, drawn safely** (#1688, I-1): a folder's name as the chat's sandbox met
- * it, with every character that draws as nothing (one that turns the text around, hides what
- * follows, or moves the cursor) written out as its escape, and a backslash doubled so the name
- * cannot spell an escape itself, as the registry writes an ask's line (`asking::said_inertly`).
- * What an Allow names is still the target itself: this is only what is drawn.
+ * **A block's target, drawn safely** (#1688, I-1; SK-51, #3202): a folder's name as the chat's
+ * sandbox met it, with every character purlis's one rule hides on a line (one that turns the
+ * text around, hides what follows, moves the cursor or only looks like a space) written as its
+ * mark, `⟦U+XXXX⟧`, as the registry writes an ask's line (`asking::said_inertly`). A `⟦` the
+ * name holds itself is marked too, `⟦U+27E6⟧`, so a name cannot spell a mark
+ * (`dispatchgrant::inert`). What an Allow names is still the target itself: this is only what
+ * is drawn.
  */
 export function inertly(text: string): string {
-  return text.replace(/[\\\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (c) =>
-    c === "\\" ? "\\\\" : escapeOf(c.codePointAt(0) ?? 0),
-  );
+  return text
+    .split("\u27E6")
+    .map((part) => marked(part, "marked"))
+    .join(markOf("\u27E6"));
 }
 
 /** What a block's Allow can name: a host, a folder, a socket or a service (D-sock-1), or a
