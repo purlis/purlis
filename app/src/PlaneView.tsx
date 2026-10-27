@@ -1256,6 +1256,25 @@ export const PlaneView = memo(function PlaneView({
       }),
     [],
   );
+  /** **Search contents, from Explorer's filter** (#3343): the Search view on the scope the filter
+   *  found in, Branch or Workspace, with what it held; the switches as they were left. */
+  const searchContents = useCallback(
+    (kind: "branch" | "workspace", at: Place, query: string) => {
+      setSideSearch((was) => {
+        const kept = was === undefined ? undefined : searchOf(was);
+        const here = searchFromFocus(at, at.workspace);
+        return searchView({
+          ...here,
+          kind,
+          query: query !== "" ? query : (kept?.query ?? ""),
+          matching: kept?.matching ?? here.matching,
+        });
+      });
+      showSide("search");
+      requestAnimationFrame(() => giveViewTheKeyboard("search"));
+    },
+    [showSide],
+  );
   const showSideView = useCallback(
     (view: ViewId) => {
       if (view === "search") searchHere();
@@ -8783,6 +8802,8 @@ export const PlaneView = memo(function PlaneView({
                     onGoToWorkspace={focusWorkspace}
                     // The Skills view's Show in Explorer (#3266).
                     reveal={explorerReveal}
+                    // Search contents (#3343): Search on the filter's scope, with its words.
+                    onSearchContents={searchContents}
                   />
                 )}
               />

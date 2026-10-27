@@ -13,9 +13,10 @@ import { GLOBAL } from "./windowprefs";
 import { tipOf } from "./ui/tooltip/tooltip.testkit";
 
 /**
- * **Explorer in sections** (#1677, spec #1671 B-12): the focused workspace's repos and branches;
- * and *Files*, of where the next chat starts. Each section folds, and the fold is kept in the
- * layout file for the next launch.
+ * **Explorer in sections** (#1677, spec #1671 B-12): the focused workspace's repos and branches,
+ * the Repos view's; and *Files*, of where the next chat starts, the Explorer view itself, which
+ * since #3343 is no fold: the view's title is the workspace and the tree is the view. A clone's
+ * fold is kept in the layout file for the next launch.
  *
  * **It lists no workspaces** (qw358): the strip is where one is selected, and Files is of the
  * one selected there.
@@ -164,18 +165,21 @@ const goTo = (name: string) => goToWorkspace(name);
 const reposView = () => within(screen.getByRole("navigation", { name: "Repos" }));
 
 describe("Explorer in sections (#1677)", () => {
-  it("draws Files alone, open and named for the strip's workspace, and the repos in the Repos view (#1737)", async () => {
+  it("draws the files alone, no fold, titled for the strip's workspace, and the repos in the Repos view (#1737, #3343)", async () => {
     core();
     render(<App />);
     await showTheExplorer();
-    await explorer().findByRole("treegrid", { name: "Files of alpha" });
+    const tree = await explorer().findByRole("treegrid", { name: "Files of alpha" });
 
+    // No heading folds: the view's one title is its region's, the workspace (#3330).
     expect(
       explorer()
-        .getAllByRole("button", { expanded: true })
-        .filter((one) => one.closest("h2") !== null)
-        .map((one) => one.textContent),
-    ).toEqual(["Files alpha"]);
+        .queryAllByRole("button", { expanded: true })
+        .filter((one) => one.closest("h2") !== null),
+    ).toEqual([]);
+    expect(screen.getByRole("heading", { name: "alpha" })).toBeVisible();
+    // Its one repo is its tree, open at once.
+    expect(await within(tree).findByRole("row", { name: /^README\.md/ })).toBeVisible();
     expect(reposView().getByRole("treegrid", { name: "Repos and branches" })).toBeVisible();
   });
 
@@ -198,14 +202,13 @@ describe("Explorer in sections (#1677)", () => {
     render(<App />);
     await showTheExplorer();
     const alphas = await explorer().findByRole("treegrid", { name: "Files of alpha" });
-    expect(await within(alphas).findByRole("row", { name: /^svc/ })).toBeVisible();
+    expect(await within(alphas).findByRole("row", { name: /^README\.md/ })).toBeVisible();
 
     await goTo("beta");
 
     const betas = await explorer().findByRole("treegrid", { name: "Files of beta" });
-    expect(await within(betas).findByRole("row", { name: /^web/ })).toBeVisible();
-    expect(within(betas).queryByRole("row", { name: /^svc/ })).toBeNull();
-    expect(explorer().getByRole("button", { name: "Files beta" })).toBeVisible();
+    expect(await within(betas).findByRole("row", { name: /^README\.md/ })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "beta" })).toBeVisible();
     expect(explorer().queryByRole("treegrid", { name: "Files of alpha" })).toBeNull();
     await reposView().findByTestId("clone-web");
     // The extensions heard it, as ever from the strip (charter-app#343).
@@ -223,7 +226,6 @@ describe("Explorer in sections (#1677)", () => {
 
     await goTo("Plane root");
 
-    await explorer().findByRole("button", { name: "Files Plane root" });
     const tree = within(await explorer().findByRole("treegrid", { name: "Files of Plane root" }));
     // The project's own top folder, folders first; what git ignores is hidden until asked for.
     await tree.findByRole("row", { name: "README.md" });
@@ -298,17 +300,14 @@ describe("Explorer in sections (#1677)", () => {
     await explorer().findByRole("treegrid", { name: "Files of beta" });
   });
 
-  it("draws the picked branch's files in Files, and each repo's own folder before one is picked", async () => {
+  it("draws the picked branch's files in Files, and the one repo's own folder before one is picked", async () => {
     core();
     render(<App />);
     await showTheExplorer();
     await reposView().findByTestId("clone-svc");
 
     const before = explorer().getByRole("treegrid", { name: "Files of alpha" });
-    expect(await within(before).findByRole("row", { name: /^svc/ })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    expect(await within(before).findByRole("row", { name: /^README\.md/ })).toBeVisible();
 
     // Picked in the Repos view, which is what Files lists (P-10).
     await userEvent.click(await reposView().findByRole("row", { name: /^one/ }));
@@ -323,32 +322,7 @@ describe("Explorer in sections (#1677)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("folds a section on its heading, keeping it mounted, and keeps the fold for the next launch", async () => {
-    const asked = core();
-    render(<App />);
-    await showTheExplorer();
-    const tree = await explorer().findByRole("treegrid", { name: "Files of alpha" });
-    await within(tree).findByRole("row", { name: /^svc/ });
-    const heading = explorer().getByRole("button", { name: /^Files/ });
-
-    await userEvent.click(heading);
-
-    expect(heading).toHaveAttribute("aria-expanded", "false");
-    // Hidden, never unmounted: the same element, out of sight and out of the tab order.
-    expect(tree.isConnected).toBe(true);
-    expect(tree).not.toBeVisible();
-    expect(tree.querySelector('[tabindex="0"]')).toBeNull();
-    await waitFor(() => expect(written(asked)?.explorer).toEqual({ closed: ["files"] }));
-
-    await userEvent.click(heading);
-
-    expect(heading).toHaveAttribute("aria-expanded", "true");
-    expect(tree).toBeVisible();
-    // Every section open is the default, which the file leaves out.
-    await waitFor(() => expect(written(asked)).not.toHaveProperty("explorer"));
-  });
-
-  it("launches with the sections the layout file says are folded", async () => {
+  it("draws the files open though a file from before #3343 says Files was folded", async () => {
     (globalThis as Record<string, unknown>)[GLOBAL] = {
       layout: {
         path: "layout.json",
@@ -363,11 +337,8 @@ describe("Explorer in sections (#1677)", () => {
     await showTheExplorer();
     await reposView().findByTestId("clone-svc");
 
-    expect(explorer().getByRole("button", { name: /^Files/ })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    expect(explorer().getByTestId("files")).not.toBeVisible();
+    expect(explorer().queryByRole("button", { name: /^Files/ })).toBeNull();
+    expect(explorer().getByTestId("files")).toBeVisible();
   });
 
   it("launches whole on a file from before qw358 that folded Workspaces, and says nothing of it", async () => {
@@ -391,10 +362,6 @@ describe("Explorer in sections (#1677)", () => {
 
     const tree = await explorer().findByRole("treegrid", { name: "Files of alpha" });
     expect(tree).toBeVisible();
-    expect(explorer().getByRole("button", { name: /^Files/ })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
     expect(explorer().queryByRole("button", { name: "Workspaces" })).toBeNull();
     // Not a mistake in the file: nothing about Explorer's sections is said.
     expect(screen.queryByText(/which Explorer has no section called/)).toBeNull();
@@ -432,7 +399,7 @@ describe("Explorer in sections (#1677)", () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(
         within(explorer().getByRole("treegrid", { name: "Files of alpha" })).getByRole("row", {
-          name: /^svc/,
+          name: /^README\.md/,
         }),
       ),
     );
@@ -442,18 +409,15 @@ describe("Explorer in sections (#1677)", () => {
 describe("Explorer kept per project across a relaunch (B-11, #1686)", () => {
   const repos = () => within(reposView().getByRole("treegrid", { name: "Repos and branches" }));
 
-  it("writes a section folded and a clone folded under the project", async () => {
+  it("writes a clone folded under the project", async () => {
     const asked = core();
     render(<App />);
     await showTheExplorer();
     await explorer_ready();
 
-    await userEvent.click(explorer().getByRole("button", { name: /^Files/ }));
     await userEvent.click(repos().getByRole("row", { name: /^svc/ }));
 
-    await waitFor(() =>
-      expect(explorerOf(asked)).toEqual({ closed: ["files"], folded: ["alpha/svc"] }),
-    );
+    await waitFor(() => expect(explorerOf(asked)).toMatchObject({ folded: ["alpha/svc"] }));
   });
 
   it("launches with the project's own folds, whatever the machine's", async () => {
@@ -477,10 +441,8 @@ describe("Explorer kept per project across a relaunch (B-11, #1686)", () => {
     await explorer_ready();
 
     expect(repos().getByRole("row", { name: /^svc/ })).toHaveAttribute("aria-expanded", "false");
-    expect(explorer().getByRole("button", { name: /^Files/ })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    // *Files* is no fold since #3343, whatever the file says: its tree is drawn.
+    expect(explorer().getByTestId("files")).toBeVisible();
     // Showing Explorer writes the arrangement; the project's folds go with it as they were.
     await waitFor(() => expect(written(asked)).toBeDefined());
     expect(explorerOf(asked)).toEqual({ closed: ["files"], folded: ["alpha/svc"] });

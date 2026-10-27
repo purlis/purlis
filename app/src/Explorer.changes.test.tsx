@@ -155,10 +155,11 @@ describe("what a branch changed, in the explorer", () => {
     expect(await named("^README.md")).toHaveAccessibleName("README.md changed");
     expect(await named("^new.rs")).toHaveAccessibleName("new.rs renamed from lib/old.rs");
     expect(await named("^src")).toHaveAccessibleName("src 2 changes");
-    // The branch's own folder is the section's heading, and carries its count.
-    expect(screen.getByRole("button", { name: /^Files/ })).toHaveAccessibleName(
-      "Files one in svc 4 changes",
-    );
+    // The branch's own folder is the view's title, and what stands beside it carries its count
+    // (#3343).
+    const beside = document.querySelector('[data-section="files"] .head-beside');
+    expect(beside).toHaveTextContent("svc · one");
+    expect(beside?.querySelector(".change-mark")).toHaveAccessibleName("4 changes");
     expect(row("file:svc/one:src/keep.rs")).toHaveAccessibleName("keep.rs");
   });
 
