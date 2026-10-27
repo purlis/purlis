@@ -76,14 +76,14 @@ fn a_chat_is_handed_the_pins_alone_whatever_the_old_keys_say() {
     for studio in [false, true] {
         for workspace in [None, Some("alpha")] {
             assert_eq!(
-                for_start_as(studio, "claude", plane.path(), workspace).plugins,
+                for_start_as(studio, "claude", plane.path(), workspace, &unread()).plugins,
                 pins_of(&CLAUDE_CODE)
                     .into_iter()
                     .collect::<BTreeMap<_, _>>(),
                 "{studio} {workspace:?}"
             );
             assert_eq!(
-                for_start_as(studio, "codex", plane.path(), workspace),
+                for_start_as(studio, "codex", plane.path(), workspace, &unread()),
                 Chosen::new(),
                 "{studio} {workspace:?}"
             );
@@ -109,7 +109,10 @@ fn the_old_table_is_refused_nothing_so_a_file_that_holds_it_saves_as_it_did() {
 #[test]
 fn a_chat_on_no_known_harness_is_handed_nothing() {
     let plane = plane_with(&[]);
-    assert_eq!(for_start_as(true, "vim", plane.path(), None), Chosen::new());
+    assert_eq!(
+        for_start_as(true, "vim", plane.path(), None, &unread()),
+        Chosen::new()
+    );
 }
 
 // -------------------------------------------------------------------------------------
@@ -391,12 +394,12 @@ fn a_chat_is_handed_the_harness_skills_the_project_turned_off_only_while_the_stu
         ),
     ]);
     assert_eq!(
-        for_start_as(true, "codex", plane.path(), None).skills_off,
+        for_start_as(true, "codex", plane.path(), None, &unread()).skills_off,
         BTreeSet::from(["langfuse".to_owned()]),
         "Local turned review back on, over Shared"
     );
     assert_eq!(
-        for_start_as(false, "codex", plane.path(), None),
+        for_start_as(false, "codex", plane.path(), None, &unread()),
         Chosen::new(),
         "behind the Skill studio's flag"
     );
@@ -588,4 +591,65 @@ fn the_studio_refuses_what_a_harness_cannot_switch_and_writes_nothing() {
         assert!(why.starts_with(said), "{why}");
     }
     assert!(!plane.path().join("charter.local.toml").exists());
+}
+
+#[test]
+fn a_chats_start_reads_the_harnesss_own_skill_index_where_its_environment_finds_its_skills() {
+    // #3320: the arming turns the harness's own `skill-index` off so the chat gets purlis's index
+    // alone, and what it knows of that copy is read here, at the start, with the chat's
+    // environment, never with this machine's.
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let index = config.path().join("skills/skill-index");
+    std::fs::create_dir_all(&index).unwrap();
+    std::fs::write(
+        index.join("SKILL.md"),
+        "---\nname: skill-index\ndescription: The person's own.\n---\n",
+    )
+    .unwrap();
+    let dir = config.path().display().to_string();
+    let none = Env {
+        chat: &[],
+        home: None,
+        process: false,
+    };
+    for (kind, variable) in [("claude", "CLAUDE_CONFIG_DIR"), ("codex", "CODEX_HOME")] {
+        let chat = [(variable.to_owned(), dir.clone())];
+        let env = Env {
+            chat: &chat,
+            home: None,
+            process: false,
+        };
+        assert!(
+            for_start_as(true, kind, plane.path(), None, &env).own_index,
+            "{kind}"
+        );
+        assert!(
+            !for_start_as(true, kind, plane.path(), None, &none).own_index,
+            "{kind}"
+        );
+        assert!(
+            !for_start_as(false, kind, plane.path(), None, &env).own_index,
+            "{kind}: behind the Skill studio's flag"
+        );
+    }
+    // opencode knows purlis's index as `purlis-skill-index`: its own `skill-index` is another
+    // skill, so it is not even looked for.
+    let chat = [("OPENCODE_CONFIG_DIR".to_owned(), dir)];
+    let env = Env {
+        chat: &chat,
+        home: None,
+        process: false,
+    };
+    assert!(!for_start_as(true, "opencode", plane.path(), None, &env).own_index);
+}
+
+/// An environment that finds nothing: no variables, no home, nothing looked up in this process.
+fn unread() -> Env<'static> {
+    Env {
+        chat: &[],
+        home: None,
+        process: false,
+    }
 }

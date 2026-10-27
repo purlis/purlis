@@ -133,7 +133,9 @@ impl HarnessAdapter for Codex {
     /// Codex's (#3467). **And a skill the project turned off**, by one `-c
     /// 'skills.config=[{name="<name>",enabled=false},…]'`, which reaches a plugin's skill
     /// (`<plugin>:<skill>`) too, and is added to the entries of the operator's own
-    /// `config.toml` rather than replacing them (both measured on 0.163.0).
+    /// `config.toml` rather than replacing them (both measured on 0.163.0, and the second again
+    /// for #3320: a `config.toml` turning `alpha` off and `-c` turning `beta` off left neither in
+    /// `codex debug prompt-input`).
     ///
     /// Its skills ride on the `SessionStart` hook above: Codex can take no skills
     /// directory for one session ([`Harness::skills`]), so the chat is started with the

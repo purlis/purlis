@@ -47,6 +47,38 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// **A config home of the test's own**, for as long as this value lives (#3507): for a test that
+/// changes the one its binary's tests share in a way another would trip over, such as making a
+/// folder of it read-only. `cargo test` runs a binary's tests on threads of one process, so
+/// they all reach the same folder at once; nextest gives each test a process of its own, which
+/// is why the `rust` job never saw it and the nightly `fedora` job did. Set on this thread, as
+/// [`TEST_CONFIG_HOME`] is: the code a test drives here reads its config home on the test's
+/// own thread.
+#[cfg(test)]
+pub(crate) struct OwnConfigHome {
+    /// Kept for its drop: the folder goes with the value.
+    _home: tempfile::TempDir,
+    /// The thread's config home before this one, put back when this one goes.
+    was: Option<PathBuf>,
+}
+
+#[cfg(test)]
+impl OwnConfigHome {
+    pub(crate) fn new() -> Self {
+        let home = tempfile::tempdir().expect("a config home of the test's own");
+        let was = TEST_CONFIG_HOME.with(|at| at.replace(Some(home.path().to_path_buf())));
+        Self { _home: home, was }
+    }
+}
+
+#[cfg(test)]
+impl Drop for OwnConfigHome {
+    fn drop(&mut self) {
+        let was = self.was.take();
+        TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = was);
+    }
+}
+
 /// The config home this machine's files go under: the person's, or, in a fenced build (the
 /// app's tests, e2e) whose fence it is outside, one of the build's own in the temporary folder.
 fn config_home() -> Option<PathBuf> {

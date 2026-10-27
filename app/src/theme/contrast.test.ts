@@ -89,16 +89,19 @@ const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "uns
  * a colour and no background draws no pair of its own, so the change marks' colours are held on
  * their backgrounds by hand, in the engine's `PAIRS`, and the test below fails when one is not.
  *
- * - The Chats view's sticky head (#3331) is filled with its panel's fill, `--panel-fill`: the
- *   family default's `surface.base`, or the token a theme's `panel.root.fill` names. Its words
- *   (primary, secondary, muted) are held on `surface.base` and `surface.raised`, the two fills
- *   the built-in themes give a panel, in `PAIRS`.
- * - A view's top and its groups' names (`ui/panel/panel.css`, #3340) are drawn on the same
- *   fill. What stands on them is a row's words and a group's name, held on both grounds in the
- *   engine's `PAIRS` (`text.secondary`, `text.quiet` on `surface.base` and `surface.raised`).
+ * - The Chats view's top (#3331, #3342) and a view's top and its groups' names
+ *   (`ui/panel/panel.css`, #3340; the Chats view's workspace names, #3342) are drawn on the
+ *   panel's own fill, `--panel-fill`: the family default's `surface.base`, or the token a
+ *   theme's `panel.root.fill` names. What stands on them (primary, secondary, muted and quiet
+ *   words) is held on `surface.base` and `surface.raised`, the two fills the built-in themes
+ *   give a panel, in `PAIRS`.
  */
 const READ_BY_HAND: readonly string[] = [
-  ".chats-head | background: var(--panel-fill, var(--surface-base))",
+  // A chat's state badge (#3342) is ringed in the ground of the row it stands on: the panel's
+  // fill, the hover's or the chosen row's (`--chat-badge-ground`). Its mark is a state token the
+  // engine holds at 3:1 on each of those grounds in `PAIRS`.
+  ".chats-section .chat-persona > .shown-state .shape | background-color: var(--chat-badge-ground)",
+  ".chats-section li.chats-group | background-color: var(--panel-fill)",
   '[data-scope="panel-section"][data-part="top"] | background-color: var(--panel-fill)',
   '[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] | background-color: var(--panel-fill)',
 ];

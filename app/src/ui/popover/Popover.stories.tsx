@@ -11,7 +11,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useRef, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
 import { InlineMenu, MenuItem } from "../menu/Menu";
 import {
@@ -55,7 +55,8 @@ export const ACard: Story = {
     await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await waitFor(() => expect(trigger).toHaveFocus());
+    // The keyboard comes back to the trigger after the popover has gone, a frame or more later.
+    await untilFocused(() => trigger, "Popover: Escape gives the keyboard back to its trigger");
     expectFocusInSight();
     await userEvent.keyboard("{Enter}");
     await screen.findByRole("dialog", { name: "steward 4" });

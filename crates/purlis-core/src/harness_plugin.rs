@@ -52,6 +52,11 @@ pub struct Chosen {
     /// The harness's own skills to leave out of the chat, by the name the harness knows each by
     /// (SK-6, #2769).
     pub skills_off: BTreeSet<String>,
+    /// Whether the harness has a skill of its own named [`crate::skills::INDEX`], outside any
+    /// plugin, where the chat's environment finds its skills ([`crate::skills::has_own_index`]):
+    /// read at the start with that environment, so the adapter that turns it off reads nothing
+    /// of this machine itself (#3320).
+    pub own_index: bool,
 }
 
 impl Chosen {
@@ -66,6 +71,7 @@ impl From<BTreeMap<String, bool>> for Chosen {
         Self {
             plugins,
             skills_off: BTreeSet::new(),
+            own_index: false,
         }
     }
 }
@@ -661,8 +667,8 @@ pub fn pins(adapter: &dyn Adapter) -> Chosen {
 /// is handed**: its harness's pins ([`pins`]), and, only while the Skill studio's flag is on, the
 /// harness's own skills the project turned off ([`Choices::skills_off`]). No other plugin is
 /// named: the harness decides (#3467).
-pub fn for_start(kind: &str, root: &Path, workspace: Option<&str>) -> Chosen {
-    for_start_as(crate::skills::studio_on_here(), kind, root, workspace)
+pub fn for_start(kind: &str, root: &Path, workspace: Option<&str>, env: &Env<'_>) -> Chosen {
+    for_start_as(crate::skills::studio_on_here(), kind, root, workspace, env)
 }
 
 /// [`for_start`], with the Skill studio's flag `studio` as given.
@@ -671,6 +677,7 @@ pub(crate) fn for_start_as(
     kind: &str,
     root: &Path,
     workspace: Option<&str>,
+    env: &Env<'_>,
 ) -> Chosen {
     let Some(adapter) = adapter(kind) else {
         return Chosen::new();
@@ -678,6 +685,8 @@ pub(crate) fn for_start_as(
     let mut chosen = pins(adapter);
     if studio {
         chosen.skills_off = Choices::read_in(root, workspace).skills_off(adapter);
+        chosen.own_index = crate::harness::Harness::of_kind(kind)
+            .is_some_and(|harness| crate::skills::has_own_index(harness, env));
     }
     chosen
 }

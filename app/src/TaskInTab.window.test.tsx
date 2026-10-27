@@ -75,10 +75,6 @@ declare global {
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
 
-// These tests render the whole app: about 1–2 s each on an idle machine, and just over 5 s on a
-// runner with every core busy. This is the budget a test is given, not a wait for anything.
-vi.setConfig({ testTimeout: 15_000 });
-
 const PLANE = "/home/dev/plane";
 
 type Lineage = NonNullable<OpenChat["from"]>;

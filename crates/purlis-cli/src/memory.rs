@@ -25,6 +25,7 @@ use purlis_core::brokered::{Store, Write};
 use purlis_core::memscope::Scope;
 use purlis_core::memstore::{self, Unread};
 use purlis_core::recall::{self, Ask, Workspaces};
+use purlis_core::skills::fence;
 use purlis_core::workspaces::Plane;
 
 use crate::brokered::Named;
@@ -640,29 +641,31 @@ pub fn recall(here: &crate::Here, args: RecallArgs) -> Result<Code, String> {
     Ok(code)
 }
 
-/// The first line of a memory's body worth showing — `commands._body_snippet` (with
-/// `frontmatter`) or `commands_persona._snippet` (without). Headings and `_…_` lines are
-/// skipped because none of them tell one memory from another; cut at 90 with `…`.
+/// The first line of a memory's body worth showing: a workspace memory's (with `frontmatter`)
+/// or a persona memory's (without). Headings and `_…_` lines are skipped because none of them
+/// tell one memory from another; cut at 90 with `…`.
 fn body_snippet(path: &Path, frontmatter: bool) -> String {
-    let Some(text) = memstore::read_text(path) else {
+    memstore::read_text(path)
+        .map(|text| snippet_of(&text, frontmatter))
+        .unwrap_or_default()
+}
+
+/// [`body_snippet`] of a memory's `text`. With `frontmatter`, the body is what the line
+/// format's one parser says lies below the fences (`fence::Fence`, #3482). A frontmatter that
+/// opens and is never closed by a fence line shows nothing: the text is all frontmatter to
+/// the person who wrote it, and `persona lint` names an unclosed fence.
+fn snippet_of(text: &str, frontmatter: bool) -> String {
+    let body = if !frontmatter {
+        text
+    } else if let Some(found) = fence::Fence::find(text) {
+        found.body()
+    } else if fence::unclosed(text) {
         return String::new();
+    } else {
+        text
     };
-    let mut in_front = false;
-    for (i, raw) in purlis_core::mdsection::split_lines(&text)
-        .into_iter()
-        .enumerate()
-    {
+    for raw in fence::split_lines(body) {
         let line = memstore::py_strip(raw);
-        if frontmatter {
-            if i == 0 && line == "---" {
-                in_front = true;
-                continue;
-            }
-            if in_front {
-                in_front = line != "---";
-                continue;
-            }
-        }
         if !line.is_empty() && !line.starts_with('#') && !line.starts_with('_') {
             let cut: String = line.chars().take(90).collect();
             return if line.chars().count() > 90 {
@@ -1967,4 +1970,36 @@ fn index_text(root: &Path, dir: &Path) -> String {
     memstore::read_text(&index)
         .map(|t| memstore::py_strip(&t).to_string())
         .unwrap_or_else(|| "(no index)".to_string())
+}
+
+#[cfg(test)]
+mod snippet_tests {
+    use super::snippet_of;
+
+    #[test]
+    fn a_memory_s_snippet_is_its_first_body_line_below_the_fences() {
+        let text =
+            "---\nname: Gate\ndescription: a --- b\n---\n# Title\n_note_\n\nThe gate holds.\n";
+        assert_eq!(snippet_of(text, true), "The gate holds.");
+        // Without a frontmatter to cut, the first line worth showing is the text's own.
+        assert_eq!(snippet_of(text, false), "---");
+        assert_eq!(snippet_of("# Title\nPlain body.", true), "Plain body.");
+    }
+
+    #[test]
+    fn a_fence_is_a_line_of_the_format_not_a_stripped_one() {
+        // An indented `---` is a value's line, not a fence, so the fence line below it closes.
+        let text = "---\nrole: x\n  ---\n\t---\nname: y\n---\t\r\nBody\u{2028}second";
+        assert_eq!(snippet_of(text, true), "Body");
+        // With only an indented close, the frontmatter is never closed and shows nothing.
+        assert_eq!(snippet_of("---\nname: x\n  ---\nThe gate holds.", true), "");
+        assert_eq!(snippet_of("---\nname: x\n", true), "");
+    }
+
+    #[test]
+    fn a_long_line_is_cut_at_ninety_with_an_ellipsis() {
+        let snippet = snippet_of(&"x".repeat(120), true);
+        assert_eq!(snippet.chars().count(), 91);
+        assert!(snippet.ends_with('…'));
+    }
 }

@@ -390,16 +390,18 @@ describe("the window's tab order", () => {
       // icons (#1737), the same column below the divider: ONE stop, the left half's open view.
       "tab Chats",
       "tab Repos",
-      // The left region, top to bottom. The Chats view's scope switch beside its title
-      // (#1679): ONE stop, the arrows between This tab, Workspace and All.
-      "radio Workspace",
-      // The Chats list's filter (#1499): its box, then its
-      // chips, needs you and working, which are ONE stop with the arrows between them.
+      // The left region, top to bottom, as the Chats view's top stacks it (#3342, Q1 A): the
+      // new chat and More on its title's line, the filter's box (#1499), the scope switch (#1679, ONE
+      // stop, the arrows between This tab, Workspace and All), then the chips, needs you and
+      // working, ONE stop with the arrows between them.
+      "button New chat",
+      "button More",
       "input Filter chats by name, persona, workspace or state",
+      "radio Workspace",
       "checkbox needs you",
       // The project's chats (#1447): ONE stop, the row of the chat in front, which reads as
-      // its name and its state's word (#1484), on its one line (#1675).
-      "treeitem steward two running (no detail from Claude Code)",
+      // its name, its persona and its state's word (#1484, #3342), on its one line (#1675).
+      "treeitem steward two steward, running (no detail from Claude Code)",
       // Explorer, Search and Changes are the side's other views, hidden while Chats is open.
       // The handle between it and the centre — `react-resizable-panels`' keyboard resize.
       "separator Resize the left sidebar",

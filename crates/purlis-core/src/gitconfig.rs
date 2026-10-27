@@ -253,7 +253,8 @@ fn read_bounded(path: &str, limit: u64) -> Option<Vec<u8>> {
 fn pointer_target(dot: &str, base: &str) -> Option<String> {
     let head = read_bounded(dot, MAX_POINTER_BYTES)?;
     let text = String::from_utf8_lossy(&head);
-    let line = py_splitlines(&text).into_iter().next()?;
+    let first = *purlis_skills::fence::lines(&text).first()?;
+    let line = &text[first.start..first.end];
     let (label, target) = line.split_once(':')?;
     if py_strip(label).to_lowercase() != "gitdir" {
         return None;
@@ -405,31 +406,16 @@ pub fn scalar(raw: &str) -> String {
     out[..keep].iter().collect()
 }
 
-/// `str.splitlines()` — every line boundary Python knows, not only `\n`.
+/// `str.splitlines()` — every line boundary Python knows, not only `\n`
+/// (`purlis_skills::fence::split_lines`, #3482).
 ///
 /// `\r\n` is one boundary; `\r`, `\n`, `\x0b`, `\x0c`, `\x1c`–`\x1e`, U+0085, U+2028 and U+2029
 /// are one each. A trailing boundary does not make an empty last line.
 pub fn py_splitlines(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            '\r' => {
-                if chars.peek() == Some(&'\n') {
-                    chars.next();
-                }
-                out.push(std::mem::take(&mut cur));
-            }
-            '\n' | '\u{b}' | '\u{c}' | '\u{1c}' | '\u{1d}' | '\u{1e}' | '\u{85}' | '\u{2028}'
-            | '\u{2029}' => out.push(std::mem::take(&mut cur)),
-            other => cur.push(other),
-        }
-    }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
+    purlis_skills::fence::split_lines(text)
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
 }
 
 #[cfg(test)]

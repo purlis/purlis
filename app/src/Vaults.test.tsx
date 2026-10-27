@@ -83,15 +83,26 @@ describe("the Vaults section", () => {
     // React Aria draws the grid before its rows (its collection is built in a pass of its own):
     // the last vault's row is when the list is there to be read.
     await within(list).findByRole("row", { name: /files/ });
-    const rows = within(list)
-      .getAllByRole("row")
-      .map((row) => row.textContent);
-    // Each provider by the name New vault offers it under, not its id (#1719).
-    expect(rows).toEqual([
-      "ops · System keychain · 2 secrets",
-      "team · 1Password",
-      "files · Plain file · 1 secret",
+    // Each vault by its name with its count at its end (#3341, the prototype's Q1 A), under its
+    // provider, named as New vault offers it, not by its id (#1719).
+    const rows = [...list.querySelectorAll(".panel-row")].map((row) => [
+      row.querySelector(".row-text")?.textContent,
+      row.querySelector(".row-date")?.textContent ?? null,
     ]);
+    expect(rows).toEqual([
+      ["ops", "2 secrets"],
+      ["team", null],
+      ["files", "1 secret"],
+    ]);
+    expect(
+      [...list.querySelectorAll('[data-part="header"]')].map((one) => {
+        const said = one.textContent ?? "";
+        return said.slice(
+          0,
+          said.length - (one.querySelector("[data-count]")?.textContent ?? "").length,
+        );
+      }),
+    ).toEqual(["System keychain", "1Password", "Plain file"]);
     expect(asked).toEqual([{ plane: PLANE }]);
   });
 
@@ -138,7 +149,7 @@ describe("the Vaults section", () => {
     ]);
     draw();
     const list = await screen.findByRole("grid", { name: "Vaults" });
-    const row = await within(list).findByRole("row");
+    const row = await within(list).findByRole("row", { name: "team" });
     expect(row).toHaveClass("is-trouble");
     // No card: the tab says why, at the top, where the operator is looking when it matters.
     expect(screen.queryByText("op CLI not found")).not.toBeInTheDocument();
@@ -160,7 +171,8 @@ describe("the Vaults section", () => {
     draw();
     const list = await screen.findByRole("grid", { name: "Vaults" });
     await within(list).findByRole("row", { name: /ops/ });
-    const [first, second] = within(list).getAllByRole("row");
+    // The vaults' own rows, not their providers' names (#3341).
+    const [first, second] = [...list.querySelectorAll<HTMLElement>(".panel-row")];
     act(() => first.focus());
     await userEvent.keyboard("{ArrowDown}");
     await waitFor(() => expect(second).toHaveFocus());

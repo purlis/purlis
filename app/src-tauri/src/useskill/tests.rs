@@ -38,6 +38,7 @@ fn the_window_is_shown_the_chats_skills_with_what_each_takes_and_its_budget() {
         harness: Harness::ClaudeCode,
         built_in: Some(&built_in),
         plane_skills: true,
+        start: None,
     });
 
     let shown = shown(Some(&skills));
@@ -98,6 +99,7 @@ fn a_chat_with_no_id_yet_has_nothing_typed_and_says_so() {
         harness: Harness::Codex,
         built_in: None,
         plane_skills: true,
+        start: None,
     });
 
     let refused = typing_of(&skills, None, "review", &[]).unwrap_err();
@@ -130,6 +132,7 @@ fn the_budget_names_the_workspace_and_the_persona_that_pin_a_skill_sk15d() {
         harness: Harness::ClaudeCode,
         built_in: None,
         plane_skills: true,
+        start: None,
     });
 
     let budget = shown(Some(&skills)).budget.unwrap();
@@ -178,6 +181,7 @@ fn the_budget_says_a_workspace_and_a_persona_pin_past_64_together_3391() {
             harness: Harness::ClaudeCode,
             built_in: None,
             plane_skills: true,
+            start: None,
         })
     };
 
