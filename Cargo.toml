@@ -96,6 +96,20 @@ strip = "debuginfo"
 inherits = "test"
 debug = "none"
 
+# What CI builds and runs the Rust suite with (`ci.yml`, `rust`): the test profile, so debug
+# assertions and overflow checks stay on, at opt-level 1 for the workspace and 2 for its
+# dependencies. Unoptimised, the suite's CPU-bound tests (the theme engine's colour tuning, the
+# browser engine's large pages, the guards' linear-time bounds) took 4.3x the CPU they take at
+# opt-level 1, and their summed time on a runner went from 24 to 102 minutes between 2026-10-11
+# and 10-27 while the test count rose 60%. Dependencies change rarely and come from the Rust
+# cache, so their optimisation costs a build only when Cargo.lock moves.
+[profile.ci-test]
+inherits = "test"
+opt-level = 1
+
+[profile.ci-test.package."*"]
+opt-level = 2
+
 [profile.release]
 codegen-units = 1
 lto = true

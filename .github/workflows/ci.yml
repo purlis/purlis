@@ -56,18 +56,20 @@ env:
   NEXTEST_VERSION: "0.9.146"
 
 jobs:
-  # The Rust suite in two parts on two runners, each building the tests and running half of
-  # them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
-  # request waits on (2026-10-10). Part 1 also runs fmt, clippy and the doctests, which part 2's
+  # The Rust suite in three parts on three runners, each building the tests and running a third
+  # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
+  # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
+  # start at once (no queue on 2026-10-14..27), so a part costs runner minutes, not wait. The
+  # suite builds with the `ci-test` profile (Cargo.toml): the test profile, optimised. Part 1 also runs fmt, clippy and the doctests, which part 2's
   # half of the tests outlasted by three minutes on #1712. Each part builds for itself: a build handed from one job to the next
   # saves runner minutes, not the wait, since no test can start before the build ends.
   # `rust-checks` below carries the required check's name and passes when both parts did.
   rust:
-    name: rust tests (part ${{ matrix.part }} of 2)
+    name: rust tests (part ${{ matrix.part }} of 3)
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -125,7 +127,7 @@ jobs:
       # Built in a step of its own, so the run's step timings say how much of this job is
       # compiling and linking the test binaries and how much is running them, with no log to read.
       - name: Build the tests
-        run: cargo nextest run --workspace --locked --no-run
+        run: cargo nextest run --workspace --locked --cargo-profile ci-test --no-run
       # Every test's result, never the first red only (`fail-fast = false` in the profile): a
       # flake in one test (charter-app#39) must not hide the rest of the suite.
       #
@@ -136,7 +138,7 @@ jobs:
       #
       # `count:` deals each binary's tests out in turn, so each part gets half of every binary.
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition count:${{ matrix.part }}/2 -E 'not test(/::in_a_docker_pool$/)'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --cargo-profile ci-test --profile ci --partition count:${{ matrix.part }}/3 -E 'not test(/::in_a_docker_pool$/)'
       # The slowest tests and test binaries, as notices on the run: what makes the step above
       # slow, readable through the checks API without the job's log. A report, so it never turns
       # the job red.
@@ -147,7 +149,7 @@ jobs:
       # nextest does not run doctests, so cargo does.
       - name: Run the doctests
         if: matrix.part == 1
-        run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
+        run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --profile ci-test --doc
       # The theme schema only grows within a format (#2524). `Run the tests` holds the engine's
       # schema to the committed `docs/schema/theme.v2.schema.json`; this step holds it to the
       # file the last release's tag holds, fetched with git, so an edit of the committed file
@@ -157,7 +159,7 @@ jobs:
         if: matrix.part == 1
         run: >-
           tools/theme-schema-since-release.sh
-          cargo nextest run --workspace --locked --run-ignored only
+          cargo nextest run --workspace --locked --cargo-profile ci-test --run-ignored only
           -E 'package(purlis-core) & test(/the_schema_only_grows_since_the_last_release$/)'
   # The required check `rust (fmt, clippy, test)`: green only when both parts of `rust` are.
   # `!cancelled()` so a red part still reports here as red, not as skipped, which a required
@@ -223,7 +225,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: The lint and both parts passed
+      - name: The lint and every part passed
         env:
           RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
         run: test "$RESULTS" = "success success"
