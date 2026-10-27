@@ -21,6 +21,7 @@ import { panelView, type OwnViewId } from "./sideViews";
 import type { WorkspaceState } from "./workspaceState";
 import { Panel, PanelTitle } from "./ui/panel/Panel";
 import { HeadActions } from "./viewHead";
+import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 
 const two = (n: number) => String(n).padStart(2, "0");
 /** A day `back` days before today, as the store stamps it, so the days read the same any day. */
@@ -151,6 +152,19 @@ const VAULTS: VaultSummary[] = ["forge", "reddit", "crates-io", "devops", "relea
  * line holds the view's one title and its actions (#3355), and the view under it is the one
  * scroll, its top held at the top of it.
  */
+/** Two personas' chats, as the Chats list hands them to the Personas view (#3341). */
+const AT_WORK = new Map([
+  ["steward", [1]],
+  ["designer", [2]],
+]);
+
+/** What the board says of them: steward's at work, designer's asking for you. */
+const WORKING = fixedChats({
+  ...nothingKnown,
+  bySession: { 1: "running", 2: "waiting" },
+  needsYou: [2],
+});
+
 /** An approved extension's panel (#3341): declared rows, its own marks, on the same frame. */
 const EXTENSION: PanelView = {
   key: "ext/acme/reviews",
@@ -183,11 +197,14 @@ function View({
   view,
   count,
   done = 0,
+  atWork = false,
 }: {
   view: keyof typeof KEYS | "vaults" | "extension";
   count: number;
   /** Done todos after the open ones, each with its box ticked (the Todos view only). */
   done?: number;
+  /** Personas whose chats are at work: steward's working, designer's asking for you. */
+  atWork?: boolean;
 }) {
   const title =
     view === "vaults" ? "Vaults" : view === "extension" ? EXTENSION.title : KEYS[view][0];
@@ -231,25 +248,29 @@ function View({
           <PanelTitle className="side-title">{title}</PanelTitle>
           <span className="view-actions" ref={setLine} />
         </div>
-        <div style={{ display: "flex", flex: "1 1 0", minBlockSize: 0 }}>
-          <HeadActions.Provider value={line}>
-            <Panels
-              view={view === "extension" ? panelView(EXTENSION.key) : (view as OwnViewId)}
-              workspace="alpha"
-              state={stateOf(
-                view === "vaults" || view === "extension" ? "memory" : view,
-                count,
-                done,
-              )}
-              offers={offers}
-              onPress={() => {}}
-              contributed={view === "extension" ? [EXTENSION] : []}
-              shownRow={shown}
-              onShowRow={setShown}
-              onAddTodo={async () => undefined}
-              vaults={{ vaults: VAULTS.slice(0, count), reload: () => {} }}
-            />
-          </HeadActions.Provider>
+        {/* A column, as the window's region view is: the view takes the half's whole width. */}
+        <div style={{ display: "flex", flexDirection: "column", flex: "1 1 0", minBlockSize: 0 }}>
+          <ChatsHere.Provider value={atWork ? WORKING : fixedChats()}>
+            <HeadActions.Provider value={line}>
+              <Panels
+                view={view === "extension" ? panelView(EXTENSION.key) : (view as OwnViewId)}
+                workspace="alpha"
+                state={stateOf(
+                  view === "vaults" || view === "extension" ? "memory" : view,
+                  count,
+                  done,
+                )}
+                offers={offers}
+                onPress={() => {}}
+                contributed={view === "extension" ? [EXTENSION] : []}
+                shownRow={shown}
+                onShowRow={setShown}
+                onAddTodo={async () => undefined}
+                vaults={{ vaults: VAULTS.slice(0, count), reload: () => {} }}
+                personaChats={atWork ? AT_WORK : undefined}
+              />
+            </HeadActions.Provider>
+          </ChatsHere.Provider>
         </div>
       </div>
     </Panel>
@@ -405,6 +426,21 @@ export const Personas: Story = {
       canvas.getByRole("searchbox", { name: "Filter Personas" }),
       false,
     );
+  },
+};
+
+/** Personas at work (#3341): a persona's row ends with its chats' state, as its own mark — the
+ *  ring of one at work, the hand of one asking for you; one at rest shows none. */
+export const PersonasAtWork: Story = {
+  args: { view: "personas", count: 7, atWork: true },
+  play: async ({ canvas }) => {
+    const mark = (name: string) =>
+      canvas
+        .getByRole("row", { name: new RegExp(`^${name}`) })
+        .querySelector(".persona-at-work .shown-state");
+    await expect(mark("steward")).toHaveAttribute("data-state", "working");
+    await expect(mark("designer")).toHaveAttribute("data-state", "needs-you");
+    await expect(mark("release")).toBeNull();
   },
 };
 

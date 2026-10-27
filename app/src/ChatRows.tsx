@@ -105,10 +105,11 @@ export const ChatShownState = memo(function ChatShownState({
 
 /**
  * **Who a chat runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
- * persona's mark in the persona's colour, first on the chat's row, and the chat's state a small
- * dot on its corner (`App.css` draws `StateShown`'s mark as the dot; a chat that is done wears
- * none). A chat with no persona wears the terminal's mark. Its tooltip and what a screen reader
- * hears both say the two: `steward, needs you`.
+ * persona's mark in the persona's colour, first on the chat's row. A chat that asks for the person
+ * or is at work wears its state's own mark on the persona's corner, shape and colour (`App.css`
+ * draws `StateShown`'s mark as that badge); a chat at rest wears none. A chat with no persona
+ * wears the terminal's mark. Its tooltip and what a screen reader hears both say the two:
+ * `steward, needs you`.
  */
 export const ChatPersonaState = memo(function ChatPersonaState({
   persona,

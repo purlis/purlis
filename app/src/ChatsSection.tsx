@@ -26,7 +26,7 @@ import {
   type Offer,
   type TaskEndWay,
 } from "./actions";
-import { Menu, MenuItem, MenuTrigger } from "./ui/menu/Menu";
+import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
 import { TaskEndConfirm, type TaskEndInline } from "./TaskEnd";
 import type { AtLimit, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
@@ -946,7 +946,12 @@ export function ChatsSection({
                       textValue={offer.title}
                       isDisabled={!offer.available}
                     >
-                      {offer.title}
+                      {/* A row it cannot run says why under its words, as New chat's tooltip
+                          does. */}
+                      <MenuWords
+                        said={offer.title}
+                        under={offer.available ? undefined : offer.reason}
+                      />
                     </MenuItem>
                   ))}
                 </Menu>

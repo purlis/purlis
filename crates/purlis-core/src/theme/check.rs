@@ -270,6 +270,8 @@ pub const PAIRS: &[Pair] = &[
     // An alert's mark in the Inbox's Notices (#1695), on the list's `surface.raised`.
     p("state.waiting", "surface.raised", 3.0),
     p("state.failed", "surface.raised", 3.0),
+    // A chat's state badge on the persona's mark (#3342), ringed in a Purlis panel's fill.
+    p("needs-you.base", "surface.raised", 3.0),
     // Words in a state's colour on a view tab (#1457), at the window's text size.
     p("state.running", "surface.raised", TEXT),
     p("state.waiting", "surface.raised", TEXT),
