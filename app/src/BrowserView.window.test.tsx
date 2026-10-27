@@ -558,10 +558,6 @@ describe("taking a browser over from its view (#2014)", () => {
 });
 
 describe("a browser the person opened goes where they send it (#2176)", () => {
-  // Each opens the whole window and goes through the palette first, which a loaded runner
-  // takes a while over.
-  vi.setConfig({ testTimeout: 15_000 });
-
   async function opened() {
     const host = core();
     render(

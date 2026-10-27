@@ -3,14 +3,7 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  cleanup,
-  configure,
-  render as renderBare,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -39,11 +32,6 @@ vi.mock("./SessionPane", () => ({
 }));
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
-
-// The whole window renders under StrictMode here, twice per effect, and a loaded runner takes
-// longer than Testing Library's one second to draw it. What these assert is WHAT the window
-// becomes, never how fast, so they wait as long as a slow machine needs.
-configure({ asyncUtilTimeout: 5_000 });
 
 beforeEach(() => globalThis.localStorage.clear());
 afterEach(() => {

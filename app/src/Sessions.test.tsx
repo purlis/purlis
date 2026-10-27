@@ -5,7 +5,6 @@ import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
-  configure,
   fireEvent,
   render as renderBare,
   screen,
@@ -36,7 +35,6 @@ vi.mock("./SessionPane", () => ({
 }));
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
-configure({ asyncUtilTimeout: 5_000 });
 
 beforeEach(() => globalThis.localStorage.clear());
 afterEach(() => {

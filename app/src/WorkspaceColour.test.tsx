@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, render, waitFor } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { DEFAULT_THEME, drawIn, drawTint, inForce, property, tinted } from "./theme/theme";
@@ -27,8 +27,6 @@ vi.mock("./SessionPane", () => ({
     </div>
   ),
 }));
-
-configure({ asyncUtilTimeout: 5_000 });
 
 beforeEach(() => globalThis.localStorage.clear());
 afterEach(() => {
