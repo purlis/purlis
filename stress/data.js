@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793085626563,
+  "lastUpdate": 1793085647535,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -15688,6 +15688,42 @@ window.BENCHMARK_DATA = {
             "value": 693.7,
             "unit": "MB",
             "extra": "median of 6 samples: 656.8, 681.6, 691.1, 696.3, 697, 771.8 MB; window 423.2 MB, session host 270.4 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "473a5bc3e719e0afcb22be33f0d4db75e3f42b9a",
+          "message": "SK-51: the window marks invisible characters by the one rule (#3202) (#3464)\n\n* SK-51: the window marks invisible characters by the one rule (#3202)\n\nThe window kept its own lists of invisible characters (RepoInstructionsTab's\nINVISIBLE regex, sandboxBlocks.inertly's \\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}, iconsPick's\nplainLine) and its own escape. Now:\n\n- bindings.ts carries UNICODE_RULE, a specta constant built from\n  purlis_unicode's generated statics (unicoderule.rs), so the window reads the\n  core's tables and holds no list of its own.\n- app/src/invisible.ts applies them with the core's joiner rule (D-1301):\n  flagged / hides / marked / unhidden, the mark ⟦U+XXXX⟧.\n- invisible.cases.json holds the core's own marked() answers for 949 texts\n  (every table edge and joiner case); a Rust test keeps it current and\n  invisible.test.ts meets every one.\n- The instruction preview, inertly (blocks, grants, runner branches) and\n  plainLine use it.\n- Summary::of keeps a blank that only looks like a space (no-break, en,\n  ideographic) instead of collapsing it, so the Inbox shows ⟦U+00A0⟧ on a\n  Deny-only command, marks it, and says why Allow is missing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* SK-51: review fixes and CI (#3202)\n\n- invisible.cases.json kept out of prettier, deduped by value\n- Inbox line parts stay plain children, so the tooltip still sees the words\n- marksIn() instead of a shared global regex; plainLine keeps a blank as a space\n- copy: \"Allow is not offered. It holds ...\"; inertly and Summary docs\n- FirstRun and ProjectExpectsNotice expect the one mark\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T05:43:59Z",
+          "tree_id": "299dfc4886d495e6b459c58b34faa81255d010a7",
+          "url": "https://github.com/purlis/purlis/commit/473a5bc3e719e0afcb22be33f0d4db75e3f42b9a"
+        },
+        "date": 1793085643925,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (resident)",
+            "value": 1707.1,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1556.2, 1707.1, 1858.6 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 699.8,
+            "unit": "MB",
+            "extra": "median of 6 samples: 663.4, 678.9, 698.6, 700.9, 702, 789.5 MB; window 417.9 MB, session host 281.9 MB"
           }
         ]
       }
