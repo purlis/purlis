@@ -70,17 +70,20 @@ export const BrowserThumbnail = memo(function BrowserThumbnail({
   program,
   driver,
   across = THUMBNAIL_ACROSS,
+  live = true,
 }: {
   program: string;
   /** Who drives it, where its agent does not: marked on it (#2300). */
   driver: BrowserDriver | null;
   /** How many pixels across its frame is drawn. */
   across?: number;
+  /** It may ask for frames now: else it keeps the last it drew. */
+  live?: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const inFront = useProjectShown();
   const windowSeen = useWindowSeen();
-  const seen = inFront && windowSeen;
+  const seen = inFront && windowSeen && live;
   const { watched } = useBrowserWatch(program, "thumbnail", canvas, seen, across);
   return (
     <span

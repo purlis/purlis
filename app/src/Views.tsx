@@ -90,7 +90,7 @@ import { BrowserTimeline } from "./BrowserTimeline";
 import { isBrowserTimeline } from "./browserTimelines";
 import { BROWSER_VIEW, isBrowser } from "./browsers";
 import { BROWSERS_GRID_VIEW, isBrowsersGrid } from "./browsersGrid";
-import { BrowsersGrid } from "./BrowsersGridTab";
+import { BrowsersGridTab } from "./BrowsersGridTab";
 import { SessionRecordTab } from "./SessionRecordTab";
 import { useSessionOffers } from "./sessionOffers";
 import { TodoTab } from "./TodoTab";
@@ -566,7 +566,7 @@ export function ViewPane({
           <RunnerWriteTab key={`${plane}\u0000${view.key}`} plane={plane} id={Number(view.key)} />
         ) : isBrowsersGrid(view) ? (
           /* Every browser in scope, live (#2027): its This workspace is the strip's it is on. */
-          <BrowsersGrid key={plane} plane={plane} workspace={workspace} />
+          <BrowsersGridTab key={plane} plane={plane} workspace={workspace} />
         ) : isBrowser(view) ? (
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
              browser, so a pane that comes to show another one opens its own view. */

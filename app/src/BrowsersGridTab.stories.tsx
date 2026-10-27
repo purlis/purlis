@@ -10,7 +10,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { BrowsersGrid } from "./BrowsersGridTab";
+import { BrowsersGridTab } from "./BrowsersGridTab";
 import { forgetProjectsBrowsers, tellProjectBrowsers, type GridTile } from "./browsersGrid";
 import { forgetProjectViews } from "./projectViews";
 import { expectFocusInSight } from "./stories.testkit";
@@ -21,6 +21,7 @@ const THERE = "/home/dev/shop";
 const tile = (plane: string, program: string, extra: Partial<GridTile> = {}): GridTile => ({
   plane,
   program,
+  own: false,
   name: "b1",
   chat: "steward 1",
   workspace: "alpha",
@@ -37,7 +38,7 @@ function tell(tiles: boolean) {
       ? [
           tile(HERE, "A1"),
           tile(HERE, "A2", { name: "b2", driver: "person" }),
-          tile(HERE, "A3", { name: null, chat: null, workspace: "beta" }),
+          tile(HERE, "A3", { own: true, name: null, chat: null, workspace: "beta" }),
         ]
       : [],
     open: () => undefined,
@@ -53,7 +54,7 @@ function tell(tiles: boolean) {
 function Grid() {
   return (
     <div style={{ inlineSize: 720 }}>
-      <BrowsersGrid plane={HERE} workspace="alpha" />
+      <BrowsersGridTab plane={HERE} workspace="alpha" />
     </div>
   );
 }

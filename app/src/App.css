@@ -596,8 +596,8 @@ body {
 }
 
 /* **The Browsers grid** (#2027): as many tiles to a row as the width holds, each its live
-   picture over what it is called and where it is. A tile is at most twice its least width, so
-   its frame (640 across) stays sharp. */
+   picture over what it is called and where it is. A tile is drawn under twice its least width,
+   so its frame (`TILE_ACROSS`, 800 across) is over twice the widest it is drawn. */
 .browsers-grid {
   grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
 }

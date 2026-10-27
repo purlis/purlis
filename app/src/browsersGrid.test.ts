@@ -1,12 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   forgetProjectsBrowsers,
   gridCounts,
   keepBrowsersScope,
   keptBrowsersScope,
+  onProjectsBrowsers,
+  openTile,
   projectsBrowsers,
   tellProjectBrowsers,
   tilesIn,
@@ -22,6 +24,7 @@ function tile(plane: string, program: string, workspace: string): GridTile {
   return {
     plane,
     program,
+    own: false,
     name: "b1",
     chat: "steward 1",
     workspace,
@@ -82,6 +85,42 @@ describe("what each project tells the grid", () => {
     ]);
     forgetProjectsBrowsers(HERE);
     expect(projectsBrowsers().map((one) => one.plane)).toEqual([THERE]);
+  });
+});
+
+describe("telling the grid again", () => {
+  it("tells nobody when a project tells the browsers it told last, and opens by its latest way", () => {
+    const heard = vi.fn();
+    const first = vi.fn();
+    const latest = vi.fn();
+    tellProjectBrowsers({ ...project(HERE, [tile(HERE, "A1", "alpha")]), open: first });
+    const stop = onProjectsBrowsers(heard);
+    // A change to its tabs that shows no other browser: the same browsers, built afresh.
+    tellProjectBrowsers({ ...project(HERE, [tile(HERE, "A1", "alpha")]), open: latest });
+    expect(heard).not.toHaveBeenCalled();
+    openTile(tile(HERE, "A1", "alpha"));
+    expect(latest).toHaveBeenCalledTimes(1);
+    expect(first).not.toHaveBeenCalled();
+
+    tellProjectBrowsers({ ...project(HERE, [tile(HERE, "A1", "beta")]), open: latest });
+    expect(heard).toHaveBeenCalledTimes(1);
+    stop();
+  });
+});
+
+describe("whose a browser is", () => {
+  it("is never the person's own in one project where another project's chat uses it", () => {
+    // Project HERE's tabs show a view of THERE's chat's browser B1.
+    tellProjectBrowsers(
+      project(HERE, [
+        tile(HERE, "A1", "alpha"),
+        { ...tile(HERE, "B1", "alpha"), own: true, name: null, chat: null },
+      ]),
+    );
+    tellProjectBrowsers(project(THERE, [tile(THERE, "B1", "alpha")]));
+    expect(
+      projectsBrowsers().flatMap((one) => one.tiles.map((t) => `${t.plane} ${t.program} ${t.own}`)),
+    ).toEqual([`${HERE} A1 false`, `${THERE} B1 false`]);
   });
 });
 

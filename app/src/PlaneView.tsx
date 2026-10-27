@@ -4251,8 +4251,10 @@ export const PlaneView = memo(function PlaneView({
       .map(({ browser, chat }) => ({
         plane,
         program: browser.program,
+        own: false,
         name: browser.name,
-        chat,
+        // A pinned one whose chat's name was not kept is named by its own name alone.
+        chat: chat === "" ? null : chat,
         workspace: filedIn(browser.session),
         driver: browser.driver,
         pool: browser.pool,
@@ -4271,6 +4273,7 @@ export const PlaneView = memo(function PlaneView({
           own.set(content.view.key, {
             plane,
             program: content.view.key,
+            own: true,
             name: null,
             chat: null,
             workspace: content.workspace,
@@ -8906,6 +8909,8 @@ export const PlaneView = memo(function PlaneView({
                   }
                   browsers={chatBrowsersShown}
                   kept={keptShown}
+                  // The Browsers grid's button, while the grid has a tile (#2027).
+                  anyBrowser={gridTiles.length > 0}
                   onBrowser={openChatBrowser}
                   // The side panel's header (R123): the workspace, then the project, quiet.
                   heading={

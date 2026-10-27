@@ -1243,6 +1243,7 @@ const STATES: State[] = [
           {
             plane: PLANE,
             program: "01J9ZQ8000000000000000000E",
+            own: false,
             name: "b1",
             chat: "steward 1",
             workspace: WORKSPACE,

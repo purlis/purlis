@@ -37,10 +37,13 @@ export type GridTile = {
   plane: string;
   /** Its program in the session host: what its view is watched by. */
   program: string;
+  /** The person opened it: no chat's, of any project this window holds. */
+  own: boolean;
   /** What its chat calls it (`b1`), or `null` for one the person opened. */
   name: string | null;
   /** Its chat by the name it has in its project, what that chat was called for a pinned one
-   *  whose chat closed (#2022), or `null` for one the person opened. */
+   *  whose chat closed (#2022), or `null` for one the person opened or a chat with no name
+   *  kept. */
   chat: string | null;
   /** The workspace it is filed in, by the strip's key: its chat's, or its tab's. */
   workspace: string;
@@ -62,26 +65,74 @@ export type ProjectBrowsers = {
 
 /** What each project told last, in the order they first told it. */
 const told = new Map<string, ProjectBrowsers>();
+/** Each project's way to open one of its browsers, the latest it told. */
+const opens = new Map<string, (tile: GridTile) => void>();
 let listed: readonly ProjectBrowsers[] = [];
 const listeners = new Set<() => void>();
 
+/**
+ * **What every project told, as the grid lists it.** A browser is the person's own only where
+ * no project this window holds lists it as a chat's: a tab of one project that shows another
+ * project's chat's browser does not make that browser the person's.
+ */
 function changed(): void {
-  listed = [...told.values()];
+  const ofChats = new Set(
+    [...told.values()]
+      .flatMap((one) => one.tiles.filter((tile) => !tile.own))
+      .map((tile) => tile.program),
+  );
+  listed = [...told.values()].map((one) =>
+    one.tiles.some((tile) => tile.own && ofChats.has(tile.program))
+      ? { ...one, tiles: one.tiles.filter((tile) => !(tile.own && ofChats.has(tile.program))) }
+      : one,
+  );
   for (const listener of listeners) listener();
 }
 
-/** Project `entry.plane` has these browsers now. */
+const sameTile = (one: GridTile, two: GridTile): boolean =>
+  one.plane === two.plane &&
+  one.program === two.program &&
+  one.own === two.own &&
+  one.name === two.name &&
+  one.chat === two.chat &&
+  one.workspace === two.workspace &&
+  one.driver === two.driver &&
+  one.pool === two.pool;
+
+/**
+ * Project `entry.plane` has these browsers now. Nobody is told when they are the ones it told
+ * last, as a change to its tabs that shows no other browser leaves them: only its way to open
+ * one is taken.
+ */
 export function tellProjectBrowsers(entry: ProjectBrowsers): void {
-  if (told.get(entry.plane) === entry) return;
+  opens.set(entry.plane, entry.open);
+  const was = told.get(entry.plane);
+  if (
+    was !== undefined &&
+    was.project === entry.project &&
+    was.tiles.length === entry.tiles.length &&
+    was.tiles.every((tile, at) => sameTile(tile, entry.tiles[at]))
+  )
+    return;
   told.set(entry.plane, entry);
   changed();
 }
 
 /** Forgets project `plane`'s browsers, as it closes; every project's where none is named. */
 export function forgetProjectsBrowsers(plane?: string): void {
-  if (plane === undefined) told.clear();
-  else if (!told.delete(plane)) return;
+  if (plane === undefined) {
+    told.clear();
+    opens.clear();
+  } else {
+    opens.delete(plane);
+    if (!told.delete(plane)) return;
+  }
   changed();
+}
+
+/** **Opens `tile`'s view in its own project**, by the way that project told last. */
+export function openTile(tile: GridTile): void {
+  opens.get(tile.plane)?.(tile);
 }
 
 /** Every project's browsers, as they were told. */
@@ -89,14 +140,15 @@ export function projectsBrowsers(): readonly ProjectBrowsers[] {
   return listed;
 }
 
-function subscribe(listener: () => void): () => void {
+/** Calls `listener` each time a project tells the grid something new. Answers how to stop. */
+export function onProjectsBrowsers(listener: () => void): () => void {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => void listeners.delete(listener);
 }
 
 /** {@link projectsBrowsers}, for a component that redraws when a project tells it again. */
 export function useProjectsBrowsers(): readonly ProjectBrowsers[] {
-  return useSyncExternalStore(subscribe, projectsBrowsers);
+  return useSyncExternalStore(onProjectsBrowsers, projectsBrowsers);
 }
 
 /**

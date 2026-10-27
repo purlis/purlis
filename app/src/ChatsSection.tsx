@@ -298,6 +298,7 @@ export function ChatsSection({
   browsers,
   kept,
   onBrowser,
+  anyBrowser = false,
   heading,
 }: {
   rows: readonly ChatRow[];
@@ -356,6 +357,8 @@ export function ChatsSection({
   browsers?: ReadonlyMap<number, readonly BrowserShown[]>;
   /** The pinned browsers whose chat closed (#2022): rows of their own, after the chats. */
   kept?: readonly BrowserShown[];
+  /** The project has a browser the Browsers grid draws (#2027): its button is on the heading. */
+  anyBrowser?: boolean;
   /** A browser's row was pressed: open its view. No rows are drawn without it. */
   onBrowser?: (shown: BrowserShown) => void;
   /** **What its title says** (R123, #2917): the workspace and, after it, the project. Absent,
@@ -875,7 +878,7 @@ export function ChatsSection({
             {heading ?? "Chats"}
           </PanelSectionTitle>
           {/* **Every browser, live** (#2027): the Browsers grid, while the project has one. */}
-          {((browsers?.size ?? 0) > 0 || (kept?.length ?? 0) > 0) && (
+          {anyBrowser && (
             <HeadingOffer offer={offers.get(BROWSERS_SHOW)} onPress={press} mark={LayoutGrid} />
           )}
           {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
