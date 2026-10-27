@@ -21,9 +21,11 @@ import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
 import { codeSpans } from "./PanelList";
 import {
+  pinnerSaid,
   scopeOfPinner,
   SKILL_STUDIO_TITLE,
   skillStudioTitle,
+  type StudioScope,
   useSkillStudioOn,
 } from "./skillStudio";
 import {
@@ -32,6 +34,7 @@ import {
   type ChatSkills,
   type PlaneId,
   type SkillBudget,
+  type SkillPinner,
 } from "./bindings";
 
 /** The budget in a line: `12 skills of 30 · 3,400 of 6,000 characters`, and the manual-only
@@ -76,11 +79,37 @@ export function warnsSaid(budget: SkillBudget): string | undefined {
   return `This chat's ${what} near or past purlis's skill budget, past which some are hidden behind the index skill. Make some skills manual-only, or turn some off for this workspace.`;
 }
 
+/**
+ * **A chat whose workspace's and persona's pins pass the most it reads only together** (#3391):
+ * each list alone is accepted, so neither studio says anything is wrong, but the chat reads none
+ * of either. Names both, how many each pins, and where to unpin; nothing where its pins are read.
+ */
+export function pinsTogetherSaid(budget: SkillBudget): string | undefined {
+  const together = budget.pins_together;
+  if (together === null) return undefined;
+  const held = together.held
+    .map((one) => `${pinnerSaid(one.by)} pins ${counted(one.pins, "skill", "skills")}`)
+    .join(" and ");
+  const where = studiosOf(together.held.map((one) => one.by));
+  return `This chat reads none of its pins: ${held}, more than the ${together.most} a chat reads together. Unpin some in ${where}.`;
+}
+
+/** Everything the chat warns of about its skills, in one sentence or two: what its Skills chip
+ *  says, or nothing where it warns of nothing. */
+function chipWarning(budget: SkillBudget): string | undefined {
+  const said = [pinsTogetherSaid(budget), warnsSaid(budget)].filter((one) => one !== undefined);
+  return said.length === 0 ? undefined : said.join(" ");
+}
+
 /** Where a chat's pins are undone (SK-15d): the studio of each of its workspace and persona that
  *  pins a skill, by its tab's title, or the studio itself where the window was not told. */
 function unpinIn(budget: SkillBudget): string {
-  const where = budget.pinned_by.map((by) => skillStudioTitle(scopeOfPinner(by)));
-  return where.length === 0 ? SKILL_STUDIO_TITLE : where.join(" or ");
+  return budget.pinned_by.length === 0 ? SKILL_STUDIO_TITLE : studiosOf(budget.pinned_by);
+}
+
+/** Each pinner's studio, by its tab's title: `Skill studio · ops or Skill studio · reviewer`. */
+function studiosOf(pinners: readonly SkillPinner[]): string {
+  return pinners.map((by) => skillStudioTitle(scopeOfPinner(by))).join(" or ");
 }
 
 /** What the filter over a chat's skills calls them. */
@@ -122,6 +151,7 @@ export function UseSkill({
   busy,
   onUse,
   onCancel,
+  onOpenStudio,
 }: {
   /** The chat it types into, as its tab shows it. */
   chat: string;
@@ -136,6 +166,8 @@ export function UseSkill({
   /** Types `skill` with `values`, one per declared argument in order. */
   onUse: (skill: string, values: string[]) => void;
   onCancel: () => void;
+  /** Opens the Skill studio on `scope`'s chats: where a pinner's pins are undone (#3391). */
+  onOpenStudio: (scope: StudioScope) => void;
 }) {
   const [query, setQuery] = useState(picks ?? "");
   const named = picks === undefined ? undefined : skills?.skills.find((one) => one.name === picks);
@@ -149,6 +181,8 @@ export function UseSkill({
   const shown = skillsMatching(listed, query);
   const budget = skills?.budget ?? null;
   const warning = budget === null ? undefined : warnsSaid(budget);
+  const together = budget?.pins_together ?? null;
+  const togetherSaid = budget === null ? undefined : pinsTogetherSaid(budget);
 
   // **The skill it was opened on** (`picks`): drawn picked where it asks for something, typed at
   // once where it asks for nothing. The window draws this dialog again once the chat's skills are
@@ -205,6 +239,34 @@ export function UseSkill({
           <p className="use-skill-budget" data-testid="use-skill-budget">
             {budgetSaid(budget)}
           </p>
+        )}
+        {together !== null && (
+          <div
+            className="honest use-skill-over use-skill-pins-together"
+            role="status"
+            data-testid="use-skill-pins-together"
+          >
+            <TriangleAlert aria-hidden="true" />
+            <div>
+              <p>{togetherSaid}</p>
+              <div className="use-skill-studios">
+                {together.held.map(({ by }) => {
+                  const scope = scopeOfPinner(by);
+                  const title = skillStudioTitle(scope);
+                  return (
+                    <Button
+                      key={`${by.at}:${by.name}`}
+                      variant="secondary"
+                      size="sm"
+                      onPress={() => onOpenStudio(scope)}
+                    >
+                      {`Open ${title}`}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         )}
         {warning !== undefined && (
           <p className="honest use-skill-over" role="status">
@@ -391,7 +453,7 @@ export const SkillsChip = memo(function SkillsChip({ session }: { session: numbe
   const open = useOpenUseSkill();
   const budget = useContext(SkillBudgetsHere)[session];
   if (!on || budget === undefined) return null;
-  const warning = warnsSaid(budget);
+  const warning = chipWarning(budget);
   const said = `${budgetSaid(budget)}. Use one of this chat's skills.`;
   return (
     <Button

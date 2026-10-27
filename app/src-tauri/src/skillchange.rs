@@ -676,6 +676,40 @@ pub struct SkillPinsRefused {
     pub file: String,
 }
 
+/// **A chat whose workspace's and persona's pins pass the most it reads only together** (#3391):
+/// the core's `PinsTogether`. Each list alone is accepted; the chat reads none of either.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillPinsTogether {
+    /// Each pinner, the workspace first, and how many skills it pins.
+    pub held: Vec<SkillPinsHeld>,
+    /// The most pins a chat reads.
+    pub most: u32,
+}
+
+/// One pinner of a [`SkillPinsTogether`] and how many skills it pins.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillPinsHeld {
+    pub by: SkillPinner,
+    pub pins: u32,
+}
+
+impl From<&purlis_core::skills::PinsTogether> for SkillPinsTogether {
+    fn from(together: &purlis_core::skills::PinsTogether) -> Self {
+        let small = crate::useskill::small;
+        SkillPinsTogether {
+            held: together
+                .held
+                .iter()
+                .map(|one| SkillPinsHeld {
+                    by: one.by.clone().into(),
+                    pins: small(one.pins),
+                })
+                .collect(),
+            most: small(together.most),
+        }
+    }
+}
+
 /// Why a chat reads none of `by`'s pins in the project at `root`, or `None`.
 pub(crate) fn pins_refused(
     root: &std::path::Path,

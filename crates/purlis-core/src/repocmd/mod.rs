@@ -53,7 +53,10 @@ pub mod unread;
 ///
 /// A voice line holds [`Markup`], so a skill's, a repo's or a piece's name, a reason or a
 /// path enters it escaped (SK-54, #3225). [`Say::Out`] is the command's answer, read by a
-/// script, and stays the text it is.
+/// script, and stays a `String`; a name or a path it splices from outside purlis goes through
+/// [`crate::shown::answer`] (or `shown::line`, `tui::row`), so its hidden characters are marked
+/// and an ordinary name is printed byte for byte, while a document body is printed as it is
+/// (#3287).
 ///
 /// Serializable because a brokered command (#1335) runs in the app and its lines travel back
 /// over the hook socket, to be printed by the command that asked as its own run prints them.

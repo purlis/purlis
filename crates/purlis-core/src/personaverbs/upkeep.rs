@@ -328,10 +328,10 @@ pub fn dedupe(root: &Path, name: &str, threshold: f64, say: Sink) -> u8 {
         say(Say::Out(format!(
             "  {:.0}%  {}\n        ↔ {}\n        {}\n        {}\n",
             score * 100.0,
-            a.title,
-            b.title,
-            super::rel(root, &a.path),
-            super::rel(root, &b.path)
+            crate::shown::answer(&a.title),
+            crate::shown::answer(&b.title),
+            crate::shown::answer(&super::rel(root, &a.path)),
+            crate::shown::answer(&super::rel(root, &b.path))
         )));
     }
     say(Say::Info(
@@ -446,7 +446,10 @@ pub fn log(root: &Path, ask: &Log, say: Sink) -> u8 {
         return 0;
     }
     for entry in &entries {
-        say(Say::Out(crate::trace::activity_line(entry)));
+        // A note's text, and every key and value the line names, come from the log (#3287).
+        say(Say::Out(crate::shown::answer(
+            &crate::trace::activity_line(entry),
+        )));
     }
     0
 }

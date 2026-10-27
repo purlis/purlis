@@ -927,6 +927,24 @@ body {
   margin-block-start: var(--space-1);
 }
 
+/* Pins past the most a chat reads only together (#3391): the sentence, and under it a way to
+   each pinner's studio. */
+.use-skill-pins-together > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.use-skill-pins-together p {
+  margin: 0;
+}
+
+.use-skill-studios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 /* The skills are a list of the family (`ui/list`, #2911): a skill's name, its level and its
    description under them, in the row. The list scrolls inside the dialog. */
 .use-skill-list {

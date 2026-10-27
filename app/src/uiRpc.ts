@@ -9438,6 +9438,12 @@ export type SkillBudget = {
 	 *  undone in the Skill studio when they alone are past the budget.
 	 */
 	pinned_by: SkillPinner[],
+	/**
+	 *  Where the chat reads none of its pins because its workspace's and its persona's together
+	 *  pass the most it reads, though each alone is accepted (#3391): both, and how many each
+	 *  pins. Null where its pins are read.
+	 */
+	pins_together: SkillPinsTogether | null,
 };
 
 /**
@@ -9707,6 +9713,12 @@ export type SkillPanelKey = { kind: "grades" } | { kind: "runs" } | { kind: "ext
  */
 export type SkillPinner = { at: "workspace"; name: string } | { at: "persona"; name: string };
 
+/**  One pinner of a [`SkillPinsTogether`] and how many skills it pins. */
+export type SkillPinsHeld = {
+	by: SkillPinner,
+	pins: number,
+};
+
 /**
  *  **Why a chat reads none of a pinner's pins** (SK-15d): the core's `PinsRefused`, with whose
  *  list it is.
@@ -9722,6 +9734,17 @@ export type SkillPinsRefused = {
 	bad: string | null,
 	/**  The file the list is written in, relative to the project. */
 	file: string,
+};
+
+/**
+ *  **A chat whose workspace's and persona's pins pass the most it reads only together** (#3391):
+ *  the core's `PinsTogether`. Each list alone is accepted; the chat reads none of either.
+ */
+export type SkillPinsTogether = {
+	/**  Each pinner, the workspace first, and how many skills it pins. */
+	held: SkillPinsHeld[],
+	/**  The most pins a chat reads. */
+	most: number,
 };
 
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */

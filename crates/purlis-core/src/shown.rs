@@ -150,6 +150,13 @@ pub fn line(value: &str) -> String {
 /// it. Those want the escaping and not the budget above it.
 pub const NO_CLIP: usize = usize::MAX;
 
+/// **A name in a command's answer** (#3287): `value` on one line, every hidden character marked
+/// ([`one_line`]), and never clipped, as a script reads it whole. An ordinary name comes back
+/// byte for byte.
+pub fn answer(value: &str) -> String {
+    one_line(value, NO_CLIP)
+}
+
 /// charter's own separator, for a sentence naming several things (`charter/contain.py:385`).
 ///
 /// charter's own, for the same reason the template is charter's own text: a line naming
