@@ -5615,6 +5615,34 @@ fn a_chat_whose_sandbox_narrowed_while_no_window_was_there_is_reattached_and_off
     );
 }
 
+/// #3443: a grade's chat a crash left running in the session host is never put back: its grade
+/// ended with the run it was in (SK-16). Nothing reattaches it, so the launch's end of what was
+/// not reattached (#2006) ends it, and no chat of it is opened or started.
+#[test]
+fn a_graded_chat_a_crash_left_in_the_session_host_is_ended_at_relaunch() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane.path(), host.clone());
+
+    let open = chats.put_back(
+        &left_running_in(
+            plane.path(),
+            Chat {
+                graded: true,
+                ..a_resumable_chat_in(plane.path())
+            },
+        ),
+        SIZE,
+    );
+    chats.close_what_was_not_reattached();
+
+    assert!(open.is_empty(), "no chat of it is opened");
+    assert!(host.reattached().is_empty(), "nothing reattached it");
+    assert!(host.openings().is_empty(), "nothing was started");
+    assert_eq!(host.closed_left(), [3], "the host ended it");
+}
+
 /// Whether chat 3, reattached from `host` on the project at `plane`, is judged to run with no
 /// sandbox at all, as a browser login judges it (#2560).
 fn reattached_runs_unconfined(plane: &std::path::Path, host: Pretend) -> (Chats, bool) {

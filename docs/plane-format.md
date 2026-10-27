@@ -344,6 +344,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`<state>/skill-grades/<YYYY-MM>.jsonl`](#stateskill-gradesyyyy-mmjsonl)
   - [`<state>/grades-under-way/<grade>.json`](#stategrades-under-waygradejson)
+  - [`<state>/grades-under-way.lock`](#stategrades-under-waylock)
   - [`skill-tries/<id>/`](#skill-triesid)
   - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
   - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
@@ -7211,6 +7212,15 @@ rewritten.
   sound row is removed unrecorded.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state, transient — it lasts as long as its grade.
+- **Git:** gitignored, under the state directory.
+
+### `<state>/grades-under-way.lock`
+- **Format:** an empty file, `0600`, opened through no link, whose `flock` a start holds while it
+  records the [grades under way](#stategrades-under-waygradejson) no running purlis holds
+  (`grades::underway::interrupted`, #3443): two purlis processes, or two threads of one, that
+  record at once take turns, so a stale grade is recorded once.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state, durable but holding nothing: a lock, never read.
 - **Git:** gitignored, under the state directory.
 
 ### `skill-tries/<id>/`
