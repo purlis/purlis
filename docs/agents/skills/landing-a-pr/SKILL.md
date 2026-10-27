@@ -30,6 +30,7 @@ When it reports a drop from the queue, read the annotations it prints:
 
 - **The pull request's own failure:** fix it, review the fix (step 1), land again.
 - **A known flake:** find or file its ticket (label `flaky`), link it in a comment on the pull request, and land once more. A second drop on the same check is a real failure.
+- **A `Flaky (passed on retry N)` warning on a green run:** nextest retried a Rust test once and it passed (`.config/nextest.toml`). Nothing blocks the landing, but find or file the test's `flaky` ticket and link it, as for a red one: the retry saves the rerun, it does not fix the flake.
 - **Main itself is red:** landing stops for everyone. Open or join the pull request that fixes main, labelled `fixes-main`, and land that first; then land this one again.
 
 **Done:** `tools/land.mjs` printed that the pull request merged.
