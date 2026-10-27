@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793110850649,
+  "lastUpdate": 1793115586566,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26880,6 +26880,48 @@ window.BENCHMARK_DATA = {
             "value": 101.22098349999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.566, 101.204, 101.221, 101.605, 101.753 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d6fcce650aa27ef5a4b33c885502854e1a5e49fe",
+          "message": "One way to land a PR: tools/land.mjs and the landing-a-pr skill (#3501) (#3503)\n\n* tools: one way to land a pull request, tools/land.mjs and the landing-a-pr skill (#3501)\n\ntools/land.mjs holds the mechanics every session used to keep in its own\nscratch scripts: base and reviewed-SHA gates, the red-main gate with its\nfixes-main exception, approval reruns, the required checks, gh pr ready and\nthe checks it starts, the GraphQL enqueue with expectedHeadOid, and the watch\nthrough the queue that names a drop's failing check from its annotations.\n\ndocs/agents/skills/landing-a-pr/SKILL.md holds the judgement around it, and\nAGENTS.md points at both.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* tools/land: answer the adversarial review of #3503 (#3501)\n\n- Main's colour is its newest finished push run of ci, so a run still going\n  on the head no longer hides a red main.\n- --watch reads an entry that vanished again after a pause before calling it\n  a drop, and takes a drop's reason only from an event since this enqueue.\n- No --jump flag: only a fixes-main pull request goes to the front.\n- A fork's pull request is refused before any run is rerun; a rerun is given a\n  moment before the checks are read.\n- --sha is required, and a flag missing its value is a usage error.\n- The stand-in gh applies each call's --jq to a whole API envelope.\n- AGENTS.md pointer on one line; the skill states the combine rule itself.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T13:15:34Z",
+          "tree_id": "ba8c006b2dedd4e45c4b3630106a068bd8674a88",
+          "url": "https://github.com/purlis/purlis/commit/d6fcce650aa27ef5a4b33c885502854e1a5e49fe"
+        },
+        "date": 1793115581817,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5390945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.529, 0.539, 0.542, 0.565 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.181008,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.862, 17.076, 17.181, 17.198, 17.460 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.2607065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.933, 103.331, 105.261, 105.513, 106.805 ms"
           }
         ]
       }
