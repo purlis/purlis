@@ -444,7 +444,10 @@ asked for), whatever the system's appearance. Where its values come from:
   the button would have its consent floors measured at every hue at every launch); Allow, on the control's ground behind the
   accent's edge, stands farther from it than before. **A chosen activity button** is the
   record's .14 wash (`accent.wash`) with its icon in the lighter lavender (`accent.text`,
-  `#c3baf5`), and the update pill's words take `accent.text` too. Section labels are tracked at
+  `#c3baf5`), and the update pill's words take `accent.text` too. **The chosen title-bar chip**
+  takes the same wash with the primary words, and `accent.wash-hover` (the record's .23
+  lavender) under the pointer, while any other chip under the pointer takes the card's fill, so
+  chosen never reads as hovered (R101 as amended by #3345). Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
   update pill's primary words.
