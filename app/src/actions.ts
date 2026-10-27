@@ -2344,7 +2344,11 @@ export function catalogue(now: Now): Offer[] {
   // so nothing about runners shows before the first is added (spec #2041 story 6).
   if (anyPoolKept())
     offers.push({
-      ...can(DEVICES_ID, DEVICES_TITLE, { verb: "openView", view: DEVICES_VIEW, title: DEVICES_TITLE }),
+      ...can(DEVICES_ID, DEVICES_TITLE, {
+        verb: "openView",
+        view: DEVICES_VIEW,
+        title: DEVICES_TITLE,
+      }),
       note: "This machine and each runner, with the chats and browsers on it and each pool's use.",
     });
   offers.push(

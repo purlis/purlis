@@ -82,7 +82,9 @@ const section = (name: string) => screen.getByRole("rowgroup", { name });
 describe("DevicesView", () => {
   it("lists this machine and every runner, each with its chats and browsers", async () => {
     render(<DevicesView />);
-    await waitFor(() => expect(screen.getByText("Runner builds of pool builds")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("Runner builds of pool builds")).toBeInTheDocument(),
+    );
     const here = section("This machine");
     expect(within(here).getByText("lint")).toBeInTheDocument();
     expect(within(here).getByText("Browser b1")).toBeInTheDocument();
@@ -91,12 +93,18 @@ describe("DevicesView", () => {
     expect(
       within(builds).getByText("1 chat of projects not open in this window"),
     ).toBeInTheDocument();
-    expect(within(section("Runner qa of pool qa")).getByText("No chat or browser runs here")).toBeInTheDocument();
+    expect(
+      within(section("Runner qa of pool qa")).getByText("No chat or browser runs here"),
+    ).toBeInTheDocument();
   });
 
   it("says each runner's version against this machine's, how it is and when it last answered", async () => {
     render(<DevicesView />);
-    await waitFor(() => expect(within(section("Runner builds of pool builds")).getByText("answers")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        within(section("Runner builds of pool builds")).getByText("answers"),
+      ).toBeInTheDocument(),
+    );
     const builds = section("Runner builds of pool builds");
     expect(
       within(builds).getByText(/purlis 0\.8\.1, and this machine runs 0\.9\.0 · Last answered at/),
@@ -112,21 +120,17 @@ describe("DevicesView", () => {
     const table = await screen.findByRole("grid", { name: "Use per pool and person" });
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(3));
     const builds = within(table).getByRole("row", { name: /builds/ });
-    expect(within(builds).getAllByRole("gridcell").map((cell) => cell.textContent)).toEqual([
-      "You",
-      "1",
-      "0",
-      "2",
-      "4096 MiB",
-    ]);
+    expect(
+      within(builds)
+        .getAllByRole("gridcell")
+        .map((cell) => cell.textContent),
+    ).toEqual(["You", "1", "0", "2", "4096 MiB"]);
     const qa = within(table).getByRole("row", { name: /qa/ });
-    expect(within(qa).getAllByRole("gridcell").map((cell) => cell.textContent)).toEqual([
-      "You",
-      "0",
-      "1",
-      "0",
-      "0 MiB",
-    ]);
+    expect(
+      within(qa)
+        .getAllByRole("gridcell")
+        .map((cell) => cell.textContent),
+    ).toEqual(["You", "0", "1", "0", "0 MiB"]);
     expect(screen.queryByText(/\$|cost|price/i)).toBeNull();
   });
 });

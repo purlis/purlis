@@ -65,7 +65,11 @@ describe("healthSaid", () => {
 
   it("says why a runner does not answer", () => {
     const asked = { ...answered("running"), link: { state: "down" as const, why: "timed out" } };
-    expect(healthSaid(asked)).toEqual({ badge: "does not answer", line: "timed out", trouble: true });
+    expect(healthSaid(asked)).toEqual({
+      badge: "does not answer",
+      line: "timed out",
+      trouble: true,
+    });
   });
 
   it("says one not asked yet is being asked", () => {
@@ -97,14 +101,26 @@ describe("contactSaid", () => {
 
 describe("usageOf", () => {
   it("counts a pool's runners that run and are suspended, and what those that run request", () => {
-    const runners = [runner("builds", "builds"), runner("builds", "builds-2b1f"), runner("qa", "qa")];
+    const runners = [
+      runner("builds", "builds"),
+      runner("builds", "builds-2b1f"),
+      runner("qa", "qa"),
+    ];
     const use = usageOf([pool("builds"), pool("qa")], runners, {
       "builds/builds": answered("running"),
       "builds/builds-2b1f": answered("running"),
       "qa/qa": answered("suspended"),
     });
     expect(use).toEqual([
-      { pool: "builds", person: "You", running: 2, suspended: 0, cpus: "3", memoryMib: 4096, asking: 0 },
+      {
+        pool: "builds",
+        person: "You",
+        running: 2,
+        suspended: 0,
+        cpus: "3",
+        memoryMib: 4096,
+        asking: 0,
+      },
       { pool: "qa", person: "You", running: 0, suspended: 1, cpus: "0", memoryMib: 0, asking: 0 },
     ]);
   });

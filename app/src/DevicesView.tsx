@@ -18,6 +18,7 @@ import { List, ListRow, ListRowSection } from "./ui/list/List";
 import { RowDescription, RowLabel, RowTrail } from "./ui/list/Row";
 import { Badge } from "./ui/badge/Badge";
 import { Button } from "./ui/button/Button";
+import { Notice } from "./Notice";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import type { RunnerAsked } from "./bindings";
 import {
@@ -62,7 +63,8 @@ function DeviceSection({
   now: Date;
 }) {
   const runner = row.runner;
-  const title = runner === undefined ? "This machine" : `Runner ${runner.runner} of pool ${runner.pool}`;
+  const title =
+    runner === undefined ? "This machine" : `Runner ${runner.runner} of pool ${runner.pool}`;
   const health = runner === undefined ? { badge: "here", trouble: false } : healthSaid(asked);
   const runs =
     runner === undefined
@@ -82,14 +84,20 @@ function DeviceSection({
   return (
     <ListRowSection id={row.key} title={title} named={runner !== undefined}>
       <ListRow id={`${row.key}:standing`} textValue={`${title}: ${health.badge}`}>
-        <RowLabel>{health.line ?? (health.badge === "here" ? "Where this window runs" : "Answers")}</RowLabel>
+        <RowLabel>
+          {health.line ?? (health.badge === "here" ? "Where this window runs" : "Answers")}
+        </RowLabel>
         {facts.length > 0 && <RowDescription>{facts.join(" · ")}</RowDescription>}
         <RowTrail>
           <Badge variant={health.trouble ? "waiting" : "neutral"}>{health.badge}</Badge>
         </RowTrail>
       </ListRow>
       {row.chats.map((chat) => (
-        <ListRow key={`${chat.plane}:${chat.session}`} id={`${row.key}:chat:${chat.plane}:${chat.session}`} textValue={chat.name}>
+        <ListRow
+          key={`${chat.plane}:${chat.session}`}
+          id={`${row.key}:chat:${chat.plane}:${chat.session}`}
+          textValue={chat.name}
+        >
           <RowLabel>{chat.name}</RowLabel>
           <RowDescription>Chat</RowDescription>
         </ListRow>
@@ -124,14 +132,19 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
   if (read.state === "reading")
     return (
       <div className="devices-view" data-testid="devices-view">
-        <p role="status">Reading this machine&apos;s devices…</p>
+        <p className="ui-setting-help">Reading this machine&apos;s devices…</p>
       </div>
     );
   if (read.state === "trouble")
     return (
       <div className="devices-view" data-testid="devices-view">
-        <p role="alert">{read.trouble}</p>
-        <Button onPress={() => void rereadDevices()}>Refresh</Button>
+        <Notice
+          cause="devices-not-read"
+          tone="trouble"
+          fixes={[{ label: "Refresh", onPress: () => void rereadDevices() }]}
+        >
+          {read.trouble}
+        </Notice>
       </div>
     );
   const shown = read.shown;
@@ -175,7 +188,9 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
               <TableRow key={`${one.pool}:${one.person}`} id={`${one.pool}:${one.person}`}>
                 <TableCell>{one.pool}</TableCell>
                 <TableCell>{one.person}</TableCell>
-                <TableCell>{one.asking > 0 ? `${one.running}, asking ${one.asking}…` : `${one.running}`}</TableCell>
+                <TableCell>
+                  {one.asking > 0 ? `${one.running}, asking ${one.asking}…` : `${one.running}`}
+                </TableCell>
                 <TableCell>{`${one.suspended}`}</TableCell>
                 <TableCell>{one.cpus}</TableCell>
                 <TableCell>{`${one.memoryMib} MiB`}</TableCell>

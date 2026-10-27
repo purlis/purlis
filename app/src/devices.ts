@@ -194,9 +194,7 @@ export function healthSaid(asked: RunnerAsked | "asking" | undefined): Health {
 /** **Which version a device runs, against this machine's** (#2052). */
 export function versionSaid(runs: string | null, desktop: string): string | undefined {
   if (runs === null) return undefined;
-  return runs === desktop
-    ? `purlis ${runs}`
-    : `purlis ${runs}, and this machine runs ${desktop}`;
+  return runs === desktop ? `purlis ${runs}` : `purlis ${runs}, and this machine runs ${desktop}`;
 }
 
 /**
