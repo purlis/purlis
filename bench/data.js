@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793136864326,
+  "lastUpdate": 1793139727490,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27300,6 +27300,48 @@ window.BENCHMARK_DATA = {
             "value": 103.722332,
             "unit": "ms",
             "extra": "median of 5 runs: 102.544, 103.197, 103.722, 103.996, 104.184 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "491d567b9cc0bf7d1afffe0c94b3fc8d1b1ec327",
+          "message": "Skills view marks follow the chat; clashes on a hidden plane copy (#3462, #3461) (#3498)\n\n* Follow-ups after #3436: clashes on a hidden plane copy, skills read after refusal checks (#3461)\n\n- purlis skill list --json and show --json give a plane copy a repo hides\n  its clashes: the repo's copy that won on that program\n  (HarnessInTheStudio::clashes_of_left_out).\n- armed reads a chat's skills only once every fail-closed check has passed:\n  Arming::skills is a lazily read value, so a refused start reads none of\n  the chat's skill folders. The window works its skills Notice out after\n  arming, from the same read.\n- ADR 0099 amendment: the left-out line names the repo.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills view: one persona read, and the narrowed view's outside skills follow the chat (#3462)\n\n- persona_rows reads each persona's own level alone\n  (purlis_skills::persona_set): no project or workspace folder is read,\n  nor any of their local skills asked git about, once per persona. It\n  returns a named PersonaRows.\n- Narrowed to a chat, the view reads the studio for the chat's persona,\n  so each program's and repo's skills carry that chat's marks, and lists\n  the persona's own once.\n- chat_skills says which clones the chat works in (skills::clones_of_chat,\n  what repo_skills_of_chat reads), and the narrowed view lists only those\n  clones' repo skills.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Review fixes for #3461 and #3462: changelog fragments, one chat lookup, honest arming wording\n\n- changes/: a fragment per ticket.\n- chat_skills reads the open chat once for its skills and its clones.\n- The Skills view reads and narrows by one persona value.\n- Arming::skills says which refusals come before the read, and the one that\n  comes after it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3461: the running chat keeps the start's one read of its skills (#3438's skills_read)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T21:37:13Z",
+          "tree_id": "1495be845ac5c17153512e819f20d383dbf1d23b",
+          "url": "https://github.com/purlis/purlis/commit/491d567b9cc0bf7d1afffe0c94b3fc8d1b1ec327"
+        },
+        "date": 1793139722678,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.47099899999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.455, 0.471, 0.471, 0.471, 0.481 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2906945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.242, 16.286, 16.291, 16.421, 16.478 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4785335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.805, 101.190, 101.479, 101.887, 102.376 ms"
           }
         ]
       }
