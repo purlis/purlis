@@ -701,5 +701,4 @@ pub fn read_pinned(_root: &Path, _rel: &Path) -> Result<Option<Vec<u8>>, Unpinne
 }
 
 #[cfg(test)]
-#[path = "proposed_tests.rs"]
 mod tests;
