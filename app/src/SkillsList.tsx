@@ -86,9 +86,10 @@ export function SkillsList({
           <Button variant="ghost" icon={<Plus aria-hidden="true" />} isDisabled={busy}>
             {NEW_SKILL_MENU}
           </Button>
-          {/* From the button's end, so at the side's width it opens inside the view (#3308). */}
+          {/* From the button's end, and narrow, so it opens inside the view (#3308). */}
           <Menu
             align="end"
+            className="skills-view-starts"
             aria-label="Ways to start a skill"
             onAction={(key) => onStart(String(key) as SkillStart)}
           >
