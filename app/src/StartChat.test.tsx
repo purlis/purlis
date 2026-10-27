@@ -1645,6 +1645,26 @@ describe("prototype B: the persona list beside the details (#2918)", () => {
     await user.click(screen.getByRole("option", { name: "release" }));
     expect(name.getAttribute("placeholder")).toMatch(/^release\b/);
   });
+
+  it("names the next chat's number in the placeholder, following the persona (R30)", async () => {
+    const { user } = show({ next_number: 10 });
+    const name = screen.getByRole("textbox", { name: "Name" });
+
+    expect(name).toHaveAttribute("placeholder", "steward 10");
+    await user.click(screen.getByRole("option", { name: "release" }));
+    expect(name).toHaveAttribute("placeholder", "release 10");
+    // With no persona, the chat is named after its harness.
+    await user.click(screen.getByRole("option", { name: "No persona" }));
+    expect(name).toHaveAttribute("placeholder", "claude 10");
+  });
+
+  it("says the number in words where the core sent none (an older answer)", () => {
+    show();
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveAttribute(
+      "placeholder",
+      "steward and its number",
+    );
+  });
 });
 
 describe("a pick in the persona list starts nothing; ⏎ on it does (R17)", () => {

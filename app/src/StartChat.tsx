@@ -673,8 +673,12 @@ export function StartChat({
               id={nameLabel}
               value={name}
               onChange={setName}
-              // It follows the persona picked: the name the chat takes when this is left empty.
-              placeholder={`${persona ?? picked?.kind ?? "chat"} and its number`}
+              // It follows the persona picked: the name the chat takes when this is left empty,
+              // `steward 10` by the number the core says the next chat takes (R30), or in words
+              // where an older answer sent none.
+              placeholder={`${persona ?? picked?.kind ?? "chat"} ${
+                options.next_number == null ? "and its number" : options.next_number
+              }`}
               help="Left empty, the chat is named after its persona and its number. You can rename it from its tab later."
               autoComplete="off"
             />
