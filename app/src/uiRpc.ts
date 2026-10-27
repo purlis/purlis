@@ -1621,9 +1621,12 @@ export const commands = {
 	personaSetProfile: __WINDOW_ONLY_RESULT,
 	/**  Record a todo in `workspace`, and answer with what was said. */
 	todoAdd: (plane: PlaneId, workspace: string, text: string) => typedError<string, string>(__TAURI_INVOKE("todo_add", { plane, workspace, text })),
-	/**  Close a todo as done: the journal records it, then the todo goes. */
+	/**  Close a todo as done: the journal records it, then the todo is kept as done (ADR 0106). */
 	todoDone: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_done", { plane, workspace, slug })),
 	todoForget: __WINDOW_ONLY_RESULT,
+	todoForgetDone: __WINDOW_ONLY_RESULT,
+	/**  Open a done todo again, as it was: the Todos view's checkbox unticked (R131, ADR 0106). */
+	todoReopen: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_reopen", { plane, workspace, slug })),
 	/**
 	 *  One open todo of `workspace`, for its tab. `null` is a todo that is not open any more —
 	 *  closed as done or forgotten since its tab opened, here or in a terminal — which the tab
@@ -6715,7 +6718,11 @@ export type PanelTableRow = {
 	cells: string[],
 };
 
-/**  One open todo. There is no state field: a closed todo is a deleted file (ADR 0004). */
+/**
+ *  One todo, open or done. There is no state field: an open todo is a file in `todos/` and a
+ *  done one a file in `todos/archive/` (ADR 0106, amending ADR 0004), so which list it is in
+ *  says which it is.
+ */
 export type PanelTodo = {
 	/**  The file stem, which is what a todo is closed by. */
 	slug: string,
@@ -6776,6 +6783,11 @@ export type Panels = {
 	 */
 	refused: ([string, string])[],
 	todos: PanelTodo[],
+	/**
+	 *  The done todos (ADR 0106), for the catalogue's Reopen and Delete rows. Never counted:
+	 *  the status line counts `todos`, which are the open ones.
+	 */
+	done_todos: PanelTodo[],
 	/**
 	 *  Why the todos could not be read, where they could not. A store that is a link out of
 	 *  the plane is refused, and "no todos" would be the wrong thing to draw for it.

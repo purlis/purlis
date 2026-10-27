@@ -67,6 +67,9 @@ pub struct Sections {
     pub declared: Vec<String>,
     /// Its open todos, or why the store could not be read. A `Todos` change.
     pub todos: Result<Vec<Entry>, String>,
+    /// Its done todos, kept in `todos/archive/` until reopened or deleted (ADR 0106), or why
+    /// they could not be read. A `Todos` change too: the folder is in the store.
+    pub done_todos: Result<Vec<Entry>, String>,
     /// Its journal, oldest first as the store lists it, or why it could not be read. A
     /// `Memory` change.
     pub memories: Result<Vec<Entry>, String>,
@@ -85,6 +88,7 @@ impl Sections {
             clones,
             declared: repos::declared(&plane, name),
             todos: workspace.todos().map_err(|why| why.to_string()),
+            done_todos: workspace.done_todos().map_err(|why| why.to_string()),
             memories: workspace.memories().map_err(|why| why.to_string()),
             sessions: sessions_of(root, name),
         })
@@ -282,6 +286,7 @@ impl Model {
                 Kind::Todos | Kind::Memory => match plane.workspace(name) {
                     Ok(workspace) if change.kind == Kind::Todos => {
                         held.todos = workspace.todos().map_err(|why| why.to_string());
+                        held.done_todos = workspace.done_todos().map_err(|why| why.to_string());
                     }
                     Ok(workspace) => {
                         held.memories = workspace.memories().map_err(|why| why.to_string());
@@ -337,6 +342,7 @@ impl Model {
         // the plane, a permission — can change with nothing the watch hears.
         if let Some(held) = self.sections.get(name)
             && held.todos.is_ok()
+            && held.done_todos.is_ok()
             && held.memories.is_ok()
         {
             let held = held.clone();
@@ -916,6 +922,30 @@ mod tests {
         assert_eq!(titles(&sections.todos), ["Alpha one", "Alpha two"]);
         assert_eq!(repo_names(&sections), ["svc", "web"]);
         assert_eq!(titles(&sections.memories), ["Memory one"]);
+    }
+
+    #[test]
+    fn a_todo_marked_done_moves_from_the_open_ones_to_the_done_ones() {
+        let plane = full_plane();
+        let root = plane.path();
+        let mut model = Model::read(root);
+        model.sections(root, "alpha").expect("alpha's sections");
+        let ws = Plane::open(root).workspace("alpha").expect("alpha");
+        let slug = ws.todos().expect("open")[0].slug.clone();
+        ws.file_as_done(&slug).expect("done");
+
+        model.apply(
+            root,
+            Some(&[change(
+                Kind::Todos,
+                Some("alpha"),
+                &format!("workspaces/alpha/todos/archive/{slug}.md"),
+            )]),
+        );
+        let sections = model.sections(root, "alpha").expect("alpha's sections");
+
+        assert!(titles(&sections.todos).is_empty());
+        assert_eq!(titles(&sections.done_todos), ["Alpha one"]);
     }
 
     /// #1160: the sections are held for the workspaces asked most recently, at most

@@ -174,9 +174,11 @@ pub fn fork(request: &Request, say: Sink) -> u8 {
                 &fresh.dir().join("memory"),
             ),
         ),
-        // Open todos travel with the memory, and for the same reason: a fork exists so
-        // somebody can pick the task up with full context, and what is still to be done is
-        // the most actionable part of it. A COPY, so the two lists diverge from here —
+        // Todos travel with the memory, and for the same reason: a fork exists so somebody can
+        // pick the task up with full context, and what is still to be done is the most
+        // actionable part of it. The done ones (`todos/archive/`, ADR 0106) come too, on
+        // purpose: what was already done is the same context, and each list goes its own way
+        // from here. A COPY, so the two lists diverge from here —
         // closing one in the fork must not rewrite the parent's plan — and copied wholesale
         // rather than re-added one by one, which would restamp every todo with today's date
         // and hide a three-week-old intent behind a fresh one.

@@ -29,6 +29,7 @@ const PANELS: PanelsModel = {
   refused: [],
   todos: [],
   todos_refused: null,
+  done_todos: [],
   personas: ["steward"],
   persona: "steward",
   sessions: [],

@@ -19,7 +19,8 @@
 //! - each plain folder in a workspace, one that is not a clone, a store or dotted and holds no
 //!   more than [`PLAIN_FOLDER_MOST`] entries, so a `git init` in it or a `.git` moved into it
 //!   is heard as the workspace's change (#1160);
-//! - each `workspaces/<ws>/todos/`, which is the bug;
+//! - each `workspaces/<ws>/todos/`, which is the bug, and its `archive/`, the done todos
+//!   (ADR 0106);
 //! - each `workspaces/<ws>/memory/` and `workspaces/<ws>/sessions/`, and the root's
 //!   `sessions/`: the Memory and Sessions panels' stores, so a memory an agent saves or a
 //!   session record a smart close writes reaches the panel without some other change having
@@ -1051,6 +1052,12 @@ fn wanted(root: &Path) -> HashSet<PathBuf> {
                 wanted.insert(store);
             }
         }
+        // And the done todos (ADR 0106), which the Todos view's Done tab lists: a done todo
+        // deleted in a terminal, or one a sync brought, changes nothing in `todos/` itself.
+        let done = dir.join("todos").join(purlis_core::memstore::ARCHIVE);
+        if a_dir(&done) {
+            wanted.insert(done);
+        }
         // A plain folder, on its own: the one change it can make that the workspace's listing
         // never shows is becoming a clone (#1160). A clone is not watched (see the header), and
         // neither is a plain folder holding more than [`PLAIN_FOLDER_MOST`] entries, which
@@ -1625,6 +1632,18 @@ mod tests {
         ] {
             assert!(!got.contains(&alpha.join(not)), "{not} is watched: {got:?}");
         }
+    }
+
+    #[test]
+    fn the_done_todos_are_watched_where_there_are_any() {
+        let plane = plane_with_todos(&[]);
+        let root = plane.path();
+        let done = root.join("workspaces/alpha/todos/archive");
+        assert!(!wanted(root).contains(&done));
+
+        std::fs::create_dir_all(&done).expect("a done todo's folder");
+
+        assert!(wanted(root).contains(&done));
     }
 
     #[test]
