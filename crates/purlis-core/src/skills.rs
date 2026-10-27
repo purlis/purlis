@@ -1685,12 +1685,11 @@ pub fn of_a_chat(
     ask(built_in, Some(at), persona, route, None, None)
 }
 
-/// **One harness in the Skill studio** (SK-6, #2769): its plugins, as the settings tab surveys
-/// them, and the skills from outside the plane it finds itself, beside the plane's.
+/// **One harness in the Skill studio** (SK-6, #2769): the skills from outside the plane it finds
+/// itself, beside the plane's. Its plugins are its own to turn on or off (#3467): a plugin's
+/// skills are listed read-only, under the plugin's name ([`purlis_skills::Owner::Plugin`]).
 pub struct HarnessInTheStudio {
     pub harness: Harness,
-    /// Its plugins, and what the project has each at ([`crate::harness_plugin::survey`]).
-    pub group: crate::harness_plugin::Group,
     /// What a chat on it gets: the plane's skills ([`in_the_studio`]) with the ones from outside
     /// the plane ([`SkillSet::with_outside`]), each clash settled as this harness's route lets
     /// purlis settle it.
@@ -1728,16 +1727,13 @@ fn harnesses_in_the_studio(
         .and_then(|ws| crate::repos::clones(plane, ws).ok())
         .map(|clones| clones.repos)
         .unwrap_or_default();
-    crate::harness_plugin::survey(&choices, env)
-        .into_iter()
-        .filter_map(|group| {
-            // Every adapter the survey lists is a harness's ([`crate::harness_plugin::adapters`]).
-            let harness = Harness::of_kind(group.adapter.harness())?;
-            let mut outside = crate::harness_plugin::harness_skills(group.adapter, env, &choices);
+    crate::harness_plugin::adapters()
+        .filter_map(|adapter| {
+            // Every adapter is a harness's ([`crate::harness_plugin::adapters`]).
+            let harness = Harness::of_kind(adapter.harness())?;
+            let mut outside = crate::harness_plugin::harness_skills(adapter, env, &choices);
             outside.extend(crate::harness_plugin::repo_skills(
-                group.adapter,
-                &choices,
-                &clones,
+                adapter, &choices, &clones,
             ));
             // Each built-in skill by the name this harness knows it by (`purlis-<name>` on
             // opencode's route), so a copy of that name is the clash, and a bare one is not.
@@ -1757,7 +1753,6 @@ fn harnesses_in_the_studio(
                 repo_left_out: studio_rows(&by_a_repo, plane, names),
                 // Routed by this harness's own budget, with what it finds itself counted (SK-15).
                 set: set.routed(harness.skill_budget(), pins),
-                group,
                 outside,
                 rows: Vec::new(),
             };

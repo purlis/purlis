@@ -42,6 +42,8 @@ mod chats;
 mod clipath;
 mod createproject;
 mod curation;
+// The Devices view (#2052).
+mod devices;
 mod dispatchaway;
 mod dispatched;
 mod dispatches;
@@ -70,7 +72,6 @@ mod getproject;
 mod gitbroker;
 mod goingaway;
 mod handoff;
-mod harness_plugins;
 mod harnessdecls;
 mod harnessicon;
 mod heard;
@@ -112,6 +113,7 @@ mod navguard;
 mod network;
 mod notheld;
 mod off_the_main_thread;
+mod oldplugins;
 mod onboarding;
 mod opener;
 mod overlimit;
@@ -1394,6 +1396,13 @@ struct StartOptions {
     /// Whether this plane declares no profiles of its own. The built-ins still start, and
     /// the picker says so rather than looking empty or broken.
     declares_none: bool,
+    /// The number the next chat started in this plane would take (#3376, audit R30): the Name
+    /// field's placeholder says `steward 10` by it. One past the highest this plane has dealt,
+    /// read as the picker opens, so a chat started elsewhere meanwhile can take it first: it
+    /// is what the field suggests, never what the core deals. Always sent; optional in the
+    /// window's type so a picker drawn from an older answer says the number in words.
+    #[specta(optional)]
+    next_number: Option<u32>,
 }
 
 /// What the picker draws: every profile this machine has, every one charter will not use,
@@ -1412,10 +1421,13 @@ async fn start_options(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<StartOptions, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || start_options_in(&root))
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let mut options = tauri::async_runtime::spawn_blocking(move || start_options_in(&root))
         .await
-        .map_err(|err| format!("purlis could not read the profiles: {err}"))?
+        .map_err(|err| format!("purlis could not read the profiles: {err}"))??;
+    options.next_number = Some(held.chats().next_number());
+    Ok(options)
 }
 
 /// Every harness the project has, its card at a glance (HP-19): the palette's *What <product>
@@ -1554,6 +1566,8 @@ fn start_options_on(
             .profiles()
             .iter()
             .all(|p| p.source == purlis_core::profiles::Source::BuiltIn),
+        // The plane's sessions know it, not its files: `start_options` adds it.
+        next_number: None,
     })
 }
 

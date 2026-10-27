@@ -268,7 +268,7 @@ fn a_plugins_skill_is_listed_as_the_plugins_and_show_says_it_goes_only_with_its_
     assert!(text.contains("  owner: figma\n"), "{text}");
     assert!(
         text.contains(
-            "  switch: Claude Code turns a plugin's skill off only with the whole plugin, figma\n"
+            "  switch: it comes with the plugin figma, which Claude Code turns on or off itself, so its skills are shown read-only\n"
         ),
         "{text}"
     );

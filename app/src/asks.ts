@@ -286,6 +286,21 @@ export async function answerTaken(
           return { status: "ok" };
         }
         break;
+      case "old-harness-plugins": {
+        // The old `[harness_plugins]` keys (#3467): Remove holds purlis's proposed change for
+        // each file and opens the first one's tab, where Apply is pressed; nothing is written
+        // before. Dismiss says it no more. Either is said once.
+        if (option === "dismiss") return commands.dismissOldHarnessPlugins(plane);
+        if (option === "remove") {
+          const held = await commands.removeOldHarnessPlugins(plane);
+          if (held.status === "error") return held;
+          const [first] = held.data;
+          if (first !== undefined) askOpenProposal(plane, first.id, first.file);
+          opened = true;
+          return { status: "ok" };
+        }
+        break;
+      }
       case "sandbox-only": {
         // Make one makes a sandbox-only Codex profile (#2037), then the project's window opens
         // a shell tab where the core types Codex's own sign-in for it. Dismiss puts it away.

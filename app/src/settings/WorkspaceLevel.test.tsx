@@ -12,8 +12,6 @@ import type { Level } from "./groups";
 import { ViewPane } from "../Views";
 import { settingsView, workspaceSettingsTitle, workspaceSettingsView } from "../tabs";
 import type {
-  HarnessPlugin,
-  HarnessPlugins,
   ProjectExtension,
   ProjectTheme,
   SettingsChange,
@@ -106,78 +104,6 @@ const NO_THEME: ProjectTheme = {
   local_left_out: null,
 };
 
-const OWN_WHY =
-  "purlis@inline is always on: it is purlis's own plugin, and it carries purlis's hooks and the Bash guard";
-
-/** What the core says is in force for each harness in this workspace (charter-app#282). */
-const HARNESSES: HarnessPlugins[] = [
-  {
-    harness: "claude",
-    title: "Claude Code",
-    unsupported: null,
-    only_off: null,
-    record: "/home/dev/.claude/plugins/installed_plugins.json",
-    trouble: null,
-    local_left_out: null,
-    plugins: [
-      {
-        id: "purlis@inline",
-        name: "charter",
-        origin: "",
-        state: "on",
-        source: "default",
-        installed: false,
-        pinned: OWN_WHY,
-        ignored: [
-          {
-            file: "workspaces/alpha/workspace.json",
-            why: `workspaces/alpha/workspace.json sets settings.harness_plugins.claude."purlis@inline" to false, and ${OWN_WHY}`,
-          },
-          { file: "charter.toml", why: "a Shared sentence that is not this section's" },
-        ],
-      },
-      plugin("figma@official", "off", "workspace"),
-      plugin("humanizer@h", "on", "local"),
-      plugin("serena@official", "on", "shared"),
-      plugin("stripe@official", "not-set", "default"),
-    ],
-  },
-  {
-    harness: "opencode",
-    title: "opencode",
-    record: "/home/dev/.config/opencode",
-    unsupported:
-      "plugins for opencode are not supported yet — opencode has no switch that turns one plugin off",
-    only_off: null,
-    trouble: null,
-    local_left_out: null,
-    plugins: [],
-  },
-  {
-    harness: "codex",
-    title: "Codex",
-    record: "/home/dev/.codex/config.toml",
-    unsupported: "plugins for Codex are not supported yet — Codex 0.147.0 ignores -c",
-    only_off: null,
-    trouble: null,
-    local_left_out: null,
-    plugins: [],
-  },
-];
-
-function plugin(id: string, state: string, source: string): HarnessPlugin {
-  return {
-    id,
-    name: id.split("@")[0],
-    origin: "official, user",
-    state,
-    source,
-    installed: true,
-    pinned: null,
-    ignored: [],
-  };
-}
-
 /** A manifest as the core would answer it after `edits`: each edited key set or gone, and a
  *  text that differs, so the next write is checked against the new one. */
 function applied(file: Settings, edits: readonly SettingsEdit[]): Settings {
@@ -197,7 +123,6 @@ function core(
   leftOut: string | null = null,
   {
     extensions = EXTENSIONS,
-    harnesses = HARNESSES,
     // `drop_repo` takes the clone, and the manifest — a hand's — keeps its row (#1228).
     dropsClean = false,
     iconThemes = [{ extension: "solarized", name: "Seti", text: "{}" }],
@@ -257,8 +182,6 @@ function core(
           ]),
         );
       if (cmd === "project_extensions") return { extensions, local_left_out: leftOut };
-      if (cmd === "project_harness_plugins")
-        return harnesses.map((one) => ({ ...one, local_left_out: leftOut }));
       if (cmd === "extensions_on") return [];
       if (cmd === "extension_icon_themes") return iconThemes;
       if (cmd === "project_icons_drawn") return iconsDrawn;
@@ -409,15 +332,7 @@ describe("the Workspace level", () => {
     await at();
 
     await waitFor(() =>
-      expect(groups()).toEqual([
-        "Live",
-        "Repos",
-        "Dispatch",
-        "Extensions",
-        "Theme",
-        "Appearance",
-        "Plugins",
-      ]),
+      expect(groups()).toEqual(["Live", "Repos", "Dispatch", "Extensions", "Theme", "Appearance"]),
     );
     expect(asked("workspace_settings")).toContainEqual({ plane: PLANE, workspace: "alpha" });
     expect(asked("project_extensions")).toContainEqual({ plane: PLANE, workspace: "alpha" });
@@ -466,7 +381,7 @@ describe("the Workspace level", () => {
   });
 
   it("hides a group with nothing in it, but Extensions, which links to where one is installed", async () => {
-    core(ALPHA, undefined, NO_THEME, null, { extensions: [], harnesses: [] });
+    core(ALPHA, undefined, NO_THEME, null, { extensions: [] });
     await at();
 
     // Extensions is offered for its link to the Extensions dialog (#1387), and says why it has
@@ -539,15 +454,6 @@ describe("every workspace setting there is, at the Workspace level", () => {
     ["Extensions", ["Persona statistics: enabled", "Solarized: enabled"]],
     ["Theme", ["Themes", "Appearance", "Options", "Theme check", "This theme"]],
     ["Appearance", ["Theme", "Colour", "Icons"]],
-    [
-      "Plugins",
-      [
-        "Claude Code: figma@official",
-        "Claude Code: humanizer@h",
-        "Claude Code: serena@official",
-        "Claude Code: stripe@official",
-      ],
-    ],
   ])("%s holds %j", async (name, labels) => {
     core();
     const group = await at(name);
@@ -1076,47 +982,6 @@ describe("Appearance (charter-app#281)", () => {
   });
 });
 
-describe("Plugins (charter-app#282)", () => {
-  it("lists each harness's plugins, each saying which layer decided it", async () => {
-    const { asked } = core();
-    const group = await at("Plugins");
-
-    await waitFor(() =>
-      expect(group).toHaveTextContent("off in this workspace — from workspace.json"),
-    );
-    expect(group).toHaveTextContent("on in this workspace — from charter.local.toml");
-    expect(group).toHaveTextContent("on in this workspace — from charter.toml");
-    expect(group).toHaveTextContent("not set — Claude Code decides, from its own settings");
-    expect(within(group).getByLabelText("Claude Code: figma@official")).toHaveValue("");
-    // purlis's own plugin is a line, never a control.
-    expect(group).toHaveTextContent(OWN_WHY);
-    expect(within(group).queryByLabelText("Claude Code: purlis@inline")).toBeNull();
-    expect(group).toHaveTextContent(
-      'workspaces/alpha/workspace.json sets settings.harness_plugins.claude."purlis@inline" to false',
-    );
-    expect(group).not.toHaveTextContent("a Shared sentence");
-    for (const title of ["opencode", "Codex"])
-      expect(group).toHaveTextContent(`plugins for ${title} are not supported yet`);
-    expect(asked("project_harness_plugins")).toContainEqual({ plane: PLANE, workspace: "alpha" });
-  });
-
-  it("writes a plugin toggle as that one key under settings, and asks again", async () => {
-    const { sent, asked } = core();
-    const group = await at("Plugins");
-
-    await pickIn(await within(group).findByLabelText("Claude Code: serena@official"), "off");
-
-    await waitFor(() => expect(sent).toHaveLength(1));
-    expect(editsOf(sent[0])).toEqual([
-      {
-        path: [{ key: "harness_plugins" }, { key: "claude" }, { key: "serena@official" }],
-        value: { kind: "bool", value: false },
-      },
-    ]);
-    await waitFor(() => expect(asked("project_harness_plugins").length).toBeGreaterThan(1));
-  });
-});
-
 /** The ignore check's sentence for a `charter.local.toml` git would commit, as the core says it
  *  (charter-app#308). */
 const LEFT_OUT =
@@ -1128,7 +993,6 @@ describe("a charter.local.toml git would carry (charter-app#319)", () => {
     for (const [name, times] of [
       ["Extensions", 1],
       ["Appearance", 1],
-      ["Plugins", 3],
     ] as const) {
       const group = await at(name);
       await waitFor(() => expect(within(group).getAllByText(LEFT_OUT)).toHaveLength(times));
@@ -1138,7 +1002,7 @@ describe("a charter.local.toml git would carry (charter-app#319)", () => {
 
   it("is not said while charter reads the file", async () => {
     core();
-    await at("Plugins");
+    await at("Extensions");
 
     expect(screen.queryByText(/charter reads nothing in it/)).toBeNull();
   });

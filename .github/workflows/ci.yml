@@ -56,18 +56,21 @@ env:
   NEXTEST_VERSION: "0.9.146"
 
 jobs:
-  # The Rust suite in two parts on two runners, each building the tests and running half of
-  # them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
-  # request waits on (2026-10-10). Part 1 also runs fmt, clippy and the doctests, which part 2's
-  # half of the tests outlasted by three minutes on #1712. Each part builds for itself: a build handed from one job to the next
-  # saves runner minutes, not the wait, since no test can start before the build ends.
-  # `rust-checks` below carries the required check's name and passes when both parts did.
+  # The Rust suite in three parts on three runners, each building the tests and running a third
+  # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
+  # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
+  # start at once (no queue on 2026-10-14..27), so a part costs runner minutes, not wait. Part 1
+  # also runs the doctests and the schema check (fmt and clippy are `lint`'s). Each part builds
+  # for itself: a build handed from one job to the next saves runner minutes, not the wait, since
+  # no test can start before the build ends. An optimised test build was tried and dropped
+  # (#3553: 21 to 32 minutes to build cold, then the runners stopped). `rust-checks` below
+  # carries the required check's name and passes when every part did.
   rust:
-    name: rust tests (part ${{ matrix.part }} of 2)
+    name: rust tests (part ${{ matrix.part }} of 3)
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -134,9 +137,9 @@ jobs:
       # its test — and kills each one by pid. `--reap` is safe here because the runner is the
       # job's own machine.
       #
-      # `count:` deals each binary's tests out in turn, so each part gets half of every binary.
+      # `count:` deals each binary's tests out in turn, so each part gets a third of every binary.
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition count:${{ matrix.part }}/2 -E 'not test(/::in_a_docker_pool$/)'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition count:${{ matrix.part }}/3 -E 'not test(/::in_a_docker_pool$/)'
       # The slowest tests and test binaries, as notices on the run: what makes the step above
       # slow, readable through the checks API without the job's log. A report, so it never turns
       # the job red.
@@ -159,10 +162,10 @@ jobs:
           tools/theme-schema-since-release.sh
           cargo nextest run --workspace --locked --run-ignored only
           -E 'package(purlis-core) & test(/the_schema_only_grows_since_the_last_release$/)'
-  # The required check `rust (fmt, clippy, test)`: green only when both parts of `rust` are.
+  # The required check `rust (fmt, clippy, test)`: green only when every part of `rust` is.
   # `!cancelled()` so a red part still reports here as red, not as skipped, which a required
   # check would count as passing.
-  # fmt and clippy, beside the two parts rather than in part 1: a check build of its own, 1.5
+  # fmt and clippy, beside the parts of `rust` rather than in part 1: a check build of its own, 1.5
   # minutes that part 1 waited on before its tests (2026-10-12).
   lint:
     name: rust (fmt, clippy)
@@ -214,7 +217,7 @@ jobs:
       # The app's `e2e` feature, so what only the scenario build compiles (`ipc_commands.rs`'s
       # `e2e_only` and what it calls, #2836) is linted too.
       - run: cargo clippy -p purlis-app --lib --features e2e --locked -- -D warnings
-  # The required check `rust (fmt, clippy, test)`: green only when the lint and both parts of
+  # The required check `rust (fmt, clippy, test)`: green only when the lint and every part of
   # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.
   rust-checks:
@@ -223,7 +226,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: The lint and both parts passed
+      - name: The lint and every part passed
         env:
           RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
         run: test "$RESULTS" = "success success"
@@ -358,14 +361,16 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: >-
           tools/no-orphans.sh --reap --
-          cargo nextest run --locked -p purlis-app --lib --profile ci --no-tests fail
+          cargo nextest run --locked -p purlis-app --lib --profile ci --retries 0 --no-tests fail
           -E 'test(/::in_a_docker_pool$/) | test(/^runnerlinks::tests::a_(window_reaches|project_reaches)_/)'
+      # `--retries 0` in both: the `ci` profile's retry is reported by `rust`'s annotate step,
+      # which this job has not, so a flake here fails as it did rather than pass unseen.
       # Run whatever the step above found, so each step's result is its own.
       - name: The pool's link and code over it, on Docker
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
           tools/no-orphans.sh --reap --
-          cargo nextest run --locked -p purlis-core --profile ci --no-tests fail
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test a_docker_pool_runner_is_linked_through_docker_exec
           --test code_crosses_to_a_docker_pools_runner_and_back
       - name: What the runners left, if a test failed
@@ -403,16 +408,17 @@ jobs:
           fi
           exit "$status"
 
-  # The web checks in two parts, each running half of vitest's test files (`--shard`): after
-  # `rust` and `scenario` were split (#1712), vitest's 8 to 10 minutes made this the longest job
-  # a pull request waited on. Part 1 also runs the type check, lint and format check, part 2 the
+  # The web checks in four parts, each running a quarter of vitest's test files (`--shard`):
+  # after `rust` and `scenario` were split (#1712), vitest's 8 to 10 minutes made this the
+  # longest job a pull request waited on, and by 2026-10-27 each of two parts took 10 to 12
+  # minutes of vitest alone. Part 1 also runs the type check, lint and format check, part 2 the
   # licences and the tools' tests. `web-checks` carries the required check's name.
   web:
-    name: web (part ${{ matrix.part }} of 2)
+    name: web (part ${{ matrix.part }} of 4)
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -436,7 +442,7 @@ jobs:
         if: matrix.part == 1
       - run: npm run format:check
         if: matrix.part == 1
-      - run: npm test -- --shard=${{ matrix.part }}/2
+      - run: npm test -- --shard=${{ matrix.part }}/4
       # The tools' own tests (node:test), such as the cold-start gate's decision.
       - run: node --test "../tools/*.test.mjs"
         if: matrix.part == 2
@@ -447,7 +453,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: Every part passed
         env:
           RESULT: ${{ needs.web.result }}
         run: test "$RESULT" = success

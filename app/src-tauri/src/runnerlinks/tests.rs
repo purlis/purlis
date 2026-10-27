@@ -567,3 +567,33 @@ fn a_runners_refusal_is_said_as_its_own_words_and_cut_short() {
     let multi = said_by_the_runner("first line\nRun this: rm -rf ~");
     assert!(!multi.contains('\n'), "{multi}");
 }
+
+#[test]
+fn a_link_that_is_down_says_why_safely_in_the_pools_settings() {
+    use crate::dockerpools::PoolLink;
+    let down = purlis_session_protocol::hostlink::Down::because(
+        "the bridge said: refused\n\u{202E}by ssh://someone:hidden@build.example",
+    );
+    assert_eq!(
+        link_of(down),
+        PoolLink::Down {
+            why: "the bridge said: refused by ssh://…@build.example".to_owned()
+        }
+    );
+    let changed = purlis_session_protocol::hostlink::Down {
+        why: "anything".to_owned(),
+        key_changed: true,
+    };
+    assert_eq!(link_of(changed), PoolLink::KeyChanged);
+}
+
+#[test]
+fn what_the_drain_and_the_removal_count_says_why_safely() {
+    use crate::dockerpools::PoolLink;
+    let refused = count_of(Err(PoolLink::Down {
+        why: "x\u{2066}y".repeat(400),
+    }))
+    .unwrap_err();
+    assert_eq!(refused.chars().count(), crate::devices::MOST_SHOWN + 1);
+    assert!(!refused.contains('\u{2066}'));
+}

@@ -4,7 +4,8 @@
 //! **A command run with what it prints bounded** (#2056): the one way purlis runs `docker` and
 //! `kubectl` for a pool. What the command prints is read up to a limit, and a command that prints
 //! more is ended; what it says on standard error is kept up to a limit of its own, only to be
-//! shown, and read to the end so the command never waits on it.
+//! shown, and read to the end so the command never waits on it. A run may be given a time too
+//! ([`run_within`]): one still running when it is up is ended, and said not to have finished.
 
 use std::io::{Read, Write};
 use std::process::{Command, ExitStatus, Stdio};
@@ -37,6 +38,22 @@ pub fn run(
     most: u64,
     most_said: u64,
 ) -> Result<Ran, Unanswered> {
+    run_within(command, input, most, most_said, None)
+}
+
+/// How often a run given a time is looked at, to see whether it has ended.
+const LOOKED_AT_EVERY: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// [`run`], and **ended once `within` is up** where it is given one: a command still running
+/// then is killed and answered [`Unanswered::NotFinished`], its error of kind `TimedOut`. A
+/// command that answers in time is read exactly as [`run`] reads it.
+pub fn run_within(
+    command: &mut Command,
+    input: Option<&str>,
+    most: u64,
+    most_said: u64,
+    within: Option<std::time::Duration>,
+) -> Result<Ran, Unanswered> {
     command
         .stdin(if input.is_some() {
             Stdio::piped()
@@ -60,7 +77,48 @@ pub fn run(
         })
     });
     let mut printed = Vec::new();
-    if let Some(stdout) = child.stdout.take() {
+    if let Some(within) = within {
+        // Read beside the clock: a command still running when its time is up is ended, which
+        // closes what it prints, and the reading ends with it.
+        let mut reading = child.stdout.take().map(|stdout| {
+            std::thread::spawn(move || {
+                let mut printed = Vec::new();
+                let _ = stdout.take(most + 1).read_to_end(&mut printed);
+                printed
+            })
+        });
+        let deadline = std::time::Instant::now() + within;
+        loop {
+            // What it printed, once all of it is read: past the limit, it is ended at once.
+            if reading
+                .as_ref()
+                .is_some_and(std::thread::JoinHandle::is_finished)
+            {
+                printed = reading
+                    .take()
+                    .and_then(|reading| reading.join().ok())
+                    .unwrap_or_default();
+                if printed.len() as u64 > most {
+                    break;
+                }
+            }
+            if reading.is_none() && child.try_wait().map_err(Unanswered::NotFinished)?.is_some() {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Unanswered::NotFinished(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!(
+                        "it did not answer within {} seconds, so it was ended",
+                        within.as_secs().max(1)
+                    ),
+                )));
+            }
+            std::thread::sleep(LOOKED_AT_EVERY);
+        }
+    } else if let Some(stdout) = child.stdout.take() {
         let _ = stdout.take(most + 1).read_to_end(&mut printed);
     }
     if printed.len() as u64 > most {
@@ -76,3 +134,6 @@ pub fn run(
         said,
     })
 }
+
+#[cfg(test)]
+mod tests;

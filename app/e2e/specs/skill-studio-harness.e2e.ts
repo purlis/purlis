@@ -18,8 +18,7 @@ import {
  *
  * The spec puts a clone in `alpha` as git leaves one (a `.git` folder) holding a committed
  * `.claude/skills/<name>`, and a project skill of the same name granted to `alpha`. It opens
- * `alpha`'s Settings at Plugins, which is one summary row once the studio is on, and follows
- * Open in Skill studio. There Claude Code's section lists the repo's skill, owned by the repo, and
+ * `alpha`'s Settings at Skills, and follows Open in Skill studio. There Claude Code's section lists the repo's skill, owned by the repo, and
  * the project's copy says a chat gets both. Turn off leaves the repo's skill out of `alpha`'s
  * chats, in `alpha`'s own settings, and Turn on takes that back out again.
  *
@@ -72,14 +71,9 @@ describe("a repo's own skills in the Skill studio", function () {
     else writeFileSync(manifest, manifestWas);
   });
 
-  it("summarises plugins on Settings and opens the studio, where the repo's skill is listed", async () => {
-    await runFromThePalette(
-      "Workspace settings: Plugins",
-      "settings.group:workspace.plugins:alpha",
-    );
-    const summary = await $('[data-testid="workspace.plugins-summary"]');
-    await summary.waitForExist({ timeout: 20_000 });
-    await expect(summary).toHaveText(/Claude Code:/);
+  it("opens the studio from the workspace's Skills in Settings, where the repo's skill is listed", async () => {
+    // #3467: Settings has no Plugins group any more; the Skills group is the way in.
+    await runFromThePalette("Workspace settings: Skills", "settings.group:workspace.skills:alpha");
 
     const open = await $("button=Open in Skill studio");
     await open.waitForClickable({ timeout: 10_000 });

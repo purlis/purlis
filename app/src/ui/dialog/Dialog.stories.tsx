@@ -257,8 +257,8 @@ const inside = (inner: DOMRect, outer: DOMRect) =>
   inner.top >= outer.top - 0.5 && inner.bottom <= outer.bottom + 0.5;
 
 /**
- * **A body longer than the window**: the dialog is the window less 48 px at most, the body
- * scrolls, the header and the footer stay in view, and every field the keyboard reaches is in
+ * **A body longer than the window**: the dialog is the window less its top and 24 px at most,
+ * the body scrolls, the header and the footer stay in view, and every field the keyboard reaches is in
  * sight, never under the footer (WCAG 2.4.11).
  */
 export const LongerThanTheWindow: Story = {

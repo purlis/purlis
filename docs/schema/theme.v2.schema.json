@@ -2444,6 +2444,246 @@
         "button.icon.quiet.open.text": {
           "$ref": "#/$defs/part-text"
         },
+        "button.shortcut.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.secondary.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.secondary.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.secondary.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.secondary.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.secondary.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.secondary.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.secondary.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.secondary.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.primary.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.primary.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.primary.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.primary.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.primary.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.primary.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.primary.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.primary.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.ghost.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.ghost.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.ghost.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.ghost.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.ghost.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.ghost.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.ghost.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.ghost.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.danger.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.danger.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.danger.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.danger.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.danger.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.danger.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.danger.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.danger.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.grants.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.grants.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.grants.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.grants.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.grants.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.grants.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.grants.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.grants.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.soft-accent.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.soft-accent.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.soft-accent.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.soft-accent.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.soft-accent.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.soft-accent.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.soft-accent.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.soft-accent.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.warning-soft.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.warning-soft.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.warning-soft.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.warning-soft.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.warning-soft.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.warning-soft.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.warning-soft.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.warning-soft.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.link.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.link.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.link.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.link.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.link.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.link.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.link.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.link.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "button.shortcut.quiet.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet.pressed.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet.disabled.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "button.shortcut.quiet.open.text": {
+          "$ref": "#/$defs/part-text"
+        },
         "card.root.fill": {
           "$ref": "#/$defs/part-fill"
         },

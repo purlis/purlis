@@ -5143,6 +5143,14 @@ impl Chats {
             .collect()
     }
 
+    /// The number the next chat started here would take (#3376): one past the highest this
+    /// plane has dealt. Only a guess for what to show — the Name field's placeholder,
+    /// `steward 10` — since a chat started meanwhile takes it first; a start is dealt its
+    /// number by the sessions, never by this.
+    pub fn next_number(&self) -> u32 {
+        self.sessions.dealt().saturating_add(1)
+    }
+
     /// What was open, to write down.
     pub fn record(&self) -> Record {
         // The chats a launch has still to start are written as they were recorded, each in

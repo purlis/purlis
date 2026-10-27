@@ -1319,7 +1319,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
         .iter()
         .map(|one| one["name"].as_str().unwrap())
         .collect();
-    assert_eq!(parts, ["root", "label", "icon"]);
+    assert_eq!(parts, ["root", "label", "icon", "shortcut"]);
     assert!(
         button["variants"]
             .as_array()

@@ -456,8 +456,9 @@ fn a_claude_code_chat_is_handed_the_projects_plugins_and_the_pins_win() {
 #[test]
 fn a_codex_chat_is_handed_each_plugin_and_skill_the_project_turned_off_by_its_own_flags() {
     // Measured on codex-cli 0.163.0 (SK-6, #2769): `-c plugins."<id>".enabled=false` takes a
-    // plugin's skills out for one session, and one `skills.config` takes a skill out, a
-    // plugin's included, beside the operator's own entries.
+    // plugin's skills out for one session (a Try it's scratch chat), and one `skills.config`
+    // takes a skill out beside the operator's own entries. A plugin's skill is its plugin's
+    // (#3467): never handed as turned off on its own.
     let chosen = crate::harness_plugin::Chosen {
         plugins: BTreeMap::from([("zp@zmkt".to_owned(), false)]),
         skills_off: ["langfuse".to_owned(), "zp:zp \"skill\"".to_owned()].into(),
@@ -478,7 +479,7 @@ fn a_codex_chat_is_handed_each_plugin_and_skill_the_project_turned_off_by_its_ow
         flags,
         [
             "plugins.\"zp@zmkt\".enabled=false",
-            "skills.config=[{name=\"langfuse\",enabled=false},{name='zp:zp \"skill\"',enabled=false}]",
+            "skills.config=[{name=\"langfuse\",enabled=false}]",
         ]
     );
     let none = Harness::Codex.state_hooks(

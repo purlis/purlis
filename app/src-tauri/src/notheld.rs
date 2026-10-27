@@ -7,7 +7,7 @@
 //! The desktop's host tells the window, in the runner's words, that a runner it relays a
 //! project's link to no longer holds the project, and the window holds it again at once. Where
 //! the runner refuses that hold, the project is kept here with the runner's words, as plain
-//! text and cut short ([`MOST_SAID`]), until a hold of it is taken, and the Pools group draws a
+//! text and cut short (`crate::devices::MOST_SHOWN`), until a hold of it is taken, and the Pools group draws a
 //! standing mark for it on the row of the pool its chats run on (`app/src/notheld.ts`). Only a
 //! refusal of the hold is kept: what purlis itself could not do is said where it happened.
 //!
@@ -24,8 +24,10 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 /// The event the window is sent each time the projects not held change.
 pub const EVENT: &str = "projects-not-held";
 
-/// The most of the runner's words a mark says.
-pub const MOST_SAID: usize = 300;
+/// The most of the runner's words a mark says, its `…` included: what the one sanitiser keeps
+/// ([`crate::devices::shown_safely`]).
+#[cfg(test)]
+pub const MOST_SAID: usize = crate::devices::MOST_SHOWN + 1;
 
 /// One project the runner its chats run on would not hold, as the Pools group draws it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -34,7 +36,7 @@ pub struct ProjectNotHeld {
     pub root: String,
     /// What the window calls it: its folder's name.
     pub name: String,
-    /// What the runner said, as plain text, at most [`MOST_SAID`] characters.
+    /// What the runner said, as plain text, at most what the one sanitiser keeps (`crate::devices::MOST_SHOWN`, then `…`).
     pub why: String,
     /// The pools its workspaces run their chats on, as this machine keeps them: the row the
     /// mark is drawn on where there is one.
@@ -63,9 +65,10 @@ fn told() {
 }
 
 /// **The project at `root` is not held where its chats run**, for `why`, the runner's words:
-/// kept as plain text, every control and direction mark dropped, at most [`MOST_SAID`].
+/// kept as the window may show it ([`crate::devices::shown_safely`]): one line, nothing a reader
+/// would not see, no address's user or password, and capped.
 pub fn not_held(root: &Path, why: &str) {
-    let why = crate::asknotify::plain_within(why, MOST_SAID);
+    let why = crate::devices::shown_safely(why);
     let changed = kept().insert(root.to_path_buf(), why.clone()).as_deref() != Some(&why);
     if changed {
         told();

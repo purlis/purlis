@@ -104,11 +104,14 @@ fn outside(
         Owner::Plugin(plugin) => format!("{plugin}:{}", skill.name),
         Owner::You | Owner::Repo(_) => skill.name.clone(),
     };
+    let switch = adapter
+        .skill_named_alone(&id)
+        .map_or(Switch::Alone, Switch::Not);
     OutsideSkill {
-        off: choices.skill(adapter.harness(), &id).0 == Some(false),
-        switch: adapter
-            .skill_named_alone(&id)
-            .map_or(Switch::Alone, Switch::Not),
+        // A skill the harness cannot leave out alone (a plugin's, #3467) is never off here: a
+        // file's `false` for it is handed to no chat ([`Choices::skills_off`]).
+        off: switch == Switch::Alone && choices.skill(adapter.harness(), &id).0 == Some(false),
+        switch,
         id,
         skill,
         root,

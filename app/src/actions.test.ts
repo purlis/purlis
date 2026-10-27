@@ -598,7 +598,7 @@ describe("the one list of actions", () => {
     const row = by(offers, "workspace.settings:alpha");
     expect(row?.title).toBe("Workspace settings…");
     expect(row?.note).toBe(
-      "alpha: Settings at its level — live, repos, extensions, appearance and plugins.",
+      "alpha: Settings at its level — live, repos, extensions and appearance.",
     );
     await run(offers, "workspace.settings:alpha", hands);
     expect(hands.calls).toEqual(["openWorkspaceSettings:alpha"]);
@@ -704,7 +704,7 @@ describe("the one list of actions", () => {
       ]),
     );
     // Only the focused workspace's: the other one is a focus away.
-    expect(rows.filter((one) => one.title.startsWith("Workspace settings:"))).toHaveLength(7);
+    expect(rows.filter((one) => one.title.startsWith("Workspace settings:"))).toHaveLength(6);
     expect(by(offers, "settings.group:workspace.repos:web")?.note).toBe(
       "web: Settings at its level, at Repos.",
     );
@@ -2444,8 +2444,9 @@ describe("the palette at fifty chats", () => {
     // Your settings: Pools is offered only once this machine keeps a pool. 918 since #2765:
     // Your settings: Previews (Open Skill studio is offered only while its flag is on). 920
     // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
-    // mode and Keyboard shortcuts, one row each.
-    expect(offers).toHaveLength(922);
+    // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
+    // or the Workspace level.
+    expect(offers).toHaveLength(920);
   });
 
   /**
