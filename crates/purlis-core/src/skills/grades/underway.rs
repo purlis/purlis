@@ -120,10 +120,16 @@ pub fn ended(root: &Path, grade: &str) {
 /// interrupted**, and holds it under way no more: what a project's start does (#3353). A file
 /// whose process still runs is left as it is, unless it is this process and `runs_here` says this
 /// process runs no such grade; a file that is a link, too large, or not a sound row is taken away
-/// unrecorded. A file of a newer purlis is left for it, and one whose row could not be written
+/// unrecorded. `device` names this machine's committed record file, and is asked only for a
+/// grade recorded there: a start with no grade under way reads nothing of this machine's store
+/// (a fenced test's start among them). A file of a newer purlis is left for it, and one whose row could not be written
 /// is kept for the next start, so a grade is never lost. The answer is the grades recorded, by
 /// id.
-pub fn interrupted(root: &Path, device: &str, runs_here: impl Fn(&str) -> bool) -> Vec<String> {
+pub fn interrupted(
+    root: &Path,
+    device: impl Fn() -> String,
+    runs_here: impl Fn(&str) -> bool,
+) -> Vec<String> {
     let dir = dir(root);
     if !std::fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir()) {
         return Vec::new();
@@ -153,7 +159,7 @@ pub fn interrupted(root: &Path, device: &str, runs_here: impl Fn(&str) -> bool) 
         if held_by_a_running_purlis {
             continue;
         }
-        if record_to(root, held.local, &held.graded, device).is_none() {
+        if record_to(root, held.local, &held.graded, &device).is_none() {
             continue;
         }
         out.push(held.graded.grade.clone());

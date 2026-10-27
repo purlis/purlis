@@ -235,11 +235,17 @@ const ARMS_THERE_ARE: usize = 3;
 /// this machine's state. `None` where the project is one this purlis may not write, or the write
 /// was refused.
 pub fn record(root: &Path, level: &Level, graded: &Graded, device: &str) -> Option<PathBuf> {
-    record_to(root, is_local(root, level), graded, device)
+    record_to(root, is_local(root, level), graded, || device.to_owned())
 }
 
-/// [`record`], to this machine's state where `local`, else to the committed record.
-fn record_to(root: &Path, local: bool, graded: &Graded, device: &str) -> Option<PathBuf> {
+/// [`record`], to this machine's state where `local`, else to the committed record of the
+/// device `device` names: asked only then, as naming it reads this machine's store.
+fn record_to(
+    root: &Path,
+    local: bool,
+    graded: &Graded,
+    device: impl FnOnce() -> String,
+) -> Option<PathBuf> {
     let row = serde_json::to_value(graded).ok()?;
     if local {
         return append_local(&local_path_for(root, chrono::Utc::now()), &row).ok();
@@ -247,7 +253,7 @@ fn record_to(root: &Path, local: bool, graded: &Graded, device: &str) -> Option<
     if crate::compat::read_only(root).is_some() {
         return None;
     }
-    crate::dispatch::append(&path_for(root, chrono::Utc::now(), device), root, &row)
+    crate::dispatch::append(&path_for(root, chrono::Utc::now(), &device()), root, &row)
 }
 
 /// **Appends `row` to this machine's record file `path`**, in a folder of this machine's state

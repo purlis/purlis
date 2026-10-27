@@ -6,6 +6,11 @@
 
 use super::*;
 
+/// This machine, as a test names it.
+fn laptop() -> String {
+    "laptop".to_owned()
+}
+
 const SKILL: &str = "---\nname: deploy\ndescription: Ships it.\n---\n";
 
 /// A project with a `skills.local/` copy of `deploy`, so its grades stay on this machine.
@@ -39,7 +44,7 @@ fn a_grade_purlis_stopped_under_is_recorded_interrupted_at_the_next_start() {
     let root = tmp.path();
     let held = began(root, &level, &starting("g-crashed", &level)).expect("held");
     assert!(held.exists());
-    assert_eq!(interrupted(root, "laptop", |_| false), ["g-crashed"]);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-crashed"]);
     assert!(!held.exists(), "held under way no more");
     let read = super::super::grades_of(root, "deploy", Some(&level));
     assert_eq!(read.len(), 1, "{read:?}");
@@ -47,7 +52,7 @@ fn a_grade_purlis_stopped_under_is_recorded_interrupted_at_the_next_start() {
     assert_eq!(read[0].report.ended, GradeEnd::Interrupted);
     assert_eq!(read[0].report.cap, Some(50_000));
     assert!(
-        interrupted(root, "laptop", |_| false).is_empty(),
+        interrupted(root, laptop, |_| false).is_empty(),
         "recorded once"
     );
 }
@@ -58,7 +63,7 @@ fn a_grade_that_ended_is_not_recorded_again() {
     let root = tmp.path();
     began(root, &level, &starting("g-done", &level)).expect("held");
     ended(root, "g-done");
-    assert!(interrupted(root, "laptop", |_| false).is_empty());
+    assert!(interrupted(root, laptop, |_| false).is_empty());
     assert!(super::super::grades_of(root, "deploy", Some(&level)).is_empty());
 }
 
@@ -72,7 +77,7 @@ fn a_grade_another_running_purlis_holds_is_left_to_it() {
     // A process that runs, and is not this one.
     theirs["pid"] = serde_json::json!(1);
     std::fs::write(&held, theirs.to_string()).unwrap();
-    assert!(interrupted(root, "laptop", |_| false).is_empty());
+    assert!(interrupted(root, laptop, |_| false).is_empty());
     assert!(held.exists(), "left as it is");
 }
 
@@ -83,7 +88,7 @@ fn a_held_file_that_is_not_a_sound_row_of_its_own_name_is_taken_away_unrecorded(
     let held = began(root, &level, &starting("g-one", &level)).expect("held");
     std::fs::rename(&held, held.with_file_name("g-other.json")).unwrap();
     std::fs::write(held.with_file_name("g-junk.json"), "{ not json").unwrap();
-    assert!(interrupted(root, "laptop", |_| false).is_empty());
+    assert!(interrupted(root, laptop, |_| false).is_empty());
     assert!(
         std::fs::read_dir(held.parent().unwrap())
             .unwrap()
@@ -98,7 +103,7 @@ fn a_grade_this_purlis_runs_now_is_left_to_it() {
     let (tmp, level) = project();
     let root = tmp.path();
     let held = began(root, &level, &starting("g-mine", &level)).expect("held");
-    assert!(interrupted(root, "laptop", |grade| grade == "g-mine").is_empty());
+    assert!(interrupted(root, laptop, |grade| grade == "g-mine").is_empty());
     assert!(held.exists(), "left to the grade that runs it");
 }
 
@@ -110,8 +115,24 @@ fn a_grade_whose_row_cannot_be_written_is_kept_for_the_next_start() {
     // This machine's record folder is a file: no row can go there.
     let record = crate::plane::state_dir(root).join(super::super::LOCAL_DIR);
     std::fs::write(&record, "not a folder").unwrap();
-    assert!(interrupted(root, "laptop", |_| false).is_empty());
+    assert!(interrupted(root, laptop, |_| false).is_empty());
     assert!(held.exists(), "kept, never lost");
     std::fs::remove_file(&record).unwrap();
-    assert_eq!(interrupted(root, "laptop", |_| false), ["g-kept"]);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-kept"]);
+}
+
+/// A project's start with no grade under way, or with one of a copy that is this machine's
+/// alone, never asks for this machine's name, which reads its store (a fenced test's start
+/// would be refused there).
+#[test]
+fn a_start_asks_this_machine_s_store_nothing_but_for_a_committed_row() {
+    let never = || -> String { panic!("this machine's store was read") };
+    let (tmp, level) = project();
+    let root = tmp.path();
+    assert!(
+        interrupted(root, never, |_| false).is_empty(),
+        "nothing under way"
+    );
+    began(root, &level, &starting("g-local", &level)).expect("held");
+    assert_eq!(interrupted(root, never, |_| false), ["g-local"]);
 }

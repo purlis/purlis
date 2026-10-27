@@ -320,7 +320,7 @@ pub(crate) fn runs_here(grade: &str) -> bool {
 /// (#3353): what a project's start does, and a grade a fault ended.
 pub(crate) fn record_interrupted(root: &std::path::Path) -> Vec<String> {
     let recorded =
-        grades::underway::interrupted(root, &purlis_core::machine::this_log_name(), runs_here);
+        grades::underway::interrupted(root, purlis_core::machine::this_log_name, runs_here);
     for grade in &recorded {
         tracing::info!(
             "purlis: grade {grade} was under way when purlis stopped: recorded as interrupted"
