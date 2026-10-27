@@ -506,6 +506,13 @@ pub enum Refusal {
          did nothing; purlis goes on reading it: make the call again in a moment"
     )]
     PageReadTooLong,
+    /// The page's tree, read for an agent's call, did not finish within the read's own limit
+    /// (#3277): nothing goes on reading it.
+    #[error(
+        "the page is too large to read: purlis's read of it did not finish within its own limit, \
+         so this call read nothing and did nothing; try again later, or go on without reading it"
+    )]
+    PageReadPastItsLimit,
     #[error(
         "the page has something focused that purlis cannot see, so the key was held back: click the field you mean to type into"
     )]
@@ -601,6 +608,10 @@ pub enum Refusal {
     DragKeptOut,
 }
 
+/// The most a read of a page's whole tree holds by default (#3277): two of the engine's largest
+/// answers.
+pub const MOST_TREE_READ_BYTES: usize = 2 * crate::cdp::MAX_MESSAGE_BYTES;
+
 /// How long and how much, all configurable (from Settings, by the session host).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Limits {
@@ -639,6 +650,10 @@ pub struct Limits {
     /// How long a read of a page's whole tree for an agent's call, which outlived the call it
     /// was made for, is used by the next call after it came (#3277): an older one is read anew.
     pub page_read_kept_for: Duration,
+    /// The most a read of a page's whole tree for an agent's call, or for the person's keys,
+    /// holds of the engine's answers, every frame's in all (#3277): past it, the read fails as
+    /// too large.
+    pub most_tree_read_bytes: usize,
 }
 
 impl Default for Limits {
@@ -657,6 +672,7 @@ impl Default for Limits {
             tree_read_kept_for: Duration::from_secs(10),
             page_reads_within: Duration::from_secs(60),
             page_read_kept_for: Duration::from_secs(60),
+            most_tree_read_bytes: MOST_TREE_READ_BYTES,
         }
     }
 }

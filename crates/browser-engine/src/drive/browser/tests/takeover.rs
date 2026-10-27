@@ -2044,3 +2044,24 @@ fn said_in_the_log(run: impl FnOnce()) -> Vec<String> {
     tracing::subscriber::with_default(Lines(Arc::clone(&lines)), run);
     super::super::lock(&lines).clone()
 }
+
+#[test]
+fn the_hand_back_reads_its_fields_and_its_pages_within_its_limit_in_all() {
+    let (browser, engine) = reads_within(Duration::from_millis(400));
+    the_last_box_is_read_only_at_the_hand_back(&browser, &engine, Duration::from_secs(2));
+    {
+        let mut model = super::super::lock(&engine.model);
+        for method in ["Runtime.callFunctionOn", "DOM.getFrameOwner"] {
+            model.slow.insert(method.into(), Duration::from_secs(1));
+        }
+    }
+
+    let started = Instant::now();
+    browser.hand_back();
+
+    assert!(
+        started.elapsed() < Duration::from_millis(1200),
+        "the hand-back took {:?}",
+        started.elapsed()
+    );
+}

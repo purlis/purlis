@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use common::drive::{open, sees, snapshot};
 use common::site::started;
-use purlis_browser_engine::drive::{Aim, Call, PersonInput, Refusal};
+use purlis_browser_engine::drive::{Aim, Call, Limits, PersonInput, Refusal};
 
 /// The spec's bound from a keystroke to the screen (docs/spec.md, "Keystroke to screen").
 const MOST_PER_KEY: Duration = Duration::from_millis(50);
@@ -147,13 +147,15 @@ fn a_key_into_a_second_field_of_a_large_page_is_held_in_words_until_the_page_is_
         );
         let _ = out.flush();
     }
-    // The hand-back reads the page within its limit, under the window's wait (#3277).
+    // The hand-back reads the fields and the page within its limit in all, every call of the
+    // read by then (#3277); nothing else it does here asks the engine anything.
     let started = Instant::now();
     browser.hand_back();
     let took = started.elapsed();
+    let reads_within = Limits::default().key_reads_within;
     assert!(
-        took < THE_WINDOW_WAITS,
-        "the hand-back answered after {took:?}, past the window's wait"
+        took < reads_within + Duration::from_secs(2),
+        "the hand-back answered after {took:?}, past its reads' {reads_within:?}"
     );
     {
         let mut out = std::io::stdout().lock();
@@ -171,8 +173,12 @@ fn a_key_into_a_second_field_of_a_large_page_is_held_in_words_until_the_page_is_
 fn an_agents_snapshot_of_a_large_page_answers_within_its_call_limit_in_words() {
     // #3277: the whole tree of this page takes 17 to 46 s to read on macOS. Each snapshot answers
     // within the window's wait for an act, the page or the page too large to read in words, never
-    // unknown, and the read goes on for the snapshot asked again.
-    let Some((browser, _data, _site)) = started() else {
+    // unknown, and the read goes on for the snapshot asked again. A call here waits 5 s for its
+    // read, so the first answer is in words.
+    let Some((browser, _data, _site)) = common::site::started_limited(|limits| Limits {
+        page_reads_within: Duration::from_secs(5),
+        ..limits
+    }) else {
         return;
     };
     open(&browser, "typing-on-a-large-page.html");
@@ -204,6 +210,10 @@ fn an_agents_snapshot_of_a_large_page_answers_within_its_call_limit_in_words() {
             "the page was never read"
         );
     }
+    assert!(
+        too_long > 0,
+        "the page was read within 5 s, so no answer was in words"
+    );
     let mut out = std::io::stdout().lock();
     let _ = writeln!(
         out,

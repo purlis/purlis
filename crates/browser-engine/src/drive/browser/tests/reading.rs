@@ -7,6 +7,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use serde_json::json;
+
 use super::{browser_with, id, limits, ref_of, snapshot};
 use crate::drive::{Call, Content, Refusal};
 
@@ -102,7 +104,10 @@ fn a_read_past_its_own_limit_is_said_in_words_never_unknown() {
 
     let answer = browser.call(&id(1), snapshot_call());
 
-    assert_eq!(answer, Err(Refusal::PageReadTooLong));
+    assert_eq!(answer, Err(Refusal::PageReadPastItsLimit));
+    let said = Refusal::PageReadPastItsLimit.to_string();
+    assert!(said.contains("did not finish"), "{said}");
+    assert!(!said.contains("goes on"), "{said}");
 }
 
 #[test]
@@ -211,4 +216,197 @@ fn a_call_waiting_on_a_slow_read_answers_at_once_when_the_person_takes_the_brows
         "the call waited {:?}",
         started.elapsed()
     );
+}
+
+/// A browser over a large page as [`a_large_page`], a read under way or come used for
+/// `kept_for`.
+fn a_large_page_kept_for(
+    takes: Duration,
+    call_waits: Duration,
+    kept_for: Duration,
+) -> (super::Browser, Arc<super::Engine>) {
+    let (browser, engine) = browser_with(crate::drive::Limits {
+        page_reads_within: call_waits,
+        page_read_kept_for: kept_for,
+        ..limits()
+    });
+    super::super::lock(&engine.model).ax_takes = Some(takes);
+    (browser, engine)
+}
+
+#[test]
+fn an_act_made_while_a_read_settles_leaves_that_read_for_no_later_call() {
+    let (browser, engine) = browser_with(crate::drive::Limits {
+        page_reads_within: Duration::from_millis(150),
+        settle_within: Duration::from_millis(600),
+        ..limits()
+    });
+    let text = snapshot(&browser, 1);
+    let pay = ref_of(&text, "- button \"Pay now\"");
+    // The page asks for data it never gets: a call settles for all its settling's time.
+    engine.emit(
+        "Network.requestWillBeSent",
+        json!({"requestId":"9.1","loaderId":"L9","frameId":"PAGE-1","request":{"url":"http://fixture.test/slow-data"},"type":"Fetch"}),
+        Some("S-PAGE-1"),
+    );
+    super::super::lock(&engine.model).ax_takes = Some(Duration::from_millis(300));
+    let browser = Arc::new(browser);
+    let reading = Arc::clone(&browser);
+    // A snapshot settles, then begins its read, which outlives it.
+    let snapshot_made = std::thread::spawn(move || reading.call(&id(2), snapshot_call()));
+    std::thread::sleep(Duration::from_millis(200));
+    // A click is made while the snapshot still settles, and acts once it has answered.
+    browser.call(&id(3), Call::Click { target: pay }).unwrap();
+    assert_eq!(snapshot_made.join().unwrap(), Err(Refusal::PageReadTooLong));
+    past_the_read();
+    super::super::lock(&engine.model).ax_takes = None;
+    let read = tree_reads(&engine);
+
+    let _ = browser.call(&id(4), snapshot_call());
+
+    assert!(
+        tree_reads(&engine) > read,
+        "the read from before the click was used"
+    );
+}
+
+#[test]
+fn a_wait_uses_no_read_that_began_before_it() {
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(150),
+        Duration::from_secs(30),
+    );
+    assert_eq!(
+        browser.call(&id(1), snapshot_call()),
+        Err(Refusal::PageReadTooLong)
+    );
+    past_the_read();
+    let read = tree_reads(&engine);
+
+    let waited = browser.call(
+        &id(2),
+        Call::WaitForText {
+            page: None,
+            text: "Pay now".into(),
+            gone: true,
+            within: Duration::from_millis(10),
+        },
+    );
+
+    assert_eq!(waited, Err(Refusal::PageReadTooLong));
+    assert!(tree_reads(&engine) > read, "the wait read the page anew");
+}
+
+#[test]
+fn a_read_still_under_way_long_after_it_began_is_not_used() {
+    // A read under way is used for as long as a call waits for one and a read is kept for after
+    // it: here 600 ms and 400 ms. This one takes 1.6 s.
+    let (browser, engine) = a_large_page_kept_for(
+        Duration::from_millis(800),
+        Duration::from_millis(600),
+        Duration::from_millis(400),
+    );
+    assert_eq!(
+        browser.call(&id(1), snapshot_call()),
+        Err(Refusal::PageReadTooLong)
+    );
+    // Still under way, begun 600 ms ago: used.
+    assert_eq!(
+        browser.call(&id(2), snapshot_call()),
+        Err(Refusal::PageReadTooLong)
+    );
+
+    // Still under way, begun 1.2 s ago: past what a read is used for.
+    let next = browser.call(&id(3), snapshot_call());
+
+    assert_eq!(next, Err(Refusal::PageReadTooLong));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        tree_reads(&engine) > 2,
+        "the page was read anew once the old read ended"
+    );
+}
+
+#[test]
+fn a_read_left_by_a_call_is_not_joined_by_another_while_it_runs() {
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(1),
+        Duration::from_millis(150),
+        Duration::from_secs(30),
+    );
+    let text = snapshot(&browser, 1);
+    let pay = ref_of(&text, "- button \"Pay now\"");
+    super::super::lock(&engine.model).ax_takes = Some(Duration::from_millis(600));
+    assert_eq!(
+        browser.call(&id(2), snapshot_call()),
+        Err(Refusal::PageReadTooLong)
+    );
+    // The click leaves that read for no later call; the engine still reads it.
+    super::super::lock(&engine.model).ax_takes = None;
+    browser.call(&id(3), Call::Click { target: pay }).unwrap();
+    let clicked = tree_reads(&engine);
+
+    let next = browser.call(&id(4), snapshot_call());
+
+    assert_eq!(next, Err(Refusal::PageReadTooLong));
+    assert_eq!(
+        tree_reads(&engine),
+        clicked,
+        "a second read of the page's tree was asked for while the first ran"
+    );
+}
+
+#[test]
+fn a_read_that_holds_more_than_a_read_may_is_refused_as_too_large() {
+    let (browser, _engine) = browser_with(crate::drive::Limits {
+        most_tree_read_bytes: 512,
+        ..limits()
+    });
+
+    let answer = browser.call(&id(1), snapshot_call());
+
+    assert_eq!(answer, Err(Refusal::TooLarge));
+}
+
+#[test]
+fn a_read_under_way_is_left_for_no_call_once_the_person_takes_the_browser_over() {
+    let (browser, _engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    assert_eq!(
+        browser.call(&id(1), snapshot_call()),
+        Err(Refusal::PageReadTooLong)
+    );
+
+    browser.take_over();
+
+    assert!(!super::super::lock(&browser.reading).keeps());
+}
+
+#[test]
+fn a_read_from_before_a_frame_of_the_page_loaded_another_document_is_not_used() {
+    let (browser, engine) = a_large_page(
+        Duration::from_millis(300),
+        Duration::from_millis(100),
+        Duration::from_secs(30),
+    );
+    assert_eq!(
+        browser.call(&id(1), snapshot_call()),
+        Err(Refusal::PageReadTooLong)
+    );
+    engine.emit(
+        "Page.frameNavigated",
+        json!({"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","loaderId":"LOADER-P2","url":"http://other.test/pay.html?again","securityOrigin":"http://other.test","mimeType":"text/html"}}),
+        Some("S-PAYMENT"),
+    );
+    past_the_read();
+    super::super::lock(&engine.model).ax_takes = None;
+    let read = tree_reads(&engine);
+
+    let _ = browser.call(&id(2), snapshot_call());
+
+    assert!(tree_reads(&engine) > read, "the page was read anew");
 }

@@ -92,12 +92,14 @@ impl Reading {
     }
 
     /// Begins reading `frames` through `devtools` on a thread of its own, each frame's tree
-    /// within `within`. A read past that limit, or one that cannot begin, answers `slow`.
+    /// within `within`, holding at most `most` bytes of the engine's answers in all. A read past
+    /// that limit, or one that cannot begin, answers `slow`.
     pub(super) fn begin(
         self: &Arc<Self>,
         devtools: Arc<dyn DevTools>,
         frames: Result<Vec<ToRead>, Refusal>,
         within: Duration,
+        most: usize,
         slow: Refusal,
     ) {
         let frames = match frames {
@@ -110,7 +112,7 @@ impl Reading {
             .name("purlis-tree-read".into())
             .spawn(move || {
                 told.answered(
-                    read_trees(&*devtools, frames, within)
+                    read_trees(&*devtools, frames, within, most)
                         .map(Arc::new)
                         .map_err(|why| match why {
                             CallError::TimedOut => timed_out,
@@ -121,5 +123,77 @@ impl Reading {
         if begun.is_err() {
             self.answered(Err(slow));
         }
+    }
+}
+
+/// **Where a read is kept for whoever needs the page next** (#3043, #3277): the read kept for
+/// the next caller, and the read the engine is still asked for, which may be one no caller will
+/// use any more (an act, or a key that may move the focus, left it). A slot asks the engine for
+/// one whole-tree read at a time: a read is begun only once the one before it has come.
+#[derive(Default)]
+pub(super) struct Slot {
+    kept: Option<Arc<Reading>>,
+    running: Option<Arc<Reading>>,
+}
+
+/// What a caller that needs the page does, as its slot says.
+pub(super) enum Next {
+    /// Waits on this read, begun by an earlier caller.
+    Join(Arc<Reading>),
+    /// Waits on this read, which it begins now.
+    Begin(Arc<Reading>),
+    /// Waits for this read, no longer kept for anyone, to end before it asks for another.
+    After(Arc<Reading>),
+}
+
+impl Slot {
+    /// What a caller that needs `target`'s page under `epoch`, while it shows `shows`, does:
+    /// join the kept read where `usable` says it may, else wait for a read still running to
+    /// end, else begin a new one, kept from now.
+    pub(super) fn next(
+        &mut self,
+        target: &str,
+        epoch: u64,
+        shows: u64,
+        usable: impl Fn(&Reading) -> bool,
+    ) -> Next {
+        if let Some(kept) = &self.kept {
+            if kept.is_of(target, epoch, shows) && usable(kept) {
+                return Next::Join(Arc::clone(kept));
+            }
+            // Not to be used: kept for no one, whether it comes later or not.
+            self.kept = None;
+        }
+        if let Some(running) = &self.running
+            && running.came().is_none()
+        {
+            return Next::After(Arc::clone(running));
+        }
+        let reading = Reading::new(target, epoch, shows);
+        self.kept = Some(Arc::clone(&reading));
+        self.running = Some(Arc::clone(&reading));
+        Next::Begin(reading)
+    }
+
+    /// Keeps no read for any later caller; one still running goes on to its end.
+    pub(super) fn forget(&mut self) {
+        self.kept = None;
+    }
+
+    /// `reading` was used, or failed: the next caller reads anew.
+    pub(super) fn used(&mut self, reading: &Arc<Reading>) {
+        if self
+            .kept
+            .as_ref()
+            .is_some_and(|kept| Arc::ptr_eq(kept, reading))
+        {
+            self.kept = None;
+        }
+    }
+
+    /// Whether a read is kept for a later caller.
+    #[cfg(test)]
+    pub(super) fn keeps(&self) -> bool {
+        self.kept.is_some()
     }
 }

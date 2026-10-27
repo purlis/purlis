@@ -906,7 +906,7 @@ pub struct Browser {
     read_last: changes::ReadLast,
     /// The read of a page's trees for the agent's calls under way, or come and not yet used,
     /// that a call which outlived it left (#3277): the next call that reads the page waits on it.
-    reading: Mutex<Option<Arc<reading::Reading>>>,
+    reading: Mutex<reading::Slot>,
 }
 
 impl Browser {
@@ -1064,7 +1064,7 @@ impl Browser {
             typing: Mutex::new(Typing::default()),
             to_clear: Mutex::new(Vec::new()),
             read_last: changes::ReadLast::default(),
-            reading: Mutex::new(None),
+            reading: Mutex::new(reading::Slot::default()),
         })
     }
 
@@ -1112,11 +1112,6 @@ impl Browser {
     /// the browser over before it answers.
     pub fn call_at(&self, epoch: u64, id: &CallId, call: Call) -> Result<Answer, Refusal> {
         self.agent_holds(epoch)?;
-        // A call that acts leaves a read an earlier call left running of the page before it, so
-        // no later call uses that read (#3277).
-        if !call.only_reads() {
-            *lock(&self.reading) = None;
-        }
         // A call that only reads acts on nothing, so a retry of it reads again; only what acts
         // is kept by id.
         if call.only_reads() {
@@ -1129,6 +1124,10 @@ impl Browser {
             Begin::Fresh(ticket) => {
                 let answer = {
                     let _one = lock(&self.acting);
+                    // A call that acts leaves a read an earlier call left running of the page
+                    // before it for no later call (#3277): forgotten once no read-only call
+                    // runs, so none begun before the act is kept past it.
+                    lock(&self.reading).forget();
                     self.run_at(epoch, call)
                         .map(|answer| self.with_asked(answer))
                 };
@@ -1948,7 +1947,7 @@ impl Browser {
             false,
         );
         let by = Instant::now() + self.inner.limits.page_reads_within;
-        let (mut snapshot, began) = self.agent_snapshot(target, by)?;
+        let (mut snapshot, began) = self.agent_snapshot(target, by, None)?;
         let keys = shown(&snapshot, &lock(&self.inner.state))?;
         snapshot.mark_out_of_view(self.out_of_view(target, &keys));
         let (text, document) = {
@@ -1985,14 +1984,16 @@ impl Browser {
         ))
     }
 
-    /// `target`'s tree for an agent's snapshot, find or wait, read by `by` (#3277), and how long
-    /// before now the read began where an earlier call began it.
+    /// `target`'s tree for an agent's snapshot, find or wait, read by `by` from a read begun after
+    /// `since` where it is given (#3277), and how long before now the read began where an earlier
+    /// call began it.
     fn agent_snapshot(
         &self,
         target: &str,
         by: Instant,
+        since: Option<Instant>,
     ) -> Result<(Snapshot, Option<Duration>), Refusal> {
-        let (trees, began) = self.agent_trees(target, by)?;
+        let (trees, began) = self.agent_trees(target, by, since)?;
         Ok((self.snapshot_from(target, &trees), began))
     }
 
@@ -2002,58 +2003,65 @@ impl Browser {
     /// [`Refusal::PageReadTooLong`], since a read acts on nothing, never [`Refusal::Unknown`], and
     /// the next call that reads the page waits on the same read rather than asking the engine for
     /// another behind it. That read is used only under the lease and while the page shows the
-    /// document it began under, no call that acts came between, and within
-    /// [`Limits::page_read_kept_for`](crate::drive::Limits) after it came; once used, or failed,
-    /// the next call reads anew. Answers how long before now the read began where an earlier call
-    /// began it.
+    /// document it began under, no call that acts came between, within
+    /// [`Limits::page_read_kept_for`](crate::drive::Limits) after it came or, still under way,
+    /// within that and [`Limits::page_reads_within`](crate::drive::Limits) after it began, and,
+    /// with `since`, only where it began after then; once used, or failed, the next call reads
+    /// anew. A read no call will use that is still under way is let end before another is asked
+    /// for. A read that does not finish within its own limit answers
+    /// [`Refusal::PageReadPastItsLimit`]. Answers how long before now the read began where an
+    /// earlier call began it.
     fn agent_trees(
         &self,
         target: &str,
         by: Instant,
+        since: Option<Instant>,
     ) -> Result<(Vec<FrameAx>, Option<Duration>), Refusal> {
         let epoch = self.epoch();
         let shows = lock(&self.inner.state)
             .page(target)
             .map_or(0, |page| page.shows);
         let kept_for = self.inner.limits.page_read_kept_for;
-        let (reading, begun) = {
-            let mut slot = lock(&self.reading);
-            match &*slot {
-                Some(reading)
-                    if reading.is_of(target, epoch, shows)
-                        && reading.came().is_none_or(|came| came.elapsed() <= kept_for) =>
-                {
-                    (Arc::clone(reading), false)
+        // A read is used within `kept_for` after it came, or, still under way, within as long as
+        // a call waits for one and `kept_for` after it began; and, for a wait, only one that
+        // began after the wait was made.
+        let under_way_for = self.inner.limits.page_reads_within + kept_for;
+        let usable = |reading: &reading::Reading| {
+            let fresh = match reading.came() {
+                Some(came) => came.elapsed() <= kept_for,
+                None => reading.began.elapsed() <= under_way_for,
+            };
+            fresh && since.is_none_or(|since| reading.began >= since)
+        };
+        let (reading, begun) = loop {
+            let next = lock(&self.reading).next(target, epoch, shows, usable);
+            match next {
+                reading::Next::Join(reading) => break (reading, false),
+                reading::Next::Begin(reading) => {
+                    reading.begin(
+                        Arc::clone(&self.inner.devtools),
+                        self.frames_to_read(target),
+                        self.inner.limits.tree_reads_within,
+                        self.inner.limits.most_tree_read_bytes,
+                        Refusal::PageReadPastItsLimit,
+                    );
+                    break (reading, true);
                 }
-                _ => {
-                    let reading = reading::Reading::new(target, epoch, shows);
-                    *slot = Some(Arc::clone(&reading));
-                    (reading, true)
+                // The engine still reads the page for a read no call will use: another is
+                // asked for once it has ended, never beside it.
+                reading::Next::After(running) => {
+                    if running.wait(by, || self.cut()).is_none() {
+                        return Err(Refusal::PageReadTooLong);
+                    }
                 }
             }
         };
-        if begun {
-            reading.begin(
-                Arc::clone(&self.inner.devtools),
-                self.frames_to_read(target),
-                self.inner.limits.tree_reads_within,
-                Refusal::PageReadTooLong,
-            );
-        }
         let Some((_, answer)) = reading.wait(by, || self.cut()) else {
             // The read goes on, for the next call.
             return Err(Refusal::PageReadTooLong);
         };
         // Used, or failed: the next call reads anew.
-        {
-            let mut slot = lock(&self.reading);
-            if slot
-                .as_ref()
-                .is_some_and(|kept| Arc::ptr_eq(kept, &reading))
-            {
-                *slot = None;
-            }
-        }
+        lock(&self.reading).used(&reading);
         let trees = answer?;
         Ok((
             trees.as_ref().clone(),
@@ -2088,16 +2096,29 @@ impl Browser {
     /// page a snapshot is built from.
     fn trees_of(&self, target: &str) -> Result<Vec<FrameAx>, Refusal> {
         let frames = self.frames_to_read(target)?;
-        read_trees(self.devtools(), frames, CALL_TIMEOUT).map_err(refusal)
+        read_trees(
+            self.devtools(),
+            frames,
+            CALL_TIMEOUT,
+            self.inner.limits.most_tree_read_bytes,
+        )
+        .map_err(refusal)
     }
 
-    /// Every frame's tree of `target`'s page, read by `by` (#3277): past it, the read fails
-    /// [`Refusal::PageReadTooLong`].
-    pub(super) fn trees_by(&self, target: &str, by: Instant) -> Result<Vec<FrameAx>, Refusal> {
-        let frames = self.frames_to_read(target)?;
-        read_trees_by(self.devtools(), frames, CALL_TIMEOUT, Some(by)).map_err(|why| match why {
-            CallError::TimedOut => Refusal::PageReadTooLong,
-            other => refusal(other),
+    /// Every frame's tree of `target`'s page, every call of the read made by `by` (#3277), or
+    /// why not, in words for the log.
+    pub(super) fn trees_by(&self, target: &str, by: Instant) -> Result<Vec<FrameAx>, String> {
+        let frames = self.frames_to_read(target).map_err(|why| why.to_string())?;
+        read_trees_by(
+            self.devtools(),
+            frames,
+            CALL_TIMEOUT,
+            self.inner.limits.most_tree_read_bytes,
+            Some(by),
+        )
+        .map_err(|why| match why {
+            CallError::TimedOut => "it was not read within its limit".to_owned(),
+            other => refusal(other).to_string(),
         })
     }
 
@@ -2984,11 +3005,14 @@ impl Browser {
         let by = deadline.max(start + self.inner.limits.page_reads_within);
         let mut read_once = false;
         let seen = loop {
-            let shows = match self.agent_snapshot(&target, by) {
+            // Only a read that began once the wait was made says whether the text showed.
+            let shows = match self.agent_snapshot(&target, by, Some(start)) {
                 Ok((snapshot, _)) => snapshot.shows_text(text),
                 // A read that does not come in time after one that did: the text did not show
                 // in what was read.
-                Err(Refusal::PageReadTooLong) if read_once => break false,
+                Err(Refusal::PageReadTooLong | Refusal::PageReadPastItsLimit) if read_once => {
+                    break false;
+                }
                 Err(why) => return Err(why),
             };
             read_once = true;
@@ -4023,54 +4047,83 @@ fn refer_in<'s>(state: &'s mut State, target: &'s str) -> impl FnMut(&NodeKey) -
     }
 }
 
-/// Every tree of `frames`, read through `devtools`, each frame's within `within`: the page's own
-/// (the first) failing the read, any other frame that cannot be read shown empty.
+/// Every tree of `frames`, read through `devtools`, each frame's within `within`, holding at most
+/// `most` bytes of the engine's answers in all (#3277): the page's own (the first) failing the
+/// read, any other frame that cannot be read shown empty.
 fn read_trees(
     devtools: &dyn DevTools,
     frames: Vec<ToRead>,
     within: Duration,
+    most: usize,
 ) -> Result<Vec<FrameAx>, CallError> {
-    read_trees_by(devtools, frames, within, None)
+    read_trees_by(devtools, frames, within, most, None)
 }
 
-/// [`read_trees`], every frame's read also ending by `by`, where it is given (#3277); then a frame
-/// whose read does not come by then fails the read.
+/// [`read_trees`], every call of it also ending by `by`, where it is given (#3277); then a frame
+/// whose tree does not come by then, or does not fit in what is left of `most`, fails the read,
+/// so no frame is taken for empty for want of time or room.
 fn read_trees_by(
     devtools: &dyn DevTools,
     frames: Vec<ToRead>,
     within: Duration,
+    most: usize,
     by: Option<Instant>,
 ) -> Result<Vec<FrameAx>, CallError> {
+    let left = |within: Duration| {
+        by.map_or(within, |by| {
+            within.min(by.saturating_duration_since(Instant::now()))
+        })
+    };
+    let mut room = most;
     let mut trees = Vec::new();
     for (index, read) in frames.into_iter().enumerate() {
         let mut frame = read.frame;
         frame.owner = read.parent_session.as_deref().and_then(|s| {
+            let within = left(CALL_TIMEOUT);
+            if within.is_zero() {
+                return None;
+            }
             devtools
-                .call("DOM.getFrameOwner", json!({ "frameId": frame.id }), Some(s))
+                .call_within(
+                    "DOM.getFrameOwner",
+                    json!({ "frameId": frame.id }),
+                    Some(s),
+                    within,
+                )
                 .ok()
                 .and_then(|o| o.get("backendNodeId").and_then(Value::as_i64))
         });
-        let within = by.map_or(within, |by| {
-            within.min(by.saturating_duration_since(Instant::now()))
-        });
+        let within = left(within);
         let ax = if within.is_zero() {
             Err(CallError::TimedOut)
+        } else if room == 0 {
+            Err(CallError::TooLarge { most })
         } else {
-            devtools.call_within(
+            devtools.call_within_bounded(
                 "Accessibility.getFullAXTree",
                 json!({ "frameId": frame.id }),
                 Some(&read.session),
                 within,
+                room,
             )
         };
         frame.nodes = match ax {
-            Ok(ax) => ax.get("nodes").cloned().unwrap_or(Value::Array(Vec::new())),
+            Ok(ax) => {
+                let nodes = ax.get("nodes").cloned().unwrap_or(Value::Array(Vec::new()));
+                // What this frame's tree holds counts against what the read may hold.
+                let held = serde_json::to_vec(&nodes).map_or(room, |bytes| bytes.len());
+                if held > room {
+                    return Err(CallError::TooLarge { most });
+                }
+                room -= held;
+                nodes
+            }
             // The page's own tree is the snapshot; a frame that cannot be read is shown
             // empty rather than failing the page.
             Err(why) if index == 0 => return Err(why),
-            // A read that must end by a time fails whole where a frame's does not come in it,
-            // so no frame's tree is taken for empty for want of time.
-            Err(CallError::TimedOut) if by.is_some() => return Err(CallError::TimedOut),
+            Err(why @ (CallError::TimedOut | CallError::TooLarge { .. })) if by.is_some() => {
+                return Err(why);
+            }
             Err(_) => Value::Array(Vec::new()),
         };
         trees.push(frame);
