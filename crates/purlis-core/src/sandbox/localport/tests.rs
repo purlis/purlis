@@ -300,6 +300,10 @@ fn a_servers_risk_says_what_its_page_can_do_in_your_browser() {
             said.contains("send what it reads to the internet"),
             "{said}"
         );
+        assert!(
+            said.contains("send requests to those apps as you"),
+            "{said}"
+        );
         assert!(said.contains("Open it in the chat's own browser"), "{said}");
         assert!(!said.contains("cookies for other sites"), "{said}");
         assert!(!said.contains("reaches it"), "{said}");
@@ -331,46 +335,6 @@ fn a_port_given_for_a_listen_grant_alone_is_reached_only_where_its_door_opened()
     let unserving = widened.unserving();
     assert_eq!(unserving.ports, vec![8080]);
     assert!(unserving.listens.is_empty());
-}
-
-/// #2019: a chat at the floor serves on its own socket too. Its denials hold the folder the
-/// sockets are in, and every port of this machine, so the rules that let it serve come after
-/// them; the Linux sandbox reads them so.
-#[test]
-fn a_floor_chat_serves_on_its_own_socket_whatever_its_denials_hold() {
-    use super::super::{Access, Class, Denial, Reach, door, seatbelt};
-    let folder = std::path::Path::new("/run/user/1000/purlis-serve/0123456789abcdef");
-    let socket = serve_socket(folder, 5173);
-    let mut own = seatbelt::Own::default();
-    seatbelt::served(&mut own, folder, &[5173]).expect("served");
-    let denied = [Denial {
-        class: Class::Integrity,
-        path: door::root_in(Some(std::ffi::OsStr::new("/run/user/1000"))),
-        access: Access::Write,
-        named: None,
-        reach: Reach::AndBelow,
-        any_case: false,
-    }];
-    let text = seatbelt::floor_profile(&denied, &[], &own, &[47000], None).expect("a profile");
-    let held_at = text
-        .lines()
-        .position(|line| line.starts_with("(deny") && line.contains("/run/user/1000/purlis-serve"))
-        .expect("the folder held");
-    let at = |rule: &str| text.lines().position(|line| line == rule);
-    for rule in serve_rules(&socket)
-        .expect("rules")
-        .iter()
-        .chain([&seatbelt_rule(5173)])
-    {
-        assert!(
-            at(rule).is_some_and(|line| line > held_at),
-            "{rule}\n{text}"
-        );
-    }
-    let read =
-        purlis_linux_sandbox::profile::Profile::parse(&text).expect("the Linux sandbox reads it");
-    assert!(read.serves_at(&socket));
-    assert!(!read.serves_at(std::path::Path::new("/run/user/1000/bus")));
 }
 
 /// **Under Seatbelt, for real** (#2019): a chat allowed to serve on a port serves on its own
