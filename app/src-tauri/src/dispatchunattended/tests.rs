@@ -81,7 +81,9 @@ fn a_grant_the_person_made_for_this_machine_starts_an_unattended_dispatch() {
 
     assert_eq!(
         asked,
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("devops"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "devops"
+        )))
     );
     // The way back is another pair.
     assert!(matches!(
@@ -133,7 +135,9 @@ fn a_grant_in_the_project_s_file_starts_an_unattended_dispatch() {
         .expect("a person read the project's grants on this machine");
     assert_eq!(
         ask(),
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("devops"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "devops"
+        )))
     );
 }
 
@@ -242,7 +246,9 @@ fn its_own_persona_starts_and_a_policy_lock_refuses_in_the_policy_s_words() {
             "devops",
             None
         ),
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("devops"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "devops"
+        )))
     );
 
     purlis_core::sandbox::local::grant_dispatch(project.path(), "steward", "devops")
@@ -335,7 +341,9 @@ fn an_unattended_chat_started_with_no_sandbox_dispatches_to_no_other_persona() {
             "steward",
             None
         ),
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("steward"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "steward"
+        )))
     );
 }
 
@@ -471,7 +479,9 @@ fn an_unattended_chat_s_ask_raises_no_notice_and_its_sandbox_is_the_app_s_own_re
             "Check it.",
             None
         ),
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("steward"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "steward"
+        )))
     );
     // A persona the project does not have, and a chat this app does not hold.
     assert_eq!(

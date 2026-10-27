@@ -145,6 +145,39 @@ fn the_budget_names_the_workspace_and_the_persona_that_pin_a_skill_sk15d() {
     );
 }
 
+/// #3445: a chat whose start the plane's skills did not reach (the Skill studio's flag off) was
+/// handed the built-in skills alone, so Use skill… offers those alone.
+#[test]
+fn a_chat_started_with_the_flag_off_is_offered_the_built_in_skills_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let built_in = tmp.path().join("plugin/skills");
+    let root = tmp.path().join("plane");
+    skill(
+        &built_in,
+        "handoff",
+        "---\nname: handoff\ndescription: Hands off.\n---\n",
+    );
+    skill(
+        &root.join("skills"),
+        "review",
+        "---\nname: review\ndescription: Reviews.\n---\n",
+    );
+    let skills = for_use_skill(&Running {
+        plane: &root,
+        workspace: None,
+        persona: None,
+        harness: Harness::ClaudeCode,
+        built_in: Some(&built_in),
+        plane_skills: false,
+        start: None,
+    });
+
+    let shown = shown(Some(&skills));
+
+    let names: Vec<&str> = shown.skills.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["handoff"]);
+}
+
 /// #3391: forty pins of the workspace's and thirty of the persona's, each list read alone, are
 /// past the 64 a chat reads together: the budget names both and how many each pins.
 #[test]

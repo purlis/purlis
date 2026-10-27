@@ -1470,6 +1470,16 @@ on this machine only, listed in Settings' Network page with Remove. A Claude Cod
 `this-mac.internal:<port>`, and its kubectl through a copy of one context purlis makes for it.
 _Avoid_: localhost (in UI text), local port grant, loopback
 
+**A chat's server**:
+A server a sandboxed chat runs on one port, allowed from the Notice its first refused bind raises,
+for *this chat* or for *this project on this machine*; from port 1024, never a port something on
+this Mac listens on, a range or one of purlis's own. The server listens on a socket of the chat's
+own, never on a TCP port, and purlis's **front door** on the port carries each request to it,
+checking its address and keeping the browser's cookies from the server. A page it serves still runs
+in the person's browser as a site of this Mac. The chat's browser opens it with no second Ask. Kept on this machine only, listed in Settings' Network page with Remove. A Claude Code
+chat cannot be given one.
+_Avoid_: listen grant (in UI text), open port, loopback
+
 **A proposed change**:
 An edit a chat makes to purlis's own configuration (the project's manifest, a persona's
 `mcp.json` or `persona.md`, a skill's files), which only the person applies, in the window. The

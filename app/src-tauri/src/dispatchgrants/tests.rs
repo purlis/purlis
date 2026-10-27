@@ -382,7 +382,9 @@ fn a_chat_dispatching_to_its_own_persona_starts_at_once_with_nothing_held() {
     let (store, _) = store();
     assert_eq!(
         world.request(&store, chat(3, Some("devops")), "devops", BRIEF),
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("devops"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "devops"
+        )))
     );
     assert!(store.waiting(3).is_empty());
 }
@@ -1148,7 +1150,9 @@ fn the_core_s_request_is_judged_from_the_app_s_record_of_the_chat_and_held_on_it
     // dispatch to, and a chat this app does not hold is no asking chat.
     assert_eq!(
         request_dispatch_grant(&held, session, "steward", BRIEF, None),
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("steward"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "steward"
+        )))
     );
     assert_eq!(
         request_dispatch_grant(&held, session, "nobody", BRIEF, None),
@@ -1359,19 +1363,25 @@ fn a_chat_nobody_is_at_and_outside_a_sandbox_is_refused_another_persona_whatever
         world
             .request_unattended(&store, chat(3, Some("steward")), "steward", BRIEF)
             .0,
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("steward"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "steward"
+        )))
     );
     // The same standing grant covers a chat nobody is at that the app did start in a sandbox.
     assert_eq!(
         world
             .request_unattended(&store, chat(4, Some("steward")), "devops", BRIEF)
             .0,
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("devops"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "devops"
+        )))
     );
     // And the missing sandbox refuses nothing of a chat a person answers.
     assert_eq!(
         world.request(&store, chat(3, Some("steward")), "devops", BRIEF),
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("devops"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "devops"
+        )))
     );
 }
 
@@ -2358,26 +2368,26 @@ fn a_chat_still_running_as_a_persona_that_is_gone_is_covered_by_no_grant_and_ask
     assert_eq!(sandbox::local::granted_dispatch_any(&root), ["steward"]);
 }
 
-#[path = "dispatchgrants_table_tests.rs"]
+#[path = "tests/table.rs"]
 mod table;
 
-#[path = "dispatchgrants_within_tests.rs"]
+#[path = "tests/within.rs"]
 mod within;
 
 // ---- what a persona wants, and several pairs in one answer (#1502) -------------------------------
 
-#[path = "dispatchgrants_wants_tests.rs"]
+#[path = "tests/wants.rs"]
 mod wants;
 
 // ---- where the several-pairs answer meets the workspace condition (#1502, #1505) ---------------
 
-#[path = "dispatchgrants_wants_within_tests.rs"]
+#[path = "tests/wants_within.rs"]
 mod wants_within;
 
-#[path = "dispatchgrants_arrival_tests.rs"]
+#[path = "tests/arrival.rs"]
 mod arrival;
 
 // ---- a standing grant made in Settings (#1465) ---------------------------------------------------
 
-#[path = "dispatchgrants_added_tests.rs"]
+#[path = "tests/added.rs"]
 mod added;

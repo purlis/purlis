@@ -142,9 +142,9 @@ pub fn unattended(
 ) -> Requested {
     match answered(root, locks, asking, runs, target, works_in) {
         Err(said) => Requested::Refused(said),
-        Ok(Answer::Covered) => {
-            Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat(target))
-        }
+        Ok(Answer::Covered) => Requested::Covered(Box::new(
+            dispatchgrant::grants_for_a_dispatched_chat(target),
+        )),
         Ok(Answer::Locked(why)) => Requested::Locked(why),
         Ok(Answer::Refused(why)) => Requested::Refused(why.say()),
     }
@@ -226,5 +226,5 @@ fn answered(
 }
 
 #[cfg(test)]
-#[path = "dispatchunattended_tests.rs"]
+#[path = "dispatchunattended/tests.rs"]
 mod tests;

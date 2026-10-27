@@ -2714,6 +2714,12 @@ export type BlockOffer =
  *  the person types.
  */
 "port" | 
+/**
+ *  Allow listening on one port of this Mac's loopback (#2019): [`ChatBlocked::route`] says
+ *  what allowing it means. [`ChatBlocked::target`] is null where the refusal named no port,
+ *  which the person types.
+ */
+"listen" | 
 /**  Never granted, and there is a way that works: [`ChatBlocked::route`] says it. */
 "brokered" | 
 /**
@@ -5259,6 +5265,11 @@ export type GrantWhat =
 "service" | 
 /**  A service on this Mac, by its one loopback port (qw384): this machine's alone. */
 "port" | 
+/**
+ *  A port of this Mac's loopback to listen on (#2019): this machine's alone, and a named
+ *  local port of the chat's browser.
+ */
+"listen" | 
 /**
  *  Always for a persona's browser (#2241): what every chat as the persona may have its
  *  browser reach in this project on this machine. Allowed from a chat's browser Ask

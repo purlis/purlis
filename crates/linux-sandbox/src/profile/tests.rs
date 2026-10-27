@@ -234,3 +234,68 @@ fn what_a_profile_writes_and_reaches_is_listed_for_the_kernel_s_own_rules() {
         ]
     );
 }
+
+/// #2019: a chat may bind the one socket its profile names to serve on, and no other; the
+/// socket is listed for the supervisor's own rules.
+#[test]
+fn a_chat_binds_the_one_socket_it_serves_on() {
+    let socket = "/data/serve/chat-1/5173.sock";
+    let profile = read(&format!(
+        "{FULL}(allow network-bind (local unix-socket (path-literal \"{socket}\")))\n\
+         (allow network-inbound (local unix-socket (path-literal \"{socket}\")))\n\
+         (allow file-write-create file-write-unlink (literal \"{socket}\"))\n"
+    ));
+    assert!(profile.allows(&Op::BindUnix(Path::new(socket))));
+    assert!(!profile.allows(&Op::BindUnix(Path::new("/data/serve/chat-1/5174.sock"))));
+    assert!(!profile.allows(&Op::BindUnix(Path::new("/tmp/other.sock"))));
+    assert_eq!(
+        profile.reach().serves,
+        vec![Path::new(socket).to_path_buf()]
+    );
+    // Its folder is written by the supervisor's own rules, whether or not the socket is there.
+    assert!(
+        profile
+            .reach()
+            .written
+            .contains(&Path::new("/data/serve/chat-1").to_path_buf())
+    );
+    assert!(!read(FULL).allows(&Op::BindUnix(Path::new(socket))));
+    for text in [
+        "(version 1)\n(allow network-bind (local unix-socket (subpath \"/data\")))\n",
+        "(version 1)\n(allow network-bind (local unix-socket (path-literal \"relative.sock\")))\n",
+        "(version 1)\n(allow network-bind (local tcp \"localhost:5173\"))\n",
+    ] {
+        assert!(Profile::parse(text).is_err(), "read: {text}");
+    }
+}
+
+/// #2019: the supervisor binds a chat's socket only at a path its profile names to serve on,
+/// whatever else the profile allows: a floor chat, which `(allow default)` lets do nearly
+/// anything, serves on no other socket of this user's, and never replaces one.
+#[test]
+fn a_chat_serves_only_where_its_profile_names_a_socket_to_serve_on() {
+    let own = "/run/user/1000/purlis-serve/0123456789abcdef/5173.sock";
+    let floor = read("(version 1)\n(allow default)\n");
+    for other in [
+        "/run/user/1000/bus",
+        "/data/.purlis/app/hooks.sock",
+        "/run/user/1000/purlis-serve/fedcba9876543210/5173.sock",
+        own,
+    ] {
+        assert!(!floor.serves_at(Path::new(other)), "{other}");
+    }
+    let served = read(&format!(
+        "(version 1)\n(allow default)\n\
+         (allow network-bind (local unix-socket (path-literal \"{own}\")))\n"
+    ));
+    assert!(served.serves_at(Path::new(own)));
+    assert!(!served.serves_at(Path::new("/run/user/1000/bus")));
+    assert!(!served.serves_at(Path::new("5173.sock")));
+    // A socket the chat may not make or take away there is not served on either.
+    let held = read(&format!(
+        "(version 1)\n(allow default)\n\
+         (allow network-bind (local unix-socket (path-literal \"{own}\")))\n\
+         (deny file-write-unlink (literal \"{own}\"))\n"
+    ));
+    assert!(!held.serves_at(Path::new(own)));
+}

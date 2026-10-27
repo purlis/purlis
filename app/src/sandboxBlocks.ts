@@ -51,10 +51,7 @@ export type Blocks = Readonly<Record<number, readonly HeldBlock[]>>;
  * host lowered, without a trailing dot and without the default port (`:443`, `:80`); a folder
  * as the core offered it.
  */
-export function matched(
-  offer: "host" | "write" | "socket" | "service" | "port",
-  target: string,
-): string {
+export function matched(offer: GrantedOffer, target: string): string {
   if (offer !== "host") return target;
   const host = target
     .trim()
@@ -222,19 +219,20 @@ export function inertly(text: string): string {
     .join(markOf("\u27E6"));
 }
 
-/** What a block's Allow can name: a host, a folder, a socket or a service (D-sock-1), or a
- *  service on this Mac by its port (qw384). */
-type GrantedOffer = "host" | "write" | "socket" | "service" | "port";
+/** What a block's Allow can name: a host, a folder, a socket or a service (D-sock-1), a
+ *  service on this Mac by its port (qw384), or a port on this Mac to listen on (#2019). The one
+ *  list of them. */
+export const GRANTED_OFFERS = ["host", "write", "socket", "service", "port", "listen"] as const;
+
+export type GrantedOffer = (typeof GRANTED_OFFERS)[number];
+
+/** Whether a block's Notice offers an Allow of something it names. */
+export const isGrantedOffer = (offer: string): offer is GrantedOffer =>
+  (GRANTED_OFFERS as readonly string[]).includes(offer);
 
 /** Whether `block` is an ask (#1695): one of the chat's own work a grant can name, which the
  *  registry lists while the chat is held on it. */
-export const isAnAsk = (block: ChatBlocked) =>
-  !block.ours &&
-  (block.offer === "host" ||
-    block.offer === "write" ||
-    block.offer === "socket" ||
-    block.offer === "service" ||
-    block.offer === "port");
+export const isAnAsk = (block: ChatBlocked) => !block.ours && isGrantedOffer(block.offer);
 
 /**
  * **The asks the registry lists for `block`** (#1695): a sandbox ask of the same chat, on the
