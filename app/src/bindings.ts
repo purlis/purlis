@@ -1811,11 +1811,12 @@ export const commands = {
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
-	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
-	 *  run of the skill, newest first, then each extension's. None while the flag is off. On a
+	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
+	 *  `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
+	 *  every run of the skill, newest first, then each extension's. None while the flag is off. On a
 	 *  blocking thread, as it reads the project's skill log and asks each extension.
 	 */
-	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
+	skillPanels: (plane: PlaneId, skill: string, level: { at: "project"; local: boolean } | { at: "workspace"; name: string; local: boolean } | { at: "persona"; name: string; local: boolean } | null) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill, level })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	/**
@@ -7045,7 +7046,9 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 /**  It reached its token cap. */
 "over-cap" | 
 /**  A chat did not say what it spent, so the cap could not be held. */
-"spend-not-reported";
+"spend-not-reported" | 
+/**  A fault in purlis ended it before it was scored (#3353): recorded as interrupted. */
+"failed";
 
 /**  What a grade's chats spent last time, worked out for this one. */
 export type GradeEstimate = {
@@ -7053,6 +7056,15 @@ export type GradeEstimate = {
 	cost_usd: number | null,
 	/**  The chats of the grade it is worked out from. */
 	chats_then: number,
+};
+
+/**
+ *  **A trigger test a grade leaves out** (`grades::LeftOut`): its place in the file, from 0, and
+ *  why, as a sentence.
+ */
+export type GradeLeftOut = {
+	at: number,
+	why: string,
 };
 
 /**  One trigger test, as the plan shows it before anything runs. */
@@ -11447,7 +11459,7 @@ export type SkillGradePlan = {
 	/**  Why the trigger tests could not be read, where they were not. */
 	tests_refused: string | null,
 	/**  The trigger tests left out, each with why: a query no chat can be started on. */
-	left_out: string[],
+	left_out: GradeLeftOut[],
 	/**  The outcome evals the skill has, shown and not run (#3235 grades them). */
 	outcome_evals: number,
 	outcomes_refused: string | null,

@@ -290,6 +290,12 @@ impl HarnessAdapter for Codex {
         true
     }
 
+    /// No grade runs here until purlis can hold its chats to the grade's limits and read their
+    /// spend on this harness (#3272).
+    fn can_grade(&self) -> bool {
+        false
+    }
+
     /// The wrap's program first, with the profile written for where the chat opens, then the
     /// chat's whole line, with the flags that turn Codex's own sandbox off last among its flags
     /// and in front of the subcommand, session id and first message that end the line. Its

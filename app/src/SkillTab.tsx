@@ -6,6 +6,7 @@ import { LoaderCircle } from "lucide-react";
 import {
   commands,
   SKILL_RUNS_PANEL,
+  type SkillLevel,
   type SkillPanel,
   type SkillPanelKey,
   type SkillStats,
@@ -128,6 +129,15 @@ function SkillTotals({ plane, name, changed }: { plane: string; name: string; ch
   );
 }
 
+/** Whether two levels are one: the same place, shared or this machine's alike. */
+function sameLevel(a: SkillLevel, b: SkillLevel): boolean {
+  return (
+    a.at === b.at &&
+    a.local === b.local &&
+    ("name" in a ? a.name : null) === ("name" in b ? b.name : null)
+  );
+}
+
 /**
  * **One skill's tab** (SK-3, #2766), opened from a skill run's chip or the Skill studio. Its
  * state, owners, history and uses come first (SK-19, #2782, `SkillDetailsPanel`), then its
@@ -159,9 +169,16 @@ export function SkillTab({
   // A grade that ended (SK-16): its scorecard and the history's grade are read again.
   const [graded, setGraded] = useState(0);
   const regraded = useCallback(() => setGraded((n) => n + 1), []);
+  // The copy the details show (#3353): the Grades panel is of that copy alone. Until the details
+  // say, the core reads the copy they show first.
+  const [level, setLevel] = useState<SkillLevel | null>(null);
+  const shownCopy = useCallback(
+    (next: SkillLevel) => setLevel((was) => (was !== null && sameLevel(was, next) ? was : next)),
+    [],
+  );
   useEffect(() => {
     let live = true;
-    void commands.skillPanels(plane, name).then((answer) => {
+    void commands.skillPanels(plane, name, level).then((answer) => {
       if (!live) return;
       if (answer.status === "ok") {
         setPanels(answer.data);
@@ -171,12 +188,18 @@ export function SkillTab({
     return () => {
       live = false;
     };
-  }, [plane, name, changed, graded]);
+  }, [plane, name, changed, graded, level]);
 
   return (
     <div className="skill-tab" data-testid="skill-tab">
       {/* No heading with the skill's name: its tab says it (#3147). */}
-      <SkillDetailsPanel plane={plane} name={name} changed={changed + graded} onGraded={regraded} />
+      <SkillDetailsPanel
+        plane={plane}
+        name={name}
+        changed={changed + graded}
+        onGraded={regraded}
+        onCopy={shownCopy}
+      />
       <SkillTotals plane={plane} name={name} changed={changed} />
       {refused !== undefined ? (
         <EmptyState

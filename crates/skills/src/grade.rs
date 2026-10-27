@@ -25,9 +25,8 @@
 mod fixtures;
 
 pub use fixtures::{
-    EVALS_DIR, FixtureFile, Fixtures, MOST_EVAL_FILES, MOST_EXPECTATION_BYTES, MOST_EXPECTATIONS,
-    MOST_FIXTURE_BYTES, MOST_OUTCOME_EVALS, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OUTCOME_FILE,
-    OutcomeEval, Read, Refused, TRIGGER_FILE, TriggerTest, Wrong, fixtures_of,
+    EVALS_DIR, FixtureFile, Fixtures, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OutcomeEval, Read,
+    Refused, TriggerTest, Wrong, fixtures_of,
 };
 
 /// How many times each fixture runs in each arm: skill-creator's and `claude plugin eval`'s
@@ -261,6 +260,9 @@ pub enum GradeEnd {
     /// A chat that ran did not say what it spent, so the grade could not be held to its cap
     /// and stopped asking for more.
     SpendNotReported,
+    /// purlis stopped before the grade ended (a crash, a fault in it, or a quit), so it was never
+    /// scored: recorded by the host at its next start, never by this runner (#3353).
+    Interrupted,
 }
 
 /// **The grade report**: the scores per trigger test and arm, each arm's summary, and the
