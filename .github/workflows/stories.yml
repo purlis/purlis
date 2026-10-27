@@ -44,8 +44,30 @@ permissions:
   contents: read
 
 jobs:
+  # Whether this change touches what the stories draw (`tools/ci-scope.mjs`, #3505). Its own job
+  # on the runner, not a step of `stories`: that job's container is pulled before its first step.
+  changes:
+    name: what this change touches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      stories: ${{ steps.scope.outputs.stories }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: The scopes this change needs
+        id: scope
+        uses: ./.github/actions/change-scope
+
+  # Not a required check, so it is skipped whole when nothing it draws has changed: a docs-, skills-
+  # or tools-only pull request pulls no Playwright image. A push to main and a run by hand run it;
+  # a `changes` that fails runs it too.
   stories:
     name: stories (Chromium and WebKit, axe, keyboard, screenshots)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:

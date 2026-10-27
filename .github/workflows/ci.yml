@@ -36,6 +36,16 @@ on:
 # conclusion; and none of these names is in branch protection, so a pull request waits on nothing it
 # no longer runs. `bench` measures each pull request against main (V62), so it stays.
 
+# **A pull request's heavy jobs run by what it changes (#3505).** The `changes` job sorts the
+# change into scopes (`tools/ci-scope.mjs`, the one place that says which paths need which jobs):
+# a pull request that changes only docs, agent skills or a tool a person runs by hand needs no
+# Rust, app, scenario or web build. No job is filtered by path and no required check is skipped
+# by `if:`: a job that carries a required check's name always runs, and skips its expensive steps
+# when its scope is untouched, as `parity` does; a job behind one of the `*-checks` jobs is skipped
+# whole, and its `*-checks` job passes only when the scope says it had nothing to run. A merge
+# group, a push to main and a nightly run every scope. When `changes` itself fails, every scope's
+# output is empty and every job runs (`!= 'false'`), so a fault there runs more, never less.
+
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
   group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
@@ -56,6 +66,26 @@ env:
   NEXTEST_VERSION: "0.9.146"
 
 jobs:
+  # Which scopes this change needs (`tools/ci-scope.mjs`, `.github/actions/change-scope`).
+  changes:
+    name: what this change touches
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      rust: ${{ steps.scope.outputs.rust }}
+      web: ${{ steps.scope.outputs.web }}
+      app: ${{ steps.scope.outputs.app }}
+      scenario: ${{ steps.scope.outputs.scenario }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request's merge commit and its first parent: what the change is.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: The scopes this change needs
+        id: scope
+        uses: ./.github/actions/change-scope
+
   # The Rust suite in two parts on two runners, each building the tests and running half of
   # them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
   # request waits on (2026-10-10). Part 1 also runs fmt, clippy and the doctests, which part 2's
@@ -64,6 +94,9 @@ jobs:
   # `rust-checks` below carries the required check's name and passes when both parts did.
   rust:
     name: rust tests (part ${{ matrix.part }} of 2)
+    needs: changes
+    # Skipped whole when nothing Rust reads has changed; `rust-checks` says so.
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     strategy:
       fail-fast: false
       matrix:
@@ -166,6 +199,8 @@ jobs:
   # minutes that part 1 waited on before its tests (2026-10-12).
   lint:
     name: rust (fmt, clippy)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -217,16 +252,21 @@ jobs:
   # The required check `rust (fmt, clippy, test)`: green only when the lint and both parts of
   # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.
+  # Skipped is green only when the change touched nothing Rust reads (`changes`).
   rust-checks:
     name: rust (fmt, clippy, test)
-    needs: [lint, rust]
+    needs: [changes, lint, rust]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: The lint and both parts passed
         env:
+          SCOPE: ${{ needs.changes.outputs.rust }}
           RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
-        run: test "$RESULTS" = "success success"
+        run: |
+          if [ "$SCOPE" = false ]; then want="skipped skipped"; else want="success success"; fi
+          echo "scope: ${SCOPE:-unknown}, results: $RESULTS"
+          test "$RESULTS" = "$want"
   # **The parity suite against a Docker pool** (#2045, spec #2041): the behaviour suite
   # (`app/src-tauri/src/behaviour.rs`) on its Docker pool target, each behaviour on a pool of its
   # own whose runner is a container of this build's runner image, reached through `docker exec`
@@ -371,17 +411,25 @@ jobs:
       - name: What the runners left, if a test failed
         if: failure() && steps.scope.outputs.run == 'true'
         run: docker ps --all --no-trunc || true
+  # A required check, so it always runs, and skips its steps when nothing Rust reads has changed.
   deny:
     name: rust (licences, advisories)
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/rust-toolchain
+      - name: Nothing Rust reads has changed
+        if: needs.changes.outputs.rust == 'false'
+        run: echo "::notice::nothing Rust reads has changed; the licences and advisories are not checked"
+      - if: needs.changes.outputs.rust != 'false'
+        uses: ./.github/actions/rust-toolchain
       # cargo-deny itself, the version `EmbarkStudios/cargo-deny-action` v2.1.1 runs, checked
       # against its published SHA-256. Run here rather than in that action's container so its
       # findings can be read: each is an annotation on `Cargo.lock` (qw390), the one place a
       # failure shows without the job's log.
       - name: Install cargo-deny
+        if: needs.changes.outputs.rust != 'false'
         env:
           DENY_VERSION: "0.20.2"
           DENY_SHA256: "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
@@ -393,6 +441,7 @@ jobs:
           tar -xzf /tmp/deny.tgz -C /tmp
           install -m 0755 "/tmp/$name/cargo-deny" "$HOME/.cargo/bin/cargo-deny"
       - name: cargo deny check
+        if: needs.changes.outputs.rust != 'false'
         run: |
           status=0
           cargo deny --format json --log-level warn --all-features check 2> deny.jsonl || status=$?
@@ -407,8 +456,13 @@ jobs:
   # `rust` and `scenario` were split (#1712), vitest's 8 to 10 minutes made this the longest job
   # a pull request waited on. Part 1 also runs the type check, lint and format check, part 2 the
   # licences and the tools' tests. `web-checks` carries the required check's name.
+  #
+  # It always runs, for the tools' tests, which run on every change; the rest of its steps run
+  # when the change touches what the web checks read (`changes`).
   web:
     name: web (part ${{ matrix.part }} of 2)
+    needs: changes
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
@@ -424,19 +478,24 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
+      - name: Nothing the web checks read has changed
+        if: needs.changes.outputs.web == 'false'
+        run: echo "::notice::nothing the web checks read has changed; only the tools' tests run"
       - run: npm ci
+        if: needs.changes.outputs.web != 'false'
       # Every npm package the app ships, and every vendored asset (app/icons/vendored.json), is
       # under a licence deny.toml allows (FM-3, #1106). It reads the lockfile and nothing else,
       # under a second, so it gates as part of this job rather than as evidence.
       - run: node ../tools/npm-licences.mjs
-        if: matrix.part == 2
+        if: matrix.part == 2 && needs.changes.outputs.web != 'false'
       - run: npm run typecheck
-        if: matrix.part == 1
+        if: matrix.part == 1 && needs.changes.outputs.web != 'false'
       - run: npm run lint
-        if: matrix.part == 1
+        if: matrix.part == 1 && needs.changes.outputs.web != 'false'
       - run: npm run format:check
-        if: matrix.part == 1
+        if: matrix.part == 1 && needs.changes.outputs.web != 'false'
       - run: npm test -- --shard=${{ matrix.part }}/2
+        if: needs.changes.outputs.web != 'false'
       # The tools' own tests (node:test), such as the cold-start gate's decision.
       - run: node --test "../tools/*.test.mjs"
         if: matrix.part == 2
@@ -631,8 +690,13 @@ jobs:
   #
   # Two jobs, not one matrix, because a job's `if:` cannot see `matrix`, and a matrix `exclude`
   # computed per event is undone by `include`, which adds an excluded entry back.
+  #
+  # `app builds (ubuntu-24.04)` is a required check, so the job always runs, and skips its steps
+  # when nothing the app is built from has changed (`changes`).
   app:
     name: app builds (${{ matrix.os }}${{ matrix.evidence && ', evidence only' || '' }})
+    needs: changes
+    if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
@@ -653,9 +717,13 @@ jobs:
           # The pull request's merge commit and its first parent, main as it is now: the cold
           # start below is measured against main's build of it (#1866).
           fetch-depth: 2
+      - name: Nothing the app is built from has changed
+        if: needs.changes.outputs.app == 'false'
+        run: echo "::notice::nothing the app is built from has changed; it is not built"
       # Which OS this runner image really is, and a warning when a label has moved off the
       # version its row in `docs/platforms.md` names.
       - name: What this runner is
+        if: needs.changes.outputs.app != 'false'
         env:
           EXPECT: ${{ matrix.expect }}
         run: |
@@ -673,38 +741,43 @@ jobs:
       # bubblewrap and socat: Claude Code's Linux sandbox runs through them (ADR 0067 §1).
       # Cached and bounded, as the `rust` job's (#1477).
       - name: Tauri's Linux build dependencies, an X server and i3 to start it in, and the sandbox's programs
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         timeout-minutes: 9
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
           packages: xvfb xauth dbus-x11 i3 bubblewrap socat
       - uses: ./.github/actions/rust-toolchain
+        if: needs.changes.outputs.app != 'false'
       # Not on the newer images: rust-cache's key has the OS and architecture but not the image,
       # so they would restore objects compiled on macOS 26 or Ubuntu 24.04 and only link them.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-        if: ${{ !matrix.evidence }}
+        if: ${{ needs.changes.outputs.app != 'false' && (!matrix.evidence) }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: needs.changes.outputs.app != 'false'
         with:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
       - run: npm ci
+        if: needs.changes.outputs.app != 'false'
         working-directory: app
       # Every Rust crate and npm package this platform's build ships has its licence text
       # (#1784). `vite build` generates the notices from the locked graph and fails on the same
       # thing; this names it as a step of its own. Nothing is committed, so nothing can be stale.
       - name: Every shipped crate and npm package has its licence text
+        if: needs.changes.outputs.app != 'false'
         run: node tools/third-party-notices.mjs
       - run: npx tauri build --debug --no-bundle
+        if: needs.changes.outputs.app != 'false'
         working-directory: app
       # The window's main bundle carries no CodeMirror (#987): the light editor is a lazy chunk
       # (ADR 0086 rows M2 and L6), and a static import would quietly undo that. It reads the
       # `app/dist` this build left. Not on the evidence images, which only report.
       - name: The window's main bundle carries no CodeMirror
-        if: ${{ !matrix.evidence }}
+        if: ${{ needs.changes.outputs.app != 'false' && (!matrix.evidence) }}
         run: node tools/main-chunk-has-no-codemirror.mjs
       # main's app, built in this job, for the cold start below to be held to (#1866, ADR 0086 as
       # amended): the merge commit's first parent, main as it is now, built into the same target
@@ -717,11 +790,11 @@ jobs:
       # built in the environment the change set up), and the step fails rather than ungate it.
       - name: The commit this change is measured against
         id: base
-        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')) }}
         uses: ./.github/actions/change-base
       - name: main's app, for the cold start to be measured against
         id: main-app
-        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')) }}
         timeout-minutes: 20
         env:
           GH_TOKEN: ${{ github.token }}
@@ -758,7 +831,7 @@ jobs:
       # request held the same code to main already. `tools/coldstart-linux.sh` says why not a
       # release build.
       - name: Cold start on X, on the runner's own session bus (charter-app#24's machine)
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         env: &coldstart-env
           APP: ${{ steps.main-app.outputs.change }}
           BASELINE_APP: ${{ steps.main-app.outputs.app }}
@@ -775,18 +848,18 @@ jobs:
           EVIDENCE_ONLY: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' && '1' || '' }}
         run: tools/coldstart-linux.sh bare
       - name: Cold start on i3 under X11, on the runner's own session bus
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         env: *coldstart-env
         run: tools/coldstart-linux.sh i3
       - name: Cold start on i3 under X11 with no session bus, as startx into i3
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         env: *coldstart-env
         run: tools/coldstart-linux.sh i3-nobus
       # A launch that puts 1, 10 and 40 chats back (ADR 0086 row L8): when the window could be
       # used and when the chats had started. They start behind the window, so the first must
       # not grow with them. Evidence: reported in the job's summary, and it fails nothing.
       - name: A launch that puts chats back, on X (evidence only)
-        if: runner.os == 'Linux'
+        if: ${{ needs.changes.outputs.app != 'false' && (runner.os == 'Linux') }}
         continue-on-error: true
         env:
           APP: ${{ steps.main-app.outputs.change }}
@@ -797,6 +870,8 @@ jobs:
   # image breaking upstream must not stop that. Nightly only (V70).
   app-evidence:
     name: app builds (${{ matrix.os }}${{ matrix.evidence && ', evidence only' || '' }})
+    # `changes` for the steps it shares with `app`; a nightly runs every scope.
+    needs: changes
     if: github.event_name == 'schedule'
     continue-on-error: true
     strategy:
@@ -1076,16 +1151,26 @@ jobs:
   # The `rust` job's `cargo test --workspace` runs these too. This job exists so the gate has a
   # NAME — "recorded behaviour" is a required check — and so a red run says which contract moved
   # without reading a whole test log. It builds no frontend and needs no Tauri.
+  #
+  # A required check, so it always runs, and skips its steps when nothing Rust reads has changed.
   recorded:
     name: recorded behaviour
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Nothing Rust reads has changed
+        if: needs.changes.outputs.rust == 'false'
+        run: echo "::notice::nothing Rust reads has changed; the recorded behaviour is not replayed"
       - uses: ./.github/actions/rust-toolchain
+        if: needs.changes.outputs.rust != 'false'
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: needs.changes.outputs.rust != 'false'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: The plane writes, hooks, status line and doctor, as recorded
+        if: needs.changes.outputs.rust != 'false'
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
       # A red replay offers the file a bless would write, so rows that moved on purpose can be
       # taken from here where no machine at hand can run the recorder (a sandboxed chat cannot
@@ -1094,13 +1179,13 @@ jobs:
       # fields that were meant to move, before anyone commits it. A row's verdict (`denies`,
       # `allows`) is never moved by a bless.
       - name: What a bless would record, where the replay differs
-        if: failure()
+        if: ${{ needs.changes.outputs.rust != 'false' && (failure()) }}
         continue-on-error: true
         env:
           CHARTER_RECORDED_BLESS: "1"
         run: cargo test --locked -p purlis-cli --test recorded_behaviour
       - name: The blessed file, to check and commit by hand
-        if: failure()
+        if: ${{ needs.changes.outputs.rust != 'false' && (failure()) }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recorded-behaviour-blessed
@@ -1109,6 +1194,7 @@ jobs:
             tests/fixtures/recorded/behaviour-blobs.jsonl.gz
           if-no-files-found: error
       - name: The shell reader and the plane-root guards, as recorded
+        if: needs.changes.outputs.rust != 'false'
         run: >-
           cargo test --locked -p purlis-core
           --test the_shell_is_read_the_way_python_reads_it
@@ -1125,8 +1211,13 @@ jobs:
   # 2's half of the specs is the heavier, 13 to 16 minutes against part 1's 7 to 11 (2026-10-12).
   # `scenario-checks` carries the required check's name. Linux has the same steps, in
   # `scenario-linux`.
+  #
+  # Skipped whole, and no macOS runner held, when nothing the scenarios run has changed
+  # (`changes`); `scenario-checks` and `app-macos-checks` say so.
   scenario:
     name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1400,35 +1491,47 @@ jobs:
 
   # The required check `app builds (macos-latest)`: its steps ran in the macOS scenario job's
   # part 1, so it is green when that job is. A red scenario part turns it red too.
+  # Skipped is green only when nothing the scenarios run has changed, which takes in everything
+  # the app is built from (`tools/ci-scope.mjs`: `app` needs `scenario`).
   app-macos-checks:
     name: app builds (macos-latest)
-    needs: scenario
+    needs: [changes, scenario]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: The macOS scenario job, which built the app as it ships, passed
         env:
+          SCOPE: ${{ needs.changes.outputs.scenario }}
           RESULT: ${{ needs.scenario.result }}
-        run: test "$RESULT" = success
+        run: |
+          if [ "$SCOPE" = false ]; then want=skipped; else want=success; fi
+          echo "scope: ${SCOPE:-unknown}, result: $RESULT"
+          test "$RESULT" = "$want"
 
   # The required check `scenario tests (macos-latest)`: green only when both parts are, and
   # `!cancelled()` for the reason `rust-checks` gives.
   scenario-checks:
     name: scenario tests (macos-latest)
-    needs: scenario
+    needs: [changes, scenario]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Both parts passed
         env:
+          SCOPE: ${{ needs.changes.outputs.scenario }}
           RESULT: ${{ needs.scenario.result }}
-        run: test "$RESULT" = success
+        run: |
+          if [ "$SCOPE" = false ]; then want=skipped; else want=success; fi
+          echo "scope: ${SCOPE:-unknown}, result: $RESULT"
+          test "$RESULT" = "$want"
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
   # alone. Two parts too, since its specs alone took 7.8 minutes of 12.7 (2026-10-12); Linux
   # runners are not the ones in short supply. Part 2 runs the seven single-app runs, as on macOS.
   scenario-linux:
     name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.scenario != 'false' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1450,14 +1553,18 @@ jobs:
   # The required check `scenario tests (ubuntu-24.04)`, as `scenario-checks` is for macOS.
   scenario-linux-checks:
     name: scenario tests (ubuntu-24.04)
-    needs: scenario-linux
+    needs: [changes, scenario-linux]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Both parts passed
         env:
+          SCOPE: ${{ needs.changes.outputs.scenario }}
           RESULT: ${{ needs.scenario-linux.result }}
-        run: test "$RESULT" = success
+        run: |
+          if [ "$SCOPE" = false ]; then want=skipped; else want=success; fi
+          echo "scope: ${SCOPE:-unknown}, result: $RESULT"
+          test "$RESULT" = "$want"
 
   windows:
     # M4, the Windows question. ADR 0025 names macOS, Linux AND Windows; nothing has ever
