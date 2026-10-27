@@ -191,6 +191,8 @@ pub(crate) mod tests {
                 crate::todos::todo_add,
                 crate::todos::todo_done,
                 crate::todos::todo_forget,
+                crate::todos::todo_forget_done,
+                crate::todos::todo_reopen,
                 crate::todos::todo_read,
                 crate::personas::persona_create,
                 crate::personas::persona_marks,

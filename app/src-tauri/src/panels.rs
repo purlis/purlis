@@ -318,7 +318,9 @@ impl From<&panel::Row> for PanelRow {
     }
 }
 
-/// One open todo. There is no state field: a closed todo is a deleted file (ADR 0004).
+/// One todo, open or done. There is no state field: an open todo is a file in `todos/` and a
+/// done one a file in `todos/archive/` (ADR 0106, amending ADR 0004), so which list it is in
+/// says which it is.
 #[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub(crate) struct PanelTodo {
     /// The file stem, which is what a todo is closed by.
@@ -349,6 +351,9 @@ pub(crate) struct Panels {
     /// is missing is otherwise merely missing.
     refused: Vec<(String, String)>,
     todos: Vec<PanelTodo>,
+    /// The done todos (ADR 0106), for the catalogue's Reopen and Delete rows. Never counted:
+    /// the status line counts `todos`, which are the open ones.
+    done_todos: Vec<PanelTodo>,
     /// Why the todos could not be read, where they could not. A store that is a link out of
     /// the plane is refused, and "no todos" would be the wrong thing to draw for it.
     todos_refused: Option<String>,
@@ -676,6 +681,7 @@ fn drawn(
         clones: found,
         declared,
         todos: read,
+        done_todos: done_read,
         memories,
         sessions: records,
     } = sections;
@@ -702,9 +708,21 @@ fn drawn(
         ),
         Err(why) => (Vec::new(), Some(why.clone())),
     };
+    // A done list that could not be read draws none: the open ones are the work, and their
+    // own refusal is the one said.
+    let done: &[purlis_core::workspaces::Entry] = done_read.as_deref().unwrap_or(&[]);
+    let done_todos = done
+        .iter()
+        .map(|todo| PanelTodo {
+            slug: todo.slug.clone(),
+            title: todo.title.clone(),
+            stamp: todo.stamp.clone(),
+        })
+        .collect();
     let place = Place::Workspace(workspace.to_owned());
     let mut contributed = charters_own(
         read.as_deref().unwrap_or(&[]),
+        done,
         todos_refused.as_deref(),
         &personas,
         persona.as_deref(),
@@ -722,6 +740,7 @@ fn drawn(
         absent,
         refused: found.refused,
         todos,
+        done_todos,
         todos_refused,
         personas,
         persona,
@@ -933,6 +952,10 @@ pub(crate) fn session_record(root: &Path, path: &str) -> Result<Option<SessionRe
     }))
 }
 
+/// What a done todo's row key starts with, before its slug (ADR 0106): `PanelList` and the
+/// Todos view tell a done row by it (`app/src/todos.ts`).
+pub(crate) const DONE_ROW: &str = "done/";
+
 /// charter's own two panels, built through the seam a stranger's extension contributes through.
 ///
 /// **This is the proof, and it is the whole reason the contract is worth having.** These two
@@ -956,6 +979,7 @@ pub(crate) fn session_record(root: &Path, path: &str) -> Result<Option<SessionRe
 /// and nobody has asked for it yet, which under ADR 0041 is the reason it does not exist.
 fn charters_own(
     todos: &[purlis_core::workspaces::Entry],
+    done: &[purlis_core::workspaces::Entry],
     todos_refused: Option<&str>,
     personas: &[String],
     default: Option<&str>,
@@ -997,6 +1021,25 @@ fn charters_own(
                 runs: Some(format!("todo.open:{}", todo.slug)),
                 actions: Vec::new(),
             })
+            // **Then the done ones, which stay** (ADR 0106, R131): drawn struck through with
+            // their box ticked, and unticked to reopen. Keyed `done/<slug>`, which no open
+            // todo's key can be (a slug is one path segment), so an open and a done todo with
+            // one name are two rows. A done row opens its card, not a tab: the tab is the open
+            // todo's.
+            .chain(done.iter().map(|todo| panel::Row {
+                key: format!("{DONE_ROW}{}", todo.slug),
+                text: todo.title.clone(),
+                note: (!todo.stamp.is_empty()).then(|| todo.stamp.clone()),
+                mark: panel::Mark::Todo,
+                tone: panel::Tone::Plain,
+                detail: Some(panel::Detail::Text(if todo.body.trim().is_empty() {
+                    todo.title.clone()
+                } else {
+                    todo.body.clone()
+                })),
+                runs: None,
+                actions: Vec::new(),
+            }))
             .collect(),
         empty: panel::Empty {
             headline: "Nothing to do".into(),

@@ -9,7 +9,7 @@ R90–R115). The strip under the bar is gone, as the project strip went to the r
 **What the title bar holds, left to right.** The window controls; while the rail hides itself,
 the button that shows it (R91); the project in front's name, quiet, and a faint "/" (R92); its
 **pinned workspaces as chips**, any number of them, each with what waits in it, the current one
-lit (R101); while the workspace in front is not pinned, a **dashed chip** that pins it (R105);
+lit (R101, on the accent's wash since #3345); while the workspace in front is not pinned, a **dashed chip** that pins it (R105);
 and **⌄**, which opens every workspace (R106). The right-hand end is as it was. The chips are a
 component family (`ui/titlebar`, `titlebar.*` in the parts manifest).
 
@@ -66,3 +66,11 @@ unbound and Emacs binds to backward-list; the window takes it, as VS Code takes 
 so the key works from a chat too. AltGr (which Windows reports as Ctrl+Alt) is never the key, so a
 letter typed with AltGr+Shift+P is left alone. None of the title bar's keys acts while a dialog
 is up.
+
+**Amended 2026-10-26 (#3345): the chosen chip is told from a hovered one.** R101 drew the current
+chip exactly as a hovered one, the card's fill with the primary words, so the operator could not
+tell which workspace he was in. From the sidebar-views prototype, Q4 variant A, his pick: the
+**chosen chip takes the accent's wash** (`accent.wash`) with the primary words; any other chip
+under the pointer keeps the card's fill with the primary words; the chosen chip under the pointer
+takes the **stronger wash** (`accent.wash-hover`, a token of its own). Only a fill changes; no
+state moves the chip's box or a neighbour (R153). The dashed, unpinned chip is unchanged (R105).

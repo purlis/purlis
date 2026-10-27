@@ -21,7 +21,8 @@ import {
 } from "lucide-react";
 import { catalogueMenu } from "./Menus";
 import { useSessionOffers } from "./sessionOffers";
-import { PanelList } from "./PanelList";
+import { PanelList, type CheckOfRow } from "./PanelList";
+import { doneSlugOf, todoDoneId, todoReopenId } from "./todos";
 import { HeadingOffer, PanelSection } from "./PanelSection";
 import { Vaults, type VaultsSaid } from "./Vaults";
 import { Chart, Facts, Table } from "./Views";
@@ -38,6 +39,7 @@ import type { WorkspaceState } from "./workspaceState";
 import { isPanelView, panelKeyOf, panelView, type OwnViewId, type ViewId } from "./sideViews";
 import type { PanelTab } from "./ActivityBar";
 import { Form, TextField } from "./ui/field/Field";
+import { Segment, SegmentedControl } from "./ui/choice/Radio";
 
 /**
  * One view of the right region: **what is asking for you** (ADR 0038).
@@ -351,9 +353,33 @@ function Contributed({
   const sessions = useSessionOffers();
   const lookUp = (id: string) => memories.get(id) ?? sessions.get(id) ?? offers.get(id);
   const framed = FRAMED.has(panel.key);
+  /**
+   * **A todo's box toggles done** (R131, ADR 0106): ticking an open todo marks it done, and
+   * unticking a done one reopens it — the catalogue's rows, so the box, the row's menu and the
+   * palette are one verb. A row the catalogue offers no such row for keeps its mark.
+   */
+  const todoCheck: CheckOfRow | undefined =
+    panel.key === TODOS
+      ? (row) => {
+          const done = doneSlugOf(row.key);
+          const offer = offers.get(done === undefined ? todoDoneId(row.key) : todoReopenId(done));
+          if (offer === undefined) return undefined;
+          return {
+            checked: done !== undefined,
+            label: offer.title,
+            off: offer.available ? undefined : offer.reason,
+            onChange: () => onPress(offer),
+          };
+        }
+      : undefined;
+  /** Which of its todos the Todos view lists: the open ones first (#3358, the prototype's Q1 A). */
+  const [todosShown, setTodosShown] = useState<TodosShown>("open");
   const addTodo =
-    panel.key === TODOS && onAddTodo !== undefined ? (
-      <AddTodo workspace={workspace} onAdd={onAddTodo} />
+    panel.key === TODOS ? (
+      <>
+        {onAddTodo !== undefined && <AddTodo workspace={workspace} onAdd={onAddTodo} />}
+        <TodoTabs shown={todosShown} onShow={setTodosShown} />
+      </>
     ) : undefined;
 
   return (
@@ -419,8 +445,8 @@ function Contributed({
           <PanelList
             /* By position, as above. */
             key={at}
-            rows={block.rows}
-            empty={block.empty}
+            rows={panel.key === TODOS ? block.rows.filter(todosOf(todosShown)) : block.rows}
+            empty={panel.key === TODOS && todosShown === "done" ? NOTHING_DONE : block.empty}
             label={panel.title}
             testid={`list-${named(panel)}`}
             // One line a row on this side (#1674): the title, the note on hover, and a dated
@@ -446,11 +472,21 @@ function Contributed({
               const offer = lookUp(id);
               if (offer) onPress(kept ? toKeep(offer) : offer);
             }}
+            checkOf={todoCheck}
+            // The open todos under their days, then the done ones (ADR 0106).
+            groupOf={panel.key === TODOS ? todoGroupOf : undefined}
             menuOf={(row) =>
               panel.key === TODOS
                 ? /* Open, Mark done, and Forget (SI-3, #1214): the catalogue's rows for this todo
-                     in the focused workspace, which is the one this panel is about. */
-                  catalogueMenu({ on: "todo", slug: row.key }, offers, onPress)
+                     in the focused workspace, which is the one this panel is about. A done one's
+                     are Reopen, and Delete under the line (ADR 0106). */
+                  catalogueMenu(
+                    doneSlugOf(row.key) === undefined
+                      ? { on: "todo", slug: row.key }
+                      : { on: "doneTodo", slug: doneSlugOf(row.key) ?? "" },
+                    offers,
+                    onPress,
+                  )
                 : panel.key === SESSIONS
                   ? /* Open and Resume (SI-8d): the place's rows for this record, whose key is
                        its plane-relative path. */
@@ -479,6 +515,60 @@ function Contributed({
 
 /** charter's own panels, by the key `purlis_core::panel::Panel::key` gives them. */
 const TODOS = "charter/todos";
+
+/** Which todos the Todos view lists (#3358): its tabs, Open, Done and All. */
+type TodosShown = "open" | "done" | "all";
+
+/** The Todos view's tabs, in the order the prototype's Q1 A draws them. */
+const TODO_TABS: readonly { shown: TodosShown; says: string }[] = [
+  { shown: "open", says: "Open" },
+  { shown: "done", says: "Done" },
+  { shown: "all", says: "All" },
+];
+
+/** Whether a Todos row is one `shown` lists. */
+function todosOf(shown: TodosShown): (row: { key: string }) => boolean {
+  return (row) => shown === "all" || (doneSlugOf(row.key) === undefined) === (shown === "open");
+}
+
+/** What the Done tab says when no todo is done: the panel's own sentence is about open ones. */
+const NOTHING_DONE = {
+  headline: "Nothing done yet",
+  body: "A todo marked done stays here, struck through, until it is reopened or deleted.",
+  offer: null,
+};
+
+/**
+ * **The Todos view's tabs** (#3358, the prototype's Q1 A): Open, Done and All, under the box that
+ * adds one, in the view's top. One of a few views of the same list, so the segmented control: one
+ * Tab stop, the arrows between them.
+ */
+function TodoTabs({ shown, onShow }: { shown: TodosShown; onShow: (to: TodosShown) => void }) {
+  return (
+    <SegmentedControl
+      size="sm"
+      className="todo-tabs"
+      aria-label="Show the todos that are"
+      value={shown}
+      onChange={(to) => {
+        const one = TODO_TABS.find((tab) => tab.shown === to);
+        if (one !== undefined) onShow(one.shown);
+      }}
+    >
+      {TODO_TABS.map((tab) => (
+        <Segment key={tab.shown} value={tab.shown}>
+          {tab.says}
+        </Segment>
+      ))}
+    </SegmentedControl>
+  );
+}
+
+/** The group a done todo's row is drawn under, after the days the open ones are under
+ *  (ADR 0106); an open todo's stays under its day. */
+function todoGroupOf(row: { key: string }): string | undefined {
+  return doneSlugOf(row.key) === undefined ? undefined : "Done";
+}
 const PERSONAS = "charter/personas";
 const SESSIONS = "charter/sessions";
 const MEMORY = "charter/memory";

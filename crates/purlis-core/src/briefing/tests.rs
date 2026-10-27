@@ -707,6 +707,14 @@ fn todos(root: &Path, ws: &str, n: usize) {
 fn exactly_as_many_todos_as_are_shown_are_listed_oldest_first_and_one_is_singular() {
     let (_d, root) = plane();
     todos(&root, "alpha", 3);
+    // A done todo stays in `todos/archive/` (ADR 0106), and is neither counted nor listed.
+    let done = root.join("workspaces/alpha/todos/archive");
+    std::fs::create_dir_all(&done).unwrap();
+    std::fs::write(
+        done.join("20260430-090000-old.md"),
+        "# old\n\n_2026-04-30 09:00 · todo_\n\nx\n",
+    )
+    .unwrap();
     let ask = |env: &[(&str, &str)]| told(&root, env, serde_json::json!({}));
     let got = ask(&[("PURLIS_SESSION_ID", "s1"), ("PURLIS_WORKSPACE", "alpha")]);
     let todo = got.iter().find(|p| p.contains("open todo")).unwrap();

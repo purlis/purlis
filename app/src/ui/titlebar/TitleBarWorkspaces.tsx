@@ -111,8 +111,12 @@ export function WorkspaceChip({
         </span>
       )}
       {waiting > 0 && (
-        <span data-scope="titlebar" data-part="count" aria-hidden="true">
-          {counted}
+        // The count's wash is laid on the bar's own ground, whatever the chip's fill
+        // (D-3345-3): this holds that ground under it.
+        <span data-scope="titlebar" data-ground="count" aria-hidden="true">
+          <span data-scope="titlebar" data-part="count">
+            {counted}
+          </span>
         </span>
       )}
     </button>

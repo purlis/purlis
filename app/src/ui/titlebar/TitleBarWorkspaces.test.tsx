@@ -93,6 +93,16 @@ describe("its stylesheet (R101, R103, R153, R167)", () => {
     }
   });
 
+  it("draws the chosen chip on the accent's wash, never the hovered one's fill (#3345)", () => {
+    // R101 as amended: under the pointer the card's fill, chosen the wash, chosen under the
+    // pointer the stronger wash, each with the primary words.
+    const fill = (selector: string) => /background-color: ([^;]+);/.exec(rule(selector))?.[1];
+    expect(fill(`${chip}[data-hovered]`)).toBe("var(--surface-overlay)");
+    expect(fill(`${chip}[data-selected]`)).toBe("var(--accent-wash)");
+    expect(fill(`${chip}[data-selected][data-hovered]`)).toBe("var(--accent-wash-hover)");
+    expect(rule(`${chip}[data-selected]`)).toContain("color: var(--text-primary)");
+  });
+
   it("scrolls the strip sideways with its scrollbar hidden, at most 62% of the bar", () => {
     const strip = rule('[data-part="strip"][data-scope="titlebar"]');
     expect(strip).toContain("overflow-x: auto");
