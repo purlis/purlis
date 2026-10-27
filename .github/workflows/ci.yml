@@ -165,7 +165,7 @@ jobs:
   # The required check `rust (fmt, clippy, test)`: green only when every part of `rust` is.
   # `!cancelled()` so a red part still reports here as red, not as skipped, which a required
   # check would count as passing.
-  # fmt and clippy, beside the two parts rather than in part 1: a check build of its own, 1.5
+  # fmt and clippy, beside the parts of `rust` rather than in part 1: a check build of its own, 1.5
   # minutes that part 1 waited on before its tests (2026-10-12).
   lint:
     name: rust (fmt, clippy)
