@@ -3734,3 +3734,64 @@ fn a_curation_prompt_held_before_its_chat_begins_makes_the_skill_its_turn_starts
     assert_eq!(runs[0].harness.as_deref(), Some("codex"));
     assert_eq!(runs[0].persona.as_deref(), Some("steward"));
 }
+
+#[test]
+fn a_log_whose_newest_event_has_no_id_takes_no_id_a_window_names_for_a_run() {
+    // Nothing the log held can be told apart by time from such a log (#3394), so every run a
+    // clear begins is under an id the writer mints.
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let mut log = Log::open(dir.path(), DEVICE).unwrap();
+        log.append(None, None, None, "a.kind", serde_json::json!({}))
+            .unwrap();
+    }
+    let file = dir.path().join(FILE);
+    let text = std::fs::read_to_string(&file).unwrap();
+    let mut event: Event = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    event.ulid = "not-an-id".to_owned();
+    std::fs::write(
+        &file,
+        format!("{}\n", serde_json::to_string(&event).unwrap()),
+    )
+    .unwrap();
+
+    let opened = recorder(dir.path());
+
+    assert!(!opened.never_held(&crate::reopen::mint()));
+}
+
+#[test]
+fn an_empty_log_takes_a_fresh_id_a_window_names_for_a_run() {
+    let dir = tempfile::tempdir().unwrap();
+
+    assert!(recorder(dir.path()).never_held(&crate::reopen::mint()));
+}
+
+#[test]
+fn a_run_let_go_of_from_what_the_writer_remembers_is_still_not_taken_again() {
+    // The writer remembers so many runs it began (#3394); one it let go of is still held by
+    // its time.
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    let first = crate::reopen::mint();
+    let attributes = Attributes::default();
+    for (number, run) in std::iter::once(first.clone())
+        .chain((0..RUNS_HELD).map(|_| crate::reopen::mint()))
+        .enumerate()
+    {
+        host.begin(
+            Path::new("/p"),
+            u32::try_from(number).unwrap(),
+            RunOf {
+                chat: &crate::reopen::mint(),
+                run: &run,
+            },
+            Began::Start,
+            &attributes,
+        )
+        .unwrap();
+    }
+    host.chats.clear();
+
+    assert!(!host.never_held(&first));
+}

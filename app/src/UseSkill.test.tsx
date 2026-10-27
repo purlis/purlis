@@ -12,6 +12,7 @@ import {
   UseSkillOpener,
   budgetSaid,
   budgetShort,
+  pinsTogetherSaid,
   skillsMatching,
   useChatSkillBudgets,
   warnsSaid,
@@ -49,16 +50,40 @@ const BUDGET: SkillBudget = {
   hidden: 0,
   still_over: null,
   pinned_by: [],
+  pins_together: null,
   warns: null,
+};
+
+/** #3391: forty of the workspace's pins and thirty of the persona's, past the 64 a chat reads. */
+const TOGETHER: SkillBudget = {
+  ...BUDGET,
+  pinned_by: [
+    { at: "workspace", name: "ops" },
+    { at: "persona", name: "reviewer" },
+  ],
+  pins_together: {
+    held: [
+      { by: { at: "workspace", name: "ops" }, pins: 40 },
+      { by: { at: "persona", name: "reviewer" }, pins: 30 },
+    ],
+    most: 64,
+  },
 };
 
 function skills(listed: ChatSkill[], budget: SkillBudget | null = BUDGET): ChatSkills {
   return { on: true, known: true, skills: listed, budget };
 }
 
-function opened(listed: ChatSkills | undefined, onUse = vi.fn()) {
+function opened(listed: ChatSkills | undefined, onUse = vi.fn(), onOpenStudio = vi.fn()) {
   render(
-    <UseSkill chat="steward 3" skills={listed} busy={false} onUse={onUse} onCancel={vi.fn()} />,
+    <UseSkill
+      chat="steward 3"
+      skills={listed}
+      busy={false}
+      onUse={onUse}
+      onCancel={vi.fn()}
+      onOpenStudio={onOpenStudio}
+    />,
   );
   return onUse;
 }
@@ -154,6 +179,24 @@ describe("Use skill…", () => {
     expect(budgetShort(BUDGET)).toBe("3 of 30 skills");
     expect(budgetShort({ ...BUDGET, warns: "chars" })).toBe("3 of 30 skills, near the budget");
     expect(budgetShort({ ...BUDGET, skills: 1, most_skills: 1 })).toBe("1 of 1 skill");
+  });
+
+  it("says a workspace's and a persona's pins pass 64 together, each studio one press away (#3391)", () => {
+    expect(pinsTogetherSaid(BUDGET)).toBeUndefined();
+    expect(pinsTogetherSaid(TOGETHER)).toBe(
+      "This chat reads none of its pins: workspace ops pins 40 skills and persona reviewer pins 30 skills, more than the 64 a chat reads together. Unpin some in Skill studio · ops or Skill studio · reviewer.",
+    );
+    const openStudio = vi.fn();
+    opened(skills([skill("deploy")], TOGETHER), vi.fn(), openStudio);
+    const line = screen.getByTestId("use-skill-pins-together");
+    expect(line.getAttribute("role")).toBe("status");
+    expect(line.textContent).toMatch(
+      /workspace ops pins 40 skills and persona reviewer pins 30 skills/,
+    );
+    fireEvent.click(within(line).getByRole("button", { name: "Open Skill studio · reviewer" }));
+    expect(openStudio).toHaveBeenCalledWith({ at: "persona", name: "reviewer" });
+    fireEvent.click(within(line).getByRole("button", { name: "Open Skill studio · ops" }));
+    expect(openStudio).toHaveBeenLastCalledWith({ at: "workspace", name: "ops" });
   });
 
   it("says how many skills the router hid behind the index skill, and marks each (SK-15)", () => {
@@ -252,6 +295,20 @@ describe("the Skills chip on a chat's pane", () => {
     // A manual-only skill is in the set's count, free in the listing's.
     expect(chip.textContent).toBe("4 skills");
     expect(chip.getAttribute("aria-label")).toMatch(/descriptions are near or past/);
+  });
+
+  it("is in the warning look for pins past 64 together, under the budget or not (#3391)", async () => {
+    studioOn();
+    render(
+      <SkillBudgetsHere.Provider value={{ 4: TOGETHER }}>
+        <SkillsChip session={4} />
+      </SkillBudgetsHere.Provider>,
+    );
+    const chip = await screen.findByTestId("pane-skills");
+    expect(chip.hasAttribute("data-over")).toBe(true);
+    expect(chip.getAttribute("aria-label")).toMatch(
+      /^This chat reads none of its pins: workspace ops pins 40 skills and persona reviewer pins 30/,
+    );
   });
 
   it("reads each open chat's budget once, for the chip and the tab's menu row alike", async () => {

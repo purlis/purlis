@@ -19,6 +19,14 @@ The Unicode Character Database 16.0.0 files in tools/ucd/, and the tables
 derived from them in crates/unicode/src/tables.rs, are Copyright © Unicode,
 Inc., under the Unicode License V3, whose text is in tools/ucd/LICENSE.
 
+The seccomp profile a Docker pool's runner container is given,
+crates/purlis-core/src/dockerpool/seccomp.json, is Docker's default profile
+from the Moby project (github.com/moby/profiles, seccomp/v0.2.4, Apache
+License 2.0) with one call allowed besides. That default is kept beside it
+as it was published, crates/purlis-core/src/dockerpool/seccomp-moby-v0.2.4.json
+(seccomp/default.json at the tag seccomp/v0.2.4, SHA-256
+785b2429264afba4d594320337cb17f144f3c7d51585f9805eef72e28f4f9334).
+
 "Purlis" and the Purlis logo are trademarks of Purlis. The License does
 not grant permission to use these trademarks, except as required for
 reasonable and customary use in describing the origin of the Work.

@@ -75,6 +75,7 @@
    "Runtime": "oci",
    "SecurityOpt": [
     "no-new-privileges",
+    "seccomp=/home/runner/work/_temp/measured/runner-seccomp.json",
     "unmask=all"
    ],
    "Tmpfs": {

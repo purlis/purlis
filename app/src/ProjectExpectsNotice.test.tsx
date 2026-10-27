@@ -238,7 +238,7 @@ describe("what a project expects, asked up front", () => {
     const notice = await screen.findByRole("status", { name: LABEL });
     expect(notice.textContent).not.toContain("\u202e");
     const names = [...notice.querySelectorAll("code")].map((one) => one.textContent);
-    expect(names).toEqual(["/run/a\\u202eb.sock", spoken]);
+    expect(names).toEqual(["/run/a⟦U+202E⟧b.sock", spoken]);
   });
 
   it("Not now answers what was drawn: each item goes with the name it was shown under (#1927)", async () => {
