@@ -274,3 +274,15 @@ export const APinNoChatReads: Story = {
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
   },
 };
+
+// TEMPORARY (#3449): By Level nine more times in every cell, to show it steady. Taken out before
+// the PR is ready.
+export const ByLevelAgain1: Story = { ...ByLevel, parameters: { screenshot: false } };
+export const ByLevelAgain2: Story = { ...ByLevel, parameters: { screenshot: false } };
+export const ByLevelAgain3: Story = { ...ByLevel, parameters: { screenshot: false } };
+export const ByLevelAgain4: Story = { ...ByLevel, parameters: { screenshot: false } };
+export const ByLevelAgain5: Story = { ...ByLevel, parameters: { screenshot: false } };
+export const ByLevelAgain6: Story = { ...ByLevel, parameters: { screenshot: false } };
+export const ByLevelAgain7: Story = { ...ByLevel, parameters: { screenshot: false } };
+export const ByLevelAgain8: Story = { ...ByLevel, parameters: { screenshot: false } };
+export const ByLevelAgain9: Story = { ...ByLevel, parameters: { screenshot: false } };
