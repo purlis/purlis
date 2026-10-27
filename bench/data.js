@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793104832782,
+  "lastUpdate": 1793106749185,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26796,6 +26796,48 @@ window.BENCHMARK_DATA = {
             "value": 102.15456449999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.421, 101.614, 102.155, 102.191, 103.670 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c9a0e614927872a3a48c1328ac2b204ae4ab6f34",
+          "message": "#3470: hidden line breaks in a command are marked and say why; joiner tables generated; HAS_CONTROL on the one rule (#3496)\n\n* #3470: a line break in a command is marked and says why; one letter table; HAS_CONTROL on the one rule\n\n- Summary::of collapses only the white space a command line is laid out with\n  (space, tab, \\n, \\r): a vertical tab, form feed, next line, line or paragraph\n  separator stays, is marked, and the Inbox row says it breaks the line there.\n  Allow stays withheld (hooked::shown_in_full).\n- gen-unicode-tables.py writes BRAHMIC_LETTER and ARABIC_LETTER from the pinned\n  UCD's Alphabetic; purlis_unicode and the window's invisible.ts both ask them\n  (via UNICODE_RULE) instead of std's is_alphabetic and the engine's \\p{Alphabetic}.\n- PlaneView's forge-login check uses typableLogin (the shared rule) in place of\n  HAS_CONTROL, refusing every control and every hidden character.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3470: review fixes: lone CR kept, vault value on one line, reasons by kind, generated viramas\n\n- Summary::of collapses \\r\\n as a line end but keeps a lone carriage return, so\n  it is marked too. still_holds_a_vault_value puts a value on one line exactly\n  as the summary does, so a value across a kept blank is still masked.\n- The Inbox names the most misleading mark (a break, then any hidden character,\n  then a look-alike blank) and words each kind from generated LINE_BREAK and\n  BLANK tables instead of a hand list.\n- VIRAMA is generated (canonical combining class 9 in the Brahmic blocks) and\n  read by both the core and the window; the letter tables scan only their\n  blocks and are anchored by hand-picked answers.\n- The forge-login refusal says what to do next.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T11:00:57Z",
+          "tree_id": "1ef5417ffb97647be4db2fc49a517729871c7b57",
+          "url": "https://github.com/purlis/purlis/commit/c9a0e614927872a3a48c1328ac2b204ae4ab6f34"
+        },
+        "date": 1793106744403,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6176619999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.590, 0.615, 0.618, 0.621, 0.637 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.120032,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.994, 16.053, 16.120, 16.238, 16.269 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.01710349999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.032, 100.875, 102.017, 102.041, 102.954 ms"
           }
         ]
       }
