@@ -2033,6 +2033,12 @@ Ctrl+Tab, so the window walks the engine's sequence itself (`app/src/tabSequence
 above written down once and shared with the tests). The palette (`F2`, `⌘K`) remains the other
 way to act from inside a chat without leaving it.
 
+**A browser the person drives, and a browser's DevTools, keep every key too** (#2014, #2028):
+each key goes to the page or to DevTools. The same chord leaves them
+(`leaveKeys.leavesTheSurface`), on the capture phase of the surface, so Ctrl+Tab and
+Ctrl+Shift+Tab never reach the page or DevTools; neither has a use for it that the window
+needs to pass on.
+
 **What only a person can confirm**, because a scenario cannot press Tab (above): that WebKit
 walks this sequence in the real window with full keyboard access off; that `Ctrl+Tab` reaches
 the page on macOS and on GTK rather than being taken by the window system first; and that the

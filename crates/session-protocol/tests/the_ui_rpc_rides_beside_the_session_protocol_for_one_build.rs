@@ -822,3 +822,12 @@ async fn a_link_sees_that_an_edit_waits_but_never_the_change_it_would_write() {
     assert!(!ui::WINDOW_ONLY.contains(&"pending_asks"));
     assert!(ui::WINDOW_ONLY.contains(&"answer_ask"));
 }
+
+#[test]
+fn the_persons_devtools_are_opened_watched_and_typed_into_from_the_window_alone() {
+    // #2028: DevTools reach the whole of the inspected page, so no link but the window's own
+    // carries their commands.
+    for command in ["inspect_browser", "watch_inspector", "inspector_input"] {
+        assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
+    }
+}

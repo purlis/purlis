@@ -652,7 +652,7 @@ pub struct Shown {
     /// Each event of the person's its DevTools took, in order.
     pub devtools_inputs: Vec<purlis_session_protocol::browsing::Input>,
     devtools_sink: Option<crate::browsers::FrameSink>,
-    devtools_closed: Option<Box<dyn FnOnce() + Send>>,
+    devtools_closed: Option<Box<dyn FnOnce(&'static str) + Send>>,
     sink: Option<crate::browsers::FrameSink>,
     ends: Option<Box<dyn FnOnce(crate::browsers::ScreenEnded) + Send>>,
 }
@@ -705,15 +705,16 @@ impl StandInScreen {
         }
     }
 
-    /// Its DevTools close by themselves, as when the page they inspect goes (#2028).
-    pub fn devtools_close(&self) {
+    /// Its DevTools close by themselves, saying `why`, as when the page they inspect goes
+    /// (#2028).
+    pub fn devtools_close(&self, why: &'static str) {
         let closed = {
             let mut shown = self.shown();
             shown.inspecting = None;
             shown.devtools_closed.take()
         };
         if let Some(closed) = closed {
-            closed();
+            closed(why);
         }
     }
 
@@ -836,7 +837,7 @@ impl crate::browsers::Screen for StandInScreen {
             shown.epoch
         };
         // As an engine's: the hand-back closes its DevTools.
-        self.devtools_close();
+        self.devtools_close("handed_back");
         epoch
     }
 
@@ -844,7 +845,7 @@ impl crate::browsers::Screen for StandInScreen {
         &self,
         width: u16,
         height: u16,
-        ended: Box<dyn FnOnce() + Send>,
+        ended: Box<dyn FnOnce(&'static str) + Send>,
     ) -> Result<(), crate::browsers::NotTaken> {
         let mut shown = self.shown();
         if !shown.taken_over {

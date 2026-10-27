@@ -53,7 +53,7 @@ use purlis_session_protocol::browsing::{
     Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LogIn, origin_of,
 };
 use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
-use purlis_session_protocol::view::frames::{JPEG, aimed, frame, origin};
+use purlis_session_protocol::view::frames::{JPEG, aimed, closed as closed_frame, frame, origin};
 use purlis_session_protocol::view::{Attachment, Source};
 use tokio::sync::watch;
 
@@ -169,13 +169,14 @@ pub trait Screen: Send + Sync + 'static {
     /// runtime.
     fn log_in(&self, login: &LogIn) -> Result<LoginEnded, NotActed>;
     /// The person opens the DevTools of the page it shows (#2028), their front end `width` by
-    /// `height`, while they drive; `ended` is called once, as they close. Opened already, it
+    /// `height`, while they drive; `ended` is called once, as they close, with why: one of
+    /// `view::frames::CLOSED_WHY`. Opened already, it
     /// only sizes them. It waits on the engine, so the host calls it off its runtime.
     fn inspect(
         &self,
         width: u16,
         height: u16,
-        ended: Box<dyn FnOnce() + Send>,
+        ended: Box<dyn FnOnce(&'static str) + Send>,
     ) -> Result<(), NotTaken> {
         let _ = (width, height, ended);
         Err(NotTaken::Refused(NO_DEVTOOLS.into()))
@@ -477,6 +478,8 @@ struct Hub {
     /// Each attached view's least time between frames and widest frame, by its number here.
     viewers: Mutex<Vec<Viewer>>,
     next: AtomicU64,
+    /// Why its frames ended, where it says (#2028): the last frame each view is sent.
+    closed_why: Mutex<Option<&'static str>>,
 }
 
 /// One attached view, as its browser makes frames for it.
@@ -590,23 +593,53 @@ impl Source for BrowserSource {
             .borrow_and_update()
             .framed(reads, &mut origin_sent)
             .unwrap_or_default();
+        let hub = Arc::clone(&self.hub);
         let live = futures::stream::unfold(
-            (latest, watching, None::<tokio::time::Instant>, origin_sent),
-            move |(mut latest, watching, sent, mut origin_sent)| async move {
-                loop {
-                    latest.changed().await.ok()?;
-                    if let Some(sent) = sent {
-                        tokio::time::sleep_until(sent + every).await;
+            (
+                latest,
+                watching,
+                None::<tokio::time::Instant>,
+                origin_sent,
+                false,
+            ),
+            move |(mut latest, watching, sent, mut origin_sent, said)| {
+                let hub = Arc::clone(&hub);
+                async move {
+                    if said {
+                        return None;
                     }
-                    let next = latest.borrow_and_update().clone();
-                    match next {
-                        Latest::Frame(..) => {
-                            let framed = next.framed(reads, &mut origin_sent).unwrap_or_default();
-                            let now = tokio::time::Instant::now();
-                            return Some((framed, (latest, watching, Some(now), origin_sent)));
+                    loop {
+                        if !matches!(*latest.borrow(), Latest::Ended) {
+                            latest.changed().await.ok()?;
                         }
-                        Latest::Ended => return None,
-                        Latest::Nothing => {}
+                        if let Some(sent) = sent {
+                            tokio::time::sleep_until(sent + every).await;
+                        }
+                        let next = latest.borrow_and_update().clone();
+                        match next {
+                            Latest::Frame(..) => {
+                                let framed =
+                                    next.framed(reads, &mut origin_sent).unwrap_or_default();
+                                let now = tokio::time::Instant::now();
+                                return Some((
+                                    framed,
+                                    (latest, watching, Some(now), origin_sent, false),
+                                ));
+                            }
+                            // Why its DevTools closed, where they say, is its last frame (#2028).
+                            Latest::Ended => {
+                                let why = *hub
+                                    .closed_why
+                                    .lock()
+                                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                                let why = why?;
+                                return Some((
+                                    closed_frame(why),
+                                    (latest, watching, sent, origin_sent, true),
+                                ));
+                            }
+                            Latest::Nothing => {}
+                        }
                     }
                 }
             },
@@ -681,6 +714,10 @@ impl Browser {
     /// Its open DevTools' frames end, and the views of them with them.
     fn devtools_closed(&self) {
         if let Some((hub, _)) = self.inspector().take() {
+            hub.closed_why
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get_or_insert("handed_back");
             hub.ended();
         }
     }
@@ -694,6 +731,7 @@ impl Hub {
             latest,
             viewers: Mutex::new(Vec::new()),
             next: AtomicU64::new(1),
+            closed_why: Mutex::new(None),
         })
     }
 }
@@ -702,7 +740,11 @@ impl Hub {
 type OpenDevTools = (Arc<Hub>, (u16, u16));
 
 /// DevTools of `hub` closed: their views end, and `slot` forgets them where it still holds them.
-fn closed(slot: &Mutex<Option<OpenDevTools>>, hub: &Arc<Hub>) {
+fn closed(slot: &Mutex<Option<OpenDevTools>>, hub: &Arc<Hub>, why: &'static str) {
+    hub.closed_why
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get_or_insert(why);
     let mut open = slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if open.as_ref().is_some_and(|(now, _)| Arc::ptr_eq(now, hub)) {
         *open = None;
@@ -833,7 +875,7 @@ impl Running for Browser {
             let hub = Arc::clone(hub);
             let slot = Arc::clone(&self.inspector);
             self.screen
-                .inspect(width, height, Box::new(move || closed(&slot, &hub)))
+                .inspect(width, height, Box::new(move |why| closed(&slot, &hub, why)))
                 .map_err(not_taken)?;
             *size = (width, height);
             return Ok(());
@@ -844,11 +886,12 @@ impl Running for Browser {
         // Held while the engine opens them, so an end it says at once finds them here.
         *open = Some((Arc::clone(&hub), (width, height)));
         drop(open);
-        if let Err(why) =
-            self.screen
-                .inspect(width, height, Box::new(move || closed(&slot, &theirs)))
-        {
-            closed(&self.inspector, &hub);
+        if let Err(why) = self.screen.inspect(
+            width,
+            height,
+            Box::new(move |why| closed(&slot, &theirs, why)),
+        ) {
+            closed(&self.inspector, &hub, "ended");
             return Err(not_taken(why));
         }
         Ok(())

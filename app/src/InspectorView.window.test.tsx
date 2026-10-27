@@ -78,7 +78,9 @@ function core() {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
     order: () => asked.map(({ cmd }) => cmd),
     devtoolsSend: (jpeg: string, aim = "devtools:1") =>
-      devtools?.onmessage({ aim, jpeg, reconnection: null, page: null }),
+      devtools?.onmessage({ aim, jpeg, reconnection: null, page: null, closed: null }),
+    devtoolsClosed: (closed: string) =>
+      devtools?.onmessage({ aim: "", jpeg: "", reconnection: null, page: null, closed }),
   };
 }
 
@@ -173,5 +175,36 @@ describe("Inspect", () => {
     await waitFor(() => expect(screen.getByTestId("browser-chip")).toHaveTextContent("qa"));
 
     expect(screen.queryByRole("button", { name: "Inspect" })).toBeNull();
+  });
+
+  it("says why DevTools closed, as their view's last frame says", async () => {
+    const host = await aBrowser();
+    await userEvent.click(await screen.findByRole("button", { name: "Inspect" }));
+    await screen.findByTestId("devtools-view");
+    await waitFor(() => expect(host.asked("watch_inspector").length).toBeGreaterThan(0));
+
+    host.devtoolsClosed("page_gone");
+    host.devtoolsSend("");
+
+    expect(await screen.findByText("DevTools are closed")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The page they inspected closed. Press Inspect on the browser to open them on the page it shows now.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("lets the keyboard out of DevTools with Ctrl+Tab, and sends DevTools nothing of it", async () => {
+    const host = await aBrowser();
+    await userEvent.click(await screen.findByRole("button", { name: "Inspect" }));
+    const surface = await screen.findByTestId("devtools-surface");
+    await waitFor(() => expect(host.asked("watch_inspector").length).toBeGreaterThan(0));
+    surface.focus();
+    expect(document.activeElement).toBe(surface);
+
+    fireEvent.keyDown(surface, { key: "Tab", code: "Tab", keyCode: 9, ctrlKey: true });
+
+    await waitFor(() => expect(document.activeElement).not.toBe(surface));
+    expect(host.asked("inspector_input")).toEqual([]);
   });
 });

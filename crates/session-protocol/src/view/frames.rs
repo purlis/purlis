@@ -20,6 +20,9 @@
 //! in a view's snapshot, cut from the engine's own record of the page
 //! ([`crate::browsing::origin_of`]): never a path, a query, a fragment, a user or a title.
 //!
+//! **A closed frame** (1.44, #2028, [`CLOSED`]) is the last of a view of a browser's DevTools:
+//! why they closed, as one of [`CLOSED_WHY`]'s words, which the window says in its own.
+//!
 //! A frame's image is opaque to the host and to this crate: the window decodes it on a canvas.
 //! A reader reads a frame of a format it does not know whole, and passes it on for its caller
 //! to skip, so a later minor may add a format.
@@ -36,6 +39,21 @@ pub const AIMED_JPEG: u8 = 0x02;
 
 /// The origin of the page a browser shows (1.35): [`origin`].
 pub const ORIGIN: u8 = 0x03;
+
+/// Why a browser's DevTools closed, the last frame of their view (1.44): [`closed`].
+pub const CLOSED: u8 = 0x04;
+
+/// The words a [`CLOSED`] frame says: the person handed the browser back, the page went,
+/// DevTools fell behind, the page sent more than they show at once, they left their page, or
+/// they ended.
+pub const CLOSED_WHY: &[&str] = &[
+    "handed_back",
+    "page_gone",
+    "fell_behind",
+    "too_large",
+    "moved",
+    "ended",
+];
 
 /// The longest frame a reader takes, format byte included: far more than a screen's JPEG.
 pub const MOST_FRAME_BYTES: usize = 16 << 20;
@@ -65,6 +83,11 @@ pub fn aimed(aim: &Aim, image: &[u8]) -> Bytes {
 /// `origin`, the origin of the page a browser shows, or none, as one [`ORIGIN`] frame.
 pub fn origin(origin: Option<&str>) -> Bytes {
     frame(ORIGIN, origin.unwrap_or_default().as_bytes())
+}
+
+/// Why a browser's DevTools closed, one of [`CLOSED_WHY`], as one [`CLOSED`] frame.
+pub fn closed(why: &str) -> Bytes {
+    frame(CLOSED, why.as_bytes())
 }
 
 /// **A JPEG's size, width then height, from its first start-of-frame header**, read without
@@ -127,6 +150,16 @@ impl Frame {
         }
         let origin = std::str::from_utf8(&self.image).ok()?;
         Some((!origin.is_empty()).then(|| origin.to_owned()))
+    }
+
+    /// Why a [`CLOSED`] frame says DevTools closed: one of [`CLOSED_WHY`]; `None` for any other
+    /// frame, or a word it does not know.
+    pub fn closed(&self) -> Option<&'static str> {
+        if self.format != CLOSED {
+            return None;
+        }
+        let said = std::str::from_utf8(&self.image).ok()?;
+        CLOSED_WHY.iter().copied().find(|why| *why == said)
     }
 }
 

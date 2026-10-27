@@ -168,13 +168,13 @@ function core(browsers: ChatBrowser[]) {
       act(() =>
         views
           .get(`${program} ${role}`)
-          ?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin } }),
+          ?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin }, closed: null }),
       ),
     /** A frame on the view of `program` attached as `role`. */
     frame: (program: string, role: "focused" | "thumbnail", base64: string) =>
       views
         .get(`${program} ${role}`)
-        ?.onmessage({ aim: "p1:1", jpeg: base64, reconnection: null, page: null }),
+        ?.onmessage({ aim: "p1:1", jpeg: base64, reconnection: null, page: null, closed: null }),
   };
 }
 

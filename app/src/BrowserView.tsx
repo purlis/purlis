@@ -27,6 +27,7 @@ import {
   pagePoint,
   wheelInput,
 } from "./browserDriving";
+import { leavesTheSurface } from "./leaveKeys";
 import { addressChip, deviceOf, originOfAddress, takeGoWhenShown } from "./browsers";
 import { INSPECTOR_OPENS_AT, askToInspect } from "./inspector";
 import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
@@ -48,7 +49,7 @@ const ONLY_HELD = new Set(["Shift", "Control", "Alt", "Meta"]);
 /** What the bar says when the person's key or click was dropped because the page moved on
  *  (#2304): the page, or a frame inside it, loaded another document after the frame they acted
  *  on was drawn, so the input never reached something they did not see. */
-const DROPPED =
+export const DROPPED =
   "The page changed before your key or click reached it, so purlis dropped it. Type or click again.";
 
 /** Whether `input` is one the person would miss if it were dropped: a key pressed, or a mouse
@@ -567,6 +568,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
         onPointerUp={onPointerUp}
         onPointerMove={onPointerMove}
         onWheel={onWheel}
+        onKeyDownCapture={leavesTheSurface}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onContextMenu={(e) => e.preventDefault()}

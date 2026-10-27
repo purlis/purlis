@@ -32,7 +32,7 @@ export const THUMBNAIL_ACROSS = 64;
 export type Watched =
   | { kind: "opening" }
   | { kind: "live"; width: number; height: number }
-  | { kind: "ended" }
+  | { kind: "ended"; closed?: string }
   | { kind: "refused"; why: string };
 
 /**
@@ -115,6 +115,7 @@ export function useBrowserWatch(
     if (!seen) return;
     let gone = false;
     let view: number | undefined;
+    let closedWhy: string | undefined;
     const draw = latestOnly((jpeg) =>
       canvas.current === null ? Promise.resolve() : paint(canvas.current, jpeg, across),
     );
@@ -126,6 +127,11 @@ export function useBrowserWatch(
         setReconnecting(frame.reconnection === "reconnecting");
         return;
       }
+      // Why a browser's DevTools closed, just before their view ends (#2028).
+      if (frame.closed !== null) {
+        closedWhy = frame.closed;
+        return;
+      }
       // Where its page is, its origin alone (#2300): no image of its own.
       if (frame.page !== null) {
         originTold(program, frame.page.origin);
@@ -133,7 +139,9 @@ export function useBrowserWatch(
       }
       // An empty frame is the host's word that the view has ended for good.
       if (frame.jpeg === "") {
-        setWatched({ kind: "ended" });
+        setWatched(
+          closedWhy === undefined ? { kind: "ended" } : { kind: "ended", closed: closedWhy },
+        );
         return;
       }
       // A frame comes only over a link that is up.

@@ -297,12 +297,6 @@ pub const VERSION: Version = Version {
     minor: 44,
 };
 
-/// The version that first opens DevTools for the person (#2028).
-pub const KNOWS_INSPECT: Version = Version {
-    major: 1,
-    minor: 44,
-};
-
 /// The version that first pushes a host's own event log to a link that asks with a cursor for its
 /// device, and answers `log_end` (#3393).
 pub const KNOWS_EVENT_LOG: Version = Version {

@@ -7,7 +7,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CHAT_KEYBOARD } from "./actions";
 import { type BrowserWatching, commands } from "./bindings";
 import { keyInput, mouseInput, pagePoint, wheelInput } from "./browserDriving";
-import { useSender } from "./BrowserView";
+import { DROPPED, useSender } from "./BrowserView";
+import { leavesTheSurface } from "./leaveKeys";
 import { useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { INSPECTOR_SMALLEST } from "./inspector";
 import { useProjectShown } from "./projectShown";
@@ -16,6 +17,21 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 /** What the bar says while DevTools are open. */
 export const DEVTOOLS_SAID =
   "DevTools of this browser's page. You drive the browser while they are open, and they close when you press Done on it.";
+
+/** Why DevTools closed, as their view says it (#2028): what happened, and what to do. */
+export const CLOSED_SAID: Record<string, string> = {
+  handed_back:
+    "They closed when the browser was handed back. Press Inspect on the browser to open them again.",
+  page_gone:
+    "The page they inspected closed. Press Inspect on the browser to open them on the page it shows now.",
+  fell_behind:
+    "They fell too far behind the page. Press Inspect on the browser to open them again.",
+  too_large:
+    "The page sent them more than they can show at once. Press Inspect on the browser to open them again.",
+  moved:
+    "They left their own page, so purlis closed them. Press Inspect on the browser to open them again.",
+  ended: "They ended. Press Inspect on the browser to open them again.",
+};
 
 /** How long the pane's size settles before DevTools are sized to it, in milliseconds. */
 const SIZED_AFTER = 200;
@@ -26,7 +42,9 @@ const SIZED_AFTER = 200;
  * and are drawn on a canvas; nothing of DevTools runs in the window. The person's clicks, wheel
  * and keys go to DevTools alone, aimed at what the frame they saw showed. They are sized to the
  * pane. Only the person drives them: they close as the browser is handed back, and the view
- * then says so.
+ * then says why they closed. Every key goes to DevTools but Ctrl+Tab (Ctrl+Shift+Tab back),
+ * which leaves them as it leaves a chat's terminal (`leaveKeys.leavesTheSurface`), and the
+ * palette's own keys.
  */
 export function InspectorView({ program }: { program: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -37,8 +55,8 @@ export function InspectorView({ program }: { program: string }) {
   const inFront = useProjectShown();
   const windowSeen = useWindowSeen();
   const seen = inFront && windowSeen;
-  const noneDropped = useCallback(() => {}, []);
-  const { send, clear } = useSender(program, setSaid, noneDropped, commands.inspectorInput);
+  const [dropped, setDropped] = useState(false);
+  const { send, clear } = useSender(program, setSaid, setDropped, commands.inspectorInput);
 
   useEffect(() => {
     if (seen) clear();
@@ -131,7 +149,12 @@ export function InspectorView({ program }: { program: string }) {
       <EmptyState
         mark={Bug}
         headline="DevTools are closed"
-        body="They close when the browser is handed back. Press Inspect on the browser to open them again."
+        body={
+          shown.kind === "refused"
+            ? shown.why
+            : (CLOSED_SAID[shown.closed ?? ""] ??
+              "Press Inspect on the browser to open them again.")
+        }
         testid="devtools-closed"
       />
     );
@@ -140,6 +163,7 @@ export function InspectorView({ program }: { program: string }) {
       <div className="browser-bar" data-driving="person">
         <p className="browser-bar-said" role="status">
           {DEVTOOLS_SAID}
+          {dropped && <span className="browser-bar-dropped"> {DROPPED}</span>}
           {said !== undefined && <span className="browser-bar-refused"> {said}</span>}
         </p>
       </div>
@@ -154,6 +178,7 @@ export function InspectorView({ program }: { program: string }) {
         onPointerUp={onPointerUp}
         onPointerMove={onPointerMove}
         onWheel={onWheel}
+        onKeyDownCapture={leavesTheSurface}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onContextMenu={(e) => e.preventDefault()}

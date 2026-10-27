@@ -2955,6 +2955,12 @@ export type BrowserFrame = {
 	 *  and before the first frame of each snapshot; `null` on every frame.
 	 */
 	page: PageAt | null,
+	/**
+	 *  Why a browser's DevTools closed (#2028), said on its own with no image, as their view's
+	 *  last frame: one of `handed_back`, `page_gone`, `fell_behind`, `too_large`, `moved` and
+	 *  `ended`; `null` on every other frame.
+	 */
+	closed: string | null,
 };
 
 /**

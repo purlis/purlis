@@ -155,6 +155,14 @@ async fn a_devtools_view_is_their_frames_and_ends_as_the_person_hands_the_browse
     assert_eq!(&image[..], b"\xff\xd8 devtools");
 
     client.hand_back(&program).await.unwrap();
+    let last = next_frame(&mut reader, &mut frames)
+        .await
+        .expect("a last frame");
+    assert_eq!(
+        last.closed(),
+        Some("handed_back"),
+        "why they closed is said"
+    );
     assert!(
         next_frame(&mut reader, &mut frames).await.is_none(),
         "the view of DevTools ends with them"
@@ -204,8 +212,12 @@ async fn devtools_that_close_by_themselves_end_their_view_and_open_again_afresh(
     let stream = timeout(PATIENCE, views.accept()).await.unwrap().unwrap();
     let mut reader = Viewer::default().accept(stream).await.unwrap();
 
-    screen.devtools_close();
+    screen.devtools_close("page_gone");
     let mut frames = Frames::default();
+    let last = next_frame(&mut reader, &mut frames)
+        .await
+        .expect("why they closed is the view's last frame");
+    assert_eq!(last.closed(), Some("page_gone"));
     assert!(next_frame(&mut reader, &mut frames).await.is_none());
 
     client.inspect(&program, 1000, 600).await.unwrap();

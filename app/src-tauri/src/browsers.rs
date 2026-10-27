@@ -82,6 +82,10 @@ pub struct BrowserFrame {
     /// Where the browser's page is (#2300): said on its own, with no image, where it changed
     /// and before the first frame of each snapshot; `null` on every frame.
     pub page: Option<PageAt>,
+    /// Why a browser's DevTools closed (#2028), said on its own with no image, as their view's
+    /// last frame: one of `handed_back`, `page_gone`, `fell_behind`, `too_large`, `moved` and
+    /// `ended`; `null` on every other frame.
+    pub closed: Option<String>,
 }
 
 /// **Where a browser's page is** (#2300): the origin of the document it has loaded
@@ -1231,6 +1235,7 @@ mod hosted {
             &self,
             program: &str,
             frames: FrameSink,
+            closed: crate::hostedsessions::ClosedSink,
         ) -> Result<BrowserWatching, String> {
             if self.pool_of(program).is_some() {
                 return Err(crate::browsers::NOT_ON_A_RUNNER.to_owned());
@@ -1249,8 +1254,7 @@ mod hosted {
                     ));
                 }
             };
-            // DevTools name no page's origin: nothing to keep of one.
-            link.draw_frames(attached.view, frames, Box::new(|_| {}), false);
+            link.draw_devtools_frames(attached.view, frames, closed);
             Ok(BrowserWatching {
                 view: attached.view,
                 width: attached.cols,
@@ -1638,6 +1642,7 @@ pub async fn watch_browser(
                             jpeg: base64::engine::general_purpose::STANDARD.encode(&image),
                             reconnection: None,
                             page: None,
+                            closed: None,
                         });
                     }),
                     // Where its page is (#2300).
@@ -1647,6 +1652,7 @@ pub async fn watch_browser(
                             jpeg: String::new(),
                             reconnection: None,
                             page: Some(PageAt { origin }),
+                            closed: None,
                         });
                     }),
                     // Where it stands while its runner's link is down and back (#2542).
@@ -1656,6 +1662,7 @@ pub async fn watch_browser(
                             jpeg: String::new(),
                             reconnection: Some(reconnection),
                             page: None,
+                            closed: None,
                         });
                     }),
                 )
@@ -1847,6 +1854,7 @@ pub async fn watch_inspector(
     {
         use base64::Engine as _;
         let browsers = browsers(&app)?;
+        let said = frames.clone();
         crate::off_the_window("opening a DevTools view", move || {
             browsers.watch_inspector(
                 &program,
@@ -1856,6 +1864,17 @@ pub async fn watch_inspector(
                         jpeg: base64::engine::general_purpose::STANDARD.encode(&image),
                         reconnection: None,
                         page: None,
+                        closed: None,
+                    });
+                }),
+                // Why they closed, before the view's end (#2028).
+                Box::new(move |why| {
+                    let _ = said.send(BrowserFrame {
+                        aim: String::new(),
+                        jpeg: String::new(),
+                        reconnection: None,
+                        page: None,
+                        closed: Some(why.to_owned()),
                     });
                 }),
             )

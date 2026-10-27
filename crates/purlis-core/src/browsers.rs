@@ -1205,6 +1205,19 @@ fn driver_of(driver: drive::Driver) -> wire::Driver {
     }
 }
 
+/// **Why DevTools closed, in the word their view's last frame says** (#2028): one of
+/// `view::frames::CLOSED_WHY`.
+fn closed_word(why: drive::InspectEnded) -> &'static str {
+    match why {
+        drive::InspectEnded::Closed => "handed_back",
+        drive::InspectEnded::PageGone => "page_gone",
+        drive::InspectEnded::FellBehind => "fell_behind",
+        drive::InspectEnded::TooLarge => "too_large",
+        drive::InspectEnded::Moved => "moved",
+        drive::InspectEnded::Ended => "ended",
+    }
+}
+
 /// Why the driver did not carry an act or a login out, as the host says it.
 fn not_acted(refusal: drive::Refusal) -> NotActed {
     match refusal {
@@ -1400,12 +1413,12 @@ impl Screen for EngineScreen {
         &self,
         width: u16,
         height: u16,
-        ended: Box<dyn FnOnce() + Send>,
+        ended: Box<dyn FnOnce(&'static str) + Send>,
     ) -> Result<(), NotTaken> {
         let browser = self.with(Arc::clone).ok_or(NotTaken::Ended)?;
         self.browsed();
         browser
-            .inspect(width, height, Box::new(move |_why| ended()))
+            .inspect(width, height, Box::new(move |why| ended(closed_word(why))))
             .map_err(not_taken)
     }
 

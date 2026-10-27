@@ -165,5 +165,6 @@
 {"call":{"id":160,"command":"inspect","program":"01J9ZQ8000000000000000000D","width":1000,"height":600}}
 {"reply":{"re":160,"ok":"done"}}
 {"call":{"id":161,"command":"attach_view","program":"01J9ZQ8000000000000000000D","kind":"inspector","role":"focused"}}
+{"reply":{"re":161,"ok":{"attached":{"view":5,"cols":1000,"rows":600,"kind":"inspector"}}}}
 {"call":{"id":162,"command":"inspector_input","program":"01J9ZQ8000000000000000000D","input":{"kind":"key","aim":{"page":"devtools","document":1},"action":"down","key":"d","physical":"KeyD","key_code":68}}}
 {"reply":{"re":162,"refused":{"code":"input_missed","why":"the page changed before this input reached it, so it was dropped"}}}
