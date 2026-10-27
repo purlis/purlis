@@ -938,8 +938,8 @@ impl Supervisor {
     /// the chat's Landlock layer binds none today. Any other socket listens as it would have.
     ///
     /// The listen is made on the socket judged, never on whatever the descriptor holds by then,
-    /// and the port it listens on is read again after: one other than the port judged undoes the
-    /// listen and refuses it. Where the socket cannot be taken, nothing listens. A refusal is
+    /// and the address it listens on is read again after: one other than the address judged undoes
+    /// the listen and refuses it (and where it cannot be undone, ends the chat's process). Where the socket cannot be taken, nothing listens. A refusal is
     /// told, as macOS's kernel tells a refused bind, with why in what it names.
     ///
     /// Two of the chat's calls a listen relies on are refused elsewhere: a `connect` of any
@@ -974,8 +974,8 @@ impl Supervisor {
         if (taken.st_dev, taken.st_ino) != (theirs.st_dev, theirs.st_ino) {
             return Err(REFUSED);
         }
-        let judged = bound_port(socket.as_fd())?;
-        if judged == Some(0) {
+        let judged = getsockname::<SockaddrStorage>(socket.as_raw_fd())?;
+        if port_of(&judged) == Some(0) {
             self.tell(chat, BIND, NEVER_BOUND.to_owned());
             return Err(REFUSED);
         }
@@ -985,10 +985,14 @@ impl Supervisor {
         // Below zero, as above the system's own cap, the kernel's largest queue.
         let backlog = Backlog::new(backlog).unwrap_or(Backlog::MAXALLOWABLE);
         listen(&socket, backlog)?;
-        if bound_port(socket.as_fd()).ok() != Some(judged) {
-            // Unbound between the judging and the listen, and bound by the kernel now: a
-            // listening socket shut for reading is unconnected again, its port let go.
-            let _ = shutdown(socket.as_raw_fd(), Shutdown::Read);
+        if getsockname::<SockaddrStorage>(socket.as_raw_fd()).ok() != Some(judged) {
+            // Unbound between the judging and the listen, and bound by the kernel now, to an
+            // address it picked: a listening socket shut for reading is unconnected again, its
+            // address let go. A socket that cannot be shut would go on listening where nothing
+            // judged it, so its process is ended instead.
+            if shutdown(socket.as_raw_fd(), Shutdown::Read).is_err() {
+                let _ = rustix::process::pidfd_send_signal(&caller, rustix::process::Signal::KILL);
+            }
             self.tell(chat, BIND, NEVER_BOUND.to_owned());
             return Err(REFUSED);
         }
@@ -1006,15 +1010,14 @@ impl Supervisor {
     }
 }
 
-/// The port an internet socket is bound to, port 0 where its address cannot be read; None for
+/// The port an internet socket's address `name` holds, port 0 where it cannot be read; None for
 /// any other socket.
-fn bound_port(socket: BorrowedFd<'_>) -> Result<Option<u16>, Errno> {
-    let name = getsockname::<SockaddrStorage>(socket.as_raw_fd())?;
-    Ok(match name.family() {
+fn port_of(name: &SockaddrStorage) -> Option<u16> {
+    match name.family() {
         Some(AddressFamily::Inet) => Some(name.as_sockaddr_in().map_or(0, SockaddrIn::port)),
         Some(AddressFamily::Inet6) => Some(name.as_sockaddr_in6().map_or(0, SockaddrIn6::port)),
         _ => None,
-    })
+    }
 }
 
 /// What purlis's own profile language has no word for on Linux, and every wrapped chat needs:

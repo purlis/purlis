@@ -22,8 +22,10 @@ ADR 0089's amendment of 2026-10-27 says. The ruling's three conditions are items
    - **Rootful Podman** keeps only that path, and its runtime's config is root's: it is held to
      the path alone. The container's id is pinned when purlis makes it, and no engine changes a
      container's seccomp profile in place, so the path is the one purlis gave it.
-   - The runtime's own default (item 3) is taken too; `seccomp=unconfined` and any other profile
-     are refused.
+   - The runtime's own default (item 3) is taken only for a runner that already exists, and on
+     rootless Podman only where its compiled profile refuses what it does not name; a runner made
+     now that does not run the runner's profile is removed with its volume.
+     `seccomp=unconfined` and any other profile are refused.
 3. **A runner made before the profile stays usable on the runtime's own default.** That profile
    is stricter: it refuses `pidfd_getfd`, so no server a chat starts on that runner listens, and
    the refusal is told. The runner listens once the person removes it and adds it again. The

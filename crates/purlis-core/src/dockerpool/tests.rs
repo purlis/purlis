@@ -861,6 +861,22 @@ fn a_runner_made_and_confined_as_it_should_be_is_handed_back_by_its_container_id
     assert!(!log.contains(" rm "), "{log}");
 }
 
+/// The runtime's own default profile is taken only for a runner made before #3410: one made
+/// now that came up without the runner's profile is refused and removed with its volume.
+#[test]
+fn a_runner_made_now_on_the_runtimes_default_profile_is_refused_and_removed() {
+    let fake = FakeDocker::new(&on_the_runtimes_default(inspected()));
+    let refused = fake.docker().make(&runner()).unwrap_err();
+    assert!(refused.0.contains("seccomp"), "{refused}");
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("container rm --force --volumes {ID}")),
+        "{log}"
+    );
+    // The same container, made before, is still linked.
+    assert_eq!(fake.docker().check(&made()), Ok(()));
+}
+
 #[test]
 fn a_runner_whose_container_fails_the_check_is_removed_with_its_volume() {
     let fake = FakeDocker::new(&with(|c| c["HostConfig"]["Privileged"] = true.into()));
@@ -1762,6 +1778,10 @@ fn rootless_podmans_runtime_config_on_the_runtimes_default_holds_a_profile() {
     let mut none = own.clone();
     none["linux"].as_object_mut().unwrap().remove("seccomp");
     assert!(check_oci(&none, &made, &config, &store, Seccomp::RuntimeDefault).is_err());
+    // A profile that allows every call it does not name is no default of Podman's.
+    let mut open = default.clone();
+    open["linux"]["seccomp"]["defaultAction"] = "SCMP_ACT_ALLOW".into();
+    assert!(check_oci(&open, &made, &config, &store, Seccomp::RuntimeDefault).is_err());
 }
 
 /// Docker's runner is held to the runner's profile rule for rule, however its text is spaced.

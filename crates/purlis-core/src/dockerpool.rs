@@ -957,11 +957,14 @@ pub fn check_oci(
         return Err(not("has a runtime config that is not its own"));
     }
     // The runner's profile, exactly as Podman compiles it; on a runner made before it, a
-    // profile, which `podman info`'s check holds to Podman's own default ([`check_podman`]).
+    // profile that refuses what it does not name, which `podman info`'s check holds to Podman's
+    // own default ([`check_podman`]).
     let compiled = oci.pointer("/linux/seccomp");
     let held = match seccomp {
         Seccomp::Runners => compiled.is_some_and(is_the_runners_compiled),
-        Seccomp::RuntimeDefault => compiled.is_some_and(serde_json::Value::is_object),
+        Seccomp::RuntimeDefault => {
+            compiled.is_some_and(|it| it.is_object() && it["defaultAction"] == "SCMP_ACT_ERRNO")
+        }
     };
     if !held {
         return Err(not("does not run with the runner's seccomp profile"));
@@ -1616,10 +1619,20 @@ impl Docker {
                 return Err(self.and_removed(why, &runner.container(), &volume));
             }
         };
-        if let Err(why) = self.check(&made) {
-            return Err(self.and_removed(why, made.container.as_str(), &volume));
+        // A runner made now runs the runner's profile: the runtime's own default is taken only
+        // for one made before it (#3410).
+        match self.checked(&made) {
+            Ok(Seccomp::Runners) => Ok(made),
+            Ok(Seccomp::RuntimeDefault) => {
+                let why = refused(format!(
+                    "runner {}'s container was made without the runner's seccomp profile, so \
+                     purlis does not link to it",
+                    made.runner.name
+                ));
+                Err(self.and_removed(why, made.container.as_str(), &volume))
+            }
+            Err(why) => Err(self.and_removed(why, made.container.as_str(), &volume)),
         }
-        Ok(made)
     }
 
     /// `why`, after removing the container `container` names and the volume `volume`; a
@@ -1637,6 +1650,11 @@ impl Docker {
     /// What Docker says of `made`'s container, its home volume and the daemon, held to
     /// [`check`], [`check_volume`] and [`check_daemon`].
     pub fn check(&self, made: &Made) -> Result<(), Refused> {
+        self.checked(made).map(drop)
+    }
+
+    /// [`Docker::check`]: the seccomp profile the container runs, where it passes.
+    fn checked(&self, made: &Made) -> Result<Seccomp, Refused> {
         let engine = self.check_daemon()?;
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
@@ -1662,7 +1680,8 @@ impl Docker {
         }
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
-        check_volume(&inspected, made)
+        check_volume(&inspected, made)?;
+        Ok(seccomp)
     }
 
     /// Pair `made`'s runner with `desktop`, once its container passes the check: the runner's
