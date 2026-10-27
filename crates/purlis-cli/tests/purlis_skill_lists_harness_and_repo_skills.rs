@@ -268,7 +268,7 @@ fn a_plugins_skill_is_listed_as_the_plugins_and_show_says_it_goes_only_with_its_
     assert!(text.contains("  owner: figma\n"), "{text}");
     assert!(
         text.contains(
-            "  switch: it comes with the plugin figma, which Claude Code turns on or off itself: purlis shows a plugin's skills and does not switch them\n"
+            "  switch: it comes with the plugin figma, which Claude Code turns on or off itself, so its skills are shown read-only\n"
         ),
         "{text}"
     );

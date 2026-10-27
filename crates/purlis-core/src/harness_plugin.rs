@@ -184,8 +184,7 @@ pub trait Adapter: Sync {
 pub fn plugins_skill(title: &str, name: &str) -> Option<String> {
     name.split_once(':').map(|(plugin, _)| {
         format!(
-            "it comes with the plugin {plugin}, which {title} turns on or off itself: purlis shows \
-             a plugin's skills and does not switch them"
+            "it comes with the plugin {plugin}, which {title} turns on or off itself, so its skills are shown read-only"
         )
     })
 }

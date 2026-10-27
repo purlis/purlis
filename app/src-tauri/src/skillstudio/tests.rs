@@ -319,7 +319,7 @@ fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_
                 }),
                 Some(&SkillSwitch::Not {
                     why: "it comes with the plugin figma, which Claude Code turns on or off \
-                          itself: purlis shows a plugin's skills and does not switch them"
+                          itself, so its skills are shown read-only"
                         .to_owned()
                 })
             ),

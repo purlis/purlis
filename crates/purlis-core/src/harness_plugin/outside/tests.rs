@@ -97,8 +97,7 @@ fn claude_code_finds_the_persons_own_skills_and_each_installed_plugins_by_its_na
     assert_eq!(
         found[1].switch,
         Switch::Not(
-            "it comes with the plugin figma, which Claude Code turns on or off itself: purlis \
-             shows a plugin's skills and does not switch them"
+            "it comes with the plugin figma, which Claude Code turns on or off itself, so its skills are shown read-only"
                 .to_owned()
         )
     );

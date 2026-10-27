@@ -312,12 +312,10 @@ fn a_harness_skills_table_is_refused_what_its_harness_cannot_switch_alone() {
         got,
         [
             "harness_skills.claude.\"figma:frame\" in charter.toml cannot be set: it comes with \
-             the plugin figma, which Claude Code turns on or off itself: purlis shows a plugin's \
-             skills and does not switch them"
+             the plugin figma, which Claude Code turns on or off itself, so its skills are shown read-only"
                 .to_owned(),
             "harness_skills.codex.\"zp:zp-skill\" in charter.toml cannot be set: it comes with \
-             the plugin zp, which Codex turns on or off itself: purlis shows a plugin's skills and \
-             does not switch them"
+             the plugin zp, which Codex turns on or off itself, so its skills are shown read-only"
                 .to_owned(),
             "harness_skills.codex.review in charter.toml is not true or false".to_owned(),
             "[harness_skills.vim] in charter.toml is not a harness purlis knows — one of: \
@@ -570,8 +568,7 @@ fn the_studio_refuses_what_a_harness_cannot_switch_and_writes_nothing() {
                 false,
                 &built_in(),
             ),
-            "it comes with the plugin figma, which Claude Code turns on or off itself: purlis \
-             shows a plugin's skills and does not switch them, so nothing was changed",
+            "it comes with the plugin figma, which Claude Code turns on or off itself, so its skills are shown read-only, so nothing was changed",
         ),
         (
             switch_in_the_studio(

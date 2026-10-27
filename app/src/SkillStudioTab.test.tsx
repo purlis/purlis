@@ -646,7 +646,7 @@ function withClaudeCode(offLangfuse: boolean) {
             owner: { kind: "plugin", name: "figma" },
             switch: {
               kind: "not",
-              why: "it comes with the plugin figma, which Claude Code turns on or off itself: purlis shows a plugin's skills and does not switch them",
+              why: "it comes with the plugin figma, which Claude Code turns on or off itself, so its skills are shown read-only",
             },
           },
           {
