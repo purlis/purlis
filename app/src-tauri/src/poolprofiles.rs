@@ -51,8 +51,9 @@ impl Linked {
 
 impl ProfilesOnPools for Linked {
     fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        // A chat's start is what wakes a suspended runner (#2051), so its keep does too.
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
-            keep_on(&self.config, pool, kept)
+            keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
         })
     }
 }
@@ -74,7 +75,25 @@ pub fn keep_on(
     pool: &str,
     kept: &onrunner::Kept,
 ) -> Result<Option<Standing>, String> {
-    keep_on_as(owned(), config, pool, kept)
+    keep_on_as(owned(), config, pool, kept, Waking::No)
+}
+
+/// Whether a link made to keep a profile starts a suspended runner again (#2051): only a chat's
+/// start does; a look, a poll and a sign-in leave it as it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Waking {
+    Yes,
+    No,
+}
+
+/// The runner of pool `pool` this machine keeps under `config`, linked to waking it or not.
+fn to_a_runner(config: &Path, pool: &str, waking: Waking) -> Result<ToARunner, String> {
+    let machine = Machine::here(config)?;
+    let kept = purlis_core::runners::runner_for(config, pool).map_err(|why| why.to_string())?;
+    match waking {
+        Waking::Yes => ToARunner::of_kept_waking(&machine, &kept),
+        Waking::No => ToARunner::of_kept(&machine, &kept),
+    }
 }
 
 /// [`keep_on`], with `owned` what [`owned`] said of this machine's pools: nothing is read or
@@ -84,11 +103,12 @@ fn keep_on_as(
     config: &Path,
     pool: &str,
     kept: &onrunner::Kept,
+    waking: Waking,
 ) -> Result<Option<Standing>, String> {
     if owned.is_err() {
         return Ok(None);
     }
-    let to = ToARunner::of(&Machine::here(config)?, pool)?;
+    let to = to_a_runner(config, pool, waking)?;
     let Some(said) = crate::runnerlinks::keep_profiles(&to, vec![kept.clone().into()])? else {
         return Ok(None);
     };
@@ -129,7 +149,7 @@ pub async fn pool_profiles(pool: String) -> Result<Vec<PoolProfileRow>, String> 
         let config = config_root()?;
         owned()?;
         let records = profilestore::list(&config)?;
-        let to = ToARunner::of(&Machine::here(&config)?, &pool)?;
+        let to = to_a_runner(&config, &pool, Waking::No)?;
         // Each that goes to a runner, kept there over one link.
         let kept: Vec<_> = records.iter().map(onrunner::Kept::of).collect();
         let sent: Vec<_> = kept

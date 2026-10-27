@@ -24,6 +24,7 @@ fn a_pool_not_shown_to_be_owned_is_sent_nothing_and_is_its_own_to_say() {
         &config.path().join("nowhere"),
         "builds",
         &work(),
+        Waking::No,
     );
 
     assert_eq!(said, Ok(None));
@@ -40,6 +41,7 @@ fn on_an_owned_pool_it_goes_on_to_the_pool() {
         config.path(),
         "builds",
         &work(),
+        Waking::No,
     );
 
     assert!(said.is_err(), "{said:?}");
