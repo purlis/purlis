@@ -75,7 +75,7 @@ const THE_CORE = "theme/geometry.css";
 /** The forced-colours sheet (#2328): a text colour there is the system's, which forced colours
  *  draw in, and never a token. `theme/forced-colors.test.ts` holds every colour in it to the
  *  system's; any other type declaration in it is held here as anywhere. */
-const FORCED = "theme/forced-colors.css";
+const FORCED = /^(?:theme|ui\/[\w-]+)\/forced-colors\.css$/;
 const SYSTEM_TEXT = / \| color: (?:CanvasText|GrayText|HighlightText|MarkText|SelectedItemText)$/;
 
 /** The tokens each property may take its value from. */
@@ -230,7 +230,7 @@ function literalsByFile(planted: Readonly<Record<string, string>> = {}): Map<str
   for (const file of sourceFiles((name) => name.endsWith(".css"))) {
     if (file === THE_CORE) continue;
     const found = cssLiterals(text(file));
-    byFile.set(file, file === FORCED ? found.filter((one) => !SYSTEM_TEXT.test(one)) : found);
+    byFile.set(file, FORCED.test(file) ? found.filter((one) => !SYSTEM_TEXT.test(one)) : found);
   }
   const others = windowFiles(planted);
   for (const file of sourceFiles(isScript)) {

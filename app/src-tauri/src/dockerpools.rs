@@ -68,6 +68,9 @@ pub enum PoolLink {
     KeyChanged,
     /// It did not answer, and why.
     Down { why: String },
+    /// It suspended itself, a day without a link (#2051): its container is stopped, its home
+    /// kept, and the window's next chat there starts it again. A check never wakes it.
+    Suspended,
 }
 
 /// **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
@@ -270,7 +273,12 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
     {
         crate::off_the_window("asking a pool's runner", move || {
             let machine = Machine::here(&config_root()?)?;
-            crate::runnerlinks::link_state(&ToARunner::of(&machine, &name)?)
+            let kept = purlis_core::runners::runner_for(&machine.config, &name)
+                .map_err(|why| why.to_string())?;
+            if matches!(machine.docker.running(&kept.made), Ok(false)) {
+                return Ok(PoolLink::Suspended);
+            }
+            crate::runnerlinks::link_state(&ToARunner::of_kept(&machine, &kept)?)
         })
         .await
     }

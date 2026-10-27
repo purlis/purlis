@@ -7,7 +7,17 @@
  */
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { builtStyles, FAMILIES, familiesIn, familySheet, withEveryFamily } from "./stylesheets";
+import {
+  builtStyles,
+  FAMILIES,
+  familiesIn,
+  familySheet,
+  FORCED,
+  forcedFamiliesIn,
+  forcedSheet,
+  withEveryFamily,
+  withEveryForcedSheet,
+} from "./stylesheets";
 
 const SRC = join(process.cwd(), "src");
 
@@ -36,5 +46,29 @@ describe("the families' stylesheets", () => {
 
   it("refuse a styles.css with no marker, which would leave every new family out", () => {
     expect(() => withEveryFamily("/* no marker */", ["a"])).toThrow(/@families/);
+    expect(() => withEveryForcedSheet("/* no marker */", ["a"])).toThrow(/@forced/);
+  });
+});
+
+describe("the families' forced-colours sheets (#3387)", () => {
+  it("are each imported into the forced layer once, before the window's own", () => {
+    const built = builtStyles(SRC);
+    const forced = forcedFamiliesIn(join(SRC, "ui"));
+    expect(forced.length).toBeGreaterThan(0);
+    for (const family of forced) {
+      const line = `@import "${forcedSheet(family)}" layer(forced);`;
+      expect(
+        built.split("\n").filter((one) => one.includes(forcedSheet(family))),
+        family,
+      ).toEqual([line]);
+      expect(built.indexOf(line), family).toBeLessThan(built.indexOf("./theme/forced-colors"));
+    }
+  });
+
+  it("put them in the marker's place, by name", () => {
+    const line = (family: string) => `@import "${forcedSheet(family)}" layer(forced);`;
+    expect(withEveryForcedSheet(["x", FORCED, "y"].join("\n"), ["b", "a"])).toBe(
+      ["x", line("a"), line("b"), "y"].join("\n"),
+    );
   });
 });

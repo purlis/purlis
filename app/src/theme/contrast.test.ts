@@ -19,7 +19,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { builtStyles } from "../ui/stylesheets";
+import { builtStyles, isForcedColoursSheet } from "../ui/stylesheets";
 import { property, TOKENS, type Token } from "./theme";
 
 /**
@@ -152,7 +152,7 @@ describe("every pair a stylesheet draws", () => {
         .matchAll(/@import "\.\/([^"]+\.css)"/g),
     ]
       .map((hit) => hit[1])
-      .filter((file) => !file.startsWith("theme/")),
+      .filter((file) => !file.startsWith("theme/") && !isForcedColoursSheet(file)),
   ];
   const sheets = sheetNames.map(read);
 

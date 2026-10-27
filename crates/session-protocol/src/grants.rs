@@ -25,7 +25,7 @@
 //! | `hold_project`, `let_go_of_project` (1.2), and the pushed `not_held` a relaying host says to the client that held the project (1.30) | yes | | | | | relayed |
 //! | `stop_all` (1.5) | yes | yes | yes | yes | | yes |
 //! | `kill_switch`, the switch's state (1.5) | yes | yes | yes | yes | | yes |
-//! | `rearm` (1.5) | yes | | | | | |
+//! | `rearm` (1.5) | yes | | | | | relayed (#2051) |
 //! | a start's `launch`, the window's own composed start (1.2) | yes | | | | | relayed |
 //! | `deal`, `dealt_already` (1.3) | yes | | | | | relayed |
 //! | `reply_heard`, and the `heard` lines pushed (1.3) | yes | | | | | relayed |
@@ -48,6 +48,7 @@
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
 //! | `cancel_engine_download`, and the pushed `engine_download`: a browser engine's first download (1.37) | yes | | | | | |
+//! | `log_end`, and the host's own event log pushed from a cursor for its device (1.41) | yes | | | | | relayed |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -161,7 +162,12 @@
 //!   (ADR 0075): a scope that could write in it could record a person's act no person made.
 //! - **Only the window re-arms** (ADR 0071, 1.5). Any agent can run a command, so a re-arm any
 //!   other scope could send would put a person's power in every agent's hands. A `rearm` from
-//!   another scope is refused in words saying where a re-arm is made.
+//!   another scope is refused in words saying where a re-arm is made. **A runner is re-armed by
+//!   its desktop's window, through its desktop's host** (#2051, ADR 0078 §4 and ADR 0071 as
+//!   amended, ruled V29b): a runner has no window of its own, so its peer's `remote-link` may
+//!   re-arm it, and the desktop's host sends one only as its own window re-arms it, to the
+//!   runners its stop reached, or on as it relays its window's link. No other scope of the
+//!   desktop's host reaches a link.
 //! - **`fleet-mcp` lists, watches events and stops.** Its clients are outside agents (HP-20),
 //!   and an agent never holds a human power (V16): it does not type into, start, resize, view
 //!   or answer a chat. A view of a terminal is left out until HP-20 asks for it.
@@ -191,6 +197,11 @@
 //!   runner with this device's key and run the runner's connector, which is a human act (ADR
 //!   0078 §2 and §4): no agent's scope reaches a link. A relaying host refuses it, so a window
 //!   whose link is relayed never asks the runner to relay again.
+//! - **A host's own event log is read by the window, on its own host or relayed** (1.41,
+//!   #3393, ADR 0078 §7). It is the audit's source and names what each chat ran, so only the
+//!   window reads it: on the desktop it reads this machine's from its own disk, and a runner's
+//!   through its host's relay, from a cursor of its own for that runner's device. Nothing of a
+//!   runner's log is copied into the desktop's. No other scope is pushed it.
 //! - **`take_code` and `give_code` are the window's, relayed for it** (1.34, #2046). They write
 //!   into a repository of a project the host holds, and read its branches back: what the window
 //!   decides moves between the desktop and a runner, as holding the project is. A relaying host
@@ -281,6 +292,9 @@ pub enum Power {
     /// `take_code` and `give_code` (1.34, #2046): a repository's history moved between the
     /// desktop and a runner as a git bundle.
     Code,
+    /// `log_end`, and the host's own event log pushed from a cursor for its device (1.41,
+    /// #3393): the window's, on its own host or relayed to a runner's.
+    EventLog,
 }
 
 impl Scope {
@@ -314,6 +328,8 @@ impl Scope {
                     | P::TakeBack
                     | P::Unpair
                     | P::Code
+                    | P::Rearm
+                    | P::EventLog
             ),
             S::FleetMcp => matches!(power, P::List | P::Stop | P::Subscribe),
             S::Approval => matches!(power, P::List | P::Answer | P::Stop | P::Subscribe),

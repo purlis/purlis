@@ -18,7 +18,6 @@ fn only_local_ui_reaches_the_ui_rpc_or_answers_a_secrets_ask() {
 #[test]
 fn only_the_window_or_its_hosts_relay_hands_a_host_a_composed_launch_or_holds_a_project() {
     for scope in Scope::ALL {
-        assert_eq!(scope.may(Power::Rearm), scope == Scope::LocalUi, "{scope}");
         let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
         assert_eq!(scope.may(Power::Launch), windows, "{scope}");
         assert_eq!(scope.may(Power::Hold), windows, "{scope}");
@@ -173,5 +172,21 @@ fn only_the_window_or_its_hosts_relay_moves_code_over_the_link() {
             matches!(scope, Scope::LocalUi | Scope::RemoteLink),
             "{scope}"
         );
+    }
+}
+
+#[test]
+fn only_the_window_re_arms_or_its_host_re_arming_a_runner_it_stopped() {
+    for scope in Scope::ALL {
+        let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+        assert_eq!(scope.may(Power::Rearm), windows, "{scope}");
+    }
+}
+
+#[test]
+fn only_the_window_or_its_hosts_relay_reads_a_hosts_own_event_log() {
+    for scope in Scope::ALL {
+        let windows = matches!(scope, Scope::LocalUi | Scope::RemoteLink);
+        assert_eq!(scope.may(Power::EventLog), windows, "{scope}");
     }
 }

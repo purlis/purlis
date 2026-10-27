@@ -57,6 +57,9 @@ pub enum Actor {
     Window,
     /// `charter stop --all`.
     Cli,
+    /// A runner's desktop, over its link (ADR 0071 as amended by ADR 0078, #2051): any scope of
+    /// the desktop may send a stop, and only its window a re-arm.
+    Link,
     /// The app itself, on noticing a tamper.
     App,
 }
@@ -170,6 +173,32 @@ impl purlis_host::StopsElsewhere for OnDisk {
             None => "marker".to_owned(),
         })
     }
+
+    /// **The runner's desktop stopped or re-armed it over its link** (#2051): its journal says so,
+    /// `by: link`, and the event log records it with the desktop's device id (ADR 0075 as
+    /// amended).
+    fn link_switched(&self, rearm: bool, device: &str) -> Option<serde_json::Value> {
+        let at = now();
+        let (event, written) = if rearm {
+            (Event::Rearm, rearm_by(&self.0, Actor::Link, at).is_ok())
+        } else {
+            // Kept in the host's own folder whatever happens here: the journal is the record.
+            (Event::Stop, stop(&self.0, Actor::Link, at).is_ok())
+        };
+        if !written {
+            tracing::warn!("purlis: the kill switch's journal did not take a link's line");
+        }
+        let line = Entry {
+            at,
+            event,
+            by: Actor::Link,
+        };
+        serde_json::to_value(crate::eventlog::Entry::KillSwitchWrote {
+            line,
+            device: Some(device.to_owned()),
+        })
+        .ok()
+    }
 }
 
 /// Stops every agent on this machine until [`rearm`]: the marker, then one journal line.
@@ -199,6 +228,12 @@ pub fn stop(config_root: &Path, by: Actor, at: u64) -> Result<(), NotKept> {
 /// The marker goes first and the journal line after. A journal line that cannot be written puts
 /// the marker back and fails, so the files never say re-armed without the journal saying so.
 pub fn rearm(config_root: &Path, at: u64) -> io::Result<()> {
+    rearm_by(config_root, Actor::Window, at)
+}
+
+/// [`rearm`], by `by`: the window, or a runner's desktop's window over its link (ADR 0071 as
+/// amended, V29b), which is how a runner, with no window of its own, re-arms.
+pub fn rearm_by(config_root: &Path, by: Actor, at: u64) -> io::Result<()> {
     // Every spelling's marker (RN-5): a stop under either name holds until the window re-arms.
     for dir in crate::machine::dirs_spelled(config_root) {
         match std::fs::remove_file(dir.join(FILE)) {
@@ -210,7 +245,7 @@ pub fn rearm(config_root: &Path, at: u64) -> io::Result<()> {
     let entry = Entry {
         at,
         event: Event::Rearm,
-        by: Actor::Window,
+        by,
     };
     if let Err(why) = append(config_root, entry) {
         let _ = write_marker(config_root);

@@ -83,8 +83,13 @@ pub enum Entry {
         kind: String,
         body: serde_json::Value,
     },
-    /// A line the window wrote in the kill switch's journal ([`Recorder::kill_switch_wrote`]).
-    KillSwitchWrote { line: crate::halt::Entry },
+    /// A line the window wrote in the kill switch's journal ([`Recorder::kill_switch_wrote`]):
+    /// or, on a runner, its desktop over its link, whose device id it names (#2051).
+    KillSwitchWrote {
+        line: crate::halt::Entry,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        device: Option<String>,
+    },
     /// The kill switch's journal, read again ([`Recorder::kill_switch_read`]).
     KillSwitchRead,
     /// Use skill… typed a skill into chat `number`, unsent (SK-12): the run a prompt that
@@ -198,9 +203,9 @@ impl Recorder {
                 kind,
                 body,
             } => one(trust_kind(&kind).and_then(|()| self.audited(&plane, number, &kind, body))),
-            Entry::KillSwitchWrote { line } => {
+            Entry::KillSwitchWrote { line, device } => {
                 let config = self.config()?;
-                self.kill_switch_wrote(line, &config)
+                self.kill_switch_wrote_by(line, device.as_deref(), &config)
             }
             Entry::KillSwitchRead => {
                 let config = self.config()?;

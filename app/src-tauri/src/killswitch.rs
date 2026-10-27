@@ -91,6 +91,11 @@ pub trait Authority: Send + Sync {
     fn rearm(&self) -> Result<(), String>;
     /// Whether the host holds every agent stopped.
     fn stopped(&self) -> Result<bool, String>;
+    /// **The runners the host's stop stopped, which its re-arm re-arms** (#2051), each
+    /// `<pool>/<runner>`: none for a host that reaches no runner.
+    fn runners(&self) -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
 }
 
 /// Whether this machine's agents are stopped, as this process holds it.
@@ -243,6 +248,14 @@ impl KillSwitch {
         })
     }
 
+    /// The runners the session host's stop stopped, which a re-arm re-arms with it (#2051).
+    pub fn runners_a_rearm_reaches(&self) -> Vec<String> {
+        self.host
+            .get()
+            .and_then(|host| host.runners().ok())
+            .unwrap_or_default()
+    }
+
     /// Sends the session host again a stop it did not take.
     fn pay_what_is_owed(&self) {
         if self.owes_the_host.load(std::sync::atomic::Ordering::SeqCst) && self.is_stopped() {
@@ -376,7 +389,7 @@ fn record(events: &crate::hooks::Events, config: &Path, told: &mpsc::Receiver<No
         // read goes to it, and it reads the journal from the same machine store.
         let Some(log) = events.held() else {
             for line in wrote {
-                let line = purlis_core::eventlog::Entry::KillSwitchWrote { line };
+                let line = purlis_core::eventlog::Entry::KillSwitchWrote { line, device: None };
                 if let Err(why) = events.record(line) {
                     tracing::warn!(
                         "purlis: a kill-switch line was not recorded in the event log ({why})"
@@ -537,6 +550,21 @@ fn identity(dir: &Path) -> Option<(u64, u64)> {
     {
         std::fs::metadata(dir).ok().map(|_| (0, 0))
     }
+}
+
+/// **The runners the re-arm re-arms beside this machine** (#2051, ADR 0071 as amended: *"The
+/// window's re-arm lists the runners it will re-arm"*): what the session host's stop stopped,
+/// read from the host as the title bar draws a stopped switch. None where chats do not run in a
+/// host, or it cannot say.
+#[tauri::command]
+#[specta::specta]
+pub async fn runners_a_rearm_reaches(
+    planes: tauri::State<'_, crate::planes::Planes>,
+) -> Result<Vec<String>, String> {
+    let switch = planes.kill_switch();
+    tauri::async_runtime::spawn_blocking(move || switch.runners_a_rearm_reaches())
+        .await
+        .map_err(|why| format!("the runners could not be read: {why}"))
 }
 
 /// Whether every agent is stopped, for a window drawing its title bar.
