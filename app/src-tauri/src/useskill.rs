@@ -176,7 +176,17 @@ fn of_the_chat(
     purlis_core::skills::ChatSkills,
     Option<purlis_core::skillspan::PromptSalt>,
 )> {
-    let chat = held.chats().skills_of(session)?;
+    of_this_chat(held, &held.chats().skills_of(session)?)
+}
+
+/// [`of_the_chat`], for `chat`, read of the open chats once.
+fn of_this_chat(
+    held: &Held,
+    chat: &crate::chats::ChatForSkills,
+) -> Option<(
+    purlis_core::skills::ChatSkills,
+    Option<purlis_core::skillspan::PromptSalt>,
+)> {
     let built_in =
         crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
     let skills = purlis_core::skills::for_use_skill(&purlis_core::skills::Running {
@@ -187,15 +197,12 @@ fn of_the_chat(
         built_in: built_in.as_deref(),
         plane_skills: true,
     });
-    Some((skills, chat.salt))
+    Some((skills, chat.salt.clone()))
 }
 
-/// **The clones chat `session` of `held` works in**, by name (#3462): none for a chat at the
-/// project's root, in no clone, or not open here.
-fn repos_of_the_chat(held: &Held, session: u32) -> Vec<String> {
-    let Some(chat) = held.chats().skills_of(session) else {
-        return Vec::new();
-    };
+/// **The clones `chat` of `held` works in**, by name (#3462): none for a chat at the project's
+/// root or in no clone.
+fn repos_of_the_chat(held: &Held, chat: &crate::chats::ChatForSkills) -> Vec<String> {
     let (Some(workspace), Some(cwd)) = (chat.workspace.as_deref(), chat.cwd.as_deref()) else {
         return Vec::new();
     };
@@ -265,13 +272,16 @@ pub(crate) async fn chat_skills(
         if !purlis_core::skills::studio_on_here() {
             return Ok(ChatSkills::none(false));
         }
+        let Some(chat) = held.chats().skills_of(session) else {
+            return Ok(shown(None));
+        };
         let mut shown = shown(
-            of_the_chat(&held, session)
+            of_this_chat(&held, &chat)
                 .map(|(skills, _)| skills)
                 .as_ref(),
         );
         if shown.known {
-            shown.repos = repos_of_the_chat(&held, session);
+            shown.repos = repos_of_the_chat(&held, &chat);
         }
         Ok(shown)
     })

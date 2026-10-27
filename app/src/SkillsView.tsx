@@ -139,8 +139,9 @@ export function SkillsView({
   // Where the rows are read for, and where the switch and Explorer act: the chat's own place
   // while narrowed to it, else the title bar's.
   const place = narrowed === undefined ? workspace : narrowed.workspace;
-  // Whom the rows are read as: the chat's persona while narrowed to it.
-  const readAs = narrowed?.persona ?? null;
+  // Whom the rows are read as, and the persona the list is narrowed for: the chat's while
+  // narrowed to it.
+  const persona = narrowed?.persona ?? null;
   const changed = useViewChanged([plane], skillsIn(place));
   const [read, setRead] = useState<Read>();
   // The chat in front's real set, what Use skill… types from, and the clones it works in, while
@@ -154,7 +155,7 @@ export function SkillsView({
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let live = true;
-    void readSkills(plane, place, readAs)
+    void readSkills(plane, place, persona)
       .catch((err: unknown): Read => ({ refused: String(err) }))
       .then((answer) => {
         if (live) setRead(answer);
@@ -162,7 +163,7 @@ export function SkillsView({
     return () => {
       live = false;
     };
-  }, [plane, place, readAs, changed]);
+  }, [plane, place, persona, changed]);
   const session = narrowed?.session;
   useEffect(() => {
     let live = true;
@@ -181,7 +182,6 @@ export function SkillsView({
   }, [plane, session, changed]);
 
   const base = read !== undefined && "rows" in read ? read.rows : NO_ROWS;
-  const persona = narrowed?.persona ?? null;
   const harness = narrowed?.harness;
   const front = chatSet !== undefined && chatSet.session === session ? chatSet : undefined;
   const rows = useMemo(

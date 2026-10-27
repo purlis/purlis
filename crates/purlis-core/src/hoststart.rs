@@ -844,8 +844,10 @@ pub struct Arming<'a> {
     pub graded: bool,
     /// Where its plane skills come from, read once at its start ([`ChatSkills::read`], #3234):
     /// what its tab's Notice is worked out from too. Read the first time it is looked at, which
-    /// [`armed`] does only once every fail-closed check has passed (#3461): a refused start
-    /// reads none of the chat's skill folders, its clone's included. A
+    /// [`armed`] does only once the checks that need nothing of it have passed (#3461): a start
+    /// they refuse (a sandbox for another harness, a grade's mismatch, no binary for a sandbox)
+    /// reads none of the chat's skill folders, its clone's included. The one refusal after it,
+    /// a sandboxed chat whose harness cannot carry the arming, needs the arming built from it. A
     /// [`std::cell::LazyCell`] over the read is what a start passes.
     pub skills: &'a dyn std::ops::Deref<Target = ChatSkills>,
 }
@@ -907,7 +909,8 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             None => Ok((Vec::new(), Vec::new())),
         };
     };
-    // Every check that refuses the chat has passed: its skills are read from here on (#3461).
+    // Every check that needs nothing of the chat's skills has passed: they are read from here
+    // on (#3461), as the arming below is built from them.
     let skills: &ChatSkills = skills;
     // Read for this very chat: its persona, unless a Try it's, which has none (#3234).
     debug_assert!(
