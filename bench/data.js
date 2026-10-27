@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793139727490,
+  "lastUpdate": 1793141615534,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27342,6 +27342,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4785335,
             "unit": "ms",
             "extra": "median of 5 runs: 100.805, 101.190, 101.479, 101.887, 102.376 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "002417c777c416e4d49ab868081bdf9efd382e21",
+          "message": "Skills: a grade's dollar limit priced from its model; a held marker lock reads as running (#3469, #3466) (#3504)\n\n* A grade has a dollar limit, priced from its model or the dearest known (#3469)\n\nThe operator's ruling G12: a grade's dollar limit is its token cap at the\nprice of the model its chats run on, or at the dearest known price where\nthe model or its price is not known, so it is never set too low.\n\n- The model is the harness adapter's word (HarnessAdapter::grade_model):\n  Claude Code reads the last --model, then ANTHROPIC_MODEL, then its\n  settings' model. SK-60 (#3240) will let the person pick it.\n- Prices are a dated table in purlis_core::skills::grades::price, never\n  fetched at grade time. A model's price is its dearest per-token rate.\n- The plan says the limit and the price it used; the CLI says the dearest.\n- A grade that reaches the limit ends over-limit; its record keeps the\n  price (priced) and, where a chat said tokens and no cost, what the\n  limit counted at the dearest price (counted_usd).\n- ADR 0105 amendment of 2026-10-27; plane-format documents the keys.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A grade's held marker lock reads as running (#3466)\n\nA grade now holds an exclusive lock on its own file under\n<state>/grades-under-way/ while it runs, taken before the file is renamed\ninto place, and a project's start reads a held lock as a grade that runs,\nwhatever process number the file names. So a crashed grade whose pid\nanother process took is recorded as interrupted, and the check works\nwhere process::alive says nothing (non-unix). The pid is read only where\nthe lock cannot be asked. The lock is asked before the file is read, so a\nsystem whose locks keep a file from being read never has a running\ngrade's file taken away.\n\nThe second item of #3466 (a reattached chat keeps its start's Skill\nstudio flag) needs #3465's Running::plane_skills and is left for after it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A grade's dollar limit: review fixes (#3469)\n\n- Claude Code's model is the last --model, then ANTHROPIC_MODEL; a family\n  alias is read through ANTHROPIC_DEFAULT_<FAMILY>_MODEL, and opusplan with\n  either remapped prices at the dearest. A settings file's model is no\n  longer read: the project's outranks the person's and both reach the\n  chat, so one alone could under-price the limit.\n- The app's host counts a chat's tokens with no cost at the grade's own\n  unpriced price, and skips a cost no reader could hold, as the runner\n  does.\n- A row read back may name a price up to 1,000 dollars a million, so a row\n  a newer purlis priced at a dearer model is still read.\n- The plan says \"no model is named for its chats\" for every dearest case\n  with no model.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T22:06:01Z",
+          "tree_id": "1c590a5523dafa7cab0311fb92db3bd767eff2b6",
+          "url": "https://github.com/purlis/purlis/commit/002417c777c416e4d49ab868081bdf9efd382e21"
+        },
+        "date": 1793141611881,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5277354999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.523, 0.524, 0.528, 0.533, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.315269,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.879, 16.121, 16.315, 16.365, 16.445 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.280754,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.394, 100.757, 101.281, 101.329, 103.563 ms"
           }
         ]
       }
