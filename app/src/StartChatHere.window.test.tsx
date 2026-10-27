@@ -114,6 +114,12 @@ afterEach(() => {
 const starts = (asked: Asked[]) =>
   asked.filter((one) => one.cmd === "start_chat_here").map((one) => one.args);
 
+/** The light editor is a chunk of its own (`Views.tsx`'s `lazy`), so a file's tab says
+ *  "Opening the light editor…" until it arrives. A cold import of CodeMirror in a loaded CI
+ *  worker takes past Testing Library's 1s, the press opening the tab having already worked:
+ *  the preview's button is waited for as long as a chunk can take, as the merge view's is. */
+const CHUNK = { timeout: 5_000 };
+
 /** Picks the branch in the Repos view (in the Panel since #1737) and opens `README.md` from
  *  Explorer's Files in a tab of its own, as a press on its row does; answers its "Start a chat
  *  here". */
@@ -124,11 +130,12 @@ async function startFromThePreview() {
   const tree = await screen.findByRole("treegrid", { name: "Files of one in svc" });
   await userEvent.click(await within(tree).findByRole("row", { name: /^README\.md/ }));
   await userEvent.click(
-    await screen.findByRole("button", { name: /^Start a chat here on README\.md/ }),
+    await screen.findByRole("button", { name: /^Start a chat here on README\.md/ }, CHUNK),
   );
 }
 
-describe("Start a chat here, from a file's preview (#1151)", () => {
+// The whole window, then the editor's chunk: past the default 5s on a loaded runner.
+describe("Start a chat here, from a file's preview (#1151)", { timeout: 20_000 }, () => {
   it("starts a chat on the file's branch and path, through the core's own start", async () => {
     const asked = core();
     render(<App />);
