@@ -28,6 +28,8 @@ purlis-core.workspace = true
 purlis-host.workspace = true
 # The hidden `purlis _sandbox`: purlis's own wrap of a chat on Linux (#1040).
 purlis-linux-sandbox.workspace = true
+# The line format's one parser and its `str.strip`/`str.splitlines` (#3482).
+purlis-skills.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap.workspace = true
 # charter's MCP server (HP-7): the official Rust SDK, Apache-2.0, serving stdio only. No HTTP

@@ -202,7 +202,7 @@ impl std::error::Error for Unwritten {}
 /// Whether `value` can be written on one line and read back as itself: no line break, and
 /// nothing a reader would strip off its ends.
 pub fn holds(value: &str) -> bool {
-    !value.chars().any(is_break) && py_strip(value) == value
+    !value.chars().any(is_line_break) && py_strip(value) == value
 }
 
 /// **`text` with each of `keys` saying its value**, or with no line of it for `None`: the one
@@ -318,15 +318,25 @@ fn reads_back(text: &str, written: &str, keys: &[(&str, Option<&str>)]) -> Resul
     Ok(())
 }
 
-/// `str.strip()`: Python's whitespace is Rust's and the four separator controls U+001C-U+001F.
-pub fn py_strip(text: &str) -> &str {
-    text.trim_matches(|c: char| {
-        c.is_whitespace() || matches!(c, '\u{1c}' | '\u{1d}' | '\u{1e}' | '\u{1f}')
-    })
+/// `str.isspace()` for one character: Python's whitespace is Rust's and the four separator
+/// controls U+001C-U+001F. The one answer every `str.strip` of the line format asks.
+pub fn is_python_space(c: char) -> bool {
+    c.is_whitespace() || matches!(c, '\u{1c}' | '\u{1d}' | '\u{1e}' | '\u{1f}')
 }
 
-/// A character `str.splitlines()` breaks a line at.
-fn is_break(c: char) -> bool {
+/// `str.strip()`.
+pub fn py_strip(text: &str) -> &str {
+    text.trim_matches(is_python_space)
+}
+
+/// `str.rstrip()`.
+pub fn py_rstrip(text: &str) -> &str {
+    text.trim_end_matches(is_python_space)
+}
+
+/// A character `str.splitlines()` breaks a line at: the one set every splitter of the line
+/// format, a `workspace.md` and a scaffolded file asks (#3482).
+pub fn is_line_break(c: char) -> bool {
     matches!(
         c,
         '\n' | '\r'
@@ -348,7 +358,7 @@ pub fn lines(text: &str) -> Vec<Line> {
     let mut start = 0;
     let mut it = text.char_indices().peekable();
     while let Some((i, c)) = it.next() {
-        if !is_break(c) {
+        if !is_line_break(c) {
             continue;
         }
         let next = if c == '\r' && it.peek().is_some_and(|&(_, next)| next == '\n') {
@@ -372,6 +382,14 @@ pub fn lines(text: &str) -> Vec<Line> {
         });
     }
     out
+}
+
+/// `str.splitlines()`: each line of `text` without its break ([`lines`]).
+pub fn split_lines(text: &str) -> Vec<&str> {
+    lines(text)
+        .into_iter()
+        .map(|line| &text[line.start..line.end])
+        .collect()
 }
 
 #[cfg(test)]
