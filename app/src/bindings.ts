@@ -810,6 +810,25 @@ export const commands = {
 	 *  Window-only.
 	 */
 	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
+	/**
+	 *  **The old keys' Notice**, for the project's window: none where nothing holds them or it was
+	 *  answered.
+	 */
+	oldHarnessPlugins: (plane: PlaneId) => typedError<{
+	/**  The sentence: which files hold the keys, that they are ignored, and what Remove reaches. */
+	said: string,
+	/**  The files that hold them, relative to the project. */
+	files: string[],
+	/**  Whether Remove has a change to propose: one of the project's own two files holds them. */
+	removable: boolean,
+} | null, string>(__TAURI_INVOKE("old_harness_plugins", { plane })),
+	/**
+	 *  **Remove** on the Notice: each file's change held for the person to apply, the ids of the
+	 *  changes held. Window-only: only the person proposes purlis's own change.
+	 */
+	removeOldHarnessPlugins: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("remove_old_harness_plugins", { plane })),
+	/**  **Dismiss** on the Notice: kept, so it is not said again. Window-only. */
+	dismissOldHarnessPlugins: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("dismiss_old_harness_plugins", { plane })),
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	/**
@@ -8210,6 +8229,16 @@ export type OfferedSource = {
 	name: string,
 	why: string,
 	source: SkillSource,
+};
+
+/**  The Notice, as the window draws it. */
+export type OldHarnessPlugins = {
+	/**  The sentence: which files hold the keys, that they are ignored, and what Remove reaches. */
+	said: string,
+	/**  The files that hold them, relative to the project. */
+	files: string[],
+	/**  Whether Remove has a change to propose: one of the project's own two files holds them. */
+	removable: boolean,
 };
 
 /**

@@ -447,3 +447,40 @@ fn the_app_s_write_makes_no_persona_and_is_not_blocked_by_a_leftover() {
         .collect();
     assert!(left.is_empty(), "no new file left behind: {left:?}");
 }
+
+/// #3467: purlis proposes a change to the project's two settings files alone, and only to the
+/// one there by the name the project spells it; a chat's own judgement is not widened.
+#[test]
+fn purlis_proposes_only_to_the_projects_two_settings_files() {
+    let (_dir, root) = project();
+    std::fs::write(root.join("charter.local.toml"), "a = 1\n").expect("local");
+    for yes in ["purlis.toml", "charter.local.toml"] {
+        assert_eq!(
+            proposable_by_purlis(&root, &root.join(yes)).as_deref(),
+            Ok(Path::new(yes)),
+            "{yes}"
+        );
+    }
+    for no in [
+        "charter.toml",
+        "workspaces/alpha/purlis.toml",
+        "personas/devops/persona.md",
+        "../purlis.toml",
+    ] {
+        assert!(proposable_by_purlis(&root, &root.join(no)).is_err(), "{no}");
+    }
+    assert!(
+        proposable(&root, &root.join("charter.local.toml")).is_err(),
+        "no chat proposes to the Local file"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn purlis_proposes_to_no_settings_file_that_is_a_link() {
+    let (dir, root) = project();
+    let elsewhere = dir.path().join("elsewhere.toml");
+    std::fs::write(&elsewhere, "a = 1\n").expect("elsewhere");
+    std::os::unix::fs::symlink(&elsewhere, root.join("charter.local.toml")).expect("link");
+    assert!(proposable_by_purlis(&root, &root.join("charter.local.toml")).is_err());
+}

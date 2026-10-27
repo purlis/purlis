@@ -14,6 +14,9 @@ const MergeViewer = lazy(() =>
   import("./editor/LightEditor").then((module) => ({ default: module.MergeViewer })),
 );
 
+/** The session of a change purlis itself proposes (#3467, `proposals::BY_PURLIS`): no chat's. */
+export const BY_PURLIS = 0;
+
 /** Tells `onDrawn` once it is drawn: inside the wait, so once the change is on the screen. */
 function Drawn({ onDrawn }: { onDrawn: () => void }) {
   useEffect(() => onDrawn(), [onDrawn]);
@@ -75,10 +78,17 @@ export function ProposedChangeTab({ plane, id }: { plane: PlaneId; id: number })
   };
   return (
     <section className="proposed-change" aria-label={`The change proposed to ${read.path}`}>
-      <p>
-        Chat {read.session} proposes this change to <code>{read.path}</code>. It may not write the
-        file itself, so only you apply it; it is told what you did on its next turn.
-      </p>
+      {read.session === BY_PURLIS ? (
+        <p>
+          purlis proposes this change to <code>{read.path}</code>: it takes out settings purlis no
+          longer reads. Nothing is written until you apply it.
+        </p>
+      ) : (
+        <p>
+          Chat {read.session} proposes this change to <code>{read.path}</code>. It may not write
+          the file itself, so only you apply it; it is told what you did on its next turn.
+        </p>
+      )}
       {read.why !== null && read.why !== undefined ? (
         <p className="inbox-refused" data-testid="proposal-not-shown">
           {read.why}

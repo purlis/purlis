@@ -1846,5 +1846,7 @@ pub fn switch_in_the_studio(
 mod outside;
 pub use outside::{harness_skills, repo_skills};
 
+pub mod old;
+
 #[cfg(test)]
 mod tests;

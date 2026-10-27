@@ -105,6 +105,7 @@ mod kubectl;
 mod lifecycle;
 mod live;
 mod mcpfailed;
+mod oldplugins;
 mod memories;
 mod nativewindow;
 mod navguard;

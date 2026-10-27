@@ -128,6 +128,24 @@ pub fn proposable(root: &Path, path: &Path) -> Result<PathBuf, String> {
     Ok(rel)
 }
 
+/// **Whether `path` is a file purlis itself may propose a change to** (#3467), for the person
+/// to apply as a chat's proposal is applied: one of the project's two settings files at its
+/// root, as the project spells them, there, and no link. What a chat may propose
+/// ([`proposable`]) is not widened by it: no chat's proposal is judged here.
+pub fn proposable_by_purlis(root: &Path, path: &Path) -> Result<PathBuf, String> {
+    let rel = relative_to(root, path).ok_or_else(|| not_proposable(path))?;
+    let ours = [crate::settings::Which::Shared, crate::settings::Which::Local]
+        .into_iter()
+        .any(|which| rel == Path::new(which.file_at(root)));
+    if !ours {
+        return Err(not_proposable(path));
+    }
+    match std::fs::symlink_metadata(root.join(&rel)) {
+        Ok(meta) if meta.file_type().is_file() => Ok(rel),
+        _ => Err(not_proposable(path)),
+    }
+}
+
 /// What a proposal to a file in a persona or a workspace that is not there is refused with.
 pub const NO_NEW_FOLDER: &str = "a proposed change does not make a new persona or workspace: the \
      person makes that in the window first, then the change can be proposed.";

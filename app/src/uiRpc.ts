@@ -411,6 +411,20 @@ export const commands = {
 	applyProposedChange: __WINDOW_ONLY_RESULT,
 	proposedChange: __WINDOW_ONLY_RESULT,
 	dismissProposedChange: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **The old keys' Notice**, for the project's window: none where nothing holds them or it was
+	 *  answered.
+	 */
+	oldHarnessPlugins: (plane: PlaneId) => typedError<{
+	/**  The sentence: which files hold the keys, that they are ignored, and what Remove reaches. */
+	said: string,
+	/**  The files that hold them, relative to the project. */
+	files: string[],
+	/**  Whether Remove has a change to propose: one of the project's own two files holds them. */
+	removable: boolean,
+} | null, string>(__TAURI_INVOKE("old_harness_plugins", { plane })),
+	removeOldHarnessPlugins: __WINDOW_ONLY_RESULT,
+	dismissOldHarnessPlugins: __WINDOW_ONLY_RESULT,
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	putAwayMcpFailure: __WINDOW_ONLY_RESULT,
@@ -6319,6 +6333,16 @@ export type OfferedSource = {
 	name: string,
 	why: string,
 	source: SkillSource,
+};
+
+/**  The Notice, as the window draws it. */
+export type OldHarnessPlugins = {
+	/**  The sentence: which files hold the keys, that they are ignored, and what Remove reaches. */
+	said: string,
+	/**  The files that hold them, relative to the project. */
+	files: string[],
+	/**  Whether Remove has a change to propose: one of the project's own two files holds them. */
+	removable: boolean,
 };
 
 /**

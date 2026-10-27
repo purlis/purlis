@@ -394,6 +394,7 @@ import { ProjectHostsNotice } from "./ProjectHostsNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
+import { OldHarnessPluginsNotice } from "./OldHarnessPluginsNotice";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
 import { ProjectDispatchNotice } from "./ProjectDispatchNotice";
@@ -8492,6 +8493,9 @@ export const PlaneView = memo(function PlaneView({
       {/* **The project turned the sandbox off** (#2071, SO-8): reaches each person only on
           their one Accept. */}
       <TeamSandboxOffNotice plane={plane} />
+      {/* **The old harness plugin keys** (#3467): ignored now, said once, removed by an edit
+          the person applies. */}
+      <OldHarnessPluginsNotice plane={plane} />
       {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. */}
       <PersonaHostsNotice plane={plane} />
       {/* **A teammate's dispatch grant arrived** (#1506): said here, at the window's level,
