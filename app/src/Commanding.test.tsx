@@ -400,9 +400,10 @@ describe("the palette reaching what the window can do", () => {
     await userEvent.keyboard("{Escape}");
 
     await runFromPalette("remove the folder of this chat");
-    await within(await screen.findByRole("dialog", { name: "Command palette" })).findByText(
-      (text) => text.includes("svc/fix-it has uncommitted changes"),
-    );
+    const refused = await within(
+      await screen.findByRole("dialog", { name: "Command palette" }),
+    ).findByText((text) => text.includes("svc/fix-it has uncommitted changes"));
+    expect(refused.closest('[role="status"]')).toHaveTextContent(/^Not done:/);
     refuse = false;
     // The palette stayed open, and the answer to the sentence is now a row in it.
     await userEvent.clear(screen.getByRole("combobox"));

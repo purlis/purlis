@@ -3747,11 +3747,10 @@ body {
 }
 
 /* **What an action answered** (`ActionResultNotice.tsx`, #3344, the sidebar-views prototype's
-   Q3 A): a card Notice at the top of the content, at most 640px wide; what the core said, behind
+   Q3 A): a card Notice at the top of the content (its width is the card's, `notice.css`); what the core said, behind
    Details, in mono on the code ground inside it. The same notice is listed under Results in the
    Inbox's Notices, where the list's row is its box. */
 .action-result {
-  max-inline-size: 640px;
   margin: var(--space-3) var(--space-5) 0;
 }
 
@@ -3762,7 +3761,8 @@ body {
 
 .action-result-details {
   margin: 0;
-  padding: var(--space-4) var(--space-5);
+  /* 8 and 10, as the prototype's details box. */
+  padding: var(--space-4) calc(var(--space-4) + var(--space-1));
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   background-color: var(--terminal-background);

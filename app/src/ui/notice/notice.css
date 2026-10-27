@@ -306,7 +306,8 @@
   block-size: 16px;
 }
 
-[data-layout="card"] > [data-scope="notice"][data-part="message"] {
+[data-scope="notice"][data-part="root"][data-layout="card"]
+  > [data-scope="notice"][data-part="message"] {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -321,13 +322,14 @@
   font-weight: var(--font-weight-medium);
 }
 
-[data-layout="card"] > [data-scope="button-row"] {
+[data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] {
   grid-column: 2;
   margin: var(--space-3) 0 0;
   padding: 0;
 }
 
-[data-layout="card"] > [data-scope="notice"][data-part="under"] {
+[data-scope="notice"][data-part="root"][data-layout="card"]
+  > [data-scope="notice"][data-part="under"] {
   grid-column: 2 / 4;
   margin-block-start: var(--space-3);
   padding: 0;

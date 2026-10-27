@@ -93,6 +93,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". Add a Docker pool's refusal (#2679), in the core's words, under the form it refused; " +
       "the form, kept as it was typed, and Add pool are the way on",
   },
+  "ui/notice/Notice.tsx": {
+    count: 1,
+    why:
+      "the notice family's message part, the live region of a card Notice (#3344): drawn live " +
+      "only by `Notice.tsx`, which this guard holds as the one way to draw a standing line",
+  },
   "AddVision.tsx": {
     count: 1,
     why: ACTION,
@@ -709,9 +715,12 @@ describe("the window's standing lines", () => {
   it("are all Notices, but for the live regions listed with why", () => {
     const counted: Record<string, number> = {};
     for (const { name, text } of sources()) {
-      // The Notice, and the family it is drawn by: a card's message is its live region (#3344).
-      if (name === "Notice.tsx" || name === "ui/notice/Notice.tsx") continue;
-      const n = tags(text, (tag) => tag !== "Notice").filter(({ attrs }) => live(attrs)).length;
+      if (name === "Notice.tsx") continue;
+      // A card's message drawn `live` is a live region too (#3344): only Notice may draw one.
+      const n = tags(text, (tag) => tag !== "Notice").filter(
+        ({ tag, attrs }) =>
+          live(attrs) || (tag === "NoticeMessage" && /\blive\b/.test(ownAttributes(attrs))),
+      ).length;
       if (n > 0) counted[name] = n;
     }
     const listed = Object.fromEntries(

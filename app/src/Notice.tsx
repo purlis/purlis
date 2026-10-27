@@ -121,33 +121,58 @@ type WayOut =
   | (Ways & { copy: string })
   | (Ways & { onDismiss: () => void });
 
-export type NoticeProps = WayOut & {
+/** What every Notice says: what it is about, its tone, its sentence and what a way out opened. */
+type Said = {
   /** What the line is about, stably: what a dismissal will be keyed by. */
   cause: string;
   tone?: "news" | "trouble";
-  at?: "inbox" | "pane";
-  /** The accessible name, where the sentence alone would not make a good one. */
-  label?: string;
-  /** The persona the line names, when it names one: its mark is drawn before the sentence
-   *  (#1449). */
-  persona?: string | null;
   /** The sentence (and anything else the line says before its ways out). */
   children: ReactNode;
   /** What a way out opened (a fix's form, #1250): drawn right after the line, outside its live
    *  region, and moved with it by the Inbox's list. */
   under?: ReactNode;
-  /**
-   * **A card Notice's title** (#3344, the sidebar-views prototype's Q3 A): given, the Notice is
-   * drawn as the family's card (`layout="card"`): its mark at the start, its title with × at the
-   * top right, its sentence (`children`) under the title, its ways on a row of their own under
-   * that, and what a way out opened inside the card. Only the title and the sentence are its
-   * live region, so opening its Details reads nothing out again.
-   */
-  title?: ReactNode;
-  /** **Not a live region** (#3344): a copy of a Notice another one already said, as a result
-   *  kept under Results is of the result's notice. */
-  quiet?: boolean;
 };
+
+/** **A line Notice**: in a pane's row, the Inbox's list or alone on a page. */
+type LineProps = WayOut &
+  Said & {
+    at?: "inbox" | "pane";
+    /** The accessible name, where the sentence alone would not make a good one. */
+    label?: string;
+    /** The persona the line names, when it names one: its mark is drawn before the sentence
+     *  (#1449). */
+    persona?: string | null;
+    title?: never;
+    quiet?: never;
+  };
+
+/** A card's ways out: a fix, a link or its ×, never a command to copy (#3344). */
+type CardWayOut =
+  | (Ways & { copy?: never; fixes: readonly [NoticeAction, ...NoticeAction[]] })
+  | (Ways & { copy?: never; link: NoticeAction })
+  | (Ways & { copy?: never; onDismiss: () => void });
+
+/**
+ * **A card Notice** (#3344, the sidebar-views prototype's Q3 A): drawn as the family's card
+ * (`layout="card"`): its mark at the start, its title with × at the top right, its sentence
+ * (`children`) under the title, its ways on a row of their own under that, and what a way out
+ * opened inside the card. Only the title and the sentence are its live region, so opening its
+ * Details reads nothing out again. Never in a pane, whose row reads its line's live region, and
+ * with no persona, label or command to copy: the title names it.
+ */
+type CardProps = CardWayOut &
+  Said & {
+    at?: "inbox";
+    /** What happened, before its one sentence. */
+    title: ReactNode;
+    /** **Not a live region**: a copy of a Notice another one already said, as a result kept
+     *  under Results is of the result's notice. */
+    quiet?: boolean;
+    label?: never;
+    persona?: never;
+  };
+
+export type NoticeProps = LineProps | CardProps;
 
 /**
  * **Whose Notice this is, for a Notice of a chat that is not the one its pane shows** (#1486).

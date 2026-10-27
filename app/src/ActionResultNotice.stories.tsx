@@ -52,6 +52,12 @@ type Story = StoryObj<typeof meta>;
 export const WorkspaceMade: Story = {
   play: async ({ canvas, userEvent }) => {
     await expect(canvas.getByText("Workspace git-ci-cd is ready")).toBeVisible();
+    // The ways stand in the title's column: the first one flush with the title, under the
+    // sentence (the prototype's Q3 A).
+    const title = canvas.getByText("Workspace git-ci-cd is ready").getBoundingClientRect();
+    const first = canvas.getByRole("button", { name: "Open git-ci-cd" }).getBoundingClientRect();
+    await expect(Math.abs(first.left - title.left)).toBeLessThanOrEqual(1);
+    await expect(first.top).toBeGreaterThan(title.bottom);
     await expect(
       canvas.getByText("It has no vision yet. Add one so its chats know what it is for."),
     ).toBeVisible();
