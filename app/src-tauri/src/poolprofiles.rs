@@ -203,7 +203,9 @@ pub fn sign_in_line(pool: &str, name: &str, provider: Option<&str>) -> Result<St
     }
     let kept = onrunner::Kept::of(&record)?;
     if keep_on(&config, pool, &kept)?.is_none() {
-        return Err(format!("Pool {pool}: {OLDER_RUNNER}. No sign-in was typed."));
+        return Err(format!(
+            "Pool {pool}: {OLDER_RUNNER}. No sign-in was typed."
+        ));
     }
     let runner = purlis_core::runners::runner_for(&config, pool).map_err(|why| why.to_string())?;
     crate::runnerlinks::docker()?.sign_in_line(&runner.made, &engine, name, provider)

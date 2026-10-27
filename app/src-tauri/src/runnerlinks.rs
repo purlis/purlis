@@ -299,7 +299,7 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
 
 /// What a runner answered each profile it was asked to keep: whether it is signed in there, or
 /// why it was not kept.
-pub type Kept = Vec<Result<purlis_session_protocol::session::ProfileStanding, String>>;
+pub type ProfilesKept = Vec<Result<purlis_session_protocol::session::ProfileStanding, String>>;
 
 /// **Has the runner keep each of this desktop's `profiles` over one link of its own**
 /// (`keep_profile`, 1.42, #2049), in order: whether each is signed in there, or why the runner
@@ -308,22 +308,25 @@ pub type Kept = Vec<Result<purlis_session_protocol::session::ProfileStanding, St
 pub fn keep_profiles(
     to: &ToARunner,
     profiles: Vec<purlis_session_protocol::session::ProfileToKeep>,
-) -> Result<Option<Kept>, String> {
+) -> Result<Option<ProfilesKept>, String> {
     use purlis_session_protocol::session::KNOWS_KEEP_PROFILE;
     on_one_link(to, async |linked| match linked {
         Ok(client) if client.version() < KNOWS_KEEP_PROFILE => Ok(None),
         Ok(client) => {
             let mut said = Vec::with_capacity(profiles.len());
             for profile in profiles {
-                said.push(client.keep_profile(profile).await.map_err(|why| {
-                    match why.refusal() {
-                        Some(refused) => format!(
-                            "the runner says: {}",
-                            purlis_core::shown::short(&refused.why)
-                        ),
-                        None => why.to_string(),
-                    }
-                }));
+                said.push(
+                    client
+                        .keep_profile(profile)
+                        .await
+                        .map_err(|why| match why.refusal() {
+                            Some(refused) => format!(
+                                "the runner says: {}",
+                                purlis_core::shown::short(&refused.why)
+                            ),
+                            None => why.to_string(),
+                        }),
+                );
             }
             Ok(Some(said))
         }
