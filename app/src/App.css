@@ -589,6 +589,12 @@ body {
   block-size: var(--space-5);
 }
 
+/* A canvas with no frame yet is not laid out: `display: block` above would otherwise take the
+   mark's room. */
+.browser-thumbnail > canvas[hidden] {
+  display: none;
+}
+
 /* **The Browsers grid** (#2027): as many tiles to a row as the width holds, each its live
    picture over what it is called and where it is. A tile is at most twice its least width, so
    its frame (640 across) stays sharp. */
@@ -600,6 +606,7 @@ body {
   inline-size: 100%;
   block-size: auto;
   aspect-ratio: 16 / 10;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   background-color: var(--surface-sunken);
 }
