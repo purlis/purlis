@@ -18,7 +18,7 @@ const script = join(dirname(fileURLToPath(import.meta.url)), "linux-packages.sh"
 
 // A machine to run the script on: a bin/ of stand-ins, an archives/ apt downloads into, a log
 // of every apt-get call, and the files GitHub hands a step for its outputs and its summary.
-function machine({ failUpdates = 0, failInstalls = 0, failOffline = false, manyInstalled = false, imageVersion = "20261005.1" } = {}) {
+function machine({ failUpdates = 0, failInstalls = 0, failOffline = false, manyInstalled = false, imageVersion = "20261005.1", offlineHas = "socat bubblewrap" } = {}) {
   const root = mkdtempSync(join(tmpdir(), "linux-packages-"));
   const bin = join(root, "bin");
   const archives = join(root, "archives");
@@ -44,10 +44,18 @@ case $kind in
     # As apt does: a .deb named on the command line counts as downloaded only when it lies in
     # the archives directory. Anywhere else apt queues it as a download, which --no-download
     # drops, and the install fails (#1477: every warm run on 2026-10-10 failed this way).
+    # A package named by name installs offline only when this image has it or its file is in
+    # the archives: offlineHas stands for both.
     for a in "$@"; do
-      case "$a" in *.deb)
-        [ "$(dirname "$a")" = "${archives}" ] && [ -e "$a" ] || {
-          echo "E: Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?" >&2; exit 100; } ;;
+      case "$a" in
+        *.deb)
+          [ "$(dirname "$a")" = "${archives}" ] && [ -e "$a" ] || {
+            echo "E: Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?" >&2; exit 100; } ;;
+        -* | install | *=* | *:*) ;;
+        *)
+          case " ${offlineHas} " in *" $a "*) ;; *)
+            echo "E: Unable to fetch some archives, maybe run apt-get update or try with --fix-missing?" >&2; exit 100 ;;
+          esac ;;
       esac
     done ;;
   install) [ $n -le ${failInstalls} ] && exit 124
@@ -174,6 +182,21 @@ test("with the cache restored, the install never asks the mirror", () => {
   assert.doesNotMatch(r.stdout + r.stderr, /::warning/);
   assert.doesNotMatch(r.output, /^save=true$/m);
   assert.match(r.summary, /from the cache/);
+});
+
+test("a restored cache that lacks a package asked for goes to the mirror", () => {
+  // Restored from another image's key, the files are what that image lacked: a package it had
+  // preinstalled and this one does not is in no file, so the offline install must fail on it.
+  const { root, run } = machine({ offlineHas: "" });
+  const cache = join(root, "cache");
+  mkdirSync(cache);
+  writeFileSync(join(cache, "libfoo_1.0-1_amd64.deb"), "");
+  const r = run("install", "--cache", cache, "socat");
+  assert.equal(r.status, 0, r.stderr);
+  const offline = r.apt.find((l) => l.includes("--no-download"));
+  assert.ok(offline && / socat( |$)/.test(offline), `the offline install did not name socat: ${offline}`);
+  assert.ok(r.apt.some((l) => l.includes("update")), "never went to the mirror");
+  assert.match(r.summary, /from the mirror/);
 });
 
 test("a cache the image no longer fits falls back to the mirror", () => {

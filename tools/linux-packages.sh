@@ -14,8 +14,9 @@
 # the next image they may not fit. It also writes `restore=...`, the key without the image: GitHub
 # rolls a new image out over days, and a run on it restores the last image's files instead of
 # asking the mirror (2026-10-22 to 10-27, 41 runs failed on a slow mirror after missing the cache).
-# If those files do not fit, `install` says so and goes on to the mirror, and main saves the new
-# image's files under its own key.
+# If those files do not fit, or a package asked for is in none of them, `install` says so and goes
+# on to the mirror, and main saves the new image's files under its own key. When they fit, main
+# saves nothing new and later runs keep restoring the last image's files by the prefix.
 #
 # `install` installs PACKAGE... and says in the job summary how long it took and from where.
 #   - With `--cache DIR` holding .deb files (`.github/actions/linux-packages` restores them
@@ -136,7 +137,11 @@ if [ -n "$cache" ] && ls "$cache"/*.deb > /dev/null 2>&1; then
     debs+=("$ARCHIVES/$(basename "$deb")")
   done
   offline=0
-  said=$(apt "$OFFLINE_SECONDS" install --no-download "${debs[@]}" 2>&1) || offline=$?
+  # The packages by name as well as the files: restored from another image's key, the files
+  # are what that image lacked, and a package it had and this image has not is in none of
+  # them. Named, it cannot be downloaded, so the install fails and goes on to the mirror.
+  # shellcheck disable=SC2086 # split into its names on purpose.
+  said=$(apt "$OFFLINE_SECONDS" install --no-download $packages "${debs[@]}" 2>&1) || offline=$?
   printf '%s\n' "$said"
   if [ "$offline" -eq 0 ]; then
     say "$count packages installed in $(elapsed) s from the cache, without asking the mirror."
