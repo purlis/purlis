@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793134730196,
+  "lastUpdate": 1793136864326,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27258,6 +27258,48 @@ window.BENCHMARK_DATA = {
             "value": 101.05207899999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.675, 100.974, 101.052, 101.149, 101.634 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "590a1cd5a9179b85d6bc08e36c50d4e9c6494952",
+          "message": "ci: web in four parts (#3556)\n\nOn 2026-10-27 each of web's two parts ran vitest for 10 to 12 minutes,\nthe longest wait of a pull request after the scenario specs. No runner\nqueue across 4,417 ci runs (2026-10-14..27), so a part costs runner\nminutes, not wait. Part 1 keeps types, lint and format; part 2 the\nlicences and the tools' tests.\n\nThe scenario split that was in this PR is out: in three parts the skill\nstudio's draft specs failed in a fresh part 3 (twice on Linux, once on\nmacOS), an order dependence the two-part split hid (filed separately).\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T20:36:09Z",
+          "tree_id": "ba8776d39fbd640f5a883ec2af31abccbec8972b",
+          "url": "https://github.com/purlis/purlis/commit/590a1cd5a9179b85d6bc08e36c50d4e9c6494952"
+        },
+        "date": 1793136860167,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5227155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.497, 0.508, 0.523, 0.536, 0.541 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.058019,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.824, 16.956, 17.058, 17.172, 17.198 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.722332,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.544, 103.197, 103.722, 103.996, 104.184 ms"
           }
         ]
       }
