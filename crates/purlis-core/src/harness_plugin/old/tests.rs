@@ -47,7 +47,8 @@ fn each_of_the_projects_files_that_holds_the_old_table_is_found_with_its_text() 
 
 #[test]
 fn a_workspaces_old_settings_are_found_with_the_manifests_text() {
-    let manifest = r#"{"name": "alpha", "settings": {"harness_plugins": {"claude": {"a@b": true}}}}"#;
+    let manifest =
+        r#"{"name": "alpha", "settings": {"harness_plugins": {"claude": {"a@b": true}}}}"#;
     let dir = project(&[
         ("charter.toml", "[plane]\nname = \"p\"\n"),
         ("workspaces/alpha/workspace.json", manifest),
@@ -56,7 +57,10 @@ fn a_workspaces_old_settings_are_found_with_the_manifests_text() {
     assert_eq!(all.len(), 1, "{all:?}");
     assert_eq!(all[0].file, "workspaces/alpha/workspace.json");
     assert_eq!(all[0].which, None);
-    assert_eq!(all[0].text, manifest, "Remove works its change out against it");
+    assert_eq!(
+        all[0].text, manifest,
+        "Remove works its change out against it"
+    );
     assert!(!said(&all).contains("Edit as JSON"), "{}", said(&all));
 }
 

@@ -517,9 +517,7 @@ fn purlis_proposes_to_no_manifest_in_a_workspace_that_is_a_link() {
     std::fs::create_dir_all(&elsewhere).expect("elsewhere");
     std::fs::write(elsewhere.join("workspace.json"), "{}\n").expect("a manifest");
     std::os::unix::fs::symlink(&elsewhere, root.join("workspaces/gamma")).expect("link");
-    assert!(
-        proposable_by_purlis(&root, &root.join("workspaces/gamma/workspace.json")).is_err()
-    );
+    assert!(proposable_by_purlis(&root, &root.join("workspaces/gamma/workspace.json")).is_err());
 }
 
 /// #3486: purlis's change to a workspace's manifest is written by the manifest's own writer,

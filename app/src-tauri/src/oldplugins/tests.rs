@@ -116,7 +116,10 @@ fn a_workspaces_old_key_gets_a_change_and_nothing_is_written_until_apply() {
     let one = proposals.get(held[0].id).expect("it waits");
     assert_eq!(one.session, BY_PURLIS);
     match crate::proposals::now_of(&root, &one) {
-        crate::proposals::Now::Made { before: shown, after } => {
+        crate::proposals::Now::Made {
+            before: shown,
+            after,
+        } => {
             assert_eq!(shown, before, "shown against the manifest as it is");
             assert!(!after.contains("harness_plugins"), "{after}");
         }
@@ -135,7 +138,10 @@ fn after_apply_a_manifest_purlis_wrote_keeps_its_stamp_as_after_a_form_save() {
     apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Tab).expect("applied");
     let after = read(&root, MANIFEST);
     assert!(!after.contains("harness_plugins"), "{after}");
-    assert!(after.contains("\"theme\""), "every other setting kept: {after}");
+    assert!(
+        after.contains("\"theme\""),
+        "every other setting kept: {after}"
+    );
     assert_eq!(
         purlis_core::manifest::ownership(Some(&after)),
         purlis_core::manifest::Ownership::Charter,
