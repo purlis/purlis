@@ -1049,7 +1049,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1072,11 +1072,56 @@ jobs:
       - name: A wrapped chat listens nowhere, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p purlis-core --test a_sandboxed_chat_listens_nowhere_under_seatbelt
+      # A chat allowed to serve on a port, under its own compiled profile for real (#2019): its
+      # own socket and no TCP port, reached through purlis's door alone.
+      - name: A chat's server behind its door, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused
         if: failure() && steps.scope.outputs.run == 'true'
         run: log show --last 15m --style compact --predicate 'eventMessage CONTAINS "studio-probe" AND eventMessage CONTAINS "deny"' | tail -100 || true
+
+  # **`purlis listen`'s shim for Node, tried for real** (#2019): a server started on a chat's port
+  # by Node's own `http`, by Vite and by Next.js listens on the chat's socket and on no TCP port,
+  # under each Node the shim promises. Scoped like the confinement jobs: a pull request that does
+  # not touch the shim runs a check of a few seconds.
+  listen-shim:
+    name: listen shim (Node ${{ matrix.node }}, ${{ matrix.kind }})
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
+        kind: [plain, vite, next]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: The commit this change is measured against
+        id: base
+        uses: ./.github/actions/change-base
+      - name: Whether this change touches the shim
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          if [ "$EVENT" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(crates/purlis-cli/src/listen|tests/listen-shim/|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::the listen shim has not changed; not run"
+          fi
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: A server on the chat's port listens on its socket
+        if: steps.scope.outputs.run == 'true'
+        run: node tests/listen-shim/check.mjs ${{ matrix.kind }}
 
   # What the Python charter answered, frozen: every scenario the old differential ran, and the
   # generated cases of the shell reader and the plane-root guards, replayed against this build

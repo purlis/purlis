@@ -42,6 +42,8 @@ mod githook;
 mod guard;
 mod handoff;
 mod hooks;
+#[cfg(unix)]
+mod listen;
 mod mcp;
 mod memory;
 mod permission;
@@ -94,6 +96,16 @@ struct Cli {
 enum Command {
     /// Print the plane root the current directory sits in.
     Root,
+    /// Run a server for this chat on PORT: the port a sandboxed chat was allowed to serve on,
+    /// which purlis's door on this Mac answers on, while the server listens on the chat's own
+    /// socket behind it. For example: `purlis listen 5173 -- npm run dev`.
+    Listen {
+        /// The port the chat serves on.
+        port: u16,
+        /// The server's command, after `--`.
+        #[arg(last = true, allow_hyphen_values = true, required = true)]
+        command: Vec<std::ffi::OsString>,
+    },
     /// Run this user's session host on this device (`purlisd`) until it is ended: its socket
     /// under the runtime directory, a fresh credential for each of its clients' scopes, and the
     /// session protocol. The app starts its own; this is the same host for a machine with no
@@ -3250,6 +3262,7 @@ fn run(command: Command) -> Result<u8, String> {
         // Answered in `main`, before this: it is the one command whose exit code is not a
         // plain success or failure, and clap must never be allowed to exit 2 in front of it.
         Command::Hook { .. }
+        | Command::Listen { .. }
         | Command::Serve { .. }
         | Command::Bridge { .. }
         | Command::Init(_)
@@ -4291,6 +4304,11 @@ fn main() -> ExitCode {
     if let Command::Scan { explain } = &cli.command {
         return scan::run(*explain);
     }
+    // Needs no project: it runs a chat's server, wherever the chat is (#2019).
+    #[cfg(unix)]
+    if let Command::Listen { port, command } = &cli.command {
+        return listen::run(*port, command);
+    }
     // Needs no project: one host serves every project of this user on this device (ADR 0068).
     if let Command::Serve { suspends_unlinked } = &cli.command {
         return serve(*suspends_unlinked);
@@ -5016,77 +5034,5 @@ fn home_spelled(folder: &std::path::Path) -> String {
 }
 
 #[cfg(test)]
-mod core_word_tests {
-    use super::*;
-    use clap::CommandFactory;
-    use std::collections::BTreeSet;
-
-    /// Every word this binary's parser answers as its first argument: each command's name,
-    /// every other name clap takes for it, and clap's own `help` — read off the parser, so a
-    /// command added to it is in this set the day it is added.
-    fn words_the_parser_answers() -> BTreeSet<String> {
-        let mut root = Cli::command();
-        root.build();
-        root.get_subcommands()
-            .flat_map(|sub| {
-                std::iter::once(sub.get_name().to_owned())
-                    .chain(sub.get_all_aliases().map(str::to_owned))
-            })
-            .collect()
-    }
-
-    #[test]
-    fn every_word_charter_answers_is_one_no_extension_may_take() {
-        // **charter-app#342: an extension can never take over a core word.** The refusal lives
-        // in the core, which the app calls to approve an extension and which cannot read this
-        // parser — so this is where the list it refuses by is held to the parser, both ways.
-        // A new core command that is not in `CORE_WORDS` fails here, in the change adding it.
-        let parser = words_the_parser_answers();
-        let refused: BTreeSet<String> = purlis_core::extension::cli::CORE_WORDS
-            .iter()
-            .map(|&word| word.to_owned())
-            .collect();
-        let unprotected: Vec<&String> = parser.difference(&refused).collect();
-        assert!(
-            unprotected.is_empty(),
-            "`charter {unprotected:?}` is a core command an extension could still take as its \
-             id — add it to purlis_core::extension::cli::CORE_WORDS"
-        );
-        let stale: Vec<&String> = refused.difference(&parser).collect();
-        assert!(
-            stale.is_empty(),
-            "CORE_WORDS refuses {stale:?}, which is no longer a word charter answers"
-        );
-    }
-
-    #[test]
-    fn every_word_purlis_answers_is_a_name_no_profile_may_take() {
-        // #2422: a profile named like a command would shadow it, so the core refuses the name.
-        // The core cannot read this parser either, so here every word it answers is declared
-        // as a profile and each one must come back refused for its name.
-        let parser = words_the_parser_answers();
-        let local: String = parser
-            .iter()
-            .map(|word| format!("[harness.{word}]\nkind = \"claude\"\ncommand = [\"claude\"]\n"))
-            .collect();
-        let set = purlis_core::profiles::current_of(purlis_core::profiles::derive_from(
-            None,
-            Ok(Some(local)),
-        ));
-        let refused_for_the_name: BTreeSet<&str> = set
-            .refused
-            .iter()
-            .filter(|r| r.reason.contains("is named like the command"))
-            .map(|r| r.name.as_str())
-            .collect();
-        let unprotected: Vec<&String> = parser
-            .iter()
-            .filter(|word| !refused_for_the_name.contains(word.as_str()))
-            .collect();
-        assert!(
-            unprotected.is_empty(),
-            "`purlis {unprotected:?}` is a command a profile may still be named after — a word \
-             the parser answers must be in purlis_core::extension::cli::CORE_WORDS"
-        );
-    }
-}
+#[path = "main/tests/core_words.rs"]
+mod core_word_tests;

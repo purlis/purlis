@@ -585,3 +585,67 @@ fn a_wrapped_chats_printed_port_is_only_a_suggestion_and_its_violation_blocks_ar
     let claude = as_its_harness_reports(&opencode, Some(Harness::ClaudeCode.name()));
     assert_eq!(claude, opencode);
 }
+
+/// A server refused its port on this Mac (#2019): listening on one loopback port.
+fn listen(port: Option<&str>) -> (Block, Option<String>) {
+    (
+        Block {
+            operation: Operation::Listen,
+            kind: Kind::LocalService,
+            ours: false,
+        },
+        port.map(str::to_owned),
+    )
+}
+
+/// #2019: a dev server that failed to start on its port names the port in its own error, and
+/// the sandbox's own line names it too; a line that only printed such words raises nothing.
+#[test]
+fn a_server_refused_its_port_is_a_block_naming_the_port_to_listen_on() {
+    let said = "Error: listen EPERM: operation not permitted 127.0.0.1:5173\n    at \
+                Server.setupListenHandle [as _listen2] (node:net:1872:21)";
+    assert_eq!(
+        detect_with_targets(
+            &failed("npm run dev", &format!("Exit code 1\n{said}")),
+            &place()
+        ),
+        vec![listen(Some("5173"))]
+    );
+    let go = "listen tcp 127.0.0.1:8080: bind: operation not permitted";
+    assert_eq!(
+        detect_with_targets(&failed("go run .", &format!("Exit code 1\n{go}")), &place()),
+        vec![listen(Some("8080"))]
+    );
+    let stderr = "error: could not start\n<sandbox_violations>\n\
+                  node(812) deny(1) network-bind localhost:3000\n\
+                  </sandbox_violations>";
+    assert_eq!(
+        detect_with_targets(&came_back("npm run dev | tee log", "", stderr), &place()),
+        vec![listen(Some("3000"))]
+    );
+    assert_eq!(
+        detect_with_targets(&came_back("cat server.log", said, ""), &place()),
+        Vec::new()
+    );
+    // In a Codex chat the port is printed words: offered to the person to check, never named.
+    let codex = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "npm run dev"},
+        "tool_response": said,
+    });
+    assert_eq!(detect_with_targets(&codex, &place()), vec![listen(None)]);
+    assert_eq!(printed_port(&codex), Some(5173));
+}
+
+/// #2019: on Linux the wrap's supervisor tells a refused listen itself, so the hook leaves it.
+#[test]
+fn a_chat_purlis_wraps_on_linux_leaves_a_refused_listen_to_the_supervisor() {
+    for harness in ["codex", "opencode"] {
+        assert_eq!(
+            the_hooks_own(vec![listen(Some("3000"))], Some(harness), Os::Linux),
+            Vec::new(),
+            "{harness}"
+        );
+    }
+}

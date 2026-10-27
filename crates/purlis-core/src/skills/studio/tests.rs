@@ -310,10 +310,9 @@ fn the_grades_panel_shows_one_copys_grades_alone() {
     };
     assert_eq!(keys(Some(&shared)), ["shared-one"]);
     assert_eq!(keys(Some(&local)), ["local-one"]);
-    let first = Level::every(root)
-        .into_iter()
-        .find(|level| level.named(root, "deploy").is_some())
-        .unwrap();
+    // The one order a skill's tab shows its copies in (#3443): the window shows the first.
+    let (first, _) = Level::copies_of(root, "deploy").next().unwrap();
+    assert_eq!(first, shared, "the project's copy first");
     assert_eq!(
         keys(None),
         keys(Some(&first)),

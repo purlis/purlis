@@ -43,6 +43,8 @@ pub enum About {
     Service { service: String },
     /// A service on this Mac, by its one loopback port, its sandbox refused (qw384).
     Port { port: String },
+    /// Listening on one port of this Mac's loopback, its sandbox refused (#2019).
+    Listen { port: String },
     /// A vault its persona may not use.
     Vault { vault: String },
     /// A browser for the chat (#2013): the first browser tool it called asked the person what
@@ -79,6 +81,9 @@ impl About {
             What::Port(port) => Self::Port {
                 port: port.to_string(),
             },
+            What::Listen(port) => Self::Listen {
+                port: port.to_string(),
+            },
         }
     }
 
@@ -97,6 +102,13 @@ impl About {
                     code(port)
                 )
             }
+            // How to start it, and where its browser opens it.
+            Self::Listen { port } => format!(
+                "running a server on port {} ({})",
+                code(port),
+                port.parse::<u16>()
+                    .map_or_else(|_| String::new(), crate::sandbox::localport::listen_said)
+            ),
             Self::Vault { vault } => format!("using vault {}", code(vault)),
             Self::BrowserSite { site } => {
                 format!("its browser going to and sending to {}", code(site))

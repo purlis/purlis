@@ -102,7 +102,9 @@ fn a_grant_for_you_in_any_workspace_is_audited_as_yours_and_a_chat_nobody_is_at_
     );
     assert_eq!(
         unattended(&world, "steward", "devops", None),
-        Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat("devops"))
+        Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+            "devops"
+        )))
     );
 
     // Made again, it is refused, and nothing more is audited.
