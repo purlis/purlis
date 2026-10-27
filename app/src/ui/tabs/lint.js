@@ -96,13 +96,13 @@ export const off = {
 };
 
 /**
- * **This family's controls still drawn as a raw `<button>`** (D-2904-9): A tab drawn by hand (`role="tab"`), and a tab's marks and closer and the strip's offers, said by its role
- * or its class, which the button family's rule lets through until this family's lane moves them.
+ * **This family's controls still drawn as a raw `<button>`** (D-2904-9, #3012): a tab drawn by
+ * hand, by its role (`role="tab"`), and the strip's own controls, by the family's one class
+ * (`ui-tabs-control`), never by a word a view picked (`closer`, `crumb`): the button family's
+ * rule lets these through until this family's lane moves them, and refuses a bare button with
+ * any other class.
  */
 export const rawButtons = {
   roles: ["tab"],
-  classes: [
-    // A tab's closer.
-    "closer",
-  ],
+  classes: ["ui-tabs-control"],
 };

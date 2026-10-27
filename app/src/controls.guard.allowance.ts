@@ -21,7 +21,7 @@ export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
     "<button className=\"needs-you-mark rolled-up\">",
   ],
   "StripMarks.tsx": [
-    "<button className={clsx(\"closer\", closesOnly(offer.does) && \"keeps\", minimise && \"minimise\")}>",
+    "<button className={clsx(\"ui-tabs-control closer\", { keeps: closesOnly(offer.does), minimise })}>",
   ],
   "Welcome.tsx": [
     "<button className=\"welcome-door\">",
