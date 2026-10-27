@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::fence::Fence;
 use crate::{Missing, Skill};
 
 /// Where the skills sit inside the bundled plugin directory. Claude Code reads a plugin's
@@ -131,81 +132,25 @@ pub fn read(dir: &Path) -> Vec<Skill> {
 /// which is how every built-in skill is written.
 ///
 /// The one rule purlis reads a frontmatter by, a persona's too
-/// (`purlis_core::personas::frontmatter`): the block between the first two `---`, split into
-/// lines as Python's `str.splitlines` splits them, each line at its first `:`, key and value
+/// (`purlis_core::personas::frontmatter`): [`crate::fence::Fence`]'s, the lines between the
+/// opening `---` line and the next `---` line, each split at its first `:`, key and value
 /// stripped as Python's `str.strip` strips, and a line with an empty key dropped.
 pub fn frontmatter(text: &str) -> Vec<(String, String)> {
-    frontmatter_lines(text)
-        .into_iter()
-        .filter_map(|line| {
-            let (key, value) = line.split_once(':')?;
-            let key = py_strip(key);
-            (!key.is_empty()).then(|| (key.to_owned(), py_strip(value).to_owned()))
-        })
-        .collect()
+    Fence::find(text).map(|f| f.pairs()).unwrap_or_default()
 }
 
-/// **Where a frontmatter is**, as byte offsets into `text`: from just after the opening `---`
-/// to the start of the next `---`, or `None` where it has none. The one rule every reader and
-/// writer of a frontmatter keeps ([`frontmatter`], and the rename of a skill's text in
-/// [`crate::change`]).
+/// **Where a frontmatter is**, as byte offsets into `text`: from the first byte under the
+/// opening fence to the first of the closing one, or `None` where it has none
+/// ([`crate::fence::Fence`]). What every rewrite of a frontmatter cuts by ([`crate::change`]).
 pub(crate) fn frontmatter_block(text: &str) -> Option<(usize, usize)> {
-    let rest = text.strip_prefix("---")?;
-    let end = rest.find("---")?;
-    Some((3, 3 + end))
+    Fence::find(text).map(|f| f.span())
 }
 
-/// The lines of a `SKILL.md`'s frontmatter, by the rule [`frontmatter`] reads it by: the block
-/// [`frontmatter_block`] finds, stripped and split as Python splits lines. Empty where there is
-/// no frontmatter. What a reader of a key that spans lines (a block list) reads.
+/// The lines of a `SKILL.md`'s frontmatter, by the rule [`frontmatter`] reads it by, each
+/// without its break. Empty where there is no frontmatter. What a reader of a key that spans
+/// lines (a block list) reads.
 pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
-    frontmatter_block(text)
-        .map(|(start, end)| lines(py_strip(&text[start..end])))
-        .unwrap_or_default()
-}
-
-/// `str.strip()`: Python's whitespace is Rust's and the four separator controls U+001C-U+001F.
-fn py_strip(text: &str) -> &str {
-    text.trim_matches(|c: char| {
-        c.is_whitespace() || matches!(c, '\u{1c}' | '\u{1d}' | '\u{1e}' | '\u{1f}')
-    })
-}
-
-/// `str.splitlines()`: every line break Python knows, `\r\n` as one, and no empty last line.
-fn lines(text: &str) -> Vec<&str> {
-    fn is_break(c: char) -> bool {
-        matches!(
-            c,
-            '\n' | '\r'
-                | '\u{b}'
-                | '\u{c}'
-                | '\u{1c}'
-                | '\u{1d}'
-                | '\u{1e}'
-                | '\u{85}'
-                | '\u{2028}'
-                | '\u{2029}'
-        )
-    }
-    let mut out = Vec::new();
-    let mut start = 0;
-    let mut it = text.char_indices().peekable();
-    while let Some((i, c)) = it.next() {
-        if !is_break(c) {
-            continue;
-        }
-        out.push(&text[start..i]);
-        if c == '\r' && it.peek().is_some_and(|&(_, next)| next == '\n') {
-            it.next();
-            start = i + 2;
-        } else {
-            start = i + c.len_utf8();
-        }
-    }
-    if start < text.len() {
-        out.push(&text[start..]);
-    }
-    out
+    Fence::find(text).map(|f| f.line_texts()).unwrap_or_default()
 }
 
 /// The briefing section that lists `skills`, or none when there are none.
