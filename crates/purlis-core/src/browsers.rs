@@ -1395,6 +1395,39 @@ impl Screen for EngineScreen {
         browser.size_to(width, height).map_err(not_taken)
     }
 
+    /// The engine's own DevTools of the page it shows, for the person (#2028).
+    fn inspect(
+        &self,
+        width: u16,
+        height: u16,
+        ended: Box<dyn FnOnce() + Send>,
+    ) -> Result<(), NotTaken> {
+        let browser = self.with(Arc::clone).ok_or(NotTaken::Ended)?;
+        self.browsed();
+        browser
+            .inspect(width, height, Box::new(move |_why| ended()))
+            .map_err(not_taken)
+    }
+
+    fn show_inspector(&self, frames: FrameSink) {
+        self.with(|browser| {
+            browser.show_inspector(Arc::new(move |painted: drive::Painted| {
+                frames(aim_of(&painted.aim), painted.address, Bytes::from(painted.jpeg));
+            }));
+        });
+    }
+
+    fn hide_inspector(&self) {
+        self.with(|browser| browser.hide_inspector());
+    }
+
+    fn inspector_input(&self, input: &wire::Input) -> Result<(), NotTaken> {
+        let browser = self.with(Arc::clone).ok_or(NotTaken::Ended)?;
+        browser
+            .inspector_input(&input_of(input))
+            .map_err(not_taken)
+    }
+
     /// Told once the engine has ended, however it ended, with how (#2745); at once when it was
     /// stopped already.
     fn when_it_ends(&self, tell: Box<dyn FnOnce(ScreenEnded) + Send>) {
