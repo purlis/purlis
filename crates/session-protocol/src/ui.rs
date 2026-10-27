@@ -996,7 +996,6 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "memory_unarchive",
     "move_projects",
     "move_their_agents_md_aside",
-    "old_harness_plugins",
     "open_chat_tab",
     "open_local_project",
     "open_plane",

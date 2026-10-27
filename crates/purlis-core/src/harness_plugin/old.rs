@@ -5,7 +5,7 @@
 //! 2026-10-26/27 on spec #2762): purlis stopped choosing another harness's plugins per project,
 //! and the harness decides. A project that still holds the old keys starts as any other, with
 //! the keys ignored and never rewritten behind the person's back. This finds them, for the one
-//! notice that says so, and makes the text without them, for the change the person applies
+//! Inbox ask that says so, and makes the text without them, for the change the person applies
 //! (`Remove`, held as a proposed change: [`crate::proposed`]).
 //!
 //! The project's two files are found here and made without the keys. A workspace's
@@ -86,7 +86,7 @@ pub fn removed(text: &str) -> Result<String, String> {
     )
 }
 
-/// What the notice says, for the files in `found`: the keys are ignored, the harness decides,
+/// What the Inbox ask says, for the files in `found`: the keys are ignored, the harness decides,
 /// and where Remove reaches.
 pub fn said(found: &[Found]) -> String {
     let files: Vec<&str> = found.iter().map(|one| one.file.as_str()).collect();

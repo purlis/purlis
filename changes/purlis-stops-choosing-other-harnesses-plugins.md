@@ -10,5 +10,5 @@
 ### Changed
 
 - **Old `[harness_plugins]` keys are ignored, and said once.** A project that still holds them
-  starts as any other. A Notice names the files, and its Remove shows the change that takes the
+  starts as any other. One ask in the Inbox names the files, and its Remove shows the change that takes the
   keys out for you to apply; nothing is rewritten until you do (#3467).

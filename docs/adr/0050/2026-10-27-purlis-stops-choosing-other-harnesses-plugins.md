@@ -42,13 +42,13 @@ for its plugins. purlis now leaves it there.
 
 A project that still holds `[harness_plugins]` starts as any other. The keys are **ignored and
 never rewritten behind the person's back**: no reader reads them, no save refuses them, and a
-save of another setting keeps them as they are. The window says so **once**, in a Notice that
+save of another setting keeps them as they are. The window says so **once**, in one ask in the Inbox (purlis's own, of no chat) that
 names each file holding them and that each harness decides. Its **Remove** holds a proposed
 change for each of the project's two files (the change purlis itself proposes, judged by
 `proposed::proposable_by_purlis` and drawn and applied as a chat's proposal is, #1975): nothing is
-written until the person presses Apply. **Dismiss** keeps the Notice away. Either answer is kept
+written until the person presses Apply. **Dismiss** keeps the ask away. Either answer is kept
 in the project's own state folder on this machine. A workspace's `settings.harness_plugins` is
-named in the Notice and taken out with that workspace's Edit as JSON, since its manifest has a
+named in the ask and taken out with that workspace's Edit as JSON, since its manifest has a
 writer of its own.
 
 ## What this amends

@@ -430,7 +430,7 @@ was. A `default` in the local file wins over the committed one.
 
 **The local file carries `[harness]`, `[extensions]`, `[theme]`, `[harness_skills]`,
 `[plane]` and `[repos]`, and nothing else.** Any other section in it is refused by name, except
-an old `[harness_plugins]`, which nothing reads since #3467 and one Notice says so of. An
+an old `[harness_plugins]`, which nothing reads since #3467 and one Inbox ask says so of. An
 ignored file that could override `[[forge]]` — whose hosts steer the one-credential guard —
 would change plane policy with no trace in git. And the file is read only while git would not
 carry it: if git tracks it or would commit it, purlis reads nothing in it, and

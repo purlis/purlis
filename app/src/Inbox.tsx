@@ -587,7 +587,9 @@ function shapeOf(
     // A chat that only waits for the person's next word asks again at its next stop, so it
     // may be put away, as the queue always let it be. A decision never is.
     ignore: waits && onIgnore !== undefined,
-    go: ask.source !== "sign-in" && ask.source !== "sandbox-only",
+    // An ask of no chat's (session 0: a sign-in, a sandbox-only profile, purlis's own) has no
+    // chat to go to.
+    go: ask.session !== 0 && ask.source !== "sign-in" && ask.source !== "sandbox-only",
   };
 }
 
@@ -688,6 +690,7 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "runner-write": "Asks, from a pool's runner, to change this project",
   "sign-in": "Asks you to sign a profile in",
   "sandbox-only": "Asks you to make a sandbox-only profile",
+  "old-harness-plugins": "Old harness plugin settings, ignored now",
   browser: "Asks what its browser may reach",
   "browser-needs-you": "Needs you in its browser",
   "browser-site": "Asks to let its browser reach a new site",

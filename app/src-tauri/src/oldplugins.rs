@@ -7,9 +7,10 @@
 //! never rewritten behind the person's back
 //! ([`purlis_core::harness_plugin::old`]).
 //!
-//! - **One Notice** ([`old_harness_plugins`]) says which files hold them, until the person
+//! - **One Ask in the Inbox** ([`notice_of`], drawn by `asking::old_harness_plugins`, so it
+//!   costs a project switch no read of its own) says which files hold them, until the person
 //!   answers it once: **Remove** or **Dismiss**. The answer is kept in this machine's state for
-//!   the project, where no chat writes, so the Notice never comes back for it.
+//!   the project, where no chat writes, so the Ask never comes back for it.
 //! - **Remove is an edit the person approves** ([`remove_old_harness_plugins`]): each of the
 //!   project's two files that holds them gets a proposed change that takes the table out, held
 //!   as purlis's own ([`crate::proposals::BY_PURLIS`]) and drawn, shown whole and applied as a
@@ -23,7 +24,7 @@ use purlis_core::proposed::{Change, base_of};
 use crate::planes::{Held, PlaneId, Planes};
 use crate::proposals::{BY_PURLIS, Proposals};
 
-/// The Notice, as the window draws it.
+/// The Ask about the old keys, as the Inbox draws it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct OldHarnessPlugins {
     /// The sentence: which files hold the keys, that they are ignored, and what Remove reaches.
@@ -34,14 +35,14 @@ pub struct OldHarnessPlugins {
     pub removable: bool,
 }
 
-/// Where this machine keeps that the project's Notice was answered.
+/// Where this machine keeps that the project's Ask was answered.
 fn answered_at(root: &Path) -> PathBuf {
     purlis_core::names::state(root)
         .join("app")
         .join("old-harness-plugins-answered")
 }
 
-/// The Notice for the project at `root`, or none: no file holds the keys, or it was answered.
+/// The Ask for the project at `root`, or none: no file holds the keys, or it was answered.
 pub fn notice_of(root: &Path) -> Option<OldHarnessPlugins> {
     if answered_at(root).exists() {
         return None;
@@ -57,7 +58,7 @@ pub fn notice_of(root: &Path) -> Option<OldHarnessPlugins> {
     })
 }
 
-/// Keeps that the project's Notice was answered, so it is said once.
+/// Keeps that the project's Ask was answered, so it is said once.
 fn answer(root: &Path) -> Result<(), String> {
     let at = answered_at(root);
     let keep = || -> std::io::Result<()> {
@@ -77,7 +78,7 @@ pub struct HeldRemoval {
 }
 
 /// **Remove**'s work in the project at `root`: a proposed change per file of its own two that
-/// holds the keys, held in `proposals` at `now` as purlis's, in file order. The Notice is
+/// holds the keys, held in `proposals` at `now` as purlis's, in file order. The Ask is
 /// answered only once a change is held, so it never goes with nothing to apply.
 pub fn removal_held(
     root: &Path,
@@ -103,22 +104,7 @@ pub fn removal_held(
     Ok(held)
 }
 
-/// **The old keys' Notice**, for the project's window: none where nothing holds them or it was
-/// answered.
-#[tauri::command]
-#[specta::specta]
-pub async fn old_harness_plugins(
-    planes: tauri::State<'_, Planes>,
-    plane: PlaneId,
-) -> Result<Option<OldHarnessPlugins>, String> {
-    let held = planes.held(&plane)?;
-    crate::off_the_window("reading the old harness plugin keys", move || {
-        Ok(notice_of(held.root()))
-    })
-    .await
-}
-
-/// **Remove** on the Notice: each file's change held for the person to apply, each with its
+/// **Remove** on the Ask: each file's change held for the person to apply, each with its
 /// file. Window-only: only the person proposes purlis's own change.
 #[tauri::command]
 #[specta::specta]
@@ -137,7 +123,7 @@ fn removed(held: &Held) -> Result<Vec<HeldRemoval>, String> {
     Ok(ids)
 }
 
-/// **Dismiss** on the Notice: kept, so it is not said again. Window-only.
+/// **Dismiss** on the Ask: kept, so it is not said again. Window-only.
 #[tauri::command]
 #[specta::specta]
 pub async fn dismiss_old_harness_plugins(

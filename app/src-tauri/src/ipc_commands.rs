@@ -132,7 +132,6 @@ macro_rules! app_commands {
                 proposals::apply_proposed_change,
                 proposals::proposed_change,
                 proposals::dismiss_proposed_change,
-                oldplugins::old_harness_plugins,
                 oldplugins::remove_old_harness_plugins,
                 oldplugins::dismiss_old_harness_plugins,
                 mcpfailed::mcp_failures,

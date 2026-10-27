@@ -302,7 +302,7 @@ pub fn standing(text: &str, workspace: &str) -> Vec<Refusal> {
     let mut out: Vec<Refusal> = settings
         .keys()
         .filter(|key| !READ.contains(&key.as_str()))
-        // Read by nothing since #3467, and said once by its own Notice rather than refused: a
+        // Read by nothing since #3467, and said once by its own Inbox ask rather than refused: a
         // manifest that still holds it saves as it did.
         .filter(|key| key.as_str() != crate::harness_plugin::old::TABLE)
         .map(|key| {

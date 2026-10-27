@@ -811,18 +811,6 @@ export const commands = {
 	 */
 	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
 	/**
-	 *  **The old keys' Notice**, for the project's window: none where nothing holds them or it was
-	 *  answered.
-	 */
-	oldHarnessPlugins: (plane: PlaneId) => typedError<{
-	/**  The sentence: which files hold the keys, that they are ignored, and what Remove reaches. */
-	said: string,
-	/**  The files that hold them, relative to the project. */
-	files: string[],
-	/**  Whether Remove has a change to propose: one of the project's own two files holds them. */
-	removable: boolean,
-} | null, string>(__TAURI_INVOKE("old_harness_plugins", { plane })),
-	/**
 	 *  **Remove** on the Notice: each file's change held for the person to apply, each with its
 	 *  file. Window-only: only the person proposes purlis's own change.
 	 */
@@ -4275,6 +4263,11 @@ export type AnswerPath =
  */
 { via: "sandbox-only" } | 
 /**
+ *  `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
+ *  file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
+ */
+{ via: "old-harness-plugins" } | 
+/**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
  */
@@ -4443,6 +4436,11 @@ export type AskSource =
  *  making one and running Codex's own sign-in in it.
  */
 "sandbox-only" | 
+/**
+ *  A project that still holds the old `[harness_plugins]` keys purlis no longer reads
+ *  (#3467): said once, answered by Remove, which proposes the edit, or Dismiss.
+ */
+"old-harness-plugins" | 
 /**  A chat's first browser call, asking what its browser may reach (#2013). */
 "browser" | 
 /**
@@ -8175,16 +8173,6 @@ export type OfferedSource = {
 	name: string,
 	why: string,
 	source: SkillSource,
-};
-
-/**  The Notice, as the window draws it. */
-export type OldHarnessPlugins = {
-	/**  The sentence: which files hold the keys, that they are ignored, and what Remove reaches. */
-	said: string,
-	/**  The files that hold them, relative to the project. */
-	files: string[],
-	/**  Whether Remove has a change to propose: one of the project's own two files holds them. */
-	removable: boolean,
 };
 
 /**
