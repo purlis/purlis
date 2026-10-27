@@ -401,6 +401,8 @@ describe("a start already running (GL-1)", () => {
       "data-off",
       "",
     );
+    // Nor is the key named to assistive tech.
+    expect(start).not.toHaveAttribute("aria-keyshortcuts");
     await userEvent.setup().click(start);
     expect(onStart).not.toHaveBeenCalled();
   });

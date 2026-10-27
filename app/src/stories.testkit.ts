@@ -7,6 +7,7 @@
  */
 
 import { waitFor } from "storybook/test";
+import { cellInTest } from "../.storybook/matrix";
 
 /** The global the screenshot gate puts its picture-taker on (`.storybook/screenshots.setup.ts`),
  *  only where pictures are taken. */
@@ -30,6 +31,9 @@ export const WINDOW_GLOBAL = "__PURLIS_STORY_WINDOW__";
 /** The short window the operator's complaint was of (#3389): about 500 px tall. */
 export const SHORT_WINDOW = { width: 800, height: 500 } as const;
 
+/** A window short enough that 6vh is under 24 px, so the dialog's top is held by the floor. */
+export const SHORTEST_WINDOW = { width: 800, height: 360 } as const;
+
 /**
  * **The story's window is `height` px tall** (and `width` px wide), for the rest of its `play`:
  * a story that checks where something sits against a short window, such as a dialog's fixed
@@ -39,7 +43,13 @@ export const SHORT_WINDOW = { width: 800, height: 500 } as const;
  */
 export async function inAWindow(width: number, height: number): Promise<boolean> {
   const size = (globalThis as Record<string, unknown>)[WINDOW_GLOBAL];
-  if (typeof size !== "function") return false;
+  if (typeof size !== "function") {
+    // In a story test the window is always resizable: a sizer missing there is a broken setup,
+    // which would quietly check the tall window again.
+    if (cellInTest() !== undefined)
+      throw new Error("a story test has no window sizer (.storybook/cell.setup.ts)");
+    return false;
+  }
   await (size as (width: number, height: number) => Promise<void>)(width, height);
   await waitFor(() => {
     if (window.innerHeight !== height) throw new Error("not resized yet");
@@ -69,6 +79,8 @@ function lengthOf(length: string): number {
  */
 export function expectAnchored(dialog: Element): void {
   const clear = lengthOf("var(--space-7)");
+  // An unresolved token measures 0, which would weaken both checks to nothing.
+  if (!(clear > 0)) throw new Error("--space-7 measures 0 px here: the theme's tokens are not set");
   const box = dialog.getBoundingClientRect();
   const top = Math.max(clear, DIALOG_TOP_SHARE * window.innerHeight);
   const floor = window.innerHeight - clear;

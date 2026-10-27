@@ -13,6 +13,7 @@ import { useState, type ReactNode } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import {
   SHORT_WINDOW,
+  SHORTEST_WINDOW,
   expectAnchored,
   expectFocusInSight,
   inAWindow,
@@ -305,24 +306,44 @@ export const InAShortWindow: Story = {
   render: () => <Long />,
   parameters: { screenshot: false },
   play: async () => {
-    const page = within(document.body);
-    const dialog = await page.findByRole("dialog", { name: "Ask steward" });
-    await waitFor(() => expect(page.getByRole("textbox", { name: "Field 1" })).toHaveFocus());
-    await inAWindow(SHORT_WINDOW.width, SHORT_WINDOW.height);
-    expectAnchored(dialog);
-    const footer = dialog.querySelector('[data-part="footer"]') as HTMLElement;
-    // The window's own box, top to bottom.
-    const shown = { top: 0, bottom: window.innerHeight } as DOMRect;
-    await expect(inside(footer.getBoundingClientRect(), shown)).toBe(true);
-    for (const name of ["Cancel", "Ask steward"]) {
-      const answer = page.getByRole("button", { name });
-      await expect(inside(answer.getBoundingClientRect(), shown)).toBe(true);
-      await expect(inside(answer.getBoundingClientRect(), footer.getBoundingClientRect())).toBe(
-        true,
-      );
-    }
+    await answersInAWindow(SHORT_WINDOW);
   },
 };
+
+/**
+ * **The shortest window** (#3510): at 360 px 6vh is under 24 px, so the dialog's top is held by
+ * its floor, 24 px down, and the answers are still inside the dialog and the window.
+ */
+export const InTheShortestWindow: Story = {
+  render: () => <Long />,
+  parameters: { screenshot: false },
+  play: async () => {
+    await answersInAWindow(SHORTEST_WINDOW);
+  },
+};
+
+/** `Long`'s dialog in a window `size` tall: anchored, its footer and answers inside it and in
+ *  the window, never clipped by the dialog's edge. */
+async function answersInAWindow(size: { width: number; height: number }) {
+  const page = within(document.body);
+  const dialog = await page.findByRole("dialog", { name: "Ask steward" });
+  await waitFor(() => expect(page.getByRole("textbox", { name: "Field 1" })).toHaveFocus());
+  // In a story test the window must have been resized: else this is the tall check again.
+  if (await inAWindow(size.width, size.height)) await expect(window.innerHeight).toBe(size.height);
+  expectAnchored(dialog);
+  const footer = dialog.querySelector('[data-part="footer"]') as HTMLElement;
+  const box = dialog.getBoundingClientRect();
+  // The window's own box, top to bottom.
+  const shown = { top: 0, bottom: window.innerHeight } as DOMRect;
+  await expect(inside(footer.getBoundingClientRect(), shown)).toBe(true);
+  await expect(inside(footer.getBoundingClientRect(), box)).toBe(true);
+  for (const name of ["Cancel", "Ask steward"]) {
+    const answer = page.getByRole("button", { name }).getBoundingClientRect();
+    await expect(inside(answer, shown)).toBe(true);
+    await expect(inside(answer, box)).toBe(true);
+    await expect(inside(answer, footer.getBoundingClientRect())).toBe(true);
+  }
+}
 
 const PERSONAS = [
   "steward",

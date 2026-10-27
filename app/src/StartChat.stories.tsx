@@ -216,10 +216,14 @@ export const InAShortWindow: Story = {
     if (await inAWindow(SHORT_WINDOW.width, SHORT_WINDOW.height))
       await expect(dialog.getBoundingClientRect().height).toBeLessThan(620);
     expectAnchored(dialog);
+    const box = dialog.getBoundingClientRect();
     for (const name of ["Cancel", "Start chat"]) {
       const answer = page.getByRole("button", { name }).getBoundingClientRect();
+      // In the window, and inside the dialog, which clips what runs past its edge.
       await expect(answer.top).toBeGreaterThanOrEqual(0);
       await expect(answer.bottom).toBeLessThanOrEqual(window.innerHeight);
+      await expect(answer.top).toBeGreaterThanOrEqual(box.top - 0.5);
+      await expect(answer.bottom).toBeLessThanOrEqual(box.bottom + 0.5);
     }
   },
 };
