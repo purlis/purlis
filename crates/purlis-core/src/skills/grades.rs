@@ -29,17 +29,17 @@ use super::verbs::{Level, find, rel};
 use crate::skilluse::Content;
 
 /// The directory under `personas/` the eval record lives in, beside the skill log's.
-pub const DIR_NAME: &str = "_grades";
+const DIR_NAME: &str = "_grades";
 
 /// The version of a row this purlis writes and reads.
 pub const VERSION: u32 = 1;
 
 /// The most bytes of one month's file read, and of one row.
-pub const MOST_FILE_BYTES: u64 = 16 * 1024 * 1024;
-pub const MOST_LINE_BYTES: usize = 1024 * 1024;
+const MOST_FILE_BYTES: u64 = 16 * 1024 * 1024;
+const MOST_LINE_BYTES: usize = 1024 * 1024;
 
 /// The most grades of one skill answered, newest first.
-pub const MOST_GRADES: usize = 200;
+const MOST_GRADES: usize = 200;
 
 /// The arms the built-in runner compares now: the skill against no skill.
 pub const ARMS: [Arm; 2] = [Arm::With, Arm::Without];
@@ -49,15 +49,15 @@ pub const CHAT_TIME: std::time::Duration = std::time::Duration::from_secs(5 * 60
 
 /// The folder of this machine's state the grades of a local copy are kept in, never committed
 /// (a copy in `skills.local/`, or in a workspace that is this machine's alone).
-pub const LOCAL_DIR: &str = "skill-grades";
+pub(crate) const LOCAL_DIR: &str = "skill-grades";
 
 /// The most files of one record folder looked at: a folder with more is read no further.
-pub const MOST_FILES: usize = 600;
+const MOST_FILES: usize = 600;
 
 /// The first characters a chat program reads as its own command, a flag, a shell line, a memory
 /// or a file's mention, rather than as a prompt: a query that starts with one is left out of a
 /// grade, never sent (the review of #3229).
-pub const COMMAND_STARTS: [char; 5] = ['-', '/', '!', '#', '@'];
+const COMMAND_STARTS: [char; 5] = ['-', '/', '!', '#', '@'];
 
 /// `personas/_grades/<YYYY-MM>.<device>.jsonl`, `<device>` named as the skill log's is.
 fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {

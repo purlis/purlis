@@ -80,8 +80,6 @@ function core({
           return { shared: files.shared, local: files.local };
         case "project_extensions":
           return { extensions: [], local_left_out: null };
-        case "project_harness_plugins":
-          return [];
         case "sandbox_state":
           return {
             on: true,

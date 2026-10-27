@@ -180,8 +180,6 @@ function core({
           return { shared, local: now() };
         case "project_extensions":
           return { extensions: [], local_left_out: null };
-        case "project_harness_plugins":
-          return [];
         case "opened_chats":
           return chats.map((profile, at) => ({ session: at + 1, name: `chat ${at + 1}`, profile }));
         case "sandbox_state":

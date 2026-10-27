@@ -9,6 +9,7 @@ import { emit } from "@tauri-apps/api/event";
 import { IN_ITS_CHAT, answerTaken, answerThrough, asksMoved, useAsks } from "./asks";
 import type { Shown } from "./bindings";
 import { OPEN_BROWSER_ASK, type OpenBrowserAsk } from "./browserNeedsYou";
+import { OPEN_PROPOSAL_ASK } from "./proposedChangeOpen";
 import { REMOVE_WORKSPACE_ASK } from "./removeWorkspaceAsk";
 import { OPEN_RUNNER_WRITE_ASK } from "./runnerWriteOpen";
 import { PROFILE_SIGN_IN } from "./settings/links";
@@ -137,6 +138,19 @@ const SANDBOX_ONLY: Shown = {
   source: "sandbox-only",
   chain: ["Codex"],
   answer: { via: "sandbox-only" },
+};
+
+const OLD_PLUGINS: Shown = {
+  session: 0,
+  ask: "old-harness-plugins",
+  says: "purlis no longer turns other harnesses' plugins on or off per project.",
+  options: [
+    { id: "remove", label: "Remove", allows: false },
+    { id: "dismiss", label: "Dismiss", allows: false },
+  ],
+  source: "old-harness-plugins",
+  chain: ["purlis"],
+  answer: { via: "old-harness-plugins" },
 };
 
 const BROWSER: Shown = {
@@ -327,6 +341,34 @@ describe("answering through the path an ask names", () => {
     expect(calls.map((one) => [one.cmd, one.args])).toEqual([
       ["make_sandbox_only_profile", { plane: PLANE }],
       ["dismiss_sandbox_only", { plane: PLANE }],
+    ]);
+  });
+
+  it("removes the old harness plugin keys by opening purlis's proposed change, and puts it away by Dismiss (#3467)", async () => {
+    const calls = sent({
+      remove_old_harness_plugins: [{ id: 4, file: "charter.toml" }],
+      dismiss_old_harness_plugins: null,
+    });
+    const opened: unknown[] = [];
+    const heard = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener(OPEN_PROPOSAL_ASK, heard);
+    try {
+      expect(await answerTaken(PLANE, OLD_PLUGINS, "remove")).toEqual({
+        refused: undefined,
+        live: false,
+        opened: true,
+      });
+      expect(opened).toEqual([{ plane: PLANE, id: 4, path: "charter.toml" }]);
+      expect(await answerTaken(PLANE, OLD_PLUGINS, "dismiss")).toEqual({
+        refused: undefined,
+        live: false,
+      });
+    } finally {
+      window.removeEventListener(OPEN_PROPOSAL_ASK, heard);
+    }
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["remove_old_harness_plugins", { plane: PLANE }],
+      ["dismiss_old_harness_plugins", { plane: PLANE }],
     ]);
   });
 

@@ -16,21 +16,23 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { AnchoredPopover } from "./ui/popover/Popover";
-import { ChevronRight, Hand, MessagesSquare, Search, SquareTerminal } from "lucide-react";
+import { ChevronRight, Ellipsis, Hand, Plus, Search } from "lucide-react";
 import {
   besideId,
   ONLY_A_TASK_OPENS_BESIDE,
   taskStopId,
+  DISPATCHES_SHOW,
   type Catalogued,
   type Offer,
   type TaskEndWay,
 } from "./actions";
+import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
 import { TaskEndConfirm, type TaskEndInline } from "./TaskEnd";
 import type { AtLimit, FinishedTask } from "./bindings";
 import { HelpersSaid } from "./ExplorerChats";
 import { ChatDoingLine } from "./ChatRowActivity";
 import { cardDown, cardUp, skipsTheRest, useCardUp } from "./chatCard";
-import { ChatShownState } from "./ChatRows";
+import { ChatPersonaState, ChatShownState } from "./ChatRows";
 import { sameList, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { useTokensOnHover } from "./tasksUsed";
 import {
@@ -77,16 +79,15 @@ import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
 import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
 import { tasksIn } from "./taskBuckets";
 import { Menued } from "./Menus";
-import { PersonaMark } from "./PersonaMark";
 import { useRevealedTask, type Reveal } from "./revealTask";
 import { useTabStop } from "./roving";
 import { stateClock, useStateSince, type StateClock } from "./stateClock";
 import { deletes } from "./tabKeys";
 import { askSettingsLink } from "./settings/links";
 import { DISPATCH } from "./settings/dispatch";
-import { Button } from "./ui/button/Button";
+import { Button, IconButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
-import { PanelSectionTitle } from "./ui/panel/Panel";
+import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
@@ -805,6 +806,13 @@ export function ChatsSection({
     setInside(false);
     setSaid(undefined);
   };
+  /** The catalogue's new chat, which the view's title line offers (#3342). */
+  const newChat = offers.get("chat.new");
+  /** The rows the title line's More offers (#3342), those the catalogue offers here. */
+  const more = MORE_ROWS.flatMap((id) => {
+    const offer = offers.get(id);
+    return offer === undefined ? [] : [offer];
+  });
   const hidden = steady.length - base.length;
   /** Where a chat the scope leaves out is, as the line says it (#1679). */
   const outside = scope === "all" ? undefined : OUTSIDE_SCOPE[scope];
@@ -850,82 +858,134 @@ export function ChatsSection({
         .filter((one) => one !== "")
         .join(" ");
   return (
-    <section
+    <Section
+      view
       ref={section}
       className="chats-section ui-text-body"
       data-testid="chats-section"
       aria-label="Chats"
-    >
-      {/* The title and the filter stay at the top of the section while its rows scroll. */}
-      <div className="chats-head">
-        <div className="chats-top">
-          <PanelSectionTitle
-            id="chats-title"
-            mark={heading === undefined ? MessagesSquare : undefined}
-          >
-            {heading ?? "Chats"}
-          </PanelSectionTitle>
-          {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
+      // **The Chats view is a view of the panel family** (#3342, the sidebar-views prototype's
+      // Q1 A): its title line, then the filter, then the scope, then the chips, held at the top
+      // on the panel's own fill while the rows scroll under them.
+      top={
+        <>
+          <div className="chats-top">
+            {/* The view's one title, as the sidebar-views prototype's Q1 A draws it (#3342):
+                13px, strong, in the primary tier and its own case. */}
+            <PanelTitle id="chats-title" className="side-title">
+              {heading ?? "Chats"}
+            </PanelTitle>
+            {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
               DS-11): both status lines are always in the accessibility tree, so what they come
               to say is announced, and they stand beside the title, so saying it moves no row
               and they take no line of their own while they have nothing to say. */}
-          {every.length > 0 && (
-            <div className="chats-notes ui-text-secondary">
-              {hiddenFirst !== undefined && goesTo !== undefined && (
-                <Button
+            {every.length > 0 && (
+              <div className="chats-notes ui-text-secondary">
+                {hiddenFirst !== undefined && goesTo !== undefined && (
+                  <Button
+                    size="sm"
+                    data-leads-to={goesTo.session}
+                    aria-label={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
+                    tooltip={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
+                    onPress={() => onOpen(goesTo.session)}
+                    icon={<Hand aria-hidden="true" />}
+                    className="chats-hidden-go"
+                  >
+                    Go
+                  </Button>
+                )}
+                <Tooltip tip={hides || undefined}>
+                  <p
+                    className={said === undefined ? "chats-hidden" : "chats-hidden away"}
+                    role="status"
+                  >
+                    {hides}
+                  </p>
+                </Tooltip>
+                <Tooltip tip={said}>
+                  <p className="chats-said" role="status">
+                    {said ?? ""}
+                  </p>
+                </Tooltip>
+              </div>
+            )}
+            {/* The view's own action on its title's line (Q1 A): the catalogue's new chat, named
+                for what it makes here; the strip's own `+` is the same row, as New tab. */}
+            {newChat !== undefined && (
+              <IconButton
+                size="sm"
+                aria-label="New chat"
+                tooltip={newChat.available ? "New chat" : newChat.reason}
+                isDisabled={!newChat.available}
+                onPress={() => press(newChat)}
+                icon={<Plus className="node-icon" aria-hidden="true" />}
+              />
+            )}
+            {/* **More** (Q1 A, #3342): the catalogue's other ways to start or look at chats
+                here, a new shell and the dispatches, and Settings; each its row, run as a
+                press of it is. */}
+            {more.length > 0 && (
+              <MenuTrigger>
+                <IconButton
                   size="sm"
-                  data-leads-to={goesTo.session}
-                  aria-label={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
-                  tooltip={`Go to ${goesTo.name}, ${hiddenFirst.why}`}
-                  onPress={() => onOpen(goesTo.session)}
-                  icon={<Hand aria-hidden="true" />}
-                  className="chats-hidden-go"
+                  aria-label="More"
+                  tooltip="More"
+                  icon={<Ellipsis className="node-icon" aria-hidden="true" />}
+                />
+                <Menu
+                  aria-label="More for chats"
+                  onAction={(key) => {
+                    const offer = more.find((one) => one.id === key);
+                    if (offer?.available) press(offer);
+                  }}
                 >
-                  Go
-                </Button>
-              )}
-              <Tooltip tip={hides || undefined}>
-                <p
-                  className={said === undefined ? "chats-hidden" : "chats-hidden away"}
-                  role="status"
-                >
-                  {hides}
-                </p>
-              </Tooltip>
-              <Tooltip tip={said}>
-                <p className="chats-said" role="status">
-                  {said ?? ""}
-                </p>
-              </Tooltip>
+                  {more.map((offer) => (
+                    <MenuItem
+                      key={offer.id}
+                      id={offer.id}
+                      textValue={offer.title}
+                      isDisabled={!offer.available}
+                    >
+                      {/* A row it cannot run says why under its words, as New chat's tooltip
+                          does. */}
+                      <MenuWords
+                        said={offer.title}
+                        under={offer.available ? undefined : offer.reason}
+                      />
+                    </MenuItem>
+                  ))}
+                </Menu>
+              </MenuTrigger>
+            )}
+          </div>
+          {every.length > 0 && (
+            <div className="chats-filter" role="search" aria-label="Filter the chats">
+              {/* **The box's text starts where a top-level chat's name does** (DS-11): its
+                glass stands in the column the rows' state marks stand in. */}
+              <TextField
+                className="chats-filter-box"
+                type="search"
+                icon={<Search className="chats-filter-glass" aria-hidden="true" />}
+                keepsFocus="chats-filter"
+                aria-label="Filter chats by name, persona, workspace or state"
+                placeholder="Filter chats"
+                value={text}
+                onChange={(typed) => refilter(() => setText(typed))}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape" || !filtering) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  clear();
+                }}
+              />
             </div>
           )}
           {here !== undefined && every.length > 0 && (
             <ScopeSwitch label="Show the chats of" scopes={SCOPES} scope={picked} onPick={pick} />
           )}
-        </div>
-        {every.length > 0 && (
-          <div className="chats-filter" role="search" aria-label="Filter the chats">
-            {/* **The box's text starts where a top-level chat's name does** (DS-11): its
-                glass stands in the column the rows' state marks stand in. */}
-            <TextField
-              className="chats-filter-box"
-              type="search"
-              icon={<Search className="chats-filter-glass" aria-hidden="true" />}
-              keepsFocus="chats-filter"
-              aria-label="Filter chats by name, persona, workspace or state"
-              placeholder="Filter chats"
-              value={text}
-              onChange={(typed) => refilter(() => setText(typed))}
-              onKeyDown={(event) => {
-                if (event.key !== "Escape" || !filtering) return;
-                event.preventDefault();
-                event.stopPropagation();
-                clear();
-              }}
-            />
-            {/* The chips: the set's (#626), ONE Tab stop with the arrows between them,
-                named as a group so each box is heard as what it narrows the list to. A box
-                each, since each is on or off, drawn as a chip. */}
+          {every.length > 0 && (
+            /* The chips: the set's (#626), ONE Tab stop with the arrows between them, named as a
+             group so each box is heard as what it narrows the list to. */
             <Choice
               ids={{ id: chipsId, label: "Show only" }}
               kind="chips"
@@ -945,9 +1005,10 @@ export function ChatsSection({
                 );
               }}
             />
-          </div>
-        )}
-      </div>
+          )}
+        </>
+      }
+    >
       {rows.length === 0 ? (
         <p className="empty ui-text-secondary">
           {every.length === 0
@@ -1127,7 +1188,7 @@ export function ChatsSection({
           )}
         </div>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -1156,6 +1217,10 @@ function endingAt(drawn: readonly ChatRow[], at: number, folded: ReadonlySet<num
   }
   return ending;
 }
+
+/** What the Chats title line's More holds (#3342), by catalogue id: a new shell, the project's
+ *  dispatches, and Settings. */
+const MORE_ROWS = ["shell.new", DISPATCHES_SHOW, "settings.show"] as const;
 
 /**
  * How long a row is rested on, by the pointer or the keyboard, before its card comes up
@@ -1459,7 +1524,7 @@ const Row = memo(function Row({
                     the row draws no second one. Drawn first on the row, and heard after the
                     name, as the word is: out of sight, and still the row's. */}
             <span className="ui-row-lead">
-              <ChatShownState {...state} changed={changed} />
+              <ChatPersonaState persona={persona} {...state} changed={changed} />
             </span>
             <span className="ui-row-trail">
               {open === false && (
@@ -1469,11 +1534,6 @@ const Row = memo(function Row({
                 </>
               )}
               {stopping && <span className="stopping ui-text-meta">Stopping…</span>}
-              {persona === null ? (
-                <SquareTerminal className="node-icon" aria-hidden="true" />
-              ) : (
-                <PersonaMark persona={persona} />
-              )}
             </span>
           </button>
         </RovingFocusGroup.Item>

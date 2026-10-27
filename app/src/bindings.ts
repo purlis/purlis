@@ -810,6 +810,13 @@ export const commands = {
 	 *  Window-only.
 	 */
 	dismissProposedChange: (plane: PlaneId, id: number) => typedError<null, string>(__TAURI_INVOKE("dismiss_proposed_change", { plane, id })),
+	/**
+	 *  **Remove** on the Ask: each file's change held for the person to apply, each with its
+	 *  file. Window-only: only the person proposes purlis's own change.
+	 */
+	removeOldHarnessPlugins: (plane: PlaneId) => typedError<HeldRemoval[], string>(__TAURI_INVOKE("remove_old_harness_plugins", { plane })),
+	/**  **Dismiss** on the Ask: kept, so it is not said again. Window-only. */
+	dismissOldHarnessPlugins: (plane: PlaneId) => typedError<null, string>(__TAURI_INVOKE("dismiss_old_harness_plugins", { plane })),
 	/**  The servers chat `session` could not start and the person has not put away, oldest first. */
 	mcpFailures: (plane: PlaneId, session: number) => typedError<McpFailed[], string>(__TAURI_INVOKE("mcp_failures", { plane, session })),
 	/**
@@ -2039,12 +2046,12 @@ export const commands = {
 	/**  **Accepts an update** that was reviewed: the pin moves, as one commit. */
 	skillUpdate: (plane: PlaneId, level: SkillLevel, name: string, reviewed: Reviewed) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_update", { plane, level, name, reviewed })),
 	/**
-	 *  **Turns one of a harness's plugins or skills on or off** (SK-6, #2769) for the chats the
-	 *  studio shows: at the project's root on this machine alone (`charter.local.toml`), in a
+	 *  **Turns one of a harness's own skills on or off** (SK-6, #2769) for the chats the studio
+	 *  shows (a plugin's is the plugin's, and refused, #3467): at the project's root on this machine alone (`charter.local.toml`), in a
 	 *  workspace in its own settings, as `purlis_core::harness_plugin::switch_in_the_studio` writes
 	 *  it. A chat started after it is handed the change.
 	 */
-	skillStudioSwitch: (plane: PlaneId, workspace: string | null, harness: HarnessKind, what: StudioSwitched, id: string, on: boolean) => typedError<null, string>(__TAURI_INVOKE("skill_studio_switch", { plane, workspace, harness, what, id, on })),
+	skillStudioSwitch: (plane: PlaneId, workspace: string | null, harness: HarnessKind, id: string, on: boolean) => typedError<null, string>(__TAURI_INVOKE("skill_studio_switch", { plane, workspace, harness, id, on })),
 	/**
 	 *  **The skills chat `session` has, as Use skill… offers them, and its skill budget**: nothing
 	 *  while the Skill studio is off. On a blocking thread, as it reads the project's skill folders.
@@ -3524,14 +3531,6 @@ export const commands = {
 	 */
 	extensionFacts: (plane: PlaneId, workspace: string | null) => typedError<ExtensionFacts, string>(__TAURI_INVOKE("extension_facts", { plane, workspace })),
 	/**
-	 *  Every harness charter knows, with what it has installed on this machine and what this
-	 *  project has each plugin at — in `workspace`, when one is named, with that workspace's
-	 *  settings as the layer between Shared and Local (charter-app#282): what Settings shows at the
-	 *  Workspace level. Read from the harness's own files, never written; asked when the tab opens and
-	 *  after it saves.
-	 */
-	projectHarnessPlugins: (plane: PlaneId, workspace: string | null) => typedError<HarnessPlugins[], string>(__TAURI_INVOKE("project_harness_plugins", { plane, workspace })),
-	/**
 	 *  This project's theme, with every theme it may pick — in `workspace`, when one is named, whose
 	 *  `workspace.json` is a layer too (charter-app#281): what Settings shows at the Workspace level. It takes a survey, as
 	 *  [`project_extensions`] does, so a pick the extension no longer contributes is said here.
@@ -4286,6 +4285,11 @@ export type AnswerPath =
  */
 { via: "sandbox-only" } | 
 /**
+ *  `remove_old_harness_plugins` for Remove, which holds purlis's proposed change for each
+ *  file and opens the first; `dismiss_old_harness_plugins` for Dismiss (#3467).
+ */
+{ via: "old-harness-plugins" } | 
+/**
  *  `allow_chat_browser`, with the open web for `open-web`, and `keep_chat_browser_off` for
  *  Keep off, with the person's reason (#2013).
  */
@@ -4454,6 +4458,11 @@ export type AskSource =
  *  making one and running Codex's own sign-in in it.
  */
 "sandbox-only" | 
+/**
+ *  A project that still holds the old `[harness_plugins]` keys purlis no longer reads
+ *  (#3467): said once, answered by Remove, which proposes the edit, or Dismiss.
+ */
+"old-harness-plugins" | 
 /**  A chat's first browser call, asking what its browser may reach (#2013). */
 "browser" | 
 /**
@@ -4606,6 +4615,12 @@ export type BlockOffer =
  *  the person types.
  */
 "port" | 
+/**
+ *  Allow listening on one port of this Mac's loopback (#2019): [`ChatBlocked::route`] says
+ *  what allowing it means. [`ChatBlocked::target`] is null where the refusal named no port,
+ *  which the person types.
+ */
+"listen" | 
 /**  Never granted, and there is a way that works: [`ChatBlocked::route`] says it. */
 "brokered" | 
 /**
@@ -7157,6 +7172,11 @@ export type GrantWhat =
 /**  A service on this Mac, by its one loopback port (qw384): this machine's alone. */
 "port" | 
 /**
+ *  A port of this Mac's loopback to listen on (#2019): this machine's alone, and a named
+ *  local port of the chat's browser.
+ */
+"listen" | 
+/**
  *  Always for a persona's browser (#2241): what every chat as the persona may have its
  *  browser reach in this project on this machine. Allowed from a chat's browser Ask
  *  (`allow_chat_browser`), never from a block's Allow.
@@ -7321,64 +7341,6 @@ export type HarnessIconRow = {
 /**  A harness, as the window and the core name one to each other: a profile's `kind`. */
 export type HarnessKind = "claude" | "opencode" | "codex";
 
-/**  One plugin, in one project. */
-export type HarnessPlugin = {
-	/**  The harness's own id for it. */
-	id: string,
-	name: string,
-	/**  Where charter found it installed; empty when this machine has not installed it. */
-	origin: string,
-	/**  `on`, `off` or `not-set`. */
-	state: string,
-	/**  `default`, `shared`, `workspace` or `local`: which layer decided `state`. */
-	source: string,
-	installed: boolean,
-	/**
-	 *  Why charter fixes it whatever a file says, in the core's words ("<id> is always on: …"),
-	 *  or none for a plugin a project may choose. No control is drawn for a fixed one.
-	 */
-	pinned: string | null,
-	/**  Each value a file set that charter did not use, and why. */
-	ignored: ProjectExtensionIgnored[],
-};
-
-/**  One harness's plugins in one project. */
-export type HarnessPlugins = {
-	/**
-	 *  The plane's word for the harness (`claude`, `opencode`, `codex`): the key under
-	 *  `[harness_plugins]`.
-	 */
-	harness: string,
-	/**  What a person calls it. */
-	title: string,
-	/**
-	 *  "plugins for <harness> are not supported yet — <why>", or none where charter applies
-	 *  a project's choice to the chats it starts.
-	 */
-	unsupported: string | null,
-	/**
-	 *  "<harness> is handed a plugin only to turn it off — <why>" (SK-6, #2769), where a chat
-	 *  can be handed a plugin turned off and not one turned on: Codex's.
-	 */
-	only_off: string | null,
-	/**
-	 *  Where charter read what it has installed: the file or directory, as this app's own
-	 *  environment names it. A profile that points the harness elsewhere is listed against its
-	 *  own directory when its chat starts.
-	 */
-	record: string | null,
-	/**  Why the harness's own record of what it installed could not be read, if it could not. */
-	trouble: string | null,
-	plugins: HarnessPlugin[],
-	/**
-	 *  The ignore check's sentence while git would carry `charter.local.toml` and it names a
-	 *  plugin of this harness — the one the Settings tab says at the Project level — so this
-	 *  group says why a plugin set there is not applied (charter-app#319). The core's
-	 *  `Choices::local_left_out`, asked for this harness.
-	 */
-	local_left_out: string | null,
-};
-
 /**  One harness, as the first-run screen lists it. */
 export type HarnessRow = {
 	/**  The word the plane calls it by (`claude`, `codex`, `opencode`). */
@@ -7408,6 +7370,12 @@ export type HarnessRow = {
 export type HarnessSetupFound = {
 	harnesses: HarnessRow[],
 	local_models: LocalModelRow[],
+};
+
+/**  One change Remove held: its proposal's id, and the file it changes. */
+export type HeldRemoval = {
+	id: number,
+	file: string,
 };
 
 /**
@@ -7723,6 +7691,22 @@ export type LevelWaiting = {
 export type LineRange = {
 	first: number,
 	last: number,
+};
+
+/**
+ *  The lines an action runs over, as a row draws them under its line (#3502). An action whose
+ *  line holds several is never offered Allow (`hooked::shown_in_full`): its line is not what
+ *  would run.
+ */
+export type LinesShown = {
+	/**  How many lines it runs over. */
+	count: number,
+	/**
+	 *  **Each line, as [`Shown::says`] has it**: joined by a space, they are that line,
+	 *  character for character, masked and cut as it is. Empty where they could not be shown
+	 *  that way; the row then says only the count.
+	 */
+	shown: string[],
 };
 
 /**  One repo the person can get. */
@@ -9330,11 +9314,6 @@ export type PlaneUpdated = {
 	 */
 	skills: boolean,
 };
-
-/**  What the project has a harness's plugin at. */
-export type PluginState = "on" | "off" | 
-/**  No layer names it: the harness decides, from its own settings. */
-"not-set";
 
 /**  A pool as the person typed it: each limit left empty takes the default. */
 export type PoolAdding = {
@@ -11324,6 +11303,11 @@ export type Shown = {
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */
 	writes?: WritesShown | null,
+	/**
+	 *  **The lines a permission's action runs over** (#3502), where its line puts several on
+	 *  one: their count, and each as [`Shown::says`] shows it. Absent for an action on one line.
+	 */
+	lines?: LinesShown | null,
 };
 
 /**
@@ -12191,19 +12175,15 @@ export type StudioFirst = {
 	unmoved: StudioUnmoved | null,
 };
 
-/**  One harness in the studio (SK-6): its plugins and the skills it finds itself. */
+/**
+ *  One harness in the studio (SK-6): the skills it finds itself. Its plugins are its own to turn
+ *  on or off (#3467): a plugin's skills are among these, read-only, each naming its plugin.
+ */
 export type StudioHarness = {
 	/**  Which harness it is, which a switch names. */
 	harness: HarnessKind,
 	title: string,
-	/**  Why its plugins cannot be chosen for one chat, where they cannot: no plugin switch. */
-	unsupported: string | null,
-	/**  Why a plugin can only be turned off, where that is all it can be. */
-	only_off: string | null,
-	/**  Why its own record of what it installed could not be read, if it could not. */
-	trouble: string | null,
-	plugins: StudioPlugin[],
-	/**  The skills it finds itself, read only, each by the name it knows it by. */
+	/**  The skills it finds itself, each by the name it knows it by. */
 	skills: StudioSkill[],
 	/**
 	 *  The project's skills a repo of the workspace leaves out of its chats in that clone, each
@@ -12217,20 +12197,6 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
-};
-
-/**  One of a harness's plugins in the studio (SK-6). */
-export type StudioPlugin = {
-	/**  The harness's own id for it, which the switch names. */
-	id: string,
-	name: string,
-	/**  Where purlis found it installed; empty where this machine has not installed it. */
-	origin: string,
-	installed: boolean,
-	/**  What the project has it at, in the chats the studio shows. */
-	state: PluginState,
-	/**  Why purlis fixes it whatever the project says, or `None`: no switch is drawn for it. */
-	pinned: string | null,
 };
 
 /**
@@ -12358,13 +12324,6 @@ export type StudioSkill = {
 	 */
 	pinned_by: SkillPinner[],
 };
-
-/**
- *  What the studio's switch turns on or off for a harness: the core's `Switched`, spelled for
- *  the window. purlis-core keeps no UI typing crate (CLAUDE.md), so the window's copy of the type
- *  lives here and turns into the core's in one place.
- */
-export type StudioSwitched = "plugin" | "skill";
 
 /**  The project's skills still to move into the studio's. */
 export type StudioUnmoved = {

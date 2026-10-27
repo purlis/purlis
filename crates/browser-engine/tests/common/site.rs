@@ -239,10 +239,29 @@ fn started_with(judge: Option<Judge>) -> Option<(Browser, tempfile::TempDir, Sit
     Some((browser, data, site))
 }
 
+/// [`started`], its limits those `limits` makes of the usual ones (#3277).
+#[allow(dead_code)]
+pub fn started_limited(
+    limits: impl FnOnce(Limits) -> Limits,
+) -> Option<(Browser, tempfile::TempDir, Site)> {
+    let data = tempfile::tempdir().unwrap();
+    let (browser, site) = started_on_limited(&data.path().join("browser"), None, limits)?;
+    Some((browser, data, site))
+}
+
 /// A real engine on the data folder `folder`, as a browser opened from what an earlier one
 /// kept there starts (#2021), with the fixture site as its reach proxy, or `None` where no
 /// engine runs.
 pub fn started_on(folder: &Path, judge: Option<Judge>) -> Option<(Browser, Site)> {
+    started_on_limited(folder, judge, |limits| limits)
+}
+
+/// [`started_on`], its limits those `limits` makes of the usual ones.
+fn started_on_limited(
+    folder: &Path,
+    judge: Option<Judge>,
+    limits: impl FnOnce(Limits) -> Limits,
+) -> Option<(Browser, Site)> {
     let program = engine_program()?;
     say_failures_on_ci();
     let site = serve();
@@ -256,10 +275,10 @@ pub fn started_on(folder: &Path, judge: Option<Judge>) -> Option<(Browser, Site)
         let log = std::fs::read_to_string(folder.join("engine.log")).unwrap_or_default();
         panic!("{why}\nthe engine's log:\n{log}")
     });
-    let limits = Limits {
+    let limits = limits(Limits {
         settle_within: Duration::from_secs(20),
         ..Limits::default()
-    };
+    });
     let browser = match judge {
         Some(judge) => Browser::judged(engine, limits, judge),
         None => Browser::new(engine, limits),

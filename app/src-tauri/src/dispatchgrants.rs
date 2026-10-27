@@ -450,7 +450,7 @@ fn lock<T>(held: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Requested {
     /// Start it now, with these.
-    Covered(Dispatched),
+    Covered(Box<Dispatched>),
     /// Nothing starts. The Notice is raised and the dispatch is held under this number; an
     /// Allow hands it to [`Store::answers_with`]'s listener.
     NeedsGrant { pending: u32 },
@@ -632,7 +632,9 @@ impl Store {
         let grants = self.in_force_for(ground.root, &asking, works_in);
         match dispatchgrant::covers(asking.persona.as_deref(), target, &grants, ground.locks) {
             Covers::Covered => (
-                Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat(target)),
+                Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+                    target,
+                ))),
                 None,
             ),
             Covers::Locked(why) => {
@@ -673,7 +675,9 @@ impl Store {
                 if self.spend_once(&asking, target, works_in, brief) =>
             {
                 (
-                    Requested::Covered(dispatchgrant::grants_for_a_dispatched_chat(target)),
+                    Requested::Covered(Box::new(dispatchgrant::grants_for_a_dispatched_chat(
+                        target,
+                    ))),
                     None,
                 )
             }
@@ -4453,5 +4457,5 @@ pub async fn dispatch_gone_told(
 }
 
 #[cfg(test)]
-#[path = "dispatchgrants_tests.rs"]
+#[path = "dispatchgrants/tests.rs"]
 mod tests;

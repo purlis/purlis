@@ -195,7 +195,7 @@ fn of_this_chat(
         persona: chat.persona.as_deref(),
         harness: chat.harness?,
         built_in: built_in.as_deref(),
-        plane_skills: true,
+        plane_skills: chat.plane_skills,
         start: Some(&chat.start),
     });
     Some((skills, chat.salt.clone()))

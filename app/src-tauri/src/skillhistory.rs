@@ -135,10 +135,10 @@ pub struct SkillDiff {
 /// [`skill_details`]'s answer for the project at `root`, at `now` (seconds since 1970).
 fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
     let unused = lifecycle::unused(root, now);
-    let copies = Level::every(root)
-        .into_iter()
-        .filter_map(|level| {
-            let folder = level.named(root, name)?;
+    // In the one order a skill's tab shows its copies (`Level::copies_of`): the window shows
+    // the first until another is picked, as the Grades panel reads it.
+    let copies = Level::copies_of(root, name)
+        .map(|(level, folder)| {
             let about = purlis_core::skills::about_of(&folder);
             let history = history::history(root, &level, name).unwrap_or_default();
             let versions = history
@@ -158,7 +158,7 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
                     }),
                 })
                 .collect();
-            Some(SkillCopy {
+            SkillCopy {
                 label: level.to_string(),
                 unused_days: unused
                     .iter()
@@ -177,7 +177,7 @@ fn details_of(root: &std::path::Path, name: &str, now: u64) -> SkillDetails {
                     .unwrap_or_default(),
                 unread: about.is_err(),
                 versions,
-            })
+            }
         })
         .collect();
     let built_in = built_in();

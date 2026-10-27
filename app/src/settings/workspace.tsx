@@ -8,28 +8,20 @@ import { useNotClonedHere, useWorkspaceRepos } from "../WorkspaceRepos";
 import {
   commands,
   type ExtensionTheme,
-  type HarnessPlugins,
   type PlaneId,
   type ProjectExtensions,
   type ProjectTheme,
   type SettingsChange,
   type WorkspaceSettings,
 } from "../bindings";
-import {
-  EXTENSIONS,
-  harnessPluginGroups,
-  NO_EXTENSIONS,
-  themeGroup,
-  type Control,
-  type Shown,
-} from "./fileControls";
+import { EXTENSIONS, NO_EXTENSIONS, themeGroup, type Control, type Shown } from "./fileControls";
 import { EXTENSIONS_LINK } from "./links";
 import { askIconThemes, iconsControl, iconsHeld, iconsNotes } from "./iconsPick";
 import { asked, fileSetting, useSettingsDriver, type Driven, type Wrote } from "./driver";
 import type { FileSetting, LiveSetting, SettingsGroup } from "./groups";
 import { THEME_GROUP, themeRows } from "./themeGallery";
 import { workspaceDispatchGroup } from "./dispatch";
-import { pluginsSummaryGroup, workspaceSkillsGroup } from "./skillsSummary";
+import { workspaceSkillsGroup } from "./skillsSummary";
 import { Button } from "../ui/button/Button";
 import { anyPoolKept, usePools } from "../pools";
 import { runsOnGroup } from "./runsOn";
@@ -37,13 +29,13 @@ import { sendLeavesOutGroup } from "./sendLeavesOut";
 
 /**
  * **The Workspace level** (SE-20, #1170; V89b, V89e, V89h): one workspace's settings in the
- * Settings tab, grouped as Live · Repos · Extensions · Appearance · Plugins. It retires the old
+ * Settings tab, grouped as Live · Repos · Extensions · Appearance · Skills. It retires the old
  * Workspace settings page (charter-app#280), and keeps everything that page reached.
  *
  * A workspace's settings are the `settings` of its `workspace.json`: the layer between the
  * project's `charter.toml` and this machine's `charter.local.toml`, read in that order — the
- * workspace refines its project for the team, and this machine has the last word. Extensions,
- * Appearance (the theme, the icons and the workspace's colour) and Plugins are kept there —
+ * workspace refines its project for the team, and this machine has the last word. Extensions
+ * and Appearance (the theme, the icons and the workspace's colour) are kept there —
  * every key a workspace's `settings` may hold (`docs/plane-format.md`), `theme.icons` included,
  * which the old page had no control for — and are written
  * by the same driver as the Project level's (`driver.ts`), through `save_workspace_settings`.
@@ -60,7 +52,6 @@ export type WorkspaceRead = {
   workspace: string;
   settings: WorkspaceSettings;
   extensions: ProjectExtensions;
-  harnesses: readonly HarnessPlugins[];
   theme: ProjectTheme | undefined;
   /** Every icon theme an approved extension contributes (#1145): what Icons offers. */
   iconThemes?: readonly ExtensionTheme[];
@@ -146,7 +137,7 @@ function absentSetting(read: WorkspaceRead): LiveSetting {
 
 /**
  * **The groups**, in V89h's order with Dispatch (#1440) after Repos, each with its stable id. A group with no setting is
- * hidden: Extensions with no extension, Plugins with no harness that can set one. A
+ * hidden: Extensions with no extension. A
  * `workspace.json` that is not a JSON object has no file settings to show until it is mended:
  * its standing refusals say why, above the groups.
  */
@@ -162,9 +153,6 @@ export function workspaceGroups(
       : [];
   const extensions = asked(EXTENSIONS, file, read);
   const theme = asked(themeGroup("not set — the project's pick", "workspace"), file, read);
-  const plugins = harnessPluginGroups(read.harnesses, "workspace").map((group) =>
-    asked(group, file, read),
-  );
   return [
     {
       id: "workspace.live",
@@ -223,19 +211,6 @@ export function workspaceGroups(
     },
     // Its chats' skills (#2767): a summary and the way into the Skill studio, behind its flag.
     ...(skillStudio ? [workspaceSkillsGroup(read.plane, read.workspace)] : []),
-    // Once the Skill studio is on, every plugin choice is the studio's (SK-6, decision 35).
-    skillStudio
-      ? pluginsSummaryGroup("workspace.plugins", read.harnesses, read.workspace)
-      : {
-          id: "workspace.plugins",
-          label: "Plugins",
-          help: "Which harness plugins the chats purlis starts in this workspace have on.",
-          settings: fromFile(
-            "workspace.plugins",
-            plugins.flatMap((one) => one.controls),
-          ),
-          notes: plugins.flatMap((one) => one.notes),
-        },
   ];
 }
 
@@ -264,7 +239,6 @@ function saveManifest(
  */
 export function useWorkspaceLevel(plane: PlaneId, workspace: string): WorkspaceLevel {
   const [extensions, setExtensions] = useState<ProjectExtensions>(NO_EXTENSIONS);
-  const [harnesses, setHarnesses] = useState<HarnessPlugins[]>([]);
   const [theme, setTheme] = useState<ProjectTheme>();
   const [iconThemes, setIconThemes] = useState<ExtensionTheme[]>();
   const [iconsDrawn, setIconsDrawn] = useState<string | null>();
@@ -303,12 +277,6 @@ export function useWorkspaceLevel(plane: PlaneId, workspace: string): WorkspaceL
           setExtensions(said.status === "ok" ? (said.data ?? NO_EXTENSIONS) : NO_EXTENSIONS);
       })
       .catch(() => newest() && setExtensions(NO_EXTENSIONS));
-    void commands
-      .projectHarnessPlugins(plane, workspace)
-      .then((said) => {
-        if (newest()) setHarnesses(said.status === "ok" ? (said.data ?? []) : []);
-      })
-      .catch(() => newest() && setHarnesses([]));
     readTheme();
   }, [plane, workspace, readTheme]);
 
@@ -342,7 +310,6 @@ export function useWorkspaceLevel(plane: PlaneId, workspace: string): WorkspaceL
       workspace,
       settings: driver.now,
       extensions,
-      harnesses,
       theme,
       iconThemes,
       iconsDrawn,

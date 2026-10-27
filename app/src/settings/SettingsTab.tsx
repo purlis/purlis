@@ -182,11 +182,9 @@ function ProjectLevelTab({ plane, ...switcher }: Switcher & { plane: PlaneId }) 
     if (project.state === "read") await project.readEntries();
     return true;
   };
-  const skillStudio = useSkillStudioOn();
   const groups = useMemo(
-    () =>
-      project.state === "read" ? projectGroups(project.read, project.reread, skillStudio) : [],
-    [project, skillStudio],
+    () => (project.state === "read" ? projectGroups(project.read, project.reread) : []),
+    [project],
   );
   // Each file as its whole text (SE-19, V89d), written through the level's driver: the core
   // checks it and writes it, in the queue every setting's write is in.

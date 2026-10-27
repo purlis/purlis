@@ -455,10 +455,6 @@ describe("a row's menu", () => {
           {
             harness: "claude",
             title: "Claude Code",
-            unsupported: null,
-            only_off: null,
-            trouble: null,
-            plugins: [],
             skills: [
               skill("lint-rs", {
                 level: "repo",
@@ -587,10 +583,6 @@ describe("Only this chat's", () => {
     const program = (harness: "claude" | "codex", title: string, skills: StudioSkill[]) => ({
       harness,
       title,
-      unsupported: null,
-      only_off: null,
-      trouble: null,
-      plugins: [],
       skills,
       repo_left_out: [],
     });
