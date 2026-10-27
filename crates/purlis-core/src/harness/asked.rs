@@ -1170,7 +1170,23 @@ mod tests {
         // its place. Only the layout's own white space is collapsed.
         let summary = Summary::of("git\u{00A0}commit \u{2002}-m\u{3000}x\n\t\u{2028}\u{0B} y");
 
-        assert_eq!(summary.as_str(), "git\u{00A0}commit \u{2002}-m\u{3000}x y");
+        assert_eq!(
+            summary.as_str(),
+            "git\u{00A0}commit \u{2002}-m\u{3000}x \u{2028}\u{0B} y"
+        );
+    }
+
+    #[test]
+    fn a_summary_keeps_a_line_break_a_command_line_is_not_laid_out_with() {
+        // #3470: a shell lays a command out with spaces, tabs and line ends. A next line, a
+        // vertical tab, a form feed or a line or paragraph separator is a character the command
+        // holds, which a reader takes for a break: kept for the window to mark and say why.
+        for c in ['\r', '\u{0B}', '\u{0C}', '\u{85}', '\u{2028}', '\u{2029}'] {
+            let line = format!("ls{c}rm -rf x");
+
+            assert_eq!(Summary::of(&line).as_str(), line, "U+{:04X}", u32::from(c));
+        }
+        assert_eq!(Summary::of("ls\r\n\t rm\r\n").as_str(), "ls rm");
     }
 
     #[test]

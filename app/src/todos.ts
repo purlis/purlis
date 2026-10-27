@@ -38,3 +38,29 @@ export function todoRefOf(key: string): TodoRef | undefined {
 export function todoOpenId(slug: string): string {
   return `todo.open:${slug}`;
 }
+
+/** The catalogue's id for the row that marks the focused workspace's todo `slug` done. */
+export function todoDoneId(slug: string): string {
+  return `todo.done:${slug}`;
+}
+
+/** The catalogue's id for the row that reopens the focused workspace's done todo `slug`. */
+export function todoReopenId(slug: string): string {
+  return `todo.reopen:${slug}`;
+}
+
+/** The catalogue's id for the row that deletes the focused workspace's done todo `slug`. */
+export function todoDeleteId(slug: string): string {
+  return `todo.delete:${slug}`;
+}
+
+/**
+ * What a done todo's row key starts with in the Todos view (ADR 0106): `done/<slug>`, which no
+ * open todo's key can be, since a slug is one path segment (`panels.rs`, `DONE_ROW`).
+ */
+export const DONE_ROW = "done/";
+
+/** The slug of the done todo a Todos row's key names, or `undefined` for an open todo's row. */
+export function doneSlugOf(key: string): string | undefined {
+  return key.startsWith(DONE_ROW) ? key.slice(DONE_ROW.length) : undefined;
+}

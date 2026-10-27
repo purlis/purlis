@@ -89,7 +89,7 @@ fn a_runner_container_runs_the_pinned_image_by_digest_as_its_session_host() {
         .iter()
         .position(|a| a == &format!("ghcr.io/purlis/purlis-runner@{DIGEST}"))
         .expect("the image is named by its digest");
-    assert_eq!(&args[at + 1..], ["serve"]);
+    assert_eq!(&args[at + 1..], ["serve", "--suspends-unlinked"]);
 }
 
 #[test]
@@ -1988,4 +1988,47 @@ fn the_runners_profile_is_the_pinned_upstream_default_and_one_rule() {
     );
     let ours: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
     assert_eq!(ours, upstream);
+}
+
+#[test]
+fn a_suspended_runner_is_checked_as_it_was_made_then_started_again() {
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    let fake = FakeDocker::new(&stopped);
+    // The fake's container stays stopped, so the whole check after the start refuses it: it was
+    // started once it was checked as made, then stopped again, and not linked.
+    // Seen red: with the stop after a refused check taken out, no `stop` is in the log.
+    let resumed = fake.docker().resumed(&made());
+    assert!(
+        resumed.is_err(),
+        "a container refused its check after the start is not linked"
+    );
+    let log = fake.file("log");
+    assert!(log.contains(&format!("start {ID}")), "{log}");
+    assert!(log.contains(&format!("stop {ID}")), "{log}");
+}
+
+#[test]
+fn a_suspended_runner_not_as_it_was_made_is_never_started() {
+    let mut changed = inspected();
+    changed[0]["State"]["Running"] = false.into();
+    changed[0]["HostConfig"]["Privileged"] = true.into();
+    let fake = FakeDocker::new(&changed);
+    // Seen red: with the check before the start taken out, the log holds a `start`.
+    let resumed = fake.docker().resumed(&made());
+    assert!(
+        resumed
+            .as_ref()
+            .is_err_and(|why| why.0.contains("privileged")),
+        "refused as privileged, before any start"
+    );
+    assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
+}
+
+#[test]
+fn a_running_runner_is_only_checked() {
+    let fake = FakeDocker::new(&inspected());
+    assert_eq!(fake.docker().resumed(&made()), Ok(()));
+    assert!(fake.docker().running(&made()).unwrap());
+    assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
 }

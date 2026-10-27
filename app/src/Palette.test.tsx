@@ -160,10 +160,11 @@ describe("the command palette", () => {
     );
     await open();
 
-    const alert = within(screen.getByRole("dialog")).getByRole("alert");
-    expect(alert).toHaveTextContent(
-      "svc/fix-it has uncommitted changes; commit or stash them first",
-    );
+    // A polite status, as the result's notice is (#3344), and told as a refusal in words.
+    const said = within(screen.getByRole("dialog"))
+      .getByText("svc/fix-it has uncommitted changes; commit or stash them first")
+      .closest('[role="status"]');
+    expect(said).toHaveTextContent(/^Not done: svc\/fix-it has uncommitted changes/);
   });
 
   it("follows a refusal's way to its setting, and closes (#1201)", async () => {
@@ -183,8 +184,11 @@ describe("the command palette", () => {
     );
     await open();
 
-    const alert = within(screen.getByRole("dialog")).getByRole("alert");
-    await userEvent.click(within(alert).getByRole("button", { name: "Choose your editor" }));
+    const said = within(screen.getByRole("dialog"))
+      .getByText("Choose your editor in Settings first.")
+      .closest<HTMLElement>('[role="status"]');
+    if (said === null) throw new Error("the refusal is not said");
+    await userEvent.click(within(said).getByRole("button", { name: "Choose your editor" }));
 
     expect(onSettings).toHaveBeenCalledWith({ group: "you.editor" });
     await vi.waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());

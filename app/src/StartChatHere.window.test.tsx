@@ -9,6 +9,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { showTheExplorer, showTheRepos } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * **"Start a chat here" from a file's own tab, against the whole window** (#1151, lane KA's
@@ -120,9 +121,9 @@ const starts = (asked: Asked[]) =>
 async function startFromThePreview() {
   await showTheExplorer();
   const repos = await showTheRepos();
-  await userEvent.click(await within(repos).findByRole("treeitem", { name: /^one in svc/ }));
-  const tree = await screen.findByRole("tree", { name: "Files of one in svc" });
-  await userEvent.click(await within(tree).findByRole("treeitem", { name: /^README\.md/ }));
+  await userEvent.click(await within(repos).findByRole("row", { name: /^one in svc/ }));
+  const tree = await screen.findByRole("treegrid", { name: "Files of one in svc" });
+  await userEvent.click(await within(tree).findByRole("row", { name: /^README\.md/ }));
   await userEvent.click(
     await screen.findByRole("button", { name: /^Start a chat here on README\.md/ }),
   );
@@ -159,7 +160,7 @@ describe("Start a chat here, from a file's preview (#1151)", () => {
     await startFromThePreview();
 
     expect(
-      await screen.findByText("purlis could not start a chat in svc: the branch's folder is gone"),
+      await findResult("purlis could not start a chat in svc: the branch's folder is gone"),
     ).toBeInTheDocument();
   });
 });

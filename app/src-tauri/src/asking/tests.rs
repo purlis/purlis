@@ -227,6 +227,26 @@ fn a_held_permission_prompt_is_an_ask_answered_on_its_own_hook() {
 }
 
 #[test]
+fn a_permission_holding_a_line_break_its_command_is_not_laid_out_with_shows_its_mark() {
+    // #3470: a next line, a vertical tab or a line separator in a command reaches the Inbox as
+    // its mark, so the window can say why only Deny is offered, as for a no-break space.
+    for (c, mark) in [
+        ('\u{85}', "⟦U+0085⟧"),
+        ('\u{0B}', "⟦U+000B⟧"),
+        ('\u{2028}', "⟦U+2028⟧"),
+    ] {
+        let asks = Asks::new();
+        let raised = asks
+            .raise("3", a_hook_ask(&format!("Run ls{c}rm")), Instant::now())
+            .raised;
+
+        let shown = permission(raised).expect("a chat of this project's");
+
+        assert_eq!(shown.says, format!("Run ls{mark}rm"));
+    }
+}
+
+#[test]
 fn a_permission_prompt_s_answer_through_the_registry_closes_it_once() {
     // The path a permission ask names is the registry's own answer: the first one applies, and
     // the ask leaves the list the moment it does.

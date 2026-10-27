@@ -28,6 +28,7 @@ mod askoutcome;
 mod askwrites;
 mod atlimit;
 mod autosave;
+mod awayrunners;
 mod blockedsave;
 mod branchwatch;
 mod brokered;
@@ -143,6 +144,7 @@ mod routedsessions;
 #[cfg(unix)]
 mod runnercode;
 mod runnerlinks;
+mod runnerlog;
 mod runnerwrites;
 mod sandboxchoose;
 mod sandboxing;
@@ -3185,6 +3187,8 @@ pub fn serve_as_the_session_host_if_asked() -> Option<i32> {
             Some(config) => hosting
                 .heeding(purlis_core::halt::OnDisk(config.clone()))
                 .relaying_with(runnerlinks::relays_to(config.clone()))
+                // The kill switch reaches every runner this machine keeps (#2051).
+                .stopping_runners_with(runnerlinks::every_runner(config.clone()))
                 .draining_with(runnerlinks::drains_to(config)),
             None => hosting,
         };

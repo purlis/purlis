@@ -13,7 +13,7 @@ import { useState } from "react";
 import { Menu, MenuItem, MenuWords } from "../menu/Menu";
 import { drawnWith } from "../../cascade.testkit";
 import { RowLabel, RowLead, RowTrail } from "../list/Row";
-import { Tree, TreeLine, TreeRow, TreeSection, type Key } from "./Tree";
+import { Tree, TreeLine, TreePending, TreeRow, TreeSection, type Key } from "./Tree";
 
 afterEach(cleanup);
 
@@ -254,10 +254,165 @@ describe("a row's look as the cascade draws it", () => {
     expect(drawnWith(one, "color", { hover: true })).toBe("var(--text-primary)");
   });
 
+  it("keeps a row as wide as its words where the tree fits its content, and a line takes no pill", () => {
+    const body = document.createElement("div");
+    body.setAttribute("data-fit", "content");
+    const one = element();
+    body.append(one);
+    document.body.append(body);
+    expect(drawnWith(one, "min-inline-size")).toBe("max-content");
+    body.removeAttribute("data-fit");
+    expect(drawnWith(one, "min-inline-size")).toBe("0");
+    one.setAttribute("data-line", "");
+    expect(drawnWith(one, "background-color", { hover: true })).toBe("transparent");
+    body.remove();
+  });
+
   it("rests in the secondary tier, and a line in the quiet one", () => {
     const one = element();
     expect(drawnWith(one, "color")).toBe("var(--text-secondary)");
     one.setAttribute("data-line", "");
     expect(drawnWith(one, "color")).toBe("var(--text-quiet)");
+  });
+});
+
+describe("a tree whose owner reads, chooses and drags its rows", () => {
+  /** A branch's top: `lib` not read yet, `a.txt` and `b.txt`, and `away` that will not open. */
+  function Owned({ onRun }: { onRun: (key: string) => void }) {
+    const [open, setOpen] = useState<Set<Key>>(new Set());
+    const [chosen, setChosen] = useState<string[]>([]);
+    const file = (id: string, extra: Partial<Parameters<typeof TreeRow>[0]> = {}) => (
+      <TreeRow
+        id={id}
+        textValue={id}
+        content={<RowLabel>{id}</RowLabel>}
+        chosen={chosen.includes(id)}
+        carries={{ "text/plain": id }}
+        onAction={() => onRun(id)}
+        {...extra}
+      />
+    );
+    return (
+      <Tree
+        aria-label="Files of one"
+        draggable
+        choosesMany
+        expandedKeys={open}
+        onExpandedChange={setOpen}
+        onRowKey={(event) => {
+          // Esc lets every pick go, as the Explorer's picks do.
+          if (event.key === "Escape" && chosen.length > 0) {
+            setChosen([]);
+            return true;
+          }
+          if (event.key !== "x") return false;
+          const at = (event.target as HTMLElement).getAttribute("aria-label") ?? "";
+          setChosen((was) => [...was, at]);
+          return true;
+        }}
+      >
+        <TreeRow
+          id="lib"
+          textValue="lib"
+          content={<RowLabel>lib</RowLabel>}
+          hasChildItems
+          busy={open.has("lib")}
+        >
+          {open.has("lib") ? (
+            <TreePending>
+              <RowLabel>Reading…</RowLabel>
+            </TreePending>
+          ) : null}
+        </TreeRow>
+        {file("a.txt", {
+          menu: () => (
+            <Menu aria-label="a.txt">
+              <MenuItem id="add" textValue="Add to a chat">
+                <MenuWords said="Add to a chat" />
+              </MenuItem>
+            </Menu>
+          ),
+        })}
+        {file("b.txt")}
+        {file("away", { unavailable: true, carries: undefined, chosen: undefined })}
+      </Tree>
+    );
+  }
+
+  it("says a folder not read yet is closed, opens it on →, and stays on it while it is read", async () => {
+    render(<Owned onRun={() => {}} />);
+    expect(row("lib")).toHaveAttribute("aria-expanded", "false");
+    // The row React Aria holds under it is never drawn while it is closed.
+    expect(screen.getAllByRole("row")).toHaveLength(4);
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(row("lib")).toHaveAttribute("aria-expanded", "true");
+    expect(row("lib")).toHaveAttribute("aria-busy", "true");
+    // "Reading…" is drawn in its place and said, and the keyboard passes it: it goes away.
+    const reading = screen.getByText("Reading…").closest('[role="row"]');
+    expect(reading).toHaveAttribute("data-part", "pending");
+    expect(reading).toHaveAttribute("aria-level", "2");
+    await userEvent.keyboard("{ArrowRight}");
+    expect(row("lib")).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(row("a.txt")).toHaveFocus();
+  });
+
+  it("says a multiselectable tree's chosen rows, and a press on a chosen row still runs it", async () => {
+    const ran: string[] = [];
+    render(<Owned onRun={(key) => ran.push(key)} />);
+    expect(screen.getByRole("treegrid")).toHaveAttribute("aria-multiselectable", "true");
+    expect(row("a.txt")).toHaveAttribute("aria-selected", "false");
+    act(() => row("a.txt").focus());
+    // The owner's key, heard before the tree's.
+    await userEvent.keyboard("x");
+    expect(row("a.txt")).toHaveAttribute("aria-selected", "true");
+    expect(row("a.txt")).toHaveAttribute("data-selected", "true");
+    expect(row("away")).not.toHaveAttribute("aria-selected");
+    await userEvent.click(row("a.txt"));
+    expect(ran).toEqual(["a.txt"]);
+  });
+
+  it("keeps a row that cannot run on the keyboard, and says it cannot", async () => {
+    const ran: string[] = [];
+    render(<Owned onRun={(key) => ran.push(key)} />);
+    expect(row("away")).toHaveAttribute("aria-disabled", "true");
+    expect(row("away")).toHaveAttribute("data-unavailable");
+    await userEvent.tab();
+    await userEvent.keyboard("{End}");
+    expect(row("away")).toHaveFocus();
+  });
+
+  it("keeps → on a row with nothing under it on the row: no drag button to land on", async () => {
+    render(<Owned onRun={() => {}} />);
+    expect(within(row("a.txt")).queryByRole("button")).toBeNull();
+    act(() => row("a.txt").focus());
+    await userEvent.keyboard("{ArrowRight}");
+    expect(row("a.txt")).toHaveFocus();
+  });
+
+  it("leaves a row menu's keys to the menu: Esc closes it and keeps the picks", async () => {
+    render(<Owned onRun={() => {}} />);
+    act(() => row("b.txt").focus());
+    await userEvent.keyboard("x");
+    expect(row("b.txt")).toHaveAttribute("aria-selected", "true");
+    fireEvent.contextMenu(row("a.txt"));
+    await screen.findByRole("menu", { name: "a.txt" });
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    expect(row("b.txt")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("drags a row out with what it carries, by the pointer", () => {
+    render(<Owned onRun={() => {}} />);
+    const set: Record<string, string> = {};
+    const dataTransfer = {
+      items: { add: (value: string, type: string) => (set[type] = value) },
+      clearData: () => {},
+      setDragImage: () => {},
+      effectAllowed: "all",
+    };
+    fireEvent.dragStart(row("b.txt"), { dataTransfer });
+    expect(set["text/plain"]).toBe("b.txt");
   });
 });

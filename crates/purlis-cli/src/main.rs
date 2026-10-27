@@ -98,7 +98,13 @@ enum Command {
     /// under the runtime directory, a fresh credential for each of its clients' scopes, and the
     /// session protocol. The app starts its own; this is the same host for a machine with no
     /// window, such as a runner.
-    Serve,
+    Serve {
+        /// A paired runner's host suspends itself after a day with no link from its desktop: it
+        /// stops serving, every chat ends, and its container stops with its home kept (#2051).
+        /// What a Docker pool's runner is made with; without it, a host never suspends.
+        #[arg(long)]
+        suspends_unlinked: bool,
+    },
     /// On a runner: join this standard input and output to the session host's link socket,
     /// for the connector the desktop runs (ADR 0078 §2). It holds no key and decides nothing.
     Bridge {
@@ -814,7 +820,7 @@ fn emit(report: &purlis_core::news::Report) -> ExitCode {
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(not(unix))]
-fn serve() -> ExitCode {
+fn serve(_suspends_unlinked: bool) -> ExitCode {
     voice::err("the session host runs on macOS and Linux only");
     ExitCode::FAILURE
 }
@@ -822,7 +828,7 @@ fn serve() -> ExitCode {
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(unix)]
-fn serve() -> ExitCode {
+fn serve(suspends_unlinked: bool) -> ExitCode {
     // A service: its standard error is its log, the journal or the container's (#2753), so the
     // core's `info` is said there too, redacted as the app's log is.
     purlis_core::applog::widen_for_a_service();
@@ -903,6 +909,7 @@ fn serve() -> ExitCode {
                 ))
             },
             pairing,
+            suspends_unlinked.then_some(purlis_host::UNLINKED_FOR),
         ))
         .unwrap_or(1),
     )
@@ -1565,15 +1572,20 @@ enum WorkspaceCommand {
         #[arg(long, hide = true)]
         now: Option<String>,
     },
-    /// Record a todo, list them, close one with `done <slug>`, or promote one to an issue with
-    /// `promote <slug> --repo <repo>`.
+    /// Record a todo, list the open ones (`--done` for the done ones), mark one done with
+    /// `done <slug>`, open a done one again with `reopen <slug>`, delete one with
+    /// `forget <slug>`, or promote one to an issue with `promote <slug> --repo <repo>`.
     ///
-    /// `done`/`forget`/`promote` are read as verbs rather than as todo text, and told apart by
-    /// the shape of the call rather than the word: one positional records, two act on a todo.
-    /// purlis's own parser does exactly this, and a real subcommand cannot.
+    /// `done`/`reopen`/`forget`/`promote` are read as verbs rather than as todo text, and told
+    /// apart by the shape of the call rather than the word: one positional records, two act on
+    /// a todo. purlis's own parser does exactly this, and a real subcommand cannot.
     Todo {
         #[arg(num_args = 0..=2)]
         words: Vec<String>,
+        /// List the done todos instead of the open ones: each stays, struck through in the
+        /// window, until `reopen <slug>` opens it again or `forget <slug>` deletes it.
+        #[arg(long)]
+        done: bool,
         /// With `promote`: the workspace's repo to open the issue in, by its inventory name.
         /// May be left out when the workspace has one repo on a forge.
         #[arg(long)]
@@ -3257,7 +3269,7 @@ fn run(command: Command) -> Result<u8, String> {
         // Answered in `main`, before this: it is the one command whose exit code is not a
         // plain success or failure, and clap must never be allowed to exit 2 in front of it.
         Command::Hook { .. }
-        | Command::Serve
+        | Command::Serve { .. }
         | Command::Bridge { .. }
         | Command::Init(_)
         | Command::Reinit
@@ -3560,6 +3572,7 @@ fn run(command: Command) -> Result<u8, String> {
         }
         Command::Workspace(WorkspaceCommand::Todo {
             words,
+            done,
             repo,
             common,
         }) => {
@@ -3569,8 +3582,8 @@ fn run(command: Command) -> Result<u8, String> {
             // issue as the person, and is not brokered.
             let closes = matches!(words.as_slice(), [verb, _] if todo_close(verb).is_some());
             let adds = matches!(words.as_slice(),
-                [text] if !["done", "forget", "promote"].contains(&text.as_str()));
-            let own = if (closes || adds) && repo.is_none() && common.now.is_none() {
+                [text] if !["done", "reopen", "forget", "promote"].contains(&text.as_str()));
+            let own = if (closes || adds) && !done && repo.is_none() && common.now.is_none() {
                 match brokered::named_here(&here, common.workspace.as_deref()) {
                     brokered::Named::Own => true,
                     brokered::Named::Here => false,
@@ -3608,7 +3621,7 @@ fn run(command: Command) -> Result<u8, String> {
             }
             let ws = here.workspace(common.workspace.as_deref())?;
             let stamp = common.stamp()?;
-            return Ok(todo(&here.plane, &ws, &words, repo.as_deref(), stamp));
+            return Ok(todo(&here.plane, &ws, &words, done, repo.as_deref(), stamp));
         }
     }
     Ok(0)
@@ -3622,6 +3635,7 @@ fn todo(
     plane: &Plane,
     ws: &purlis_core::workspaces::Workspace,
     words: &[String],
+    done: bool,
     repo: Option<&str>,
     stamp: chrono::NaiveDateTime,
 ) -> u8 {
@@ -3634,8 +3648,30 @@ fn todo(
         voice::err("--repo is taken only with `charter ws todo promote <slug>`.");
         return 1;
     }
+    if done && !words.is_empty() {
+        voice::err("--done lists the done todos, and is taken with nothing else.");
+        voice::info(format!("  See them: {see} --done"));
+        return 1;
+    }
     finish_promotes(plane, ws, stamp);
     match words {
+        [] if done => {
+            let (closed, unread) = purlis_core::memstore::read_entries(
+                root,
+                &dir.join(purlis_core::memstore::ARCHIVE),
+            );
+            voice::unread(root, &unread);
+            if closed.is_empty() {
+                voice::info(format!("No done todos in '{name}'."));
+                return 0;
+            }
+            for todo in closed {
+                let stem = todo.path.file_stem().unwrap_or_default().to_string_lossy();
+                println!("  {stem}  {}", purlis_core::personas::one_line(&todo.title));
+            }
+            voice::info("  Reopen one: purlis ws todo reopen <slug>");
+            0
+        }
         [verb, slug] if verb == "promote" => promote_todo(plane, ws, slug, repo, stamp),
         [] => {
             let (open, unread) = purlis_core::memstore::read_entries(root, &dir);
@@ -3660,12 +3696,7 @@ fn todo(
             }
             0
         }
-        [verb, slug] if verb == "done" || verb == "forget" => {
-            let how = if verb == "done" {
-                purlis_core::wscmd::todo::Close::Done
-            } else {
-                purlis_core::wscmd::todo::Close::Forget
-            };
+        [verb, slug] if let Some(how) = todo_close(verb) => {
             purlis_core::wscmd::todo::close(plane, ws, how, slug, stamp, &mut speak)
         }
         // A lone verb is NOT todo text. charter refuses it, and the reason is that
@@ -3680,10 +3711,9 @@ fn todo(
             );
             1
         }
-        [verb] if verb == "done" || verb == "forget" => {
-            voice::err(format!(
-                "`todo {verb}` needs the slug of the todo to close."
-            ));
+        [verb] if todo_close(verb).is_some() => {
+            let to = if verb == "reopen" { "reopen" } else { "close" };
+            voice::err(format!("`todo {verb}` needs the slug of the todo to {to}."));
             voice::info(format!("  The slug is the first column: {see}"));
             let capital: String = verb
                 .chars()
@@ -3718,8 +3748,8 @@ fn todo(
         }
         _ => {
             voice::err(
-                "usage: purlis ws todo [-w WS] [\"<text>\" | done <slug> | forget <slug> | \
-                 promote <slug> [--repo <repo>]]",
+                "usage: purlis ws todo [-w WS] [\"<text>\" | done <slug> | reopen <slug> | \
+                 forget <slug> | promote <slug> [--repo <repo>]] [--done]",
             );
             1
         }
@@ -3752,10 +3782,10 @@ fn finish_promotes(
     purlis_core::wscmd::todo::finish_promotes(plane, ws, stamp, &mut speak);
 }
 
-/// How `ws todo <verb> <slug>` closes a todo, when `verb` is `done` or `forget`.
+/// How `ws todo <verb> <slug>` changes a todo, when `verb` is `done`, `reopen` or `forget`.
 fn todo_close(verb: &str) -> Option<purlis_core::wscmd::todo::Close> {
     use purlis_core::wscmd::todo::Close;
-    [Close::Done, Close::Forget]
+    [Close::Done, Close::Reopen, Close::Forget]
         .into_iter()
         .find(|how| how.verb() == verb)
 }
@@ -4281,8 +4311,8 @@ fn main() -> ExitCode {
         return scan::run(*explain);
     }
     // Needs no project: one host serves every project of this user on this device (ADR 0068).
-    if let Command::Serve = &cli.command {
-        return serve();
+    if let Command::Serve { suspends_unlinked } = &cli.command {
+        return serve(*suspends_unlinked);
     }
     // Needs no project: a runner's bridge to its own host, or its pairing (ADR 0078 §2, §3).
     if let Command::Bridge {

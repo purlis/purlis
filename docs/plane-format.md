@@ -1365,7 +1365,8 @@ outside the project and removes it when the flow ends, so it adds none of them (
   by ADR 0098, built by #2324: a theme folder needs no approval. Format 2's vocabulary only
   grows: the Figma pass added the colour tokens `border.control`, `accent.wash`, `accent.text`,
   `accent.fill`, `accent.fill-hover`, `accent.fill-edge` and `accent.fill-text`, and the
-  geometry token `radius.control` (operator ruling 2026-10-25, #3177, #3113). A theme folder
+  geometry token `radius.control` (operator ruling 2026-10-25, #3177, #3113), then
+  `accent.wash-hover`, the chosen title-bar chip under the pointer (#3345). A theme folder
   written before them draws as it did: each follows the token that drew its part before
   (`crates/purlis-core/docs/themes.md`, "Tokens added after themes existed").
 
@@ -2011,8 +2012,9 @@ excepted), and for a secret-shaped value, named by its kind.
     (`charter/memstore.py:132`); `kind` is `"persistent"` for workspace memories (the
     default, `charter/memstore.py:102`). The text is `.strip()`ed; empty raises.
   - Closed todos: `ws todo done <slug>` writes a memory whose text is
-    `f"Closed todo: {title}"` before deleting the todo
-    (`charter/commands_workspace.py:1516`–`1517`), so its filename is
+    `f"Closed todo: {title}"` before moving the todo to `todos/archive/`
+    (`charter/commands_workspace.py:1516`–`1517`; the move is
+    [ADR 0106](adr/0106-a-done-todo-is-kept-and-can-be-reopened.md)), so its filename is
     `<stamp>-closed-todo-<slug-of-the-title>.md`.
   - `memory/archive/<name>.md` holds retired memories, moved by `memstore.archive`
     (`charter/memstore.py:510`, `charter/memstore.py:524`); it is out of every listing
@@ -2113,7 +2115,9 @@ file `memstore.write` could have written in its new store.
 - **Tier:** Plane when LIVE, Clone state when LOCAL
 - **Written by:** `todos.scaffold` (`charter/todos.py:73`), `todos.add`
   (`charter/todos.py:93`); commands `purlis ws todo "<text>"`
-  (`charter/commands_workspace.py:1462`), `ws todo done|forget <slug>` (deletes —
+  (`charter/commands_workspace.py:1462`), `ws todo done <slug>` (moves it to
+  `todos/archive/`, [ADR 0106](adr/0106-a-done-todo-is-kept-and-can-be-reopened.md)),
+  `ws todo reopen <slug>` (moves it back), `ws todo forget <slug>` (deletes, open or done —
   `charter/commands_workspace.py:1519`), `fork` (directory copy,
   `charter/commands_workspace.py:1702`).
 - **Read by:** `todos.open_todos` (`charter/todos.py:219`), `todos.count_open`
@@ -2127,8 +2131,12 @@ file `memstore.write` could have written in its new store.
   `memstore.write(..., timestamped=True, index=True)`), so a todo file is
   `<YYYYMMDD-HHMMSS>-<slug>.md` holding `# <title>`, `_<YYYY-MM-DD HH:MM> · persistent_`,
   the body. The index header is at `charter/todos.py:31`. **There is no state field**:
-  closing deletes the file and its index line (ADR 0004/0006,
-  `charter/commands_workspace.py:1469`). The slug a caller closes by is the file stem, and
+  an open todo is a file directly in `todos/`, listed in its index; closing one as done moves
+  the file, unchanged, into `todos/archive/` and drops its index line, and reopening moves it
+  back and appends the line again ([ADR 0106](adr/0106-a-done-todo-is-kept-and-can-be-reopened.md),
+  amending ADR 0004/0006, which deleted it). A done todo whose name is taken there is numbered
+  `-2`, then `-2-3`, as an archived memory is. Every count and listing of open todos reads only
+  the `*.md` files directly in `todos/`. The slug a caller closes by is the file stem, and
   it must be one path segment (`charter/commands_workspace.py:1498`). Ordering is the
   filename's second resolution (whole seconds, ties broken alphabetically,
   `charter/todos.py:93`, `charter/memstore.py:119`). Age comes from the in-body `_YYYY-MM-DD` stamp, falling back
@@ -3121,8 +3129,9 @@ curation actions is offered.
 
 ### `personas/<name>/persona.md`
 
-- **Format:** Markdown with a minimal, line-based frontmatter block (NOT YAML: no parser,
-  no quote stripping, no nesting, no comments).
+- **Format:** Markdown with a minimal, line-based frontmatter block (NOT YAML: no quote
+  stripping, no nesting, no comments). One parser of that line format reads and writes it
+  (`crates/skills/src/fence.rs`, 2026-10-27; the fence rule is under **Encoding details**).
 - **Status:** stable — hand-edited, committed, and read by the tool gate, the status line,
   hooks and the app. **Not read by a sub-agent generator any more** (#1451): a persona runs
   as its own chat and purlis generates no sub-agent from this file. The keys that only fed
@@ -3152,9 +3161,23 @@ curation actions is offered.
   `charter/render.py:97`, `charter/doctor.py`.
 - **Git:** committed.
 - **Encoding details:**
-  - Frontmatter is parsed only when the file **starts with** `---`; `text.split("---", 2)`
-    must yield ≥3 parts (`charter/persona.py:258`-`:260`). `parts[1]` is the frontmatter,
-    `parts[2]` the body (stripped, `:268`).
+  - **Where the frontmatter is (2026-10-27, #3244, operator ruling F14 on #2762).** Its
+    fences are lines. A line is what Python's `str.splitlines` splits (`\n`, `\r\n` as one,
+    `\r` and the other Unicode breaks), and a line is a **fence** when it is exactly `---` at
+    its start with nothing after it but spaces or tabs. The frontmatter opens only where the
+    file's **first line** is a fence, and ends at the **first later line that is a fence**.
+    The lines between are the frontmatter; everything after the closing fence's line is the
+    body (stripped). A `---` anywhere else is text: inside a value (`role: a --- b`, `role:
+    ---`), indented (`  ---`), or with more on its line (`----`, `--- x`). A value can never
+    be a fence, since a key's line starts with its key. A file whose first line is no fence,
+    or whose opening fence no later line closes, has no frontmatter and is all body; `persona
+    lint` names the unclosed case as an error, as every key then reads as none.
+    - *Before 2026-10-27* the cut was charter's `text.split("---", 2)`: the first `---`
+      anywhere after the opening one ended the frontmatter, so a value holding `---` cut the
+      keys and the body there. A file that relied on that (a closing `---` with more on its
+      line, such as `role: r---`) now reads as unclosed.
+    - The same rule cuts every line-format frontmatter purlis reads: a `SKILL.md`'s `name:`
+      and `description:`, a curation action, a session record.
   - Each frontmatter line: skipped if it has no `:`; `key, _, value = line.partition(":")`;
     both sides `.strip()`ed; empty key skipped (`charter/persona.py:261`-`:267`). Quotes are
     **kept** as part of the value (`charter/persona.py:95`).
@@ -3173,7 +3196,17 @@ curation actions is offered.
     confirmed by running `persona create --extends`). Front door order:
     `name, role, vault, routing, delegate-when` (`charter/commands.py:2597`); purlis's
     `init` writes `name, role, vault, delegate-when`, since `routing` is retired (charter#369).
-  - Body: everything after the closing `---`, stripped.
+  - Body: everything after the closing `---` line, stripped.
+  - **Writing (2026-10-27, #3244, #3460).** Every purlis write of a key's value (`skills:`,
+    `pinned-skills:`, `profile:`, `icon:`, `color:`) goes through one writer
+    (`purlis_skills::fence::with_keys`): the key's first line is rewritten where it stands,
+    keeping its line break; a later line of the same key goes; a key whose line is empty takes
+    the `- item` lines under it along; a key with no line gains one, last in the frontmatter.
+    The `persona-agents` fix, which renames `model:` to `profile:` where the line stands, finds
+    its lines with the same parser. Every other line, `# note`, blank line and the order of
+    the keys, and the body, is kept byte for byte. A value that cannot be one line reading back
+    as itself (a line break in it, or a blank at either end) is refused with a sentence, and
+    what is written is read back before it is kept.
 
 Full frontmatter vocabulary — `KNOWN_KEYS = AGENT_PASSTHROUGH_KEYS | CHARTER_OWN_KEYS`
 (`charter/persona.py:305`, `charter/persona.py:309`, `charter/persona.py:322`). Every value
@@ -7581,12 +7614,13 @@ refuses a `<data>` under a project or inside any git work tree.
 | `<config>/onboarding.json` | Machine, device-bound | where the person is in the guided steps (#1817, spec #1810): `version` (1), `step` (`welcome`, `sign-in`, `project`, `git` or `harness`), `door` (`create`, `get`, `open` or null), `signing_in` and `git_missing` (whether those steps are counted in this run), `made` (the project the steps opened, which the harness step holds: its absolute root, where its first chat starts and the workspace strip an installer is filed on; or null) and `finished_once` (this machine has been through the steps, so the harness step shows only while no harness is installed). **No secret, ever**: a forge token is a keyring item (ADR 0077 §7), and a resumed sign-in asks again. A convenience, never a gate: a file that is missing, larger than 16 KiB, not JSON, of another version or naming a step purlis does not know reads as no progress, and a `made` path is opened through the trust gate like any other. Written whole by the window on every step, read each time the steps appear | `onboarding::write`, from the window's `keep_onboarding_progress`; read by `onboarding::read` (`onboarding_progress`) |
 | `<config>/theme.json` | Machine, syncable | the operator's own theme; purlis only reads it | the operator, by hand |
 | `<config>/halted` | Machine, device-bound | the kill switch's marker (ADR 0071): an empty file whose existence means every agent purlis started on this machine is stopped | `halt::stop`, from the window's Stop all and `purlis stop --all`; only the window's re-arm removes it |
-| `<config>/kill-switch.jsonl` | Machine, device-bound | the kill switch's journal (ADR 0071): one line per stop, re-arm or tamper, the newest 1000. On a runner, `by` may also be `link`: a stop or re-arm sent from a paired desktop (**decided, not yet written**, ADR 0078) | `halt.rs`, from the app and `purlis stop --all` |
+| `<config>/kill-switch.jsonl` | Machine, device-bound | the kill switch's journal (ADR 0071): one line per stop, re-arm or tamper, the newest 1000. On a runner, `by` may also be `link`: a stop or re-arm sent from its paired desktop, written since #2051 (ADR 0078, ADR 0071 as amended); its event-log line names the desktop's device id (`device`) | `halt.rs`, from the app and `purlis stop --all` |
 | `<config>/restarted-to-update` | Machine, device-bound, transient | the last quit was **Restart to update**. Empty, or one word and a newline saying what the person picked in the update's dialog to put back (#1078): `reopen-all` or `start-fresh`. The launch after it takes that as the answer to *Reopen your sessions?* and does not ask; an empty file, or a word this build does not read, is asked about as before, and a build before #1078 reads only that the file is there | `reopen::mark_restart_to_update_choosing`; the next launch reads it and removes it (`reopen::take_restart`) |
 | `<config>/runs/journal.json` | Machine, device-bound | **decided, not yet written** (ADR 0068, ADR 0076; its contents pre-empt FD-29). The run journal: each live run's chat and run ids, its state with its reason or hold, the state a paused run was paused from, its conversation, harness and level; a run hibernated by a quit stays in it. Replaced whole at every move; read at the host's start to account for a crash. Kept out of `<config>/charterd/`, which is transient. Chats are denied it. Backed up by FR-10 | `purlisd`, its only writer (FD-29) |
 | `<config>/charterd/<scope>` | Machine, device-bound, transient | Written since #1997 (ADR 0068, ADR 0069, ADR 0081), as `<config>/purlisd/<scope>` once rename-local has moved the folder. One credential per human client scope (`local-ui`, `terminal`, `fleet-mcp`, `approval` and `editor`), 64 hex digits, `0600`, in a `0700` folder, minted fresh at each start of `purlisd`, so a crash or an upgrade rotates them. Chats are denied the directory | `purlisd` (FD-6, FD-27, #1997) |
 | `<config>/charterd/window-names.json`, and `window-names.json.lock` beside it | Machine, device-bound | Written since #2623 (ADR 0078 as amended 2026-10-20), as `<config>/purlisd/window-names.json` once rename-local has moved the folder. **The name the window keeps for each project root's link to its session host**: `version` (1) and `names`, by a SHA-256 of the root's path in hex, each `{"name": <32 hex digits, 128 random bits>, "used": <milliseconds since the epoch the link last named itself>}`; past 256 roots, the root used longest ago is let go of, never one whose link is open. The window names itself by it on the root's link (`name_window`, session protocol 1.31), so the session host's relay names the window to a runner by a digest of it, the same after a restart, and the window takes back its runner chats. `0600`, in the `0700` folder chats are denied; never committed, never sent anywhere but to the window's own host over its `local-ui` link, never logged. A file that does not read, or that is this user's alone and longer than 64 KiB, is started again (#2744); losing it loses only the take-back after the window's next start. Forgetting a project removes its root's entry, and no other (#2738). The `.lock` is the `flock` that makes one read-modify-write of it one act | `purlis_core::windownames::name_for`, from the window as it opens a project root's link; `purlis_core::windownames::forget`, from `machine::forget_project` |
 | `<config>/charterd/kill-switch` | Machine, device-bound | Written since #2001 (ADR 0068, ADR 0071), as `<config>/purlisd/kill-switch` once rename-local has moved the folder. The kill switch as the session host holds it: the word `stopped` or `armed` and a newline, `0600`, replaced whole. Read as the host starts, before it serves anyone; no file is a host never stopped, and any other content, a link, or a file others may read or write holds every agent stopped. A stop `purlis stop --all` writes in the config home's `halted` and `kill-switch.jsonl` is written here too by the host, which reads those two files as it starts, before every start and every three seconds while it serves, so it is heard with no window there; the host never re-arms from them (#2190, ADR 0071 as amended for #2190). Not minted fresh like the credentials beside it: it outlives the host. Chats are denied the directory | `purlisd`, its only writer (#2001) |
+| `<config>/purlisd/runners-stopped.json` | Machine, device-bound | Written since #2051 (ADR 0078 §7, ADR 0089 as amended 2026-10-27): the runners this machine's kill switch reached and those it still owes a stop, as JSON `{"reached": ["<pool>/<runner>", …], "owed": {"<pool>/<runner>": "<why, in purlis's words>"}}`, `0600`, replaced whole. Read as the session host starts, only when it is this user's alone and 64 KiB at the most; a file that is not, or does not read, is none kept, and the host's stop is sent to every runner again. The re-arm re-arms the runners it names as reached. Chats are denied the directory | `purlisd`, its only writer |
 | `<config>/charterd/hosts.jsonl` | Machine, device-bound, transient | Written since #2007 (ADR 0068 §3), as `<config>/purlisd/hosts.jsonl` once rename-local has moved the folder. The session host's host record: its own note of the programs it has started and not yet ended, which nothing else writes or reads, and not ADR 0076's run journal (`<config>/runs/journal.json`). JSON Lines, `0600`, never written or read through a link, read only when it is a regular file this user owns that nobody else may read or write. `{"started":{…}}` as a program starts (its id in the host, its project's id and path, its number, its run where the window named one, its process, when the kernel says that process started, the machine's boot where the system names one, and how the host applied the sandbox to its run, `sandbox`, `"off"` or `{"by":<backend>}`, read from what it started and absent from a line an older host wrote, #2636) and `{"ended":{"program":…}}` once what its end leaves is kept. Written again with only the programs still running once it passes 256 KiB, whole beside itself and renamed over it; one past 4 MiB is not read. A host that ends every program as it stops empties it; the next host to start reads what is left, ends what is still running where the process is the one that was started in this boot, keeps each one's end as a host crash's, and empties it. A line that cannot be read, or is not text, is passed over alone. Chats are denied the directory | `purlisd`, its only writer (#2007) |
 | `purlis/purlisd.sock` in the user's own temporary directory on macOS (`_CS_DARWIN_USER_TEMP_DIR`, never `$TMPDIR`), or in `$XDG_RUNTIME_DIR` on Linux when it is an absolute directory this user owns that nobody else may enter; else `/tmp/purlis-<uid>/purlisd.sock`; `purlisd-<key>.sock` in the same folder for a config home `PURLIS_CONFIG_HOME` names apart from the default one | Machine, device-bound, transient | Written since #1997 (ADR 0068 §1). The session host's socket, `0600`, and beside it `purlisd.lock`, the `flock` the one host of this user holds while it serves; a purlis whose `PURLIS_CONFIG_HOME` names a config home other than the one it finds by itself (a scenario run, a development build beside an installed one) has a host of its own at `purlisd-<key>.sock` and `purlisd-<key>.lock`, `<key>` the first 16 hex digits of the SHA-256 of that config home resolved, so one config home spelled two ways has one host (#2114, ADR 0068 as amended for #2004); the folder is `0700` and this user's, never a link, and the window makes it before any chat starts. Not in the machine store: the runtime directory is the standard per-user place for a socket. The socket is removed when the host ends, and one a host left is replaced by the next. `purlis serve` also listens beside it on `purlisd.link.sock` (`purlisd-<key>.link.sock`), `0600`, where a runner's host takes the link between hosts from the desktop it is paired with, which the bridge a connector runs opens (#2044, ADR 0078 §2); removed and replaced as the socket is. Chats are denied the folder | `purlisd` (#1997) |
 | `<config>/extensions.json` | Machine, device-bound | each installed extension: its absolute path, the fingerprint the operator approved, and whether it is on; for a runner provider, also whether the operator marked its machines as the user's own (**decided, not yet written**, ADR 0089; default not owned, changed only on `local-ui`, never by the provider's own claim) | `extension::install`, `approve`, `set_on`, `forget` |

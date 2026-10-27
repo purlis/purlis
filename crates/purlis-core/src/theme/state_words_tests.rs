@@ -104,8 +104,12 @@ fn state_words() -> Vec<Words> {
                                 .map(|ground| (named.clone(), words, *ground, None)),
                         );
                     } else if is_wash(fill) {
+                        // Laid on its own ground where it has one (D-3345-3), else the root's.
+                        let below: Vec<&'static str> = family
+                            .laid_on(at)
+                            .map_or_else(|| under.clone(), |ground| vec![ground]);
                         found.extend(
-                            under
+                            below
                                 .iter()
                                 .map(|below| (named.clone(), words, fill, Some(*below))),
                         );
@@ -166,10 +170,14 @@ fn the_waiting_words_of_a_button_a_badge_and_a_count_are_among_them() {
         has("titlebar.count", "wash.warning", Some("surface.deep")),
         "{found:?}"
     );
-    assert!(
-        has("titlebar.count", "wash.warning", Some("surface.overlay")),
-        "{found:?}"
-    );
+    // On its own ground, the bar's, whatever the chip's fill (D-3345-3): never on the card's
+    // fill or the accent's wash.
+    for chip in ["surface.overlay", "accent.wash", "accent.wash-hover"] {
+        assert!(
+            !has("titlebar.count", "wash.warning", Some(chip)),
+            "{chip}: {found:?}"
+        );
+    }
 }
 
 #[test]

@@ -3,12 +3,13 @@
 
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render as renderBare, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render as renderBare, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetThisLaunch } from "./regions";
 import { dragWithTheKeyboard, laidOutInAColumn, laidOutInARow, stripNamed } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * **Dragging a tab with the keyboard** (SI-6): Shift+Space picks the focused tab up, the arrows
@@ -238,7 +239,7 @@ describe("dragging a chat tab with the keyboard", () => {
     tabOn("Tabs", "two").focus();
     await dragWithTheKeyboard("{ArrowLeft}");
 
-    expect(await screen.findByText("The plane's record could not be written.")).toBeInTheDocument();
+    expect(await findResult("The plane's record could not be written.")).toBeInTheDocument();
     expect(namesOn("Tabs").map((name) => name?.match(/one|two|three/)?.[0])).toEqual([
       "one",
       "two",
@@ -338,7 +339,7 @@ describe("dragging a project up the rail with the keyboard (#2915)", () => {
     tabOn("Projects", "plane").focus();
     await dragWithTheKeyboard("{ArrowUp}");
 
-    expect(await screen.findByText("charter pins at most 32 projects.")).toBeInTheDocument();
+    expect(await findResult("charter pins at most 32 projects.")).toBeInTheDocument();
     expect(projects()).toEqual(["other", "plane"]);
   });
 });

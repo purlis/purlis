@@ -431,6 +431,11 @@ fn every_format_ignorable_or_blank_character_keeps_a_command_from_being_shown_in
         '\u{2000}',
         '\u{3000}',
         '\u{00A0}',
+        '\u{000B}',
+        '\u{000C}',
+        '\u{0085}',
+        '\u{2028}',
+        '\u{2029}',
     ] {
         let line = format!("echo a{c}b");
         assert!(

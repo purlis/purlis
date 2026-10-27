@@ -127,9 +127,9 @@ describe("the branch cockpit in the window (FM-5)", () => {
     const asked = core();
     render(<App />);
     await showTheExplorer();
-    const tree = await screen.findByRole("tree", { name: "Repos and branches" });
+    const tree = await screen.findByRole("treegrid", { name: "Repos and branches" });
 
-    fireEvent.contextMenu(await within(tree).findByRole("treeitem", { name: /^one/ }));
+    fireEvent.contextMenu(await within(tree).findByRole("row", { name: /^one/ }));
     const menu = await screen.findByRole("menu");
     await userEvent.click(within(menu).getByRole("menuitem", { name: "Focus" }));
 
@@ -137,13 +137,18 @@ describe("the branch cockpit in the window (FM-5)", () => {
     await within(head).findByText("3 ahead, 0 behind main");
     await waitFor(() => expect(said(asked).at(-1)).toEqual(ONE));
 
-    screen
-      .getByRole("tree", { name: "Files of one" })
-      .querySelector<HTMLElement>("[data-row]")
-      ?.focus();
+    // Esc is the cockpit's from a row of its tree: the row is waited for (the branch's files are
+    // read after the cockpit opens) and holds the keyboard before the key, or the key lands on
+    // the page and nothing steps back.
+    const file = await within(screen.getByRole("treegrid", { name: "Files of one" })).findByRole(
+      "row",
+      { name: /^README\.md/ },
+    );
+    file.focus();
+    await waitFor(() => expect(file).toHaveFocus());
     await userEvent.keyboard("{Escape}");
 
-    await screen.findByRole("tree", { name: "Repos and branches" });
+    await screen.findByRole("treegrid", { name: "Repos and branches" });
     await waitFor(() => expect(said(asked).at(-1)).toBeNull());
   });
 
@@ -159,7 +164,7 @@ describe("the branch cockpit in the window (FM-5)", () => {
       render(<App />);
       await showTheExplorer();
 
-      await screen.findByRole("tree", { name: "Repos and branches" });
+      await screen.findByRole("treegrid", { name: "Repos and branches" });
       await waitFor(() => expect(said(asked).at(-1)).toBeNull());
       // And nothing tells the core it again.
       await settle();
@@ -193,10 +198,10 @@ describe("the branch cockpit in the window (FM-5)", () => {
 
     await screen.findByRole("region", { name: "Branch one" });
     const explorer = screen.getByRole("navigation", { name: "Explorer" });
-    expect(within(explorer).queryByRole("tree", { name: "Repos and branches" })).toBeNull();
+    expect(within(explorer).queryByRole("treegrid", { name: "Repos and branches" })).toBeNull();
     // The Repos view is the Panel's (#1737): it keeps the tree, where another branch is picked.
     expect(
-      within(screen.getByRole("navigation", { name: "Repos" })).getByRole("tree", {
+      within(screen.getByRole("navigation", { name: "Repos" })).getByRole("treegrid", {
         name: "Repos and branches",
       }),
     ).toBeInTheDocument();

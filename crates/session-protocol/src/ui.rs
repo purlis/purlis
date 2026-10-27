@@ -426,6 +426,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "vault_remove",
     "vault_secret_delete",
     "todo_forget",
+    "todo_forget_done",
     "clear_finished_tasks",
     // Grant commands (#1927): a consent given, answered or taken back.
     "allow_refused_vault",
@@ -911,6 +912,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "activity_chat",
     "adopt_layout",
     "agents_stopped",
+    // The runners a re-arm re-arms with this machine (#2051): a read, as whether it is stopped.
+    "runners_a_rearm_reaches",
     "alerts_everywhere",
     "arrange_workspace_pins",
     "ask_persona_offer",
@@ -1046,6 +1049,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "repo_instructions",
     "resize_session",
     "reveal_branch_path",
+    // Where the chats the away summary counts run, and their runners' branches (#2051): a read.
+    "runners_away",
     "running_sessions",
     "sandbox_block_report",
     "sandbox_grants",
@@ -1109,6 +1114,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "todo_add",
     "todo_done",
     "todo_read",
+    "todo_reopen",
     "unwatch_session",
     "update_channel",
     "use_built_in_theme",
@@ -1137,6 +1143,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "workspace_saving",
     "workspace_settings",
     "workspace_starts_fresh",
+    // The person's own edit of a workspace's vision (#3344), through the core's brokered
+    // write: served as `workspace_create`, which takes a vision too, is.
+    "workspace_vision",
     "worktree_add",
     "worktree_done",
     "worktree_list",

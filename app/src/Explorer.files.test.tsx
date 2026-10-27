@@ -45,6 +45,7 @@ const PANELS: PanelsModel = {
   refused: [],
   todos: [],
   todos_refused: null,
+  done_todos: [],
   personas: [],
   persona: "steward",
   sessions: [],
@@ -101,6 +102,13 @@ function core(
   return asked;
 }
 
+/** The workspace with a second repo: each repo's own folder is a row of its own (#3343). */
+const TWO_REPOS: WorkspaceState = {
+  ...STATE,
+  panels: { ...PANELS, repos: ["svc", "tool"] },
+  pieces: { svc: [ONE], tool: [] },
+};
+
 /** Branch `one`, picked: the *Files* section draws its files (#1677). */
 const PICKED: Spot = { repo: "svc", piece: "one", path: ONE.path };
 
@@ -109,13 +117,14 @@ function draw(
   onPress: (offer: Offer) => void = () => {},
   /** `null` for the workspace itself, nothing picked. */
   spot: Spot | null = PICKED,
+  state: WorkspaceState = STATE,
 ) {
   render(
     <ChatsHere.Provider value={fixedChats(nothingKnown)}>
       <Explorer
         plane={PLANE}
         workspace="alpha"
-        state={STATE}
+        state={state}
         chats={[]}
         spot={spot ?? undefined}
         onPick={() => {}}
@@ -129,13 +138,13 @@ function draw(
   return onOpenFile;
 }
 
-const tree = () => screen.getByRole("tree", { name: /^Files of / });
+const tree = () => screen.getByRole("treegrid", { name: /^Files of / });
 const row = (id: string) => {
   const found = tree().querySelector<HTMLElement>(`[data-row="${id}"]`);
   if (found === null) throw new Error(`no row ${id}`);
   return found;
 };
-const named = (name: string) => within(tree()).findByRole("treeitem", { name: new RegExp(name) });
+const named = (name: string) => within(tree()).findByRole("row", { name: new RegExp(name) });
 
 describe("a branch's files in the explorer", () => {
   it("reads a folder only when it is opened, and opens a file in its tab", async () => {
@@ -159,8 +168,8 @@ describe("a branch's files in the explorer", () => {
   });
 
   it("draws a folder's chevron in a box centred on its row, closed or open, at every depth (qw358)", async () => {
-    // The operator's screenshot: each folder's `>` stood above its name. The box is the shared
-    // twist's (`.ui-tree-twist`), one row high and held in the middle by its margins.
+    // The operator's screenshot: each folder's `>` stood above its name. The box is the tree
+    // family's twist (`ui/tree`), as high as its row, with its chevron in its middle.
     core({
       "one:": [entry("src", { kind: "folder" }), entry("docs", { kind: "folder" })],
       "one:src": [entry("deep", { kind: "folder" })],
@@ -177,24 +186,25 @@ describe("a branch's files in the explorer", () => {
     ]);
     expect(folders.map((one) => one.getAttribute("aria-level"))).toEqual(["1", "1", "2"]);
     for (const folder of folders) {
-      const twist = folder.querySelector<HTMLElement>(":scope > .ui-tree-twist");
+      const twist = folder.querySelector<HTMLElement>('[data-part="twist"]');
       if (twist === null) throw new Error(`no twist on ${folder.dataset.row}`);
-      expect(folder).toHaveClass("ui-row", "ui-tree-row");
+      expect(folder).toHaveAttribute("data-scope", "tree");
       expect(drawnWith(folder, "align-items")).toBe("center");
-      expect(twist.tagName).toBe("SPAN");
+      // React Aria's toggle, named for what it does, and never a Tab stop.
+      expect(twist.tagName).toBe("BUTTON");
+      expect(twist).toHaveAttribute("tabindex", "-1");
       expect(twist.querySelector(":scope > svg")).not.toBeNull();
       expect(drawnWith(twist, "display")).toBe("inline-flex");
-      expect(drawnWith(twist, "block-size")).toBe("var(--ui-row-height)");
+      expect(drawnWith(twist, "block-size")).toBe("100%");
       expect(drawnWith(twist, "inset-block")).toBe("0");
-      expect(drawnWith(twist, "margin-block")).toBe("auto");
       expect(drawnWith(twist, "align-items")).toBe("center");
     }
   });
 
   it("opens a file of the repo's own folder as the repo's, with no branch folder named", async () => {
     core({ ":": [entry("README.md")] });
-    // With the workspace itself picked, each repo's own folder is a row of the section.
-    const opened = draw(vi.fn(), () => {}, null);
+    // With the workspace itself picked, each of its repos' own folders is a row (#3343).
+    const opened = draw(vi.fn(), () => {}, null, TWO_REPOS);
 
     await userEvent.click(row("file:svc/:"));
     await userEvent.click(await named("^README.md"));
@@ -235,8 +245,8 @@ describe("a branch's files in the explorer", () => {
     const opened = draw();
     await named("^README.md");
 
-    expect(within(tree()).queryByRole("treeitem", { name: /^\.env/ })).toBeNull();
-    expect(within(tree()).queryByRole("treeitem", { name: /^target/ })).toBeNull();
+    expect(within(tree()).queryByRole("row", { name: /^\.env/ })).toBeNull();
+    expect(within(tree()).queryByRole("row", { name: /^target/ })).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Show ignored files" }));
     const env = await named("^\\.env");
@@ -246,7 +256,7 @@ describe("a branch's files in the explorer", () => {
       "aria-pressed",
       "true",
     );
-    expect(env.closest("li")).toHaveAttribute("data-ignored", "true");
+    expect(env).toHaveAttribute("data-ignored");
     expect(await named("^target")).toBeInTheDocument();
     expect(opened).not.toHaveBeenCalled();
   });
@@ -276,7 +286,7 @@ describe("a branch's files in the explorer", () => {
     );
 
     await vi.waitFor(() =>
-      expect(within(tree()).queryByRole("treeitem", { name: /^README.md/ })).toBeNull(),
+      expect(within(tree()).queryByRole("row", { name: /^README.md/ })).toBeNull(),
     );
   });
 
@@ -599,13 +609,19 @@ describe("a file or folder row's menu (FM-10)", () => {
     core({ "one:": [entry("src", { kind: "folder" }), entry("README.md")] });
     draw();
     const set: Record<string, string> = {};
-    const dataTransfer = { setData: (type: string, value: string) => (set[type] = value) };
+    // What a browser's drag carries, as far as the tree family's drag (React Aria's) writes it.
+    const dataTransfer = {
+      items: { add: (value: string, type: string) => (set[type] = value) },
+      clearData: () => {},
+      setDragImage: () => {},
+      effectAllowed: "all",
+    };
 
-    fireEvent.dragStart(await screen.findByRole("treeitem", { name: /README\.md/ }), {
+    fireEvent.dragStart(await screen.findByRole("row", { name: /README\.md/ }), {
       dataTransfer,
     });
     const file = JSON.parse(set["application/x-charter-reference"]) as unknown;
-    fireEvent.dragStart(screen.getByRole("treeitem", { name: /^src/ }), { dataTransfer });
+    fireEvent.dragStart(screen.getByRole("row", { name: /^src/ }), { dataTransfer });
     const folder = JSON.parse(set["application/x-charter-reference"]) as unknown;
 
     const branch = { plane: PLANE, workspace: "alpha", repo: "svc", piece: "one" };
@@ -632,7 +648,7 @@ describe("a file or folder row's menu (FM-10)", () => {
   it("gives a repo's own folder row its absolute path, a reveal and a shell (#1143)", async () => {
     core({ ":": [] });
     const pressed: Offer[] = [];
-    draw(vi.fn(), (offer) => pressed.push(offer), null);
+    draw(vi.fn(), (offer) => pressed.push(offer), null, TWO_REPOS);
 
     fireEvent.contextMenu(row("file:svc/:"));
     const menu = await screen.findByRole("menu");

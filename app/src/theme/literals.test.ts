@@ -20,7 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { builtStyles } from "../ui/stylesheets";
+import { builtStyles, isForcedColoursSheet } from "../ui/stylesheets";
 import { GEOMETRY_PROPERTIES } from "./geometry";
 import { LITERALS, dataUrls, mixesNoColourOfItsOwn } from "./literal";
 import { MOTION_TOKENS, motionProperty } from "./motion";
@@ -70,10 +70,11 @@ function nonEmpty(path: string): string {
   return text;
 }
 
-/** The files the rule covers: everything but the theme's own, which is the exception it makes. */
+/** The files the rule covers: everything but the theme's own, which is the exception it makes,
+ *  and a family's forced-colours sheet, which draws in the system's colours alone (#3387). */
 function sources(...extensions: string[]): [string, string][] {
   const covered = Object.entries(SOURCES)
-    .filter(([path]) => !path.startsWith("src/theme/"))
+    .filter(([path]) => !path.startsWith("src/theme/") && !isForcedColoursSheet(path))
     .filter(([path]) => extensions.some((extension) => path.endsWith(extension)))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([path]) => [path, nonEmpty(path)] as [string, string]);
@@ -395,7 +396,7 @@ describe("the stylesheet and the vocabulary agree", () => {
     ...builtStyles(join(process.cwd(), "src")).matchAll(/@import "\.\/([^"]+\.css)"/g),
   ]
     .map((hit) => hit[1])
-    .filter((path) => !path.startsWith("theme/"));
+    .filter((path) => !path.startsWith("theme/") && !isForcedColoursSheet(path));
   const css = ownSheets.map((path) => nonEmpty(`src/${path}`)).join("\n");
 
   it("reads App.css and every other sheet of the window's own", () => {

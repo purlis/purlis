@@ -42,7 +42,7 @@ import { VaultsWaitingNotice } from "./VaultsWaitingNotice";
 import { Notice, NoticeList } from "./Notice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { AddDockerPoolHost } from "./AddDockerPool";
-import { SaidLink } from "./SaidLink";
+import { ActionResultNotice, ResultsGroup } from "./ActionResultNotice";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
 import { goneCause, goneKept, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
 import { askUpdate, tellSaved, useRepoSaving } from "./saving";
@@ -62,6 +62,7 @@ import {
 } from "./actions";
 import { useScreenReaderMode } from "./screenReader";
 import { useLatestSaid } from "./latestSaid";
+import { resultsFor, useKeptResults } from "./keptResults";
 import { useAlerts } from "./alerts";
 import type { InboxAlertsDo, WindowAlerts } from "./InboxAlerts";
 import { waitingAsk, type Elsewhere } from "./InboxElsewhere";
@@ -356,10 +357,9 @@ function App() {
   const [inboxLinesAt, setInboxLinesAt] = useState<HTMLDivElement | null>(null);
   /** How many lines the window lists now: counted in the front project's status line. */
   const [windowLinesListed, setWindowLinesListed] = useState(0);
-  const windowLines = useMemo(
-    () => ({ at: setInboxLinesAt, count: windowLinesListed }),
-    [windowLinesListed],
-  );
+  /** Where the window's kept results are drawn: under the front project's Inbox's Notices
+   *  (#3344). */
+  const [resultsAt, setResultsAt] = useState<HTMLDivElement | null>(null);
   const onWindowLines = useCallback((_counted: number, listed: number) => {
     setWindowLinesListed(listed);
   }, []);
@@ -1267,6 +1267,20 @@ function App() {
   /** What the last action answered: the newer of the project in front's answer and this
    *  window's own (#1669), so a window sentence is not hidden by an older project one. */
   const said = useLatestSaid(inFront, saying?.said, report);
+  /** The result whose notice was closed: it stays closed until the next result (#3344). */
+  const [closedSaid, setClosedSaid] = useState<Said>();
+  /** Every result said, kept for the Inbox's Notices under Results (#3344). */
+  const { kept: keptResults, drop: dropResult } = useKeptResults(said, inFront);
+  const resultsInFront = useMemo(() => resultsFor(keptResults, inFront), [keptResults, inFront]);
+  const windowLines = useMemo(
+    () => ({
+      at: setInboxLinesAt,
+      count: windowLinesListed,
+      resultsAt: setResultsAt,
+      results: resultsInFront.length,
+    }),
+    [windowLinesListed, resultsInFront.length],
+  );
 
   // What this window holds and what it has in front, told to the core. It buys two things: a
   // notification about a chat in a project the operator is NOT looking at is sent rather than
@@ -1486,6 +1500,8 @@ function App() {
       editPersona: async () => nowhere(),
       closeTodo: async () => nowhere(),
       forgetTodo: async () => nowhere(),
+      reopenTodo: async () => nowhere(),
+      forgetDoneTodo: async () => nowhere(),
       // No plane, no browsers of its chats (#2022).
       pinBrowser: async () => nowhere(),
       handBrowser: async () => nowhere(),
@@ -2190,20 +2206,27 @@ function App() {
           />
         )}
         <div className="window-work">
-          {/* What the last action answered. Said here only while the palette is down: it is modal
-          and draws over this line, and shows the same words itself rather than leaving the
-          operator to guess at a sentence behind the overlay. One state, two places it can be
-          drawn — never two states. */}
-          {said && !paletteOpen && (
-            <p
-              className={said.refused ? "trouble" : "came-back"}
-              role={said.refused ? "alert" : "status"}
-            >
-              <span>{said.words}</span>
-              {said.settings !== undefined && (
-                <SaidLink way={said.settings} onFollow={followSaid} />
-              )}
-            </p>
+          {/* What the last action answered, as a closable notice at the top of the content
+          (#3344). Said here only while the palette is down: it is modal and draws over this
+          notice, and shows the same words itself rather than leaving the operator to guess at a
+          sentence behind the overlay. One state, two places it can be drawn — never two states.
+          Closed, it stays closed until the next result; it is kept under Results in the Inbox's
+          Notices either way. */}
+          {said && said !== closedSaid && !paletteOpen && (
+            <ActionResultNotice
+              cause={`result:${said.from}`}
+              said={said}
+              onClose={() => setClosedSaid(said)}
+              onSettings={followSaid}
+            />
+          )}
+          {resultsAt !== null && inFront !== undefined && (
+            <ResultsGroup
+              kept={resultsInFront}
+              into={resultsAt}
+              onDrop={dropResult}
+              onSettings={followSaid}
+            />
           )}
 
           {/* **The window's own lines, one list** (D-LB-1): what the window says about itself

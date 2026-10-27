@@ -101,6 +101,37 @@
   outline: none;
 }
 
+/* **Rows as wide as their words** (`fit="content"`): where the view scrolls sideways, a row is
+   never narrower than its one line, so its pill and ring reach a long name's end (#1796). */
+[data-fit="content"] {
+  min-inline-size: max-content;
+}
+
+[data-fit="content"] [data-scope="tree"][data-part="root"] {
+  min-inline-size: max-content;
+}
+
+/* **What stands under a row while its rows are read** (`TreePending`): React Aria's loading row,
+   which the keyboard passes, one step in as a row is, in the quiet tier. */
+[data-scope="tree"][data-part="pending"] {
+  --tree-drawn: min(var(--tree-depth, 0), 4);
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-block-size: var(--size-control);
+  padding-inline: calc(var(--space-4) + (var(--tree-drawn) + 1) * var(--tree-step)) var(--space-4);
+  color: var(--text-quiet);
+}
+
+[data-scope="tree"][data-part="pending"][data-size="sm"] {
+  min-block-size: var(--size-chrome);
+  padding-inline-start: calc(var(--space-3) + (var(--tree-drawn) + 1) * var(--tree-step));
+}
+
+[data-scope="tree"][data-part="pending"] > [role="gridcell"] {
+  display: contents;
+}
+
 /* Where twists trail (a row that is itself a page), no step is kept for one. */
 [data-twist="trail"] [data-scope="tree"][data-part="root"] {
   padding-inline-start: calc(var(--tree-pad) + var(--tree-drawn) * var(--tree-step));
@@ -147,9 +178,15 @@
   inset-inline-start: calc(var(--tree-pad) - var(--tree-step) / 2);
 }
 
-/* **Under the pointer**: the pill, on the tree's ground. A chosen row keeps its wash. */
+/* **Under the pointer**: the pill, on the tree's ground. A chosen row keeps its wash; a line,
+   and a row of a tree that never folds, run nothing and take none. */
 [data-scope="tree"][data-part="root"][data-hovered]:not([data-disabled]):not([data-selected]) {
   background-color: var(--surface-hover);
+}
+
+[data-twist="none"] [data-scope="tree"][data-part="root"][data-hovered]:not([data-selected]),
+[data-scope="tree"][data-part="root"][data-line][data-hovered]:not([data-selected]) {
+  background-color: transparent;
 }
 
 /* **Chosen** (R21): the wash, the words in the primary tier, and an edge down its start. */
@@ -169,8 +206,14 @@
   outline-offset: var(--focus-ring-inset);
 }
 
-/* **A row that cannot be used**: its words in the faint tier, on no ground. */
+/* **A row that cannot be used**: its words in the faint tier, on no ground. A row that keeps
+   the keyboard to say why it cannot be run (`unavailable`: a file purlis will not open) is drawn
+   so too. */
 [data-scope="tree"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+[data-scope="tree"][data-part="root"][data-unavailable] {
   color: var(--text-faint);
 }
 

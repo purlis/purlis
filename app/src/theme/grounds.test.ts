@@ -30,6 +30,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import { FAMILY_THEMES } from "./families.testkit";
 import { property, TOKENS, type Token } from "./theme";
 
 const SRC = join(process.cwd(), "src");
@@ -75,6 +76,22 @@ const BY_DASHED = new Map<string, Token>(TOKENS.map((token) => [token.replace(/\
 /** The parts of a selector that say a state, not what is drawn at rest. */
 const STATE =
   /:(?:hover|focus-visible|focus-within|focus|active|checked)(?![\w-])|\[(?:aria-(?:selected|current|pressed|checked|expanded)|data-(?:hovered|pressed|selected|focus-visible|open|state|on|active|current))(?:[~|^$*]?="[^"]*")?\]/;
+
+/** Of each family's parts, by scope, the only ones that are grounds (a family's `groundParts`). */
+const GROUND_PARTS = new Map(
+  FAMILY_THEMES.flatMap((family) => Object.entries(family.groundParts ?? {})),
+);
+
+/** Whether `subject` is a family's part that family says is no ground a button stands on. */
+function noGround(subject: string): boolean {
+  for (const [scope, parts] of GROUND_PARTS)
+    if (
+      subject.includes(`[data-scope="${scope}"]`) &&
+      !parts.some((part) => subject.includes(`[data-part="${part}"]`))
+    )
+      return true;
+  return false;
+}
 
 /** The grounds one class draws: each background token, and whether one is drawn at rest. */
 type Ground = { tokens: Set<Token>; rest: boolean };
@@ -164,12 +181,8 @@ function groundsOfClasses(css: string[]): {
         const attribute = /^\[([\w-]+)(?:="([^"]*)")?\]/.exec(bare);
         // A button's own fill is no ground: nothing a button holds is another button.
         if (classes.length === 0 && tag === "button") continue;
-        // Nor is the family's own stylesheet, on its wrapper's attributes.
-        if (/\[data-scope="button"\]/.test(subject)) continue;
-        // Of the dialog family's parts (#2910), only its root is a ground a button stands on: the
-        // scrim is drawn under the root, and the footer's rule holds nothing.
-        if (/\[data-scope="dialog"\]/.test(subject) && !/\[data-part="root"\]/.test(subject))
-          continue;
+        // A family's part it says is no ground (its `groundParts`).
+        if (noGround(subject)) continue;
         const form =
           tag !== undefined
             ? `<${tag}>`
@@ -631,18 +644,12 @@ function buttonGrounds(files: { name: string; text: string }[], css: string[]): 
 /**
  * **The grounds a family draws on an element whose attributes a helper hands it** (#2914), each
  * listed by the class the element carries: the reader ties a rule to an element by attributes
- * written out, and `tabsPart`, `panelRoot` and `editorToolbar` spread theirs. The chat strip's
- * shade is the engine's too, under `tabs.layout.attach: strip` (`attached` in
- * `crates/purlis-core/src/theme/parts.rs`).
+ * written out, and a family's helpers (`tabsPart`, `panelRoot`, `editorToolbar`) spread theirs.
+ * Each family lists its own (`spreadGrounds`, in `ui/<family>/theme.testkit.ts`).
  */
-const ENGINE_GROUNDS: ReadonlyMap<string, readonly Token[]> = new Map([
-  // The chat strip (`tabsPart("strip")`): none docked, the chat strip's shade on its own.
-  ["bar", ["layer.chat"]],
-  // The content panel the tabs attach to (`panelRoot("content")`), Purlis's panel fill.
-  ["panes", ["surface.raised"]],
-  // The editor's toolbar over a file (`editorToolbar`): the code's own surface.
-  ["piece-files-head", ["terminal.background"]],
-]);
+const ENGINE_GROUNDS: ReadonlyMap<string, readonly Token[]> = new Map(
+  FAMILY_THEMES.flatMap((family) => family.spreadGrounds ?? []),
+);
 
 const CLASSLESS: readonly string[] = [
   // The band a chat row takes for a moment once it is revealed (`revealTask.ts` sets the
@@ -653,17 +660,8 @@ const CLASSLESS: readonly string[] = [
   // The line between the bottom panel's halves, a handle the panel library draws, which holds
   // nothing.
   ".panel-halves > [data-separator]",
-  // The editor's toolbar (`ui/tabs`, #2914): its attributes are spread by `editorToolbar`, and its
-  // ground is listed by class in ENGINE_GROUNDS.
-  '[data-scope="editor"][data-part="toolbar"]',
-  // A session tab's `×` under the pointer (`ui/tabs/tabs.css`, #2914): its attributes are the
-  // family's (`tabPart`), and it holds no button.
-  '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:hover',
-  '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"][data-keeps]:hover',
-  // A card's ground (`ui/card`, #2912), set by the family's attributes on the element a screen
-  // asks for: `surface.raised`, which the button family lists, and in Purlis `surface.base`
-  // (its `card.root.fill`), which the engine holds to the button's grounds.
-  '[data-scope="card"][data-part="root"]',
+  // And each family's own (`classless`, in `ui/<family>/theme.testkit.ts`).
+  ...FAMILY_THEMES.flatMap((family) => family.classless ?? []),
 ];
 
 /**

@@ -17,6 +17,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 import { forgetRepoClones } from "./repoClones";
 import { chipName, openAllWorkspaces, workspaceChips, workspaceInFront } from "./test-strips";
+import { findResult, theResult } from "./actionResult.testkit";
 
 /**
  * Making a workspace and deleting one, from the window.
@@ -197,11 +198,23 @@ function core(
       made.push(name);
       return [`✓ Renamed workspace '${String(got.workspace)}' to '${name}'.`];
     }
+    if (cmd === "workspace_vision") {
+      if (String(got.vision).startsWith("##"))
+        throw "a line of a vision starts with `## `, which would start a section of its own in workspace.md: nothing was written";
+      return `${String(got.workspace)} has a vision now.`;
+    }
     if (cmd === "workspace_create") {
       const name = String(got.name);
       if (name.includes("/"))
         throw `invalid workspace name '${name}' (use letters, digits, '.', '_', '-'; must not start with a dot)`;
-      return [`✓ Workspace '${name}' ready (LOCAL) → workspaces/${name}/`];
+      const ready = `✓ Workspace '${name}' ready (LOCAL) → workspaces/${name}/`;
+      // As `wscmd/create.rs` says it with no vision: a line written for an agent (#3344).
+      return got.vision == null
+        ? [
+            ready,
+            '⬢ No vision yet — ask the developer what this workspace is for, then record it: purlis workspace vision "<the goal>"',
+          ]
+        : [ready];
     }
     return null;
   });
@@ -487,9 +500,7 @@ describe("deleting a workspace", () => {
 
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete workspace" }));
 
-    expect(
-      await screen.findByText("✓ Removed workspace 'alpha' and its clones."),
-    ).toBeInTheDocument();
+    expect(await findResult("✓ Removed workspace 'alpha' and its clones.")).toBeInTheDocument();
   });
 });
 
@@ -646,7 +657,99 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
         ["clone_repo", "web"],
       ]),
     );
-    expect(await screen.findByText("Cloned api, web into gamma.")).toBeInTheDocument();
+    expect(await findResult("Cloned api, web into gamma.")).toBeInTheDocument();
+  });
+
+  it("says a workspace made as a closable notice in plain words, kept under Results (#3344)", async () => {
+    core();
+    render(<App />);
+    await settled();
+
+    await createWithRepos([]);
+
+    const title = await findResult("Workspace gamma is ready");
+    const notice = theResult();
+    expect(notice.querySelector('[role="status"]')).not.toBeNull();
+    expect(notice).toHaveTextContent(
+      "It has no vision yet. Add one so its chats know what it is for.",
+    );
+    expect(title).toBeInTheDocument();
+    // The core's lines are behind Details, and the one written for an agent is never shown.
+    expect(notice).not.toHaveTextContent("ask the developer");
+    await userEvent.click(within(notice).getByRole("button", { name: "Details" }));
+    expect(notice).toHaveTextContent("✓ Workspace 'gamma' ready (LOCAL) → workspaces/gamma/");
+    expect(document.body).not.toHaveTextContent("ask the developer");
+    expect(within(notice).getByRole("button", { name: "Open gamma" })).toBeInTheDocument();
+    // Kept under Results in the Inbox's Notices, with the same ways on.
+    const results = await screen.findByRole("region", { name: "Results" });
+    expect(within(results).getByText("Workspace gamma is ready")).toBeInTheDocument();
+    expect(within(results).getByRole("button", { name: "Open gamma" })).toBeInTheDocument();
+    // × closes the notice; the result stays under Results.
+    await userEvent.click(within(notice).getByRole("button", { name: "Dismiss" }));
+    expect(document.querySelector(".window-work > .action-result")).toBeNull();
+    expect(within(results).getByText("Workspace gamma is ready")).toBeInTheDocument();
+  });
+
+  it("says a result in one live region, though Results lists it too (#3344)", async () => {
+    core();
+    render(<App />);
+    await settled();
+
+    await createWithRepos([]);
+    await findResult("Workspace gamma is ready");
+    await screen.findByRole("region", { name: "Results" });
+    const saying = [...document.querySelectorAll('[role="status"]')].filter((one) =>
+      one.textContent?.includes("Workspace gamma is ready"),
+    );
+    expect(saying).toHaveLength(1);
+    expect(saying[0].closest(".window-work > .action-result")).not.toBeNull();
+  });
+
+  it("adds a vision from the notice, through the core, and says it was recorded (#3344)", async () => {
+    const { calls } = core();
+    render(<App />);
+    await settled();
+
+    await createWithRepos([]);
+    await findResult("Workspace gamma is ready");
+    await userEvent.click(within(theResult()).getByRole("button", { name: "Add a vision" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a vision for gamma" });
+    await userEvent.type(within(dialog).getByRole("textbox"), "Keep the CI green");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save vision" }));
+
+    expect(await findResult("gamma has a vision now.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Add a vision for gamma" })).toBeNull();
+    expect(calls("workspace_vision").map((one) => one.args)).toEqual([
+      expect.objectContaining({ workspace: "gamma", vision: "Keep the CI green" }),
+    ]);
+  });
+
+  it("keeps a refused vision in the dialog, in the core's words (#3344)", async () => {
+    core();
+    render(<App />);
+    await settled();
+
+    await createWithRepos([]);
+    await findResult("Workspace gamma is ready");
+    await userEvent.click(within(theResult()).getByRole("button", { name: "Add a vision" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a vision for gamma" });
+    await userEvent.type(within(dialog).getByRole("textbox"), "## Not a vision");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save vision" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/nothing was written/);
+    expect(within(dialog).getByRole("textbox")).toHaveValue("## Not a vision");
+  });
+
+  it("closes a result's notice with Esc while the keyboard is in it (#3344)", async () => {
+    core();
+    render(<App />);
+    await settled();
+
+    await createWithRepos([]);
+    await findResult("Workspace gamma is ready");
+    within(theResult()).getByRole("button", { name: "Open gamma" }).focus();
+    await userEvent.keyboard("{Escape}");
+    expect(document.querySelector(".window-work > .action-result")).toBeNull();
   });
 
   it("says which repo did not clone, in the core's words, and clones the rest", async () => {
@@ -656,7 +759,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
 
     await createWithRepos(["api", "web"]);
 
-    expect(await screen.findByText(/Could not clone api into gamma/)).toHaveTextContent(
+    expect(await findResult(/Could not clone api into gamma/)).toHaveTextContent(
       "api: clone failed — no access.",
     );
     expect(calls("clone_repo").map((one) => one.args.repo)).toEqual(["api", "web"]);
@@ -669,7 +772,7 @@ describe("picking a new workspace's repos (ADR 0055)", () => {
 
     await createWithRepos(["api"]);
 
-    expect(await screen.findByText(/Could not clone api into gamma/)).toHaveTextContent(
+    expect(await findResult(/Could not clone api into gamma/)).toHaveTextContent(
       "api was cloned, but purlis does not see it in gamma. purlis said: ✓ api cloned",
     );
   });

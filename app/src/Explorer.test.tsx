@@ -29,6 +29,7 @@ const PANELS: PanelsModel = {
   refused: [],
   todos: [],
   todos_refused: null,
+  done_todos: [],
   personas: ["steward"],
   persona: "steward",
   sessions: [],
@@ -113,18 +114,23 @@ function draw(on: {
 /** The spot marked as the one the next chat would start in. */
 const picked = () =>
   screen
-    .getAllByRole("treeitem")
+    .getAllByRole("row")
     .filter((one) => one.getAttribute("aria-current") === "true")
     .map((one) => one.textContent);
+
+/** A clone's rows: its own, and the rows and lines under it (the tree family draws a tree's rows
+ *  one after another, each saying the clone it is of). */
+const ofClone = (repo: string) =>
+  screen.getAllByRole("row").filter((one) => one.dataset.clone === repo);
 
 describe("the explorer", () => {
   it("lists the focused workspace's clones and the worktrees cut off each", () => {
     draw({});
 
-    const svc = screen.getByTestId("clone-svc");
-    expect(within(svc).getByRole("treeitem", { name: /one/ })).toBeInTheDocument();
-    expect(within(svc).getByRole("treeitem", { name: /two/ })).toBeInTheDocument();
-    expect(screen.getByTestId("clone-tool")).toHaveTextContent("No branches cut here");
+    const svc = ofClone("svc").map((one) => one.getAttribute("aria-label"));
+    expect(svc).toEqual(expect.arrayContaining([expect.stringMatching(/^one/)]));
+    expect(svc).toEqual(expect.arrayContaining([expect.stringMatching(/^two/)]));
+    expect(ofClone("tool").map((one) => one.textContent)).toContain("No branches cut here");
   });
 
   it("lists no workspaces: the strip is where one is selected (qw358)", () => {
@@ -146,7 +152,7 @@ describe("the explorer", () => {
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 
-  it("is the Files section alone in the window's Explorer view, named for the workspace", () => {
+  it("is the files alone in the window's Explorer view, titled for the workspace, with no fold (#3343)", () => {
     render(
       <ChatsHere.Provider value={fixedChats(nothingKnown)}>
         <Explorer
@@ -169,12 +175,10 @@ describe("the explorer", () => {
         one.getAttribute("data-section"),
       ),
     ).toEqual(["files"]);
-    // The heading keeps naming whose files they are.
-    expect(screen.getByRole("button", { name: "Files alpha" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-    expect(screen.getByRole("tree", { name: "Files of alpha" })).toBeInTheDocument();
+    // The view's title names whose files they are; *Files* is no fold (#3343).
+    expect(screen.getByRole("heading", { name: "alpha" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Files/ })).toBeNull();
+    expect(screen.getByRole("treegrid", { name: "Files of alpha" })).toBeInTheDocument();
   });
 
   it("follows the strip: the files are of whichever workspace it selects", () => {
@@ -196,18 +200,19 @@ describe("the explorer", () => {
     const { rerender } = render(of("alpha", ["svc", "tool"]));
     const names = () =>
       within(screen.getByTestId("files"))
-        .getAllByRole("treeitem")
+        .getAllByRole("row")
         .map((one) => one.textContent?.trim());
-    expect(screen.getByRole("tree", { name: "Files of alpha" })).toBeInTheDocument();
+    expect(screen.getByRole("treegrid", { name: "Files of alpha" })).toBeInTheDocument();
     expect(names()).toEqual(["svc", "tool"]);
 
     // The strip moved to beta: the same view, beta's files, and nothing of alpha's.
     rerender(of("beta", ["web"]));
 
-    expect(screen.getByRole("button", { name: "Files beta" })).toBeInTheDocument();
-    expect(screen.getByRole("tree", { name: "Files of beta" })).toBeInTheDocument();
-    expect(screen.queryByRole("tree", { name: "Files of alpha" })).toBeNull();
-    expect(names()).toEqual(["web"]);
+    // One repo is its tree, open at once (#3343): its own folder's rows, here none read yet.
+    expect(screen.getByRole("heading", { name: "beta" })).toBeInTheDocument();
+    expect(screen.getByRole("treegrid", { name: "Files of beta" })).toBeInTheDocument();
+    expect(screen.queryByRole("treegrid", { name: "Files of alpha" })).toBeNull();
+    expect(names()).not.toContain("svc");
   });
 
   it("draws no chat, wherever it works: the Chats view lists them (#1673)", () => {
@@ -226,7 +231,7 @@ describe("the explorer", () => {
     // The tree is the place: the workspace, its clones, their branches and files.
     expect(
       within(explorer)
-        .getAllByRole("treeitem")
+        .getAllByRole("row")
         .map((row) => row.dataset.row?.split(":")[0]),
     ).not.toContain("chat");
   });
@@ -243,7 +248,7 @@ describe("the explorer", () => {
     const onPick = vi.fn();
     draw({ onPick });
 
-    await userEvent.click(screen.getByRole("treeitem", { name: /^one/ }));
+    await userEvent.click(screen.getByRole("row", { name: /^one/ }));
 
     expect(onPick).toHaveBeenCalledWith({ repo: "svc", piece: "one", path: `${CUT}/one` });
   });
@@ -258,7 +263,7 @@ describe("the explorer", () => {
     const onPick = vi.fn();
     draw({ spot: { repo: "svc", piece: "two", path: `${CUT}/two` }, onPick });
 
-    await userEvent.click(screen.getByRole("treeitem", { name: /the workspace itself/ }));
+    await userEvent.click(screen.getByRole("row", { name: "alpha" }));
 
     expect(onPick).toHaveBeenCalledWith(undefined);
   });
@@ -305,7 +310,10 @@ describe("the explorer", () => {
 
     const mark = screen.getByTestId("piece-svc-one").querySelector("[data-testid=piece-unclaimed]");
     expect(mark).toHaveTextContent("unclaimed 3d");
-    expect(tipOf(mark)).toEqual(expect.stringContaining("never started"));
+    // Why, in the row's own tooltip (a mark inside a row takes no keyboard of its own).
+    expect(tipOf(screen.getByTestId("piece-svc-one"))).toEqual(
+      expect.stringContaining("never started"),
+    );
     expect(screen.getByTestId("piece-svc-two").querySelector("[data-testid=piece-unclaimed]")).toBe(
       null,
     );
@@ -321,7 +329,7 @@ describe("the explorer", () => {
 
     const mark = screen.getByTestId("piece-svc-one").querySelector("[data-testid=piece-unread]");
     expect(mark).toHaveTextContent("unreadable");
-    expect(tipOf(mark)).toEqual(why);
+    expect(tipOf(screen.getByTestId("piece-svc-one"))).toEqual(`${CUT}/one\n${why}`);
     expect(screen.getByTestId("piece-svc-two").querySelector("[data-testid=piece-unread]")).toBe(
       null,
     );
@@ -344,9 +352,8 @@ describe("the explorer", () => {
     // branch, and is shown only where a path is wanted.
     draw({ state: state({ pieces: { svc: [piece("one", { branch: "fix/login" })], tool: [] } }) });
 
-    const row = within(screen.getByTestId("piece-svc-one")).getByRole("treeitem", {
-      name: "fix/login in svc",
-    });
+    const row = screen.getByRole("row", { name: "fix/login in svc" });
+    expect(row).toBe(screen.getByTestId("piece-svc-one"));
     expect(tipOf(row)).toEqual(`${CUT}/one`);
     // Said once: the mark beside the row no longer repeats the branch.
     expect(within(screen.getByTestId("piece-svc-one")).getAllByText("fix/login")).toHaveLength(1);
@@ -355,9 +362,7 @@ describe("the explorer", () => {
   it("reads a folder with no branch checked out by the folder's name (#1102)", () => {
     draw({ state: state({ pieces: { svc: [piece("one", { branch: null })], tool: [] } }) });
 
-    expect(
-      within(screen.getByTestId("piece-svc-one")).getByRole("treeitem", { name: "one" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: "one" })).toBe(screen.getByTestId("piece-svc-one"));
   });
 
   it("says why a clone's worktrees could not be listed rather than showing none", () => {
@@ -368,12 +373,17 @@ describe("the explorer", () => {
       }),
     });
 
-    const svc = screen.getByTestId("clone-svc");
-    const refused = within(svc).getByRole("status");
+    // A line under the clone's row, which the arrows read (#2911).
+    const [line] = ofClone("svc").filter((one) => one.matches(".clone-refused"));
+    const refused = within(line).getByRole("status");
     expect(refused).toHaveTextContent("symlink");
     // Its way out (NO-4): the read asked again.
     expect(within(refused).getByRole("button", { name: "Read again" })).toBeInTheDocument();
-    expect(svc).not.toHaveTextContent("No branches cut here");
+    expect(
+      ofClone("svc")
+        .map((one) => one.textContent)
+        .join(" "),
+    ).not.toContain("No branches cut here");
   });
 
   it("names why on the clone's heading, where its branches could not be read (#1476)", () => {
@@ -384,14 +394,16 @@ describe("the explorer", () => {
       }),
     });
 
-    const count = within(screen.getByTestId("clone-svc")).getByText("unreadable");
-    expect(tipOf(count)).toEqual("purlis will not run git through a symlink");
+    const clone = screen.getByTestId("clone-svc");
+    expect(within(clone).getByText("unreadable")).toBeInTheDocument();
+    // The clone's row says why, beside it: under the pointer and on the keyboard.
+    expect(tipOf(clone)).toEqual("purlis will not run git through a symlink");
   });
 
   it("says the listing is still coming rather than saying there is nothing", () => {
     draw({ state: state({ pieces: {} }) });
 
-    expect(screen.getByTestId("clone-svc")).toHaveTextContent("Asking git…");
+    expect(ofClone("svc").map((one) => one.textContent)).toContain("Asking git…");
   });
 
   // ---------------------------------------------------------------------------------------
@@ -402,17 +414,15 @@ describe("the explorer", () => {
   // Nothing to explore
   // ---------------------------------------------------------------------------------------
 
-  it("names the plane root in the Files heading when the strip is on it, and reads no folder without a project (#1916)", () => {
+  it("titles the plane root's files when the strip is on it, and reads no folder without a project (#1916)", () => {
     draw({ workspace: undefined });
 
     const explorer = screen.getByTestId("explorer");
     // Still a files browser with its heading, never a list of workspaces to pick from, and
     // no sentence in place of the tree: with a project, the tree is the whole project's
     // (`ExplorerSections.window.test.tsx`).
-    expect(screen.getByRole("button", { name: "Files Plane root" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    expect(screen.getByRole("heading", { name: "Plane root" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Files/ })).toBeNull();
     expect(explorer).not.toHaveTextContent(/is not a workspace/);
     expect(screen.queryByRole("tree")).toBeNull();
     expect(explorer.querySelector('[data-section="workspaces"]')).toBeNull();
@@ -501,9 +511,7 @@ describe("a piece row's menu", () => {
   it("opens on a right-click with the catalogue's own rows for that piece", async () => {
     draw({ offers: offers() });
 
-    const row = within(screen.getByTestId("piece-svc-one")).getByRole("treeitem", {
-      name: "one in svc",
-    });
+    const row = screen.getByRole("row", { name: "one in svc" });
     row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
 
     const menu = await screen.findByRole("menu");
@@ -528,9 +536,7 @@ describe("a piece row's menu", () => {
     const pressed: string[] = [];
     draw({ offers: offers(), onPress: (offer) => pressed.push(offer.id) });
 
-    const row = within(screen.getByTestId("piece-svc-one")).getByRole("treeitem", {
-      name: "one in svc",
-    });
+    const row = screen.getByRole("row", { name: "one in svc" });
     row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     await screen.findByRole("menu");
     await userEvent.click(screen.getByRole("menuitem", { name: "Remove folder" }));
@@ -561,8 +567,7 @@ describe("a clone row's menu", () => {
         nameOf: String,
       }),
     );
-  const heading = () =>
-    within(screen.getByTestId("clone-svc")).getByRole("treeitem", { name: /^svc/ });
+  const heading = () => screen.getByTestId("clone-svc");
 
   it("opens on a right-click with the catalogue's own rows for that clone", async () => {
     draw({ offers: offers() });
@@ -591,7 +596,7 @@ describe("a clone row's menu", () => {
   it("opens from the keyboard on the clone's row, which the arrows reach", async () => {
     const pressed: string[] = [];
     draw({ offers: offers(), onPress: (offer) => pressed.push(offer.id) });
-    screen.getByRole("treeitem", { name: /^alpha/ }).focus();
+    screen.getByRole("row", { name: /^alpha/ }).focus();
     await userEvent.keyboard("{ArrowDown}");
     expect(heading()).toHaveFocus();
 
@@ -621,10 +626,10 @@ describe("the explorer is drawn as a tree", () => {
     const svc = screen.getByTestId("clone-svc");
     // Lucide names each `<svg>` after its icon, which is the only handle a test has on which
     // mark was drawn — the mark itself is hidden from the accessibility tree on purpose.
-    expect(svc.querySelector("summary .lucide-folder-git-2")).not.toBeNull();
-    expect(svc.querySelector("summary .twisty")).not.toBeNull();
+    expect(svc.querySelector(".lucide-folder-git-2")).not.toBeNull();
+    expect(svc.querySelector('[data-part="twist"]')).not.toBeNull();
     const one = screen.getByTestId("piece-svc-one");
-    expect(one.querySelector(".spot .lucide-git-branch")).not.toBeNull();
+    expect(one.querySelector(".lucide-git-branch")).not.toBeNull();
   });
 
   it("keeps every row named by its words, with the icons beside them unread", () => {
@@ -632,7 +637,7 @@ describe("the explorer is drawn as a tree", () => {
 
     // The names the rest of this file and the scenario specs press by. An icon that joined
     // an accessible name would rename every row it was put on.
-    expect(screen.getByRole("treeitem", { name: /^one in svc$/ })).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /^one in svc$/ })).toBeInTheDocument();
     for (const svg of screen.getByTestId("explorer").querySelectorAll("svg")) {
       expect(svg.getAttribute("aria-hidden")).toBe("true");
     }
@@ -640,7 +645,9 @@ describe("the explorer is drawn as a tree", () => {
 
   it("spins only while something is still being read", () => {
     draw({ state: state({ pieces: {} }) });
-    expect(screen.getByTestId("clone-svc").querySelector(".pending .spinning")).not.toBeNull();
+    expect(
+      ofClone("svc").some((one) => one.matches(".pending") && one.querySelector(".spinning")),
+    ).toBe(true);
 
     cleanup();
     draw({});
@@ -661,24 +668,28 @@ describe("the explorer is drawn as a tree", () => {
 describe("the explorer's tree guides", () => {
   const strip = (file: string) =>
     readFileSync(join(process.cwd(), "src", file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
-  const shared = strip("primitives/collections.css");
-  const guides = [...shared.matchAll(/([^{}]*)\{([^}]*)\}/g)].filter(([, , body]) =>
+  const family = strip("ui/tree/tree.css");
+  const guides = [...family.matchAll(/([^{}]*)\{([^}]*)\}/g)].filter(([, , body]) =>
     body.includes("var(--tree-guide)"),
   );
 
-  it("are drawn by the shared tree row", () => {
-    expect(guides.map(([, selector]) => selector.trim())).toEqual([".ui-tree-row"]);
+  it("are drawn by the tree family's row, in either direction", () => {
+    expect(guides.map(([, selector]) => selector.trim())).toEqual([
+      '[data-scope="tree"][data-part="root"]::before',
+      '[data-scope="tree"][data-part="root"]:dir(rtl)::before',
+    ]);
   });
 
   it("paint the guide's colour and nothing else, so they need to know nothing about what is behind them", () => {
-    const [[, , body]] = guides;
-    const image = /background-image:([^;]*);/.exec(body)?.[1] ?? "";
-    const colours = [...image.matchAll(/var\((--[\w-]+)\)/g)]
-      .map((hit) => hit[1])
-      .filter((read) => !read.startsWith("--ui-tree"));
-    expect(colours).toEqual(["--tree-guide"]);
-    expect(image).toContain("transparent");
-    expect(body).not.toMatch(/background-color\s*:/);
+    for (const [, , body] of guides) {
+      const image = /background-image:([^;]*);/.exec(body)?.[1] ?? "";
+      const colours = [...image.matchAll(/var\((--[\w-]+)\)/g)]
+        .map((hit) => hit[1])
+        .filter((read) => !read.startsWith("--tree-step"));
+      expect(colours).toEqual(["--tree-guide"]);
+      expect(image).toContain("transparent");
+      expect(body).not.toMatch(/background-color\s*:/);
+    }
   });
 
   it("are no longer drawn as elbows by the rows", () => {
@@ -693,45 +704,49 @@ describe("the explorer's tree guides", () => {
  * clone's `<summary>`; and its toggles and filter are the shared button and field.
  */
 describe("the explorer on the shared styles", () => {
-  it("draws every row as a shared tree row, a step in per level", () => {
+  it("draws every row as a row of the tree family, a step in per level", () => {
     draw({});
-    const tree = screen.getByRole("tree", { name: "Repos and branches" });
-    expect(tree).toHaveClass("ui-tree");
-    const rows = within(tree).getAllByRole("treeitem");
+    const tree = screen.getByRole("treegrid", { name: "Repos and branches" });
+    expect(tree).toHaveAttribute("data-scope", "tree");
+    const rows = within(tree).getAllByRole("row");
     expect(rows.length).toBeGreaterThan(3);
     for (const row of rows) {
-      expect(row).toHaveClass("ui-row", "ui-tree-row");
-      expect(drawnWith(row, "min-block-size")).toBe("var(--ui-row-height)");
-      expect(drawnWith(row, "padding-inline-start")).toContain("var(--ui-tree-step)");
-      // Under the pointer: the hover, but the selected row stays selected.
-      expect(drawnWith(row, "background", { hover: true })).toBe(
+      expect(row).toHaveAttribute("data-scope", "tree");
+      expect(row).toHaveAttribute("data-size", "sm");
+      expect(drawnWith(row, "min-block-size")).toBe("var(--size-chrome)");
+      expect(drawnWith(row, "padding-inline-start")).toContain("var(--tree-step)");
+      // Under the pointer: the pill, but the current row keeps its wash, and a line, which runs
+      // nothing, takes none.
+      expect(drawnWith(row, "background-color", { hover: true })).toBe(
         row.getAttribute("aria-current") === "true"
           ? "var(--list-selected)"
-          : "var(--surface-hover)",
+          : row.hasAttribute("data-line")
+            ? "transparent"
+            : "var(--surface-hover)",
       );
     }
-    // The picked spot is the selected row, its look the shared one.
+    // The picked spot is drawn as a chosen row is.
     const current = rows.find((row) => row.getAttribute("aria-current") === "true");
-    expect(current && drawnWith(current, "background")).toBe("var(--list-selected)");
+    expect(current && drawnWith(current, "background-color")).toBe("var(--list-selected)");
     // The clone's twist hangs in its step, turned by the row's own `aria-expanded`.
-    const twist = screen.getByTestId("clone-svc").querySelector("summary > .ui-tree-twist");
-    expect(twist?.closest("summary")).toHaveAttribute("aria-expanded", "true");
-    // The twist is a box holding the chevron (`docs/ui-primitives.md`), never the icon itself:
-    // an icon given the class kept its own height and sat at the row's top (qw358).
+    const clone = screen.getByTestId("clone-svc");
+    expect(clone).toHaveAttribute("aria-expanded", "true");
+    const twist = clone.querySelector<HTMLElement>('[data-part="twist"]');
     if (twist === null) throw new Error("the clone's row has no twist");
-    expect(twist.tagName).toBe("SPAN");
+    expect(twist.tagName).toBe("BUTTON");
     expect(twist.querySelector(":scope > svg")).not.toBeNull();
-    expect(drawnWith(twist, "block-size")).toBe("var(--ui-row-height)");
-    expect(drawnWith(twist, "margin-block")).toBe("auto");
+    expect(drawnWith(twist, "block-size")).toBe("100%");
   });
 
   it("stands what a clone holds where its branches' names start", () => {
     draw({ state: state({ pieces: {} }) });
-    const pending = screen.getByTestId("clone-svc").querySelector(".pending");
-    if (pending === null) throw new Error("the clone says nothing while git is asked");
-    // One level under the clone's row: the branches' level, said on what holds them.
-    expect(pending.closest("[data-level]")).toHaveAttribute("data-level", "3");
-    expect(drawnWith(pending, "padding-inline-start")).toContain("var(--ui-tree-depth)");
+    const [pending] = ofClone("svc").filter((one) => one.matches(".pending"));
+    if (pending === undefined) throw new Error("the clone says nothing while git is asked");
+    // One level under the clone's row: the branches' level, the tree's loading row, which the
+    // arrows pass; the clone says it is busy meanwhile.
+    expect(pending).toHaveAttribute("aria-level", "3");
+    expect(pending).toHaveAttribute("data-part", "pending");
+    expect(screen.getByTestId("clone-svc")).toHaveAttribute("aria-busy", "true");
   });
 });
 
@@ -751,8 +766,8 @@ describe("the explorer is a WAI-ARIA tree", () => {
   // A chat working in a branch, which the tree no longer draws (#1673): its shape is the same
   // with or without it.
   const withAChat = () => draw({ chats: [chat(7, "seven", `${CUT}/one`)] });
-  const tree = () => screen.getByRole("tree", { name: "Repos and branches" });
-  const item = (name: RegExp) => within(tree()).getByRole("treeitem", { name });
+  const tree = () => screen.getByRole("treegrid", { name: "Repos and branches" });
+  const item = (name: RegExp) => within(tree()).getByRole("row", { name });
   /** A treeitem as its first word, its level and its place among its siblings. */
   const shape = (row: HTMLElement) =>
     [
@@ -764,13 +779,13 @@ describe("the explorer is a WAI-ARIA tree", () => {
   it("draws every row as a treeitem with its level and its place among its siblings", () => {
     withAChat();
 
-    expect(within(tree()).getAllByRole("treeitem").map(shape)).toEqual([
-      "alpha 1 1/1",
-      "svc 2 1/2",
-      "one 3 1/2",
-      "two 3 2/2",
-      "tool 2 2/2",
-    ]);
+    // The rows that name something; a line under a clone ("No branches cut here") says it.
+    expect(
+      within(tree())
+        .getAllByRole("row")
+        .filter((one) => !one.hasAttribute("data-line"))
+        .map(shape),
+    ).toEqual(["alpha 1 1/1", "svc 2 1/2", "one 3 1/2", "two 3 2/2", "tool 2 2/2"]);
   });
 
   it("says on every parent whether it is open, and nothing on a leaf", async () => {
@@ -837,23 +852,23 @@ describe("the explorer is a WAI-ARIA tree", () => {
     expect(item(/^tool/)).toHaveFocus();
     await userEvent.keyboard("{Home}");
     expect(item(/^alpha/)).toHaveFocus();
+    // The last row is the line under `tool`, which says it holds no branches.
     await userEvent.keyboard("{End}");
-    expect(item(/^tool/)).toHaveFocus();
+    expect(item(/^No branches cut here/)).toHaveFocus();
   });
 
-  it("a typed letter moves to the next row whose name starts with it, and wraps", async () => {
+  it("typing moves to the next row whose name starts with what is typed (the tree family's)", async () => {
     withAChat();
     item(/^alpha/).focus();
 
     await userEvent.keyboard("t");
     expect(item(/^two/)).toHaveFocus();
-    await userEvent.keyboard("T");
+    // Typed on within a moment, the letters are one name's first ones.
+    await userEvent.keyboard("o");
     expect(item(/^tool/)).toHaveFocus();
-    await userEvent.keyboard("t");
-    expect(item(/^two/)).toHaveFocus();
-    // A letter nothing starts with moves nothing.
+    // What nothing starts with moves nothing.
     await userEvent.keyboard("z");
-    expect(item(/^two/)).toHaveFocus();
+    expect(item(/^tool/)).toHaveFocus();
   });
 
   it("a typed letter finds a branch's row by the branch it reads, not its folder (#1102)", async () => {

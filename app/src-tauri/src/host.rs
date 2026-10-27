@@ -259,6 +259,12 @@ pub trait SessionHost: Send + Sync {
         None
     }
 
+    /// Each pool's runner log the project's chats read, by the pool (#3393): none where they
+    /// all run here.
+    fn runner_logs(&self) -> Vec<(String, crate::runnerlog::RunnerLogNow)> {
+        Vec::new()
+    }
+
     /// **Holds the project in this host now** (#2046), as a window that is about to start a
     /// chat on a runner beside it does: this machine's host keeps the project's board for
     /// every chat, those on runners included. Nothing, where the window's own process runs the
@@ -327,6 +333,12 @@ pub trait SessionHost: Send + Sync {
     /// chats run in the window's own process.
     fn when_reconnecting(&self, tell: Reconnecting) {
         let _ = tell;
+    }
+
+    /// **What the window holds of what the runner these chats run on recorded** (#3393), read
+    /// over the link from a cursor of its own; none for chats on this machine.
+    fn runner_log(&self) -> Option<crate::runnerlog::RunnerLogNow> {
+        None
     }
 
     /// The sessions that are reconnecting now (#2496), in order. None, where chats run in the

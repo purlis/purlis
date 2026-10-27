@@ -839,6 +839,12 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**
+	 *  **Each runner of `plane`'s chats, for the away summary** (#2051): of `sessions`, the chats
+	 *  that run on each pool's runner, and the branches each runner has, as this machine last
+	 *  fetched them. A pool none of them runs on and no workspace names is not said.
+	 */
+	runnersAway: (plane: PlaneId, sessions: number[]) => typedError<RunnerAway[], string>(__TAURI_INVOKE("runners_away", { plane, sessions })),
 	/**  Whether the session host is failing, and what the window says of it. */
 	sessionHostFailing: () => __TAURI_INVOKE<{
 	/**  How many unexpected exits tripped the breaker. */
@@ -1698,6 +1704,13 @@ export const commands = {
 	stopEveryAgent: () => typedError<number, string>(__TAURI_INVOKE("stop_every_agent")),
 	/**  The title bar's re-arm: chats may start again. Nothing that was stopped is restarted. */
 	rearmAgents: () => typedError<null, string>(__TAURI_INVOKE("rearm_agents")),
+	/**
+	 *  **The runners the re-arm re-arms beside this machine** (#2051, ADR 0071 as amended: *"The
+	 *  window's re-arm lists the runners it will re-arm"*): what the session host's stop stopped,
+	 *  read from the host as the title bar draws a stopped switch. None where chats do not run in a
+	 *  host, or it cannot say.
+	 */
+	runnersARearmReaches: () => typedError<string[], string>(__TAURI_INVOKE("runners_a_rearm_reaches")),
 	/**  Hides the window, which is what its close button does. Every session keeps running. */
 	hideWindow: () => __TAURI_INVOKE<void>("hide_window"),
 	/**  Whether the window is on screen. The scenario tests ask; nothing in the UI does. */
@@ -2425,6 +2438,15 @@ export const commands = {
 	 *  back.
 	 */
 	workspaceRename: (plane: PlaneId, workspace: string, name: string) => typedError<string[], string>(__TAURI_INVOKE("workspace_rename", { plane, workspace, name })),
+	/**
+	 *  **Record a workspace's vision**: what `purlis workspace vision "<the goal>"` writes, the
+	 *  `## Vision` of its `workspace.md`, from the window's Add a vision (#3344). The core's own
+	 *  brokered write decides everything, as it does for a chat's `workspace_vision`: an empty
+	 *  vision, a line that would start a section of its own, a workspace that is not there, a file
+	 *  over its budget. Its refusal is the core's sentence. It answers with the sentence the window
+	 *  says.
+	 */
+	workspaceVision: (plane: PlaneId, workspace: string, vision: string) => typedError<string, string>(__TAURI_INVOKE("workspace_vision", { plane, workspace, vision })),
 	/**
 	 *  The core's sentence naming the chats that will start a fresh conversation if `workspace` is
 	 *  renamed, or none — what the Rename dialog says before it is answered (charter#367, D10).
@@ -3289,10 +3311,14 @@ export const commands = {
 	personaSetProfile: (plane: PlaneId, name: string, profile: string | null) => typedError<null, string>(__TAURI_INVOKE("persona_set_profile", { plane, name, profile })),
 	/**  Record a todo in `workspace`, and answer with what was said. */
 	todoAdd: (plane: PlaneId, workspace: string, text: string) => typedError<string, string>(__TAURI_INVOKE("todo_add", { plane, workspace, text })),
-	/**  Close a todo as done: the journal records it, then the todo goes. */
+	/**  Close a todo as done: the journal records it, then the todo is kept as done (ADR 0106). */
 	todoDone: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_done", { plane, workspace, slug })),
 	/**  Forget a todo: it goes, and nothing is journalled. */
 	todoForget: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_forget", { plane, workspace, slug })),
+	/**  Delete a done todo: it goes from the done ones, and nothing is journalled. */
+	todoForgetDone: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_forget_done", { plane, workspace, slug })),
+	/**  Open a done todo again, as it was: the Todos view's checkbox unticked (R131, ADR 0106). */
+	todoReopen: (plane: PlaneId, workspace: string, slug: string) => typedError<string, string>(__TAURI_INVOKE("todo_reopen", { plane, workspace, slug })),
 	/**
 	 *  One open todo of `workspace`, for its tab. `null` is a todo that is not open any more —
 	 *  closed as done or forgotten since its tab opened, here or in a terminal — which the tab
@@ -3959,7 +3985,7 @@ export const SKILL_STUDIO_IN = "skills.studio:" as const;
 
 export const SPECIMEN_BUSY = "purlis is drawing another theme specimen, and draws one at a time: ask again in a moment" as const;
 
-export const UNICODE_RULE = {"invisible":[[0,31],[127,160],[173,173],[847,847],[1536,1541],[1564,1564],[1757,1757],[1807,1807],[2192,2193],[2274,2274],[4447,4448],[5760,5760],[6068,6069],[6155,6159],[8192,8207],[8232,8239],[8287,8303],[12288,12288],[12644,12644],[65024,65039],[65279,65279],[65440,65440],[65520,65531],[69821,69821],[69837,69837],[78896,78911],[113824,113827],[119155,119162],[917504,921599]],"extended_pictographic":[[169,169],[174,174],[8252,8252],[8265,8265],[8482,8482],[8505,8505],[8596,8601],[8617,8618],[8986,8987],[9000,9000],[9096,9096],[9167,9167],[9193,9203],[9208,9210],[9410,9410],[9642,9643],[9654,9654],[9664,9664],[9723,9726],[9728,9733],[9735,9746],[9748,9861],[9872,9989],[9992,10002],[10004,10004],[10006,10006],[10013,10013],[10017,10017],[10024,10024],[10035,10036],[10052,10052],[10055,10055],[10060,10060],[10062,10062],[10067,10069],[10071,10071],[10083,10087],[10133,10135],[10145,10145],[10160,10160],[10175,10175],[10548,10549],[11013,11015],[11035,11036],[11088,11088],[11093,11093],[12336,12336],[12349,12349],[12951,12951],[12953,12953],[126976,127231],[127245,127247],[127279,127279],[127340,127345],[127358,127359],[127374,127374],[127377,127386],[127405,127461],[127489,127503],[127514,127514],[127535,127535],[127538,127546],[127548,127551],[127561,127994],[128000,128317],[128326,128591],[128640,128767],[128884,128895],[128981,129023],[129036,129039],[129096,129103],[129114,129119],[129160,129167],[129198,129279],[129292,129338],[129340,129349],[129351,129791],[130048,131069]],"emoji_modifier":[[127995,127999]],"emoji_sequences":[[35,65039,8419],[42,65039,8419],[48,65039,8419],[49,65039,8419],[50,65039,8419],[51,65039,8419],[52,65039,8419],[53,65039,8419],[54,65039,8419],[55,65039,8419],[56,65039,8419],[57,65039,8419],[127988,917607,917602,917605,917614,917607,917631],[127988,917607,917602,917619,917603,917620,917631],[127988,917607,917602,917623,917612,917619,917631]]} as const;
+export const UNICODE_RULE = {"invisible":[[0,31],[127,160],[173,173],[847,847],[1536,1541],[1564,1564],[1757,1757],[1807,1807],[2192,2193],[2274,2274],[4447,4448],[5760,5760],[6068,6069],[6155,6159],[8192,8207],[8232,8239],[8287,8303],[12288,12288],[12644,12644],[65024,65039],[65279,65279],[65440,65440],[65520,65531],[69821,69821],[69837,69837],[78896,78911],[113824,113827],[119155,119162],[917504,921599]],"extended_pictographic":[[169,169],[174,174],[8252,8252],[8265,8265],[8482,8482],[8505,8505],[8596,8601],[8617,8618],[8986,8987],[9000,9000],[9096,9096],[9167,9167],[9193,9203],[9208,9210],[9410,9410],[9642,9643],[9654,9654],[9664,9664],[9723,9726],[9728,9733],[9735,9746],[9748,9861],[9872,9989],[9992,10002],[10004,10004],[10006,10006],[10013,10013],[10017,10017],[10024,10024],[10035,10036],[10052,10052],[10055,10055],[10060,10060],[10062,10062],[10067,10069],[10071,10071],[10083,10087],[10133,10135],[10145,10145],[10160,10160],[10175,10175],[10548,10549],[11013,11015],[11035,11036],[11088,11088],[11093,11093],[12336,12336],[12349,12349],[12951,12951],[12953,12953],[126976,127231],[127245,127247],[127279,127279],[127340,127345],[127358,127359],[127374,127374],[127377,127386],[127405,127461],[127489,127503],[127514,127514],[127535,127535],[127538,127546],[127548,127551],[127561,127994],[128000,128317],[128326,128591],[128640,128767],[128884,128895],[128981,129023],[129036,129039],[129096,129103],[129114,129119],[129160,129167],[129198,129279],[129292,129338],[129340,129349],[129351,129791],[130048,131069]],"emoji_modifier":[[127995,127999]],"emoji_sequences":[[35,65039,8419],[42,65039,8419],[48,65039,8419],[49,65039,8419],[50,65039,8419],[51,65039,8419],[52,65039,8419],[53,65039,8419],[54,65039,8419],[55,65039,8419],[56,65039,8419],[57,65039,8419],[127988,917607,917602,917605,917614,917607,917631],[127988,917607,917602,917619,917603,917620,917631],[127988,917607,917602,917623,917612,917619,917631]],"brahmic_letter":[[2304,2363],[2365,2380],[2382,2384],[2389,2403],[2417,2435],[2437,2444],[2447,2448],[2451,2472],[2474,2480],[2482,2482],[2486,2489],[2493,2500],[2503,2504],[2507,2508],[2510,2510],[2519,2519],[2524,2525],[2527,2531],[2544,2545],[2556,2556],[2561,2563],[2565,2570],[2575,2576],[2579,2600],[2602,2608],[2610,2611],[2613,2614],[2616,2617],[2622,2626],[2631,2632],[2635,2636],[2641,2641],[2649,2652],[2654,2654],[2672,2677],[2689,2691],[2693,2701],[2703,2705],[2707,2728],[2730,2736],[2738,2739],[2741,2745],[2749,2757],[2759,2761],[2763,2764],[2768,2768],[2784,2787],[2809,2812],[2817,2819],[2821,2828],[2831,2832],[2835,2856],[2858,2864],[2866,2867],[2869,2873],[2877,2884],[2887,2888],[2891,2892],[2902,2903],[2908,2909],[2911,2915],[2929,2929],[2946,2947],[2949,2954],[2958,2960],[2962,2965],[2969,2970],[2972,2972],[2974,2975],[2979,2980],[2984,2986],[2990,3001],[3006,3010],[3014,3016],[3018,3020],[3024,3024],[3031,3031],[3072,3084],[3086,3088],[3090,3112],[3114,3129],[3133,3140],[3142,3144],[3146,3148],[3157,3158],[3160,3162],[3165,3165],[3168,3171],[3200,3203],[3205,3212],[3214,3216],[3218,3240],[3242,3251],[3253,3257],[3261,3268],[3270,3272],[3274,3276],[3285,3286],[3293,3294],[3296,3299],[3313,3315],[3328,3340],[3342,3344],[3346,3386],[3389,3396],[3398,3400],[3402,3404],[3406,3406],[3412,3415],[3423,3427],[3450,3455]],"arabic_letter":[[1552,1562],[1568,1623],[1625,1631],[1646,1747],[1749,1756],[1761,1768],[1773,1775],[1786,1788],[1791,1791],[1872,1919],[2208,2249],[2260,2271],[2275,2281],[2288,2303],[64336,64433],[64467,64829],[64848,64911],[64914,64967],[65008,65019],[65136,65140],[65142,65276]],"virama":[[2381,2381],[2509,2509],[2637,2637],[2765,2765],[2893,2893],[3021,3021],[3149,3149],[3277,3277],[3387,3388],[3405,3405]],"line_break":[[10,13],[133,133],[8232,8233]],"blank":[[160,160],[5760,5760],[8192,8202],[8239,8239],[8287,8287],[12288,12288]]} as const;
 
 /* Types */
 /**  What charter says about itself. */
@@ -4760,6 +4786,14 @@ export type BranchStatus = {
 	more: number,
 	/**  The branch the changes are counted against; `null` when against the last commit. */
 	base: string | null,
+};
+
+/**  One clone's branches on a runner, as this machine last fetched them (#2046). */
+export type BranchesOfAClone = {
+	workspace: string,
+	/**  The clone's folder name in the workspace. */
+	repo: string,
+	branches: RunnerBranch[],
 };
 
 /**  Which task's brief is asked for. */
@@ -8620,7 +8654,11 @@ export type PanelTableRow = {
 	cells: string[],
 };
 
-/**  One open todo. There is no state field: a closed todo is a deleted file (ADR 0004). */
+/**
+ *  One todo, open or done. There is no state field: an open todo is a file in `todos/` and a
+ *  done one a file in `todos/archive/` (ADR 0106, amending ADR 0004), so which list it is in
+ *  says which it is.
+ */
 export type PanelTodo = {
 	/**  The file stem, which is what a todo is closed by. */
 	slug: string,
@@ -8681,6 +8719,11 @@ export type Panels = {
 	 */
 	refused: ([string, string])[],
 	todos: PanelTodo[],
+	/**
+	 *  The done todos (ADR 0106), for the catalogue's Reopen and Delete rows. Never counted:
+	 *  the status line counts `todos`, which are the open ones.
+	 */
+	done_todos: PanelTodo[],
 	/**
 	 *  Why the todos could not be read, where they could not. A store that is a link out of
 	 *  the plane is refused, and "no todos" would be the wrong thing to draw for it.
@@ -9330,7 +9373,12 @@ export type PoolLink =
 /**  It answered with another key: it is refused, and the window offers to remove it. */
 { state: "key_changed" } | 
 /**  It did not answer, and why. */
-{ state: "down"; why: string };
+{ state: "down"; why: string } | 
+/**
+ *  It suspended itself, a day without a link (#2051): its container is stopped, its home
+ *  kept, and the window's next chat there starts it again. A check never wakes it.
+ */
+{ state: "suspended" };
 
 /**  One of this machine's profiles, as a pool's runner stands with it. */
 export type PoolProfileRow = {
@@ -10450,6 +10498,24 @@ export type RunEnd =
 /**  An end a newer purlis wrote. */
 "unknown";
 
+/**  How a run ended, as the runner's log says it: any other word is not held. */
+export type RunEnded = "completed" | "failed" | "stopped";
+
+/**  One run of a chat that ended on a runner, as the runner recorded it (#3393). */
+export type RunEndedOnARunner = {
+	/**  The chat, by its number in the plane. */
+	chat: number,
+	/**  How it ended. */
+	ended: RunEnded,
+	/**
+	 *  When the runner wrote it, in seconds since 1970: the window says it in the person's time
+	 *  zone.
+	 */
+	at: number,
+	/**  The device that wrote it: the runner's. */
+	device: string,
+};
+
 /**  What started a skill run, as the Runs panel draws it. */
 export type RunStart = 
 /**  The chat's own Skill tool. */
@@ -10469,6 +10535,26 @@ export type RunStart =
 /**  A start a newer purlis wrote. */
 "unknown";
 
+/**  One runner of a project, as the away summary reads it. */
+export type RunnerAway = {
+	/**  The pool whose runner it is. */
+	pool: string,
+	/**  Of the chats asked about, those that run on it, by their number in the plane. */
+	chats: number[],
+	/**
+	 *  Its branches, as this machine last fetched them, by the clone of a workspace that runs on
+	 *  it.
+	 */
+	branches: BranchesOfAClone[],
+	/**  How the window reads what it records now (#3393). */
+	log: RunnerLogRead,
+	/**
+	 *  The runs of this project's chats that ended there, as it recorded them, oldest first:
+	 *  what the window read since it linked.
+	 */
+	ended: RunEndedOnARunner[],
+};
+
 /**  One branch of a pool's runner, as this machine last fetched it (#2046). */
 export type RunnerBranch = {
 	pool: string,
@@ -10479,6 +10565,17 @@ export type RunnerBranch = {
 	 */
 	ahead: number,
 };
+
+/**  How the window reads what a runner records (#3393). */
+export type RunnerLogRead = 
+/**  Over the link, which is up. */
+"read" | 
+/**  Over the link, which is down: what happened there since is not known yet. */
+"link_down" | 
+/**  Some of it was not kept for the window: what it says is not all that happened. */
+"partly" | 
+/**  Not at all: no link to it is open, or the runner is from a purlis before 1.41. */
+"not_read";
 
 /**
  *  **A held write whole, as its own tab draws it**: what it would do with every text whole, and

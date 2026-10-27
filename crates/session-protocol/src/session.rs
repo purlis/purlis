@@ -260,6 +260,16 @@ use crate::view::{Limits, Views};
 /// project path, which such a host never used. A host before 1.40 says nothing of it, and is
 /// sent the path as before.
 ///
+/// 1.41 added a host's own event log over a link (#3393, ADR 0078 §7): `log_end` answers the
+/// host's device and the last `seq` of its log, and a `subscribe` whose `since` names that device
+/// is pushed each line of the log after it, then each as it is written, as `event`, and a gap as
+/// `missed`. A link that may read it, the window's or its host's relaying it, is pushed it; one
+/// whose `since` names no such device is pushed none of it, as before. A host before 1.41 refuses
+/// `log_end` `unknown_command`, and its window reads none of its log. And the kill switch says
+/// which runners a desktop's stop stopped (`runners`), and that a stop found a host stopped
+/// already (`already`), so a runner stopped from its own command line is not re-armed by its
+/// desktop (#2051).
+///
 /// 1.42 added a desktop's profiles on its runner (#2049, spec #2041): `keep_profile`, sent by
 /// the desktop on its own link to the runner, has the runner keep a profile of that name in a
 /// folder of its own ([`ProfileToKeep`]: its name, harness, sandbox-only mark and pinned
@@ -269,6 +279,13 @@ use crate::view::{Limits, Views};
 pub const VERSION: Version = Version {
     major: 1,
     minor: 42,
+};
+
+/// The version that first pushes a host's own event log to a link that asks with a cursor for its
+/// device, and answers `log_end` (#3393).
+pub const KNOWS_EVENT_LOG: Version = Version {
+    major: 1,
+    minor: 41,
 };
 
 /// The version that first keeps a desktop's profile on a runner (#2049).
@@ -475,7 +492,11 @@ pub enum Command {
     /// Close a view the client attached. The program keeps running.
     DetachView { program: String, view: u32 },
     /// Every event after `since`, then each as it is written ([`Pushed`]): ADR 0066's
-    /// `subscribe(since)`.
+    /// `subscribe(since)`. **The host's own event log is pushed from its device's cursor**
+    /// (1.41, #3393): to a link that may read it ([`crate::grants::Power::EventLog`]) and whose
+    /// `since` names the host's device ([`Command::LogEnd`] says which), each of its lines after
+    /// that cursor, then each as it is written, as [`Pushed::Event`], and a gap as
+    /// [`Pushed::Missed`]. A `since` that does not name it is pushed none of its log.
     Subscribe { since: Since },
     /// Stop pushing events.
     Unsubscribe,
@@ -722,6 +743,12 @@ pub enum Command {
     /// the one before, and [`NO_SUCH_CHAT`] for a program the host does not hold. The window's
     /// alone ([`crate::grants::Power::Reattach`]).
     NoteProgram { program: String, note: ProgramNote },
+    /// **Where the host's own event log ends now** (1.41, #3393): its device and the `seq` of
+    /// its last line, 0 for none, answered [`Answer::LogEnd`]: the cursor a client that holds
+    /// none of it subscribes from, so it is pushed what is written from now on. Refused
+    /// [`NOT_STARTED`] by a host whose binary keeps no event log. The window's, and its host's
+    /// relaying it ([`crate::grants::Power::EventLog`]).
+    LogEnd,
 }
 
 /// One ref of a repository and the commit it is at (1.34): what `take_code` names and `code`
@@ -1191,6 +1218,8 @@ pub enum Answer {
     ProfileKept { standing: ProfileStanding },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
+    /// Where the host's own event log ends: [`Command::LogEnd`] (1.41).
+    LogEnd { device: String, seq: u64 },
     /// Done, with nothing to say.
     Done,
 }
@@ -1245,7 +1274,7 @@ pub struct HeldProgram {
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KillSwitch {
     /// Every agent is stopped, and nothing starts until the window re-arms.
     pub stopped: bool,
@@ -1253,6 +1282,14 @@ pub struct KillSwitch {
     /// across its restart, or a state it could not read and so holds as stopped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<String>,
+    /// **It was stopped already when this stop came** (1.41, #2051): a runner stopped from its own
+    /// command line, which its desktop's re-arm leaves stopped. Said only in answer to a stop.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub already: bool,
+    /// **The runners this host's stop stopped, which its window's re-arm re-arms** (1.41,
+    /// #2051), each `<pool>/<runner>`: what the window lists before it re-arms.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runners: Vec<String>,
 }
 
 /// What a host said of a program it started ([`Client::start_program_told`]).
@@ -1532,6 +1569,7 @@ wire_words!(Command {
     GiveCode => "give_code",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
+    LogEnd => "log_end",
 });
 
 impl Command {
@@ -1582,6 +1620,7 @@ impl Command {
             Command::KeepProfile(_) => Power::KeepProfile,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. } | Command::GiveCode { .. } => Power::Code,
+            Command::LogEnd => Power::EventLog,
         }
     }
 }
@@ -1649,6 +1688,7 @@ wire_words!(Answer {
     Code => "code",
     ProfileKept => "profile_kept",
     Subscribed => "subscribed",
+    LogEnd => "log_end",
     Done => "done",
 });
 
@@ -2100,7 +2140,10 @@ impl Lane {
             Command::LetGoOfConfinement { confinement }
             | Command::ChangeReach { confinement, .. }
             | Command::ReachOf { confinement } => Some(Lane::Confinement(confinement.clone())),
-            Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
+            // Where the log ends is asked before the subscribe that starts from it (1.41).
+            Command::Subscribe { .. } | Command::Unsubscribe | Command::LogEnd => {
+                Some(Lane::Subscription)
+            }
             // The replies to one line keep their order: a command's frames, one after another.
             Command::ReplyHeard { heard, .. } => Some(Lane::Heard(*heard)),
             Command::StartSaving { project }
@@ -2782,6 +2825,15 @@ impl Client {
     /// Let programs start again (1.5): refused on every link but the window's.
     pub async fn rearm(&self) -> Result<KillSwitch, CallError> {
         self.kill_switch_after(Command::Rearm).await
+    }
+
+    /// **Where the host's own event log ends now** (1.41, #3393): its device, and the `seq` of
+    /// its last line.
+    pub async fn log_end(&self) -> Result<(String, u64), CallError> {
+        match self.call(Command::LogEnd).await? {
+            Answer::LogEnd { device, seq } => Ok((device, seq)),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// Whether every agent is stopped (1.5).
