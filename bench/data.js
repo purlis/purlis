@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793084280518,
+  "lastUpdate": 1793086173909,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26544,6 +26544,48 @@ window.BENCHMARK_DATA = {
             "value": 105.9097825,
             "unit": "ms",
             "extra": "median of 5 runs: 103.662, 103.724, 105.910, 106.108, 106.131 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "db5c4dcf1d1a57118e71ed5011dbc8b32d375e67",
+          "message": "Todos: a done todo stays and reopens; Open/Done/All tabs (#3063, #3358) (#3415)\n\n* Todos: a done todo stays, struck through, and can be reopened (#3063)\n\nThe operator's ruling of 2026-10-26, recorded as ADR 0106 (amending the\nPython charter's ADR 0004): closing a todo marks it done instead of\ndeleting it. The journal still gets \"Closed todo: <title>\" first; the\nfile then moves, unchanged, to todos/archive/ through the store's one\nretire (memstore::archive_one), and reopening moves it back and re-indexes\nit. Delete still removes one, open or done.\n\n- core: Workspace::done_todos, reopen_todo, file_as_done,\n  forget_done_todo; close_todo keeps the todo; forget_todo reaches a done\n  one too. The plane model holds the done todos beside the open ones.\n- CLI: `ws todo done` keeps it and says how to reopen it; `ws todo reopen\n  <slug>`; `ws todo --done` lists the done ones; `forget` deletes either.\n  A sandboxed chat's reopen goes through the app (Close::Reopen).\n- MCP: todo_done keeps the todo as done and says how to reopen it;\n  todo_list still lists the open ones.\n- App: todo_reopen and todo_forget_done; the Todos view draws done todos\n  after the open ones under \"Done\", box ticked and words struck through;\n  a todo's box toggles done and back (R131); a done row's menu has Reopen\n  and Delete.\n- Open counts, the session-start digest and duplicate detection read\n  todos/ only, and say so in tests.\n- Three recorded todo-done scenarios edited for the new tree and line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Todos view: Open, Done and All tabs in its top (#3358)\n\nThe prototype's Q1 A: the sidebar Todos view's top holds the box that\nadds a todo, then a segmented control, Open / Done / All, and the list\nfollows it. Open is picked first, so the view still reads as what is\nleft to do; Done lists the done todos (ADR 0106) and says \"Nothing done\nyet\" when there are none; All lists both, the open ones under their\ndays and the done ones under \"Done\" with its count.\n\nThe group counts the ticket also asks for came with the frame itself\n(#3340): ListRowSection's count is outside the rowgroup's name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: the Todos view baselines, its tabs and its done todos (#3063, #3358)\n\nDrawn in the pinned image by the pull request's own stories run\n(stories-baselines), committed again so the checks start.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-27T06:23:52Z",
+          "tree_id": "0981344eda1d9ca8281c79d006d78d20bd99759d",
+          "url": "https://github.com/purlis/purlis/commit/db5c4dcf1d1a57118e71ed5011dbc8b32d375e67"
+        },
+        "date": 1793086170843,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5374455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.511, 0.524, 0.537, 0.539, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.040608,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.616, 16.756, 17.041, 17.074, 17.158 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 106.442198,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.110, 104.290, 106.442, 106.519, 108.282 ms"
           }
         ]
       }
