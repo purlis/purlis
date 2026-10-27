@@ -670,8 +670,8 @@ fn how_long_the_commands_that_run_git_hold_the_thread_that_asked() {
         println!("git could not make a clone here, so there is no measure with one");
         return;
     }
-    let added = purlis_core::worktree::add(&root, "alpha", "thing", "piece", None)
-        .expect("a branch of it");
+    let added =
+        purlis_core::worktree::add(&root, "alpha", "thing", "piece", None).expect("a branch of it");
     let (app, plane) = app_running_git(&root);
     let piece = json!({
         "plane": plane, "workspace": "alpha", "repo": "thing", "piece": "piece",

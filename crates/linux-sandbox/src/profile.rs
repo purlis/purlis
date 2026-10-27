@@ -287,6 +287,22 @@ impl Profile {
         allowed
     }
 
+    /// **Whether a chat's server may be bound at `path`** (#2019): an absolute path the profile
+    /// names to serve on (`local unix-socket (path-literal …)`, never `default` alone), where it
+    /// may make and take away a socket. The one unix bind the supervisor makes for a chat.
+    pub fn serves_at(&self, path: &Path) -> bool {
+        let file = |what| Op::File {
+            what,
+            path,
+            kind: Kind::Socket,
+        };
+        path.is_absolute()
+            && self.reach().serves.iter().any(|served| served == path)
+            && self.allows(&Op::BindUnix(path))
+            && self.allows(&file(FileOp::Create))
+            && self.allows(&file(FileOp::Unlink))
+    }
+
     /// What the profile writes and reaches ([`Reach`]).
     pub fn reach(&self) -> Reach {
         let mut reach = Reach::default();
@@ -352,8 +368,9 @@ impl Profile {
 }
 
 /// Whether a rule's operation `rule` names the operation `op`.
+/// `default` never names a bind: a chat binds only a socket a rule names (#2019).
 fn names(rule: &str, op: &str) -> bool {
-    rule == "default"
+    (rule == "default" && op != "network-bind")
         || rule == op
         || rule
             .strip_suffix('*')

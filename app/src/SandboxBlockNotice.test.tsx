@@ -688,8 +688,11 @@ describe("a server's Notice (#2019)", () => {
     route:
       "Allowing it lets this chat run a server that its browser, its commands and your own " +
       "browser reach at http://127.0.0.1:5173, through purlis on this Mac. purlis checks each " +
-      "request's address and keeps your browser's cookies for other sites from it. Nothing on " +
-      "another machine reaches it.",
+      "request's address, and keeps your browser's cookies from the server. A page the server " +
+      "sends runs in your browser as a site of this Mac: it can read your other local apps' " +
+      "cookies that are not HttpOnly, send requests to those apps, and send what it reads to " +
+      "the internet. Open it in the chat's own browser unless you trust it. Nothing on another " +
+      "machine connects to it.",
     levels: ["chat", "you"],
   };
 

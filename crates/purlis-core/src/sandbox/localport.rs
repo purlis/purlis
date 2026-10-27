@@ -328,24 +328,30 @@ pub fn serve_rules(socket: &std::path::Path) -> Result<[String; 3], &'static str
     ])
 }
 
-/// **What allowing a chat to serve on `port` means**, as the Ask says it (#2019).
+/// **What allowing a chat to serve on `port` means**, as the Ask says it (#2019): who reaches
+/// the server, what the door holds back, and what a page it serves can do in the person's own
+/// browser, where it runs as a site of this Mac.
 pub fn listen_risk(port: u16) -> String {
     format!(
         "lets this chat run a server that its browser, its commands and your own browser reach \
-         at http://127.0.0.1:{port}, through purlis on this Mac. purlis checks each request's \
-         address and keeps your browser's cookies for other sites from it. Nothing on another \
-         machine reaches it"
+         at http://127.0.0.1:{port}, through purlis on this Mac. {LISTEN_RISK_REST}"
     )
 }
 
 /// [`listen_risk`] where the port is not known yet: the person types it.
 pub fn listen_risk_unnamed() -> String {
-    "lets this chat run a server that its browser, its commands and your own browser reach at \
-     http://127.0.0.1 on the port you type, through purlis on this Mac. purlis checks each \
-     request's address and keeps your browser's cookies for other sites from it. Nothing on \
-     another machine reaches it"
-        .to_owned()
+    format!(
+        "lets this chat run a server that its browser, its commands and your own browser reach \
+         at http://127.0.0.1 on the port you type, through purlis on this Mac. {LISTEN_RISK_REST}"
+    )
 }
+
+/// What [`listen_risk`] says after who reaches the server.
+const LISTEN_RISK_REST: &str = "purlis checks each request's address, and keeps your browser's \
+     cookies from the server. A page the server sends runs in your browser as a site of this \
+     Mac: it can read your other local apps' cookies that are not HttpOnly, send requests to \
+     those apps, and send what it reads to the internet. Open it in the chat's own browser \
+     unless you trust it. Nothing on another machine connects to it";
 
 /// What a chat is told to start a server on `port` with, once it may (#2019).
 pub fn listen_said(port: u16) -> String {

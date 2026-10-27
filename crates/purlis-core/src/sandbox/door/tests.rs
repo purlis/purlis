@@ -157,6 +157,84 @@ fn a_browsers_cookies_never_reach_the_server_and_its_jar_does() {
 }
 
 #[test]
+fn a_request_another_page_of_this_machine_sent_never_uses_the_jar() {
+    let jar = |token: Option<&str>| match token {
+        Some(TOKEN) => vec!["session=abc".to_owned()],
+        _ => Vec::new(),
+    };
+    let sent = |site: &str| {
+        judge(
+            &head(&[
+                "GET /api/me HTTP/1.1",
+                "Host: 127.0.0.1:5173",
+                &format!("Sec-Fetch-Site: {site}"),
+                &format!("Cookie: purlis-door-5173={TOKEN}"),
+            ]),
+            5173,
+            &jar,
+        )
+        .expect("carried")
+    };
+    for site in ["same-site", "cross-site", "SAME-SITE"] {
+        let carried = sent(site);
+        assert!(!carried.jarred, "{site}");
+        assert_eq!(carried.token, None, "{site}");
+        assert!(
+            !carried.head.contains("session=abc"),
+            "{site}: {}",
+            carried.head
+        );
+    }
+    // Its own page, or the person typing the address, uses it.
+    for site in ["same-origin", "none"] {
+        let carried = sent(site);
+        assert!(carried.jarred, "{site}");
+        assert!(
+            carried.head.contains("\r\nCookie: session=abc\r\n"),
+            "{site}"
+        );
+    }
+}
+
+#[test]
+fn a_jar_keeps_no_cookie_longer_than_a_browser_does_and_holds_its_own_bytes() {
+    let mut jar = Jar::default();
+    jar.keep(TOKEN, &format!("huge={}", "x".repeat(COOKIE_MOST_BYTES)));
+    assert!(
+        jar.of(Some(TOKEN)).is_empty(),
+        "a cookie past the longest kept"
+    );
+    for n in 0..100 {
+        jar.keep(TOKEN, &format!("c{n}={}", "y".repeat(2000)));
+    }
+    let held = jar.of(Some(TOKEN));
+    let bytes: usize = held.iter().map(|cookie| cookie.len() - 1).sum();
+    assert!(bytes <= JAR_MOST_BYTES, "{bytes}");
+    // The newest are kept, the oldest let go.
+    assert!(held.last().is_some_and(|cookie| cookie.starts_with("c99=")));
+    assert!(!held.iter().any(|cookie| cookie.starts_with("c0=")));
+}
+
+#[test]
+fn a_chat_not_served_is_told_in_words_that_agree_with_its_ports() {
+    let one = unserved_said(&[5173]).expect("said");
+    assert!(one.contains("serve on port 5173,"), "{one}");
+    assert!(one.contains("does not serve on it this run"), "{one}");
+    let two = unserved_said(&[3000, 5173]).expect("said");
+    assert!(two.contains("serve on ports 3000 and 5173,"), "{two}");
+    assert!(
+        two.contains("does not serve on any of them this run"),
+        "{two}"
+    );
+    assert_eq!(unserved_said(&[]), None);
+    let failed = unservable_said(&[5173], "a folder is where its socket goes").expect("said");
+    assert!(
+        failed.contains("could not open the way to its server: a folder is where its socket goes."),
+        "{failed}"
+    );
+}
+
+#[test]
 fn a_server_sets_cookies_in_the_door_s_jar_never_in_the_browser() {
     let mut kept = Vec::new();
     let head = answered(
@@ -433,6 +511,25 @@ mod sockets {
         assert!(answer.starts_with("HTTP/1.1 502 "), "{answer}");
         std::fs::remove_file(&socket).expect("the link taken away");
         std::fs::hard_link(&other, &socket).expect("a second name for the other socket");
+        let answer = ask(
+            port,
+            &["GET / HTTP/1.1", &format!("Host: localhost:{port}")],
+        );
+        assert!(answer.starts_with("HTTP/1.1 502 "), "{answer}");
+    }
+
+    #[test]
+    fn a_door_carries_only_to_the_folder_it_opened_on() {
+        let base = tempfile::tempdir().expect("a folder");
+        let folder = base.path().join("serve");
+        std::fs::create_dir(&folder).expect("the chat's folder");
+        let socket = folder.join("5173.sock");
+        let port = free_port();
+        let _door = Door::open(port, &socket).expect("the door opens");
+        // A folder put in its place since, with a server at the same name, is not the chat's.
+        std::fs::rename(&folder, base.path().join("moved")).expect("moved away");
+        std::fs::create_dir(&folder).expect("another folder");
+        echo_on(&socket);
         let answer = ask(
             port,
             &["GET / HTTP/1.1", &format!("Host: localhost:{port}")],

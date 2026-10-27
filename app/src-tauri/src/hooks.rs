@@ -1063,7 +1063,10 @@ pub(crate) fn on_its_runner(mut told: ChatBlocked, runner: Option<&str>) -> Chat
 /// it, with no Allow; `serving` are the ports the chat serves on. Any other block is as it was
 /// told.
 pub(crate) fn on_its_serving(mut told: ChatBlocked, serving: &[u16]) -> ChatBlocked {
-    if told.offer == BlockOffer::Listen
+    // The door on a port it serves on listens there, so the refusal is offered as a service in
+    // use (`offered_to`): a refused listen either way.
+    if told.operation == purlis_core::sandboxblock::Operation::Listen.word()
+        && matches!(told.offer, BlockOffer::Listen | BlockOffer::Port)
         && let Some(port) = told
             .target
             .as_deref()
@@ -1365,15 +1368,17 @@ fn held(
                 .as_deref()
                 .and_then(|port| port.parse::<u16>().ok())
                 .and_then(|port| offer.granted()?.of_port(port));
-            let mut why = locks.port_grants_refused();
+            let refused_all = || match offer {
+                BlockOffer::Listen => locks.listen_grants_refused(),
+                _ => locks.port_grants_refused(),
+            };
+            let mut why = refused_all();
             let levels: Vec<GrantLevel> = [GrantLevel::Chat, GrantLevel::You]
                 .into_iter()
                 .filter(|level| {
                     let refused = match named.as_ref() {
                         Some(what) => locks.refuses_grant(what, (*level).into()),
-                        None => locks
-                            .port_grants_refused()
-                            .or_else(|| locks.scope_removed((*level).into())),
+                        None => refused_all().or_else(|| locks.scope_removed((*level).into())),
                     };
                     if refused.is_some() && why.is_none() {
                         why = refused.clone();

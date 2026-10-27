@@ -2609,6 +2609,20 @@ fn a_port_to_serve_on_is_never_a_system_ones_or_one_in_use() {
             .is_some_and(|route| route.contains("purlis listen 5173 --"))
     );
     assert_eq!(on_its_serving(told, &[3000]).offer, BlockOffer::Listen);
+    // A port the chat serves on has its door open, so it is in use as it is asked about: still
+    // told how to start the server there, never offered as a service to connect to.
+    let told = blocked_on(&plane, 7, &refused, None, Some(&port), false);
+    assert_eq!(told.offer, BlockOffer::Port);
+    let served_port: u16 = port.parse().expect("a port");
+    let served = on_its_serving(told, &[served_port]);
+    assert_eq!(served.offer, BlockOffer::Brokered);
+    assert!(
+        served
+            .route
+            .as_deref()
+            .is_some_and(|route| route.contains(&format!("purlis listen {port} --")))
+    );
+    drop(taken);
 }
 
 /// #2019: a port allowed to listen on for this project is said to be allowed already, and a
@@ -2632,9 +2646,24 @@ fn a_port_to_listen_on_allowed_already_or_held_by_policy_is_said_so() {
         r#"{"sandbox": {"socket-grants": false}}"#,
         std::path::Path::new("/etc/purlis/policy.json"),
     );
-    let (offer, _, _, levels) = held(&locked, (BlockOffer::Listen, Some("5173".to_owned()), None));
+    let (offer, _, route, levels) =
+        held(&locked, (BlockOffer::Listen, Some("5173".to_owned()), None));
     assert_ne!(offer, BlockOffer::Listen);
     assert!(levels.is_empty());
+    // In a server's words, not a service's.
+    assert!(
+        route
+            .as_deref()
+            .is_some_and(|route| route.contains("to run a server on this Mac")),
+        "{route:?}"
+    );
+    let (_, _, route, _) = held(&locked, (BlockOffer::Listen, None, None));
+    assert!(
+        route
+            .as_deref()
+            .is_some_and(|route| route.contains("to run a server on this Mac")),
+        "{route:?}"
+    );
 }
 
 /// qw384 review: a port only printed words name is pre-filled for the person to check, on a

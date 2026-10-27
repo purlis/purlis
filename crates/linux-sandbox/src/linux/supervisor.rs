@@ -933,9 +933,11 @@ impl Supervisor {
     /// **A bind, judged and made by the supervisor** (#2019). A chat serves on a socket of its
     /// own, in the folder purlis made for it, behind purlis's door on the chat's port:
     ///
-    /// - **A unix socket at a path** is bound only where the profile names it
-    ///   (`local unix-socket`), by the supervisor, on a socket of its own put in place of the
-    ///   chat's descriptor; a socket a server left there is taken away first.
+    /// - **A unix socket at a path** is bound only at an absolute path the profile names to serve
+    ///   on (`local unix-socket (path-literal …)`) and lets the chat make and take away a socket
+    ///   at ([`crate::profile::Profile::serves_at`]), by the supervisor, on a socket of its own
+    ///   put in place of the chat's descriptor; what was left at the path is taken away first.
+    ///   Any other path is refused, at every level: the floor's `(allow default)` names no bind.
     /// - **An internet address on a port the chat serves on** (any address: `127.0.0.1`,
     ///   `0.0.0.0`, `::`) is bound instead to that port's socket, `<port>.sock`, the same way: a
     ///   server started for a port, on whatever address, is served through the door. Any other
@@ -943,8 +945,8 @@ impl Supervisor {
     ///   so a server that asks for a port raises the Ask to serve on it; a port of zero is not
     ///   told, since no person allows one.
     /// - **A netlink socket (what `getifaddrs` binds) and an abstract or unnamed unix socket go
-    ///   on in the kernel** ([`Answer::GoOn`]), as before; any other family is refused. Nothing the chat
-    ///   changes after the address was read carries such a call further: the call the kernel
+    ///   on in the kernel** ([`Answer::GoOn`]), as before; any other family is refused. Nothing
+    ///   the chat changes after the address was read carries such a call further: the call the kernel
     ///   makes is judged by the chat's own Landlock layer, which binds no TCP port and makes no
     ///   socket file.
     /// - **The socket put in the chat's place is always a unix one**, bound here at its path: no
@@ -972,9 +974,6 @@ impl Supervisor {
                 }
                 let end = path.iter().position(|c| *c == 0).unwrap_or(path.len());
                 let named = Path::new(OsStr::from_bytes(&path[..end]));
-                if !self.profile.allows(&Op::BindUnix(named)) {
-                    return Err(REFUSED);
-                }
                 named.to_path_buf()
             }
             libc::AF_INET | libc::AF_INET6 => {
@@ -983,13 +982,9 @@ impl Supervisor {
                     return Err(REFUSED);
                 }
                 let wanted = format!("{}.sock", local.port());
-                let Some(served) = self
-                    .profile
-                    .reach()
-                    .serves
-                    .into_iter()
-                    .find(|path| path.file_name() == Some(OsStr::new(&wanted)))
-                else {
+                let Some(served) = self.profile.reach().serves.into_iter().find(|path| {
+                    path.file_name() == Some(OsStr::new(&wanted)) && self.profile.serves_at(path)
+                }) else {
                     self.tell(chat, BIND, local.to_string());
                     return Err(REFUSED);
                 };
@@ -1000,17 +995,20 @@ impl Supervisor {
             libc::AF_NETLINK => return Ok(Answer::GoOn),
             _ => return Err(REFUSED),
         };
+        // Only where the profile names a socket to serve on, and lets it be made and taken
+        // away: never another socket of this user's, whatever else the profile allows.
+        if !self.profile.serves_at(&socket) {
+            return Err(REFUSED);
+        }
         let at = u32::try_from(fd).map_err(|_| Errno::EBADF)?;
         let flags = descriptor_flags(chat.tid, fd)?;
         if !self.alive(id) {
             return Ok(Answer::Gone);
         }
-        // A server that ended leaves its socket: taken away, never anything else at the path.
+        // What a server that ended left there, or anything else but a folder, is taken away.
         match std::fs::symlink_metadata(&socket) {
-            Ok(meta) if std::os::unix::fs::FileTypeExt::is_socket(&meta.file_type()) => {
-                std::fs::remove_file(&socket).map_err(|_| REFUSED)?;
-            }
-            Ok(_) => return Err(Errno::EADDRINUSE),
+            Ok(meta) if meta.is_dir() => return Err(Errno::EADDRINUSE),
+            Ok(_) => std::fs::remove_file(&socket).map_err(|_| REFUSED)?,
             Err(_) => {}
         }
         let served = nix::sys::socket::socket(

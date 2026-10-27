@@ -3611,25 +3611,44 @@ impl Chats {
             None => None,
         };
         // The doors to the servers this chat may run (#2019), opened in this process wherever
-        // its proxy runs, before its line is compiled: a socket for each, in its own folder.
-        if let (Some(confinement), Some(confines), Some(id)) = (
-            confinement.as_mut(),
-            confines.as_ref(),
-            identity.id.as_deref(),
-        ) && !confines.widened.listens.is_empty()
+        // its proxy runs, before its line is compiled: a socket for each, in its own folder. A
+        // port it serves on none of is told, and withdrawn from its proxy where only its listen
+        // grant gave it.
+        if let (Some(confinement), Some(confines)) = (confinement.as_mut(), confines.as_ref())
             && sandbox.is_some_and(|applied| {
                 applied.harness() != purlis_core::harness::Harness::ClaudeCode
             })
         {
-            match purlis_core::sandbox::door::folder_for(id) {
-                Some(folder) => match confinement.serve(&folder, &confines.widened.listens) {
-                    Ok(unserved) => {
-                        late.extend(purlis_core::sandbox::door::unserved_said(&unserved));
+            let widened = &confines.widened;
+            let mut unserved = widened.unserved.clone();
+            if !widened.listens.is_empty() {
+                let folder = identity
+                    .id
+                    .as_deref()
+                    .and_then(purlis_core::sandbox::door::folder_for);
+                let served = match folder {
+                    Some(folder) => confinement
+                        .serve(&folder, widened)
+                        .map_err(|err| err.to_string()),
+                    None => {
+                        for port in &widened.listen_only {
+                            let _ = confinement.withdraw_port(*port);
+                        }
+                        Err("it has no folder of its own to serve in".to_owned())
                     }
-                    Err(err) => tracing::warn!("purlis: a chat's servers were not served ({err})"),
-                },
-                None => tracing::warn!("purlis: a chat's servers have no folder to listen in"),
+                };
+                match served {
+                    Ok(more) => unserved.extend(more),
+                    Err(why) => {
+                        tracing::warn!("purlis: a chat's servers were not served ({why})");
+                        late.extend(purlis_core::sandbox::door::unservable_said(
+                            &widened.listens,
+                            &why,
+                        ));
+                    }
+                }
             }
+            late.extend(purlis_core::sandbox::door::unserved_said(&unserved));
         }
         // A runner starts the chat without the services you allowed for this chat alone on this
         // machine, and the tab says so, and whether the chat is asked about them there (#2510).

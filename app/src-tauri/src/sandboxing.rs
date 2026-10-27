@@ -2886,8 +2886,10 @@ fn revoke(
             // and each chat serving on it restarts without it once its turn ends.
             if !held_for_the_project(root, *port) {
                 not_withdrawn = chats.withdraw_port(None, *port).err();
-                chats.owe_restart_serving(None, *port);
             }
+            // Served no more, whatever else still lets the chats connect there: each serving
+            // on it restarts without it once its turn ends.
+            chats.owe_restart_serving(None, *port);
         }
     }
     if let Err(why) = sandbox::local::forget_made(root, what, target, level.word()) {

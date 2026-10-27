@@ -32,10 +32,11 @@
 //! - **Streamed, never buffered**: a server's answer, an event stream included, goes on as it
 //!   comes.
 //! - **Carried to the chat's own socket alone**: the server it reaches bound the socket's own
-//!   name, in the chat's folder (`bound_at`). The chat may make a file at that path, so a link
-//!   or a second name there, to some other socket of this user's, is answered `502` and never
-//!   carried to.
+//!   name, in the chat's folder as it was when the door opened (`bound_at`). The chat may make
+//!   a file at that path, so a link or a second name there, to some other socket of this
+//!   user's, is answered `502` and never carried to; so is a folder put in place of the chat's.
 
+use std::ffi::OsStr;
 use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::os::unix::net::UnixStream;
@@ -56,6 +57,13 @@ pub const AT_ONCE: usize = 256;
 /// The most browsers a door keeps a jar for, and cookies in one jar: the oldest goes first.
 pub const JARS_MOST: usize = 64;
 pub const COOKIES_MOST: usize = 128;
+
+/// The longest cookie a jar keeps, its name and value together, as a browser keeps one; a
+/// longer one is never kept.
+pub const COOKIE_MOST_BYTES: usize = 4096;
+
+/// The most one jar holds of its cookies' names and values together: the oldest go first.
+pub const JAR_MOST_BYTES: usize = 64 * 1024;
 
 /// The name of the cookie a door tells one browser from another by, on port `port`.
 pub fn token_cookie(port: u16) -> String {
@@ -81,7 +89,8 @@ impl Refused {
         match self {
             Self::Malformed => (
                 "400 Bad Request",
-                "purlis's door reads this request no one way.",
+                "purlis's door refused this request: it is malformed, or it could be read in \
+                 more than one way.",
             ),
             Self::Host => (
                 "421 Misdirected Request",
@@ -110,8 +119,13 @@ pub struct Carried {
     pub body: u64,
     /// Whether it asks to upgrade the connection (a WebSocket).
     pub upgrade: bool,
-    /// The browser's jar token, where it sent one.
+    /// The browser's jar token, where it sent one and the request may use the jar.
     pub token: Option<String>,
+    /// Whether the request may use the jar at all: one the browser says came from this
+    /// server's own page, or from the person (`Sec-Fetch-Site` of `same-origin` or `none`), or
+    /// says nothing of where it came from. A request from another page of this machine, which a
+    /// browser sends this door's token with too, is carried without the jar, and is given none.
+    pub jarred: bool,
 }
 
 /// **The request in `head`** (which ends in its blank line) **as the door on `port` carries
@@ -190,6 +204,11 @@ pub fn judge(
         }
         _ => return Err(Refused::Malformed),
     };
+    let jarred = match named("sec-fetch-site")[..] {
+        [] => true,
+        [site] => site.eq_ignore_ascii_case("same-origin") || site.eq_ignore_ascii_case("none"),
+        _ => false,
+    };
     let token_name = token_cookie(port);
     let token = named("cookie")
         .iter()
@@ -197,7 +216,7 @@ pub fn judge(
         .filter_map(|pair| pair.trim().split_once('='))
         .find(|(name, _)| *name == token_name)
         .map(|(_, value)| value.to_owned())
-        .filter(|value| is_a_token(value));
+        .filter(|value| jarred && is_a_token(value));
     let upgrade = !named("upgrade").is_empty()
         && named("connection")
             .iter()
@@ -220,7 +239,11 @@ pub fn judge(
             out.push_str(&format!("{name}: {value}\r\n"));
         }
     }
-    let kept = jar(token.as_deref());
+    let kept = if jarred {
+        jar(token.as_deref())
+    } else {
+        Vec::new()
+    };
     if !kept.is_empty() {
         out.push_str(&format!("Cookie: {}\r\n", kept.join("; ")));
     }
@@ -234,6 +257,7 @@ pub fn judge(
         body,
         upgrade,
         token,
+        jarred,
     })
 }
 
@@ -310,8 +334,9 @@ pub fn answered(
 
 /// **The cookies a door keeps for the chat's server, one jar for each browser** (module docs):
 /// by name, each with its value; a cookie the server sets again replaces it, and one it sets
-/// with `Max-Age=0` or less, or an empty value, is taken away. At most [`JARS_MOST`] jars and
-/// [`COOKIES_MOST`] cookies in each, the oldest let go first.
+/// with `Max-Age=0` or less, or an empty value, is taken away. At most [`JARS_MOST`] jars, and
+/// [`COOKIES_MOST`] cookies and [`JAR_MOST_BYTES`] in each, the oldest let go first; a cookie
+/// longer than [`COOKIE_MOST_BYTES`] is never kept.
 #[derive(Debug, Default)]
 pub struct Jar {
     jars: Vec<(String, Vec<(String, String)>)>,
@@ -342,7 +367,11 @@ impl Jar {
             return;
         };
         let (name, value) = (name.trim(), value.trim());
-        if name.is_empty() || !name.bytes().all(is_token) || value.contains([';', ',']) {
+        if name.is_empty()
+            || !name.bytes().all(is_token)
+            || value.contains([';', ','])
+            || name.len() + value.len() > COOKIE_MOST_BYTES
+        {
             return;
         }
         let gone = value.is_empty()
@@ -365,7 +394,16 @@ impl Jar {
         let cookies = &mut self.jars[at].1;
         cookies.retain(|(held, _)| held != name);
         if !gone {
-            if cookies.len() >= COOKIES_MOST {
+            let bytes = |cookies: &[(String, String)]| -> usize {
+                cookies
+                    .iter()
+                    .map(|(name, value)| name.len() + value.len())
+                    .sum()
+            };
+            while !cookies.is_empty()
+                && (cookies.len() >= COOKIES_MOST
+                    || bytes(cookies) + name.len() + value.len() > JAR_MOST_BYTES)
+            {
                 cookies.remove(0);
             }
             cookies.push((name.to_owned(), value.to_owned()));
@@ -393,16 +431,24 @@ pub fn folder_for(id: &str) -> Option<PathBuf> {
     if id.is_empty() {
         return None;
     }
-    let base = crate::envvar::var("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .filter(|dir| dir.is_absolute())
-        .unwrap_or_else(std::env::temp_dir);
+    let base = root_in(crate::envvar::var_os("XDG_RUNTIME_DIR").as_deref());
     let digest = sha2::Sha256::digest(id.as_bytes());
     let named: String = digest[..8]
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
-    Some(base.join(FOLDER).join(named))
+    Some(base.join(named))
+}
+
+/// **The folder every chat's server folder is in** (#2019): [`FOLDER`] in `runtime`, this user's
+/// runtime folder where it is an absolute path, or else in the system's temp folder for this
+/// process. No chat writes anything in it but its own socket.
+pub fn root_in(runtime: Option<&OsStr>) -> PathBuf {
+    runtime
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .unwrap_or_else(std::env::temp_dir)
+        .join(FOLDER)
 }
 
 /// The variable a chat that serves is handed its servers' folder in, which `purlis listen`
@@ -412,22 +458,41 @@ pub const FOLDER_ENV: &str = "PURLIS_SERVE_DIR";
 /// What a chat is told of `ports` it was allowed to serve on that it does not serve on this
 /// run: something on this Mac listens on each already.
 pub fn unserved_said(ports: &[u16]) -> Option<String> {
-    let (last, rest) = ports.split_last()?;
-    let ports = match rest {
-        [] => format!("port {last}"),
-        _ => format!(
-            "ports {} and {last}",
-            rest.iter()
-                .map(u16::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    };
+    let (named, there) = ports_named(ports)?;
     Some(format!(
-        "This chat was allowed to serve on {ports}, but something on this Mac already listens \
-         there, so it serves on none of them this run. Stop what listens there, then restart \
+        "This chat was allowed to serve on {named}, but something on this Mac already listens \
+         there, so it does not serve on {there} this run. Stop what listens there, then restart \
          this chat."
     ))
+}
+
+/// What a chat is told where none of `ports` it was allowed to serve on could be served, and
+/// `why` (#2019).
+pub fn unservable_said(ports: &[u16], why: &str) -> Option<String> {
+    let (named, there) = ports_named(ports)?;
+    Some(format!(
+        "This chat was allowed to serve on {named}, but purlis could not open the way to its \
+         server: {why}. It does not serve on {there} this run; restart this chat to try again."
+    ))
+}
+
+/// `ports` as a sentence names them, and the words for "them" that agree with it: one port is
+/// `port 5173` and `it`, more are `ports 3000 and 5173` and `any of them`.
+fn ports_named(ports: &[u16]) -> Option<(String, &'static str)> {
+    let (last, rest) = ports.split_last()?;
+    Some(match rest {
+        [] => (format!("port {last}"), "it"),
+        _ => (
+            format!(
+                "ports {} and {last}",
+                rest.iter()
+                    .map(u16::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            "any of them",
+        ),
+    })
 }
 
 /// **Whether anything listens on `port` of this machine now**, by `127.0.0.1` or `::1`: what
@@ -449,6 +514,9 @@ pub struct Door {
     port: u16,
     socket: PathBuf,
     stop: Arc<AtomicBool>,
+    /// The port on every interface, bound and never listened on, where the system lets a
+    /// later server bind it there over the door's own ([`every_interface`]).
+    _held: Vec<std::os::fd::OwnedFd>,
 }
 
 impl Door {
@@ -462,6 +530,8 @@ impl Door {
                 format!("something on this Mac already listens on port {port}"),
             ));
         }
+        let folder = Pinned::of(socket)?;
+        let held = every_interface(port)?;
         let mut listeners = vec![TcpListener::bind((Ipv4Addr::LOCALHOST, port))?];
         if let Ok(v6) = TcpListener::bind((Ipv6Addr::LOCALHOST, port)) {
             listeners.push(v6);
@@ -471,6 +541,7 @@ impl Door {
         let busy = Arc::new(AtomicUsize::new(0));
         for listener in listeners {
             let (stop, jar, busy) = (Arc::clone(&stop), Arc::clone(&jar), Arc::clone(&busy));
+            let folder = folder.clone();
             let socket = socket.to_path_buf();
             std::thread::Builder::new()
                 .name(format!("purlis-door-{port}"))
@@ -486,12 +557,16 @@ impl Door {
                             busy.fetch_sub(1, Ordering::SeqCst);
                             continue;
                         }
-                        let (held_jar, held_busy, socket) =
-                            (Arc::clone(&jar), Arc::clone(&busy), socket.clone());
+                        let (held_jar, held_busy, socket, folder) = (
+                            Arc::clone(&jar),
+                            Arc::clone(&busy),
+                            socket.clone(),
+                            folder.clone(),
+                        );
                         let spawned = std::thread::Builder::new()
                             .name(format!("purlis-door-{port}-in"))
                             .spawn(move || {
-                                carry(stream, port, &socket, &held_jar);
+                                carry(stream, port, &socket, &folder, &held_jar);
                                 held_busy.fetch_sub(1, Ordering::SeqCst);
                             });
                         if spawned.is_err() {
@@ -504,6 +579,7 @@ impl Door {
             port,
             socket: socket.to_path_buf(),
             stop,
+            _held: held,
         })
     }
 
@@ -531,8 +607,67 @@ impl Drop for Door {
     }
 }
 
+/// **The door's port on every interface, held** (#2019): on macOS a server bound on every
+/// interface (`0.0.0.0` or `::`) after the door is let bind beside it, and the door, the more
+/// particular of the two, would go on taking what is sent to the server the person started. So
+/// the door binds those first, with no option to share them, and never listens there: a later
+/// server is refused its bind, as on Linux. Refused, as in use, where either is taken already.
+#[cfg(target_os = "macos")]
+fn every_interface(port: u16) -> io::Result<Vec<std::os::fd::OwnedFd>> {
+    use nix::sys::socket::{
+        AddressFamily, SockFlag, SockType, SockaddrIn, SockaddrIn6, bind, setsockopt, socket,
+        sockopt,
+    };
+    use std::os::fd::AsRawFd as _;
+    let taken = |err: nix::Error| {
+        if err == nix::Error::EADDRINUSE {
+            io::Error::new(
+                io::ErrorKind::AddrInUse,
+                format!("something on this Mac already holds port {port}"),
+            )
+        } else {
+            io::Error::from(err)
+        }
+    };
+    let cloexec = |fd: &std::os::fd::OwnedFd| {
+        rustix::io::fcntl_setfd(fd, rustix::io::FdFlags::CLOEXEC).map_err(io::Error::from)
+    };
+    let v4 = socket(
+        AddressFamily::Inet,
+        SockType::Stream,
+        SockFlag::empty(),
+        None,
+    )?;
+    cloexec(&v4)?;
+    bind(v4.as_raw_fd(), &SockaddrIn::new(0, 0, 0, 0, port)).map_err(taken)?;
+    let mut held = vec![v4];
+    // Where this Mac has IPv6: a server on `::` alone is held apart from one on `0.0.0.0`.
+    if let Ok(v6) = socket(
+        AddressFamily::Inet6,
+        SockType::Stream,
+        SockFlag::empty(),
+        None,
+    ) {
+        cloexec(&v6)?;
+        setsockopt(&v6, sockopt::Ipv6V6Only, &true)?;
+        let any6 = std::net::SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, port, 0, 0);
+        match bind(v6.as_raw_fd(), &SockaddrIn6::from(any6)) {
+            Ok(()) => held.push(v6),
+            Err(nix::Error::EADDRINUSE) => return Err(taken(nix::Error::EADDRINUSE)),
+            Err(_) => {}
+        }
+    }
+    Ok(held)
+}
+
+/// Elsewhere a later server's bind on every interface is refused while the door listens.
+#[cfg(not(target_os = "macos"))]
+fn every_interface(_port: u16) -> io::Result<Vec<std::os::fd::OwnedFd>> {
+    Ok(Vec::new())
+}
+
 /// Carries one connection, `client`, to the server on `socket`, as the module says.
-fn carry(mut client: TcpStream, port: u16, socket: &Path, jar: &Mutex<Jar>) {
+fn carry(mut client: TcpStream, port: u16, socket: &Path, folder: &Pinned, jar: &Mutex<Jar>) {
     let Some((head, mut rest)) = read_head(&mut client) else {
         return;
     };
@@ -555,7 +690,7 @@ fn carry(mut client: TcpStream, port: u16, socket: &Path, jar: &Mutex<Jar>) {
     };
     let Some(mut server) = UnixStream::connect(socket)
         .ok()
-        .filter(|server| bound_at(server, socket))
+        .filter(|server| bound_at(server, socket, folder))
     else {
         let said = "The chat's server is not running.";
         let _ = write!(
@@ -586,14 +721,14 @@ fn carry(mut client: TcpStream, port: u16, socket: &Path, jar: &Mutex<Jar>) {
         return;
     };
     let fresh = match &carried.token {
-        Some(_) => None,
-        None => new_token(),
+        None if carried.jarred => new_token(),
+        _ => None,
     };
     let token = carried.token.clone().or_else(|| fresh.clone());
     let head = {
         let mut held = jar.lock().unwrap_or_else(PoisonError::into_inner);
         answered(&answer, port, fresh.as_deref(), &mut |set| {
-            if let Some(token) = &token {
+            if let Some(token) = token.as_ref().filter(|_| carried.jarred) {
                 held.keep(token, set);
             }
         })
@@ -627,26 +762,62 @@ fn carry(mut client: TcpStream, port: u16, socket: &Path, jar: &Mutex<Jar>) {
     }
 }
 
+/// **The folder a door's socket is in, as it was when the door opened** (#2019): the device
+/// and the entry it is, so a folder put in its place since, or a link to another, is never
+/// taken for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Pinned {
+    dev: u64,
+    ino: u64,
+}
+
+impl Pinned {
+    /// The folder `socket` is in, which must be a folder (never a link to one) now.
+    fn of(socket: &Path) -> io::Result<Pinned> {
+        use std::os::unix::fs::MetadataExt as _;
+        let folder = socket
+            .parent()
+            .filter(|folder| folder.is_absolute())
+            .ok_or_else(|| io::Error::other("a server's socket is in no folder"))?;
+        let meta = std::fs::symlink_metadata(folder)?;
+        if !meta.is_dir() {
+            return Err(io::Error::other(format!(
+                "{} is not a folder",
+                folder.display()
+            )));
+        }
+        Ok(Pinned {
+            dev: meta.dev(),
+            ino: meta.ino(),
+        })
+    }
+
+    /// Whether `folder` is this folder now.
+    fn is(self, folder: &Path) -> bool {
+        use std::os::unix::fs::MetadataExt as _;
+        std::fs::metadata(folder)
+            .is_ok_and(|meta| meta.is_dir() && meta.dev() == self.dev && meta.ino() == self.ino)
+    }
+}
+
 /// **Whether `server` is the socket bound at `socket` itself**: the name its server bound is
-/// `socket`'s, in the same folder. A connect follows a link, and the chat may make a file at its
-/// socket's path, so a link or a second name there, to another socket of this user's, is never
-/// carried to: that socket's server bound a name of its own elsewhere. A name bound relative to
-/// some folder is not told apart, and is refused with the rest.
-fn bound_at(server: &UnixStream, socket: &Path) -> bool {
+/// `socket`'s, in `folder`, the folder the door opened on. A connect follows a link, and the
+/// chat may make a file at its socket's path, so a link or a second name there, to another
+/// socket of this user's, is never carried to: that socket's server bound a name of its own
+/// elsewhere. A name bound relative to some folder is not told apart, and is refused with the
+/// rest.
+fn bound_at(server: &UnixStream, socket: &Path, folder: &Pinned) -> bool {
     let Ok(peer) = server.peer_addr() else {
         return false;
     };
     let Some(named) = peer.as_pathname().map(up_to_nul) else {
         return false;
     };
-    let folder = |path: &Path| {
-        path.parent()
-            .filter(|folder| folder.is_absolute())
-            .and_then(|folder| std::fs::canonicalize(folder).ok())
-    };
     named.file_name().is_some()
         && named.file_name() == socket.file_name()
-        && folder(named).is_some_and(|at| Some(at) == folder(socket))
+        && named
+            .parent()
+            .is_some_and(|at| at.is_absolute() && folder.is(at))
 }
 
 /// `named` up to its first NUL: macOS keeps the whole address a server bound, so a name bound

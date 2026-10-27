@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// `purlis listen`'s shim for Node (#2019; the one file of purlis that is not Rust, by the
+// `purlis listen`'s shim for Node (#2019; the one Node preload shim, allowed by the
 // person's ruling of 2026-10-26). Loaded with `--require` by every Node program the command
 // starts, it moves a server started on this chat's port onto the chat's own socket, behind
 // purlis's door on that port, and has the server say it listens on that port, so a dev server

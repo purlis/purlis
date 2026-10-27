@@ -286,6 +286,53 @@ fn a_chats_server_listens_on_its_socket_in_its_folder_and_on_no_port() {
     );
 }
 
+/// #2019: the Ask says what a page a chat's server sends can do in the person's own browser, and
+/// claims no more of the door than it holds.
+#[test]
+fn a_servers_risk_says_what_its_page_can_do_in_your_browser() {
+    for said in [listen_risk(5173), listen_risk_unnamed()] {
+        assert!(
+            said.contains("runs in your browser as a site of this Mac"),
+            "{said}"
+        );
+        assert!(said.contains("cookies that are not HttpOnly"), "{said}");
+        assert!(
+            said.contains("send what it reads to the internet"),
+            "{said}"
+        );
+        assert!(said.contains("Open it in the chat's own browser"), "{said}");
+        assert!(!said.contains("cookies for other sites"), "{said}");
+        assert!(!said.contains("reaches it"), "{said}");
+    }
+}
+
+/// #2019: a port given for a listen grant alone is connected to only where its door opened, and
+/// a chat no door opens for (Claude Code's) is given nothing for the grant.
+#[test]
+fn a_port_given_for_a_listen_grant_alone_is_reached_only_where_its_door_opened() {
+    use super::super::{Widened, seatbelt};
+    let widened = Widened {
+        ports: vec![5173, 8080],
+        listens: vec![5173],
+        listen_only: vec![5173],
+        ..Widened::default()
+    };
+    let mut own = seatbelt::Own::default();
+    seatbelt::widen(&mut own, &widened).expect("widened");
+    assert!(!own.after.contains(&seatbelt_rule(5173)), "{:?}", own.after);
+    assert!(own.after.contains(&seatbelt_rule(8080)), "{:?}", own.after);
+    seatbelt::served(
+        &mut own,
+        std::path::Path::new("/run/user/1000/purlis-serve/0123456789abcdef"),
+        &[5173],
+    )
+    .expect("served");
+    assert!(own.after.contains(&seatbelt_rule(5173)), "{:?}", own.after);
+    let unserving = widened.unserving();
+    assert_eq!(unserving.ports, vec![8080]);
+    assert!(unserving.listens.is_empty());
+}
+
 /// **Under Seatbelt, for real** (#2019): a chat allowed to serve on a port serves on its own
 /// socket and on no TCP port, and is reached through the door alone. Small Perl programs inside
 /// the chat's own compiled profile try each thing and print `yes`, or the step refused.
@@ -378,6 +425,7 @@ while (accept(my $c, $s)) {
             &Widened {
                 ports: vec![port],
                 listens: vec![port],
+                listen_only: vec![port],
                 ..Widened::default()
             },
         )
@@ -459,5 +507,28 @@ while (accept(my $c, $s)) {
         {
             assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "no");
         }
+    }
+    /// A server the person starts on every interface after the door opened is refused its
+    /// bind, as on Linux, and the port is free on every interface once the door is let go.
+    #[test]
+    fn a_door_holds_its_port_on_every_interface_against_a_later_server() {
+        let port = free_port();
+        let base = tempfile::tempdir().expect("a folder");
+        let folder = base.path().canonicalize().expect("real").join("serve");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&folder)
+            .expect("the chat's folder");
+        let door = door::Door::open(port, &serve_socket(&folder, port)).expect("the door opens");
+        // As a dev server binds, with the address shared (Rust's listener sets it, as Node's).
+        for address in ["0.0.0.0", "::"] {
+            assert!(
+                std::net::TcpListener::bind((address, port)).is_err(),
+                "{address}:{port} was let bind beside the door"
+            );
+        }
+        drop(door);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(std::net::TcpListener::bind(("0.0.0.0", port)).is_ok());
     }
 }

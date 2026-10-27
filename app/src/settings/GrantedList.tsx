@@ -47,7 +47,7 @@ const ALLOWS: Record<SandboxGrant["what"], (one: SandboxGrant) => string> = {
   port: (one) =>
     `Connect to the service on this Mac at port ${one.target} (Codex and opencode chats; Claude Code chats not yet)`,
   listen: (one) =>
-    `Run a server on port ${one.target}, reached through purlis on this Mac (Codex and opencode chats); removing it restarts the chats serving there once their turn ends, and they serve until then`,
+    `Run a server on port ${one.target}, reached through purlis on this Mac (Codex and opencode chats). Removing it restarts the chats serving there once their turn ends. They serve until then`,
   browser: (one) =>
     `Chats as ${one.persona ?? "a persona"} open a browser without asking, reaching ${one.target}`,
   "browser-site": (one) =>

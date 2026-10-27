@@ -66,9 +66,32 @@ pub fn env(
     out
 }
 
-/// Where the shim is written for a run: the chat's own temp folder.
-fn shim_path() -> PathBuf {
-    std::env::temp_dir().join("purlis-listen-shim.cjs")
+/// **The shim, written for one run** in `folder` (the chat's own temp folder): under a name of
+/// its own, made new and never over anything there, so nothing put there first is what Node
+/// loads. Its path, or None where none could be made.
+fn shim_in(folder: &std::path::Path) -> Option<PathBuf> {
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos());
+    for tried in 0..16u32 {
+        let path = folder.join(format!(
+            "purlis-listen-shim-{}-{now:x}-{tried}.cjs",
+            std::process::id()
+        ));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+        {
+            Ok(mut file) => return file.write_all(SHIM.as_bytes()).ok().map(|()| path),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(_) => return None,
+        }
+    }
+    None
 }
 
 /// Runs `command` as the module says, in place of this process; its error where it could not.
@@ -86,10 +109,7 @@ pub fn run(port: u16, command: &[OsString]) -> ExitCode {
     let folder = purlis_core::envvar::var(purlis_core::sandbox::door::FOLDER_ENV)
         .filter(|folder| !folder.is_empty())
         .map(PathBuf::from);
-    let shim = folder.as_ref().and_then(|_| {
-        let path = shim_path();
-        std::fs::write(&path, SHIM).ok().map(|()| path)
-    });
+    let shim = folder.as_ref().and_then(|_| shim_in(&std::env::temp_dir()));
     let node_options = purlis_core::envvar::var("NODE_OPTIONS");
     let mut child = std::process::Command::new(program);
     child.args(args);

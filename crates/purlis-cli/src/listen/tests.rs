@@ -62,3 +62,12 @@ fn the_shim_moves_only_the_chats_own_port_onto_its_socket() {
     assert!(SHIM.contains("process.env.PURLIS_SERVE_PORT"));
     assert!(SHIM.contains("if (wanted(args) !== port) return listen.apply(this, args);"));
 }
+
+#[test]
+fn each_run_writes_its_shim_new_under_a_name_of_its_own() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let first = shim_in(dir.path()).expect("written");
+    let second = shim_in(dir.path()).expect("written");
+    assert_ne!(first, second);
+    assert_eq!(std::fs::read_to_string(&first).expect("read"), SHIM);
+}
