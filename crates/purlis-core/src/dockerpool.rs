@@ -1219,6 +1219,9 @@ pub struct Docker {
     /// Where each run's copy of Docker's settings is made: `<data>/docker-settings`, unless
     /// another folder is named (a test's).
     settings_in: Option<std::path::PathBuf>,
+    /// How long each run may take, where a caller holds it to a time ([`Docker::within`]); none
+    /// for a run that takes as long as it takes (a pull, a make).
+    within: Option<std::time::Duration>,
 }
 
 pub mod settings;
@@ -1263,7 +1266,17 @@ impl Docker {
         Docker {
             program: program.into(),
             settings_in: None,
+            within: None,
         }
+    }
+
+    /// **This `docker`, each of its runs held to `within`** (#2052): a run still going when it is
+    /// up is ended and refused, so a wedged engine holds up nothing that asks it. For what only
+    /// reads (an inspect, a version); a pull or a make takes as long as it takes.
+    #[must_use]
+    pub fn within(mut self, within: std::time::Duration) -> Docker {
+        self.within = Some(within);
+        self
     }
 
     /// This `docker`, with each run's copy of Docker's settings made in `folder`.
@@ -1451,7 +1464,8 @@ impl Docker {
         }
         command.args(args);
         let first = || args.first().map(String::as_str).unwrap_or_default();
-        let ran = crate::boundedrun::run(&mut command, input, most, MOST_SAID).map_err(|why| {
+        let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, self.within)
+            .map_err(|why| {
             use crate::boundedrun::Unanswered;
             refused(match why {
                 Unanswered::NotStarted(why) => {
