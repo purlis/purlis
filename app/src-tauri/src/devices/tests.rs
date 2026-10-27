@@ -90,7 +90,11 @@ fn every_kept_runner_is_listed_whether_or_not_a_chat_runs_on_it() {
         Vec::new(),
         Vec::new(),
     );
-    let names: Vec<&str> = shown.runners.iter().map(|one| one.runner.as_str()).collect();
+    let names: Vec<&str> = shown
+        .runners
+        .iter()
+        .map(|one| one.runner.as_str())
+        .collect();
     assert_eq!(names, ["builds", "qa"]);
     assert!(shown.runners.iter().all(|one| one.on.chats.is_empty()));
 }
@@ -99,7 +103,10 @@ fn every_kept_runner_is_listed_whether_or_not_a_chat_runs_on_it() {
 fn a_chat_on_a_pool_this_machine_no_longer_keeps_is_said_apart_never_put_on_another_device() {
     let shown = placed(
         &[runner("builds", "builds", false)],
-        vec![chat(5, "gone", Some("removed")), chat(6, "gone too", Some("builds/old"))],
+        vec![
+            chat(5, "gone", Some("removed")),
+            chat(6, "gone too", Some("builds/old")),
+        ],
         Vec::new(),
     );
     assert!(shown.here.chats.is_empty());
@@ -129,7 +136,13 @@ fn a_browser_is_on_the_device_its_chat_runs_it_on() {
     assert_eq!(shown.runners[0].on.browsers[0].name, "b1");
 }
 
-fn listed(id: &str, project: &str, number: Option<u32>, state: &str, browser: bool) -> ListedProgram {
+fn listed(
+    id: &str,
+    project: &str,
+    number: Option<u32>,
+    state: &str,
+    browser: bool,
+) -> ListedProgram {
     ListedProgram {
         id: id.to_owned(),
         project: project.to_owned(),
@@ -185,7 +198,11 @@ fn a_running_runner_that_answers_is_contacted_now_and_counts_what_it_holds_that_
         .collect();
     assert_eq!(
         holds,
-        [("p1", Some(1), false), ("p2", Some(1), false), ("p1", None, true)]
+        [
+            ("p1", Some(1), false),
+            ("p2", Some(1), false),
+            ("p1", None, true)
+        ]
     );
 }
 

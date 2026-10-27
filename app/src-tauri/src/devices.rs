@@ -206,7 +206,9 @@ pub enum RunnerStanding {
     /// Its container stopped, its home kept: it starts again as a chat next needs it.
     Suspended,
     /// Its container could not be read, and why.
-    Unknown { why: String },
+    Unknown {
+        why: String,
+    },
 }
 
 /// One program a runner holds, as its own list says.
@@ -375,9 +377,9 @@ pub struct RunnerAsked {
     pub link: Option<PoolLink>,
     /// The version it runs, where it answered.
     pub version: Option<String>,
-    /// When it last answered this window, in seconds since 1970; none if it has not since the
-    /// app started.
-    pub contacted: Option<u64>,
+    /// When it last answered this window, in seconds since 1970 (good to 2106); none if it has
+    /// not since the app started.
+    pub contacted: Option<u32>,
     /// What it holds, set against what the window has open.
     pub holds: NotOpenHere,
 }
@@ -441,7 +443,9 @@ fn what_is_open(planes: &crate::planes::Planes) -> (Vec<Placed>, Vec<BrowserPlac
 /// with the chats and browsers the window has open there, and each pool's limits.
 #[tauri::command]
 #[specta::specta]
-pub async fn devices(planes: tauri::State<'_, crate::planes::Planes>) -> Result<DevicesShown, String> {
+pub async fn devices(
+    planes: tauri::State<'_, crate::planes::Planes>,
+) -> Result<DevicesShown, String> {
     let (chats, browsers) = what_is_open(&planes);
     crate::off_the_window("reading this machine's devices", move || {
         let (kept, pools) = kept_here()?;
@@ -528,7 +532,7 @@ pub async fn device_runner(
                 standing: asked.standing,
                 link: asked.link,
                 version: asked.version,
-                contacted: asked.contacted,
+                contacted: asked.contacted.and_then(|at| u32::try_from(at).ok()),
             })
         })
         .await
