@@ -86,6 +86,7 @@ use super::cmd::{self, Io, Say};
 use super::exec::{self, Request, Stopped};
 use super::{Ctx, Env, registry};
 use crate::sandbox::{Confines, Denial};
+use crate::tui::Markup;
 
 /// The line a chat writes: which chat (checked against its token), and what it wants run.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -322,7 +323,7 @@ pub enum Reader {
 /// **A courtesy, not the boundary.** The mark it reads is the chat's environment, which the
 /// chat can change; what holds the item is the store's own rule (V90a) and the sandbox. This
 /// keeps purlis itself from raising a question on the chat's behalf, and says what to do.
-pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) -> Option<String> {
+pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) -> Option<Markup> {
     let env = |name: &str| ctx.env.get(name);
     if !crate::sandbox::chat_is_sandboxed_in(&env) || !super::keyring::holds_values_of(ctx, vault) {
         return None;
@@ -347,13 +348,16 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
             ),
         ),
     };
-    Some(format!(
-        "vault '{}' is read from {}, which a sandboxed chat reaches only through the app, and \
-         {why}. purlis does not read {} from inside a sandboxed chat.\n  {next}",
-        vault.name,
-        super::keyring::STORE_NAME,
-        super::keyring::STORE_NAME,
-    ))
+    Some(Markup::lines([
+        Markup::from(format!(
+            "vault '{}' is read from {}, which a sandboxed chat reaches only through the app, \
+             and {why}. purlis does not read {} from inside a sandboxed chat.",
+            vault.name,
+            super::keyring::STORE_NAME,
+            super::keyring::STORE_NAME,
+        )),
+        Markup::from(format!("  {next}")),
+    ]))
 }
 
 /// Runs `req` through the app that started this chat, and answers its status, or `None` when
@@ -710,7 +714,7 @@ fn allowed_here(ctx: &Ctx, persona: &str, vault: &str) -> bool {
 /// registry does not read, so "which is not known" is never said as "none". Names only: no
 /// vault is opened, and nothing inside one is read.
 pub fn vaults_of(ctx: &Ctx, persona: &str) -> Result<Vec<String>, String> {
-    let doc = registry::load_registry(ctx).map_err(|e| e.message)?;
+    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
     let mut out = registry::vaults_for_persona(&doc, persona);
     if !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants() {
         for one in crate::sandbox::local::granted_vaults(&ctx.root) {
@@ -805,8 +809,8 @@ pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), St
              persona that vault '{vault}' is tagged with."
         ));
     };
-    let doc = registry::load_registry(ctx).map_err(|e| e.message)?;
-    let registered = registry::vault_in(&doc, vault).map_err(|e| e.message)?;
+    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
+    let registered = registry::vault_in(&doc, vault).map_err(|e| e.message.to_string())?;
     let tagged = registry::vaults_for_persona(&doc, persona);
     if tagged.iter().any(|t| t == vault) || allowed_here(ctx, persona, vault) {
         return Ok(());
@@ -858,7 +862,7 @@ pub struct Listed {
 /// alone, in the app, so no provider is asked and no session is opened. The registry, the
 /// policy and this machine's grants are each read once.
 pub fn listed(ctx: &Ctx, persona: Option<&str>) -> Result<Vec<Listed>, String> {
-    let doc = registry::load_registry(ctx).map_err(|e| e.message)?;
+    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
     let persona = persona.filter(|p| !p.is_empty());
     let granted = if crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants() {
         Vec::new()
@@ -999,8 +1003,8 @@ pub fn listing_from_the_app(_ctx: &Ctx) -> Option<Result<Listing, String>> {
 /// which names the ways forward.
 pub fn keys_for(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<Vec<String>, String> {
     authorise(ctx, persona, vault)?;
-    let v = cmd::provider(ctx, vault).map_err(|e| e.message)?;
-    let mut keys = cmd::keys(ctx, &v).map_err(|e| e.message)?;
+    let v = cmd::provider(ctx, vault).map_err(|e| e.message.to_string())?;
+    let mut keys = cmd::keys(ctx, &v).map_err(|e| e.message.to_string())?;
     keys.sort();
     Ok(keys)
 }
@@ -1045,7 +1049,7 @@ pub fn declares_a_tool_with(root: &Path, persona: &str, vault: &str) -> bool {
 /// chat never reads a vault, and no grant changes that; the route that works is a tool its
 /// persona declares, handed the value by `secret exec`, which the app runs. `None` outside a
 /// sandboxed chat.
-pub fn value_refused_in_this_chat(ctx: &Ctx, vault: &str) -> Option<String> {
+pub fn value_refused_in_this_chat(ctx: &Ctx, vault: &str) -> Option<Markup> {
     let env = |name: &str| ctx.env.get(name);
     if !crate::sandbox::chat_is_sandboxed_in(&env) {
         return None;
@@ -1061,11 +1065,16 @@ pub fn value_refused_in_this_chat(ctx: &Ctx, vault: &str) -> Option<String> {
          a command in a sandbox on this system."
             .to_owned()
     };
-    Some(format!(
-        "a sandboxed chat does not read a vault's values, so purlis did not read '{vault}', and \
-         no Allow changes that.\n  To check which keys it holds: purlis secret list {vault}\n  \
-         {to_use}"
-    ))
+    Some(Markup::lines([
+        Markup::from(format!(
+            "a sandboxed chat does not read a vault's values, so purlis did not read '{vault}', \
+             and no Allow changes that."
+        )),
+        Markup::from(format!(
+            "  To check which keys it holds: purlis secret list {vault}"
+        )),
+        Markup::from(format!("  {to_use}")),
+    ]))
 }
 
 /// How a run is wrapped: in the profile built from the chat's policy, applied by this system's
@@ -1265,7 +1274,7 @@ pub fn login_and_identity_for(
         return Err(format!("{name} is not a browser login"));
     };
     let vault = &ready.tool.vault;
-    let v = cmd::provider(&ctx, vault).map_err(|e| e.message)?;
+    let v = cmd::provider(&ctx, vault).map_err(|e| e.message.to_string())?;
     let read = |key: &str| {
         cmd::get_value(&ctx, &v, key).map(Secret::new).map_err(|e| {
             format!(
@@ -1920,7 +1929,7 @@ pub(crate) fn serve_recorded(
         Some(_) => None,
         None => match cmd::provider(&ctx, &wanted.vault) {
             Ok(v) => Some(v),
-            Err(e) => return refuse(&mut *writer, 1, e.message),
+            Err(e) => return refuse(&mut *writer, 1, e.message.to_string()),
         },
     };
     // What runs beside the child for as long as it does: the egress proxy carrying the chat's
@@ -2019,7 +2028,7 @@ pub(crate) fn serve_recorded(
     }
     let base = match exec::child_env_of(&ctx, &wanted.vault, &base) {
         Ok(base) => base,
-        Err(e) => return refuse(&mut *writer, 1, e.message),
+        Err(e) => return refuse(&mut *writer, 1, e.message.to_string()),
     };
     let within = match private_dir(&ctx.vaults_dir()) {
         Ok(within) => within,

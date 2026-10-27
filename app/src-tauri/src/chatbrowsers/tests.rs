@@ -3030,4 +3030,208 @@ fn a_chats_timeline_keeps_no_screenshot_answered_while_purlis_drives_its_browser
     assert_eq!(driven.png, None, "nothing of a moment purlis drove");
     assert_eq!(driven.moment.unkept, Some(Unkept::Driven));
 }
+
+type SaidUnder = (Option<u32>, purlis_core::eventlog::browsing::Said);
+
+/// What `browsers` says of its chats' browsers for the event log (#2842), by chat, in order.
+fn saying(browsers: &ChatBrowsers) -> Arc<Mutex<Vec<SaidUnder>>> {
+    let said: Arc<Mutex<Vec<_>>> = Arc::default();
+    let into = Arc::clone(&said);
+    browsers.saying(Arc::new(move |chat, one| {
+        into.lock().unwrap().push((chat, one))
+    }));
+    said
+}
+
+#[test]
+fn a_chats_browser_opening_its_calls_and_its_close_by_the_chat_are_said_under_the_chat() {
+    use purlis_core::eventlog::browsing::{Called, Closer, Outcome, Said};
+    let browsers = ChatBrowsers::default();
+    let said = saying(&browsers);
+    let hosted = Arc::new(Hosted::default());
+    *hosted.at.lock().unwrap() = Some("https://shop.example.test/basket?item=42#pay".into());
+
+    allowed_and_acting(&browsers, &hosted, 3);
+    let typed = Browsing::Act(Act::Type {
+        page: None,
+        fields: vec![purlis_session_protocol::browsing::Typed {
+            into: Some("e2".into()),
+            text: "hunter2".into(),
+            replace: false,
+        }],
+    });
+    answered(&browsers, &hosted, &ask(3, typed));
+    answered(&browsers, &hosted, &ask(3, Browsing::Close));
+
+    let call = |call, outcome| Said::Call {
+        browser: "program-1".into(),
+        call,
+        origin: Some("https://shop.example.test".into()),
+        outcome,
+    };
+    assert_eq!(
+        *said.lock().unwrap(),
+        [
+            (
+                Some(3),
+                Said::Opened {
+                    browser: "program-1".into()
+                }
+            ),
+            (Some(3), call(Called::Click, Outcome::Done)),
+            (Some(3), call(Called::Type, Outcome::Done)),
+            (
+                Some(3),
+                Said::Closed {
+                    browser: "program-1".into(),
+                    by: Closer::Chat
+                }
+            ),
+            (Some(3), call(Called::Close, Outcome::Done)),
+        ],
+        "the first click asked the person and reached no browser, so it is not said here"
+    );
+}
+
+#[test]
+fn a_refused_call_on_a_chats_browser_is_said_refused_on_where_its_page_last_was() {
+    use purlis_core::eventlog::browsing::{Called, Outcome, Said};
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    *hosted.at.lock().unwrap() = Some("http://localhost:5173/admin".into());
+    allowed_and_acting(&browsers, &hosted, 3);
+    let said = saying(&browsers);
+    *hosted.pages_fail.lock().unwrap() = 1;
+
+    answered(&browsers, &hosted, &ask(3, Browsing::Act(Act::Pages)));
+
+    assert_eq!(
+        *said.lock().unwrap(),
+        [(
+            Some(3),
+            Said::Call {
+                browser: "program-1".into(),
+                call: Called::Pages,
+                origin: Some("http://localhost:5173".into()),
+                outcome: Outcome::Refused,
+            }
+        )]
+    );
+}
+
+#[test]
+fn a_chats_browser_stopped_unused_is_said_closed_idle_and_its_chat_ending_closed_by_the_chat() {
+    use purlis_core::eventlog::browsing::{Closer, Said};
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver = used_at_1000(&browsers, &hosted);
+    allowed_and_acting(&browsers, &hosted, 5);
+    let said = saying(&browsers);
+
+    browsers.idle(Some(&driver), 1600, &[]);
+    let after_idle = said.lock().unwrap().clone();
+    allowed_and_acting(&browsers, &hosted, 7);
+    said.lock().unwrap().clear();
+    browsers.forget(Some(&driver), 7, "Fix the login");
+
+    assert!(
+        after_idle.contains(&(
+            Some(3),
+            Said::Closed {
+                browser: "program-1".into(),
+                by: Closer::Idle
+            }
+        )),
+        "{after_idle:?}"
+    );
+    assert_eq!(
+        *said.lock().unwrap(),
+        [(
+            Some(7),
+            Said::Closed {
+                browser: "program-3".into(),
+                by: Closer::Chat
+            }
+        )]
+    );
+}
+
+#[test]
+fn pinning_and_unpinning_a_chats_browser_is_said_and_stop_all_leaves_its_close_to_the_kill_switch()
+{
+    use purlis_core::eventlog::browsing::Said;
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    allowed_and_acting(&browsers, &hosted, 3);
+    let said = saying(&browsers);
+
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.pin(3, "program-1", true).unwrap();
+    browsers.pin(3, "program-1", false).unwrap();
+    browsers.all_stopped(Some(&driver));
+
+    let browser = || "program-1".to_owned();
+    assert_eq!(
+        *said.lock().unwrap(),
+        [
+            (Some(3), Said::Pinned { browser: browser() }),
+            (Some(3), Said::Unpinned { browser: browser() }),
+        ],
+        "a pin that changes nothing is not said, and the kill switch says its own closes"
+    );
+}
+
+#[test]
+fn a_runners_refusal_for_its_engines_sandbox_names_that_runner_to_the_chat_and_on_the_notice() {
+    // #2990: the refusal the desktop relays from pool `relayed`'s runner is that runner's.
+    let browsers = ChatBrowsers::default();
+    let hosted = Arc::new(Hosted::default());
+    let driver: Arc<dyn Driver> = hosted.clone();
+    *hosted.refuses.lock().unwrap() = Some(NotStarted::NoSandbox);
+    let on_the_runner = |browse: &BrowseAsk| {
+        browsers.answer(
+            Some(&driver),
+            Path::new("/p"),
+            Some("relayed"),
+            browse,
+            &|| reach(),
+            false,
+            &AsPersona::default,
+            &logins,
+            1000,
+        )
+    };
+    on_the_runner(&ask(3, click()));
+    browsers.allow(3, false);
+
+    let (answer, _) = on_the_runner(&ask(3, click()));
+
+    let told = refusal(answer);
+    assert_eq!(told, crate::enginesandbox::no_browser_on("relayed"));
+    assert!(
+        told.contains("not available on the runner of pool relayed"),
+        "{told}"
+    );
+    let runners = |pool: &str| {
+        crate::enginesandbox::notice()
+            .expect("the Notices read")
+            .into_iter()
+            .filter(|one| {
+                one.machine == crate::enginesandbox::EngineMachine::Runner { pool: pool.into() }
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        runners("relayed"),
+        [crate::enginesandbox::shown_on_runner("relayed")]
+    );
+
+    // The runner's engine makes its sandbox again: its Notice no longer holds.
+    *hosted.refuses.lock().unwrap() = None;
+    let (answer, _) = on_the_runner(&ask(3, click()));
+    assert!(matches!(answer, Answer::Browsed { .. }), "{answer:?}");
+    assert!(runners("relayed").is_empty());
+}
+
 mod taken_back;

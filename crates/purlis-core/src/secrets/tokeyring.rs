@@ -18,6 +18,7 @@ use serde_json::Map;
 
 use super::registry::{self, Vault};
 use super::{Ctx, VaultError, keyring, plain_file};
+use crate::tui::Markup;
 
 /// The provider a plain-file vault is registered with.
 pub const PLAIN_FILE: &str = "plain-file";
@@ -257,29 +258,33 @@ fn stopped(
             false,
         )
         .is_ok();
-    let mut said = format!("vault '{name}' was not moved: {}.", why.message);
+    let mut said = Markup::from(format!("vault '{name}' was not moved: "))
+        .then(why.message.clone())
+        .then(Markup::from("."));
     if registered {
-        said.push_str(" It is still a plain file, and its file still holds its values.");
+        said = said.then(Markup::from(
+            " It is still a plain file, and its file still holds its values.",
+        ));
     } else {
-        said.push_str(&format!(
+        said = said.then(Markup::from(format!(
             " purlis could not register it as a plain file again: its file is still there, \
              and `purlis vault add {name} --provider plain-file --force` with its file points \
              at it again."
-        ));
+        )));
     }
     if !left.is_empty() {
-        said.push_str(&format!(
+        said = said.then(Markup::from(format!(
             " purlis could not take back {} it wrote to the keychain under {}: they stay \
              there, listed in {}.",
             left.join(", "),
             service.unwrap_or("?"),
             super::short_path(&ctx.root, &keyring::index_path(ctx, held))
-        ));
+        )));
     } else if index_left {
-        said.push_str(&format!(
+        said = said.then(Markup::from(format!(
             " Its unused keychain index {} could not be removed: remove it before moving again.",
             super::short_path(&ctx.root, &keyring::index_path(ctx, held))
-        ));
+        )));
     }
     VaultError::new(said)
 }

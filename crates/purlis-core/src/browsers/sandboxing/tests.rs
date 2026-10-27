@@ -101,6 +101,22 @@ fn the_command_writes_the_profile_and_loads_it_and_runs_nothing_else() {
 }
 
 #[test]
+fn the_command_for_another_machine_installs_the_shipped_profile_where_the_deb_does() {
+    let command = install_shipped_command();
+    assert!(
+        command.ends_with(&format!(
+            "| sudo tee {PROFILE} >/dev/null && sudo apparmor_parser -r {PROFILE}"
+        )),
+        "{command}"
+    );
+    let lines = shell_words(command.split(" | ").next().unwrap());
+    assert_eq!(
+        lines[1..].join("\n").trim_start_matches("%s\\n\n"),
+        SHIPPED.trim_end()
+    );
+}
+
+#[test]
 fn what_apparmor_reads_as_a_pattern_in_the_data_folder_is_written_as_itself() {
     let data = engines("/srv/{a,b} [x]?*^@{HOME}/purlis");
     let profile = profile_for(&data).expect("a profile");

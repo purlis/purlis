@@ -329,11 +329,40 @@ pub fn origin_of(address: &str) -> Option<String> {
     let plain = host
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b"-._:[]".contains(&b));
-    if host.is_empty() || !plain || host.starts_with(':') {
+    if host.is_empty() || !plain || host.starts_with(':') || !one_host_and_a_port(host) {
         return None;
     }
     let origin = format!("{scheme}://{}", host.to_ascii_lowercase());
     (origin.len() <= MOST_ORIGIN_BYTES).then_some(origin)
+}
+
+/// Whether `host` is one name, or one bracketed address, and at most a port after it: a port
+/// of digits, at most 65535 (#2842). Nothing else may follow a host in an origin.
+fn one_host_and_a_port(host: &str) -> bool {
+    let (name, port) = match host.strip_prefix('[') {
+        Some(bracketed) => {
+            let Some((address, after)) = bracketed.split_once(']') else {
+                return false;
+            };
+            if address.is_empty() || address.contains(['[', ']']) {
+                return false;
+            }
+            match after {
+                "" => return true,
+                port => (address, port.strip_prefix(':').unwrap_or("x")),
+            }
+        }
+        None => match host.split_once(':') {
+            Some((name, port)) => (name, port),
+            None => (host, "0"),
+        },
+    };
+    !name.contains(['[', ']'])
+        && (host.starts_with('[') || !name.contains(':'))
+        && !port.is_empty()
+        && port.len() <= 5
+        && port.bytes().all(|b| b.is_ascii_digit())
+        && port.parse::<u32>().is_ok_and(|port| port <= 65_535)
 }
 
 /// The longest origin [`origin_of`] answers (1.35): a whole DNS name and a port fit in it, so

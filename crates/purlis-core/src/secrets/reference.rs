@@ -26,6 +26,7 @@ use super::registry::Vault;
 use super::run::{self, RunError};
 use super::{Ctx, VaultError};
 use crate::counts::counted;
+use crate::tui::Markup;
 
 /// How long one reference may take to resolve — `reference.RESOLVE_TIMEOUT`.
 pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -105,6 +106,9 @@ pub fn scheme_of(value: &Value) -> Option<&'static str> {
     let scheme = urlsplit(text).scheme;
     SCHEMES.iter().copied().find(|s| *s == scheme)
 }
+
+/// The last line of a resolver's failure: why nothing it printed is shown.
+const WITHHELD: &str = "  (Resolver output withheld — it can contain the secret.)";
 
 /// A resolver's argv and the CLI it runs, or why the URI is malformed.
 pub fn argv(uri: &str, scheme: &str) -> Result<(Vec<String>, &'static str), VaultError> {
@@ -255,13 +259,19 @@ pub fn get(ctx: &Ctx, vault: &Vault, key: &str) -> Result<String, VaultError> {
     let ran = match run::run(&ctx.env, &argv, None, &overlay, Some(RESOLVE_TIMEOUT)) {
         Ok(ran) => ran,
         Err(RunError::Timeout) => {
-            return Err(VaultError::new(format!(
-                "resolving '{key}' via {cli} did not finish within {}s and was stopped{identity}.\n  \
-                 Almost always this is {cli} waiting on an authentication prompt that an \
-                 unattended run has nowhere to display — re-authenticate in a terminal ({cli} \
-                 sign-in), then retry.\n  (Resolver output withheld — it can contain the secret.)",
-                RESOLVE_TIMEOUT.as_secs()
-            )));
+            return Err(VaultError::new(Markup::lines([
+                Markup::from(format!(
+                    "resolving '{key}' via {cli} did not finish within {}s and was \
+                     stopped{identity}.",
+                    RESOLVE_TIMEOUT.as_secs()
+                )),
+                Markup::from(format!(
+                    "  Almost always this is {cli} waiting on an authentication prompt that an \
+                     unattended run has nowhere to display — re-authenticate in a terminal \
+                     ({cli} sign-in), then retry."
+                )),
+                Markup::from(WITHHELD),
+            ])));
         }
         Err(RunError::Interrupted(_)) => return Err(VaultError::interrupted()),
         Err(RunError::Spawn(e)) => {
@@ -271,17 +281,28 @@ pub fn get(ctx: &Ctx, vault: &Vault, key: &str) -> Result<String, VaultError> {
         }
     };
     if ran.code != 0 {
-        return Err(VaultError::new(format!(
-            "resolving '{key}' via {cli} failed (exit {}){identity}.\n  Causes, roughly \
-             in order of how often they are the real one:\n    - the item or field behind the \
-             reference was renamed, moved or deleted (the vault stays healthy — `purlis vault \
-             verify` tests this)\n    - you are not authenticated to {cli}\n    - the identity \
-             variable for this vault is unset, so {cli} read the vault as somebody else\n    - \
-             purlis version drift: an older build may not map this vault's identity into {cli}'s \
-             environment (`purlis version` shows the pin; `purlis version sync` conforms this \
-             machine)\n  (Resolver output withheld — it can contain the secret.)",
-            ran.code
-        )));
+        return Err(VaultError::new(Markup::lines([
+            Markup::from(format!(
+                "resolving '{key}' via {cli} failed (exit {}){identity}.",
+                ran.code
+            )),
+            Markup::from("  Causes, roughly in order of how often they are the real one:"),
+            Markup::from(
+                "    - the item or field behind the reference was renamed, moved or deleted (the \
+                 vault stays healthy — `purlis vault verify` tests this)",
+            ),
+            Markup::from(format!("    - you are not authenticated to {cli}")),
+            Markup::from(format!(
+                "    - the identity variable for this vault is unset, so {cli} read the vault as \
+                 somebody else"
+            )),
+            Markup::from(format!(
+                "    - purlis version drift: an older build may not map this vault's identity \
+                 into {cli}'s environment (`purlis version` shows the pin; `purlis version sync` \
+                 conforms this machine)"
+            )),
+            Markup::from(WITHHELD),
+        ])));
     }
     let value = ran.stdout;
     Ok(value.strip_suffix('\n').map(str::to_owned).unwrap_or(value))
@@ -295,16 +316,23 @@ pub fn set(ctx: &Ctx, vault: &Vault, key: &str, value: &str) -> Result<(), Vault
     let Some(scheme) = scheme_of(&as_json) else {
         let mut schemes: Vec<String> = SCHEMES.iter().map(|s| format!("{s}://")).collect();
         schemes.sort();
-        return Err(VaultError::new(format!(
-            "'{key}': a reference vault stores a URI, not a value — expected one of {}.\n  A \
-             reference vault POINTS AT items somebody else owns, which is why it declines to \
-             create one. To have purlis own the item — creating it and storing the value, with \
-             the value on stdin and never in argv:\n      purlis vault add <name> --provider \
-             1password --op-vault <VAULT>\n      purlis secret set <name> {key} --from-file \
-             <path>\n  To keep the value on this machine instead: --provider keyring.\n  To \
-             register an item you created elsewhere: pass its URI here.",
-            schemes.join(", ")
-        )));
+        return Err(VaultError::new(Markup::lines([
+            Markup::from(format!(
+                "'{key}': a reference vault stores a URI, not a value — expected one of {}.",
+                schemes.join(", ")
+            )),
+            Markup::from(
+                "  A reference vault POINTS AT items somebody else owns, which is why it declines \
+                 to create one. To have purlis own the item — creating it and storing the value, \
+                 with the value on stdin and never in argv:",
+            ),
+            Markup::from("      purlis vault add <name> --provider 1password --op-vault <VAULT>"),
+            Markup::from(format!(
+                "      purlis secret set <name> {key} --from-file <path>"
+            )),
+            Markup::from("  To keep the value on this machine instead: --provider keyring."),
+            Markup::from("  To register an item you created elsewhere: pass its URI here."),
+        ])));
     };
     if scheme != "browser" {
         argv(&value, scheme)?;
@@ -360,7 +388,7 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
     };
     // Gated before the existence test, which follows links (#1321).
     if let Some(refused) = plain_file::linked_on_the_way(ctx, &p) {
-        return (false, refused.message);
+        return (false, refused.message.to_string());
     }
     let note = super::loose_dir_note(&ctx.root, &plain_file::loose_dirs(ctx, vault));
     let line = |text: String| {
@@ -374,7 +402,7 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
     };
     if !p.exists() {
         if let Some(gone) = plain_file::gone(ctx, vault, &p) {
-            return (false, gone.message);
+            return (false, gone.message.to_string());
         }
         return (
             true,
@@ -386,7 +414,7 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
     }
     let data = match plain_file::load(ctx, vault, "reference") {
         Ok(d) => d,
-        Err(e) => return (false, line(e.message)),
+        Err(e) => return (false, line(e.message.to_string())),
     };
     if data.is_empty() {
         return (true, line("no references yet".into()));
