@@ -489,6 +489,9 @@ describe("a Notice in a pane", () => {
   let wereAlreadyOpen: string[] = [];
   /** The chats running when the file began, so only the ones it started are ended again. */
   let chatsBefore: Running = {};
+  /** How tall the result standing at the top of the content was, Details open (#3344); 0 for
+   *  none. */
+  let standingResult = 0;
   let was = { width: 1280, height: 800 };
 
   before(async () => {
@@ -499,6 +502,25 @@ describe("a Notice in a pane", () => {
     await untilShows(0, READY);
     await pressAndStart("Split right");
     await untilShows(1, READY);
+    // What an earlier action answered stands at the top of the content until it is closed
+    // (#3344), and takes the panes' height with it: measured with its Details open, its tallest,
+    // for the case that squeezes a pane with it, then closed, as a person reading a pane would,
+    // so each other case measures the pane the window gives.
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>('.window-work > .action-result [data-way="disclosure"]')
+        ?.click();
+    });
+    await browser.pause(250);
+    standingResult = await browser.execute(
+      () => document.querySelector<HTMLElement>(".window-work > .action-result")?.offsetHeight ?? 0,
+    );
+    await browser.execute(() => {
+      for (const close of document.querySelectorAll<HTMLElement>(
+        '.window-work > .action-result button[aria-label="Dismiss"]',
+      ))
+        close.click();
+    });
   });
 
   afterEach(async () => {
@@ -943,6 +965,56 @@ describe("a Notice in a pane", () => {
     expect((long.under as Box).right).toBeLessThanOrEqual((long.box as Box).right + 1);
     for (const neighbour of seen.neighbours)
       expect(overlap(long.box as Box, neighbour as Box)).toBe(false);
+    offTheTerminal(seen);
+  });
+
+  it("keeps each Notice's drawn box inside a pane a standing result squeezes (#3344)", async () => {
+    await windowIs(1600, 1000);
+    // What an action answered stands at the top of the content until it is closed, and takes the
+    // panes' height: one as tall as the real result card this run found standing, Details open,
+    // and never shorter than a card with its Details shut, raised as this file raises its
+    // Notices.
+    const tall = Math.max(standingResult, 120);
+    check("the stand-in is shorter than the real result", tall, "atLeast", standingResult);
+    const stood = await browser.execute((height: number) => {
+      const work = document.querySelector(".window-work");
+      if (!work) return false;
+      const result = document.createElement("div");
+      result.dataset.raised = "pane-notices.e2e";
+      result.style.blockSize = `${height}px`;
+      result.style.flex = "none";
+      work.prepend(result);
+      return true;
+    }, tall);
+    expect(stood).toBe(true);
+    expect(await raise(0, { sentence: "Restarting this chat…", ways: ["Dismiss"] })).toBe(true);
+    expect(await raise(0, { sentence: SENTENCE, ways: WAYS, opened: BRIEF })).toBe(true);
+
+    const seen = await measured(0);
+    const [frame, stack] = [seen.frame as Box, seen.stack as Box];
+    // The band keeps to its share of the pane, and scrolls what it cannot show.
+    check(
+      "the band runs past its share of the pane",
+      stack.height,
+      "atMost",
+      frame.height * 0.46 + 1,
+    );
+    // What each Notice draws, its box clipped to the stack, stays inside the pane and off the
+    // terminal, however short the pane is.
+    for (const [index, notice] of seen.notices.entries()) {
+      if (!notice.shown) continue;
+      const box = notice.box as Box;
+      const top = Math.max(box.top, stack.top);
+      const bottom = Math.min(box.bottom, stack.bottom);
+      if (bottom - top <= 0) continue;
+      const left = Math.max(box.left, stack.left);
+      const right = Math.min(box.right, stack.right);
+      inside(
+        { left, right, top, bottom, width: right - left, height: bottom - top },
+        frame,
+        `Notice ${index + 1}, as drawn`,
+      );
+    }
     offTheTerminal(seen);
   });
 

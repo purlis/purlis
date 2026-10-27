@@ -5,8 +5,11 @@ import { LiveMark } from "./LiveDialog";
 import { NamedNotReadWords, namedNotRead, namedNotReadSaid } from "./ExplorerRefused";
 import { Notice } from "./Notice";
 import { useEffect, useContext, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
+  ArrowUpRight,
   ChevronRight,
+  ChevronsDownUp,
   Files,
   FileSymlink,
   FileX,
@@ -17,7 +20,7 @@ import {
   LoaderCircle,
   TriangleAlert,
 } from "lucide-react";
-import type { FolderEntry, OpenChat, Piece, PlaneId } from "./bindings";
+import type { FileScope, FolderEntry, FoundFile, OpenChat, Piece, PlaneId } from "./bindings";
 import { FileIcon } from "./FileIcon";
 import { useFileIcons } from "./projectTheme";
 import { iconFor, type IconTheme } from "./theme/icons";
@@ -50,14 +53,24 @@ import { carriedReference, type Referenced } from "./references";
 import { pickable, useFilePicks, type Pickable } from "./filePicks";
 import { useLastRead } from "./editor/lastRead";
 import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
-import { Button, ToggleButton } from "./ui/button/Button";
+import { Button, IconButton, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
-import { PanelSectionTitle } from "./ui/panel/Panel";
+import {
+  PanelSection as ViewSection,
+  PanelSectionHead,
+  PanelSectionTitle,
+  PanelTitle,
+} from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { HeadActions } from "./viewHead";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Tree, TreeLine, TreePending, TreeRow, type Key, type PressEvent } from "./ui/tree/Tree";
-import type { RowMenu } from "./ui/list/List";
+import { List, ListRow, ListRowSection, type RowMenu } from "./ui/list/List";
+import { RowBelow, RowLabel, RowLead } from "./ui/list/Row";
+import { ScopeSwitch } from "./ScopeSwitch";
+import { hitSaid, placeOf, useFileFind, type FilesFoundNow } from "./fileFind";
+import { searchKeySaid } from "./searchKey";
+import { onAMac } from "./tabKeys";
 
 /**
  * The left region: the repo and worktree **explorer** (ADR 0038).
@@ -196,6 +209,15 @@ import type { RowMenu } from "./ui/list/List";
  * picking a repo or branch in Repos is what Files lists, exactly as when they were one. Each
  * keeps the rows of its own trees: Repos the clones folded, Explorer the folders opened.
  *
+ * **The Explorer view opens straight to the files** (#3343, the sidebar-views prototype's Q2 A,
+ * "Repos as folders"). *Files* is no fold: the view's title is the workspace (its region's head,
+ * #3330) and the tree is the view, one scroll on the panel family's view frame (#3340). One repo
+ * is its tree, open at once, with the repo and its branch beside the title; several are a
+ * collapsed row each (its name, how many files it changed, its branch) that opens in place. The
+ * filter stays in the view's top: it finds files by name (`find_files`, ⌘P's) in the selected
+ * repo or in all of them, Search's *Branch* and *Workspace*, and *Search contents* opens Search
+ * on the same scope.
+ *
  * **What a chat is touching right now is marked live** (FM-6, #1109; V86 F6): a file a chat's
  * tool reads or edits, and every folder above it up to the branch's *Files* row, carry a dot
  * naming the chat on hover, which fades a few seconds after the chat goes quiet on it
@@ -221,6 +243,8 @@ export function Explorer({
   onAddToChat,
   onGoToWorkspace,
   reveal,
+  onSearchContents,
+  onSearchKey,
 }: {
   /** The project, for reading a branch's folders. Without one no folder is read. */
   plane?: PlaneId;
@@ -270,6 +294,18 @@ export function Explorer({
    * A folder of the other kind waits until Explorer is where it is.
    */
   reveal?: { repo: string; folder: string; asked: number };
+  /**
+   * **Search contents** (#3343): the Search view, opened on the filter's scope — `branch`, the
+   * selected repo's own folder or the picked branch (`at`), or `workspace`, all its repos — with
+   * what the filter holds. No link without it.
+   */
+  onSearchContents?: (kind: "branch" | "workspace", at: Place, query: string) => void;
+  /**
+   * **⌘⇧F does what the Search contents link says** (#3343): while the keyboard is in the files
+   * view (`inside`), the window's key runs `run`, Search on the filter's scope with its words,
+   * instead of Search on the window's focus. Handed over after each render, and taken back.
+   */
+  onSearchKey?: (here: SearchKeyHere | undefined) => void;
 }) {
   const has = (section: SectionId) => PART_SECTIONS[part].includes(section);
   /** Whether this draws the plane root's files (issue 1916): the strip is on the plane root,
@@ -311,15 +347,28 @@ export function Explorer({
   );
   // The cockpit is Files' shape: the Repos view draws its tree whatever Explorer is focused on.
   const cockpit = has("files") ? cockpitOf(workspace, state, focus) : undefined;
-  /** Where the *Files* section is of: the picked branch or repo, or nothing for the workspace
-   *  itself, whose repos' own folders it lists. */
+  /** The workspace's repos: one is its tree, open at once; several a row each (#3343). */
+  const repos = workspace === undefined ? [] : (state.panels?.repos ?? []);
+  /** Where the *Files* tree is of: the picked branch or repo, or the workspace's one repo; or
+   *  nothing for a workspace of several, whose repos' own folders it lists. */
   const filesTop: BranchFolderRef | undefined = atRoot
     ? { repo: PLANE_ROOT.repo, piece: PLANE_ROOT.piece, folder: "" }
     : cockpit !== undefined
       ? { ...cockpit.ref, folder: "" }
-      : spot === undefined
-        ? undefined
-        : { repo: spot.repo, piece: spot.piece ?? null, folder: "" };
+      : spot !== undefined
+        ? { repo: spot.repo, piece: spot.piece ?? null, folder: "" }
+        : repos.length === 1
+          ? { repo: repos[0], piece: null, folder: "" }
+          : undefined;
+  /** The repo row pressed last, which the filter's *Selected* scope is of (#3343). */
+  const [chosenRepo, setChosenRepo] = useState<string>();
+  /** Whether the filter finds in all the workspace's repos rather than the selected one. */
+  const [allRepos, setAllRepos] = useState(false);
+  /** Whether the filter finds files by name (#3343), as it does on a workspace's own Files; on a
+   *  branch or repo picked in Repos, in the cockpit and at the plane root it narrows the tree's
+   *  rows, with *Changed only* and *Show ignored files* beside it. */
+  const finds =
+    has("files") && workspace !== undefined && cockpit === undefined && spot === undefined;
   const topFold =
     filesTop === undefined || filesWorkspace === undefined
       ? undefined
@@ -344,6 +393,11 @@ export function Explorer({
   // The cockpit's branch is read whether or not its files are open: its header counts them.
   if (cockpit !== undefined && !branches.some((one) => branchKey(one) === branchKey(cockpit.ref)))
     branches.push(cockpit.ref);
+  // A closed repo's row says how many files it changed (#3343): each repo's is read, open or not.
+  if (has("files") && filesTop === undefined)
+    for (const repo of repos)
+      if (!branches.some((one) => one.repo === repo && one.piece === null))
+        branches.push({ repo, piece: null });
   const statuses = useBranchStatus(plane, workspace, branches);
   const cockpitStatus = cockpit === undefined ? undefined : statuses.get(branchKey(cockpit.ref));
   const apart = useAheadBehind(plane, workspace, cockpit?.ref, cockpitStatus);
@@ -353,7 +407,12 @@ export function Explorer({
     () =>
       new Map(
         [...statuses].flatMap(([key, read]) =>
-          read.status === undefined ? [] : [[key, indexed(read.status)] as const],
+          // A status with nothing in it indexes nothing. The core always answers one; the check is
+          // for a test's mocked core that answers every command it was not told about with `null`
+          // (`theme/chrome.test.tsx`), which the closed repo rows' reads (#3343) now reach.
+          read.status === undefined || read.status === null
+            ? []
+            : [[key, indexed(read.status)] as const],
         ),
       ),
     [statuses],
@@ -385,14 +444,36 @@ export function Explorer({
     statuses,
     indexes,
     changedOnly,
-    filter: filter.trim().toLocaleLowerCase(),
+    // Where the filter finds by name, the tree is not narrowed: the files found are drawn instead.
+    filter: finds ? "" : filter.trim().toLocaleLowerCase(),
     levels: new Map(),
     touching,
   };
   const closed = useClosedSections(plane);
   /** Whether a section is folded on its heading: never the Repos view's, which has none, though
-   *  a file from before #1737 says *Repos and branches* was folded. */
-  const folds = (section: SectionId) => part !== "repos" && closed.has(section);
+   *  a file from before #1737 says *Repos and branches* was folded; and never *Files*, which is
+   *  no fold since #3343, though a file from before says it was. */
+  const folds = (section: SectionId) =>
+    section === "repos" && part !== "repos" && closed.has(section);
+  /** The branch the filter's *Selected* scope is of (#3343): the tree's own, else the repo row
+   *  pressed last, else the first repo. */
+  const selected: { repo: string; piece: string | null } | undefined =
+    filesTop !== undefined && !atRoot
+      ? { repo: filesTop.repo, piece: filesTop.piece }
+      : chosenRepo !== undefined && repos.includes(chosenRepo)
+        ? { repo: chosenRepo, piece: null }
+        : repos.length > 0
+          ? { repo: repos[0], piece: null }
+          : undefined;
+  /** Whether the filter finds in all the repos: only offered where there are several. */
+  const wide = repos.length > 1 && allRepos;
+  const findIn: FileScope | undefined =
+    plane === undefined || workspace === undefined || selected === undefined
+      ? undefined
+      : wide
+        ? { kind: "workspace", plane, workspace, near: { workspace, ...selected } }
+        : { kind: "branch", plane, workspace, ...selected };
+  const found = useFileFind(finds && filter.trim() !== "", findIn, filter);
   /** The rows of each section's tree, and of the cockpit's: ids never repeat across them, so
    *  one lookup answers for every row. A folded section draws none of its rows. */
   const shownIn = (rows: Row[], section: SectionId) =>
@@ -423,6 +504,14 @@ export function Explorer({
   /** Opens or closes a clone or a branch's folder: the one fold state of each, whether a click
    *  or a key asked. A clone is open until folded; a folder is closed until opened. */
   const fold = (key: string, open: boolean) => {
+    // A repo of several opened or closed, by a press, a twist or an arrow, is the one the
+    // filter's *Selected* scope is of (#3343), as every open selects in the prototype.
+    if (filesTop === undefined && workspace !== undefined) {
+      const repo = repos.find(
+        (one) => key === fileFold(workspace, { repo: one, piece: null, folder: "" }),
+      );
+      if (repo !== undefined) setChosenRepo(repo);
+    }
     if (key === topFold)
       setShut((was) => {
         if (open !== was.has(key)) return was;
@@ -577,6 +666,34 @@ export function Explorer({
     return () => drawn.disconnect();
   });
 
+  // ⌘⇧F in the files view searches the filter's scope with its words (#3343): what the link
+  // under the filter does, kept current for the window's key.
+  useEffect(() => {
+    if (onSearchKey === undefined) return;
+    const run =
+      onSearchContents !== undefined &&
+      has("files") &&
+      cockpit === undefined &&
+      selected !== undefined &&
+      workspace !== undefined
+        ? () =>
+            onSearchContents(
+              wide ? "workspace" : "branch",
+              { workspace, ...selected },
+              filter.trim(),
+            )
+        : undefined;
+    onSearchKey(
+      run === undefined
+        ? undefined
+        : {
+            inside: navRef.current?.querySelector<HTMLElement>('[data-section="files"]') ?? null,
+            run,
+          },
+    );
+    return () => onSearchKey(undefined);
+  });
+
   /** Steps back out of the cockpit to the whole workspace. */
   const leave = () => onFocus?.(undefined);
 
@@ -602,23 +719,25 @@ export function Explorer({
       // would otherwise lose it.
       <nav
         ref={navRef}
-        className="explorer ui-text-body"
+        className={has("files") ? "explorer explorer-view ui-text-body" : "explorer ui-text-body"}
         aria-label={named.label}
         data-testid={named.testid}
       >
         {/* The plane root is not a workspace: it has no repos. Its files are the whole
-            project's (issue 1916), and the heading says where the strip is. */}
+            project's (issue 1916), and the view's title says where the strip is (#3343). */}
         {has("files") ? (
-          <Section
-            id="files"
-            title="Files"
-            of={OUTSIDE_TITLE}
-            closed={closed.has("files")}
-            project={plane}
+          <ViewSection
+            view
+            data-section="files"
+            top={
+              <>
+                <ViewHeadLine title={OUTSIDE_TITLE} />
+                {filesTop !== undefined && <FilesFilter filter={filter} onFilter={setFilter} />}
+              </>
+            }
           >
             {filesTop !== undefined && rootLevel !== undefined && (
               <>
-                <FilesFilter filter={filter} onFilter={setFilter} />
                 <Tree
                   fit="content"
                   aria-label={`Files of ${OUTSIDE_TITLE}`}
@@ -645,7 +764,7 @@ export function Explorer({
                 </div>
               </>
             )}
-          </Section>
+          </ViewSection>
         ) : (
           <p className="empty ui-text-secondary">
             No workspace selected, so there are no repos to list.
@@ -695,6 +814,31 @@ export function Explorer({
       data-testid={testid}
     />
   );
+  /** **A repo of several, as a folder** (#3343): its own folder's row, closed until opened, with
+   *  how many files it changed and its branch; a press opens it in place and selects it as the
+   *  filter's *Selected* scope. */
+  const repoRowOf = (repo: string) => {
+    const top: BranchFolderRef = { repo, piece: null, folder: "" };
+    const branch = repoBranch(state, repo);
+    return (
+      <FilesRow
+        key={repo}
+        branch={top}
+        name={repo}
+        repo
+        // The repo the filter's *Selected* scope is of, drawn so (the scope switch names it):
+        // never `aria-current`, which is where the next chat starts.
+        data-in-scope={selected?.repo === repo && selected.piece === null ? "" : undefined}
+        trail={
+          branch === undefined ? undefined : (
+            <span className="repo-branch ui-text-meta">{branch}</span>
+          )
+        }
+        at={{ ...at, place: { workspace, repo, piece: null } }}
+        data-testid={`files-${repo}`}
+      />
+    );
+  };
   const filterBox = open.length > 0 && (
     // Only while some branch's files are open: it narrows the file rows and nothing else.
     <FilesFilter filter={filter} onFilter={setFilter} />
@@ -807,8 +951,8 @@ export function Explorer({
         ? spot.repo
         : pieceName(pieces[spot.repo], spot.repo, spot.piece);
   const topLevel = filesTop === undefined ? undefined : levelOf(files, filesTop);
-  // What the picked branch changed in all, and whether a chat is in it now: the marks its own
-  // folder's row carried, on the heading that stands for that folder.
+  // What the one tree's branch changed in all, and whether a chat is in it now: the marks its
+  // own folder's row would carry, beside the title that stands for that folder.
   const topKey = filesTop === undefined ? undefined : branchKey(filesTop);
   const topMarks = topKey !== undefined && (
     <>
@@ -817,11 +961,37 @@ export function Explorer({
       <ChangeBadge marked={indexes.get(topKey)?.marks.get("")} folder />
     </>
   );
+  /** What stands beside the view's title (#3343): the one tree's repo and its branch. */
+  const beside =
+    filesTop === undefined
+      ? undefined
+      : [
+          filesTop.repo,
+          filesTop.piece === null
+            ? repoBranch(state, filesTop.repo)
+            : branchName(pieces[filesTop.repo], filesTop.piece),
+        ]
+          .filter((part) => part !== undefined && part !== "")
+          .join(" · ");
+  const selectedName =
+    selected === undefined
+      ? ""
+      : selected.piece === null
+        ? selected.repo
+        : branchName(pieces[selected.repo], selected.piece);
+  const finding = finds && filter.trim() !== "";
+  /** Collapse all (#3343): every folder of this workspace's files closed. */
+  const collapseAll = () =>
+    setExpanded((was) => {
+      const mine = `${FILE_FOLD}${workspace}\u0000`;
+      const now = new Set([...was].filter((key) => !key.startsWith(mine)));
+      return now.size === was.size ? was : now;
+    });
 
   return (
     <nav
       ref={navRef}
-      className="explorer ui-text-body"
+      className={has("files") ? "explorer explorer-view ui-text-body" : "explorer ui-text-body"}
       aria-label={named.label}
       data-testid={named.testid}
     >
@@ -845,42 +1015,134 @@ export function Explorer({
         />
       )}
 
-      {/* **Files, of where the next chat starts** (#1677): what a branch's row held under it,
-          moved to a section of its own so a branch is one row and its files one tree. The
-          picked branch's or repo's files are the tree's first level; with the workspace itself
-          picked, each repo's own folder is a row that opens. */}
+      {/* **Files, of where the next chat starts** (#1677), and since #3343 the view itself: no
+          fold, its title the workspace's, its filter held at the top while the tree scrolls.
+          The picked branch's or the one repo's files are the tree's first level; several repos
+          are a row each, closed, that opens in place. */}
       {has("files") && (
-        <Section
-          id="files"
-          title="Files"
-          of={filesName}
-          marks={topMarks || undefined}
-          closed={closed.has("files")}
-          project={plane}
+        <ViewSection
+          view
+          data-section="files"
+          top={
+            <>
+              <ViewHeadLine
+                title={workspace}
+                beside={beside}
+                marks={topMarks}
+                actions={
+                  <IconButton
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Collapse all folders"
+                    tooltip="Collapse all folders"
+                    onPress={collapseAll}
+                    icon={<ChevronsDownUp className="node-icon" aria-hidden="true" />}
+                  />
+                }
+              />
+              {repos.length > 0 && (
+                <FilesFilter
+                  filter={filter}
+                  onFilter={setFilter}
+                  onArrowDown={
+                    finding
+                      ? () =>
+                          navRef.current
+                            ?.querySelector<HTMLElement>('.found-files [role="row"]')
+                            ?.focus()
+                      : undefined
+                  }
+                  placeholder={
+                    repos.length === 1 || !finds
+                      ? "Filter files"
+                      : wide
+                        ? "Filter all repos"
+                        : `Filter ${selectedName}`
+                  }
+                />
+              )}
+              {finds && repos.length > 1 && (
+                <ScopeSwitch
+                  label="Filter the files of"
+                  scopes={[
+                    { scope: "branch", says: `Selected: ${selectedName}` },
+                    { scope: "workspace", says: "All repos" },
+                  ]}
+                  scope={wide ? "workspace" : "branch"}
+                  onPick={(to) => setAllRepos(to === "workspace")}
+                />
+              )}
+              {repos.length === 1 && beside !== undefined && (
+                <p className="files-scope-note ui-text-meta">
+                  <span className="files-scope-chip">
+                    <FolderGit2 className="node-icon" aria-hidden="true" />
+                    {beside}
+                  </span>{" "}
+                  One repo, so the filter covers all of it.
+                </p>
+              )}
+              {onSearchContents !== undefined && selected !== undefined && (
+                <p className="files-search-link ui-text-meta">
+                  Names only.{" "}
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onPress={() =>
+                      onSearchContents(
+                        wide ? "workspace" : "branch",
+                        { workspace, ...selected },
+                        filter.trim(),
+                      )
+                    }
+                  >
+                    {`Search contents in ${wide ? "Workspace" : "Branch"}`}
+                    <ArrowUpRight className="node-icon" aria-hidden="true" />
+                  </Button>{" "}
+                  <kbd className="files-search-key" aria-hidden="true">
+                    {searchKeySaid(onAMac())}
+                  </kbd>
+                </p>
+              )}
+            </>
+          }
         >
-          {filterBox}
-          <Tree
-            aria-label={`Files of ${filesName}`}
-            data-testid="files"
-            size="sm"
-            fit="content"
-            {...fileTree}
-          >
-            {filesTop === undefined || topLevel === undefined
-              ? clones.map((repo) => filesOf(repo, null, `files-${repo}`, repo))
-              : [
-                  <TopItems
-                    key="top"
-                    top={filesTop}
-                    level={topLevel}
-                    reading={`Reading the files of ${filesName}…`}
-                    at={at}
-                  />,
-                ]}
-          </Tree>
-          {pickedBar}
-          {toggles}
-        </Section>
+          {finding ? (
+            <FoundFiles
+              found={found}
+              query={filter.trim()}
+              grouped={wide}
+              pieces={pieces}
+              icons={icons}
+              onOpen={(hit) => onOpenFile?.(placeOf(hit), hit.path)}
+            />
+          ) : (
+            <>
+              <Tree
+                aria-label={`Files of ${filesName}`}
+                data-testid="files"
+                size="sm"
+                fit="content"
+                {...fileTree}
+              >
+                {filesTop === undefined || topLevel === undefined
+                  ? clones.map(repoRowOf)
+                  : [
+                      <TopItems
+                        // Keyed by its folder: another workspace's one repo is other rows, whose
+                        // ids the tree family never changes in place.
+                        key={`${workspace}\u0000${folderKey(filesTop)}`}
+                        top={filesTop}
+                        level={topLevel}
+                        reading={`Reading the files of ${filesName}…`}
+                        at={at}
+                      />,
+                    ]}
+              </Tree>
+              {pickedBar}
+              {toggles}
+            </>
+          )}
+        </ViewSection>
       )}
     </nav>
   );
@@ -892,6 +1154,9 @@ export function Explorer({
  * its `repos` view, *Repos and branches*, in the left half of the Panel.
  */
 export type ExplorerPart = "whole" | "explorer" | "repos";
+
+/** What ⌘⇧F runs while the keyboard is `inside` Explorer's files view (#3343). */
+export type SearchKeyHere = { inside: HTMLElement | null; run: () => void };
 
 const PART_SECTIONS: Record<ExplorerPart, readonly SectionId[]> = {
   whole: ["repos", "files"],
@@ -905,9 +1170,21 @@ const PART_NAMES: Record<ExplorerPart, { label: string; testid: string }> = {
   repos: { label: "Repos", testid: "repos-view" },
 };
 
-/** The *Filter files* box: it narrows the file rows drawn to names holding what is typed, and
- *  Esc clears it. */
-function FilesFilter({ filter, onFilter }: { filter: string; onFilter: (to: string) => void }) {
+/** The *Filter files* box: it finds files by name in a workspace's Files (#3343), else narrows
+ *  the file rows drawn to names holding what is typed; Esc clears it. */
+function FilesFilter({
+  filter,
+  onFilter,
+  onArrowDown,
+  placeholder = "Filter files",
+}: {
+  filter: string;
+  onFilter: (to: string) => void;
+  /** ↓ from the box: into the files it found (#3343), as the palette's box does. */
+  onArrowDown?: () => void;
+  /** What it finds in, said in the box while it is empty: "Filter svc", "Filter all repos". */
+  placeholder?: string;
+}) {
   return (
     <TextField
       className="files-filter"
@@ -916,9 +1193,14 @@ function FilesFilter({ filter, onFilter }: { filter: string; onFilter: (to: stri
       keepsFocus="files-filter"
       value={filter}
       aria-label="Filter files"
-      placeholder="Filter files"
+      placeholder={placeholder}
       onChange={onFilter}
       onKeyDown={(event) => {
+        if (event.key === "ArrowDown" && onArrowDown !== undefined) {
+          event.preventDefault();
+          onArrowDown();
+          return;
+        }
         if (event.key !== "Escape" || filter === "") return;
         // Taken here: an Esc that cleared the box has done its job, and nothing behind
         // the explorer should act on it too.
@@ -927,6 +1209,149 @@ function FilesFilter({ filter, onFilter }: { filter: string; onFilter: (to: stri
         onFilter("");
       }}
     />
+  );
+}
+
+/**
+ * **The view's heading line** (#3343): its title, what stands beside it, and its actions. In a
+ * region the title is the region's head (#3330), so what stands beside it and the actions go on
+ * that line ({@link HeadActions}); drawn on its own (a story, a test) it is the top's first line.
+ */
+function ViewHeadLine({
+  title,
+  beside,
+  marks,
+  actions,
+}: {
+  title: string;
+  beside?: string;
+  /** The marks of what stands beside it: what its branch changed, a chat in it now. */
+  marks?: ReactNode;
+  actions?: ReactNode;
+}) {
+  const head = useContext(HeadActions);
+  const besideIt = beside !== undefined && beside !== "" && (
+    <span className="head-beside ui-text-meta">
+      {beside}
+      {marks}
+    </span>
+  );
+  if (head === null) return null;
+  if (head !== undefined)
+    return createPortal(
+      <>
+        {besideIt}
+        {actions}
+      </>,
+      head,
+    );
+  return (
+    <PanelSectionHead>
+      <PanelTitle>{title}</PanelTitle>
+      {besideIt}
+      {actions}
+    </PanelSectionHead>
+  );
+}
+
+/** A repo's own branch, as the workspace read it; nothing until it has. */
+function repoBranch(state: WorkspaceState, repo: string): string | undefined {
+  return state.repos?.repos.find((one) => one.name === repo)?.branch || undefined;
+}
+
+/** A branch of a repo by its name, or its folder's where it has none (yet). */
+function branchName(pieces: readonly Piece[] | undefined, piece: string): string {
+  const found = pieces?.find((one) => one.piece === piece);
+  return found === undefined ? piece : branchOf(found);
+}
+
+/**
+ * **The files the filter found by name** (#3343): best first, under their repo's name where the
+ * workspace has several, each with the folder it is in under its name, the letters the filter
+ * matched marked. A press opens the file in its tab. What the core could not list is said.
+ */
+function FoundFiles({
+  found,
+  query,
+  grouped,
+  pieces,
+  icons,
+  onOpen,
+}: {
+  found: FilesFoundNow;
+  query: string;
+  grouped: boolean;
+  /** Each repo's branches, so a group of a branch is headed by its name. */
+  pieces?: WorkspaceState["pieces"];
+  icons: IconTheme;
+  onOpen: (hit: FoundFile) => void;
+}) {
+  const refused = found.refused.map((why) => (
+    <p key={why} className="trouble ui-text-secondary" role="alert">
+      {why}
+    </p>
+  ));
+  if (found.files.length === 0)
+    return (
+      <>
+        {refused}
+        {found.looking ? (
+          <Pending>Finding files…</Pending>
+        ) : (
+          <p className="none ui-text-secondary">
+            {`No file names match “${query}”. Search file contents instead.`}
+          </p>
+        )}
+      </>
+    );
+  const groups = new Map<string, FoundFile[]>();
+  for (const hit of found.files) {
+    const at =
+      hit.piece === null ? hit.repo : `${hit.repo} · ${branchName(pieces?.[hit.repo], hit.piece)}`;
+    groups.set(at, [...(groups.get(at) ?? []), hit]);
+  }
+  const rowOf = (hit: FoundFile) => {
+    const said = hitSaid(hit, () => "");
+    const folder = said.marks.folder.map((part) => part.text).join("");
+    return (
+      <ListRow
+        key={`${hit.repo}/${hit.piece ?? ""}:${hit.path}`}
+        id={`${hit.repo}/${hit.piece ?? ""}:${hit.path}`}
+        textValue={said.name}
+        className="found-file"
+        onAction={() => onOpen(hit)}
+      >
+        <RowLead>
+          <FileIcon symbol={iconFor(icons, { name: said.name, folder: false })} />
+        </RowLead>
+        <RowLabel>
+          {said.marks.name.map((part, at) =>
+            part.matched ? (
+              <mark key={at} className="found-match">
+                {part.text}
+              </mark>
+            ) : (
+              <span key={at}>{part.text}</span>
+            ),
+          )}
+        </RowLabel>
+        <RowBelow className="ui-text-meta">{folder === "" ? hit.repo : folder}</RowBelow>
+      </ListRow>
+    );
+  };
+  return (
+    <>
+      {refused}
+      <List aria-label="Files found" size="sm" className="found-files">
+        {grouped
+          ? [...groups].map(([at, hits]) => (
+              <ListRowSection key={at} id={at} title={at} named count={hits.length}>
+                {hits.map(rowOf)}
+              </ListRowSection>
+            ))
+          : found.files.map(rowOf)}
+      </List>
+    </>
   );
 }
 
@@ -1259,8 +1684,6 @@ function cloneItems({
 function Section({
   id,
   title,
-  of,
-  marks,
   closed,
   project,
   bare = false,
@@ -1268,10 +1691,6 @@ function Section({
 }: {
   id: SectionId;
   title: string;
-  /** What the section is of, said quietly after its title. */
-  of?: string;
-  /** The marks of what it is of, after that. */
-  marks?: ReactNode;
   closed: boolean;
   /** The project whose sections these are: a fold is kept for it (B-11). */
   project: string | undefined;
@@ -1312,13 +1731,6 @@ function Section({
         >
           <ChevronRight className="twisty" data-open={!closed || undefined} />
           {title}
-          {of !== undefined && (
-            <>
-              {" "}
-              <span className="section-of ui-text-secondary">{of}</span>
-            </>
-          )}
-          {marks}
         </button>
       </PanelSectionTitle>
       <div id={body} className="explorer-section-body" hidden={closed}>
@@ -1694,10 +2106,13 @@ function FilesRow({
   name = "Files",
   always = false,
   repo = false,
+  trail,
   at,
   ...data
 }: {
   branch: BranchFolderRef;
+  /** At the row's end: a repo's branch (#3343). */
+  trail?: ReactNode;
   /** A repo's own folder, drawn as the repo, in the *Files* section. */
   repo?: boolean;
   /** Its name: *Files* for the branch's own folder in the cockpit, the repo's for a repo's own
@@ -1752,6 +2167,7 @@ function FilesRow({
           {/* A space, so a screen reader says the mark as its own word; flex drops it. */}{" "}
           <TouchMark names={touchedBy} />
           <ChangeBadge marked={marked} folder />
+          {trail}
         </>
       }
     >

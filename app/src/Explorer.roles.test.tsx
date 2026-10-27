@@ -115,28 +115,17 @@ function draw(on: { workspace?: string; part?: ExplorerPart; spot?: Spot } = {})
 }
 
 describe("the Explorer's words, each on its text role", () => {
-  it("heads the Files section with the one section label, and what it is of beside it as data", async () => {
+  it("titles the files with the view's title, and what it is of beside it as data (#3343)", async () => {
     core({ "one:": [entry("src", { kind: "folder" }), entry("README.md")] });
     const drawn = draw({ spot: PICKED });
     await screen.findByRole("row", { name: /README\.md/ });
 
-    const head = drawn.querySelector('[data-section="files"] .explorer-section-head');
-    wears(head, "label", "the Files heading");
-    // The words are the disclosure's, a row of the set: it wears the label itself, or the
-    // row's own colour would draw the title brighter than every other section's.
-    const title = head?.querySelector("button");
-    wears(title, "label", "the Files heading's button");
-
-    const of = head?.querySelector(".section-of");
-    wears(of, "secondary", "what Files is of");
-    // Data, never capitals (T4): the label's capitals and spacing stop at it.
-    const rule = declarations(readFileSync(join(process.cwd(), "src", "App.css"), "utf8")).filter(
-      ({ context }) => context.join(" ").endsWith(".explorer .explorer-section-head .section-of"),
-    );
-    expect(Object.fromEntries(rule.map((one) => [one.property, one.value]))).toMatchObject({
-      "text-transform": "none",
-      "letter-spacing": "normal",
-    });
+    // *Files* is no fold: its view's one title, the body's strong words (#3340), the workspace.
+    const title = drawn.querySelector('[data-section="files"] [data-part="title"]');
+    wears(title, "body", "the files' title", true);
+    expect(title).toHaveTextContent("alpha");
+    const beside = drawn.querySelector('[data-section="files"] .head-beside');
+    wears(beside, "meta", "what the files are of");
   });
 
   it("draws a file's and a folder's name at the body's size, in a tree row's tier", async () => {

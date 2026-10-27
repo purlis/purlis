@@ -3129,8 +3129,9 @@ curation actions is offered.
 
 ### `personas/<name>/persona.md`
 
-- **Format:** Markdown with a minimal, line-based frontmatter block (NOT YAML: no parser,
-  no quote stripping, no nesting, no comments).
+- **Format:** Markdown with a minimal, line-based frontmatter block (NOT YAML: no quote
+  stripping, no nesting, no comments). One parser of that line format reads and writes it
+  (`crates/skills/src/fence.rs`, 2026-10-27; the fence rule is under **Encoding details**).
 - **Status:** stable — hand-edited, committed, and read by the tool gate, the status line,
   hooks and the app. **Not read by a sub-agent generator any more** (#1451): a persona runs
   as its own chat and purlis generates no sub-agent from this file. The keys that only fed
@@ -3160,9 +3161,23 @@ curation actions is offered.
   `charter/render.py:97`, `charter/doctor.py`.
 - **Git:** committed.
 - **Encoding details:**
-  - Frontmatter is parsed only when the file **starts with** `---`; `text.split("---", 2)`
-    must yield ≥3 parts (`charter/persona.py:258`-`:260`). `parts[1]` is the frontmatter,
-    `parts[2]` the body (stripped, `:268`).
+  - **Where the frontmatter is (2026-10-27, #3244, operator ruling F14 on #2762).** Its
+    fences are lines. A line is what Python's `str.splitlines` splits (`\n`, `\r\n` as one,
+    `\r` and the other Unicode breaks), and a line is a **fence** when it is exactly `---` at
+    its start with nothing after it but spaces or tabs. The frontmatter opens only where the
+    file's **first line** is a fence, and ends at the **first later line that is a fence**.
+    The lines between are the frontmatter; everything after the closing fence's line is the
+    body (stripped). A `---` anywhere else is text: inside a value (`role: a --- b`, `role:
+    ---`), indented (`  ---`), or with more on its line (`----`, `--- x`). A value can never
+    be a fence, since a key's line starts with its key. A file whose first line is no fence,
+    or whose opening fence no later line closes, has no frontmatter and is all body; `persona
+    lint` names the unclosed case as an error, as every key then reads as none.
+    - *Before 2026-10-27* the cut was charter's `text.split("---", 2)`: the first `---`
+      anywhere after the opening one ended the frontmatter, so a value holding `---` cut the
+      keys and the body there. A file that relied on that (a closing `---` with more on its
+      line, such as `role: r---`) now reads as unclosed.
+    - The same rule cuts every line-format frontmatter purlis reads: a `SKILL.md`'s `name:`
+      and `description:`, a curation action, a session record.
   - Each frontmatter line: skipped if it has no `:`; `key, _, value = line.partition(":")`;
     both sides `.strip()`ed; empty key skipped (`charter/persona.py:261`-`:267`). Quotes are
     **kept** as part of the value (`charter/persona.py:95`).
@@ -3181,7 +3196,17 @@ curation actions is offered.
     confirmed by running `persona create --extends`). Front door order:
     `name, role, vault, routing, delegate-when` (`charter/commands.py:2597`); purlis's
     `init` writes `name, role, vault, delegate-when`, since `routing` is retired (charter#369).
-  - Body: everything after the closing `---`, stripped.
+  - Body: everything after the closing `---` line, stripped.
+  - **Writing (2026-10-27, #3244, #3460).** Every purlis write of a key's value (`skills:`,
+    `pinned-skills:`, `profile:`, `icon:`, `color:`) goes through one writer
+    (`purlis_skills::fence::with_keys`): the key's first line is rewritten where it stands,
+    keeping its line break; a later line of the same key goes; a key whose line is empty takes
+    the `- item` lines under it along; a key with no line gains one, last in the frontmatter.
+    The `persona-agents` fix, which renames `model:` to `profile:` where the line stands, finds
+    its lines with the same parser. Every other line, `# note`, blank line and the order of
+    the keys, and the body, is kept byte for byte. A value that cannot be one line reading back
+    as itself (a line break in it, or a blank at either end) is refused with a sentence, and
+    what is written is read back before it is kept.
 
 Full frontmatter vocabulary — `KNOWN_KEYS = AGENT_PASSTHROUGH_KEYS | CHARTER_OWN_KEYS`
 (`charter/persona.py:305`, `charter/persona.py:309`, `charter/persona.py:322`). Every value

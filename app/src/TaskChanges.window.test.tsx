@@ -24,6 +24,7 @@ import type {
 } from "./bindings";
 import { forgetThisLaunch } from "./regions";
 import { stripNamed } from "./test-strips";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * **What a task changed, against the whole window** (#1511): Changes on a finished task's row
@@ -480,9 +481,7 @@ describe("what a task changed", () => {
       ]),
     );
     expect(
-      await screen.findByText(
-        `${BRANCH} is merged, and its folder is removed: it held nothing else.`,
-      ),
+      await findResult(`${BRANCH} is merged, and its folder is removed: it held nothing else.`),
     ).toBeInTheDocument();
   });
 
@@ -512,9 +511,7 @@ describe("what a task changed", () => {
     const menu = await menuOfRow(ON_ITS_BRANCH.id);
     await userEvent.click(within(menu).getByRole("menuitem", { name: "Merge…" }));
 
-    expect(
-      await screen.findByText(/so the branch no longer fast-forwards/, { exact: false }),
-    ).toBeInTheDocument();
+    expect(await findResult(/so the branch no longer fast-forwards/)).toBeInTheDocument();
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(said.asked("task_branch_merge")).toEqual([]);
   });

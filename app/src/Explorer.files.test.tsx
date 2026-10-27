@@ -102,6 +102,13 @@ function core(
   return asked;
 }
 
+/** The workspace with a second repo: each repo's own folder is a row of its own (#3343). */
+const TWO_REPOS: WorkspaceState = {
+  ...STATE,
+  panels: { ...PANELS, repos: ["svc", "tool"] },
+  pieces: { svc: [ONE], tool: [] },
+};
+
 /** Branch `one`, picked: the *Files* section draws its files (#1677). */
 const PICKED: Spot = { repo: "svc", piece: "one", path: ONE.path };
 
@@ -110,13 +117,14 @@ function draw(
   onPress: (offer: Offer) => void = () => {},
   /** `null` for the workspace itself, nothing picked. */
   spot: Spot | null = PICKED,
+  state: WorkspaceState = STATE,
 ) {
   render(
     <ChatsHere.Provider value={fixedChats(nothingKnown)}>
       <Explorer
         plane={PLANE}
         workspace="alpha"
-        state={STATE}
+        state={state}
         chats={[]}
         spot={spot ?? undefined}
         onPick={() => {}}
@@ -195,8 +203,8 @@ describe("a branch's files in the explorer", () => {
 
   it("opens a file of the repo's own folder as the repo's, with no branch folder named", async () => {
     core({ ":": [entry("README.md")] });
-    // With the workspace itself picked, each repo's own folder is a row of the section.
-    const opened = draw(vi.fn(), () => {}, null);
+    // With the workspace itself picked, each of its repos' own folders is a row (#3343).
+    const opened = draw(vi.fn(), () => {}, null, TWO_REPOS);
 
     await userEvent.click(row("file:svc/:"));
     await userEvent.click(await named("^README.md"));
@@ -640,7 +648,7 @@ describe("a file or folder row's menu (FM-10)", () => {
   it("gives a repo's own folder row its absolute path, a reveal and a shell (#1143)", async () => {
     core({ ":": [] });
     const pressed: Offer[] = [];
-    draw(vi.fn(), (offer) => pressed.push(offer), null);
+    draw(vi.fn(), (offer) => pressed.push(offer), null, TWO_REPOS);
 
     fireEvent.contextMenu(row("file:svc/:"));
     const menu = await screen.findByRole("menu");

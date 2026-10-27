@@ -21,6 +21,7 @@ import type { MemoryView, PanelRow } from "./bindings";
 import { forgetDrafts } from "./memories";
 import { stripNamed, showThePanel } from "./test-strips";
 import { findSelectNamed, pickIn } from "./ui/select/select.testkit";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * **A memory's tab, against the whole window** (SI-9b, ADR 0065): a persona's memory rows open
@@ -582,7 +583,7 @@ describe("Move, from a memory row's menu (#1190)", () => {
 
     await userEvent.click(within(sub).getByRole("menuitem", { name: "shared" }));
 
-    expect(await screen.findByText(/shared memory already holds never-pkill/)).toBeInTheDocument();
+    expect(await findResult(/shared memory already holds never-pkill/)).toBeInTheDocument();
     expect(document.querySelector('[data-cause="memory-moved"]')).toBeNull();
   });
 });

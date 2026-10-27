@@ -151,13 +151,32 @@ export const READ_AGAIN = "workspace.readagain";
 export type Ran =
   { ok: true; said?: string } | { ok: false; refused: string; settings?: SettingsWay };
 
+/** A way on from what an action answered (#3344): "Open git-ci-cd", the filled primary where
+ *  `primary`, or "Add a vision". */
+export type SaidWay = { label: string; onPress: () => void; primary?: boolean };
+
 /**
- * **What the window says about the last action** — the line under the strip, and the palette's
- * line while it is up: one state drawn in two places. `settings` is a refusal's way to the
- * setting that puts it right (#1201), drawn as a link beside the words, and either line
- * follows it.
+ * **What the window says about the last action** — the closable notice at the top of the
+ * content, and the palette's line while it is up: one state drawn in two places, and kept in
+ * the Inbox's Notices under Results (#3344). `settings` is a refusal's way to the setting that
+ * puts it right (#1201), drawn as a link beside the words, and either line follows it.
+ *
+ * `words` is one plain sentence in the app's own words. `title` heads it where the action has
+ * one (`actionResult.ts` writes the known ones); `details` is what the core said, behind a
+ * Details disclosure, never a line the core wrote for an agent; `ways` are where to go on.
  */
-export type Said = { from: string; refused: boolean; words: string; settings?: SettingsWay };
+export type Said = {
+  from: string;
+  refused: boolean;
+  words: string;
+  settings?: SettingsWay;
+  title?: string;
+  details?: string;
+  ways?: readonly SaidWay[];
+  /** A line about work still under way ("Cloning 2 repo(s)…"), which the next line replaces:
+   *  said, but not kept under Results. */
+  progress?: boolean;
+};
 
 /** What the window says of a row's answer: nothing for a quiet success. */
 export function saidOf(from: string, answer: Ran): Said | undefined {

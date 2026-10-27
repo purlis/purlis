@@ -31,6 +31,7 @@ import { KEPT_DRAWN } from "./projectShown";
 import { onAMac } from "./tabKeys";
 import { themeInForce } from "./theme/inForce.testkit";
 import { PURLIS_LIGHT } from "./theme/handed.testkit";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * A window holding more than one project (ADR 0033, spec decision 23).
@@ -711,7 +712,7 @@ describe("a window holding more than one project", () => {
     // A command the window asked, never answered: timed as every command is.
     void timed("createProject", () => new Promise(() => {}), 10)("/home/dev/made");
     expect(
-      await screen.findByText(saidOfLate({ command: "createProject", at: 0, ms: undefined })),
+      await findResult(saidOfLate({ command: "createProject", at: 0, ms: undefined })),
     ).toBeInTheDocument();
   });
 
@@ -726,7 +727,7 @@ describe("a window holding more than one project", () => {
       10,
     )("/home/dev/made");
     const late = saidOfLate({ command: "createProject", at: 0, ms: undefined });
-    expect(await screen.findByText(late)).toBeInTheDocument();
+    expect(await findResult(late)).toBeInTheDocument();
     await act(async () => {
       answer("made");
       await asked;
