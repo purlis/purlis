@@ -195,7 +195,7 @@ fn laid_out_on(
 /// **Where a chat's plane skills come from, read once at its start** (#3234): what arms it
 /// ([`Arming::skills`]) and what its tab's Notice says it starts without ([`skills_not_here`])
 /// are both worked out from this one value, so the two never disagree.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ChatSkills {
     /// Whether the plane's skills reach the chat: the Skill studio's flag, once the project
     /// requires them (`skills::reach_chats`, #2784).
