@@ -68,6 +68,7 @@ import type { ViewRef } from "../tabs";
 import { complaints } from "./complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme";
 import { forgetGroups } from "../settings/links";
+import { forgetDevicesForTests } from "../devices";
 import { findSelectNamed, pickIn } from "../ui/select/select.testkit";
 
 afterEach(() => {
@@ -1314,8 +1315,25 @@ const STATES: State[] = [
   {
     name: "Devices, while they are read",
     view: { from: null, view: "devices", key: "" },
-    answers: { devices: DEVICES_SHOWN, device_runner: DEVICE_ANSWERS },
+    // Never answered: the view stays on its reading line.
+    answers: { devices: new Promise(() => {}) },
     drawn: /Reading this machine/,
+  },
+  {
+    name: "Devices, while each runner is asked",
+    view: { from: null, view: "devices", key: "" },
+    // Never answered: each runner's row stays on asking, Refresh beside them.
+    answers: { devices: DEVICES_SHOWN, device_runner: new Promise(() => {}) },
+    drawn: /Asking the runner how it is/,
+  },
+  {
+    name: "Devices, a runner purlis could not ask",
+    view: { from: null, view: "devices", key: "" },
+    answers: {
+      devices: DEVICES_SHOWN,
+      device_runner: new Error("No runner qa of pool qa is on this machine."),
+    },
+    drawn: /purlis could not ask this runner/,
   },
   {
     name: "Devices that could not be read",
@@ -1826,6 +1844,8 @@ describe.each(Object.keys(BUILT_IN))("every view in %s", (theme) => {
     forgetDrafts();
     // Which group each Settings level shows is the window's, for as long as it runs (SE-22).
     forgetGroups();
+    // An ask of a runner a state left unanswered is not joined by the next state's.
+    forgetDevicesForTests();
   });
 
   it.each(STATES)("draws $name with tokens only", async (state) => {
