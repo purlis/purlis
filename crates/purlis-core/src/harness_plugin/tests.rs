@@ -1705,12 +1705,30 @@ fn a_chat_written_config_is_read_only_as_a_plain_file_of_its_own() {
         read_config(&folder, "own.json", HardLinks::Refused),
         Ok(Some(r#"{"plugin":["b"]}"#.to_owned()))
     );
-    assert_eq!(read_config(&folder, "missing.json", HardLinks::Refused), Ok(None));
-    assert_eq!(read_config(&folder, "elsewhere.json", HardLinks::Refused), Err(()));
-    assert_eq!(read_config(&folder, "endless.json", HardLinks::Refused), Err(()));
-    assert_eq!(read_config(&folder, "big.json", HardLinks::Refused), Err(()));
-    assert_eq!(read_config(&folder, "folder.json", HardLinks::Refused), Err(()));
-    assert_eq!(read_config(&folder, "twinned.json", HardLinks::Refused), Err(()));
+    assert_eq!(
+        read_config(&folder, "missing.json", HardLinks::Refused),
+        Ok(None)
+    );
+    assert_eq!(
+        read_config(&folder, "elsewhere.json", HardLinks::Refused),
+        Err(())
+    );
+    assert_eq!(
+        read_config(&folder, "endless.json", HardLinks::Refused),
+        Err(())
+    );
+    assert_eq!(
+        read_config(&folder, "big.json", HardLinks::Refused),
+        Err(())
+    );
+    assert_eq!(
+        read_config(&folder, "folder.json", HardLinks::Refused),
+        Err(())
+    );
+    assert_eq!(
+        read_config(&folder, "twinned.json", HardLinks::Refused),
+        Err(())
+    );
     assert_eq!(
         read_config(&folder, "plain.json", HardLinks::Refused),
         Err(()),

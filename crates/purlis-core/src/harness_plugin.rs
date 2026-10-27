@@ -46,7 +46,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use purlis_skills::held::{Follow, Folder, HardLinks, Kind, NotListed, Opened};
+use purlis_skills::held::{Folder, Follow, HardLinks, Kind, NotListed, Opened};
 
 use crate::extension::project::{Source, toml_key};
 use crate::profiles::{COMMITTED_FILE, LOCAL_FILE};
@@ -914,10 +914,7 @@ fn unlisted(harness: &'static str, prefix: &str, name: &str, why: NotListed) -> 
         id: format!("{prefix}{name}"),
         harness,
         name: name.to_owned(),
-        source: format!(
-            "{}: the plugins opencode loads from it are not listed",
-            why
-        ),
+        source: format!("{}: the plugins opencode loads from it are not listed", why),
     }
 }
 

@@ -288,7 +288,11 @@ fn a_level_of_more_names_than_purlis_reads_is_refused_with_a_sentence() {
     // the most names purlis reads of one folder it reads none of them and says so once.
     let tmp = tempfile::tempdir().unwrap();
     let level = tmp.path().join("skills");
-    skill(&level, "whole", "---\nname: whole\ndescription: Does it.\n---\n");
+    skill(
+        &level,
+        "whole",
+        "---\nname: whole\ndescription: Does it.\n---\n",
+    );
     for n in 0..crate::held::MOST_NAMES {
         std::fs::write(level.join(format!("f{n}")), "").unwrap();
     }
@@ -307,7 +311,11 @@ fn a_level_of_more_names_than_purlis_reads_is_refused_with_a_sentence() {
 fn a_level_of_exactly_the_most_names_purlis_reads_is_scanned() {
     let tmp = tempfile::tempdir().unwrap();
     let level = tmp.path().join("skills");
-    skill(&level, "whole", "---\nname: whole\ndescription: Does it.\n---\n");
+    skill(
+        &level,
+        "whole",
+        "---\nname: whole\ndescription: Does it.\n---\n",
+    );
     for n in 1..crate::held::MOST_NAMES {
         std::fs::write(level.join(format!("f{n}")), "").unwrap();
     }

@@ -16,7 +16,7 @@
 
 use std::path::{Path, PathBuf};
 
-use purlis_skills::held::{Follow, Folder, Opened};
+use purlis_skills::held::{Folder, Follow, Opened};
 use purlis_skills::{Origin, OutsideSkill, Owner, Skill, Switch, Unread};
 
 use super::{Adapter, Choices, Env, SkillsAt};
