@@ -56,7 +56,7 @@ env:
   NEXTEST_VERSION: "0.9.146"
 
 jobs:
-  # The Rust suite in three parts on three runners, each building the tests and running a third
+  # The Rust suite in four parts on four runners, each building the tests and running a quarter
   # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
   # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
   # start at once (no queue on 2026-10-14..27), so a part costs runner minutes, not wait. Part 1
@@ -66,11 +66,11 @@ jobs:
   # (#3553: 21 to 32 minutes to build cold, then the runners stopped). `rust-checks` below
   # carries the required check's name and passes when every part did.
   rust:
-    name: rust tests (part ${{ matrix.part }} of 3)
+    name: rust tests (part ${{ matrix.part }} of 4)
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3]
+        part: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -137,9 +137,12 @@ jobs:
       # its test — and kills each one by pid. `--reap` is safe here because the runner is the
       # job's own machine.
       #
-      # `count:` deals each binary's tests out in turn, so each part gets a third of every binary.
+      # `hash:` places each test by its name, not by its place in its binary: `count:` dealt the
+      # suite's heavy neighbours (the theme engine's import tests, 50 to 170 s each) to the same
+      # part, and in three parts on 2026-10-27 part 1 summed 51.6 minutes of tests against 35 and
+      # 30. On that run's own times four `hash:` parts put at most about 33 minutes in one.
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition count:${{ matrix.part }}/3 -E 'not test(/::in_a_docker_pool$/)'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E 'not test(/::in_a_docker_pool$/)'
       # The slowest tests and test binaries, as notices on the run: what makes the step above
       # slow, readable through the checks API without the job's log. A report, so it never turns
       # the job red.
