@@ -16,11 +16,12 @@ import { DONE_ROW } from "./todos";
 import { expect, waitFor } from "storybook/test";
 import { ownPanelKey, Panels } from "./Panels";
 import { expectFocusInSight } from "./stories.testkit";
-import type { PanelRow, PanelView, Panels as PanelsModel } from "./bindings";
-import type { OwnViewId } from "./sideViews";
+import type { PanelRow, PanelView, Panels as PanelsModel, VaultSummary } from "./bindings";
+import { panelView, type OwnViewId } from "./sideViews";
 import type { WorkspaceState } from "./workspaceState";
 import { Panel, PanelTitle } from "./ui/panel/Panel";
 import { HeadActions } from "./viewHead";
+import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
 
 const two = (n: number) => String(n).padStart(2, "0");
 /** A day `back` days before today, as the store stamps it, so the days read the same any day. */
@@ -47,6 +48,18 @@ const TITLES = [
 
 /** `count` rows of `mark`, a few today, a few yesterday, the rest earlier. */
 function rowsOf(count: number, mark: string): PanelRow[] {
+  // A persona's row: its mark, its name, the default's star (#1449, #1674).
+  if (mark === "persona")
+    return PERSONAS.slice(0, count).map((name, at) => ({
+      key: name,
+      text: name,
+      note: "2 memories",
+      mark,
+      tone: at === 0 ? "default" : "plain",
+      detail: null,
+      runs: `persona.show:${name}`,
+      actions: [],
+    }));
   return TITLES.slice(0, count).map((text, at) => ({
     key: `row-${at}`,
     text,
@@ -61,10 +74,11 @@ function rowsOf(count: number, mark: string): PanelRow[] {
   }));
 }
 
-const KEYS: Record<"memory" | "todos" | "sessions", [string, string]> = {
+const KEYS: Record<"memory" | "todos" | "sessions" | "personas", [string, string]> = {
   memory: ["Memory", "note"],
   todos: ["Todos", "todo"],
   sessions: ["Sessions", "note"],
+  personas: ["Personas", "persona"],
 };
 
 /** `count` done todos, as `panels.rs` keys them: `done/<slug>`. */
@@ -81,6 +95,8 @@ function doneOf(count: number): PanelRow[] {
     actions: [],
   }));
 }
+
+const PERSONAS = ["steward", "designer", "release", "security", "reviewer", "docs", "ops"];
 
 function panelOf(view: keyof typeof KEYS, count: number, done = 0): PanelView {
   const [title, mark] = KEYS[view];
@@ -120,21 +136,78 @@ function stateOf(view: keyof typeof KEYS, count: number, done = 0): WorkspaceSta
 }
 
 /** The view in a side panel, its region the one scroll, as `RegionFrame` lays a view out. */
+/** The plane's vaults, as `vault_list` answers: names and counts, never a value. */
+const VAULTS: VaultSummary[] = ["forge", "reddit", "crates-io", "devops", "release-signing"].map(
+  (name, at) => ({
+    name,
+    provider: at < 3 ? "keyring" : "file",
+    count: at + 1,
+    health: { ok: true, detail: "" },
+    reads_on_open: false,
+  }),
+);
+
 /**
  * The view in a half of the Panel, as the window draws one (`RegionFrame`'s `Half`): the half's
  * line holds the view's one title and its actions (#3355), and the view under it is the one
  * scroll, its top held at the top of it.
  */
+/** Two personas' chats, as the Chats list hands them to the Personas view (#3341). */
+const AT_WORK = new Map([
+  ["steward", [1]],
+  ["designer", [2]],
+]);
+
+/** What the board says of them: steward's at work, designer's asking for you. */
+const WORKING = fixedChats({
+  ...nothingKnown,
+  bySession: { 1: "running", 2: "waiting" },
+  needsYou: [2],
+});
+
+/** An approved extension's panel (#3341): declared rows, its own marks, on the same frame. */
+const EXTENSION: PanelView = {
+  key: "ext/acme/reviews",
+  title: "Reviews",
+  order: 15,
+  mark: "note",
+  from: "acme",
+  about: null,
+  blocks: [
+    {
+      kind: "list",
+      rows: ["Land the panel contract", "Review the rollout plan", "Read the audit"].map(
+        (text, at) => ({
+          key: `review-${at}`,
+          text,
+          note: null,
+          mark: at === 0 ? "trouble" : "note",
+          tone: "plain",
+          detail: { kind: "text", text: `${text}, in full.` },
+          runs: null,
+          actions: [],
+        }),
+      ),
+      empty: { headline: "Nothing to review", body: null, offer: null },
+    },
+  ],
+};
+
 function View({
   view,
   count,
   done = 0,
+  atWork = false,
 }: {
-  view: keyof typeof KEYS;
+  view: keyof typeof KEYS | "vaults" | "extension";
   count: number;
   /** Done todos after the open ones, each with its box ticked (the Todos view only). */
   done?: number;
+  /** Personas whose chats are at work: steward's working, designer's asking for you. */
+  atWork?: boolean;
 }) {
+  const title =
+    view === "vaults" ? "Vaults" : view === "extension" ? EXTENSION.title : KEYS[view][0];
   const [shown, setShown] = useState<string>();
   // The catalogue's Mark done and Reopen rows, which a todo's box runs: without them a row keeps
   // its mark, as it does where the catalogue offers none.
@@ -161,7 +234,7 @@ function View({
   );
   const [line, setLine] = useState<HTMLElement | null>(null);
   return (
-    <Panel variant="bottom" aria-label={KEYS[view][0]} role="region">
+    <Panel variant="bottom" aria-label={title} role="region">
       <div
         data-testid="region"
         style={{
@@ -172,23 +245,32 @@ function View({
         }}
       >
         <div className="half-head">
-          <PanelTitle className="side-title">{KEYS[view][0]}</PanelTitle>
+          <PanelTitle className="side-title">{title}</PanelTitle>
           <span className="view-actions" ref={setLine} />
         </div>
-        <div style={{ display: "flex", flex: "1 1 0", minBlockSize: 0 }}>
-          <HeadActions.Provider value={line}>
-            <Panels
-              view={view as OwnViewId}
-              workspace="alpha"
-              state={stateOf(view, count, done)}
-              offers={offers}
-              onPress={() => {}}
-              contributed={[]}
-              shownRow={shown}
-              onShowRow={setShown}
-              onAddTodo={async () => undefined}
-            />
-          </HeadActions.Provider>
+        {/* A column, as the window's region view is: the view takes the half's whole width. */}
+        <div style={{ display: "flex", flexDirection: "column", flex: "1 1 0", minBlockSize: 0 }}>
+          <ChatsHere.Provider value={atWork ? WORKING : fixedChats()}>
+            <HeadActions.Provider value={line}>
+              <Panels
+                view={view === "extension" ? panelView(EXTENSION.key) : (view as OwnViewId)}
+                workspace="alpha"
+                state={stateOf(
+                  view === "vaults" || view === "extension" ? "memory" : view,
+                  count,
+                  done,
+                )}
+                offers={offers}
+                onPress={() => {}}
+                contributed={view === "extension" ? [EXTENSION] : []}
+                shownRow={shown}
+                onShowRow={setShown}
+                onAddTodo={async () => undefined}
+                vaults={{ vaults: VAULTS.slice(0, count), reload: () => {} }}
+                personaChats={atWork ? AT_WORK : undefined}
+              />
+            </HeadActions.Provider>
+          </ChatsHere.Provider>
         </div>
       </div>
     </Panel>
@@ -328,6 +410,63 @@ export const SessionsShort: Story = {
       canvasElement,
       () => userEvent.tab(),
       canvas.getByRole("searchbox", { name: "Search Sessions" }),
+      false,
+    );
+  },
+};
+
+/** Personas on the frame (#3341): one title, the filter held in the top, one scroll; each row
+ *  keeps its persona's mark and the default's star. */
+export const Personas: Story = {
+  args: { view: "personas", count: 7 },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await walk(
+      canvasElement,
+      () => userEvent.tab(),
+      canvas.getByRole("searchbox", { name: "Filter Personas" }),
+      false,
+    );
+  },
+};
+
+/** Personas at work (#3341): a persona's row ends with its chats' state, as its own mark — the
+ *  ring of one at work, the hand of one asking for you; one at rest shows none. */
+export const PersonasAtWork: Story = {
+  args: { view: "personas", count: 7, atWork: true },
+  play: async ({ canvas }) => {
+    const mark = (name: string) =>
+      canvas
+        .getByRole("row", { name: new RegExp(`^${name}`) })
+        .querySelector(".persona-at-work .shown-state");
+    await expect(mark("steward")).toHaveAttribute("data-state", "working");
+    await expect(mark("designer")).toHaveAttribute("data-state", "needs-you");
+    await expect(mark("release")).toBeNull();
+  },
+};
+
+/** Vaults on the frame (#3341): its filter held in the top, one scroll. */
+export const Vaults: Story = {
+  args: { view: "vaults", count: 5 },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await walk(
+      canvasElement,
+      () => userEvent.tab(),
+      canvas.getByRole("searchbox", { name: "Filter Vaults" }),
+      false,
+    );
+  },
+};
+
+/** An extension's panel on the frame (#3341): its one title on the half's head, whose panel it is
+ *  beside it, the search held in the top, its rows with the marks it declared. */
+export const ExtensionPanel: Story = {
+  args: { view: "extension", count: 3 },
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await expect(canvas.getByRole("heading", { name: "Reviews" })).toBeInTheDocument();
+    await walk(
+      canvasElement,
+      () => userEvent.tab(),
+      canvas.getByRole("searchbox", { name: "Search Reviews" }),
       false,
     );
   },
