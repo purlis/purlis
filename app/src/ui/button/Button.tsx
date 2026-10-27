@@ -83,12 +83,6 @@ interface Drawn extends Native {
   variant?: ButtonVariant;
   /** Ignored inside a `ButtonRow`, whose size every button in it takes. */
   size?: ButtonSize;
-  /**
-   * **Words in a line of words** (#3264): as tall as the line, no box padding, cut to an
-   * ellipsis where the line squeezes it (a breadcrumb's crumb). A target inline in text is
-   * exempt from the target size (WCAG 2.5.8).
-   */
-  inline?: boolean;
   /** A place for the button in its view: margin, width, flex, order. Never a look. */
   className?: string;
   style?: CSSProperties;
@@ -112,6 +106,19 @@ export interface ButtonProps
   extends Drawn, Omit<AriaButtonProps, "className" | "style" | "children" | "render"> {
   children?: ReactNode;
 }
+
+/** The variants a button drawn inline takes: the ghosts, which draw no ground (#3264). */
+export type InlineVariant = Extract<ButtonVariant, "quiet" | "ghost">;
+
+/**
+ * **Words in a line of words** (#3264): as tall as the line, no box padding, cut to an ellipsis
+ * where the line squeezes it (a breadcrumb's crumb). A target inline in text is exempt from the
+ * target size (WCAG 2.5.8). **Only a ghost is drawn inline**: a button with a ground of its own
+ * (the plain, the suggested, a danger answer) would have it tight against its letters, so any
+ * other variant is a type error. Words only: an `IconButton` and a `ToggleButton` take no
+ * `inline`.
+ */
+export type Inline = { inline?: false } | { inline: true; variant: InlineVariant };
 
 export interface ToggleButtonProps
   extends
@@ -226,7 +233,12 @@ function GrantsLock() {
 }
 
 function useDrawn(
-  props: Drawn & { children?: ReactNode; isDisabled?: boolean; "aria-label"?: string },
+  props: Drawn & {
+    children?: ReactNode;
+    isDisabled?: boolean;
+    "aria-label"?: string;
+    inline?: boolean;
+  },
   iconOnly = false,
 ) {
   const rowSize = useContext(RowSize);
@@ -279,7 +291,7 @@ function useDrawn(
 }
 
 /** **A button**: words, an icon before them if it has one, in a variant and a size. */
-export function Button(props: ButtonProps) {
+export function Button(props: ButtonProps & Inline) {
   const { drawn, surface, reason } = useDrawn(props);
   return (
     <Tipped surface={surface}>

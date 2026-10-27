@@ -256,9 +256,16 @@ export const UnavailableMenuTrigger: Story = {
     await userEvent.tab();
     await expect(share).toHaveFocus();
     expectFocusInSight();
-    for (const key of ["{Enter}", " ", "{ArrowDown}"]) await userEvent.keyboard(key);
+    // After each way of pressing it, no menu: one press that opened it and the next that closed
+    // it again would pass a single look at the end.
+    const noMenu = () => expect(document.querySelector('[role="menu"]')).toBeNull();
+    for (const key of ["{Enter}", " ", "{ArrowDown}", "{ArrowUp}"]) {
+      await userEvent.keyboard(key);
+      await noMenu();
+    }
     await userEvent.click(share);
-    await expect(document.querySelector('[role="menu"]')).toBeNull();
+    await noMenu();
+    await expect(share).toHaveAttribute("aria-expanded", "false");
   },
 };
 

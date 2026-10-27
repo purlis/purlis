@@ -14,6 +14,7 @@ import { useState } from "react";
 import { drawnWith } from "../../cascade.testkit";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import { PopoverDialog, PopoverTrigger } from "../popover/Popover";
+import { StatusItem } from "../status/StatusItem";
 import { tipOf } from "../tooltip/tooltip.testkit";
 import { Button, ButtonRow, IconButton, ToggleButton, type ButtonVariant } from "./Button";
 
@@ -475,5 +476,53 @@ describe("an unavailable button that opens a popover or a menu (#3116)", () => {
     expect(share).toHaveAttribute("tabindex", "0");
     expect(tipOf(share)).toBe("Only the owner shares this project.");
     expect(share).toHaveAccessibleDescription("Only the owner shares this project.");
+    // Still said to be a menu's trigger, and a closed one (D-3116-1): only the press is dropped.
+    expect(share).toHaveAttribute("aria-haspopup", "true");
+    expect(share).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("opens nothing as a status item either, the other pressable on the shared element", async () => {
+    const branches = (isDisabled: boolean, opened: () => void) => (
+      <MenuTrigger onOpenChange={opened}>
+        <StatusItem isDisabled={isDisabled} tooltip="No branch to switch to here.">
+          main
+        </StatusItem>
+        <Menu aria-label="Branches">
+          <MenuItem id="main" textValue="main">
+            <MenuWords said="main" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>
+    );
+    // Available, a press opens the menu: the trigger reaches it.
+    const reached = vi.fn();
+    const { unmount } = render(branches(false, reached));
+    await userEvent.click(screen.getByRole("button", { name: "main" }));
+    expect(reached).toHaveBeenCalledWith(true);
+    unmount();
+
+    const opened = vi.fn();
+    render(branches(true, opened));
+    const item = screen.getByRole("button", { name: "main" });
+    await pressedEveryWay(item);
+    expect(opened).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(item).toHaveAttribute("aria-haspopup", "true");
+    expect(item).toHaveAccessibleDescription("No branch to switch to here.");
+  });
+});
+
+describe("a button drawn inline", () => {
+  it("is only a ghost: a variant with a ground of its own is a type error (#3264)", () => {
+    // @ts-expect-error -- the plain button has a ground, tight against its letters inline.
+    const plain = <Button inline aria-label="Save" />;
+    // @ts-expect-error -- so has the suggested answer.
+    const primary = <Button inline variant="primary" aria-label="Save" />;
+    const ghost = (
+      <Button inline variant="ghost">
+        Save
+      </Button>
+    );
+    expect([plain, primary, ghost]).toHaveLength(3);
   });
 });

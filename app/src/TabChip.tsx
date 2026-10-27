@@ -8,6 +8,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -64,6 +65,14 @@ import { fitCountsOn } from "./wholeWays";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { Button, IconButton } from "./ui/button/Button";
 import { tabPart } from "./ui/tabs/Tabs";
+
+/** The chip's hand: in the needs-you colour, at the words' size, drawn on the icon itself
+ *  (#3264), as each count's mark is, so the button's class says only where it stands. */
+const HAND: CSSProperties = {
+  width: "1em",
+  height: "1em",
+  color: `var(${property("needs-you.base")})`,
+};
 
 /** Each count's mark: its shape as it is drawn (`StateShown` draws the same four for a row). */
 const MARKS: Readonly<Record<TaskBucket, LucideIcon>> = {
@@ -505,17 +514,20 @@ function Chip({
       {/* **A chat of this tab is waiting for you and is not on screen** (V100-37): the hand,
           and a press goes to the one that has waited longest. The tab stays there after. */}
       {needs.length > 0 && (
-        // The quiet ghost (#3264), the hand in the needs-you colour (`.needs-you-mark svg`).
-        <IconButton
-          variant="quiet"
-          size="sm"
-          icon={<Hand aria-hidden="true" />}
-          className="tab-tasks-hand needs-you-mark"
-          data-mark="needs-you"
-          tabIndex={-1}
-          aria-label={`${needsSaid(needs.map((chat) => chat.name))}. Go to ${needs[0].name}`}
-          onPress={() => onShow(needs[0].session)}
-        />
+        // The quiet ghost (#3264), its hand in the needs-you colour, in a box of its own that
+        // draws the keyboard's ring inside it (`.tab-tasks-mark`).
+        <span className="tab-tasks-mark">
+          <IconButton
+            variant="quiet"
+            size="sm"
+            icon={<Hand aria-hidden="true" style={HAND} />}
+            className="tab-tasks-hand"
+            data-mark="needs-you"
+            tabIndex={-1}
+            aria-label={`${needsSaid(needs.map((chat) => chat.name))}. Go to ${needs[0].name}`}
+            onPress={() => onShow(needs[0].session)}
+          />
+        </span>
       )}
       {tasksIn(counts) > 0 && (
         <>
