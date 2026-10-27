@@ -12,10 +12,10 @@ import { cloneElement, useEffect, useRef, useState, type ReactElement } from "re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import * as Popover from "@radix-ui/react-popover";
 import { ProjectShownProvider } from "../../projectShown";
 import { Button, IconButton, ToggleButton } from "../button/Button";
 import { Dialog } from "../dialog/Dialog";
+import { PopoverDialog, PopoverTrigger } from "../popover/Popover";
 import { StatusCell, StatusItem } from "../status/StatusItem";
 import {
   Tooltip,
@@ -537,22 +537,18 @@ describe("a button's tooltip", () => {
       render(
         <form onSubmit={submitted}>
           <div role="group" onKeyDown={(event) => row(event.key)} onClick={() => row("click")}>
-            <Popover.Root onOpenChange={opened}>
-              <Popover.Trigger asChild>
-                <Button
-                  variant={variant}
-                  type="submit"
-                  isDisabled
-                  tooltip="This project is read-only here."
-                  onPress={pressed}
-                >
-                  Answer
-                </Button>
-              </Popover.Trigger>
-              <Popover.Portal>
-                <Popover.Content>opened</Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
+            <PopoverTrigger onOpenChange={opened}>
+              <Button
+                variant={variant}
+                type="submit"
+                isDisabled
+                tooltip="This project is read-only here."
+                onPress={pressed}
+              >
+                Answer
+              </Button>
+              <PopoverDialog aria-label="Answer">opened</PopoverDialog>
+            </PopoverTrigger>
           </div>
         </form>,
       );
@@ -577,18 +573,14 @@ describe("a button's tooltip", () => {
       const row = vi.fn();
       render(
         <div role="group" onKeyDown={(event) => row(event.key)} onClick={() => row("click")}>
-          <Popover.Root onOpenChange={opened}>
-            <Popover.Trigger asChild>
-              <Tooltip tip="This project is read-only here.">
-                <button className={variant} disabled onClick={clicked} onPointerDown={clicked}>
-                  Answer
-                </button>
-              </Tooltip>
-            </Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Content>opened</Popover.Content>
-            </Popover.Portal>
-          </Popover.Root>
+          <PopoverTrigger onOpenChange={opened}>
+            <Tooltip tip="This project is read-only here.">
+              <button className={variant} disabled onClick={clicked} onPointerDown={clicked}>
+                Answer
+              </button>
+            </Tooltip>
+            <PopoverDialog aria-label="Answer">opened</PopoverDialog>
+          </PopoverTrigger>
         </div>,
       );
       const answer = screen.getByRole("button", { name: "Answer" });

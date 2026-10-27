@@ -29,7 +29,8 @@
  *   what a screen reader hears always agree; a hint that only repeats a button's name is shown
  *   and not heard twice. **A disabled button with a hint keeps the focus** and says it is
  *   unavailable (`aria-disabled`), so the hint, which says why, is reached by the keyboard and
- *   the pointer alike, and nothing presses it.
+ *   the pointer alike, and nothing presses it: nor opens the menu or popover it is the trigger
+ *   of (#3116).
  * - **The key that presses it** (R33, #3377): `shortcut` draws the key after its words, in the
  *   `shortcut` part, a `kbd` small and mono. It is drawn by the stylesheet from its `data-key`
  *   and hidden from a screen reader, so the button's name and words stay its words alone; the

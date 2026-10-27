@@ -11,6 +11,7 @@ import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { Plus, RefreshCw, X } from "lucide-react";
 import { expectFocusInSight } from "../../stories.testkit";
+import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import {
   Button,
   ButtonRow,
@@ -163,6 +164,36 @@ export const Disabled: Story = {
     await userEvent.tab();
     await expect(button).not.toHaveFocus();
     await expect(canvas.getByRole("status")).toHaveTextContent("Pressed 0 times");
+  },
+};
+
+/**
+ * **An unavailable menu button with its reason** (#3116): it keeps the focus and says why, and
+ * starts nothing: no press, Enter, Space or arrow opens the menu it is the trigger of.
+ */
+export const UnavailableMenuTrigger: Story = {
+  render: () => (
+    <MenuTrigger>
+      <Button isDisabled tooltip="Only the owner shares this project.">
+        Share
+      </Button>
+      <Menu aria-label="Share">
+        <MenuItem id="link" textValue="Copy link">
+          <MenuWords said="Copy link" />
+        </MenuItem>
+      </Menu>
+    </MenuTrigger>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const share = canvas.getByRole("button", { name: "Share" });
+    await expect(share).toHaveAttribute("aria-disabled", "true");
+    await expect(share).toHaveAccessibleDescription("Only the owner shares this project.");
+    await userEvent.tab();
+    await expect(share).toHaveFocus();
+    expectFocusInSight();
+    for (const key of ["{Enter}", " ", "{ArrowDown}"]) await userEvent.keyboard(key);
+    await userEvent.click(share);
+    await expect(document.querySelector('[role="menu"]')).toBeNull();
   },
 };
 

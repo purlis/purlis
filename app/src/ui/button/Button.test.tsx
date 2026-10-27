@@ -12,6 +12,8 @@ import { userEvent } from "@testing-library/user-event";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { drawnWith } from "../../cascade.testkit";
+import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
+import { PopoverDialog, PopoverTrigger } from "../popover/Popover";
 import { tipOf } from "../tooltip/tooltip.testkit";
 import { Button, ButtonRow, IconButton, ToggleButton, type ButtonVariant } from "./Button";
 
@@ -381,5 +383,77 @@ describe("a key a button's handler leaves alone", () => {
     await userEvent.keyboard("{Escape}");
     expect(own).toHaveBeenCalledWith("Escape");
     expect(row).toHaveBeenCalledWith("Escape");
+  });
+});
+
+describe("an unavailable button that opens a popover or a menu (#3116)", () => {
+  /** Each way a person presses it: the pointer, Enter, Space, a screen reader's press (a click
+   *  with no pointer before it), and the arrows a menu's trigger opens on. */
+  async function pressedEveryWay(button: HTMLElement) {
+    await userEvent.click(button);
+    button.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowUp}");
+    fireEvent.click(button, { detail: 0 });
+  }
+
+  const opener = (tooltip?: string) => (
+    <Button isDisabled tooltip={tooltip}>
+      Share
+    </Button>
+  );
+
+  for (const tooltip of ["Only the owner shares this project.", undefined])
+    describe(tooltip ? "with a tooltip saying why" : "with no tooltip", () => {
+      it("opens no popover", async () => {
+        const opened = vi.fn();
+        render(
+          <PopoverTrigger onOpenChange={opened}>
+            {opener(tooltip)}
+            <PopoverDialog aria-label="Share">shared</PopoverDialog>
+          </PopoverTrigger>,
+        );
+        await pressedEveryWay(screen.getByRole("button", { name: "Share" }));
+        expect(opened).not.toHaveBeenCalled();
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+
+      it("opens no menu", async () => {
+        const opened = vi.fn();
+        render(
+          <MenuTrigger onOpenChange={opened}>
+            {opener(tooltip)}
+            <Menu aria-label="Share">
+              <MenuItem id="link" textValue="Copy link">
+                <MenuWords said="Copy link" />
+              </MenuItem>
+            </Menu>
+          </MenuTrigger>,
+        );
+        await pressedEveryWay(screen.getByRole("button", { name: "Share" }));
+        expect(opened).not.toHaveBeenCalled();
+        expect(screen.queryByRole("menu")).toBeNull();
+      });
+    });
+
+  it("keeps its tooltip and its reason as a trigger", () => {
+    render(
+      <MenuTrigger>
+        {opener("Only the owner shares this project.")}
+        <Menu aria-label="Share">
+          <MenuItem id="link" textValue="Copy link">
+            <MenuWords said="Copy link" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>,
+    );
+    const share = screen.getByRole("button", { name: "Share" });
+    expect(share).toHaveAttribute("aria-disabled", "true");
+    expect(share).not.toBeDisabled();
+    expect(share).toHaveAttribute("tabindex", "0");
+    expect(tipOf(share)).toBe("Only the owner shares this project.");
+    expect(share).toHaveAccessibleDescription("Only the owner shares this project.");
   });
 });

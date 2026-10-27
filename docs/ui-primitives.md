@@ -1602,9 +1602,10 @@ role exists for. Two consequences worth knowing before the next one:
   sentence beside it (`aria-describedby`); Radix's focus scope skips a disabled button, so
   Shift+Tab from Cancel reaches Close. Escape still answers Cancel.
 
-And the **persona card** (`@radix-ui/react-popover`, `app/src/Panels.tsx`): what a row in the
-right-hand region's persona list opens. It is the first popover in the window, and it was picked
-over the other two surfaces Radix has for the same content:
+And the **persona card** (first drawn on Radix's popover, now the popover family's, `ui/popover`;
+`app/src/Panels.tsx`): what a row in the right-hand region's persona list opens. It is the first
+popover in the window, and it was picked over the other two surfaces Radix has for the same
+content:
 
 - **Not a dialog**, because a dialog is modal and modal is wrong here twice. Radix marks
   everything outside an open dialog `aria-hidden`, which then
@@ -1645,7 +1646,8 @@ opens nothing else, such as an extension's declared row.
 An extension's view — persona statistics — opens in a tab of its own the same way, from a button
 on the personas panel's heading, a button on a persona's tab, or its palette row.
 
-And a **Chats row's card** (`@radix-ui/react-popover`, `app/src/ChatsSection.tsx`, #1675):
+And a **Chats row's card** (the popover family's `AnchoredPopover`, `app/src/ChatsSection.tsx`,
+#1675):
 what a chat's one-line row says when it is rested on, its state in words, what it is doing, its
 persona, harness, workspace, time in its state, tasks, own branch, handoffs and a task's tokens.
 It is the popover the window already has, used as a tooltip, and not a package of its own:

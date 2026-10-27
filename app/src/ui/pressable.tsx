@@ -22,7 +22,7 @@ import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from "rea
 import type { KeyboardEvent } from "react-aria-components";
 import { useId } from "react-aria";
 import { says, TooltipDetail, TooltipSurface, type Tip } from "./tooltip/Tooltip";
-import { refuseClick, unavailable } from "./unavailable";
+import { unavailable } from "./unavailable";
 
 /** The native attributes a pressable passes to its element as they are. */
 export type Native = Pick<
@@ -147,7 +147,7 @@ export function pressable(props: Record<string, unknown>, tip?: PressTip) {
 /** React Aria's `render` for a pressable: its `<button>`, with `native` handed on. */
 export function renderPressed(native: Record<string, unknown>, tip?: PressTip, own?: string) {
   return (domProps: ComponentPropsWithRef<"button">) => {
-    const unavailable = String(domProps["aria-disabled"]) === "true";
+    const off = String(domProps["aria-disabled"]) === "true";
     const {
       "data-hovered": hovered,
       "data-pressed": pressed,
@@ -166,14 +166,18 @@ export function renderPressed(native: Record<string, unknown>, tip?: PressTip, o
             ? rest["aria-describedby"]
             : [own, opened ? tip.describedBy : null].filter(Boolean).join(" ") || undefined;
     }
+    // **It starts nothing** (#3116): a menu's or a popover's trigger around it hands React Aria
+    // its own press and keys (`PressResponder`), which reach the element as handlers the call
+    // never wrote. So the element itself keeps only the focus's and the pointer's (the tooltip's),
+    // as a raw unavailable button does (`ui/unavailable.ts`), and opens nothing.
+    const element = tip?.keepsFocus ? unavailable(rest) : rest;
     return (
       <button
-        {...rest}
-        {...(tip?.keepsFocus ? { type: "button" as const, onClick: refuseClick } : {})}
+        {...element}
         aria-describedby={describedBy}
-        data-hovered={unavailable ? undefined : (hovered as string | undefined)}
-        data-pressed={unavailable ? undefined : (pressed as string | undefined)}
-        data-disabled={unavailable ? "true" : (rest["data-disabled"] as string | undefined)}
+        data-hovered={off ? undefined : (hovered as string | undefined)}
+        data-pressed={off ? undefined : (pressed as string | undefined)}
+        data-disabled={off ? "true" : (rest["data-disabled"] as string | undefined)}
         tabIndex={domProps.tabIndex ?? 0}
         {...native}
       />
