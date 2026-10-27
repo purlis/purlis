@@ -933,7 +933,7 @@ export function ChatsSection({
                   icon={<Ellipsis className="node-icon" aria-hidden="true" />}
                 />
                 <Menu
-                  aria-label="More for Chats"
+                  aria-label="More for chats"
                   onAction={(key) => {
                     const offer = more.find((one) => one.id === key);
                     if (offer?.available) press(offer);
