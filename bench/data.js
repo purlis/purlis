@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793117595801,
+  "lastUpdate": 1793119712456,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26964,6 +26964,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0076985,
             "unit": "ms",
             "extra": "median of 5 runs: 100.781, 101.197, 102.008, 102.428, 102.633 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5a841bdc4af2d804f07c732b8e3c80e88d9b8def",
+          "message": "Skills: routed restarts agree with the chat, turn-offs keep the person's settings (#3245, #3320) (#3438)\n\n* Skills: routing restarts and Use skill… agree with the routed chat (#3245)\n\nA chat's restart stamp now stamps what its index names (each hidden\nskill's name, and its deprecation and replacement), not the index text:\nthe harness lists the index by its fixed description and a hidden skill\nis loaded as it is now, so a description edit of a hidden skill no\nlonger offers every over-budget chat a restart.\n\nUse skill… and the stamp now route the chat from the inputs its start\nrouted it from: `Running` carries the folder the chat started in, and\nboth read the repo skills of that clone (`repo_skills_at_start`, the\none read arming uses too), through the one `routed` ask that the laid\nout folder and the adapter's `for_chat` go through.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a chat's skill turn-offs keep the person's own settings (#3320)\n\nMeasured, and both harnesses merge rather than replace, so purlis keeps\nwriting its own entries only:\n\n- Claude Code 2.1.311 merges a session's `skillOverrides` with the\n  person's `settings.json` name by name (their `alpha: off` plus a\n  session `beta: off` took both out of the init event's skills).\n- Codex 0.163.0 adds a `-c skills.config` to the entries of the\n  person's `config.toml` (re-measured with `codex debug prompt-input`).\n- A Codex plugin's `skill-index` is listed as `zp:skill-index`; turning\n  the bare name off takes the person's own copy alone, and purlis's\n  index reaches a Codex chat in its briefing as `skill-index`, so they\n  never share a name.\n\nWhether the harness has its own `skill-index` is now read at the chat's\nstart with the chat's environment (`Chosen::own_index`, from\n`has_own_index`), not with this machine's at arming, so the arming test\nno longer depends on the machine's own skills, and a profile's\n`CLAUDE_CONFIG_DIR` or `CODEX_HOME` is the one looked in.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a Try it chat is routed for Use skill… as its arming routes it (#3245)\n\nReview follow-up. Running::set applies the Try it scope that arming\napplies (the try's folder, no workspace, no persona), so Use skill… and\nthe stamp of a scratch chat see the draft alone. Renames the method so\nit no longer shares the free routed()'s name, and a deprecated hidden\nskill with no replacement is stamped apart from one with an empty one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: route Use skill… and the stamp from the start's one read (#3245)\n\nThe previous head re-ran ChatSkills::read (scope, workspace and the\nclone's repo skills, a read of every clone) inside each stamp, and the\nwindow stamps every open chat whenever the plane changes: with fifty\nchats in fixture clones, an open grew past its 8000 ms ceiling in the\nfifty-sessions scenario. The app now keeps the start's ChatSkills on\nits Running and hands it to core's Running as `start`; the stamp and\nUse skill… route from it and read nothing again. An open does the reads\nit did before #3438: one ChatSkills read at its start, one stamp.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T13:51:01Z",
+          "tree_id": "56ecf6ed094db7eb2f33d91e26e62638efac99dd",
+          "url": "https://github.com/purlis/purlis/commit/5a841bdc4af2d804f07c732b8e3c80e88d9b8def"
+        },
+        "date": 1793119708030,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2976345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.287, 0.296, 0.298, 0.301, 0.306 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6604015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.494, 16.514, 16.660, 16.661, 16.699 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7605655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.301, 101.399, 101.761, 101.781, 103.005 ms"
           }
         ]
       }
