@@ -13,7 +13,7 @@ import { expect, waitFor, within } from "storybook/test";
 import { FileCode, FileText, Folder, FolderGit2, GitBranch } from "lucide-react";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { RowLabel, RowLead, RowTrail } from "../list/Row";
-import { Tree, TreeLine, TreeRow, type Key } from "./Tree";
+import { Tree, TreePending, TreeRow, type Key } from "./Tree";
 
 /** A file's row: its icon and its name. */
 function file(id: string, name: string, mark?: string) {
@@ -82,9 +82,9 @@ function Files() {
         {folder(
           "docs",
           "docs",
-          <TreeLine id="docs-reading" textValue="Reading…">
+          <TreePending>
             <RowLabel>Reading…</RowLabel>
-          </TreeLine>,
+          </TreePending>,
         )}
         {file("readme", "README.md", "M")}
       </Tree>
@@ -102,7 +102,7 @@ type Story = StoryObj<typeof meta>;
 /**
  * **A branch's files**: one Tab stop on the file picked; ↑ ↓ walk the rows drawn; → opens a
  * closed folder and moves into an open one; ← closes it and moves to its parent; typing finds a
- * row; a folder still read says so in its place. The picture is the picked file under the
+ * row; a folder still read says so in its place, and the keyboard passes it. The picture is the picked file under the
  * keyboard, its ring inside its wash.
  */
 export const BranchFiles: Story = {
@@ -125,9 +125,15 @@ export const BranchFiles: Story = {
     await userEvent.keyboard("{ArrowUp}");
     await untilFocused(() => row("docs"), "Files: Up moves to docs");
     await userEvent.keyboard("{ArrowRight}");
-    await waitFor(() => expect(row("Reading…")).toHaveAttribute("aria-level", "2"));
+    // A folder being read says so in its place, and the keyboard stays on the folder.
+    await waitFor(() =>
+      expect(canvas.getByText("Reading…").closest('[role="row"]')).toHaveAttribute(
+        "aria-level",
+        "2",
+      ),
+    );
     await userEvent.keyboard("{ArrowRight}");
-    await untilFocused(() => row("Reading…"), "Files: a folder being read says so in its place");
+    await untilFocused(() => row("docs"), "Files: Right stays on a folder being read");
     await userEvent.keyboard("{Home}m");
     await untilFocused(() => row("main.tsx"), "Files: typing finds main.tsx");
     await userEvent.keyboard("{ArrowUp}{ArrowUp}");
@@ -142,7 +148,7 @@ function Changes() {
       <Tree aria-label="Repos of alpha" size="sm" fixed expandedKeys={["repo:svc", "branches:svc"]}>
         <TreeRow
           id="repo:svc"
-          textValue="svc, on main"
+          textValue="svc main"
           content={
             <>
               <RowLead>
@@ -155,12 +161,12 @@ function Changes() {
         >
           <TreeRow
             id="changes:svc"
-            textValue="changes: 3 changed"
+            textValue="3 changed, changes"
             content={<RowLabel>3 changed</RowLabel>}
           />
           <TreeRow
             id="branches:svc"
-            textValue="branches: 2 branches"
+            textValue="2 branches"
             content={
               <>
                 <RowLead>
@@ -175,7 +181,7 @@ function Changes() {
           </TreeRow>
           <TreeRow
             id="ci:svc"
-            textValue="pipeline: success"
+            textValue="success · 2m ago, pipeline"
             content={<RowLabel>success · 2m ago</RowLabel>}
           />
         </TreeRow>
@@ -195,16 +201,19 @@ export const NeverFolds: Story = {
     const row = (name: string) => within(tree).getByRole("row", { name });
     await expect(tree.querySelectorAll("button")).toHaveLength(0);
     await userEvent.tab();
-    await untilFocused(() => row("svc, on main"), "Never folds: Tab lands on the first repo");
+    await untilFocused(() => row("svc main"), "Never folds: Tab lands on the first repo");
     await userEvent.keyboard("{ArrowRight}");
-    await untilFocused(() => row("changes: 3 changed"), "Never folds: Right moves into it");
+    await untilFocused(() => row("3 changed, changes"), "Never folds: Right moves into it");
     await userEvent.keyboard("{ArrowDown}");
-    await untilFocused(() => row("branches: 2 branches"), "Never folds: Down to its branches");
+    await untilFocused(() => row("2 branches"), "Never folds: Down to its branches");
     await userEvent.keyboard("{Enter}{ArrowLeft}");
-    await untilFocused(() => row("svc, on main"), "Never folds: Left moves to the parent");
-    await expect(row("branches: 2 branches")).toHaveAttribute("aria-expanded", "true");
+    await untilFocused(() => row("svc main"), "Never folds: Left moves to the parent");
+    await expect(row("2 branches")).toHaveAttribute("aria-expanded", "true");
     await userEvent.keyboard("{End}");
-    await untilFocused(() => row("pipeline: success"), "Never folds: End moves to the last row");
+    await untilFocused(
+      () => row("success · 2m ago, pipeline"),
+      "Never folds: End moves to the last row",
+    );
   },
 };
 

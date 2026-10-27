@@ -299,7 +299,8 @@ pub static TOOLS: [Tool; 18] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
-                      each with the slug todo_done closes it by.",
+                      each with the slug todo_done closes it by. A done todo is not listed: \
+                      `purlis ws todo --done` lists those.",
         schema: no_arguments,
         read_only: true,
     },
@@ -312,8 +313,9 @@ pub static TOOLS: [Tool; 18] = [
     },
     Tool {
         name: "todo_done",
-        description: "Close one of this workspace's todos by its slug (todo_list shows it). \
-                      Its closing is written to the workspace's memory.",
+        description: "Mark one of this workspace's todos done by its slug (todo_list shows \
+                      it). Its closing is written to the workspace's memory, and the todo stays \
+                      as done, so it can be reopened (`purlis ws todo reopen <slug>`).",
         schema: || one_string("slug", "The todo's slug, as todo_list shows it."),
         read_only: false,
     },
@@ -757,9 +759,11 @@ fn run(
             let memory = must_open(root, place, "memory")?;
             let header = crate::workspaces::ws_memory_header(root, ws);
             write_entry(&memory, &header, &format!("Closed todo: {title}"), now)?;
-            forget(&todos, &file)?;
+            file_as_done(&todos, &file)?;
             Ok(format!(
-                "Closed todo {} in '{ws}'; its memory has the trace.",
+                "Closed todo {} in '{ws}'; its memory has the trace. It stays as done: \
+                 purlis ws todo reopen {} opens it again.",
+                stem(&file),
                 stem(&file)
             ))
         }
@@ -1141,12 +1145,29 @@ fn resolve(store: &held::Store, ident: &str) -> Result<String, String> {
     }
 }
 
-/// Delete `file` and its index line, through the held store.
+/// Move `file` into the store's `archive/` and drop its index line, through the held store: a
+/// done todo stays there until it is reopened or deleted (ADR 0106), as
+/// `Workspace::close_todo` keeps it. A name already taken there is numbered `-2`, then `-2-3`,
+/// as `memstore::archive_one` numbers it.
 #[cfg(unix)]
-fn forget(store: &held::Store, file: &str) -> Result<(), String> {
-    store.remove(file)?;
-    // As `memstore::forget`: the file is gone, so a failure to drop its line is drift the next
-    // `optimize` names, never a failure of the close.
+fn file_as_done(store: &held::Store, file: &str) -> Result<(), String> {
+    let archive = store.sub(crate::memstore::ARCHIVE, true)?.ok_or_else(|| {
+        format!(
+            "the chat's todos/{} could not be made",
+            crate::memstore::ARCHIVE
+        )
+    })?;
+    // Under the store's lock, as `memstore::archive_one` moves one, and never onto a file: a
+    // name taken, or taken between the look and the move, is numbered.
+    let _held = store.lock()?;
+    let mut dest = file.to_owned();
+    let mut n = 2;
+    while archive.entry(&dest)?.is_some() || !store.rename_into_new(file, &archive, &dest)? {
+        dest = format!("{}-{n}.md", stem(&dest));
+        n += 1;
+    }
+    // As `memstore::archive_one`: the file has moved, so a failure to drop its line is drift
+    // the next `optimize` names, never a failure of the close.
     crate::memstore::rewrite_index(store, file, None);
     Ok(())
 }

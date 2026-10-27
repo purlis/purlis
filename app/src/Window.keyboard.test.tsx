@@ -427,7 +427,7 @@ describe("the window's tab order", () => {
       // halves; then Memory, which this workspace's answer leaves empty, and so its line's +
       // too.
       "separator Resize the Panel",
-      "treeitem alphathe workspace itself",
+      "row alpha",
       "separator Resize the Panel's halves",
       // The right side's activity bar (#1678): ONE stop, the open view's tab, then its Lower
       // icons, ONE stop. The window's rightmost column, so last in the DOM; Tab walks it
@@ -454,21 +454,18 @@ describe("the window's tab order", () => {
 });
 
 /** The rows of a list-shaped region, in the order it draws them. */
-const rowsIn = (region: HTMLElement) => [
-  ...region.querySelectorAll<HTMLElement>("button, summary"),
-];
-
 describe("a list is one Tab stop", () => {
   it("the explorer: the current row is the stop, and Up, Down, Home and End move", async () => {
     await theWholeWindow();
     await showTheExplorer();
-    const rows = rowsIn(screen.getByRole("tree", { name: "Repos and branches" }));
+    const tree = screen.getByRole("treegrid", { name: "Repos and branches" });
+    const rows = within(tree).getAllByRole("row");
     // The workspace row, the clone and its one branch. No chat: the Chats view lists them
     // (#1673); no files: the Files section draws them (#1677).
     expect(rows.map(said)).toEqual([
-      expect.stringMatching(/^treeitem alpha/),
-      "treeitem svc1",
-      "treeitem one in svc",
+      expect.stringMatching(/^row alpha/),
+      "row svc",
+      "row one in svc",
     ]);
     expect(rows.map((row) => row.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
 
@@ -495,9 +492,7 @@ describe("a list is one Tab stop", () => {
   it("the explorer: a picked worktree is where the keyboard comes back in", async () => {
     await theWholeWindow();
     await showTheExplorer();
-    const piece = within(screen.getByTestId("piece-svc-one")).getByRole("treeitem", {
-      name: "one in svc",
-    });
+    const piece = screen.getByRole("row", { name: "one in svc" });
     await userEvent.click(piece);
     await waitFor(() => expect(piece).toHaveAttribute("tabindex", "0"));
   });

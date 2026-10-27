@@ -300,6 +300,8 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "todo.open": { said: SAID.open, slot: "first" },
   "todo.done": { said: SAID.markDone, slot: "first" },
   "todo.forget": { said: SAID.forget, slot: "end", danger: true, warns: WARNS.forgets },
+  "todo.reopen": { said: SAID.reopen, slot: "first" },
+  "todo.delete": { said: SAID.delete, slot: "end", danger: true, warns: WARNS.deletesDone },
   "session.open": { said: SAID.open, slot: "first" },
   "session.resume": { said: SAID.resume, slot: "first" },
   "memory.open": { said: SAID.open, slot: "first" },

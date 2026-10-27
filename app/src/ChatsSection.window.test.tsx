@@ -1750,10 +1750,14 @@ describe("one tree style, in the Chats tree and the explorer (#1672)", () => {
       expect(shape(tree)).toEqual(["1 steward 1", "2 drop commons", "3 steward 3"]),
     );
     // The Explorer view is mounted beside Chats and hidden while Chats is open (#1673).
-    const explorer = await screen.findByRole("tree", { name: "Repos and branches", hidden: true });
-    // Both are the shared tree (DS-11 the Chats tree, DS-12 the explorer).
+    // The explorer is the tree family's since #2911 (`ui/tree`); the Chats tree is still the
+    // shared tree (DS-11) until it moves too.
+    const explorer = await screen.findByRole("treegrid", {
+      name: "Repos and branches",
+      hidden: true,
+    });
     expect(tree).toHaveClass("ui-tree");
-    expect(explorer).toHaveClass("ui-tree");
+    expect(explorer).toHaveAttribute("data-scope", "tree");
 
     // The Chats tree is flat: each row draws a guide per level above it, in the tree's steps.
     expect(drawnAs(row(tree, "steward 1"), "--ui-tree-depth")).toBe("0");

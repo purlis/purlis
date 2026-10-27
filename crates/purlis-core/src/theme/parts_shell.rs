@@ -459,8 +459,9 @@ fn rail_look(variant: &str, states: &[State]) -> Look {
 /// **The title bar's pinned workspaces** (#2916, R101–R105, R140, N17): a chip per pinned
 /// workspace of the project in front, after its name, and the dashed chip that pins the current
 /// workspace while it is not pinned. A chip is 28px with corners of 8 and quiet words (R101); the
-/// current one takes the card's fill and the primary words, and its waiting count is the amber
-/// one (R101).
+/// current one takes the accent's wash and the primary words, the stronger wash under the
+/// pointer, while any other under the pointer takes the card's fill (R101 as amended by #3345);
+/// its waiting count is the amber one (R101).
 ///
 /// The family's root is the chip (`titlebar.workspace.*`, as the prototype's part keys name it):
 /// the strip around the chips lays them out and scrolls, and is no part a theme keys.
@@ -510,7 +511,7 @@ pub(super) const TITLEBAR: Family = Family {
         Variant {
             name: "pinned",
             since: 12,
-            description: "A pinned workspace: quiet words, the card's fill while it is current.",
+            description: "A pinned workspace: quiet words, the accent's wash while it is current.",
             consent: None,
         },
         Variant {
@@ -551,15 +552,22 @@ pub(super) const TITLEBAR: Family = Family {
 };
 
 /// **A chip's colours as `app/src/ui/titlebar/titlebar.css` draws them.** Quiet words with no box
-/// at rest; the card's fill and the primary words under the pointer and while current. The
-/// unpinned chip's words are muted, its edge the window's subtle line, dashed, and it is lit only
-/// under the pointer.
+/// at rest; the card's fill and the primary words under the pointer; the accent's wash and the
+/// primary words while current, and the stronger wash while current under the pointer, so the
+/// chosen chip never looks hovered (#3345). The unpinned chip's words are muted, its edge the
+/// window's subtle line, dashed, and it is lit only under the pointer.
 fn titlebar_look(variant: &str, states: &[State]) -> Look {
+    let hovered = states.contains(&State::Hover);
     // The unpinned chip is always current, and draws no fill for it: only the pointer lights it.
-    let lit = states.contains(&State::Hover)
-        || (variant != "unpinned" && states.contains(&State::Selected));
+    let chosen = variant != "unpinned" && states.contains(&State::Selected);
+    let lit = hovered || chosen;
     Look {
-        fill: if lit { "surface.overlay" } else { TRANSPARENT },
+        fill: match (chosen, hovered) {
+            (true, true) => "accent.wash-hover",
+            (true, false) => "accent.wash",
+            (false, true) => "surface.overlay",
+            (false, false) => TRANSPARENT,
+        },
         text: if lit {
             "text.primary"
         } else if variant == "unpinned" {

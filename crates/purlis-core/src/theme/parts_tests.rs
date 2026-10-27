@@ -789,7 +789,7 @@ fn a_disabled_control_is_not_held_to_the_floors() {
 fn rule<'a>(css: &'a str, selector: &str) -> &'a str {
     let at = css
         .find(&format!("\n{selector} {{"))
-        .unwrap_or_else(|| panic!("button.css has no rule {selector}"));
+        .unwrap_or_else(|| panic!("the stylesheet has no rule {selector}"));
     let body = &css[at..];
     &body[..body.find('}').unwrap()]
 }
