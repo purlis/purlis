@@ -13,4 +13,5 @@ export default {
   // Nor is the family's own stylesheet, on its wrapper's attributes, a ground: nothing a button
   // holds is another button.
   groundParts: { button: [] },
+  forced: { dangerous: ['[data-scope="button"][data-part="root"][data-variant="danger"]'] },
 } satisfies FamilyTheme;

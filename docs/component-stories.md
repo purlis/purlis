@@ -10,12 +10,12 @@ Its siblings: [`ui-primitives.md`](ui-primitives.md) says what the window is bui
 
 ## What a story is held to
 
-| Gate              | What fails it                                                                                                                                                              | Where it is set                       |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| **Renders**       | The story throws, or its component does, in either browser.                                                                                                                | `app/.storybook/vitest.project.ts`    |
-| **Keyboard**      | Its `play` function fails: a key that does not move the focus or the value it should, Esc that does not dismiss, a focus that ends up out of sight.                        | the story's `play`                    |
-| **Accessibility** | Any axe violation of a rule tagged `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` or `wcag22aa`, with `target-size` (WCAG 2.5.8) switched on, which axe leaves off by default. | `app/.storybook/preview.tsx`          |
-| **Screenshot**    | Its picture is not its baseline, or it has no baseline.                                                                                                                    | `app/.storybook/screenshots.setup.ts` |
+| Gate | What fails it | Where it is set |
+| --- | --- | --- |
+| **Renders** | The story throws, or its component does, in either browser. | `app/.storybook/vitest.project.ts` |
+| **Keyboard** | Its `play` function fails: a key that does not move the focus or the value it should, Esc that does not dismiss, a focus that ends up out of sight. | the story's `play` |
+| **Accessibility** | Any axe violation of a rule tagged `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` or `wcag22aa`, with `target-size` (WCAG 2.5.8) switched on, which axe leaves off by default. | `app/.storybook/preview.tsx` |
+| **Screenshot** | Its picture is not its baseline, or it has no baseline. | `app/.storybook/screenshots.setup.ts` |
 
 Both browsers run every story: WebKit is the engine purlis ships in on macOS and Linux
 (WKWebView, WebKitGTK), and Chromium is WebView2's on Windows. A picture is kept for each.
@@ -27,10 +27,10 @@ ships, in each density. One decorator in `app/.storybook/preview.tsx` draws it i
 story picks a theme of its own; each cell is a Vitest project of its own, `stories <cell>
 (<browser>)` (`app/.storybook/vitest.project.ts`, `app/.storybook/matrix.ts`).
 
-| Theme                             | Appearances                           | Densities                | Pictures                                        |
-| --------------------------------- | ------------------------------------- | ------------------------ | ----------------------------------------------- |
-| Purlis Classic (`purlis-classic`) | `dark`, `light`                       | `comfortable`, `compact` | dark and light, comfortable                     |
-| Purlis (`purlis`)                 | `dark`, `light`, `dark-high-contrast` | `comfortable`, `compact` | dark, light and dark high contrast, comfortable |
+| Theme | Appearances | Densities | Pictures |
+| --- | --- | --- | --- |
+| Purlis Classic (`purlis-classic`) | `dark`, `light` | `comfortable`, `compact` | dark and light, comfortable |
+| Purlis (`purlis`) | `dark`, `light`, `dark-high-contrast` | `comfortable`, `compact` | dark, light and dark high contrast, comfortable |
 
 Every cell renders the story, plays its keyboard path and runs axe. A picture is taken only in
 the cells `app/.storybook/pictured.json` names, each its own baseline, named for its theme and
@@ -126,25 +126,26 @@ A family's ticket (spec #2897) is done when it ships:
 
 ### How to add a family
 
-A pull request that adds a family touches its own folders and nothing two family pull requests
-share (operator ruling 2026-10-26, #3386, #3387). Every shared list is found from the files below,
-so there is no line to add to `eslint.config.js`, `eslint.ui-rules.js`, `styles.css`, a test's
-list or an ADR's index:
+A pull request that adds a family touches its own folders and no line another family's pull
+request touches (operator ruling 2026-10-26, #3386, #3387). Each shared list is found from the
+files below, so nothing is added to `eslint.config.js`, `eslint.ui-rules.js`, `styles.css`, a
+theme test's list or an ADR's index:
 
-| What                      | Where                                                                                                 | Found by                                                        |
-| ------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| its parts and tests       | `crates/purlis-core/src/theme/parts_<family>.rs`, `parts_<family>_tests.rs`                           | `build.rs`                                                      |
-| its stylesheet            | `app/src/ui/<family>/<family>.css`                                                                    | `styles.css`'s `@families` line                                 |
-| its forced colours        | `app/src/ui/<family>/forced-colors.css`, one `@media (forced-colors: active)` block                   | `styles.css`'s `@forced` line, before `theme/forced-colors.css` |
-| its lint rules            | `app/src/ui/<family>/lint.js`: `rules`, and `off` for the files a rule is still off in                | `eslint.ui-rules.js`, every rule an error                       |
-| its lint tests            | `app/src/ui/<family>/lint.test.ts`, from `../lint.testkit`                                            | required beside `lint.js` (`ui/lint.test.ts`)                   |
-| its tiers and grounds     | `app/src/ui/<family>/theme.testkit.ts`: `faint`, `quiet`, `spreadGrounds`, `classless`, `groundParts` | `theme/families.testkit.ts`                                     |
-| the cascade tests read it | nothing: `cascade.testkit.ts` reads what `styles.css` imports, as built                               | `ui/stylesheets.ts`                                             |
-| an ADR amendment          | `docs/adr/<nnnn>/<yyyy-mm-dd>-<slug>.md`                                                              | the folder; no index is kept                                    |
+| What | Where | Found by |
+| --- | --- | --- |
+| its parts and their tests | `crates/purlis-core/src/theme/parts_<family>.rs`, `parts_<family>_tests.rs` | `build.rs` |
+| its stylesheet | `app/src/ui/<family>/<family>.css` | `styles.css`'s `@families` line |
+| its forced colours | `app/src/ui/<family>/forced-colors.css`, one `@media (forced-colors: active)` block | `styles.css`'s `@forced` line, before `theme/forced-colors.css` |
+| its lint rules | `app/src/ui/<family>/lint.js`: `rules`; `off`, the files a rule is still off in; `rawButtons`, its controls still drawn as a raw `<button>` | `eslint.ui-rules.js`, every rule an error |
+| its lint tests | `app/src/ui/<family>/lint.test.ts`, on `../lint.testkit` | required beside `lint.js` (`ui/lint.test.ts`) |
+| what the theme tests hold it to | `app/src/ui/<family>/theme.testkit.ts`: `faint`, `quiet`, `spreadGrounds`, `classless`, `groundParts`, and `forced` (what its forced sheet draws) | `theme/families.testkit.ts` |
+| the cascade tests | nothing: `cascade.testkit.ts` reads what `styles.css` imports, as built | `ui/stylesheets.ts` |
+| an ADR amendment | `docs/adr/<nnnn>/<yyyy-mm-dd>-<slug>.md` | the folder; no index is kept |
 
-The written-again files (the schema, the docs family table, the stories' theme copy) are
-generated, one entry per line in the families' order, so git merges two families' additions;
-on a conflict, take main's and write them again.
+The files written again from the manifest (the schema, the docs family table, the stories'
+theme copy) are generated one entry per line in the families' order, so git merges two
+families' additions; on a conflict, take main's and write them again. One shared list is left:
+the forced-colours end-to-end probe (`app/e2e/specs/forced-colors.e2e.ts`), #3481.
 
 ## Running them
 
@@ -220,7 +221,6 @@ add or change one:
 
    Both refuse baselines drawn of another head, or of a head behind the base its run merged it
    with: update the branch, let `stories` run, and take that run's.
-
 3. Review the pictures in the pull request's diff, which shows each one beside the one it
    replaces.
 

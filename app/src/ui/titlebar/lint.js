@@ -30,3 +30,11 @@ const titlebarFamily = moved({
 export const rules = {
   "titlebar-family": titlebarFamily,
 };
+
+/**
+ * **This family's controls still drawn as a raw `<button>`** (D-2904-9): The title bar's workspace chips drawn by hand, said by its role
+ * or its class, which the button family's rule lets through until this family's lane moves them.
+ */
+export const rawButtons = {
+  classes: ["plane-root"],
+};

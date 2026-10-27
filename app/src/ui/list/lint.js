@@ -25,3 +25,16 @@ const listFamily = moved({
 export const rules = {
   "list-family": listFamily,
 };
+
+/**
+ * **This family's controls still drawn as a raw `<button>`** (D-2904-9): A list's row drawn by hand, said by its role
+ * or its class, which the button family's rule lets through until this family's lane moves them.
+ */
+export const rawButtons = {
+  classes: [
+    // A list's row, a vault's secret, and a needs-you mark on a row.
+    "ui-row",
+    "vault-secret",
+    "needs-you-mark",
+  ],
+};

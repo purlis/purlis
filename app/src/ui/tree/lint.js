@@ -35,3 +35,12 @@ export const rules = {
 export const off = {
   "tree-family": ["src/ChatsSection.tsx", "src/ChatBrowsersShown.tsx", "src/FinishedTasks.tsx"],
 };
+
+/**
+ * **This family's controls still drawn as a raw `<button>`** (D-2904-9): A tree's row drawn by hand, said by its role
+ * or its class, which the button family's rule lets through until this family's lane moves them.
+ */
+export const rawButtons = {
+  roles: ["treeitem"],
+  classes: ["ui-tree-row"],
+};

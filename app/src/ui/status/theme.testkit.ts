@@ -14,4 +14,8 @@ export default {
     // A status cell's word before its count (#2913).
     '[data-static]:has(> [data-part="count"]) > [data-scope="status-item"][data-part="label"]',
   ],
+  forced: {
+    marked: ['[data-scope="status-item"][data-variant="waiting"] > [data-part="count"]'],
+    dangerous: ['[data-scope="status-item"][data-part="root"][data-tone="danger"]'],
+  },
 } satisfies FamilyTheme;

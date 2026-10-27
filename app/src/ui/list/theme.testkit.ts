@@ -15,4 +15,13 @@ export default {
     // A list's group name (#2911): a day, a file.
     '[data-scope="list"][data-part="header"]',
   ],
+  forced: {
+    selected: ['[data-scope="list"][data-part="root"][data-selected]'],
+    // A chosen row keeps its edge (#2911).
+    drawn: {
+      '[data-scope="list"][data-part="root"][data-selected]': {
+        "box-shadow": "inset 2px 0 0 SelectedItemText",
+      },
+    },
+  },
 } satisfies FamilyTheme;

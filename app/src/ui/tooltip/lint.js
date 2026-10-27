@@ -6,8 +6,8 @@
  *
  * `purlis/tooltip-family` (error: the tooltip family has moved, #2908): a native `title=` on an
  * element, a primitive's part (`RadioGroup.Item`), a member of the button or status item
- * family, or a house component that hands it on to its element (`handsOn`, set in
- * `eslint.config.js`). A hint is the shared tooltip: `<Tooltip tip>` from `ui/tooltip/Tooltip`
+ * family, or a house component that hands it on to its element (`handsOn`, the rule's option,
+ * which the window's lint sets for none today). A hint is the shared tooltip: `<Tooltip tip>` from `ui/tooltip/Tooltip`
  * around any element, `tooltip` on a `Button`, a `ToggleButton`, a `StatusItem` or a
  * `StatusCell`, and an `IconButton`'s name, which its tooltip shows. A frame's `title` is its
  * name, not a tooltip, and stays.

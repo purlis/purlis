@@ -12,4 +12,12 @@ export default {
     '[data-scope="menu"][data-part="root"][data-disabled]',
     '[data-scope="menu"][data-part="root"][data-unavailable]',
   ],
+  forced: {
+    selected: [
+      '[data-scope="menu"][data-part="root"][data-focused]:not([data-disabled])',
+      '[data-scope="menu"][data-part="root"][data-hovered]:not([data-disabled])',
+      '[data-scope="menu"][data-part="root"][data-open]',
+    ],
+    dangerous: ['[data-scope="menu"][data-part="root"][data-variant="danger"]'],
+  },
 } satisfies FamilyTheme;

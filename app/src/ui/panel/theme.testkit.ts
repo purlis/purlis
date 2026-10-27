@@ -15,4 +15,10 @@ export default {
     // The content panel the tabs attach to (`panelRoot("content")`), Purlis's panel fill.
     ["panes", ["surface.raised"]],
   ],
+  forced: {
+    // A resize handle's grip keeps the system's own colours (#3143).
+    drawn: {
+      '[data-scope="panel-separator"][data-part="grip"]': { "forced-color-adjust": "none" },
+    },
+  },
 } satisfies FamilyTheme;

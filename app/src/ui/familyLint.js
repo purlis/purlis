@@ -3,7 +3,7 @@
 
 /**
  * **What every family's lint rule is made of** (#2904, #3387): the readers of a JSX element's
- * attributes, and the two rules a family's own is built from (`moved`, `unmoved`). Each family's
+ * attributes, and the rule most families' own is built from (`moved`). Each family's
  * rule is in its own folder, `src/ui/<family>/lint.js`, and `eslint.ui-rules.js` finds it there.
  */
 
@@ -50,21 +50,6 @@ export const attributeOf = (node, name) =>
 /** The words every string of a `className` can hold. */
 export const classWordsOf = (attribute) =>
   [...classStrings(attribute?.value)].flatMap(([, text]) => text.split(/\s+/)).filter(Boolean);
-
-/** A rule that warns of one family's raw control until that family moves. */
-export function unmoved({ description, message, test }) {
-  return {
-    meta: { type: "suggestion", docs: { description }, messages: { unmoved: message }, schema: [] },
-    create(context) {
-      return {
-        JSXOpeningElement(node) {
-          if (node.name.type !== "JSXIdentifier") return;
-          for (const at of test(node)) context.report({ node: at, messageId: "unmoved" });
-        },
-      };
-    },
-  };
-}
 
 /** The kinds of `<input>` another family draws: a choice, a slider, a colour well. */
 export const CHOICES = new Set(["checkbox", "radio", "range", "color", "file"]);

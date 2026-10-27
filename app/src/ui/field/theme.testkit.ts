@@ -11,4 +11,9 @@ export default {
     '[data-scope="text-input"][data-part="root"][data-disabled]',
     '[data-scope="textarea"][data-part="root"][data-disabled]',
   ],
+  forced: {
+    refused: [
+      ':is([data-scope="text-input"], [data-scope="textarea"])[data-part="root"][data-invalid]',
+    ],
+  },
 } satisfies FamilyTheme;

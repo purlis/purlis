@@ -18,4 +18,9 @@ export default {
     // A select's placeholder, before a value is chosen (#2906).
     '[data-scope="select"][data-part="placeholder"]',
   ],
+  forced: {
+    refused: [
+      ':is([data-scope="select"], [data-scope="combobox"])[data-part="root"][data-invalid]',
+    ],
+  },
 } satisfies FamilyTheme;

@@ -5,41 +5,20 @@ import js from "@eslint/js";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
-import { purlisUi, stillOff } from "./eslint.ui-rules.js";
+import { purlisUi, rawButtons, stillOff } from "./eslint.ui-rules.js";
 
 /** The primitives library, which only its wrappers in `src/ui` import (#2904, ADR 0104). */
 const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
 
 /**
- * **The families a raw `<button>` may still belong to** (#2904, D-2904-9): the tabs and strips,
- * the list and tree rows, the menu rows, the activity items, the
- * title bar's workspace chips, the cards and the settings nav. Each by
- * the role its button says, or by its family's class. The status items and the title bar's status
- * pills have moved (#2913), and so have the choices (#2907). A menu's rows are the menu family's since #2909, and no button says
- * their role.
+ * **The raw `<button>`s that are no family's yet** (#2904, D-2904-9): the settings nav and the
+ * files a settings page is edited as, and a link drawn as a button, each by its class or its
+ * role. A family's own still-hand-drawn buttons are in its folder (`rawButtons`, in
+ * `src/ui/<family>/lint.js`, #3387); `eslint.ui-rules.js` gathers them with these.
  */
-const OTHER_FAMILIES = {
-  roles: ["tab", "treeitem", "link"],
-  classes: [
-    // Rows of a list or a tree; a line's name in the Activity tab.
-    "ui-row",
-    "ui-tree-row",
-    "vault-secret",
-    // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
-    "closer",
-    "crumb",
-    "tab-tasks-hand",
-    "tab-tasks-counts",
-    // The title bar's workspace chips, and a needs-you mark on a row.
-    "needs-you-mark",
-    "plane-root",
-    // The cards: the welcome's doors, a recent project, a repo.
-    "welcome-door",
-    "repo-card",
-    // The settings nav, and the files a settings page is edited as.
-    "ui-settings-nav-item",
-    "ui-settings-raw-file",
-  ],
+const NO_FAMILYS = {
+  roles: ["link"],
+  classes: ["ui-settings-nav-item", "ui-settings-raw-file"],
 };
 
 export default tseslint.config(
@@ -78,8 +57,8 @@ export default tseslint.config(
       // Every family's rule (`src/ui/<family>/lint.js`, #3387), an error.
       ...Object.fromEntries(Object.keys(purlisUi.rules).map((name) => [`purlis/${name}`, "error"])),
       // A raw `<button>` left is a control of a family that has not moved yet (D-2904-9), said
-      // by its role or its class; each family's ticket takes its own out of these lists.
-      "purlis/button-family": ["error", { otherFamilies: OTHER_FAMILIES }],
+      // by its role or its class: each family's own (`rawButtons`), and the ones no family has.
+      "purlis/button-family": ["error", { otherFamilies: rawButtons(NO_FAMILYS) }],
     },
   },
   // **What each family's rule is still off in** (a family's `off`, in its `lint.js`), each

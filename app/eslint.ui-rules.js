@@ -9,7 +9,9 @@
  * every call site (ADR 0104 §5-6). **Each family's rules are in its own folder**,
  * `src/ui/<family>/lint.js` (#3387, operator ruling 2026-10-26: two family pull requests never
  * touch the same lines): it exports `rules`, by name (`purlis/<name>`), and may export `off`, the
- * files each of its rules is still off in until their lanes move them. This module finds every
+ * files each of its rules is still off in until their lanes move them, and `rawButtons`, the
+ * roles and classes of its controls still drawn as a raw `<button>` (the button family's
+ * `otherFamilies`). This module finds every
  * such file, in the families' names' order, and `eslint.config.js` turns every rule found on as an
  * error. A pull request that adds a family's rule adds its folder's `lint.js` and its
  * `lint.test.ts` beside it, and no line here. What the rules are made of is
@@ -56,6 +58,16 @@ export const purlisUi = { meta: { name: "purlis-ui" }, rules: everyRule() };
 export const stillOff = lints.flatMap(({ off = {} }) =>
   Object.entries(off).map(([name, files]) => ({ files, rules: { [`purlis/${name}`]: "off" } })),
 );
+
+/**
+ * The roles and classes a raw `<button>` may still say it is another family's control by: every
+ * family's `rawButtons`, with `more` (the ones no family has), each once, in order.
+ */
+export function rawButtons(more = { roles: [], classes: [] }) {
+  const all = [...lints.map(({ rawButtons: own = {} }) => own), more];
+  const every = (key) => [...new Set(all.flatMap((one) => one[key] ?? []))].sort();
+  return { roles: every("roles"), classes: every("classes") };
+}
 
 /** The words of an answer that grants, which no menu row says (`menuModel.test.ts`). */
 export { GRANT_WORDS } from "./src/ui/menu/lint.js";

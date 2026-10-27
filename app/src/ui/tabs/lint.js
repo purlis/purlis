@@ -94,3 +94,18 @@ export const off = {
     "src/StripTablist.tsx",
   ],
 };
+
+/**
+ * **This family's controls still drawn as a raw `<button>`** (D-2904-9): A tab drawn by hand (`role="tab"`), and a tab's marks and closer and the strip's offers, said by its role
+ * or its class, which the button family's rule lets through until this family's lane moves them.
+ */
+export const rawButtons = {
+  roles: ["tab"],
+  classes: [
+    // The tab strips and a pane's top line: a tab's marks and closer, the strip's offers.
+    "closer",
+    "crumb",
+    "tab-tasks-hand",
+    "tab-tasks-counts",
+  ],
+};

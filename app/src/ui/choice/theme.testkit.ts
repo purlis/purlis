@@ -36,4 +36,15 @@ export default {
     '[data-scope="option-card"][data-part="detail"]',
     '[data-scope="segment"][data-part="root"]',
   ],
+  forced: {
+    selected: ['[data-scope="segment"][data-part="root"][data-selected]'],
+    underlined: ['[data-scope="segment"][data-part="root"][data-selected]'],
+    drawn: {
+      // A switch's thumb, on the side it is switched to, and a radio's dot keep their shape.
+      '[data-scope="switch"][data-part="thumb"]': { "background-color": "CanvasText" },
+      '[data-scope="switch"][data-part="root"][data-selected] [data-scope="switch"][data-part="thumb"]':
+        { "background-color": "HighlightText" },
+      '[data-scope="radio"][data-part="mark"]::after': { "background-color": "CanvasText" },
+    },
+  },
 } satisfies FamilyTheme;
