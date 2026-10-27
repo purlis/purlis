@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793088614394,
+  "lastUpdate": 1793095371226,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26628,6 +26628,48 @@ window.BENCHMARK_DATA = {
             "value": 101.631788,
             "unit": "ms",
             "extra": "median of 5 runs: 100.393, 101.121, 101.632, 101.713, 102.351 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "04b6e450b4439726439c1c6d2e39b407526b6b03",
+          "message": "Action results: a closable notice with plain words, kept in Notices (#3344) (#3360)\n\n* Action results: a closable notice with plain words, kept in Notices (#3344)\n\nThe sidebar-views prototype's Q3 A. What the last action answered is a\nnotice at the top of the content: a title, one plain sentence, its ways\non, a Details disclosure holding the core's lines, and a x that closes it\n(Esc too). The same result is kept in the Inbox's Notices under Results.\nA workspace made is said in the app's own words (actionResult.ts), and\nthe core's lines written for an agent are never shown.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Action results: the tests and scenarios read the result's notice (#3344)\n\nThe same result is listed under Results too, so a test reads the notice\nat the top of the content (or the palette's line). A line that only says\nthe core has not answered yet is never kept.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Action results: the prototype's card, Add a vision, one live region (#3344)\n\nThe review of #3360: the notice is Q3 A's card (mark, title with x at the\ntop right, sentence, ways on their own row with Open filled and Details a\nghost disclosure, details inside); Add a vision records the workspace's\nvision through the core's brokered write (workspace_vision); the kept\ncopies under Results are no live region; a kept result put away stays\naway; every result drops the core's agent lines; progress lines are not\nkept; the pane-notices spec closes a standing result before it measures.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Action results: the generated bindings carry workspace_vision (#3344)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Action results: the dialog tests open Add a vision (#3344)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Action results: workspace_vision is served on a link too (#3344)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Action results: the palette's line in plain words, a vision shown before it is replaced, Details closed per result (#3344)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Action results: a refusal says so in words, and tests for one live region and Add a vision (#3344)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Action results: the palette's refusal reads as a status in the commanding tests (#3344)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Action results: the card's ways flush with its title, and the re-review's nits (#3344)\n\nB2: the card's ways row is keyed on the notice root, so it beats the\nfamily's line rule; a story holds the first way flush with the title.\nThe guard counts a live NoticeMessage as a live region and lists the\nfamily's file; the squeeze case stands in at the real result's height;\nthe palette's second refusal is read as a status; the card takes its\nwidth from notice.css alone; Details padded 8/10; a card Notice's props\ntake no persona, label, command or pane.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* pane-notices: formatted (#3344)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-27T09:22:55Z",
+          "tree_id": "d5dc2b8a540a453ea6997533b1d9dc28b917f2d5",
+          "url": "https://github.com/purlis/purlis/commit/04b6e450b4439726439c1c6d2e39b407526b6b03"
+        },
+        "date": 1793095367407,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.449648,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.437, 0.446, 0.450, 0.464, 0.466 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4861595,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.422, 16.426, 16.486, 16.491, 16.676 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.71972249999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.123, 101.718, 101.720, 101.920, 102.833 ms"
           }
         ]
       }
