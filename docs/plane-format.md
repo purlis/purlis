@@ -7220,7 +7220,7 @@ rewritten.
   (`grades::underway::interrupted`, #3443): two purlis processes, or two threads of one, that
   record at once take turns, so a stale grade is recorded once.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
-- **Tier:** Clone state, durable but holding nothing: a lock, never read.
+- **Tier:** Clone state, transient — a lock that holds nothing and is never read; losing it loses nothing.
 - **Git:** gitignored, under the state directory.
 
 ### `skill-tries/<id>/`
