@@ -344,6 +344,9 @@ fn the_studio_lists_each_harnesss_own_skills_and_plugins_and_marks_a_clash_with_
             outside: Level::Installed,
             owner: Owner::You,
             outcome: ClashOutcome::BothLoad,
+            said: "your own Claude Code skills has a skill of this name too, and a chat there \
+                   gets both"
+                .to_owned(),
         }]
     );
     let codex = &studio.harnesses[2];

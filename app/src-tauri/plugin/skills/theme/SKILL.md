@@ -146,9 +146,11 @@ tighter: `font-size.md` 14 fits comfortable (14 × 1.4 = 19.6, within 21) and fa
 (14 × 1.3 = 18.2, over 18). The check reports each line that does not fit, with its density.
 
 **Still square, whatever `radius.*` says:** the project and workspace strip tabs, the settings
-gear on a strip, and every tree row. Tell the person when they ask for rounder ones: the theme
-cannot round those yet. The session tabs (chats, views, files) and their `×` are rounded through
-their parts (`tabs.*`, below), and a list's rows by `radius.control` and the `list` family's parts. The
+gear on a strip, and the Explorer's and the Chats list's tree rows. Tell the person when they ask
+for rounder ones: the theme cannot round those yet. The session tabs (chats, views, files) and
+their `×` are rounded through their parts (`tabs.*`, below), a list's rows by `radius.control`
+and the `list` family's parts, and the Changes view's tree rows by `radius.control` and the
+`tree` family's. The
 focus ring tokens reach every focus ring, the strip tabs', the closer's and the gear's among them.
 
 **One part of one control** is a component part, in a top-level `parts` object:
@@ -167,7 +169,10 @@ parts so far: `field`
 (its label, help and error), `text-input` (the one-line box and its glass), `textarea` and
 `tooltip` (its `root`, the surface: colours, edge, corners and shadow, no sizes; and `detail`, an
 icon button's second line), which have no variants, so a key names the part alone
-(`"text-input.root.border-width": 0` turns off every one-line box's edge); and `dialog`
+(`"text-input.root.border-colour": "transparent"` draws every one-line box with no edge at rest;
+`border-width` 0 on the root of a text input, textarea, select or combobox refuses the theme,
+because the box's edge is how its refused state, `invalid`, shows:
+`"text-input.root.invalid.border-colour": "danger.base"`); and `dialog`
 (`dialog.root.corner-radius`, `dialog.title.font-size`, `dialog.separator.fill`, …), whose size
 and rows are never a theme's, whose corner is drawn at most `space.6`, and whose quieter lines
 are held to 4.5:1 in their own tiers; and `list` (`list.root.corner-radius`,
@@ -176,8 +181,10 @@ dense and large sizes are never a theme's; `select` and `combobox` (their `root`
 the text input's box, and their `chevron`; a select's `placeholder` too), whose lists are a
 menu's surface and rows; and the choices, `checkbox`, `radio`, `switch`, `segmented-control`,
 `segment`, `slider` and `option-card`, each chosen in `selected` (`switch.track.selected.fill`,
-`option-card.root.card.selected.border-colour`), none taking a height. The note above still
-holds for the strip tabs and tree rows.
+`option-card.root.card.selected.border-colour`), none taking a height; and `table` (`table.frame.corner-radius`, `table.root.selected.fill`,
+`table.head.text`, …), a table's card, its rows, its column names and its cells, which has no
+variants and whose rows are as tall as what they hold. The note above still holds for the strip
+tabs and tree rows.
 
 **The session tabs** are the `tabs` family. Purlis docks them on the content panel: the chosen
 tab takes the panel's fill and flares into it, an unchosen tab's hover is a pill inset from its
@@ -189,6 +196,12 @@ both are drawn out of the tab's flow, so they move nothing. A heavier chosen tab
 (`tabs.tab.selected.font-weight`) is refused like every size inside a state. `tabs.indicator.*`
 draws a mark on the chosen tab's `top` or `bottom` edge, at most 6px tall. A file's tab joins the
 editor's toolbar (`editor.toolbar.fill`).
+
+Since the next release's manifest version the content families have parts too: `card`
+(`raised`, and `ask`, which keeps its waiting edge), `notice` (its box, `message` and `whose`;
+`news` and `trouble`), `badge`, `count` (and its `group`) and `separator` (its colour; its width
+is the `separator.width` geometry, 0 for no lines). A card's and a Notice's fill must name a
+ground a button is measured on, since Allow stands on them.
 
 Done when the file is JSON with every value hex, a palette name, or a token's own type, and
 every shape and size inside its bounds.

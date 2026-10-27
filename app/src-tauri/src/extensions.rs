@@ -954,6 +954,8 @@ pub struct WindowApart {
     pub token: String,
     pub from: String,
     pub distance: f64,
+    /// Whether the rule is held alone: only its own sides give way to it (#3130).
+    pub alone: bool,
 }
 
 /// One workspace colour's hue in a theme, in degrees.
@@ -1137,6 +1139,7 @@ impl From<&purlis_core::theme::ResolvedTheme> for WindowTheme {
                         token: rule.token.to_owned(),
                         from: rule.from.to_owned(),
                         distance: rule.distance,
+                        alone: rule.alone,
                     })
                     .collect(),
             },

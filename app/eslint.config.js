@@ -12,16 +12,16 @@ const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
 
 /**
  * **The families a raw `<button>` may still belong to** (#2904, D-2904-9): the tabs and strips,
- * the list, tree and table rows, the menu rows, the activity items, the
+ * the list and tree rows, the menu rows, the activity items, the
  * title bar's workspace chips, the cards and the settings nav. Each by
  * the role its button says, or by its family's class. The status items and the title bar's status
  * pills have moved (#2913), and so have the choices (#2907). A menu's rows are the menu family's since #2909, and no button says
  * their role.
  */
 const OTHER_FAMILIES = {
-  roles: ["tab", "treeitem", "row", "link"],
+  roles: ["tab", "treeitem", "link"],
   classes: [
-    // Rows of a list, a tree or a table.
+    // Rows of a list or a tree; a line's name in the Activity tab.
     "ui-row",
     "ui-tree-row",
     "vault-secret",
@@ -96,9 +96,18 @@ export default tseslint.config(
       "purlis/activity-family": "error",
       // Every list is the list family's, since #2911.
       "purlis/list-family": "error",
+      // Every table is the table family's, since #2911.
+      "purlis/table-family": "error",
       // A tablist is the tabs family's, on React Aria, since #3042.
       "purlis/tabs-family": "error",
       "purlis/titlebar-family": "error",
+      // Every tree is the tree family's, on React Aria, since #2911 (the trees below aside).
+      "purlis/tree-family": "error",
+      // The card, notice, badge and count, and separator families have moved (#2912).
+      "purlis/card-family": "error",
+      "purlis/notice-family": "error",
+      "purlis/badge-family": "error",
+      "purlis/separator-family": "error",
       "purlis/panel-separator-family": "error",
     },
   },
@@ -114,5 +123,18 @@ export default tseslint.config(
       "src/StripTablist.tsx",
     ],
     rules: { "purlis/tabs-family": "off" },
+  },
+  // **The trees still drawn by hand** (the shared tree's classes and roles), each until its lane
+  // moves it onto the tree family (#2911): a branch's files and the explorer's three trees, which
+  // share the file rows; and the Chats list with the browsers and finished tasks under a chat.
+  {
+    files: [
+      "src/editor/BranchTree.tsx",
+      "src/Explorer.tsx",
+      "src/ChatsSection.tsx",
+      "src/ChatBrowsersShown.tsx",
+      "src/FinishedTasks.tsx",
+    ],
+    rules: { "purlis/tree-family": "off" },
   },
 );

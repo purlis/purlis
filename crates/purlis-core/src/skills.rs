@@ -1181,6 +1181,9 @@ pub enum BrokenWhy {
     LeftOut(Reason),
     /// purlis hands it to no chat ([`purlis_skills::Refusal`]).
     Refused(purlis_skills::Refusal),
+    /// The repo the chat works in leaves it out ([`Reason::of_a_repo`], SK-53): said as the
+    /// chat's own tab says it ([`Reason::to_its_chat`], #3234).
+    ByARepo(Reason),
 }
 
 impl std::fmt::Display for BrokenWhy {
@@ -1188,17 +1191,17 @@ impl std::fmt::Display for BrokenWhy {
         match self {
             Self::LeftOut(reason) => write!(f, "{reason}"),
             Self::Refused(why) => write!(f, "purlis hands it to no chat: {why}"),
+            Self::ByARepo(reason) => f.write_str(&reason.to_its_chat()),
         }
     }
 }
 
 /// **The skills a chat as `persona` (or on none) starts without** (SK-5, #2768; SK-8), in the
 /// plane at `plane`, at its root or in `workspace`, started in `cwd`, on `harness` with the
-/// chat's environment `env` and the built-in skills in `built_in`. A broken plane skill is one
-/// only where the chat would have loaded it: a project skill whose grant does not reach the
-/// chat's workspace is no loss. The repo skills of the clone `cwd` is in are read as its start
-/// reads them ([`repo_skills_of_chat`]), so a plane skill that repo leaves out is said too
-/// (SK-53). `None` where it has every one, or purlis could not tell.
+/// chat's environment `env` and the built-in skills in `built_in`: [`not_here_beside`], with the
+/// repo skills of the clone `cwd` is in read as a start reads them ([`repo_skills_of_chat`]).
+/// The host, which has read them already to arm the chat, hands them on instead
+/// ([`crate::hoststart::skills_not_here`], #3234).
 pub fn not_here(
     plane: &Path,
     workspace: Option<&str>,
@@ -1208,15 +1211,32 @@ pub fn not_here(
     env: &crate::harness_plugin::Env<'_>,
     cwd: Option<&Path>,
 ) -> Option<NotHere> {
-    let here = on_machine(harness, env);
     let repo = match (workspace, cwd) {
         (Some(ws), Some(cwd)) => repo_skills_of_chat(harness, plane, ws, cwd),
         _ => Vec::new(),
     };
+    not_here_beside(plane, workspace, persona, built_in, harness, env, &repo)
+}
+
+/// [`not_here`], beside the repo skills `repo` of the clone the chat works in, as its start read
+/// them. A broken plane skill is one only where the chat would have loaded it: a project skill
+/// whose grant does not reach the chat's workspace is no loss. A plane skill that repo leaves
+/// out is said too (SK-53), and a repo skill named like a built-in one (SK-37). `None` where it
+/// has every one, or purlis could not tell.
+pub fn not_here_beside(
+    plane: &Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    built_in: Option<&Path>,
+    harness: crate::harness::Harness,
+    env: &crate::harness_plugin::Env<'_>,
+    repo: &[OutsideSkill],
+) -> Option<NotHere> {
+    let here = on_machine(harness, env);
     let at = PlaneSkills {
         plane,
         workspace,
-        repo: &repo,
+        repo,
     };
     let set = ask(
         built_in,
@@ -1248,7 +1268,7 @@ pub fn not_here(
             name: left.name.clone(),
             origin: left.origin,
             local: left.local,
-            why: BrokenWhy::LeftOut(left.reason.clone()),
+            why: BrokenWhy::ByARepo(left.reason.clone()),
         })
         .collect();
     for clash in set.beside_a_built_in() {
@@ -2139,6 +2159,59 @@ fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], kno
 pub struct StudioList {
     pub rows: Vec<StudioRow>,
     pub harnesses: Vec<HarnessInTheStudio>,
+}
+
+impl StudioList {
+    /// **The clashes of a plane or built-in row** (SK-46, #3149; decision 51): each skill from
+    /// outside the plane with its name, harness by harness, as the studio marks the row of the
+    /// copy purlis hands. What `purlis skill list` and the window both say of it, each in
+    /// [`clash_said`]'s words. A row left out (a twin at the same level) is no copy purlis hands,
+    /// so it has none.
+    pub fn clashes_of<'a>(
+        &'a self,
+        row: &'a StudioRow,
+    ) -> impl Iterator<Item = (Harness, &'a Clash)> + 'a {
+        let handed = row.left_out.is_none();
+        self.harnesses
+            .iter()
+            .filter(move |_| handed)
+            .flat_map(move |one| {
+                one.set
+                    .clashes
+                    .iter()
+                    .filter(move |clash| {
+                        clash.name == row.name
+                            && clash.plane.origin == row.origin
+                            && clash.plane.local == row.local
+                    })
+                    .map(move |clash| (one.harness, clash))
+            })
+    }
+}
+
+/// **A clash as the studio and `purlis skill list` say it** (SK-46, #3149; ADR 0099 §3): whose
+/// the other copy is, and what a chat on `harness` there gets. One sentence, said on the row of
+/// purlis's copy, so the window and the command line never disagree.
+pub fn clash_said(harness: Harness, clash: &Clash) -> String {
+    let title = harness.title();
+    let whose = match &clash.owner {
+        Owner::Repo(repo) => format!("the repo {repo}"),
+        Owner::You => format!("your own {title} skills"),
+        Owner::Plugin(plugin) => format!("{plugin} in {title}"),
+    };
+    match clash.outcome {
+        Outcome::RepoWins => format!(
+            "{whose} has a skill of this name too, and {title} chats there get the repo's copy \
+             alone"
+        ),
+        Outcome::EitherOne => format!(
+            "{whose} has a skill of this name too, and {title} chats there get both under one \
+             name and may use either: rename that one"
+        ),
+        Outcome::BothLoad => {
+            format!("{whose} has a skill of this name too, and a chat there gets both")
+        }
+    }
 }
 
 /// **The studio's list for a chat in the plane at `plane`** (SK-34): at its root or in

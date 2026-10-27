@@ -339,6 +339,36 @@ tester.run("purlis/list-family", purlisUi.rules["list-family"], {
   ],
 });
 
+tester.run("purlis/table-family", purlisUi.rules["table-family"], {
+  valid: [
+    {
+      code: `<Table aria-label="Hosts" rowMenus><TableHeader><TableColumn isRowHeader>Host</TableColumn></TableHeader><TableBody>{rows}</TableBody></Table>`,
+    },
+    { code: `<ControlTable aria-label="Dispatch limits" stacks>{rows}</ControlTable>` },
+    { code: `<ControlCell heading="Depth" className="dispatch-depth">{box}</ControlCell>` },
+    // A list's grid is the list family's, and a selector that reads a row draws none.
+    { code: `table.querySelector('[role="row"]')` },
+    { code: `<div role="group" aria-label="Hosts">x</div>` },
+  ],
+  invalid: [
+    { code: `<table className="secrets">{rows}</table>`, errors: [{ messageId: "element" }] },
+    {
+      code: `<tr><td>{a}</td></tr>`,
+      errors: [{ messageId: "element" }, { messageId: "element" }],
+    },
+    { code: `<th scope="col">Name</th>`, errors: [{ messageId: "element" }] },
+    { code: `<div role="grid" aria-label="Secrets">{rows}</div>`, errors: [{ messageId: "role" }] },
+    { code: `<div role={"row"}>x</div>`, errors: [{ messageId: "role" }] },
+    { code: `<span role={on ? "gridcell" : "none"}>x</span>`, errors: [{ messageId: "role" }] },
+    {
+      code: `<div className="ui-table-room">{table}</div>`,
+      errors: [{ messageId: "oldClass" }],
+    },
+    { code: `<span className="ui-num">3</span>`, errors: [{ messageId: "oldClass" }] },
+    { code: `<div data-scope="table">x</div>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
 tester.run("purlis/tabs-family", purlisUi.rules["tabs-family"], {
   valid: [
     {
@@ -387,6 +417,85 @@ tester.run("purlis/titlebar-family", purlisUi.rules["titlebar-family"], {
     { code: `<span className="workspace">x</span>`, errors: [{ messageId: "oldClass" }] },
     { code: `<button className="plane-root">x</button>`, errors: [{ messageId: "oldClass" }] },
     { code: `<span data-scope="titlebar">x</span>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/tree-family", purlisUi.rules["tree-family"], {
+  valid: [
+    { code: `<Tree aria-label="Repos of alpha" size="sm" fixed>{rows}</Tree>` },
+    { code: `<TreeRow id="src" textValue="src" content={<RowLabel>src</RowLabel>} />` },
+    { code: `<div className="tree-held">x</div>` },
+  ],
+  invalid: [
+    { code: `<div role="tree" aria-label="Files">{rows}</div>`, errors: [{ messageId: "role" }] },
+    { code: `<li role={"treeitem"}>x</li>`, errors: [{ messageId: "role" }] },
+    { code: `<div role="treegrid">{rows}</div>`, errors: [{ messageId: "role" }] },
+    { code: `<ul className="ui-tree">{rows}</ul>`, errors: [{ messageId: "oldClass" }] },
+    {
+      code: `<button className="ui-row ui-tree-row">x</button>`,
+      errors: [{ messageId: "oldClass" }],
+    },
+    { code: `<span className="ui-tree-twist" />`, errors: [{ messageId: "oldClass" }] },
+    { code: `<div data-scope="tree">x</div>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/card-family", purlisUi.rules["card-family"], {
+  valid: [
+    { code: `<Card variant="ask" className="inbox-ask">x</Card>` },
+    { code: `<div className="row-card">x</div>` },
+  ],
+  invalid: [
+    {
+      code: `<div className="block-report ui-inline-surface">x</div>`,
+      errors: [{ messageId: "oldClass" }],
+    },
+    {
+      code: `<p className="ui-inline-surface ui-inline-surface-waiting">x</p>`,
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    { code: `<li data-scope="card">x</li>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/notice-family", purlisUi.rules["notice-family"], {
+  valid: [
+    { code: `<Notice cause="x" onDismiss={go}>x</Notice>` },
+    { code: `<section className="inbox-notices specimen-notice">x</section>` },
+  ],
+  invalid: [
+    {
+      code: `<div className="notice notice-pane notice-trouble">x</div>`,
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    {
+      code: `<div className={empty ? "pane-notice-row pane-notice-row-empty" : "pane-notice-row"} />`,
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    { code: `<div data-scope="notice-list" />`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/badge-family", purlisUi.rules["badge-family"], {
+  valid: [
+    { code: `<Badge variant="waiting">Waiting for you</Badge>` },
+    { code: `<Count className="activity-count" variant="hot" said="2 need you">2</Count>` },
+  ],
+  invalid: [
+    { code: `<span className="ui-setting-badge">x</span>`, errors: [{ messageId: "oldClass" }] },
+    {
+      code: `<span className="count-pill"><span className="count-pill-needs">2</span></span>`,
+      errors: [{ messageId: "oldClass" }, { messageId: "oldClass" }],
+    },
+    { code: `<span data-scope="count">2</span>`, errors: [{ messageId: "scope" }] },
+  ],
+});
+
+tester.run("purlis/separator-family", purlisUi.rules["separator-family"], {
+  valid: [{ code: `<Separator decorative className="activity-divider" />` }],
+  invalid: [
+    { code: `<hr />`, errors: [{ messageId: "element" }] },
+    { code: `<div data-scope="separator" />`, errors: [{ messageId: "scope" }] },
   ],
 });
 

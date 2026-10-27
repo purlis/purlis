@@ -31,6 +31,8 @@ use crate::extension::project::Choices;
 use crate::extension::studio::{self as wire, Ask, HandedFile, SkillFile};
 use crate::panel::{Block, Empty, Table, TableRow, Tone};
 
+use super::verbs::Level;
+
 /// What the studio asks extensions with: the app's executor, this machine's record of
 /// extensions, and the project the question is asked in.
 #[derive(Clone, Copy)]
@@ -124,9 +126,10 @@ impl<'a> Studio<'a> {
     }
 
     /// **The panels on `skill`'s tab**, in the project at `plane`: purlis's Grades and Runs panels
-    /// first, then each extension's, each answered or refused with a sentence.
-    pub fn panels(&self, plane: &Path, skill: &str) -> Vec<Answered> {
-        let mut out = own_panels(plane, skill);
+    /// first, then each extension's, each answered or refused with a sentence. The Grades panel
+    /// is of the copy at `level` ([`GradesPanel`]).
+    pub fn panels(&self, plane: &Path, skill: &str, level: Option<&Level>) -> Vec<Answered> {
+        let mut out = own_panels(plane, skill, level);
         let asked = self.declaring(Capability::StudioPanel);
         if asked.is_empty() {
             return out;
@@ -150,11 +153,12 @@ impl<'a> Studio<'a> {
     }
 }
 
-/// **purlis's own panels on `skill`'s tab**, in the project at `plane`: its Grades panel, then
-/// its Runs panel. What every skill's tab draws first, with a studio or without one.
-pub fn own_panels(plane: &Path, skill: &str) -> Vec<Answered> {
+/// **purlis's own panels on `skill`'s tab**, in the project at `plane`: its Grades panel, of the
+/// copy at `level`, then its Runs panel. What every skill's tab draws first, with a studio or
+/// without one.
+pub fn own_panels(plane: &Path, skill: &str, level: Option<&Level>) -> Vec<Answered> {
     vec![
-        Answered::of(&GradesPanel { plane }, skill),
+        Answered::of(&GradesPanel { plane, level }, skill),
         Answered::of(&RunsPanel { plane }, skill),
     ]
 }
@@ -320,13 +324,18 @@ impl Answered {
     }
 }
 
-/// **purlis's Grades panel** (SK-16, #2779), the built-in runner's scorecard: every grade of the
-/// skill the eval record holds, newest first, with the version it graded, what its chats ran on,
-/// each arm's pass rate and the difference the skill made. A pass or a fail comes from here
-/// alone, never from a run (decision 24).
+/// **purlis's Grades panel** (SK-16, #2779), the built-in runner's scorecard: every grade of one
+/// copy of the skill the eval record holds, newest first, with the version it graded, what its
+/// chats ran on, each arm's pass rate and the difference the skill made. A pass or a fail comes
+/// from here alone, never from a run (decision 24).
+///
+/// **One copy's grades** (#3353, #3275): same-named copies at two levels are two skills, so the
+/// panel reads the rows of the copy at `level` alone, or, with none, of the copy the skill's tab
+/// shows first (the first level of [`Level::every`] that holds it).
 #[derive(Debug, Clone, Copy)]
 pub struct GradesPanel<'a> {
     pub plane: &'a Path,
+    pub level: Option<&'a Level>,
 }
 
 impl StudioPanel for GradesPanel<'_> {
@@ -343,8 +352,17 @@ impl StudioPanel for GradesPanel<'_> {
     }
 
     fn blocks(&self, skill: &str) -> Result<Vec<Block>, String> {
+        let first = match self.level {
+            Some(_) => None,
+            None => Level::every(self.plane)
+                .into_iter()
+                .find(|level| level.named(self.plane, skill).is_some()),
+        };
+        let Some(level) = self.level.or(first.as_ref()) else {
+            return Ok(grades_blocks(&[], skill));
+        };
         Ok(grades_blocks(
-            &super::grades::grades_of(self.plane, skill, None),
+            &super::grades::grades_of(self.plane, skill, Some(level)),
             skill,
         ))
     }
@@ -417,6 +435,7 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
                         GradeEnd::ChatsDidNotStart => "Chats did not start",
                         GradeEnd::OverCap => "Stopped at its token cap",
                         GradeEnd::SpendNotReported => "Stopped: spend not reported",
+                        GradeEnd::Interrupted => "Interrupted: not scored",
                     }
                     .to_owned(),
                 ],

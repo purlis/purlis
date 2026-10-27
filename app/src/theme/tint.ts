@@ -55,7 +55,13 @@ export function hueOf(colour: string | null | undefined): number | undefined {
 
 /** The rule a tint's hue is chosen under, as the engine hands it: `token`, tinted, stays at
  *  least `distance` from `from` in OKLab. */
-export type Apart = { token: string; from: string; distance: number };
+export type Apart = {
+  token: string;
+  from: string;
+  distance: number;
+  /** A rule held alone gives less colour only to its own sides (#3130). */
+  alone?: boolean;
+};
 
 /** One rule as a theme draws it: the value of each side, whether the tint turns each, and the
  *  distance it holds (`purlis_core::theme::Rule`). */
@@ -140,10 +146,12 @@ export function chromaFor(
   token: string,
   most: number | undefined,
   rules: readonly Apart[],
+  alone: number | undefined = most,
 ): number | undefined {
-  return rules.some((rule) => rule.token === token || rule.from === token)
-    ? most
-    : Number.POSITIVE_INFINITY;
+  const side = (rule: Apart) => rule.token === token || rule.from === token;
+  // A side of a rule held alone gives way to every rule together (#3130): `alone`.
+  if (rules.some((rule) => rule.alone === true && side(rule))) return alone;
+  return rules.some(side) ? most : Number.POSITIVE_INFINITY;
 }
 
 /** How far two theme colours are in OKLab, their alpha left out. */

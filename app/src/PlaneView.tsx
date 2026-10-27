@@ -414,7 +414,7 @@ import type {
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
 import { skillStudioTitle, skillStudioView, useSkillStudioOn } from "./skillStudio";
-import { SkillRunsHere, skillOfRun, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
+import { SkillRunsHere, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
 import { handedFromNote } from "./handedFrom";
@@ -5840,7 +5840,7 @@ export const PlaneView = memo(function PlaneView({
     );
     forgetAsked.current = {
       notice,
-      band: notice?.closest(".notice-list") ?? null,
+      band: notice?.closest('[data-scope="notice-list"]') ?? null,
       forgot: false,
     };
     setForgetting({ id, name, busy: false });
@@ -7624,12 +7624,10 @@ export const PlaneView = memo(function PlaneView({
       showView(activityView(session), activityTitle(nameOfNow.current(session)));
   });
   const activityFromChip = useCallback((session: number) => activityNow.current(session), []);
-  /** Opens a skill's tab on run `run`, from the chip of the run open in a tab's chat (SK-3). */
+  /** Opens the tab of skill `skill` on run `run`, from the chip of the run open in a tab's chat
+   *  (SK-3): the skill by its own name, as the core counts the run (#3385). */
   const openSkillRun = useCallback(
-    (used: string, run: string) => {
-      const skill = skillOfRun(used);
-      showView(skillView(skill, run), skill);
-    },
+    (skill: string, run: string) => showView(skillView(skill, run), skill),
     [showView],
   );
 
@@ -10093,7 +10091,10 @@ function giveViewTheKeyboard(view: ViewId): void {
   const panel = `[role="tabpanel"][data-view="${view}"]`;
   (view === "search"
     ? document.querySelector<HTMLElement>(`${panel} input[type="search"]`)
-    : (document.querySelector<HTMLElement>(`${panel} [role="tree"] [tabindex="0"]`) ??
+    : // A tree of the tree family is its own stop until a row has had the keyboard (#2911).
+      (document.querySelector<HTMLElement>(
+        `${panel} :is([role="tree"] [tabindex="0"], [role="treegrid"][tabindex="0"], [role="treegrid"] [tabindex="0"])`,
+      ) ??
       // The Inbox's first ask, past the scope switch above its list (qw359).
       document.querySelector<HTMLElement>(`${panel} .inbox-list [tabindex="0"]`) ??
       document.querySelector<HTMLElement>(`${panel} [tabindex="0"]`))

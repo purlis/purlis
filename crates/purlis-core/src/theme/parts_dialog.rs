@@ -103,6 +103,7 @@ pub(super) const DIALOG: Family = Family {
     corner_most: Some(DIALOG_CORNER_MOST),
     around: &[],
     fills: &[],
+    under: &[],
 };
 
 /// **The dialog's colours as `app/src/ui/dialog/dialog.css` draws them**, which a test holds to

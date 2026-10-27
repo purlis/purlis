@@ -1228,7 +1228,7 @@ fn where_purlis_builds_what_the_harness_is_handed_the_narrower_repo_copy_wins() 
                 "review",
                 Origin::Workspace,
                 false,
-                "hidden by the repo skill of this name".to_owned()
+                "hidden by the skill of this name in the repo api".to_owned()
             )],
             "{route:?}"
         );
@@ -1889,4 +1889,35 @@ fn a_repo_skills_folder_purlis_could_not_list_takes_no_name_and_leaves_out_every
         .with_outside(Route::Plugin, [crowded()]);
     assert_eq!(set.from_the_plane().count(), 2);
     assert!(set.effective.iter().all(|e| e.origin != Origin::Repo));
+}
+
+#[test]
+fn a_reason_a_repo_gives_names_the_repo_and_reads_for_the_chat_in_it_on_its_tab() {
+    // #3234: in the studio and the list, and on the tab of a chat in that repo, which already
+    // says "because of the repo it works in".
+    let hidden = Reason::HiddenByRepo {
+        repo: "api".to_owned(),
+    };
+    let unread = Reason::RepoUnread {
+        repo: "web".to_owned(),
+    };
+
+    assert_eq!(
+        hidden.to_string(),
+        "hidden by the skill of this name in the repo api"
+    );
+    assert_eq!(
+        hidden.to_its_chat(),
+        "the repo api has its own copy, which loads in its place"
+    );
+    assert_eq!(
+        unread.to_its_chat(),
+        "purlis could not read the skills folder of web whole, so it is left out in case the \
+         repo has its own"
+    );
+    assert!(hidden.of_a_repo() && unread.of_a_repo());
+    assert_eq!(
+        Reason::TurnedOff.to_its_chat(),
+        Reason::TurnedOff.to_string()
+    );
 }

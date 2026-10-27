@@ -213,7 +213,7 @@ describe("a task that did not start", () => {
 
     // And no line across the window says it.
     expect(banners()).toEqual([]);
-    expect(document.querySelector('.notice-trouble[data-cause^="chat-"]')).toBeNull();
+    expect(document.querySelector('[data-variant="trouble"] > [data-cause^="chat-"]')).toBeNull();
   });
 
   it("is cleared as any finished row is, and its reason can be folded away", async () => {
@@ -391,14 +391,14 @@ describe("a chat nobody asked for that did not start", () => {
   it("is drawn by a rule that wraps a long reason inside the window", () => {
     // jsdom lays nothing out, so the stylesheet is read as text, as `Notice.guard.test.ts`
     // reads it; `e2e/specs/notices.e2e.ts` measures the same line in the real window.
-    const css = readFileSync(join(__dirname, "App.css"), "utf8");
-    const rules = [
-      ...css.matchAll(/(^|\n)((?:\.notice-list |\.notice-inbox)[^{\n]*)\{([^}]*)\}/g),
-    ].map((rule) => ({
-      selector: rule[2].trim(),
-      body: rule[3],
-    }));
-    const line = rules.find((rule) => rule.selector === ".notice-inbox");
+    const css = readFileSync(join(__dirname, "ui", "notice", "notice.css"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\s+/g, " ");
+    // The notice family's rules (#2912): its box, and the Inbox's list it is a row of.
+    const rules = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .map((rule) => ({ selector: rule[1].trim(), body: rule[2] }))
+      .filter((rule) => /data-scope="notice(-list)?"/.test(rule.selector));
+    const line = rules.find((rule) => rule.selector === '[data-scope="notice"][data-part="root"]');
     expect(line?.body).toMatch(/overflow-wrap:\s*anywhere/);
     // And nothing in the Inbox's list is held to one line or cut with an ellipsis.
     for (const rule of rules) {

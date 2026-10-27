@@ -671,3 +671,153 @@ fn the_walk_stops_at_the_nearer_of_the_git_root_and_the_project_root() {
     );
     assert_eq!(read.len(), 6, "{read:?}");
 }
+
+/// SK-16, #3310: which programs can grade is a capability each adapter declares, and Claude Code
+/// is the one that declares it until #3272.
+#[test]
+fn claude_code_alone_says_a_grade_can_run_on_it() {
+    for harness in Harness::ALL {
+        assert_eq!(
+            harness.adapter().can_grade(),
+            harness == Harness::ClaudeCode,
+            "{harness:?}"
+        );
+    }
+}
+
+/// An environment that reads Claude Code's settings from `config` alone, never this process's.
+fn settings_in(chat: &[(String, String)]) -> crate::harness_plugin::Env<'_> {
+    crate::harness_plugin::Env {
+        chat,
+        home: None,
+        process: false,
+    }
+}
+
+/// The program and a profile's words, as a grade's chat would start.
+fn line(words: &[&str]) -> Vec<String> {
+    std::iter::once("claude")
+        .chain(words.iter().copied())
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn your_claude_code_settings_that_turn_prompts_off_or_do_not_read_keep_a_grade_from_running() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    assert_eq!(
+        adapter().grade_refused(&line(&[]), &env),
+        None,
+        "no settings file"
+    );
+    let file = config.path().join("settings.json");
+    for (text, refused) in [
+        (
+            r#"{"permissions": {"defaultMode": "bypassPermissions"}}"#,
+            true,
+        ),
+        (r#"{"permissions": {"defaultMode": "acceptEdits"}}"#, false),
+        (r#"{"model": "opus"}"#, false),
+        (r#"{"permissions": {"defaultMode": 3}}"#, true),
+        ("{ not json", true),
+        ("[]", true),
+    ] {
+        std::fs::write(&file, text).unwrap();
+        assert_eq!(
+            adapter().grade_refused(&line(&[]), &env).is_some(),
+            refused,
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn settings_purlis_cannot_find_keep_a_grade_from_running() {
+    let env = settings_in(&[]);
+    assert!(adapter().grade_refused(&line(&[]), &env).is_some());
+}
+
+#[test]
+fn a_profile_command_that_turns_the_prompts_off_keeps_a_grade_from_running() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    let why = adapter()
+        .grade_refused(&line(&["--dangerously-skip-permissions"]), &env)
+        .expect("refused");
+    assert!(why.contains("--dangerously-skip-permissions"), "{why}");
+    assert!(why.contains("pick another profile"), "{why}");
+}
+
+/// SK-16, #3352: a `--permission-mode` in the profile's command outranks the mode a grade's chat
+/// pins, so any mode but the two that ask keeps a grade from running, in each spelling the
+/// bypass check reads, with the same sentence as the bypass flags.
+#[test]
+fn a_profile_command_that_starts_in_a_mode_that_asks_nobody_keeps_a_grade_from_running() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    let bypass = adapter()
+        .grade_refused(&line(&["--dangerously-skip-permissions"]), &env)
+        .expect("refused");
+    let sentence = |why: &str, flag: &str| why.replace(flag, "<flag>");
+    for (words, flag) in [
+        (
+            &["--permission-mode", "acceptEdits"][..],
+            "--permission-mode acceptEdits",
+        ),
+        (&["--permission-mode", "auto"], "--permission-mode auto"),
+        (&["--permission-mode=auto"], "--permission-mode=auto"),
+        (
+            &["--permission-mode=acceptEdits"],
+            "--permission-mode=acceptEdits",
+        ),
+        (
+            &["--permission-mode", "\"auto\""],
+            "--permission-mode \"auto\"",
+        ),
+        (
+            &["--model", "opus", "--permission-mode", "dontAsk"],
+            "--permission-mode dontAsk",
+        ),
+        (
+            &["--permission-mode", "default", "--permission-mode", "auto"],
+            "--permission-mode auto",
+        ),
+        (&["--permission-mode"], "--permission-mode"),
+    ] {
+        let why = adapter()
+            .grade_refused(&line(words), &env)
+            .unwrap_or_else(|| panic!("{words:?} starts a grade's chat"));
+        assert!(why.contains(flag), "{words:?}: {why}");
+        assert_eq!(
+            sentence(&why, flag),
+            sentence(&bypass, "--dangerously-skip-permissions"),
+            "{words:?}"
+        );
+    }
+    for words in [
+        &["--permission-mode", "default"][..],
+        &["--permission-mode", "plan"],
+        &["--permission-mode=plan"],
+        &["--permission-mode", "'default'"],
+        &[],
+    ] {
+        assert_eq!(
+            adapter().grade_refused(&line(words), &env),
+            None,
+            "{words:?}"
+        );
+    }
+}
