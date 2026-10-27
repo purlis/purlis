@@ -59,8 +59,10 @@ jobs:
   # The Rust suite in four parts on four runners, each building the tests and running a quarter
   # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
   # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
-  # start at once (no queue on 2026-10-14..27), so a part costs runner minutes, not wait. Part 1
-  # also runs the doctests and the schema check (fmt and clippy are `lint`'s). Each part builds
+  # start at once (no queue on 2026-10-14..27), so a part costs runner minutes, not wait. Part 2
+  # also runs the doctests and the schema check (fmt and clippy are `lint`'s): `hash:` places a
+  # test by its name, and part 2 held the least (7.3 minutes of tests against 11.5 for part 1 on
+  # #3572's run), so the 3 minutes those take wait on no one. Each part builds
   # for itself: a build handed from one job to the next saves runner minutes, not the wait, since
   # no test can start before the build ends. An optimised test build was tried and dropped
   # (#3553: 21 to 32 minutes to build cold, then the runners stopped). `rust-checks` below
@@ -152,7 +154,7 @@ jobs:
         run: node tools/slowest-tests.mjs target/nextest/ci/junit.xml
       # nextest does not run doctests, so cargo does.
       - name: Run the doctests
-        if: matrix.part == 1
+        if: matrix.part == 2
         run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
       # The theme schema only grows within a format (#2524). `Run the tests` holds the engine's
       # schema to the committed `docs/schema/theme.v2.schema.json`; this step holds it to the
@@ -160,7 +162,7 @@ jobs:
       # cannot carry a removal or a narrowing past the check. Before a release has a v2 schema
       # it says so in a notice and passes. The test it runs is `#[ignore]`d everywhere else.
       - name: The theme schema only grows since the last release
-        if: matrix.part == 1
+        if: matrix.part == 2
         run: >-
           tools/theme-schema-since-release.sh
           cargo nextest run --workspace --locked --run-ignored only
