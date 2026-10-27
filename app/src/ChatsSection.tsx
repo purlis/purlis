@@ -16,8 +16,16 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { AnchoredPopover } from "./ui/popover/Popover";
-import { ChevronRight, Hand, MessagesSquare, Search, SquareTerminal } from "lucide-react";
 import {
+  ChevronRight,
+  Hand,
+  LayoutGrid,
+  MessagesSquare,
+  Search,
+  SquareTerminal,
+} from "lucide-react";
+import {
+  BROWSERS_SHOW,
   besideId,
   ONLY_A_TASK_OPENS_BESIDE,
   taskStopId,
@@ -75,6 +83,7 @@ import type { TaskFacts } from "./shownState";
 import { standingOfRows } from "./sessionTasks";
 import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
 import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
+import { HeadingOffer } from "./PanelSection";
 import { tasksIn } from "./taskBuckets";
 import { Menued } from "./Menus";
 import { PersonaMark } from "./PersonaMark";
@@ -865,6 +874,10 @@ export function ChatsSection({
           >
             {heading ?? "Chats"}
           </PanelSectionTitle>
+          {/* **Every browser, live** (#2027): the Browsers grid, while the project has one. */}
+          {((browsers?.size ?? 0) > 0 || (kept?.length ?? 0) > 0) && (
+            <HeadingOffer offer={offers.get(BROWSERS_SHOW)} onPress={press} mark={LayoutGrid} />
+          )}
           {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
               DS-11): both status lines are always in the accessibility tree, so what they come
               to say is announced, and they stand beside the title, so saying it moves no row

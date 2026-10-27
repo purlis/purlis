@@ -589,6 +589,27 @@ body {
   block-size: var(--space-5);
 }
 
+/* **The Browsers grid** (#2027): as many tiles to a row as the width holds, each its live
+   picture over what it is called and where it is. A tile is at most twice its least width, so
+   its frame (640 across) stays sharp. */
+.browsers-grid {
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+}
+
+.browsers-grid .browser-thumbnail {
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-sunken);
+}
+
+.browsers-grid .browser-thumbnail > svg {
+  inline-size: var(--space-6);
+  block-size: var(--space-6);
+  color: var(--text-quiet);
+}
+
 /* Who drives a browser where its agent does not (#2300): the bar's own mark, under the
    thumbnail, for the person; the waiting colour for purlis signing in. */
 .browser-thumbnail[data-driver="person"] {

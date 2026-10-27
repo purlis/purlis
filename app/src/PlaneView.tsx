@@ -318,6 +318,7 @@ import { sendToDriven } from "./browserDriving";
 import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import type { BrowserShown } from "./ChatBrowsersShown";
+import { forgetProjectsBrowsers, tellProjectBrowsers, type GridTile } from "./browsersGrid";
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
  *  you, or a browser (#2012). */
@@ -4227,6 +4228,67 @@ export const PlaneView = memo(function PlaneView({
       ),
     [showView, filedIn],
   );
+  /**
+   * **This project's browsers, as the Browsers grid draws them** (#2027): its chats' (one not
+   * ended yet is no chat's, as on the tab), the pinned ones whose chat closed, and the person's
+   * own that its tabs show, each filed where its chat or its tab is. The grid of any project
+   * this window holds draws them; a press on one brings this project forward and opens its view
+   * here.
+   */
+  const gridTiles = useMemo((): GridTile[] => {
+    const ofChats: GridTile[] = [...chatBrowsersShown.values(), keptShown]
+      .flat()
+      .filter(({ browser }) => !browser.unended)
+      .map(({ browser, chat }) => ({
+        plane,
+        program: browser.program,
+        name: browser.name,
+        chat,
+        workspace: filedIn(browser.session),
+        driver: browser.driver,
+        pool: browser.pool,
+      }));
+    const theirs = new Set(ofChats.map((one) => one.program));
+    const own = new Map<string, GridTile>();
+    for (const id of tabs.order)
+      for (const { content } of contentsOf(tabs, id))
+        if (
+          content.kind === "view" &&
+          isBrowser(content.view) &&
+          !theirs.has(content.view.key) &&
+          !chatPrograms.has(content.view.key) &&
+          !own.has(content.view.key)
+        )
+          own.set(content.view.key, {
+            plane,
+            program: content.view.key,
+            name: null,
+            chat: null,
+            workspace: content.workspace,
+            driver: null,
+            pool: null,
+          });
+    return [...ofChats, ...own.values()];
+  }, [chatBrowsersShown, keptShown, tabs, chatPrograms, filedIn, plane]);
+  const openGridTile = useCallback(
+    (tile: GridTile) => {
+      windowDoes.selectProject(plane);
+      if (tile.name === null || tile.chat === null)
+        showView(browserView(tile.program), BROWSER_TITLE, tile.workspace);
+      else
+        showView(browserView(tile.program), chatBrowserTitle(tile.chat, tile.name), tile.workspace);
+    },
+    [windowDoes, plane, showView],
+  );
+  useEffect(() => {
+    tellProjectBrowsers({
+      plane,
+      project: projectName(plane),
+      tiles: gridTiles,
+      open: openGridTile,
+    });
+  }, [plane, gridTiles, openGridTile]);
+  useEffect(() => () => forgetProjectsBrowsers(plane), [plane]);
   /** **A chat's new browser opens beside it**, where the person's setting says so (#2024): only
    *  one that started after the window first read them, so a reload opens nothing. */
   const { beside: browsersBeside } = useChatsListPrefs();

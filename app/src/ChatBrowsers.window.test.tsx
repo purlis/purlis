@@ -832,3 +832,59 @@ describe("a browser's view tab, told to the core (#2025)", () => {
     );
   });
 });
+
+describe("the Browsers grid (#2027)", () => {
+  const grid = () => screen.findByRole("listbox", { name: "Browsers" });
+
+  it("opens from the palette in a tab of its own, every browser of the project a live tile", async () => {
+    const host = core([B7, B8]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+
+    await fromThePalette("Open browsers");
+
+    await waitFor(() => expect(tabNames()).toContain("Browsers"));
+    const tiles = within(await grid()).getAllByRole("option");
+    expect(tiles.map((one) => one.getAttribute("data-program"))).toEqual(["B7", "B8"]);
+    expect(within(tiles[0]).getByText("Browser b1 of steward 1")).toBeInTheDocument();
+    // Each tile is a thumbnail view, about a frame a second, drawn from a wider frame.
+    await waitFor(() => {
+      host.frame("B8", "thumbnail", "/9j/2A==");
+      expect(painted.some((one) => one.across === 640)).toBe(true);
+    });
+  });
+
+  it("opens a pressed tile's browser view, on its chat's strip", async () => {
+    core([B7]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await fromThePalette("Open browsers");
+
+    await userEvent.click(within(await grid()).getByRole("option", { name: /Browser b1/ }));
+
+    await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 1"));
+  });
+
+  it("is a button on the Chats view's heading while the project has a browser", async () => {
+    const host = core([]);
+    await opened();
+    await chatsTree();
+    const chats = screen.getByTestId("chats-section");
+    expect(within(chats).queryByRole("button", { name: "Open browsers" })).toBeNull();
+
+    host.listed([B7]);
+    await userEvent.click(await within(chats).findByRole("button", { name: "Open browsers" }));
+    await waitFor(() => expect(tabNames()).toContain("Browsers"));
+  });
+
+  it("follows the chats' browsers as they come and go", async () => {
+    const host = core([B7]);
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await fromThePalette("Open browsers");
+    await grid();
+
+    host.listed([]);
+    expect(await screen.findByText("No browser runs in this project")).toBeInTheDocument();
+  });
+});
