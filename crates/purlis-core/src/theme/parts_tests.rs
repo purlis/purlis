@@ -83,28 +83,39 @@ fn a_theme_rounds_the_buttons_root_to_a_pill() {
 fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917), and
     // what keeps it as it drew when the family defaults took Purlis's (#3177): its rail's 9px
-    // corners, its title bar's 5px chips and its update pill's primary words. Nothing it draws
-    // falls back.
+    // corners, its title bar's 5px chips and its update pill's primary words; its resize
+    // handles' accent line (#3143); and its tables' rule between rows (#2911, #2804). Nothing it
+    // draws falls back.
     for theme in built_ins() {
         assert!(
-            theme.parts.keys().all(
-                |key| ["tabs", "activity", "rail", "titlebar", "status-item"].contains(&key.family)
-            ),
+            theme.parts.keys().all(|key| {
+                [
+                    "tabs",
+                    "activity",
+                    "rail",
+                    "titlebar",
+                    "status-item",
+                    "panel-separator",
+                ]
+                .contains(&key.family)
+                    || (key.family == "table" && key.part == "rule")
+            }),
             "{} names parts beyond what keeps it as it drew",
             theme.name
         );
         assert!(parts::fallen(theme).is_empty());
     }
     // Purlis names its panels' fill (#2913), the one its docked tabs join by default (#2914),
-    // and the edges it draws none of (#3177): its tooltip's, dialog's and popover's. Its tabs and
-    // its buttons are the family defaults and cost nothing to measure: a button part would have
-    // its consent floors measured at every hue a workspace's colour can take, at every launch.
+    // the edges it draws none of (#3177): its tooltip's, dialog's and popover's, and its cards'
+    // ground and edge (#2912). Its tabs and its buttons are the family defaults and cost nothing
+    // to measure: a button part would have its consent floors measured at every hue a
+    // workspace's colour can take, at every launch.
     let purlis = built_in("purlis").expect("Purlis");
     assert!(
         purlis
             .parts
             .keys()
-            .all(|key| ["panel", "tooltip", "dialog", "popover"].contains(&key.family)),
+            .all(|key| ["panel", "tooltip", "dialog", "popover", "card"].contains(&key.family)),
         "{:?}",
         purlis.parts.keys().collect::<Vec<_>>()
     );
@@ -1070,6 +1081,116 @@ fn the_list_family_default_is_what_its_stylesheet_draws() {
     );
 }
 
+#[test]
+fn the_table_family_default_is_what_its_stylesheet_draws() {
+    use parts::State::{Disabled, Focused, Hover, Selected};
+    let css = include_str!("../../../../app/src/ui/table/table.css");
+    let row = "[data-scope=\"table\"][data-part=\"root\"]";
+    let at_rest = rule(css, row);
+    assert_eq!(
+        declared(at_rest, "background-color"),
+        None,
+        "a row at rest has no ground"
+    );
+    assert_eq!(
+        parts::look_of("table", "", &[]),
+        [
+            "transparent",
+            token_of(declared(at_rest, "color").unwrap()).as_str(),
+            "transparent"
+        ]
+    );
+    // The pointer's ground is drawn on a row that is not chosen: a chosen row keeps its wash.
+    let hover = rule(
+        css,
+        &format!("{row}[data-hovered]:not([data-disabled]):not([data-selected])"),
+    );
+    assert_eq!(
+        parts::look_of("table", "", &[Hover])[0],
+        token_of(declared(hover, "background-color").unwrap())
+    );
+    // The keyboard's ring changes no colour of the row.
+    assert_eq!(
+        parts::look_of("table", "", &[Focused]),
+        parts::look_of("table", "", &[])
+    );
+    let chosen = rule(css, &format!("{row}:is([data-selected], [data-current])"));
+    for states in [&[Selected][..], &[Selected, Hover][..]] {
+        assert_eq!(
+            parts::look_of("table", "", states)[0],
+            token_of(declared(chosen, "background-color").unwrap()),
+            "{states:?}"
+        );
+    }
+    let off = rule(css, &format!("{row}[data-disabled]"));
+    assert_eq!(
+        parts::look_of("table", "", &[Disabled])[1],
+        token_of(declared(off, "color").unwrap())
+    );
+    // A column's name is in the muted tier the manifest says it is (R74).
+    let head = rule(css, "[data-scope=\"table\"][data-part=\"head\"]");
+    assert_eq!(token_of(declared(head, "color").unwrap()), "text.muted");
+    // The rule between rows is its own part, and the family draws none (#2804).
+    let line = rule(css, "[data-scope=\"table\"][data-part=\"rule\"]");
+    assert_eq!(declared(line, "background-color"), None);
+    assert_eq!(declared(line, "block-size"), Some("1px"));
+}
+
+#[test]
+fn the_tree_family_default_is_what_its_stylesheet_draws() {
+    use parts::State::{Disabled, Focused, Hover, Selected};
+    let css = include_str!("../../../../app/src/ui/tree/tree.css");
+    let row = "[data-scope=\"tree\"][data-part=\"root\"]";
+    let at_rest = rule(css, row);
+    assert_eq!(
+        declared(at_rest, "background-color"),
+        None,
+        "a row at rest has no ground"
+    );
+    assert_eq!(
+        parts::look_of("tree", "", &[]),
+        [
+            "transparent",
+            token_of(declared(at_rest, "color").unwrap()).as_str(),
+            "transparent"
+        ]
+    );
+    let hover = rule(
+        css,
+        &format!("{row}[data-hovered]:not([data-disabled]):not([data-selected])"),
+    );
+    assert_eq!(
+        parts::look_of("tree", "", &[Hover])[0],
+        token_of(declared(hover, "background-color").unwrap())
+    );
+    assert_eq!(
+        parts::look_of("tree", "", &[Focused]),
+        parts::look_of("tree", "", &[])
+    );
+    let chosen = rule(css, &format!("{row}[data-selected]"));
+    for states in [&[Selected][..], &[Selected, Hover][..]] {
+        let look = parts::look_of("tree", "", states);
+        assert_eq!(
+            look[0],
+            token_of(declared(chosen, "background-color").unwrap()),
+            "{states:?}"
+        );
+        assert_eq!(
+            look[1],
+            token_of(declared(chosen, "color").unwrap()),
+            "{states:?}"
+        );
+    }
+    let off = rule(css, &format!("{row}[data-disabled]"));
+    assert_eq!(
+        parts::look_of("tree", "", &[Disabled])[1],
+        token_of(declared(off, "color").unwrap())
+    );
+    // The twist is a mark in the quiet tier (R129).
+    let twist = rule(css, "[data-scope=\"tree\"][data-part=\"twist\"]");
+    assert_eq!(token_of(declared(twist, "color").unwrap()), "text.quiet");
+}
+
 // ---------------------------------------------------------------------------------------
 // The manifest and the schema
 // ---------------------------------------------------------------------------------------
@@ -1232,10 +1353,11 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             .iter()
             .map(|state| state.as_str().unwrap())
             .collect();
+        // A box a value is given to is refused too (#3323).
         let wanted_states: &[&str] = if name == "field" {
             &["disabled"]
         } else {
-            &["hover", "focused", "disabled"]
+            &["hover", "focused", "disabled", "invalid"]
         };
         assert_eq!(states, wanted_states, "{name}");
         let parts: Vec<&str> = one["parts"]
@@ -1288,8 +1410,20 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             "label",
             "description",
             "trail",
-            "header"
+            "header",
+            "shortcut"
         ]
+    );
+    // The key at a row's end (#2921), the next release's.
+    assert_eq!(list["parts"][7]["since"], parts::NEXT);
+    // The table family (#2911): a row, the card that holds the table, a column's name, a cell
+    // and the bar over a table that chooses.
+    let table = family("table");
+    assert_eq!(table["since"], parts::NEXT);
+    assert_eq!(table["variants"], json!([]));
+    assert_eq!(
+        names(&table, "parts"),
+        ["root", "frame", "head", "cell", "rule", "bar"]
     );
     // A textarea is as tall as its lines: no height to set.
     assert!(
@@ -1308,7 +1442,8 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
         .iter()
         .map(|one| one["name"].as_str().unwrap())
         .collect();
-    assert_eq!(parts, ["root", "detail"]);
+    assert_eq!(parts, ["root", "detail", "shortcut"]);
+    assert_eq!(tooltip["parts"][2]["since"], parts::NEXT);
 }
 
 #[test]
@@ -1988,10 +2123,14 @@ fn a_boxs_words_on_its_fill_are_held_to_their_floor() {
             .iter()
             .map(|one| one.part.as_str())
             .collect::<Vec<_>>(),
-        ["text-input.root"]
+        // The fill at rest reaches the refused box too, whose danger edge is then under 3:1 on
+        // it (#3323).
+        ["text-input.root", "text-input.root.invalid"]
     );
     // The prototype's look (R54): borderless on the window's fill. A border that is the box's
-    // only edge on its own ground must hold 3:1; with none, its words are what is measured.
+    // only edge on its own ground must hold 3:1; with none, its words are what is measured. A
+    // box that can be refused keeps its edge's width (#3333), so none is a transparent edge, and
+    // the refused state names its own, or the danger edge falls back there.
     let edged = load(&with_parts(
         json!({ "text-input.root.fill": "surface.base" }),
     ));
@@ -2002,8 +2141,10 @@ fn a_boxs_words_on_its_fill_are_held_to_their_floor() {
     );
     let clear = load(&with_parts(json!({
         "text-input.root.fill": "surface.base",
-        "text-input.root.border-width": 0,
-        "textarea.root.border-width": 0,
+        "text-input.root.border-colour": "transparent",
+        "textarea.root.border-colour": "transparent",
+        "text-input.root.invalid.border-colour": "danger.base",
+        "textarea.root.invalid.border-colour": "danger.base",
     })));
     let fell = parts::fallen(clear.theme.first());
     assert!(fell.is_empty(), "{fell:?}");
@@ -2204,11 +2345,41 @@ fn a_field_is_measured_on_every_ground_a_control_stands_on() {
 // States that hold at once
 // ---------------------------------------------------------------------------------------
 
+/// [`with_parts`] with no workspace tint: what is held as written alone. In a yellow or an
+/// orange workspace Allow's accent edge gives way to the waiting amber (#3130), which brings it
+/// near a grey edge a theme sets, so a test of how states combine is measured untinted.
+fn untinted_parts(parts: Value) -> Value {
+    let mut theme = with_parts(parts);
+    theme["tint"] = json!({ "on": false });
+    theme
+}
+
+#[test]
+fn a_grey_primary_edge_falls_back_where_a_yellow_workspace_greys_allows_edge() {
+    // #3130: in a yellow or an orange workspace Allow's accent edge gives way to the waiting
+    // amber, near a grey. A primary a theme edges in grey under the pointer is then drawn as
+    // Allow is there, so it falls back; untinted, it is drawn as written.
+    let parts = json!({
+        "button.root.primary.hover.fill": "control.hover",
+        "button.root.primary.hover.border-colour": "text.secondary",
+    });
+    let tinted = fallen_parts(&with_parts(parts.clone()));
+    assert!(
+        tinted.contains(&"button.root.primary.hover".to_owned()),
+        "{tinted:?}"
+    );
+    let untinted = fallen_parts(&untinted_parts(parts));
+    assert!(
+        !untinted.contains(&"button.root.primary.hover".to_owned()),
+        "{untinted:?}"
+    );
+}
+
 #[test]
 fn the_primary_never_takes_allows_look_in_two_states_at_once() {
     // The look two states draw at once, as the stylesheet resolves it, is held like one state's.
     for later in ["pressed", "focused", "open"] {
-        let fallen = fallen_parts(&with_parts(json!({
+        let fallen = fallen_parts(&untinted_parts(json!({
             "button.root.primary.hover.fill": "control.hover",
             "button.root.primary.hover.border-colour": "text.secondary",
             format!("button.root.primary.{later}.border-colour"): "accent.base",
@@ -2240,7 +2411,7 @@ fn a_parts_words_are_held_in_every_set_of_states_that_hold_at_once() {
 
 #[test]
 fn a_set_of_states_that_falls_back_draws_a_default_its_floors_hold() {
-    let loaded = load(&with_parts(json!({
+    let loaded = load(&untinted_parts(json!({
         "button.root.primary.hover.fill": "control.hover",
         "button.root.primary.hover.border-colour": "text.secondary",
         "button.root.primary.focused.border-colour": "accent.base",

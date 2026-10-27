@@ -54,6 +54,9 @@ pub enum About {
     /// A site new to the project, `host:port`, that the chat's browser held back what it would
     /// have opened, sent or typed there for (#2018). An Allow is for the browser alone.
     BrowserSite { site: String },
+    /// The chat's browser logins filled on pool `pool`'s runner, where its browser runs (#2050):
+    /// an Allow is for chats of its persona, while the pool stays as it is.
+    PoolLogin { pool: String },
 }
 
 impl About {
@@ -107,6 +110,12 @@ impl About {
             } => "using a browser that reaches this project's sites, its dev servers and the \
                   open web"
                 .to_owned(),
+            Self::PoolLogin { pool } => {
+                format!(
+                    "purlis filling your browser logins on pool {}'s runner",
+                    code(pool)
+                )
+            }
             Self::TakeOver { browser } => {
                 format!(
                     "your ask that the person take over browser {}",

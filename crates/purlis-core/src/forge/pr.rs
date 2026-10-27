@@ -70,7 +70,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use super::checks::{Checks, Ci, FailedCheck};
-use super::{Forge, ForgeError};
+use super::{Forge, ForgeError, Kind};
 use crate::worktree::git;
 
 /// A repository on a forge: which forge, and its path there (`owner/name` on GitHub, the full
@@ -87,6 +87,94 @@ pub struct Repo {
 pub struct Pr {
     pub number: u64,
     pub url: String,
+}
+
+/// A picture to show on a request's page, as browser proof (#2026): its file name, which purlis
+/// makes (`browser-proof-<n>.png`, never anything an agent wrote), and its PNG bytes, which the
+/// person picked and saw.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Image {
+    pub name: String,
+    pub png: Vec<u8>,
+}
+
+/// The branch a GitHub repo keeps request `number`'s browser proof on (#2026): a branch of
+/// purlis's own whose commits hold only those pictures, none with a parent outside it, so no
+/// workflow file is on it and nothing runs when it moves. A save's branch ends in a commit's
+/// short hash, never `pr-<n>`, so the two never meet.
+pub fn proof_branch(number: u64) -> String {
+    format!(
+        "{}browser-proof/pr-{number}",
+        crate::names::BRANCH_PREFIX.write
+    )
+}
+
+/// Where a request's browser proof is kept on its forge, and who can open it there, in the
+/// words the person is shown before anything is sent (#2026). `uploads_need_sign_in` is a
+/// GitLab project's `enforce_auth_checks_on_uploads`, where it was read: without it, an upload is
+/// opened by anyone who has its link.
+pub fn proof_kept_at(
+    kind: Kind,
+    path: &str,
+    number: u64,
+    uploads_need_sign_in: Option<bool>,
+) -> String {
+    match (kind, uploads_need_sign_in) {
+        (Kind::GitHub, _) => format!(
+            "on the branch {} of {path}, in its history for good",
+            proof_branch(number)
+        ),
+        (Kind::GitLab, Some(true)) => format!(
+            "as uploads of {path}, which only those who can read {path} can open; they stay \
+             after the comment is deleted"
+        ),
+        (Kind::GitLab, _) => format!(
+            "as uploads of {path}, which anyone with their link can open, signed in or not; \
+             they stay after the comment is deleted"
+        ),
+    }
+}
+
+/// Whether anyone with a picture's link can open browser proof kept on `kind`, signed in or not,
+/// whoever can read the repo: a GitLab upload, unless the project checks who opens its uploads
+/// (`uploads_need_sign_in`). GitHub draws a picture only for whoever can read the repo.
+pub fn proof_open_by_link(kind: Kind, uploads_need_sign_in: Option<bool>) -> bool {
+    matches!(kind, Kind::GitLab) && uploads_need_sign_in != Some(true)
+}
+
+/// Whether attaching proof on `kind` writes to the repo itself, so it needs push access there:
+/// GitHub's proof branch does; GitLab's uploads need only the right to comment (#2026).
+pub fn proof_needs_push(kind: Kind) -> bool {
+    matches!(kind, Kind::GitHub)
+}
+
+/// The mark a request's number takes on `kind`: `#12` on GitHub, `!12` on GitLab.
+pub fn request_mark(kind: Kind) -> char {
+    match kind {
+        Kind::GitHub => '#',
+        Kind::GitLab => '!',
+    }
+}
+
+/// What comes between a repo's page and a request's number in the request's page on `kind`.
+pub fn request_page_between(kind: Kind) -> &'static str {
+    match kind {
+        Kind::GitHub => "/pull/",
+        Kind::GitLab => "/-/merge_requests/",
+    }
+}
+
+/// Whether `name` is a picture name browser proof writes: `browser-proof-<digits>.png`.
+pub fn is_proof_name(name: &str) -> bool {
+    name.strip_prefix("browser-proof-")
+        .and_then(|rest| rest.strip_suffix(".png"))
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Whether `sha` is a whole git object name, as a forge answers one: forty or sixty-four
+/// lower-case hex digits.
+pub(super) fn is_object_name(sha: &str) -> bool {
+    matches!(sha.len(), 40 | 64) && sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// How `charter change land` has its own landing commit made: a merge commit or a squash, with

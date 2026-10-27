@@ -79,9 +79,10 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
         skills: Some(PlaneSkills {
             plane: &here.plane,
             workspace: None,
-            linked: linked.as_deref(),
             repo: &[],
         }),
+        graded: false,
+        laid_out: linked.as_deref(),
     };
     match harness.state_hooks(
         kit,
@@ -116,11 +117,12 @@ fn claude_folder(args: &[String]) -> PathBuf {
 fn opencode_folder(env: &[(String, String)]) -> PathBuf {
     let config: serde_json::Value =
         serde_json::from_str(var(env, purlis_core::opencode::CONFIG_ENV).unwrap()).unwrap();
-    let dirs = config["plugin"][0][1]["skills"]
-        .as_array()
-        .expect("a list of directories");
-    assert_eq!(dirs.len(), 2, "{dirs:?}");
-    PathBuf::from(dirs[1].as_str().unwrap())
+    // One folder, the built-in skills in it beside the plane's.
+    PathBuf::from(
+        config["plugin"][0][1]["skills"]
+            .as_str()
+            .expect("one directory"),
+    )
 }
 
 #[test]
@@ -398,7 +400,11 @@ fn each_harness_badge_says_what_applies_what_is_left_out_and_what_is_carried_ove
 
     let claude = on(Harness::ClaudeCode, Origin::Project);
     assert_eq!(claude.fit, Fit::Partial);
-    assert_eq!(claude.lines(), [left_out]);
+    assert_eq!(
+        claude.lines(),
+        ["Runs only when asked for by name.", left_out],
+        "Claude Code keeps it manual-only by its own key"
+    );
 
     for harness in [Harness::Codex, Harness::Opencode] {
         let badge = on(harness, Origin::Project);

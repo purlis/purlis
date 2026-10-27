@@ -289,7 +289,7 @@ export async function switches(shape: Shape, visits: readonly number[]): Promise
     // The tab in front, split until it holds as many panes as the shape says.
     for (let held = screen.getAllByTestId("pane").length; held < (shape.panes ?? 1); held++) {
       fireEvent.click(screen.getAllByRole("button", { name: "Split right" })[0]);
-      fireEvent.click(await screen.findByRole("button", { name: "Start" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Start chat" }));
       await waitFor(() => expect(screen.getAllByTestId("pane")).toHaveLength(held + 1));
       await settled(asked);
     }

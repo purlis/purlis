@@ -129,7 +129,7 @@ function core(
 
 async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
   await screen.findByRole("button", { name: "End chat steward 1" });
 }
 

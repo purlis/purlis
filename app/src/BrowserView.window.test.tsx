@@ -38,9 +38,16 @@ vi.mock("./SessionPane", () => ({
 /** What the core answers besides, per test (#2176): a command's name, and its answer. */
 let besides: Record<string, (args: Record<string, unknown>) => unknown> = {};
 
+/** The pool whose runner the watched browser runs on, as `watch_browser` answers (#2050). */
+let onPool: string | null = null;
+/** Whether `watch_browser` answers at all: a view not attached yet says nowhere it runs. */
+let watchAnswers = true;
+
 beforeEach(() => {
   painted.length = 0;
   besides = {};
+  onPool = null;
+  watchAnswers = true;
 });
 
 afterEach(() => {
@@ -70,7 +77,8 @@ function core(
       if (cmd === "open_browser") return open();
       if (cmd === "watch_browser") {
         frames = (args as { frames: Channel<BrowserFrame> }).frames;
-        return { view: 4, width: 1280, height: 800, person_drives: personDrives };
+        if (!watchAnswers) return new Promise(() => {});
+        return { view: 4, width: 1280, height: 800, person_drives: personDrives, pool: onPool };
       }
       if (cmd === "browser_input") return input((args ?? {}) as Record<string, unknown>);
       const answer = besides[cmd];
@@ -85,6 +93,8 @@ function core(
       frames?.onmessage({ aim, jpeg, reconnection: null, page: null }),
     reconnection: (reconnection: "reconnecting" | "reconnected") =>
       frames?.onmessage({ aim: "", jpeg: "", reconnection, page: null }),
+    page: (origin: string | null) =>
+      frames?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin } }),
     order: () => asked.map(({ cmd }) => cmd),
   };
 }
@@ -582,6 +592,28 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
     expect(await screen.findByText(/^example\.com on this/)).toBeInTheDocument();
   });
 
+  it("names a runner's pool as the device its localhost is on (#2050)", async () => {
+    onPool = "builds";
+    const host = await opened();
+
+    host.page("http://localhost:5173");
+
+    expect(await screen.findByText("localhost:5173 on pool builds")).toBeInTheDocument();
+    expect(screen.queryByText(/on this (Mac|computer)/)).toBeNull();
+  });
+
+  it("names no device while neither its view nor the chats' browsers say where it runs (#2050)", async () => {
+    watchAnswers = false;
+    besides.chat_browsers = () => [];
+    const host = await opened();
+    await waitFor(() => expect(host.asked("chat_browsers").length).toBeGreaterThan(0));
+
+    host.page("http://localhost:5173");
+
+    expect(await screen.findByText("localhost:5173")).toBeInTheDocument();
+    expect(screen.queryByText(/on this (Mac|computer)/)).toBeNull();
+  });
+
   it("asks once about a site new to the project, and an Allow on this machine lets it go there", async () => {
     let goes = 0;
     besides.go_browser = () => {
@@ -700,6 +732,7 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
           was: null,
           login: null,
           driver: null,
+          pool: null,
         },
       ];
     };

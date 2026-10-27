@@ -12,6 +12,7 @@ pub mod applog;
 pub mod askoutcome;
 pub mod autosave;
 pub mod awareness;
+pub mod boundedrun;
 pub mod briefing;
 pub mod brokered;
 pub mod browsertools;
@@ -24,6 +25,8 @@ pub mod cistate;
 pub mod cliname;
 pub mod clipath;
 pub mod cloneupdate;
+#[cfg(unix)]
+pub mod clusterpool;
 pub mod codelink;
 pub mod commitgate;
 pub mod commitguard;
@@ -68,8 +71,10 @@ pub use purlis_terminal::engine;
 pub mod browserlimits;
 #[cfg(unix)]
 pub mod browserlogins;
+pub mod browserproof;
 pub mod browsers;
 pub mod browsersatquit;
+pub mod browsertimeline;
 pub mod envvar;
 pub mod eventlog;
 pub mod executor;
@@ -114,6 +119,7 @@ pub mod hookchannel;
 pub mod hookreg;
 pub mod hookstate;
 pub mod hookwire;
+pub mod hostedchats;
 pub mod hostsocket;
 pub mod hoststart;
 pub mod inboxupdates;
@@ -161,6 +167,8 @@ pub mod planeroot;
 pub mod planesave;
 pub mod plugin;
 pub mod plugin_install;
+#[cfg(unix)]
+pub mod poollogins;
 #[cfg(unix)]
 pub mod pools;
 pub mod process;

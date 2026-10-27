@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { builtStyles } from "../ui/stylesheets";
 import { property, TOKENS, type Token } from "./theme";
 
 /**
@@ -82,14 +83,25 @@ describe("the engine's pair list", () => {
 const KEYWORDS = new Set(["inherit", "transparent", "none", "currentcolor", "unset", "initial"]);
 
 /**
- * The colours the stylesheet check below cannot read, each as `rule | declaration`. There are
- * none: every colour and background a rule sets is one token, so each is read below (the
- * explorer's change marks name their state's colour in each rule, #2318). Reading is not
- * pairing: a rule that sets a colour and no background draws no pair of its own, so the change
- * marks' colours are held on their backgrounds by hand, in the engine's `PAIRS`, and the test
- * below fails when one is not.
+ * The colours the stylesheet check below cannot read, each as `rule | declaration`. Every other
+ * colour and background a rule sets is one token, so each is read below (the explorer's change
+ * marks name their state's colour in each rule, #2318). Reading is not pairing: a rule that sets
+ * a colour and no background draws no pair of its own, so the change marks' colours are held on
+ * their backgrounds by hand, in the engine's `PAIRS`, and the test below fails when one is not.
+ *
+ * - The Chats view's sticky head (#3331) is filled with its panel's fill, `--panel-fill`: the
+ *   family default's `surface.base`, or the token a theme's `panel.root.fill` names. Its words
+ *   (primary, secondary, muted) are held on `surface.base` and `surface.raised`, the two fills
+ *   the built-in themes give a panel, in `PAIRS`.
+ * - A view's top and its groups' names (`ui/panel/panel.css`, #3340) are drawn on the same
+ *   fill. What stands on them is a row's words and a group's name, held on both grounds in the
+ *   engine's `PAIRS` (`text.secondary`, `text.quiet` on `surface.base` and `surface.raised`).
  */
-const READ_BY_HAND: readonly string[] = [];
+const READ_BY_HAND: readonly string[] = [
+  ".chats-head | background: var(--panel-fill, var(--surface-base))",
+  '[data-scope="panel-section"][data-part="top"] | background-color: var(--panel-fill)',
+  '[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] | background-color: var(--panel-fill)',
+];
 
 /** The parts of a selector that say a state, not what is drawn: the pointer on it, the
  *  keyboard on it, pressed, or chosen. */
@@ -134,7 +146,11 @@ describe("every pair a stylesheet draws", () => {
    *  being imported, so none can draw a pair this test never sees. */
   const sheetNames = [
     "styles.css",
-    ...[...read("styles.css").matchAll(/@import "\.\/([^"]+\.css)"/g)]
+    ...[
+      ...builtStyles(join(process.cwd(), "src"))
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .matchAll(/@import "\.\/([^"]+\.css)"/g),
+    ]
       .map((hit) => hit[1])
       .filter((file) => !file.startsWith("theme/")),
   ];

@@ -126,7 +126,16 @@ fn a_harness_or_repo_skill_that_widens_the_chat_is_marked_where_its_harness_appl
 #[test]
 fn manual_only_is_read_translated_or_said_to_be_ignored() {
     let text = skill("disable-model-invocation: true\n");
-    assert_eq!(compat(&text, HANDED, &READS_ALL).fit, Fit::Full);
+    let read = compat(&text, HANDED, &READS_ALL);
+    assert_eq!(read.fit, Fit::Full);
+    assert_eq!(
+        read.lines(),
+        [
+            "Everything it asks for applies.",
+            "Runs only when asked for by name."
+        ],
+        "a harness that reads it itself says so"
+    );
     for honours in [BRIEFED, BY_DESCRIPTION] {
         let badge = compat(&text, HANDED, &honours);
         assert_eq!(badge.fit, Fit::Full);
@@ -199,4 +208,41 @@ fn an_agent_that_is_not_the_harnesss_own_is_left_out_and_the_badge_says_so() {
     assert!(!handed_text(&text, &READS_ALL).unwrap().contains("agent:"));
     let own = skill("context: fork\nagent: general-purpose\n");
     assert_eq!(compat(&own, HANDED, &READS_ALL).fit, Fit::Full);
+}
+
+#[test]
+fn a_skill_its_harness_keeps_manual_only_by_a_file_beside_it_says_so_on_its_badge() {
+    // SK-39: Codex's own skills, read where they lie, are kept manual-only by a file of Codex's
+    // beside the `SKILL.md`. The frontmatter key it does not read is then no longer ignored.
+    let plain = compat(&skill(""), OUTSIDE, &BRIEFED).kept_manual();
+    assert_eq!(plain.fit, Fit::Full);
+    assert_eq!(
+        plain.lines(),
+        [
+            "Everything it asks for applies.",
+            "Runs only when asked for by name."
+        ]
+    );
+    let keyed = compat(
+        &skill("disable-model-invocation: true\n"),
+        OUTSIDE,
+        &BRIEFED,
+    );
+    assert_eq!(keyed.fit, Fit::Partial);
+    let keyed = keyed.kept_manual();
+    assert_eq!(keyed.fit, Fit::Full);
+    assert!(keyed.ignored.is_empty(), "{keyed:?}");
+    // What else it asks for is still said.
+    let model = compat(&skill("model: opus\n"), OUTSIDE, &BRIEFED).kept_manual();
+    assert_eq!(model.fit, Fit::Partial);
+    assert_eq!(
+        model.lines(),
+        [
+            "Runs only when asked for by name.",
+            "Ignored: the model it asks for."
+        ]
+    );
+    // One purlis cannot read stays refused.
+    let refused = compat("no frontmatter", OUTSIDE, &BRIEFED);
+    assert_eq!(refused.clone().kept_manual(), refused);
 }

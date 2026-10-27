@@ -111,7 +111,7 @@ export function ResultsGroup({
   onSettings: (link: SettingsLink) => void;
 }) {
   return (
-    <NoticeList into={into} className="action-results">
+    <NoticeList into={into}>
       {kept.map((one) => (
         <ActionResultNotice
           kept

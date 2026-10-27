@@ -41,6 +41,7 @@ import { RequestMerge } from "./SavingMerge";
 import { SaveConflict } from "./SavingResolve";
 import { Button, IconButton } from "./ui/button/Button";
 import { AlertDialog } from "./ui/dialog/Dialog";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 
 /** Settings › Saving › Mode: where a project's save mode is changed (SE-22's address). */
 const SAVING_MODE: SettingsLink = { group: "project.saving", setting: "project.saving.plane.mode" };
@@ -513,27 +514,29 @@ function RepoRows({
   onSave: (name: string) => void;
 }) {
   return (
-    <table className="ui-table saving-repos" aria-label={`Repos in ${workspace}`}>
-      <thead>
-        <tr>
-          <th scope="col">Repo</th>
-          <th scope="col">Branch</th>
-          <th scope="col">Stage</th>
-          <th scope="col">{capitalised(requestOf(repos))}</th>
-          <th scope="col">Mode</th>
-          <th scope="col">Save goes to</th>
-          <th scope="col">
-            <span className="sr-only">Save</span>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
+    <Table aria-label={`Repos in ${workspace}`} className="saving-repos">
+      <TableHeader>
+        <TableColumn isRowHeader>Repo</TableColumn>
+        <TableColumn>Branch</TableColumn>
+        <TableColumn>Stage</TableColumn>
+        <TableColumn>{capitalised(requestOf(repos))}</TableColumn>
+        <TableColumn>Mode</TableColumn>
+        <TableColumn>Save goes to</TableColumn>
+        <TableColumn hideName>Save</TableColumn>
+      </TableHeader>
+      <TableBody>
         {repos.map((repo) => (
-          <tr key={repo.name} data-repo={repo.name} data-stage={repo.stage}>
-            <td>{repo.name}</td>
-            <td>{repo.branch ?? "no branch"}</td>
-            <td>{repoStageText(repo)}</td>
-            <td>
+          <TableRow
+            key={repo.name}
+            id={repo.name}
+            textValue={repo.name}
+            data-repo={repo.name}
+            data-stage={repo.stage}
+          >
+            <TableCell>{repo.name}</TableCell>
+            <TableCell>{repo.branch ?? "no branch"}</TableCell>
+            <TableCell>{repoStageText(repo)}</TableCell>
+            <TableCell>
               {repo.pr === null ? (
                 "—"
               ) : (
@@ -541,10 +544,10 @@ function RepoRows({
                   {repo.pr}
                 </a>
               )}
-            </td>
-            <td>{`${repo.mode} (${repo.modeFrom})${repo.autosave ? " · auto-save" : ""}`}</td>
-            <td data-testid="save-goes-to">{repoSaveGoesTo(repo, workspace)}</td>
-            <td>
+            </TableCell>
+            <TableCell>{`${repo.mode} (${repo.modeFrom})${repo.autosave ? " · auto-save" : ""}`}</TableCell>
+            <TableCell data-testid="save-goes-to">{repoSaveGoesTo(repo, workspace)}</TableCell>
+            <TableCell>
               <IconButton
                 size="sm"
                 aria-label={`Save ${repo.name}`}
@@ -554,11 +557,11 @@ function RepoRows({
                 icon={<Save className="node-icon" aria-hidden="true" />}
                 className="panel-view"
               />
-            </td>
-          </tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
-    </table>
+      </TableBody>
+    </Table>
   );
 }
 

@@ -64,6 +64,7 @@ import { capMarks } from "./combiningMarks";
 import { AskWrites } from "./AskWrites";
 import { ScopeSwitch } from "./ScopeSwitch";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Card } from "./ui/card/Card";
 import { Form, TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
 import { RESULTS } from "./ActionResultNotice";
@@ -536,6 +537,8 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "sandbox-write",
   "sandbox-local",
   "browser-site",
+  "pool-login",
+  "pool-tool",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -661,6 +664,8 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   browser: "Asks what its browser may reach",
   "browser-needs-you": "Needs you in its browser",
   "browser-site": "Asks to let its browser reach a new site",
+  "pool-login": "Asks to log its browser in on a pool's runner",
+  "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };
@@ -822,7 +827,9 @@ function Ask({
 
   return (
     <Stop id={key}>
-      <li
+      <Card
+        as="li"
+        variant="ask"
         ref={drawn}
         className="inbox-ask"
         data-source={ask.source}
@@ -910,7 +917,7 @@ function Ask({
             </Stop>
           )}
         </ButtonRow>
-      </li>
+      </Card>
     </Stop>
   );
 }
@@ -1202,7 +1209,7 @@ function updateStops(updates: Updates | undefined): string[] {
 }
 
 /** The time now: when an update was drawn where it stands, or when an answer was pressed. */
-const placedAt = () => Date.now();
+const placedAt = () => performance.now();
 
 const READ_ALL_STOP = "inbox:read-all";
 const DISMISS_ALL_STOP = "inbox:dismiss-all";

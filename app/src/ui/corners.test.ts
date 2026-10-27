@@ -16,18 +16,14 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readBuiltInThemes } from "../../.storybook/builtInThemes";
 
 const APP = process.cwd();
 const SRC = join(APP, "src");
 const SCALE = [0, 7, 8, 10, 12, 9999];
 
 type Cell = { geometry: { comfortable: Record<string, string> }; parts: string };
-const PURLIS = (
-  JSON.parse(readFileSync(join(APP, ".storybook", "built-in-themes.json"), "utf8")) as Record<
-    string,
-    Record<string, Cell>
-  >
-).purlis;
+const PURLIS = readBuiltInThemes<Cell>(join(APP, ".storybook", "built-in-themes.json")).purlis;
 
 function stylesheets(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

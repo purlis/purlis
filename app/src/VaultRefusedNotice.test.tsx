@@ -484,7 +484,8 @@ describe("the refused vault Notice", () => {
 
 /** The mark drawn at the head of a Notice's sentence, or none. */
 const markOf = (line: HTMLElement) =>
-  line.querySelector<HTMLElement>(".notice-says .persona-mark")?.dataset.persona;
+  line.querySelector<HTMLElement>("[data-scope=notice][data-part=message] .persona-mark")?.dataset
+    .persona;
 
 /** Both its Notices name the persona the chat runs as, and lead with its mark (#1454). */
 describe("the refused vault Notice's persona mark", () => {

@@ -23,21 +23,21 @@ import {
 } from "./guards.testkit";
 
 /**
- * **Every control wears its shared class** (DS-4, #1837; ADR 0094 §4, `docs/ui-primitives.md`
- * "The control classes").
+ * **Every control is its family's, or wears its shared class** (DS-4, #1837; ADR 0094 §4, ADR
+ * 0104, `docs/ui-primitives.md` "Every control is a family's").
  *
- * A control drawn without its class is drawn by whatever rule its view wrote for it, which is
- * how the window came to have about 30 button looks. So a component that draws one of these
- * gives it the class that is the whole of its look:
+ * A control drawn without its family or its class is drawn by whatever rule its view wrote for
+ * it, which is how the window came to have about 30 button looks. So a component that draws one
+ * of these natively gives it the class that is the whole of its look, or none is right and the
+ * control is its family's wrapper (`ui/`, #3294):
  *
  * | Drawn as                                                         | Wears                     |
  * | ---------------------------------------------------------------- | ------------------------- |
- * | `<button>`, or a Radix trigger or close without `asChild`        | a row, a segment or a menu row; a button of the button family is `Button` (#2904), never a native `<button>` |
- * | `<input>`, `<textarea>`                                          | nothing: a box is the field family's `TextField` or `TextArea` (#2905); a checkbox `ui-checkbox`, a radio `ui-radio` |
- * | `<select>`, Radix Select's `Trigger`                             | `ui-select`               |
- * | `<table>`                                                        | `ui-table`                |
- * | a Radix menu's or Select's `Content` or `SubContent`             | `ui-menu`                 |
- * | a Radix menu's or Select's `Item`, `SubTrigger`, checkbox or radio item | `ui-menu-item`     |
+ * | `<button>`, or a Radix trigger or close without `asChild`        | a list's row or a tree's row (`ui-row`, `ui-tree-row`); a button is the button family's `Button` (#2904), a segment the choice family's, a menu's row the menu family's |
+ * | `<input>`, `<textarea>`                                          | nothing: a box is the field family's `TextField` or `TextArea` (#2905), a checkbox or a radio the choice family's (#2907) |
+ * | `<select>`, Radix Select's `Trigger`                             | nothing: the select family's `Select` (#2906) |
+ * | `<table>`                                                        | nothing: the table family's `Table` or `ControlTable` (#2911) |
+ * | a Radix menu's or Select's `Content`, `SubContent`, `Item`, `SubTrigger`, checkbox or radio item | nothing: the menu and popover families' (#2909) |
  *
  * A Radix part is found by the name its file imports the package under (`import * as Menu from
  * "@radix-ui/react-dropdown-menu"`), so an alias is no way round. A hidden input draws nothing
@@ -50,21 +50,25 @@ import {
  * `CEILING`. The surface tickets delete an entry as each control takes its class.
  */
 
-/** The classes that are each kind's whole look. A button can also be a list row, a tree row, a
- *  segment or a menu's row (`docs/ui-primitives.md`). */
-const BUTTON = ["ui-row", "ui-tree-row", "ui-segmented-item", "ui-menu-item"];
+/** The classes that are each kind's whole look, each drawn by `primitives/collections.css`. A
+ *  native button can be a list's row or a tree's row (`docs/ui-primitives.md`). An empty list is
+ *  a kind that is a family's (`ui/`), so no class makes a native one right. */
 const WEARS: Record<string, string[]> = {
-  button: BUTTON,
-  // A box a person types in is the field family's (#2905): no class makes a raw one right.
+  button: ["ui-row", "ui-tree-row"],
+  // A box a person types in is the field family's (#2905).
   input: [],
-  "input:checkbox": ["ui-checkbox"],
-  "input:radio": ["ui-radio"],
-  "input:dynamic": ["ui-checkbox", "ui-radio"],
+  // A checkbox and a radio are the choice families' (#2907).
+  "input:checkbox": [],
+  "input:radio": [],
+  "input:dynamic": [],
   textarea: [],
-  select: ["ui-select"],
-  table: ["ui-table"],
-  menu: ["ui-menu"],
-  "menu-item": ["ui-menu-item"],
+  // A select is the select family's (#2906).
+  select: [],
+  // A table is the table family's (#2911).
+  table: [],
+  // A menu and its rows are the menu and popover families' (#2909).
+  menu: [],
+  "menu-item": [],
 };
 
 /** Radix packages whose parts are controls, and what each part is. */
@@ -280,7 +284,9 @@ export function offTheList(
   allowed: Readonly<Record<string, readonly string[]>>,
   ceiling: Readonly<Record<string, number>> = CEILING,
 ): string[] {
-  return ratchet(found, allowed, ceiling, { added: "a control without its ui- class" });
+  return ratchet(found, allowed, ceiling, {
+    added: "a control without its family or its ui- class",
+  });
 }
 
 describe("the control guard (#1837)", () => {
@@ -291,7 +297,7 @@ describe("the control guard (#1837)", () => {
   it("fails an unclassed button planted in a component", () => {
     const planted = new Map([["Fresh.tsx", unclassedControls("<button onClick={go}>Go</button>")]]);
     expect(offTheList(planted, {}, {})).toEqual([
-      "Fresh.tsx: a control without its ui- class: <button>",
+      "Fresh.tsx: a control without its family or its ui- class: <button>",
     ]);
   });
 
@@ -311,22 +317,19 @@ describe("the control guard (#1837)", () => {
       import * as Pick from "@radix-ui/react-select";
       import * as Pop from "@radix-ui/react-popover";
       <button className="tab-close" onClick={() => a > b}>×</button>
-      <button className={cn("ui-button", on && "ui-button-primary")} />
+      <button className={cn("go", on && "go-on")} />
       <button className="ui-row" />
+      <button className={cn("ui-tree-row", open && "open")} />
       <input value={v} />
-      <input className="ui-input" />
+      <input className="find" />
       <input type="checkbox" className="box" />
-      <input type="checkbox" className="ui-checkbox" />
       <input type="hidden" name="x" />
-      <input type={kind} className="ui-input" />
+      <input type={kind} className="pick" />
       <textarea className="notes" />
-      <select className="ui-select" />
-      <select value={v}>
+      <select className="wide" />
       <table className="vault-secrets">
       <table className="ui-table ui-table-fixed">
-      <Menu.Content className="ui-menu more-menu" />
-      <Menu.Content sideOffset={4} />
-      <Menu.Item className="ui-menu-item" />
+      <Menu.Content className="more-menu" />
       <Menu.Item onSelect={go} />
       <Pick.Trigger className="field" />
       <Pop.Trigger asChild><span /></Pop.Trigger>
@@ -335,15 +338,16 @@ describe("the control guard (#1837)", () => {
     `;
     expect(unclassedControls(tsx)).toEqual([
       '<button className="tab-close">',
-      '<button className={cn("ui-button", on && "ui-button-primary")}>',
+      '<button className={cn("go", on && "go-on")}>',
       "<input>",
-      '<input className="ui-input">',
+      '<input className="find">',
       '<input type="checkbox" className="box">',
-      '<input className="ui-input">',
+      '<input className="pick">',
       '<textarea className="notes">',
-      "<select>",
+      '<select className="wide">',
       '<table className="vault-secrets">',
-      "<Menu.Content>",
+      '<table className="ui-table ui-table-fixed">',
+      '<Menu.Content className="more-menu">',
       "<Menu.Item>",
       '<Pick.Trigger className="field">',
       "<Pop.Trigger>",
@@ -393,15 +397,16 @@ describe("the control guard (#1837)", () => {
  * `:is()` or `:where()` as each selector in it. The subject is a control when it is:
  * - a `button`, `select` or `textarea` element, or an `input` that is not a checkbox or a radio
  *   (`input:not([type=checkbox])` is one);
- * - a class the primitives draw a control with (`CONTROL_PRIMITIVES`);
  * - a class some component gives a button, a field or a select (`controlClasses`), unless that
- *   tag is a row of a list (`ui-row`, `ui-tree-row`) or a segment of a segmented control, whose
- *   height is the list's or the segmented control's.
+ *   tag is a row of a list (`ui-row`, `ui-tree-row`), whose height is the list's.
  *
- * A control takes `--size-control`. It takes `--size-chrome` only as the small form: the subject
- * is `.ui-button-sm` or `.ui-segmented-sm`, or a part of the selector before it is a strip. A
- * field of several lines is a whole number of controls (`calc(var(--size-control) * 3)`). A
- * checkbox, a radio and a switch are drawn at their own mark's size and are not read.
+ * A family's own sheet (`ui/`) keys its control on attributes, not on a class, so its sizes are
+ * the family's to hold; a class a view gives a family's member is read here like any other.
+ *
+ * A control takes `--size-control`. It takes `--size-chrome` only as the small form: a part of
+ * the selector before it is a strip. A field of several lines is a whole number of controls
+ * (`calc(var(--size-control) * 3)`). A checkbox, a radio and a switch are drawn at their own
+ * mark's size and are not read.
  *
  * **What is a strip or a pane header** is a class named for one (`STRIP`): a bar, a strip, a
  * head or a row of tabs, the three strips by name, the pane's top line, the status line, and
@@ -421,19 +426,8 @@ describe("the control guard (#1837)", () => {
  * is declared, not by the scope it is declared in.
  */
 
-/** The classes `primitives/controls.css` draws a control with. */
-const CONTROL_PRIMITIVES = [
-  "ui-button",
-  "ui-button-sm",
-  "ui-input",
-  "ui-select",
-  "ui-segmented",
-  "ui-segmented-sm",
-  "ui-menu-item",
-];
-
-/** A tag wearing one of these is a row of a list or a segment, not a control on its own. */
-const NOT_ON_ITS_OWN = ["ui-row", "ui-tree-row", "ui-segmented-item"];
+/** A tag wearing one of these is a row of a list, not a control on its own. */
+const NOT_ON_ITS_OWN = ["ui-row", "ui-tree-row"];
 
 /** The kinds of control whose classes are held to the control height. */
 const HELD_KINDS = new Set(["button", "input", "input:dynamic", "textarea", "select", "menu-item"]);
@@ -454,7 +448,7 @@ function withoutIcon(tag: string): string {
   return tag;
 }
 
-/** Each class a component gives a control it draws (`HELD_KINDS`), rows and segments aside. */
+/** Each class a component gives a control it draws (`HELD_KINDS`), rows aside. */
 export function controlClasses(source: string): string[] {
   const radix = radixNames(withoutComments(source, "ts"));
   return openingTags(
@@ -499,9 +493,6 @@ export const PANE_LINE_CHIPS = [
 /** What is drawn as part of a strip or a pane's top line, as tall as it is: the ways to end a
  *  pane's task (#1488), the chip a tab wears for its tasks (#1487) and the top line's chips. */
 const STRIP_PARTS = new Set(["pane-task-ends", "tab-tasks", ...PANE_LINE_CHIPS]);
-
-/** The classes that make a control the small one, drawn at the chrome height. */
-const SMALL_CONTROLS = new Set(["ui-button-sm", "ui-segmented-sm"]);
 
 const HEIGHT_PROPERTY = /^(?:min-)?(?:height|block-size)$/;
 
@@ -627,8 +618,8 @@ function ancestorsOf(selector: string): string[] {
   return compounds.slice(0, -1).filter((_, i) => !["+", "~"].includes(combinators[i]));
 }
 
-/** What a plain selector's subject is, for this guard: a control (small, when it is the small
- *  class or sits inside a strip), a strip, or neither. A strip's part (`STRIP_PARTS`) is a strip,
+/** What a plain selector's subject is, for this guard: a control (small, when it sits inside a
+ *  strip), a strip, or neither. A strip's part (`STRIP_PARTS`) is a strip,
  *  whatever else it is. Otherwise a subject whose own class is a control's is a control, however
  *  its other classes are named. */
 export function subjectKind(
@@ -641,9 +632,7 @@ export function subjectKind(
   // A part of a strip by name is the strip's height, even a button (a top-line chip); only a
   // class that is a strip by its pattern (`-head`, `-bar`) gives way to a control class.
   if (classes.some((name) => STRIP_PARTS.has(name))) return "a strip";
-  const controlClass = classes.some(
-    (name) => CONTROL_PRIMITIVES.includes(name) || controls.has(name),
-  );
+  const controlClass = classes.some((name) => controls.has(name));
   if (!controlClass && classes.some(isStrip)) return "a strip";
   const control =
     controlClass ||
@@ -651,8 +640,7 @@ export function subjectKind(
     (element !== undefined && ["button", "select", "textarea"].includes(element));
   if (!control) return undefined;
   const around = ancestorsOf(selector).flatMap((compound) => partsOf(compound).classes);
-  const small = classes.some((name) => SMALL_CONTROLS.has(name)) || around.some(isStrip);
-  return small ? "a small control" : "a control";
+  return around.some(isStrip) ? "a small control" : "a control";
 }
 
 type Height = "--size-control" | "--size-chrome";
@@ -893,12 +881,12 @@ import { plantedTall } from "./theme/theme";
 const plantedSizes = { row: { minHeight: 30 } };
 const plantedHeld = { height: "1.9rem" };
 const plantedBox = () => ({ blockSize: 31 });
-export const PlantedMember = () => <button className="ui-button" style={plantedSizes.row} />;
+export const PlantedMember = () => <button className="planted" style={plantedSizes.row} />;
 export const PlantedEither = ({ on }: { on: boolean }) => (
-  <button className="ui-button" style={on ? plantedHeld : undefined} />
+  <button className="planted" style={on ? plantedHeld : undefined} />
 );
-export const PlantedCall = () => <button className="ui-button" style={plantedBox()} />;
-export const PlantedImported = () => <button className="ui-button" style={plantedTall} />;
+export const PlantedCall = () => <button className="planted" style={plantedBox()} />;
+export const PlantedImported = () => <button className="planted" style={plantedTall} />;
 `;
     const script = `${readFileSync(join(SRC, "theme/theme.ts"), "utf8")}
 export const plantedTall = { minBlockSize: 32 };
@@ -947,8 +935,8 @@ export const plantedTall = { minBlockSize: 32 };
       "input[type=text]",
       "input[type='checkbox']",
       "input:not([type=checkbox])",
-      ".ui-button-row > .ui-button",
-      ".ui-button-row > .ui-button-sm",
+      ".actions > .task-end",
+      ".find-bar > .closer",
       ".pane-task-ends .task-end",
       ".tab .closer::before",
       ".tabs .tab:has(> .tab-tasks)",
@@ -963,12 +951,12 @@ export const plantedTall = { minBlockSize: 32 };
       ".state-bar",
       ".activity-bar",
       ".activity-tab svg",
-      ".ui-checkbox",
+      ".box",
       ".bar + button",
       ".bar ~ .x + button",
       ".bar .x + button",
       ".bar > .x ~ button",
-      ".ui-button.toolbar-head",
+      ".closer.toolbar-head",
       ".task-end.panel-head",
       ".tab-tasks.task-end",
       ".pane-harness",
@@ -1037,33 +1025,33 @@ export const plantedTall = { minBlockSize: 32 };
   it("passes the tokens, a token held in a custom property, a field of lines, and no length", () => {
     const css = `
       :root { --row: var(--size-chrome); --lead: var(--row); }
-      .ui-button { block-size: var(--size-control); }
-      .ui-button-sm { block-size: var(--size-chrome); }
+      .task-end { block-size: var(--size-control); }
+      .find-bar .task-end { block-size: var(--size-chrome); }
       .bar button { block-size: var(--size-chrome); }
       textarea { min-block-size: calc(var(--size-control) * 3); }
-      .ui-menu-item { min-block-size: var(--block); }
+      .closer { min-block-size: var(--block); }
       :root { --block: var(--size-control); }
       .bar button { min-block-size: var(--lead); }
       .bar { min-height: var(--size-chrome); }
-      .ui-button-row > .ui-button { block-size: auto; }
+      .actions > .task-end { block-size: auto; }
       .pane-head { height: 100%; }
       .x button { max-height: 3rem; width: 7px; }
       .not-a-control { height: 1.3rem; }
     `;
-    expect(cssHeights(css, new Set())).toEqual([]);
+    expect(cssHeights(css, new Set(["task-end", "closer"]))).toEqual([]);
     expect(cssHeights(".bar { min-height: var(--size-control); }", new Set())).toEqual([
       ".bar | min-height: var(--size-control) (a strip)",
     ]);
     expect(cssHeights("button { height: calc(var(--size-control) * 1.5); }", new Set())).toEqual([
       "button | height: calc(var(--size-control) * 1.5) (a control)",
     ]);
-    // A custom property brings its token's rule: a menu's row is at least a control tall.
+    // A custom property brings its token's rule: a control is at least a control tall.
     expect(
       cssHeights(
-        ":root { --lead: var(--size-chrome); } .ui-menu-item { min-block-size: var(--lead); }",
-        new Set(),
+        ":root { --lead: var(--size-chrome); } .closer { min-block-size: var(--lead); }",
+        new Set(["closer"]),
       ),
-    ).toEqual([".ui-menu-item | min-block-size: var(--lead) (a control)"]);
+    ).toEqual([".closer | min-block-size: var(--lead) (a control)"]);
     expect(cssHeights(".panel button { height: var(--size-chrome); }", new Set())).toEqual([
       ".panel button | height: var(--size-chrome) (a control)",
     ]);
@@ -1074,9 +1062,9 @@ export const plantedTall = { minBlockSize: 32 };
 
   it("reads a control's height in an inline style or a Tailwind class", () => {
     const tsx = `
-      <button className="ui-button h-7" />
-      <button className="ui-button h-full" style={{ minHeight: 30, width: 9 }} />
-      <input className="ui-input md:min-h-8" />
+      <button className="closer h-7" />
+      <button className="closer h-full" style={{ minHeight: 30, width: 9 }} />
+      <input className="find md:min-h-8" />
       <div className="h-7" style={{ height: 4 }} />
     `;
     expect(componentHeights(tsx)).toEqual([
@@ -1088,12 +1076,13 @@ export const plantedTall = { minBlockSize: 32 };
 
   it("gives every class a control wears, and not a row's or a toggle's", () => {
     const tsx = `
-      <button className="ui-button task-end" />
+      <button className="closer task-end" />
       <button className="chat ui-row" />
+      <button className={cn("file", open && "ui-tree-row")} />
       <input type="checkbox" className="box" />
-      <select className={cn("ui-select", wide && "wide")} />
+      <select className={cn("pick", wide && "wide")} />
     `;
-    expect(controlClasses(tsx)).toEqual(["ui-button", "task-end", "ui-select", "wide"]);
+    expect(controlClasses(tsx)).toEqual(["closer", "task-end", "pick", "wide"]);
   });
 
   it("holds every chip on a pane's top line at the chrome height (#2484)", () => {
@@ -1157,9 +1146,10 @@ export const plantedTall = { minBlockSize: 32 };
     const controls = sourceFiles(isView).flatMap((file) =>
       controlClasses(readFileSync(join(SRC, file), "utf8")),
     );
-    // Fewer since the field (#2905), the status items and pills (#2913) and the menus (#2909)
-    // became families of their own.
-    expect(new Set(controls).size).toBeGreaterThan(70);
+    // Fewer since the field (#2905), the status items and pills (#2913), the menus (#2909) and
+    // the cards, Notices and counts (#2912) became families of their own, and the hand-drawn
+    // buttons moved to the button family (#3208).
+    expect(new Set(controls).size).toBeGreaterThan(60);
     const read = declarations(readFileSync(join(SRC, "App.css"), "utf8")).filter(({ property }) =>
       HEIGHT_PROPERTY.test(property),
     );

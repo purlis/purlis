@@ -529,28 +529,97 @@ pub struct Try {
 /// ([`tried`]).
 pub fn try_out(root: &Path, id: &str) -> Result<Try, String> {
     let draft = one(root, id)?;
+    let mut files: BTreeMap<String, String> = BTreeMap::new();
+    if !draft.new {
+        let folder = find(root, &draft.level, &draft.name)?;
+        for (path, text) in files_below(root, &folder) {
+            files.insert(path, text);
+        }
+    }
+    for file in &draft.files {
+        files.insert(file.path.clone(), file.after.clone());
+    }
+    lay_out(root, Some((&draft.name, &files)))
+}
+
+/// **A copy of a skill, read once for a grade** (SK-16, #2779): its name and its files, without
+/// its [`EVALS`] folder, so the chat a fixture is run in is never handed the fixtures it is graded
+/// by. Every arm with the skill is laid out from it ([`lay_out_arm`]), so an edit while the grade
+/// runs changes nothing it grades.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Snapshot {
+    pub name: String,
+    pub files: BTreeMap<String, String>,
+}
+
+/// **The copy of `name` at `level`, read once**: [`Snapshot`].
+pub fn snapshot(root: &Path, level: &Level, name: &str) -> Result<Snapshot, String> {
+    let folder = find(root, level, name)?;
+    Ok(Snapshot {
+        name: name.to_owned(),
+        files: files_below(root, &folder)
+            .into_iter()
+            .filter(|(path, _)| path.split('/').next() != Some(EVALS))
+            .collect(),
+    })
+}
+
+/// **Lays out a grade's arm** (SK-16, #2779): a throwaway piece whose chat gets the built-in
+/// skills and `skill` alone, or, with none, the built-in skills alone. Marked as a grade's
+/// ([`graded_piece`]), so its chat is armed as a grade's chat is. Ended as a Try it is, when its
+/// chat closes ([`end_try_at`]).
+pub fn lay_out_arm(root: &Path, skill: Option<&Snapshot>) -> Result<Try, String> {
+    let laid = lay_out(root, skill.map(|skill| (skill.name.as_str(), &skill.files)))?;
+    let state = crate::plane::state_dir(root);
+    if let Err(why) = write_at(
+        &state,
+        &format!("{TRIES_DIR}/{}/{GRADED}", laid.id),
+        None,
+        "",
+        usize::MAX,
+    ) {
+        let _ = end_try(root, &laid.id);
+        return Err(super::not_written("the grade's record of its folder", why));
+    }
+    Ok(laid)
+}
+
+/// A try's file that marks it as a grade's arm.
+const GRADED: &str = "graded";
+
+/// **Whether `cwd` is the throwaway piece of a grade's arm** in the project at `root`
+/// ([`lay_out_arm`]): only this machine's state says so, and no chat writes it.
+pub fn graded_piece(root: &Path, cwd: &Path) -> bool {
+    a_piece(cwd)
+        && try_of(root, cwd).is_some_and(|id| {
+            read_at(
+                &crate::plane::state_dir(root),
+                &format!("{TRIES_DIR}/{id}/{GRADED}"),
+            )
+            .ok()
+            .flatten()
+            .is_some()
+        })
+}
+
+/// The folder of a skill's fixtures, which a grade's arm leaves out of its copy.
+const EVALS: &str = purlis_skills::grade::EVALS_DIR;
+
+/// **Lays out a throwaway piece** in the project at `root`: `skill`'s files, by its name, in this
+/// machine's [`TRIES_DIR`], as the one skill of a project of its own, or no skill at all, and an
+/// empty throwaway piece in the project's [`PIECES`], made new. A chat started in the piece gets
+/// the built-in skills and that skill alone ([`tried`]).
+fn lay_out(root: &Path, skill: Option<(&str, &BTreeMap<String, String>)>) -> Result<Try, String> {
     let state = state_with(root, TRIES_DIR)?;
     let try_id = random_id()?;
     super::store::made(&state, &[TRIES_DIR, &try_id], false).map_err(|why| why.to_string())?;
     let laid = (|| {
-        let skill_rel = format!(
-            "{TRIES_DIR}/{try_id}/{}/{}",
-            purlis_skills::PROJECT_DIR,
-            draft.name
-        );
-        let mut files: BTreeMap<String, String> = BTreeMap::new();
-        if !draft.new {
-            let folder = find(root, &draft.level, &draft.name)?;
-            for (path, text) in files_below(root, &folder) {
-                files.insert(path, text);
+        if let Some((name, files)) = skill {
+            let skill_rel = format!("{TRIES_DIR}/{try_id}/{}/{name}", purlis_skills::PROJECT_DIR);
+            for (path, text) in files {
+                write_at(&state, &format!("{skill_rel}/{path}"), None, text, 3)
+                    .map_err(|why| super::not_written(&format!("{name}'s {path}"), why))?;
             }
-        }
-        for file in &draft.files {
-            files.insert(file.path.clone(), file.after.clone());
-        }
-        for (path, text) in &files {
-            write_at(&state, &format!("{skill_rel}/{path}"), None, text, 3)
-                .map_err(|why| super::not_written(&format!("{}'s {path}", draft.name), why))?;
         }
         let piece = made_piece(root, &try_id)?;
         let piece_text = piece.display().to_string();

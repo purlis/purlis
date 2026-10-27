@@ -169,3 +169,49 @@ fn a_remove_takes_the_packages_profile_and_only_a_purge_takes_the_one_the_person
         assert!(here.exists(), "left as it was: {other}");
     }
 }
+
+#[test]
+fn a_runners_notice_names_it_and_offers_the_shipped_profiles_command_to_run_there_and_no_chrome() {
+    // #2990.
+    let shown = shown_on_runner("builds");
+
+    assert_eq!(
+        shown.machine,
+        EngineMachine::Runner {
+            pool: "builds".into()
+        }
+    );
+    // Whether the runner's Linux restricts the sandbox with AppArmor is not known here.
+    assert!(
+        shown.says.contains("If that runner's Linux"),
+        "{}",
+        shown.says
+    );
+    assert!(
+        shown.says.contains("the runner of pool builds"),
+        "{}",
+        shown.says
+    );
+    assert!(shown.says.contains("not on this machine"), "{}", shown.says);
+    assert_eq!(
+        shown.command.as_deref(),
+        Some(purlis_core::browsers::sandboxing::install_shipped_command().as_str())
+    );
+    assert_eq!(shown.chrome, None);
+}
+
+#[test]
+fn this_machines_notice_names_no_runner() {
+    assert_eq!(shown(Path::new(ENGINES), None).machine, EngineMachine::Here);
+}
+
+#[test]
+fn what_a_runner_chat_is_told_names_its_runner_and_no_engine_crash() {
+    let told = no_browser_on("builds");
+    assert!(
+        told.contains("not available on the runner of pool builds"),
+        "{told}"
+    );
+    assert!(!told.contains("this machine"), "{told}");
+    assert!(!told.to_lowercase().contains("zygote"));
+}

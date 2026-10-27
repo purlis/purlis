@@ -131,15 +131,24 @@ fn as_itself(text: &str) -> String {
 /// **The command the person runs** to install [`profile_for`] `engines` at [`HERE_PROFILE`] and
 /// load it: purlis offers it and never runs it. None where no profile is offered.
 pub fn install_command(engines: &Path) -> Option<String> {
-    let lines: Vec<String> = profile_for(engines)?
-        .trim_end()
-        .lines()
-        .map(single_quoted)
-        .collect();
-    Some(format!(
-        "printf '%s\\n' {} | sudo tee {HERE_PROFILE} >/dev/null && sudo apparmor_parser -r {HERE_PROFILE}",
+    Some(writing(&profile_for(engines)?, HERE_PROFILE))
+}
+
+/// **The command the person runs on another machine** whose engine cannot make its sandbox, a
+/// runner (#2990): it installs [`SHIPPED`] at [`PROFILE`], as the `.deb` does, which names the
+/// pinned engine in any user's default data folder, and loads it. purlis offers it and never
+/// runs it.
+pub fn install_shipped_command() -> String {
+    writing(SHIPPED, PROFILE)
+}
+
+/// The command that writes `profile` to `at` line by line and loads it.
+fn writing(profile: &str, at: &str) -> String {
+    let lines: Vec<String> = profile.trim_end().lines().map(single_quoted).collect();
+    format!(
+        "printf '%s\\n' {} | sudo tee {at} >/dev/null && sudo apparmor_parser -r {at}",
         lines.join(" ")
-    ))
+    )
 }
 
 /// `text` as one word for a POSIX shell.

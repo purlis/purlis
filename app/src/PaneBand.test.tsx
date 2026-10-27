@@ -211,7 +211,9 @@ describe("the band, the header and the terminal, in a pane", () => {
     const frame = screen.getByTestId("frame");
     expect([...frame.children].map((one) => one.className)).toEqual(["pane-top", "pane-body"]);
     const top = frame.firstElementChild as Element;
-    expect([...top.children].map((one) => one.className)).toEqual(["pane-notice-row", "pane-head"]);
+    expect([...top.children].map((one) => one.getAttribute("data-scope") ?? one.className)).toEqual(
+      ["notice-row", "pane-head"],
+    );
     const head = top.lastElementChild as Element;
     expect([...head.children].map((one) => one.className)).toEqual(["pane-chips", "pane-actions"]);
   });
@@ -221,7 +223,7 @@ describe("the band, the header and the terminal, in a pane", () => {
     await waitFor(() => expect(shown()).toEqual(["first"]));
     const frame = screen.getByTestId("frame");
     expect(drawnWith(frame, "background-color")).toBe("var(--terminal-background)");
-    const band = frame.querySelector(".pane-notice-row") as Element;
+    const band = frame.querySelector('[data-scope="notice-row"][data-part="root"]') as Element;
     expect(drawnWith(band, "background-color")).toBe("transparent");
     expect(drawnWith(band, "border")).toBe("0");
     // The runway: the band's own top is the terminal's fill (rule 2).
@@ -297,9 +299,15 @@ describe("the pane's rules", () => {
 
   it("reserves +N more's width on a row of its own (rules 5 and 15)", () => {
     // Both of what it says in one cell, the one not said hidden: as wide as the longer.
-    expect(rule("\\.notice-more-says")).toMatch(/display:\s*inline-grid/);
-    expect(rule("\\.notice-more-says > \\*")).toMatch(/grid-area:\s*1 \/ 1/);
-    expect(rule("\\.notice-more-says > \\[data-off\\]")).toMatch(/visibility:\s*hidden/);
+    expect(rule('\\[data-scope="notice-row"\\]\\[data-part="says"\\]')).toMatch(
+      /display:\s*inline-grid/,
+    );
+    expect(rule('\\[data-scope="notice-row"\\]\\[data-part="says"\\] > \\*')).toMatch(
+      /grid-area:\s*1 \/ 1/,
+    );
+    expect(rule('\\[data-scope="notice-row"\\]\\[data-part="says"\\] > \\[data-off\\]')).toMatch(
+      /visibility:\s*hidden/,
+    );
   });
 
   it("keeps the header one row that never gives way", () => {

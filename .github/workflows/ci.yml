@@ -7,6 +7,13 @@ on:
   pull_request:
   push:
     branches: [main]
+  # The merge queue's run of the group a pull request joins: main, or the entries ahead of it, with
+  # the pull request on top. It runs every job a pull request runs, and is gated as one: the jobs
+  # that compare a change with main (`bench`, the cold start, the scoped macOS and Docker jobs)
+  # treat a merge group as a pull request and measure it against the group's base
+  # (`.github/actions/change-base`). No job is filtered by path, so every required check reports.
+  merge_group:
+    types: [checks_requested]
   # Nightly, for the evidence-only jobs below, which nothing else runs (V70). The gating jobs
   # run too, so each night is a whole record of `main` on that day's runner images, with the
   # toolchain `rust-toolchain.toml` pins. `release.yml` publishes a dev build only for a run started by a push, so a
@@ -247,16 +254,20 @@ jobs:
           # A pull request's merge commit and the base branch's tip, or a push and the commit
           # before it: what the change is.
           fetch-depth: 2
+      - name: The commit this change is measured against
+        id: base
+        uses: ./.github/actions/change-base
       - name: Whether this change touches the host, the protocol, the sandbox or the browsers
         id: scope
         env:
           EVENT: ${{ github.event_name }}
+          BASE: ${{ steps.base.outputs.sha }}
         run: |
           if [ "$EVENT" = schedule ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed=$(git diff --name-only HEAD^1 HEAD)
+          changed=$(git diff --name-only "$BASE" HEAD)
           echo "$changed"
           if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|pools|codelink|session)[^/]*(\.rs$|/)|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/parity/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -445,14 +456,20 @@ jobs:
           # The pull request's merge commit and its first parent, the base branch's tip: main
           # as it is now, which is what the change is measured against.
           fetch-depth: 2
+      - name: The commit this change is measured against
+        id: base
+        uses: ./.github/actions/change-base
       - name: Whether this change can move what the bench measures
         id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ steps.base.outputs.sha }}
         run: |
-          if [ "${{ github.event_name }}" != pull_request ]; then
+          if [ "$EVENT" = push ]; then
             echo "measure=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed=$(git diff --name-only HEAD^1 HEAD)
+          changed=$(git diff --name-only "$BASE" HEAD)
           echo "$changed"
           if echo "$changed" | grep -qE '^(crates/session-protocol/|Cargo\.toml$|Cargo\.lock$|rust-toolchain\.toml$|fixtures/corpora/|tools/bench\.mjs$|tools/latency-gate\.mjs$|\.github/workflows/ci\.yml$)'; then
             echo "measure=true" >> "$GITHUB_OUTPUT"
@@ -481,9 +498,11 @@ jobs:
       # gets the same runtime by naming tokio's feature directly.
       - name: main's bench, in release
         id: main
-        if: github.event_name == 'pull_request' && steps.scope.outputs.measure == 'true'
+        if: github.event_name != 'push' && steps.scope.outputs.measure == 'true'
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
         run: |
-          git worktree add --detach ../main HEAD^1
+          git worktree add --detach ../main "$BASE"
           if [ -d ../main/crates/session-protocol ]; then
             cp crates/session-protocol/src/bin/charter-session-bench.rs ../main/crates/session-protocol/src/bin/
           fi
@@ -496,11 +515,11 @@ jobs:
             echo "::warning::main's crate cannot build this change's bench, so nothing is gated: no baseline"
           fi
       - name: The session layer against main, interleaved, in this job
-        if: github.event_name == 'pull_request' && steps.main.outputs.bench != ''
+        if: github.event_name != 'push' && steps.main.outputs.bench != ''
         timeout-minutes: 15
         run: node tools/bench.mjs --skip-build --only host --baseline "${{ steps.main.outputs.bench }}"
       - name: The session layer, with no baseline to judge it by
-        if: github.event_name == 'pull_request' && steps.scope.outputs.measure == 'true' && steps.main.outputs.bench == ''
+        if: github.event_name != 'push' && steps.scope.outputs.measure == 'true' && steps.main.outputs.bench == ''
         timeout-minutes: 10
         run: node tools/bench.mjs --skip-build --only host
       # main's own record (ADR 0086 §1): each row's median of five runs, which `bench record`
@@ -664,17 +683,22 @@ jobs:
       # that nothing was gated, because the runner's speed alone missed it in 39 of 1,572 cases on
       # unchanged launch code. Green there: this change broke main's build in its own job (main is
       # built in the environment the change set up), and the step fails rather than ungate it.
+      - name: The commit this change is measured against
+        id: base
+        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+        uses: ./.github/actions/change-base
       - name: main's app, for the cold start to be measured against
         id: main-app
-        if: runner.os == 'Linux' && github.event_name == 'pull_request'
+        if: runner.os == 'Linux' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
         timeout-minutes: 20
         env:
           GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.base.outputs.sha }}
         run: |
           kept="$RUNNER_TEMP/coldstart"
           mkdir -p "$kept"
           cp target/debug/charter-app "$kept/change"
-          git worktree add --detach "$RUNNER_TEMP/main" HEAD^1
+          git worktree add --detach "$RUNNER_TEMP/main" "$BASE"
           if (cd "$RUNNER_TEMP/main/app" && npm ci \
                 && CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" npx tauri build --debug --no-bundle); then
             cp target/debug/charter-app "$kept/main"
@@ -684,7 +708,7 @@ jobs:
             # launched from two kinds of folder are not measured alike.
             echo "change=$kept/change" >> "$GITHUB_OUTPUT"
           else
-            node tools/coldstart-no-baseline.mjs "$(git rev-parse HEAD^1)"
+            node tools/coldstart-no-baseline.mjs "$BASE"
           fi
           cp "$kept/change" target/debug/charter-app
       # Cold start on Linux (charter-app#24, program map FR-8). This runner IS the issue's machine:
@@ -716,7 +740,7 @@ jobs:
           # missed 2 s in 39 of them. Where the gate reports, a case that could not be
           # measured at all is a warning naming its cause and passes; this change's own build
           # leaving before its first frame fails either way (`tools/coldstart-linux.sh`).
-          EVIDENCE_ONLY: ${{ github.event_name != 'pull_request' && '1' || '' }}
+          EVIDENCE_ONLY: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' && '1' || '' }}
         run: tools/coldstart-linux.sh bare
       - name: Cold start on i3 under X11, on the runner's own session bus
         if: runner.os == 'Linux'
@@ -924,17 +948,22 @@ jobs:
   # check of a few seconds and nothing else. The nightly `macos-tests` runs them on `main`.
   browser-engine-macos:
     name: browser engine on macos (real Chrome, when the engine changes)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      - name: The commit this change is measured against
+        id: base
+        uses: ./.github/actions/change-base
       - name: Whether this change touches the engine
         id: scope
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
         run: |
-          changed=$(git diff --name-only HEAD^1 HEAD)
+          changed=$(git diff --name-only "$BASE" HEAD)
           if echo "$changed" | grep -qE '^(crates/browser-engine/|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
@@ -961,17 +990,22 @@ jobs:
   # touch the confinement runs a check of a few seconds and nothing else.
   studio-confinement-macos:
     name: studio confinement on macos (Seatbelt, when the confinement changes)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: macos-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
+      - name: The commit this change is measured against
+        id: base
+        uses: ./.github/actions/change-base
       - name: Whether this change touches the confinement
         id: scope
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
         run: |
-          changed=$(git diff --name-only HEAD^1 HEAD)
+          changed=$(git diff --name-only "$BASE" HEAD)
           if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
@@ -1279,6 +1313,25 @@ jobs:
         working-directory: app
       - name: An upgrade over an old charter install
         run: xvfb-run -a npm run e2e:upgrade
+        if: runner.os == 'Linux' && matrix.extras
+        working-directory: app
+      # A browser view tab drawing a real engine's frames and taking a click (#2025, spec #2008's
+      # one window end-to-end test). Its own run, because its host downloads the pinned engine
+      # on its first browser. On Linux the engine makes its sandbox only where an AppArmor
+      # profile names it (#2835): the `.deb`'s profile is installed, and AppArmor told the
+      # temporary folder holds homes, as the `rust` job does.
+      - name: The pinned engine may make its sandbox, as the .deb sets it up
+        if: runner.os == 'Linux' && matrix.extras
+        run: |
+          echo '@{HOMEDIRS}+=/tmp/' | sudo tee /etc/apparmor.d/tunables/home.d/purlis-ci >/dev/null
+          sudo install -m 0644 crates/purlis-core/src/browsers/purlis-engine.apparmor /etc/apparmor.d/purlis-engine
+          sudo apparmor_parser -r -T -W /etc/apparmor.d/purlis-engine
+      - name: A browser view tab draws frames and takes a click
+        run: npm run e2e:browser
+        if: runner.os == 'macOS' && matrix.extras
+        working-directory: app
+      - name: A browser view tab draws frames and takes a click
+        run: xvfb-run -a npm run e2e:browser
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
       # The app ended and started again, which no scenario spec can do: WebdriverIO's service

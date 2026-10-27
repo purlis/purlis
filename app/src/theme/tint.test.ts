@@ -159,9 +159,13 @@ describe("a tint", () => {
     const theme = classicAppearances().find((one) => one.id === id)?.theme as Theme;
     for (const { name: colour, hue } of theme.tint.hues) {
       const accent = tinted(theme, colour).values["accent.base"];
-      // Within a few degrees: the hex is rounded to eight bits a channel.
-      // Within a few more where the tint gave less colour to keep the accent apart from danger.
-      expect(apart(hueOf(accent) ?? Number.NaN, hue), `${colour}: ${accent}`).toBeLessThan(6);
+      // Where it gives way to the waiting amber (#3130), the accent is drawn as written or near a
+      // grey, which has no hue to keep.
+      const own = hueOf(accent);
+      if (accent === theme.values["accent.base"] || own === undefined) continue;
+      // Within a few degrees: the hex is rounded to eight bits a channel, and a held colour keeps
+      // its hue as it gives up colour (Classic dark's orange and yellow are within 3°).
+      expect(apart(own, hue), `${colour}: ${accent}`).toBeLessThan(6);
     }
   });
 
@@ -395,7 +399,32 @@ describe("the consent floors under every tint (#2526)", () => {
         token,
         from: "danger.base",
         distance: 0.1,
+        alone: false,
       });
+  });
+
+  it("draws Purlis Classic light's yellow workspace as the core does", () => {
+    // #3130: the accent gives way alone to the waiting amber, near a grey, while the primary's
+    // fill keeps the yellow (`purlis_classic_s_tints_are_these`), so the window's sum and the
+    // core's cannot drift apart.
+    const light = classicAppearances().find((one) => one.id === "light")?.theme as Theme;
+    const tint = tinted(light, "yellow");
+    expect(tint.values["accent.base"]).toBe("#5e5d5e");
+    expect(tint.values["accent.fill"]).toBe("#f1edda");
+  });
+
+  it("is handed a rule keeping the accent and its edges apart from waiting, held alone", () => {
+    // #3130: only the accent and the edges drawn in it give way to the waiting amber.
+    for (const token of ["accent.base", "focus.ring", "list.selected-edge", "accent.fill-edge"])
+      expect(CLASSIC_THEME.tint.apart).toContainEqual({
+        token,
+        from: "state.waiting",
+        distance: 0.1,
+        alone: true,
+      });
+    const apart = CLASSIC_THEME.tint.apart;
+    expect(chromaFor("accent.base", 0.05, apart, 0.01)).toBe(0.01);
+    expect(chromaFor("accent.surface", 0.05, apart, 0.01)).toBe(0.05);
   });
 
   it.each(ACCENT_KIN)("keeps %s apart from danger at every whole degree", (token) => {

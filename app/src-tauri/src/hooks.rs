@@ -394,7 +394,7 @@ std::thread_local! {
 }
 
 /// Runs `hear` with the ask it hears known to have come over `pool`'s link, or this machine's.
-fn heard_from<T>(pool: Option<String>, hear: impl FnOnce() -> T) -> T {
+pub(crate) fn heard_from<T>(pool: Option<String>, hear: impl FnOnce() -> T) -> T {
     HEARD_FROM.with(|from| *from.borrow_mut() = pool);
     let heard = hear();
     HEARD_FROM.with(|from| *from.borrow_mut() = None);
@@ -2455,18 +2455,19 @@ impl Hooks {
         }
     }
 
-    /// **A curation action put `prompt` in chat `number`**, unsent (SK-20), `by` saying so: the
-    /// skill runs the turn it is sent in opens are the action's, in the event log and on the chat's tab alike.
-    /// Best effort, as [`Self::skill_typed`] is: a run is only ever a record of what the chat
-    /// did.
+    /// **A curation action put `prompt` in chat `number`**, unsent (SK-20), `by` saying so, its
+    /// lead digested under the chat's `salt` (SK-38): the skill runs the turn it is sent in opens
+    /// are the action's, in the event log and on the chat's tab alike. Best effort, as
+    /// [`Self::skill_typed`] is: a run is only ever a record of what the chat did.
     pub fn skill_prompted(
         &self,
         root: &Path,
         number: u32,
         by: purlis_core::skills::runs::StartedBy,
         prompt: &str,
+        salt: &purlis_core::skillspan::PromptSalt,
     ) {
-        let prompted = purlis_core::skillspan::Prompted::of(by, prompt);
+        let prompted = purlis_core::skillspan::Prompted::of(by, prompt, salt);
         self.skill_runs.prompted(number, prompted);
         let events = self
             .events

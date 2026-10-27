@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The shared table, list row and tree row** (DS-3, #1835): a row's height and a tree's indent
- * come from the core tokens, the selected row is drawn selected and no other is, a parent's
- * twist is drawn and a leaf's is not, and a table's headings stay on one line.
+ * **The shared list row and tree row** (DS-3, #1835): a row's height and a tree's indent come
+ * from the core tokens, the selected row is drawn selected and no other is, and a parent's twist
+ * is drawn and a leaf's is not. The table is the table family's (`ui/table`, #2911).
  *
  * vitest does not apply stylesheets, so this reads `collections.css` off disk. What a rule draws
  * is asked of the DOM itself: the markup a view would write is put in the document and
@@ -50,8 +50,6 @@ function value(body: string, name: string): string | undefined {
 
 const css = read("primitives/collections.css");
 
-/** The condition a stacking table's room is queried with (#1859). */
-const STACKS_UNDER = "@container ui-table (max-width: 32rem)";
 const all = rules(css);
 
 /** The rule with exactly this selector. */
@@ -95,14 +93,10 @@ describe("the collections stylesheet", () => {
     ).toEqual([]);
   });
 
-  it("writes no length of its own but a hairline, and the one room a table stacks under", () => {
-    // Every size is a token or an alias of one; 1px is a border or a guide's width. A container
-    // query's condition cannot read a token (CSS has no `var()` there), so the width a table
-    // stacks under is the one length written, once (#1859).
-    expect(css.match(new RegExp(literally(STACKS_UNDER), "g"))).toHaveLength(1);
-    const lengths = [
-      ...css.replace(STACKS_UNDER, "").matchAll(/(?<![\w-])(\d*\.?\d+)(px|rem|em)\b/g),
-    ]
+  it("writes no length of its own but a hairline", () => {
+    // Every size is a token or an alias of one; 1px is a border or a guide's width. The table,
+    // and the one room it stacks under, are the table family's (`ui/table`, #2911).
+    const lengths = [...css.matchAll(/(?<![\w-])(\d*\.?\d+)(px|rem|em)\b/g)]
       .map((hit) => hit[0])
       .filter((one) => one !== "1px");
     expect(lengths).toEqual([]);
@@ -343,140 +337,9 @@ describe("the tree row", () => {
   });
 });
 
-describe("the table", () => {
-  const table = (variant = "") => `
-    <table class="ui-table ${variant}">
-      <thead><tr>
-        <th scope="col">Level</th>
-        <th scope="col"><span class="ui-table-tip" data-tooltip-target="">Tasks</span></th>
-        <th scope="col" class="ui-cell-actions"><span>Actions</span></th>
-      </tr></thead>
-      <tbody>
-        <tr><th scope="row">Project</th><td class="ui-num">3</td><td class="ui-cell-actions"></td></tr>
-        <tr aria-selected="true"><th scope="row">You</th><td class="ui-num">2</td><td></td></tr>
-      </tbody>
-    </table>`;
-
-  it("keeps every heading on one line, cut with an ellipsis", () => {
-    const body = draw(table());
-    const headings = [...body.querySelectorAll("thead th")];
-    expect(headings).toHaveLength(3);
-    for (const heading of headings) {
-      expect(resolved(heading, "white-space")).toBe("nowrap");
-      expect(resolved(heading, "overflow")).toBe("hidden");
-      expect(resolved(heading, "text-overflow")).toBe("ellipsis");
-      expect(resolved(heading, "font-size")).toBe("var(--font-size-sm)");
-    }
-    // A row's heading is a cell, not a column's heading.
-    expect(resolved(body.querySelector("tbody th") as Element, "white-space")).toBeUndefined();
-  });
-
-  it("marks a heading that has a tooltip", () => {
-    const body = draw(table());
-    const [plain, titled] = body.querySelectorAll("thead th");
-    expect(resolved(titled.querySelector(".ui-table-tip") as Element, "text-decoration")).toBe(
-      "underline dotted",
-    );
-    expect(resolved(plain, "text-decoration")).toBeUndefined();
-  });
-
-  it("aligns every cell to the start and the middle, from the spacing scale", () => {
-    const body = draw(table());
-    for (const cell of body.querySelectorAll("td:not(.ui-num), th")) {
-      expect(resolved(cell, "vertical-align")).toBe("middle");
-      expect(resolved(cell, "padding-inline")).toBe("var(--ui-cell-pad-inline)");
-    }
-    expect(value(rule(".ui-table").body, "--ui-cell-pad-inline")).toBe("var(--space-4)");
-    expect(value(rule(".ui-table").body, "--ui-cell-pad-block")).toBe("var(--space-2)");
-    expect(resolved(body.querySelector(".ui-num") as Element, "text-align")).toBe("end");
-  });
-
-  it.each([
-    ["", "auto"],
-    ["ui-table-fixed", "fixed"],
-  ])("lays out %s as %s", (variant, layout) => {
-    const body = draw(table(variant));
-    expect(resolved(body.querySelector("table") as Element, "table-layout")).toBe(layout);
-  });
-
-  it("draws a selected row as a list's selected row", () => {
-    const body = draw(table());
-    const [plain, selected] = body.querySelectorAll("tbody tr");
-    expect(resolved(selected.querySelector("td") as Element, "background-color")).toBe(
-      "var(--list-selected)",
-    );
-    expect(resolved(plain.querySelector("td") as Element, "background-color")).toBeUndefined();
-  });
-});
-
-/**
- * **A table that stacks into a form where its room is narrow** (#1859): `.ui-table-stacks`, in a
- * `.ui-table-room`. jsdom answers no container query (`cascade.testkit.ts` reads the window at its
- * ordinary width), so the rules are read off the sheet here, and the real WebView's drawing is
- * `settings-limits.e2e.ts`'s range check.
- */
-describe("the stacking table", () => {
-  /** The rules inside the stacking query. */
-  function stacked(): Rule[] {
-    const at = css.indexOf(STACKS_UNDER);
-    expect(at, "no stacking query").toBeGreaterThan(-1);
-    const open = css.indexOf("{", at);
-    let depth = 0;
-    let end = open;
-    for (; end < css.length; end++) {
-      if (css[end] === "{") depth++;
-      if (css[end] === "}" && --depth === 0) break;
-    }
-    return rules(css.slice(open + 1, end));
-  }
-  const inside = (selector: string) => {
-    const found = stacked().find((one) => one.selector === selector);
-    expect(found, `no stacked rule ${selector}`).toBeDefined();
-    return (found as Rule).body;
-  };
-
-  it("measures its room, the holder it is drawn in", () => {
-    expect(value(rule(".ui-table-room").body, "container")).toBe("ui-table / inline-size");
-  });
-
-  it("puts the column headings away and makes each row a grid of its cells, under the row's own heading", () => {
-    expect(value(inside(".ui-table-stacks thead"), "display")).toBe("none");
-    const row = inside(".ui-table-stacks tbody tr");
-    expect(value(row, "display")).toBe("grid");
-    expect(value(row, "grid-template-columns")).toMatch(
-      /^repeat\(auto-fill, minmax\(calc\(var\(--size-control\) \* \d+\), 1fr\)\)$/,
-    );
-    expect(value(inside(".ui-table-stacks tbody th"), "grid-column")).toBe("1 / -1");
-    expect(value(inside(".ui-table-stacks tbody .ui-cell-actions"), "grid-column")).toBe("1 / -1");
-  });
-
-  it("gives a cell across the columns the row's whole width (#1865)", () => {
-    expect(value(inside(".ui-table-stacks tbody td[colspan]"), "grid-column")).toBe("1 / -1");
-  });
-
-  it("says each cell's column above it, in its whole words, and drops a cell with nothing in it", () => {
-    const words = inside(".ui-table-stacks td[data-heading]::before");
-    expect(value(words, "content")).toBe("attr(data-heading)");
-    expect(value(words, "display")).toBe("block");
-    expect(value(inside(".ui-table-stacks td:empty"), "display")).toBe("none");
-  });
-
-  it("lets a cell's words wrap, never cutting them", () => {
-    const cell = inside(".ui-table-stacks tbody :is(th, td)");
-    expect(value(cell, "white-space")).toBe("normal");
-    expect(value(cell, "overflow-wrap")).toBe("anywhere");
-  });
-});
-
 describe("docs/ui-primitives.md", () => {
   const doc = readFileSync(join(process.cwd(), "..", "docs", "ui-primitives.md"), "utf8");
   it.each([
-    "ui-table",
-    "ui-table-fixed",
-    "ui-table-stacks",
-    "ui-table-room",
-    "ui-num",
-    "ui-cell-actions",
     "ui-list",
     "ui-row",
     "ui-row-lead",

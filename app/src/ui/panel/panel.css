@@ -25,12 +25,24 @@
   border: 0 solid var(--border-subtle);
   border-radius: var(--panel-corner-radius);
   background-color: var(--surface-base);
+  /* Its fill, said to what it holds (#3331): a theme's `panel.root.fill` writes both. A view's
+     top and its groups' names are drawn on it (#3340). */
+  --panel-fill: var(--surface-base);
 }
 
 /* A library's resizable panel draws its root's attributes on its outer box and scrolls its inner
    one, which keeps to the root's corners. */
 [data-scope="panel"][data-part="root"][data-panel] > * {
   border-radius: inherit;
+}
+
+/* **The title of the view it shows** (#3340, the prototype's Q1 A `.trow h2`): its one heading,
+   13px, strong, in the primary tier and its own case, never the section label's capitals. */
+[data-scope="panel"][data-part="title"] {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-strong);
 }
 
 /* Any other panel clips what it holds to its own corners. */
@@ -73,4 +85,189 @@
 [data-scope="panel-section"][data-part="title"] .node-icon {
   flex: none;
   color: inherit;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A panel separator: the handle between two panels that resizes them (#3143).
+   --------------------------------------------------------------------------------------------- */
+
+/* **The handle's box.** Where it sits, the room it takes between its panels, is the regions'
+   (`--separator-room` in `App.css`: the window's gutter, or none between two panes). Its box is
+   never thinner than the keyboard's ring (`--separator-least`), so the keyboard always lands on
+   something drawn, and a
+   negative margin gives the difference back, so it straddles its boundary and nothing moves. It
+   stands over the panels either side, so its grip is drawn over them and never under. */
+[data-scope="panel-separator"][data-part="root"] {
+  --separator-least: var(--focus-ring-width);
+  --separator-box: max(var(--separator-room, 0px), var(--separator-least));
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+}
+
+[data-scope="panel-separator"][data-part="root"][aria-orientation="vertical"] {
+  inline-size: var(--separator-box);
+  margin-inline: calc((var(--separator-room, 0px) - var(--separator-box)) / 2);
+}
+
+[data-scope="panel-separator"][data-part="root"][aria-orientation="horizontal"] {
+  block-size: var(--separator-box);
+  margin-block: calc((var(--separator-room, 0px) - var(--separator-box)) / 2);
+}
+
+/* **With the keyboard** the handle says so by its grip, in the window's focus colour (below),
+   rather than by a ring its whole length: a short mark at 3:1 that nothing draws over. Purlis
+   Classic draws its accent line instead, through its own parts. In forced colours the window's
+   ring comes back (`theme/forced-colors.css`), outside the handle, which is thinner than it. */
+[data-scope="panel-separator"][data-part="root"]:focus-visible {
+  outline-style: none;
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* **Its grip**: a short mark at the handle's middle, 4 by 32 and round, drawn over what is either
+   side and out of the pointer's way. It is drawn in every state and only its colour changes, so
+   no state moves anything or changes where the handle can be grabbed. Along the line the handle
+   is: upright between two columns, flat between two rows. */
+[data-scope="panel-separator"][data-part="grip"] {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: 4px;
+  block-size: 32px;
+  border-radius: var(--radius-full);
+  background-color: transparent;
+  pointer-events: none;
+  translate: -50% -50%;
+}
+
+[data-scope="panel-separator"][data-part="root"][aria-orientation="horizontal"]
+  > [data-scope="panel-separator"][data-part="grip"] {
+  inline-size: 32px;
+  block-size: 4px;
+}
+
+/* **Purlis's quiet hover, clear drag and focus**: under the pointer the grip is the faint tier, a
+   mark held at 3:1; while it is dragged, the muted tier; with the keyboard on it, the window's
+   focus colour (`focus.ring`), over the pointer's grip.
+   Never a line the panels' whole length. The library marks the handle under the pointer, in a
+   hit area wider than the handle, except one a press has given the keyboard, which it marks
+   `focus`: that one is under the pointer when its own box is. */
+[data-scope="panel-separator"][data-part="root"][data-separator="hover"]
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--text-faint);
+}
+
+[data-scope="panel-separator"][data-part="root"][data-separator="focus"]:hover:not(:focus-visible)
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--text-faint);
+}
+
+[data-scope="panel-separator"][data-part="root"]:focus-visible
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--focus-ring);
+}
+
+[data-scope="panel-separator"][data-part="root"][data-separator="active"]
+  > [data-scope="panel-separator"][data-part="grip"] {
+  background-color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A view (#3340, the sidebar-views prototype's Q1 A): ONE scroll, which is its region's. Its top
+   (the heading line, the field, the tabs and chips) is held at the top on the panel's fill; each
+   group's name is held under it while its group is in sight; its rows are 30px.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="panel-section"][data-part="root"][data-frame] {
+  /* How tall its top is, which its groups' names are held under: measured as it changes
+     (`Panel.tsx`, `ViewTop`). */
+  --panel-section-top-size: 0px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The top: 8 above and below, 10 at the sides, 8 between its lines (the prototype's `.vhead`). */
+[data-scope="panel-section"][data-part="top"] {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-block: var(--space-4);
+  padding-inline: calc(var(--space-4) + var(--space-1));
+  background-color: var(--panel-fill);
+}
+
+/* An empty top takes no room: a view in a half whose line is its heading, with no field yet. */
+[data-scope="panel-section"][data-part="top"]:has(> [data-top-slot]:only-child:empty) {
+  display: none;
+}
+
+/* The heading line in a top is the top's first line, with no margin of its own. */
+[data-scope="panel-section"][data-part="top"] > [data-part="head"] {
+  margin: 0;
+}
+
+/* The title on the heading line takes what the line leaves. */
+[data-scope="panel-section"][data-part="top"] > [data-part="head"] > h2 {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+}
+
+/* A list's field, put in the top: laid out as the top's own line. */
+[data-scope="panel-section"][data-part="top"] [data-top-slot] {
+  display: contents;
+}
+
+/* **A group's name is held under the top** while its group is in sight, on the panel's fill, so
+   the rows scroll under it: the prototype's 26px `.ghead`. */
+[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] {
+  position: sticky;
+  inset-block-start: var(--panel-section-top-size);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  min-block-size: calc(var(--size-chrome) + var(--space-1));
+  padding-block: 0;
+  /* The prototype's group name: 11px capitals, spaced, medium, in the quiet tier (words that
+     inform are quiet, never faint), its count at its end. */
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background-color: var(--panel-fill);
+}
+
+[data-scope="panel-section"][data-frame] [data-part="header"] > [data-count] {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+}
+
+/* Rows touch, 30px apart, as the prototype's do: the pill is the row's own. */
+[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="body"],
+[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="section"] {
+  gap: 0;
+}
+
+/* A group keeps a little room under its last row, as the prototype's `.grp` does. */
+[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="section"] {
+  padding-block-end: var(--space-3);
+}
+
+/* **A view's rows are 30px** (the prototype's `.row`): the control's height and a step, with 8
+   at the sides and 8 between their marks and words. */
+[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="root"] {
+  /* A row the keyboard comes to is scrolled into sight below the top and its group's name, never
+     under them (WCAG 2.4.11). */
+  scroll-margin-block-start: calc(
+    var(--panel-section-top-size) + var(--size-chrome) + var(--space-1)
+  );
+  min-block-size: calc(var(--size-control) + var(--space-1));
+  padding-inline: var(--space-4);
+  column-gap: var(--space-4);
 }

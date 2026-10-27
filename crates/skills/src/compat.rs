@@ -230,6 +230,9 @@ pub struct Compat {
     ignored: Vec<Field>,
     /// How many keys it sets that no harness reads.
     unknown: usize,
+    /// Whether its harness keeps it out of its model's choice itself, by its own key or a file of
+    /// its own beside the `SKILL.md` ([`Compat::kept_manual`]), so it runs only when asked for.
+    manual: bool,
     /// Why purlis cannot read it, where it cannot.
     refused: Option<Refusal>,
 }
@@ -259,7 +262,35 @@ impl Compat {
             translated: Vec::new(),
             ignored: Vec::new(),
             unknown: 0,
+            manual: false,
             refused: Some(why),
+        }
+    }
+
+    /// **The badge of a skill its harness keeps manual-only by a file of its own beside the
+    /// `SKILL.md`** (SK-39), which its adapter says how to read: it runs only when asked for,
+    /// whatever its frontmatter says of that. A badge of a skill purlis cannot read stays as it
+    /// is.
+    #[must_use]
+    pub fn kept_manual(mut self) -> Compat {
+        if self.refused.is_some() {
+            return self;
+        }
+        self.manual = true;
+        self.ignored.retain(|field| *field != Field::ManualOnly);
+        self.fit = self.settled();
+        self
+    }
+
+    /// How well it fits, by what it holds: it widens where anything widens, and fits fully
+    /// where nothing is left out, ignored or unknown.
+    fn settled(&self) -> Fit {
+        if !self.widens.is_empty() {
+            Fit::Widens
+        } else if self.dropped.is_empty() && self.ignored.is_empty() && self.unknown == 0 {
+            Fit::Full
+        } else {
+            Fit::Partial
         }
     }
 
@@ -268,9 +299,9 @@ impl Compat {
         self.fit == Fit::Widens
     }
 
-    /// **What the badge says, one line each**: what is left out, what widens, what is carried by
-    /// an equivalent, what is not applied, and what nothing reads. One line where it all applies.
-    /// It names no key.
+    /// **What the badge says, one line each**: that it runs only when asked for where its harness
+    /// keeps it so itself, what is left out, what widens, what is carried by an equivalent, what
+    /// is not applied, and what nothing reads. One line where it all applies. It names no key.
     pub fn lines(&self) -> Vec<String> {
         if let Some(why) = &self.refused {
             return vec![match self.fit {
@@ -281,6 +312,9 @@ impl Compat {
         let mut lines = Vec::new();
         if self.fit == Fit::Full && self.translated.is_empty() {
             lines.push("Everything it asks for applies.".to_owned());
+        }
+        if self.manual {
+            lines.push("Runs only when asked for by name.".to_owned());
         }
         if !self.dropped.is_empty() {
             lines.push(format!(
@@ -336,6 +370,7 @@ pub fn compat(text: &str, origin: Origin, honours: &Honours) -> Compat {
         translated: Vec::new(),
         ignored: Vec::new(),
         unknown: 0,
+        manual: false,
         refused: None,
     };
     let read = match crate::handed::parse(text) {
@@ -363,7 +398,8 @@ pub fn compat(text: &str, origin: Origin, honours: &Honours) -> Compat {
         } else if field == Field::ManualOnly {
             match (manual, handed, honours.manual) {
                 // `disable-model-invocation: false` asks for nothing.
-                (false, ..) | (true, _, ManualOnly::Read) => {}
+                (false, ..) => {}
+                (true, _, ManualOnly::Read) => out.manual = true,
                 (true, true, ManualOnly::Listing | ManualOnly::WithoutDescription) => {
                     out.translated.push(field);
                 }
@@ -373,13 +409,7 @@ pub fn compat(text: &str, origin: Origin, honours: &Honours) -> Compat {
             out.ignored.push(field);
         }
     }
-    out.fit = if !out.widens.is_empty() {
-        Fit::Widens
-    } else if out.dropped.is_empty() && out.ignored.is_empty() && out.unknown == 0 {
-        Fit::Full
-    } else {
-        Fit::Partial
-    };
+    out.fit = out.settled();
     out
 }
 
@@ -390,6 +420,13 @@ pub fn compat(text: &str, origin: Origin, honours: &Honours) -> Compat {
 /// frontmatter is.
 pub fn handed_text(text: &str, honours: &Honours) -> Result<String, Refusal> {
     crate::handed::handed(text, honours)
+}
+
+/// [`handed_text`] for a skill the set holds as `name`, which its handed frontmatter says: a
+/// built-in skill on a route that names it its own ([`crate::Route::built_in_name`]) is handed
+/// as `purlis-<name>`, its folder's name in the set's folder, as the skill format asks.
+pub fn handed_text_as(text: &str, honours: &Honours, name: &str) -> Result<String, Refusal> {
+    crate::handed::handed_as(text, honours, Some(name))
 }
 
 #[cfg(test)]

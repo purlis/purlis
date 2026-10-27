@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { commands, type BrowsersListed, type ChatBrowser } from "./bindings";
 import { listen } from "./here";
 
@@ -47,6 +47,19 @@ export const NONE_KEPT: readonly ChatBrowser[] = [];
  * their chats, and each of `kept`, pinned past its chat, which ends when the person stops it.
  * One that could not be ended yet is no chat's, and closing a tab that shows it may end it.
  */
+/**
+ * **The pool whose runner `program` runs on, as the chats' browsers list it** (#2050): `null` for
+ * one on this machine, and `undefined` for one they do not list.
+ */
+export function poolOf(
+  browsers: ByChat,
+  kept: readonly ChatBrowser[],
+  program: string,
+): string | null | undefined {
+  const listed = [...[...browsers.values()].flat(), ...kept].find((one) => one.program === program);
+  return listed === undefined ? undefined : (listed.pool ?? null);
+}
+
 export function programsOf(
   browsers: ByChat,
   kept: readonly ChatBrowser[] = NONE_KEPT,
@@ -118,4 +131,58 @@ export function useChatBrowsers(plane: string): {
   return held.plane === plane
     ? { browsers: held.browsers, kept: held.kept, read: held.read }
     : { browsers: NO_BROWSERS, kept: NONE_KEPT, read: false };
+}
+
+/**
+ * **The person's own browsers a crash of the window left running** (#2025): the core takes them
+ * back as the project's chats come back, and each is handed to `open` once, for a view tab of its
+ * own, once `open` is given and each time the core says browsers came or went. A chat's browsers
+ * come back with their chats, under them in the Chats list ({@link useChatBrowsers}).
+ */
+export function useBrowsersTakenBack(
+  plane: string,
+  open: ((program: string) => void) | undefined,
+): void {
+  // The latest `open`, so a new one does not listen again.
+  const opening = useRef(open);
+  useEffect(() => {
+    opening.current = open;
+  }, [open]);
+  const ready = open !== undefined;
+  useEffect(() => {
+    // Nothing is taken until the window can open a tab that stays.
+    if (!ready) return;
+    let gone = false;
+    let stop: (() => void) | undefined;
+    const take = () => {
+      void commands
+        .browsersTakenBack(plane)
+        // Opened even where this effect has been cleaned up since it asked: the core hands each
+        // over once, and one dropped would run with no tab (a StrictMode remount asks twice).
+        .then((answer) => {
+          if (answer.status === "error") return;
+          for (const program of answer.data) opening.current?.(program);
+        })
+        // A window whose core cannot say opens none.
+        .catch(() => undefined);
+    };
+    take();
+    void (async () => {
+      try {
+        const unlisten = await listen<BrowsersListed>(LISTED, (event) => {
+          if (!gone && event.payload.plane === plane) take();
+        });
+        // Let go of quietly: a window going away may no longer have its events to let go of.
+        const letGo = () => void Promise.resolve(unlisten()).catch(() => undefined);
+        if (gone) letGo();
+        else stop = letGo;
+      } catch {
+        // No window to listen in.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane, ready]);
 }

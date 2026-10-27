@@ -22,10 +22,17 @@ export const purlisUi: {
     | "empty-state-family"
     | "status-item-family"
     | "list-family"
+    | "table-family"
     | "rail-family"
     | "activity-family"
     | "tabs-family"
-    | "titlebar-family",
+    | "titlebar-family"
+    | "tree-family"
+    | "card-family"
+    | "notice-family"
+    | "badge-family"
+    | "separator-family"
+    | "panel-separator-family",
     Rule.RuleModule
   >;
 };

@@ -577,7 +577,7 @@ describe("SavingView, with the workspace's repos (charter-app#299)", () => {
     ]);
     render(<SavingView plane={PLANE} workspace="alpha" />);
 
-    const table = await screen.findByRole("table", { name: "Repos in alpha" });
+    const table = await screen.findByRole("grid", { name: "Repos in alpha" });
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.map((row) => row.getAttribute("data-repo"))).toEqual(["api", "web", "docs"]);
     expect(rows[0].textContent).toContain("feature/x");
@@ -606,7 +606,7 @@ describe("SavingView, with the workspace's repos (charter-app#299)", () => {
       ],
     ]);
     render(<SavingView plane={PLANE} workspace="alpha" />);
-    let table = await screen.findByRole("table", { name: "Repos in alpha" });
+    let table = await screen.findByRole("grid", { name: "Repos in alpha" });
     expect(within(table).getByRole("columnheader", { name: "Merge request" })).toBeTruthy();
     let row = within(table).getAllByRole("row")[1];
     expect(row.textContent).toContain("Pushed — waiting on its merge request");
@@ -623,7 +623,7 @@ describe("SavingView, with the workspace's repos (charter-app#299)", () => {
       ],
     ]);
     render(<SavingView plane={PLANE} workspace="alpha" />);
-    table = await screen.findByRole("table", { name: "Repos in alpha" });
+    table = await screen.findByRole("grid", { name: "Repos in alpha" });
     expect(within(table).getByRole("columnheader", { name: "Request" })).toBeTruthy();
     row = within(table).getAllByRole("row")[2];
     expect(row.textContent).toContain("opens a pull request into main");
@@ -665,7 +665,7 @@ describe("SavingView, with the workspace's repos (charter-app#299)", () => {
     ]);
     render(<SavingView plane={PLANE} workspace="alpha" />);
 
-    const table = await screen.findByRole("table", { name: "Repos in alpha" });
+    const table = await screen.findByRole("grid", { name: "Repos in alpha" });
     const goes = within(table)
       .getAllByRole("row")
       .slice(1)

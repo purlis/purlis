@@ -1,0 +1,251 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The tree family's default** (#2911, ADR 0103, ADR 0104): how a tree and its rows are drawn
+   when a theme names none of their parts. The tree is `data-scope="tree" data-part="body"`; a row
+   is the family's root (`data-part="root"`, its `data-size`, React Aria's `data-level` and its
+   `--tree-depth`) with React Aria's state attributes; inside it the list's slots (`lead`,
+   `label`, `description`, `trail`, drawn by `ui/list/list.css` in every collection's scope) and
+   its `twist`; a group's name is the `header`.
+
+   **A row is the list's row** (`ui/list/list.css`): the same pill under the pointer, the same
+   wash and edge when chosen, the same ring inside it on the keyboard, in the tree's own scope so
+   a theme's `tree.*` parts reach a tree and never a list. What a tree adds is its steps, its
+   guides and its twist.
+
+   **In the `components` layer** (`styles.css`), above `App.css`. **Only tokens**, one `var()`
+   per colour. **A state never changes size** (#2800), and opening a row moves nothing in it: the
+   twist turns, which is a transform. */
+
+/* ---------------------------------------------------------------------------------------------
+   The tree. **Its rows stand in from its edges**, as a list's do, and keep a hairline apart; a
+   level is one step (R129: 14 px at the default text size).
+   --------------------------------------------------------------------------------------------- */
+
+/* The element around a tree that hears its keys first (`useTreeKeys`) draws nothing. */
+[data-scope="tree"][data-part="keys"] {
+  display: contents;
+}
+
+[data-scope="tree"][data-part="body"] {
+  --tree-step: calc(var(--space-5) + var(--space-1));
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-inline-size: 0;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2);
+  outline: none;
+}
+
+/* An empty tree takes the keyboard itself, and says so with a ring inside it. */
+[data-scope="tree"][data-part="body"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+[data-scope="tree"][data-part="section"] {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+/* A group's name, in purlis's own words: the label role (R161), in the quiet tier. */
+[data-scope="tree"][data-part="header"] {
+  padding-block: var(--space-3) var(--space-1);
+  padding-inline: var(--space-4);
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* A group named by data (a project, a day) is written as the name is. */
+[data-scope="tree"][data-part="header"][data-named] {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A row, at rest: the list's row, one step in per level.
+
+   **Its depth** (`--tree-depth`, its level less one, which `Tree.tsx` sets on it) is drawn at
+   most four steps deep: a side view has no room for more, and `aria-level` still says the whole. **A row
+   stands one step in further than its depth where twists lead**: that step is where a parent's
+   twist hangs, so a row with rows under it and one without start their words at one place.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="tree"][data-part="root"] {
+  --tree-drawn: min(var(--tree-depth, 0), 4);
+  --tree-pad: var(--space-4);
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  column-gap: var(--space-4);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  min-block-size: var(--size-control);
+  padding-block: var(--space-1);
+  padding-inline: var(--tree-pad);
+  padding-inline-start: calc(var(--tree-pad) + (var(--tree-drawn) + 1) * var(--tree-step));
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-regular);
+  text-align: start;
+  cursor: default;
+  outline: none;
+}
+
+/* Where twists trail (a row that is itself a page), no step is kept for one. */
+[data-twist="trail"] [data-scope="tree"][data-part="root"] {
+  padding-inline-start: calc(var(--tree-pad) + var(--tree-drawn) * var(--tree-step));
+}
+
+/* **One size per tree**: 24 px in a side view's dense tree, 32 in a dialog's. */
+[data-scope="tree"][data-part="root"][data-size="sm"] {
+  --tree-pad: var(--space-3);
+  min-block-size: var(--size-chrome);
+  padding-block: 0;
+  column-gap: var(--space-3);
+}
+
+[data-scope="tree"][data-part="root"][data-size="lg"] {
+  min-block-size: calc(var(--size-control) + var(--space-2));
+}
+
+/* **Each level above the row draws one straight guide** (VS Code's), down the middle of the
+   step where that level's twist hangs, reaching into the hairline between rows so a level's
+   guide is one line. It draws nothing at the top level and takes no pointer. */
+[data-scope="tree"][data-part="root"]::before {
+  content: "";
+  position: absolute;
+  inset-block: calc(-1 * var(--space-1));
+  inset-inline-start: calc(var(--tree-pad) + var(--tree-step) / 2);
+  inline-size: calc(var(--tree-drawn) * var(--tree-step));
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--tree-guide) 0 1px,
+    transparent 1px var(--tree-step)
+  );
+  pointer-events: none;
+}
+
+[data-scope="tree"][data-part="root"]:dir(rtl)::before {
+  background-image: repeating-linear-gradient(
+    to left,
+    var(--tree-guide) 0 1px,
+    transparent 1px var(--tree-step)
+  );
+}
+
+[data-twist="trail"] [data-scope="tree"][data-part="root"]::before {
+  inset-inline-start: calc(var(--tree-pad) - var(--tree-step) / 2);
+}
+
+/* **Under the pointer**: the pill, on the tree's ground. A chosen row keeps its wash. */
+[data-scope="tree"][data-part="root"][data-hovered]:not([data-disabled]):not([data-selected]) {
+  background-color: var(--surface-hover);
+}
+
+/* **Chosen** (R21): the wash, the words in the primary tier, and an edge down its start. */
+[data-scope="tree"][data-part="root"][data-selected] {
+  color: var(--text-primary);
+  background-color: var(--list-selected);
+  box-shadow: inset var(--focus-ring-width) 0 0 var(--list-selected-edge);
+}
+
+[data-scope="tree"][data-part="root"][data-selected]:dir(rtl) {
+  box-shadow: inset calc(-1 * var(--focus-ring-width)) 0 0 var(--list-selected-edge);
+}
+
+/* **The keyboard's place is a ring inside the row** (ADR 0104, 2026-10-22). */
+[data-scope="tree"][data-part="root"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* **A row that cannot be used**: its words in the faint tier, on no ground. */
+[data-scope="tree"][data-part="root"][data-disabled] {
+  color: var(--text-faint);
+}
+
+/* **A line that is not a row to act on** (`TreeLine`: "Reading…", "12 more not shown"):
+   informational, in the quiet tier, and drawn under the pointer as nothing. */
+[data-scope="tree"][data-part="root"][data-line] {
+  color: var(--text-quiet);
+}
+
+/* A row that is dragged stays where it is, drawn as the one the pointer carries; a row a drag
+   is over is drawn chosen, so it is told by its edge too. */
+[data-scope="tree"][data-part="root"][data-dragging] {
+  background-color: var(--surface-hover);
+}
+
+[data-scope="tree"][data-part="root"][data-drop-target] {
+  background-color: var(--list-selected);
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--list-selected-edge);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   The twist: only on a row with rows under it. **A chevron in the quiet tier** (R129, the
+   Explorer's twisties), pointing at the words while closed and down while open (R43). Turning it is a transform, so opening
+   moves nothing.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="tree"][data-part="twist"] {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  appearance: none;
+  color: var(--text-quiet);
+  background-color: transparent;
+  outline: none;
+}
+
+[data-scope="tree"][data-part="twist"] > svg {
+  flex: none;
+  inline-size: var(--font-size-md);
+  block-size: var(--font-size-md);
+}
+
+/* One chevron: mirrored in a right-to-left window while closed, down while open. */
+[data-scope="tree"][data-part="twist"]:dir(rtl) > svg {
+  transform: scaleX(-1);
+}
+
+[data-expanded] [data-scope="tree"][data-part="twist"] > svg {
+  transform: rotate(90deg);
+}
+
+/* **Leading** (R129): it hangs in the step before the words, one step wide and the row's line
+   high, and takes no room in the row. */
+[data-twist="lead"] [data-scope="tree"][data-part="twist"] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--tree-pad) + var(--tree-drawn) * var(--tree-step));
+  inline-size: var(--tree-step);
+  block-size: 100%;
+}
+
+/* **Trailing** (#2799 rule 1, R42): a toggle of its own at the row's end, 26 px, apart from the
+   row's press; under the pointer it takes the hover fill on the row's. */
+[data-twist="trail"] [data-scope="tree"][data-part="twist"] {
+  inline-size: calc(var(--size-chrome) + var(--space-1));
+  block-size: calc(var(--size-chrome) + var(--space-1));
+  margin-inline-start: auto;
+}
+
+[data-twist="trail"] [data-scope="tree"][data-part="twist"][data-hovered] {
+  background-color: var(--surface-hover);
+}

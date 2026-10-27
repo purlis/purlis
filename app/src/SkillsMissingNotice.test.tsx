@@ -18,6 +18,7 @@ const MISSING = {
   no_built_in: ["purlis:gone"],
   broken: [],
   by_a_repo: [],
+  beside_a_built_in: [],
 };
 
 describe("a chat's missing skills", () => {
@@ -82,6 +83,7 @@ describe("a chat's missing skills", () => {
           },
         ],
         by_a_repo: [],
+        beside_a_built_in: [],
       }),
     ).toBe(
       "This chat started without 1 skill that could not be loaded: half (project), not a skill: its SKILL.md names no `description`.",
@@ -101,22 +103,43 @@ describe("a chat's missing skills", () => {
             level: "workspace",
             local: false,
             label: "workspace",
-            why: "hidden by the repo skill of this name",
+            why: "the repo api has its own copy, which loads in its place",
           },
           {
             name: "ship",
             level: "workspace",
             local: false,
             label: "workspace",
-            why: "purlis could not read the skills folder of web whole, so a copy of this skill may be there, and a chat in that repo would get that one",
+            why: "purlis could not read the skills folder of web whole, so it is left out in case the repo has its own",
           },
         ],
+        beside_a_built_in: [],
       }),
     ).toBe(
       "This chat started without 2 skills because of the repo it works in: " +
-        "review (workspace), hidden by the repo skill of this name; " +
-        "ship (workspace), purlis could not read the skills folder of web whole, so a copy of " +
-        "this skill may be there, and a chat in that repo would get that one.",
+        "review (workspace), the repo api has its own copy, which loads in its place; " +
+        "ship (workspace), purlis could not read the skills folder of web whole, so it is left " +
+        "out in case the repo has its own.",
+    );
+  });
+
+  it("names each skill of the repo the chat works in that is named like a built-in one (SK-37)", () => {
+    const said = (names: string[]) =>
+      missingSays("This chat", {
+        persona: null,
+        missing: [],
+        no_built_in: [],
+        broken: [],
+        by_a_repo: [],
+        beside_a_built_in: names,
+      });
+    expect(said(["secrets"])).toBe(
+      "This chat works in a repo with its own copy of 1 built-in skill, which it gets beside " +
+        "purlis's and may use instead: secrets.",
+    );
+    expect(said(["secrets", "browser"])).toBe(
+      "This chat works in a repo with its own copy of 2 built-in skills, which it gets beside " +
+        "purlis's and may use instead: secrets, browser.",
     );
   });
 
@@ -131,6 +154,7 @@ describe("a chat's missing skills", () => {
             { name: "half", level: "project", local: false, label: "project", why: "not a skill" },
           ],
           by_a_repo: [],
+          beside_a_built_in: [],
         };
       return null;
     });

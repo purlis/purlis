@@ -141,6 +141,22 @@ fn skill_name(skill: &str) -> &str {
     skill.split_once(':').map_or(skill, |(_, leaf)| leaf)
 }
 
+/// **The skill a run started as `skill` is of, by its own name**, where its start found it the
+/// copy at `level` ([`crate::skills::whose`], on the chat's route): without the namespace a
+/// harness started it by (`purlis:secrets`), and, for a built-in copy, without the prefix of the
+/// name opencode is handed it by (`purlis-secrets`, [`crate::skills::Route::built_in_name`]). A
+/// plane skill whose own name starts so keeps it. The one reading of a run's name, for the event
+/// log's runs and for the chip of the run open in a chat.
+pub fn own_name(skill: &str, level: Option<Level>) -> &str {
+    let name = skill_name(skill);
+    match level {
+        Some(level) if level.origin == crate::skills::Origin::BuiltIn => name
+            .strip_prefix(crate::skills::BUILT_IN_OWN_PREFIX)
+            .unwrap_or(name),
+        _ => name,
+    }
+}
+
 /// What the copy at `level` of the skill `name` holds, in the plane at `root` (a chat in
 /// `workspace`, as `persona`): `None` for a copy with no folder of the plane's levels a history
 /// is kept of (a built-in or a harness skill), and for a plane git does not keep. A persona's
@@ -159,6 +175,14 @@ fn content_of(
         _ => return None,
     };
     let folder = purlis_skills::named_at(root, &at, level.local, name)?;
+    content_at(root, &folder)
+}
+
+/// **What the skill folder `folder` of the plane at `root` holds, by content**: the tree git
+/// holds of it, or that it holds changes git has not committed. `None` for a folder outside the
+/// plane, and for a plane git does not keep. The one reading a run's start and a grade (SK-16)
+/// both take.
+pub(crate) fn content_at(root: &Path, folder: &Path) -> Option<Content> {
     let rel = folder
         .strip_prefix(root)
         .ok()?
@@ -320,14 +344,17 @@ impl Run {
     }
 
     /// Whether this is a run of skill `name`: by its whole name, or by its name without the
-    /// plugin's namespace a harness started it by (`purlis:secrets` is a run of `secrets`).
+    /// plugin's namespace a harness started it by (`purlis:secrets` is a run of `secrets`), or,
+    /// for a run of a built-in skill, without the prefix opencode knows it by
+    /// (`purlis-secrets`).
     pub fn is_of(&self, name: &str) -> bool {
         self.skill == name || self.skill_name() == name
     }
 
-    /// Its skill by name, without the namespace a harness started it by.
+    /// Its skill by name, without the namespace a harness started it by, nor the prefix of a
+    /// built-in skill's own name on opencode ([`crate::skills::Route::built_in_name`]).
     pub fn skill_name(&self) -> &str {
-        skill_name(&self.skill)
+        own_name(&self.skill, self.copy.as_ref().map(|copy| copy.level))
     }
 
     /// When it started, in seconds since 1970, where its row's stamp can be read.

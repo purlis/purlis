@@ -7,6 +7,7 @@ import { commands, type ListedRepo, type RepoListing, type RepoReach } from "./b
 import { ForgeTokenSignIn } from "./ForgeTokenSignIn";
 import { Field, SettingRow } from "./settings/components";
 import { Button } from "./ui/button/Button";
+import { Badge } from "./ui/badge/Badge";
 
 const NOTHING: RepoListing = { repos: [], reaches: [] };
 
@@ -126,7 +127,7 @@ export function YourRepos({
                     onClick={() => onPick(repo.url)}
                   >
                     <strong>{repo.name}</strong> <span>{repo.owner}</span>
-                    {repo.project && <span className="ui-setting-badge">purlis project</span>}
+                    {repo.project && <Badge>purlis project</Badge>}
                   </button>{" "}
                   <span className="m-0 text-text-secondary">
                     {repo.host} · {repo.login}

@@ -413,6 +413,15 @@ one of its own, under its number, its conversation and its run, without starting
 a reopen, which starts a chat's program again on its conversation.
 _Avoid_: resume (that is the harness's), restore, reconnect (that is the link's)
 
+**Window note** (of a browser):
+What the window keeps of one of its browsers in the session host, in its own words, which the
+host never reads and answers back to a window that comes back: whose it is (a chat, by its number
+and identity, the person, or one being ended), what its chat calls it, the chat's browser Ask
+answer, the logins it holds, and whether a view tab of its own showed it. A window that comes back
+takes each browser back by its window note, and ends one with none (ADR 0068, amended for #2025).
+Not the **Host record**, which the host writes for itself about what it started.
+_Avoid_: note (unqualified), tag, label, metadata, annotation
+
 **View** (of a hosted program):
 One client's live look at a hosted program, of a kind: a terminal view, or a **browser view**.
 It opens with a snapshot of the program as it is now and then follows it. One that falls behind
@@ -463,8 +472,9 @@ which creates the machine)
 **Bridge**:
 `purlis bridge`, the program a connector runs on a runner: a pipe from its standard input and
 output to that runner's session host, which ends the link's handshake itself. Its one other act
-is a runner's pairing, once, with `--pair`. It belongs to **Project**, with the connector it
-serves (ADR 0078 §2, as amended 2026-10-17).
+is a runner's pairing, once, with `--pair`; on a cluster runner, also making the runner's link
+key as its pod starts, with `--make-key`, which its pairing then takes. It belongs to
+**Project**, with the connector it serves (ADR 0078 §2, as amended 2026-10-17 and 2026-10-26).
 _Avoid_: agent, relay (that is the desktop host's relay, or later the hosted relay), proxy
 
 **Link**:
@@ -513,7 +523,9 @@ _Avoid_: claimed (of a piece: that is the piece log's word), lease, reservation,
 
 **Cluster operator**:
 purlis's controller inside a cluster: it turns claims into runners, counts them per person,
-starts and stops pools, and says which runner a claim was given. In a sentence the app shows,
+starts and stops pools, and says which runner a claim was given, vouching with its own signing
+key for the link key each runner made as it started (ADR 0078, amended 2026-10-26). In a
+sentence the app shows,
 "purlis in your cluster".
 _Avoid_: operator (unqualified, where the person could be meant), controller, manager, master
 
@@ -524,6 +536,18 @@ ref a human chose, never an agent's own unreviewed branch, and never into its im
 agent may start a runner with the grants it has and never adds one; a runner not marked owned
 never gets one. A setting of **Workspace** (ADR 0089).
 _Avoid_: permission, secret (for the approval), capability (that is an extension's)
+
+**Pool login opt-in**:
+The person's answer, in an Ask, that one persona's browser login may be filled in its chats'
+browsers on one pool's runner: bound to that login as declared and allowed, to the pool as it is
+defined, its image, the runner that receives the values and the engine it runs on, and kept only
+while purlis runs. It is asked only where purlis can show the runner is the person's own: until a
+pool can be marked owned, a Docker pool on this machine's own engine. A runner not shown to be
+owned is never asked about and never receives a value. A login that waited while the desktop
+was away is asked about afresh. It adds to ownership, never stands in for it (ADR 0089, amended
+2026-10-26).
+_Avoid_: grant (that is an app runner's vault entry), owned (that is the device), Always (it lasts
+one run)
 
 **Editor protocol**:
 The part of the session host's public protocol an editor integration speaks: find which chat or
@@ -686,6 +710,13 @@ The typed tools a chat's agent drives its browsers with, the same on every harne
 one asks the person what its browser may reach: this project's sites and its dev servers, also
 the open web, or off; for this chat, or **Always for this persona**.
 _Avoid_: browser automation, Playwright, DevTools (that is the **engine**'s)
+
+**Browser timeline**:
+A chat's record of what its agent did in its browsers, oldest to newest, with the screenshots its
+**browser tools** returned, and where the person or purlis drove instead, which has no screenshot.
+Kept on this device, bounded, and removed when the chat closes; it holds nothing the agent was
+not given. Proof of the work.
+_Avoid_: recording, history, log (that is the event log's), video
 
 **Declared browser** (of a persona):
 What a persona says its chats' browser usually reaches, in its sandbox section
@@ -931,6 +962,17 @@ One edge of a project's window: its activity bar, its sidebar beside the editor 
 half**, together. Left is navigation, right is what is for you (ADR 0038). A view moves only
 within its own side.
 _Avoid_: pane (a pane is a chat's terminal), column
+
+**Sidebar view**:
+One of the views an activity bar shows in its sidebar, one at a time (Chats, Explorer, Search,
+**Skills**, …). The window says "the Explorer view".
+_Avoid_: view alone (that is a hosted program's), panel (that is the bottom region)
+
+**Skills** (sidebar view):
+The **sidebar view** under Search on the left that lists the skills of the title bar's workspace
+by level, with what needs the person on top, and opens each skill's tab, while the **Skill
+studio**'s preview is on (#3266). The window says "the Skills view". The studio stays a view tab.
+_Avoid_: skills panel, skill list
 
 **Panel**:
 The full-width region under both sidebars and the editor, in a left and a right **Panel half**,
@@ -1614,8 +1656,9 @@ _Avoid_: loaded skills, available skills
 
 **Skill studio**:
 The one place where every skill a chat can get is listed, made, edited, installed, removed,
-observed and graded: a view tab, with each skill opening as its own. It is built behind the
-`skill-studio` flag until its **finish line** (spec #2762).
+observed and graded: a view tab, with each skill opening as its own. The **Skills** sidebar view
+lists the same skills and opens it. It is built behind the `skill-studio` flag until its
+**finish line** (spec #2762).
 _Avoid_: skill manager, skills page
 
 **Finish line** (of the Skill studio):
@@ -1671,7 +1714,7 @@ _Avoid_: test run, preview chat
 
 **Throwaway piece**:
 A folder made for one chat, ignored by git and never saved, and removed when that chat closes. Try it
-starts its scratch chat in one, and grading's chats will too. On screen it is a **throwaway
+starts its scratch chat in one, and a grade starts each of its chats in one. On screen it is a **throwaway
 folder**.
 _Avoid_: scratch workspace, sandbox (for this), worktree (it is no branch)
 
@@ -1732,11 +1775,30 @@ A pluggable way of grading a skill. purlis ships one; others arrive as extension
 _Avoid_: eval engine, judge
 
 **Trigger test**:
-A grade of whether a harness picks the skill when it should and leaves it alone when it should
-not.
+A fixture of a skill's that tests whether a harness picks the skill when it should and leaves it
+alone when it should not. A **grade** runs each one as real chats.
 
 **Outcome eval**:
-A grade of how well a skill does its job on fixture tasks.
+A fixture of a skill's that tests how well the skill does its job on a task. A **grade** counts
+them now, and grades them later (#3235).
+
+**Grade** (of a skill):
+One run of a grading framework on a copy of a skill: its trigger tests (and, later, its outcome
+evals) run as real chats in each **arm**, scored and recorded in the **eval record** against the
+version the copy held. A grade shows what it runs and spends before it starts, and starts only on
+the person's press (ADR 0105).
+_Avoid_: test run, benchmark, eval (alone)
+
+**Arm** (of a grade):
+One side of a grade's comparison: the skill as it is, no skill at all, or the skill's previous
+version. Each fixture runs in every arm, and the difference is the arm with the skill against the
+baseline.
+_Avoid_: configuration, variant
+
+**Eval record**:
+The project's committed log of grades, one row per grade, beside the skill log. A grade is tied to
+a skill's version by what its folder held. Results never go in the skill's folder.
+_Avoid_: results file, benchmark
 
 The skills' relationships: a **project skill** reaches a workspace only through a **grant**; a
 **persona skill** adds to what the chat has where it runs; when two levels hold a skill of the

@@ -13,7 +13,8 @@
  * - **One placement and one delay** ({@link TOOLTIP_PLACEMENT}, {@link TOOLTIP_OFFSET},
  *   {@link TOOLTIP_DELAY}, {@link TOOLTIP_CLOSE_DELAY}), which no call site can change: beside
  *   its target at the target's end, 10 px from it, flipped to its start where the window has no
- *   room (R166).
+ *   room (R166); on a strip ({@link TIPS_BELOW}), below its target, clear of the strip's row
+ *   (#3361).
  * - **WCAG 1.4.13** (content on hover or focus): it opens under the pointer after the delay and
  *   at once on the keyboard's focus; **Esc dismisses it** without moving the focus, and is the
  *   tooltip's alone: a dialog under it, or a terminal with the focus, hears nothing of that Esc,
@@ -42,7 +43,9 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -62,9 +65,25 @@ import {
 } from "react-aria";
 import { unavailable } from "../unavailable";
 import { useProjectShown } from "../../projectShown";
+import { sideWithRoom, type TooltipSide } from "./side";
 
 /** **Where a tooltip stands**: beside its target, at the target's end (R166). */
 export const TOOLTIP_PLACEMENT = "end" satisfies AriaTooltipProps["placement"];
+
+/**
+ * **Where the tooltips of a strip stand** (#3361): a strip is a row of targets, and a tooltip
+ * beside one at its end would sit on the row, over the next. A target inside an element marked
+ * {@link TIPS_BELOW} (the chat strip's row) has its tooltip below it instead (above, where the
+ * window has no room below), at the same distance. It is read from the DOM, where the target
+ * stands, and not from React: a menu or a popover opened from the strip is portalled out of it,
+ * and its tooltips stand beside their targets (R166).
+ */
+export const TIPS_BELOW = { "data-tips": "below" } as const;
+
+/** The placement of the tooltip `target` has: below it on a strip, else at its end. */
+export function placementFor(target: Element | null | undefined): AriaTooltipProps["placement"] {
+  return target?.closest('[data-tips="below"]') ? "bottom" : TOOLTIP_PLACEMENT;
+}
 
 /** How far from its target a tooltip stands, in px (R166). */
 export const TOOLTIP_OFFSET = 10;
@@ -126,6 +145,17 @@ export function onTooltipEscape(dismiss: () => void): () => void {
 /** The elements that take the keyboard of their own. */
 const NATIVELY_FOCUSED = new Set(["button", "a", "input", "select", "textarea", "summary"]);
 
+/** The family components that draw words and nothing a keyboard takes (a badge, #2912): a hint
+ *  on one makes it a Tab stop, as on a `span`. */
+const WORDS = new WeakSet<object>();
+
+/** Says that `component` draws words, handing its props and its ref to its element: a hint on it
+ *  makes it a Tab stop. */
+export function drawsWords<T extends object>(component: T): T {
+  WORDS.add(component);
+  return component;
+}
+
 /** A hint: words, or what a hint must show beyond words (a path set as code). */
 export type Tip = ReactNode;
 
@@ -165,9 +195,10 @@ export function TooltipSurface({ children }: { children: Tip }) {
     () => trigger?.current?.closest("[data-tauri-drag-region]") != null,
     [trigger],
   );
+  const placement = placementFor(trigger?.current);
   return (
     <AriaTooltip
-      placement={TOOLTIP_PLACEMENT}
+      placement={placement}
       offset={TOOLTIP_OFFSET}
       data-scope="tooltip"
       data-part="root"
@@ -185,6 +216,20 @@ export function TooltipDetail({ id, children }: { id?: string; children: Tip }) 
     <span data-scope="tooltip" data-part="detail" id={id}>
       {children}
     </span>
+  );
+}
+
+/**
+ * **The key that does what the target does** (#2921, N25): the `shortcut` part, after the hint's
+ * words, from the key registry (`keys/registry.ts`). It is words of the hint, so a reader hears
+ * it where the hint is heard.
+ */
+export function TooltipShortcut({ keys }: { keys: string | undefined }) {
+  if (keys === undefined || keys === "") return null;
+  return (
+    <kbd data-scope="tooltip" data-part="shortcut">
+      {keys}
+    </kbd>
   );
 }
 
@@ -275,7 +320,10 @@ function Target({
     String(props["aria-hidden"]) === "true";
   // Only words are made a Tab stop: a control takes the keyboard already, and a component (a
   // Radix radio, a menu's row) keeps the place in the Tab order its own focus gives it.
-  const words = typeof children.type === "string" && !NATIVELY_FOCUSED.has(children.type);
+  const words =
+    typeof children.type === "string"
+      ? !NATIVELY_FOCUSED.has(children.type)
+      : WORDS.has(children.type as object);
   const { tabIndex, onFocus, onBlur, ...rest } = focusableProps;
   // The keyboard's focus opens no tooltip that only repeats what the element says.
   const focusable = theirs ? rest : { ...rest, onFocus, onBlur };
@@ -366,11 +414,14 @@ const showsWords = (children: unknown): boolean =>
  */
 export function Tooltip({
   tip,
+  shortcut,
   children,
   ref,
   ...handed
 }: {
   tip: Tip;
+  /** The key that does the same, drawn after the hint's words (#2921). */
+  shortcut?: string;
   children: ReactElement;
   ref?: Ref<HTMLElement>;
   [prop: string]: unknown;
@@ -403,13 +454,24 @@ export function Tooltip({
         : iconOnly
           ? { kind: "detail", id: detailId }
           : { kind: "tooltip" };
+  const keys = <TooltipShortcut keys={shortcut} />;
   const surface = iconOnly ? (
     <TooltipSurface>
       {label}
-      {line !== undefined ? <TooltipDetail id={detailId}>{line}</TooltipDetail> : null}
+      {line !== undefined ? (
+        <TooltipDetail id={detailId}>
+          {line}
+          {keys}
+        </TooltipDetail>
+      ) : (
+        keys
+      )}
     </TooltipSurface>
   ) : (
-    <TooltipSurface>{tip}</TooltipSurface>
+    <TooltipSurface>
+      {tip}
+      {keys}
+    </TooltipSurface>
   );
   return (
     <TooltipTrigger delay={TOOLTIP_DELAY} closeDelay={TOOLTIP_CLOSE_DELAY} isDisabled={!has}>
@@ -441,6 +503,10 @@ const ALWAYS_OPEN = { isOpen: true, shouldSkipAnimation: false, open: () => {}, 
  * while the keyboard or the pointer has rested on its row (`ui/menu/MenuTip.tsx`). It stands
  * beside `anchor` as every tooltip does, at the end, or at the start where the end is taken (a
  * submenu opens there). Whoever opens it takes it down, Esc among the ways.
+ *
+ * **It keeps its own width** (#3328): the side is chosen for the whole tooltip (`side.ts`), and
+ * it stands under its anchor where neither side has room, never squeezed against the window's
+ * edge.
  */
 export function AnchoredTooltip({
   anchor,
@@ -460,16 +526,35 @@ export function AnchoredTooltip({
   children: Tip;
 }) {
   const shown = useProjectShown();
+  const own = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState<{ side: TooltipSide; width: number } | null>(null);
+  // Measured as it opens, before it is painted: its width as its words have it, and the side
+  // with room for that width.
+  useLayoutEffect(() => {
+    const target = anchor.current;
+    const tip = own.current;
+    if (target === null || tip === null) return;
+    const was = tip.style.inlineSize;
+    tip.style.inlineSize = "max-content";
+    const width = Math.ceil(tip.getBoundingClientRect().width);
+    tip.style.inlineSize = was;
+    const rtl = getComputedStyle(target).direction === "rtl";
+    const box = target.getBoundingClientRect();
+    const view = document.documentElement.clientWidth;
+    setRoom({ side: sideWithRoom(side, box, width, TOOLTIP_OFFSET, view, rtl), width });
+  }, [anchor, side, shown]);
   if (!shown) return null;
+  const placed = room?.side ?? side;
   return (
     // Open for as long as it is drawn: whoever draws it takes it down.
     <TooltipTriggerStateContext.Provider value={ALWAYS_OPEN}>
       <AriaTooltip
-        ref={tooltipRef}
+        ref={mergeRefs(own, tooltipRef)}
         triggerRef={anchor}
         isOpen
-        placement={side === "end" ? TOOLTIP_PLACEMENT : "start"}
+        placement={placed === "end" ? TOOLTIP_PLACEMENT : placed}
         offset={TOOLTIP_OFFSET}
+        style={room === null || room.width === 0 ? undefined : { inlineSize: room.width }}
         data-scope="tooltip"
         data-part="root"
         data-pointer=""

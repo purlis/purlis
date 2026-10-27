@@ -25,6 +25,7 @@ import { moreRefusedSaid, useRefusedMore } from "./refusedMore";
 import { RestartEndsLine } from "./RestartEnds";
 import { Field, SettingRow } from "./settings/components";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Card } from "./ui/card/Card";
 
 /**
  * **What a chat's sandbox blocked, on its tab** (#1338): the operation and the kind of path or
@@ -262,7 +263,7 @@ export function SandboxBlockNotice({
 
   const under =
     draft === undefined ? undefined : (
-      <div className="block-report ui-inline-surface" id={id}>
+      <Card className="block-report" id={id}>
         <p>
           Nothing is sent until you press File report. It would be filed on {draft.repository} as
           you, with purlis&apos;s sign-in to GitHub.
@@ -280,7 +281,7 @@ export function SandboxBlockNotice({
             Cancel
           </Button>
         </ButtonRow>
-      </div>
+      </Card>
     );
 
   return (
@@ -395,7 +396,7 @@ function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () =>
       .finally(() => setBusy(false));
   };
   return (
-    <div className="block-kubectl ui-inline-surface" id={id}>
+    <Card className="block-kubectl" id={id}>
       {pointed ? null : contexts === undefined ? (
         <ButtonRow size="sm">
           <Button size="sm" isDisabled={busy} onPress={list}>
@@ -425,12 +426,12 @@ function PointKubectl({ block, onPointed }: { block: HeldBlock; onPointed: () =>
         </>
       )}
       {said !== undefined && <p>{said}</p>}
-    </div>
+    </Card>
   );
 }
 
 /** The time now: when a host joined, read once in the render that draws it, or when pressed. */
-const joinedAt = () => Date.now();
+const joinedAt = () => performance.now();
 
 /**
  * **Allow, Always allow or Keep blocked** for a block of the chat's own work (#1342). Nothing is
@@ -476,7 +477,7 @@ function AllowNotice({
   const [owedRetry, setOwedRetry] = useState(false);
   /** When Tell the chat to retry appeared, where the Allow just pressed was: a second press of
    *  that Allow lands on it, so for {@link SETTLE_MS} after, it does nothing and says why. */
-  const [owedSince, setOwedSince] = useState(0);
+  const [owedSince, setOwedSince] = useState(-Infinity);
   /** The hosts the chat's proxy refused past the ones it names (#1353): said, never offered. */
   const moreRefused = useRefusedMore(block.plane, block.session);
   const what: GrantWhat =
@@ -507,7 +508,7 @@ function AllowNotice({
    * the question for several tasks does. Never at its first drawing: nothing joined it yet.
    */
   const listing = asking.join(" ");
-  const [joined, setJoined] = useState({ listing, at: 0 });
+  const [joined, setJoined] = useState({ listing, at: -Infinity });
   if (joined.listing !== listing) {
     const grew = asking.some((host) => !joined.listing.split(" ").includes(host));
     setJoined({ listing, at: grew ? joinedAt() : joined.at });
@@ -517,7 +518,7 @@ function AllowNotice({
    * it join, or as the window's store held it, so a Notice drawn again keeps the guard.
    */
   const tooSoon = () => {
-    if (joinedAt() - Math.max(joined.at, block.joined ?? 0) < SETTLE_MS) {
+    if (joinedAt() - Math.max(joined.at, block.joined ?? -Infinity) < SETTLE_MS) {
       setSaid(
         "A host joined this Notice just now, so nothing was allowed. Read the hosts it lists and " +
           "answer again.",

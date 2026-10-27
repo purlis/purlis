@@ -15,6 +15,7 @@ import {
   openView,
   PANEL,
   panelShown,
+  placesOf,
   PROJECTS_MOST_BYTES,
   regionOf,
   REGION_IDS,
@@ -30,8 +31,10 @@ import {
   useArrangement,
   rowWidth,
   slotLength,
+  tabsOf,
   type Arrangement,
 } from "./regions";
+import type { ViewId } from "./sideViews";
 import { setYourEditor } from "./yourEditor";
 import {
   aboutThisMachine,
@@ -854,15 +857,15 @@ describe("the open view of a side (#1673)", () => {
     }
   });
 
-  it("leaves the side panel out on a pick of its view already open (R121)", () => {
+  it("puts the side panel away on a pick of its view already open, and brings it back on the next (R121, #3329)", () => {
     const { result } = renderHook(() => useArrangement("/one"));
-    const before = result.current.arrangement;
 
     act(() => result.current.pick("chats"));
+    expect(navigation(result.current.arrangement).collapsed).toBe(true);
 
+    act(() => result.current.pick("chats"));
     expect(navigation(result.current.arrangement)).toMatchObject({ collapsed: false });
     expect(openView(navigation(result.current.arrangement))).toBe("chats");
-    expect(result.current.arrangement).toBe(before);
   });
 
   it("puts the right panel away on a pick of the view already open, and brings it back on the next", () => {
@@ -925,6 +928,43 @@ describe("the open view of a side (#1673)", () => {
     expect(openView(navigation(remembered()))).toBe("chats");
     await settleLayout();
     expect(aboutThisMachine()[0].detail).toContain('"minimap"');
+  });
+});
+
+describe("the Skills view, behind the Skill studio's preview (#3266)", () => {
+  const navigation = navigationOf;
+  const ON: readonly ViewId[] = ["skills"];
+
+  it("sits under Search on the left's bar only while the preview is on", () => {
+    expect(tabsOf(DEFAULT_ARRANGEMENT, "navigation", [])).toEqual(["chats", "explorer", "search"]);
+    expect(tabsOf(DEFAULT_ARRANGEMENT, "navigation", ON)).toEqual([
+      "chats",
+      "explorer",
+      "search",
+      "skills",
+    ]);
+    // Never one of the right side's: what is present there is an extension's panel alone.
+    expect(tabsOf(DEFAULT_ARRANGEMENT, "aside", ON)).not.toContain("skills");
+  });
+
+  it("falls back to Chats while the preview is off, and comes back when it is on again", () => {
+    const { result } = renderHook(() => useArrangement("/one"));
+    act(() => result.current.pick("skills", ON));
+    const picked = navigation(result.current.arrangement);
+    expect(openView(picked, ON)).toBe("skills");
+
+    // Off: the side opens on Chats, and the pick is kept rather than written over.
+    expect(openView(picked, [])).toBe("chats");
+    expect(picked.view).toBe("skills");
+    // On again: the pick is back.
+    expect(openView(picked, ON)).toBe("skills");
+  });
+
+  it("is named for the palette only while it is drawn", () => {
+    expect(placesOf(DEFAULT_ARRANGEMENT, []).map((one) => one.view)).not.toContain("skills");
+    expect(placesOf(DEFAULT_ARRANGEMENT, [], ON)).toContainEqual(
+      expect.objectContaining({ view: "skills", name: "Skills", region: "navigation" }),
+    );
   });
 });
 
@@ -1217,8 +1257,8 @@ describe("the Panel (#1737)", () => {
     expect(slotSize("panel", inSlots(remembered("/one")).panel)).toBe(34);
   });
 
-  it("holds Changes in its left half, after Repos, and the left sidebar keeps Chats, Explorer and Search (#1739, P-2)", () => {
-    expect(CATALOGUE.navigation.views).toEqual(["chats", "explorer", "search"]);
+  it("holds Changes in its left half, after Repos, and the left sidebar keeps Chats, Explorer, Search and Skills (#1739, P-2, #3266)", () => {
+    expect(CATALOGUE.navigation.views).toEqual(["chats", "explorer", "search", "skills"]);
     expect(CATALOGUE["panel-left"].views).toEqual(["repos", "changes"]);
     expect(regionOf("changes")).toBe("panel-left");
     // Repos is still what the half opens on (P-14).

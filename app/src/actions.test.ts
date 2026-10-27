@@ -159,6 +159,9 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`stopBrowser:${program}`);
       return { ok: true as const };
     }),
+    openBrowserTimeline: vi.fn((chat: string) => {
+      calls.push(`openBrowserTimeline:${chat}`);
+    }),
     ignoreNeedsYou: vi.fn(async (session: number) => {
       calls.push(`ignoreNeedsYou:${session}`);
       return { ok: true as const };
@@ -1790,6 +1793,7 @@ describe("carrying out a row", () => {
         `newMemory:${JSON.stringify({ kind: "persona", name: "steward" })}`,
         `newMemory:${JSON.stringify({ kind: "shared" })}`,
         "openView:charter/shared-memory/,Shared memory",
+        "openView:charter/shortcuts/,Keyboard shortcuts",
         // #1452: the project's dispatches, in a tab of their own.
         "openView:charter/dispatches/,Dispatches",
         // A chat's Activity, one row per chat tab (#1495).
@@ -2285,9 +2289,10 @@ describe("the palette at fifty chats", () => {
       // One more under both since #1487: `Previous chat in this tab`, a row about the tab in
       // front, before the branch's two in the catalogue. One more under `r` since #1137:
       // `Search in files` (`search` has an `r`). One more under `r` since #2176: `New browser`.
-      // One more under `r` since #2679: `Add a Docker pool…` (`Docker` has an `r`).
+      // One more under `r` since #2679: `Add a Docker pool…` (`Docker` has an `r`). One more
+      // under `r` since #2921: `Keyboard shortcuts` (`keyboard` has an `r`).
       expect(at("re", loaded())).toBe(8);
-      expect(at("r", loaded())).toBe(17);
+      expect(at("r", loaded())).toBe(18);
       expect(at("rem", loaded())).toBe(1);
     });
 
@@ -2427,8 +2432,9 @@ describe("the palette at fifty chats", () => {
     // settings: Browsers. 916 since #2176: New browser. 917 since #2679: Add a Docker pool….
     // Your settings: Pools is offered only once this machine keeps a pool. 918 since #2765:
     // Your settings: Previews (Open Skill studio is offered only while its flag is on). 920
-    // since #2925: Your settings: Motion and contrast, and Your colours.
-    expect(offers).toHaveLength(920);
+    // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
+    // mode and Keyboard shortcuts, one row each.
+    expect(offers).toHaveLength(922);
   });
 
   /**
@@ -4087,6 +4093,20 @@ describe("a harness's card with no chat open (#1134)", () => {
   });
 });
 
+describe("the Skills view's row (#3266)", () => {
+  it("shows the Skills view, with its key, only while the Skill studio's preview is on", () => {
+    const off = catalogue(now()).find((offer) => offer.id === "view.show:skills");
+    expect(off).toBeUndefined();
+
+    const row = catalogue(now({ skillStudio: true })).find(
+      (offer) => offer.id === "view.show:skills",
+    );
+    expect(row?.title).toBe("Show the Skills view");
+    expect(row?.does).toEqual({ verb: "showSideView", view: "skills" });
+    expect(row?.note).toMatch(/⌘⇧X|Ctrl\+Shift\+X/);
+  });
+});
+
 describe("the right side's rows (#1678)", () => {
   it("shows each of its views, and says the side's key on the region's row", () => {
     const offers = catalogue(now());
@@ -4327,6 +4347,7 @@ describe("Use skill… on a chat's tab (#2775)", () => {
       most_chars: 6000,
       hidden: 0,
       still_over: null,
+      pinned_by: [],
       warns: "skills" as const,
     };
     const offers = catalogue(
@@ -4343,5 +4364,32 @@ describe("Use skill… on a chat's tab (#2775)", () => {
     const offers = catalogue(now({ tabs, askable: notAShell, skillStudio: true }));
     await run(offers, usingSkillId(chat), hands);
     expect(hands.calls).toEqual([`useSkill:${chat}`]);
+  });
+});
+
+describe("a chat's browser timeline (#2017)", () => {
+  const browser = (chatId: string | null) => ({
+    program: "B7",
+    name: "b1",
+    session: 3,
+    chat: "steward 3",
+    chatId,
+    pinned: false,
+    kept: false,
+    login: null,
+  });
+
+  it("is a row for a chat that has an id, which opens its tab by that id", async () => {
+    const offers = catalogue(now({ browsers: [browser("01JB0000000000000000000003")] }));
+    const hands = doing();
+
+    await run(offers, "browser.timeline:3", hands);
+
+    expect(by(offers, "browser.timeline:3")?.title).toBe("Browser timeline of steward 3");
+    expect(hands.calls).toContain("openBrowserTimeline:01JB0000000000000000000003");
+  });
+
+  it("is no row for a chat with no id, which keeps no timeline", () => {
+    expect(by(catalogue(now({ browsers: [browser(null)] })), "browser.timeline:3")).toBeUndefined();
   });
 });

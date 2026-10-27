@@ -392,10 +392,19 @@ export const commands = {
 	keepAskedWorkspace: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
+	answerPoolLogin: __WINDOW_ONLY_RESULT,
+	answerPoolTool: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
 	chatBrowsers: __WINDOW_ONLY_RESULT,
+	chatBrowserTimeline: __WINDOW_ONLY_RESULT,
+	chatBrowserTimelineShot: __WINDOW_ONLY_RESULT,
+	browserProofRequests: __WINDOW_ONLY_RESULT,
+	showBrowserProof: __WINDOW_ONLY_RESULT,
+	attachBrowserProof: __WINDOW_ONLY_RESULT,
+	browsersTakenBack: __WINDOW_ONLY_RESULT,
+	browserViewed: __WINDOW_ONLY_RESULT,
 	pinChatBrowser: __WINDOW_ONLY_RESULT,
 	browsersAtQuit: __WINDOW_ONLY_RESULT,
 	putAwayBrowsersAtQuit: __WINDOW_ONLY_RESULT,
@@ -894,6 +903,12 @@ export const commands = {
 	 */
 	skillStudio: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<Studio, string>(__TAURI_INVOKE("skill_studio", { plane, workspace, persona })),
 	/**
+	 *  **Every persona's own skills** (#3266): what the Skills view lists under Personas, for a chat
+	 *  in `workspace` or at the root, in one read rather than one studio per persona. On a blocking
+	 *  thread, as it reads the project's skill folders.
+	 */
+	skillPersonaSkills: (plane: PlaneId, workspace: string | null) => typedError<PersonaSkills[], string>(__TAURI_INVOKE("skill_persona_skills", { plane, workspace })),
+	/**
 	 *  The runs of skill `skill` in the project, newest first, for its Runs panel: none while the
 	 *  flag is off. On a blocking thread, as it reads the project's skill log.
 	 */
@@ -905,11 +920,12 @@ export const commands = {
 	 */
 	skillStats: (plane: PlaneId, skill: string) => typedError<SkillStats, string>(__TAURI_INVOKE("skill_stats", { plane, skill })),
 	/**
-	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Runs panel, which lists every
-	 *  run of the skill, newest first, then each extension's. None while the flag is off. On a
+	 *  **The panels on skill `skill`'s tab** (ADR 0101 §6): purlis's Grades panel, of the copy at
+	 *  `level` the tab shows (null: the copy it shows first, #3353), and its Runs panel, which lists
+	 *  every run of the skill, newest first, then each extension's. None while the flag is off. On a
 	 *  blocking thread, as it reads the project's skill log and asks each extension.
 	 */
-	skillPanels: (plane: PlaneId, skill: string) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill })),
+	skillPanels: (plane: PlaneId, skill: string, level: { at: "project"; local: boolean } | { at: "workspace"; name: string; local: boolean } | { at: "persona"; name: string; local: boolean } | null) => typedError<SkillPanel[], string>(__TAURI_INVOKE("skill_panels", { plane, skill, level })),
 	/**  Whether the Skill studio is on in this window: this machine's flag, or the variable over it. */
 	skillStudioOn: () => typedError<boolean, string>(__TAURI_INVOKE("skill_studio_on")),
 	setSkillStudioOn: __WINDOW_ONLY_RESULT,
@@ -930,6 +946,11 @@ export const commands = {
 	broken: SkillBroken[],
 	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
 	by_a_repo: SkillBroken[],
+	/**
+	 *  The repo's own skills named like one of purlis's built-in skills, which the chat's
+	 *  program loads beside purlis's (SK-37).
+	 */
+	beside_a_built_in: string[],
 } | null, string>(__TAURI_INVOKE("chat_skills_missing", { plane, session })),
 	putAwayChatSkillsMissing: __WINDOW_ONLY_RESULT,
 	/**
@@ -960,6 +981,7 @@ export const commands = {
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
+	skillPin: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
@@ -981,6 +1003,11 @@ export const commands = {
 	skillDraftChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
+	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile })),
+	skillGradeStart: __WINDOW_ONLY_RESULT,
+	skillGradeStop: __WINDOW_ONLY_RESULT,
+	skillGradeSetCap: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
 	skillSourcesOffered: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
@@ -2030,6 +2057,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
+export const SKILL_GRADE = "skill-grade" as const;
+
 export const SKILL_RUNS_PANEL = "runs" as const;
 
 export const SKILL_STUDIO_IN = "skills.studio:" as const;
@@ -2362,6 +2391,16 @@ export type AnswerPath =
  *  Keep blocked with the person's reason, each for `sites`, the sites the ask showed (#2018).
  */
 { via: "browser-sites"; sites: string[] } | 
+/**
+ *  `answer_pool_login`, allowing for Allow and not for Keep off with the person's reason,
+ *  for the chat that asked (#2050).
+ */
+{ via: "pool-login" } | 
+/**
+ *  `answer_pool_tool`, allowing for Allow this run and not for Keep off, for run `run` of
+ *  the chat that asked (#2047).
+ */
+{ via: "pool-tool"; run: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2516,7 +2555,17 @@ export type AskSource =
  *  Sites new to the project a chat's browser held back what it would open, send or type
  *  on (#2018): an Allow is a browser site grant, for the browser alone.
  */
-"browser-site";
+"browser-site" | 
+/**
+ *  A runner chat's browser login, which waits on the person's opt-in for its persona on its
+ *  pool (#2050): an Allow lets that persona's logins be filled on the pool's runner.
+ */
+"pool-login" | 
+/**
+ *  One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
+ *  lets this desktop send that tool its vault values on the pool's runner for that run alone.
+ */
+"pool-tool";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -2910,6 +2959,11 @@ export type BrowserWatching = {
 	width: number,
 	height: number,
 	person_drives: boolean,
+	/**
+	 *  **The pool whose runner the browser runs on** (#2050), or `null` on this machine: what its
+	 *  chip names as its device, so `localhost` on a runner is never taken for this machine's.
+	 */
+	pool: string | null,
 };
 
 /**  **A chat whose browsers ended because the person narrowed its reach**, as its tab says so. */
@@ -3184,6 +3238,11 @@ export type ChatBrowser = {
 	 *  purlis, while it performs a login.
 	 */
 	driver: BrowserDriver | null,
+	/**
+	 *  The pool whose runner it runs on, beside its chat, or `null` on this machine (#2050):
+	 *  what its row and thumbnail name as its device.
+	 */
+	pool: string | null,
 };
 
 /**
@@ -3397,7 +3456,12 @@ export type ClashOutcome =
 /**  Both copies load. */
 "both-load" | 
 /**  The repo's narrower copy is the one the chat gets; the plane's is left out. */
-"repo-wins";
+"repo-wins" | 
+/**
+ *  Both load under one name, and the chat may use either: a copy named as one of purlis's
+ *  own skills where the program reads every skill by its bare name.
+ */
+"either-one";
 
 /**  What [`CLOSE_HANDED`] carries: the project and the chats a link's close would end. */
 export type CloseHanded = {
@@ -4192,6 +4256,13 @@ export type EngineDownloadShown = {
 	says: string,
 };
 
+/**  **The machine whose engine a Notice is about** (#2990): this one, or a pool's runner. */
+export type EngineMachine = 
+/**  The machine the window runs on. */
+{ kind: "here" } | 
+/**  The runner of pool `pool`. */
+{ kind: "runner"; pool: string };
+
 /**  What the Notice says and offers. */
 export type EngineSandboxShown = {
 	/**  The sentence. */
@@ -4201,8 +4272,10 @@ export type EngineSandboxShown = {
 	 *  folder whose path holds a control character.
 	 */
 	command: string | null,
-	/**  This machine's own Chrome, where one is installed. */
+	/**  This machine's own Chrome, where one is installed: never for a runner's. */
 	chrome: string | null,
+	/**  The machine whose engine it is (#2990). */
+	machine: EngineMachine,
 };
 
 /**  One field of an entry the core refused, and why: the field is the entry's own key. */
@@ -5084,6 +5157,41 @@ export type GoneProject = {
 	path: string,
 	/**  The line the window draws: the path, short, and why it is gone. */
 	said: string,
+};
+
+/**  How a grade ended, as the window is told it. */
+export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" | 
+/**  It reached its token cap. */
+"over-cap" | 
+/**  A chat did not say what it spent, so the cap could not be held. */
+"spend-not-reported" | 
+/**  A fault in purlis ended it before it was scored (#3353): recorded as interrupted. */
+"failed";
+
+/**  What a grade's chats spent last time, worked out for this one. */
+export type GradeEstimate = {
+	tokens: number | null,
+	cost_usd: number | null,
+	/**  The chats of the grade it is worked out from. */
+	chats_then: number,
+};
+
+/**
+ *  **A trigger test a grade leaves out** (`grades::LeftOut`): its place in the file, from 0, and
+ *  why, as a sentence.
+ */
+export type GradeLeftOut = {
+	at: number,
+	why: string,
+};
+
+/**  One trigger test, as the plan shows it before anything runs. */
+export type GradeQuery = {
+	/**  The query as the chat will read it, each character no reader would see marked. */
+	query: string,
+	should_trigger: boolean,
+	/**  Whether it holds a character no reader would see. */
+	hides: boolean,
 };
 
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
@@ -6406,6 +6514,12 @@ export type OpenHosts = {
 export type OpenRun = {
 	/**  The skill, by the name its harness started it by. */
 	skill: string,
+	/**
+	 *  The skill it is a run of, by its own name, as the core counts it
+	 *  ([`purlis_core::skilluse::own_name`]): `secrets` for opencode's `purlis-secrets`. The
+	 *  skill whose tab its chip opens.
+	 */
+	name: string,
 	/**  The run's id, as the skill's Runs panel lists it. */
 	id: string,
 	/**  Tool calls made inside it so far, each once. */
@@ -6882,6 +6996,15 @@ export type PersonaProfile = {
 
 /**  What a change to a persona's skills does, as the studio asks it. */
 export type PersonaSkillChange = "add" | "remove";
+
+/**
+ *  **One persona's own skills** (#3266), as the Skills view lists them: the rows of its own
+ *  level, for a chat as it in the workspace the view shows.
+ */
+export type PersonaSkills = {
+	persona: string,
+	skills: StudioSkill[],
+};
 
 /**  Where a smart close stands. */
 export type Phase = 
@@ -7661,6 +7784,29 @@ export type ProjectUpdate = {
 };
 
 /**
+ *  A pull or merge request the window offers to attach proof to: the open request of a save of
+ *  one of the chat's workspace's repos.
+ */
+export type ProofRequest = {
+	/**  Its page. */
+	url: string,
+	/**  The repo's name in the workspace. */
+	repo: string,
+	/**  What its forge calls it: `pull request` or `merge request`. */
+	request: string,
+};
+
+/**  One screenshot as the person was shown it, handed back to attach. */
+export type ProofShot = {
+	/**  Its number in the chat's timeline, to read with `chat_browser_timeline_shot`. */
+	shot: number,
+	/**  When it was taken, in seconds since 1970. */
+	at: number,
+	/**  SHA-256 of its bytes, lower-case hex. */
+	digest: string,
+};
+
+/**
  *  **A proposed change whole, as its own tab draws it** (PC-7): the file before and after, and
  *  whether Apply is offered there, or why it is not shown.
  */
@@ -8402,6 +8548,8 @@ export type RunStart =
 "curation" | 
 /**  A trigger sent the prompt. */
 "trigger" | 
+/**  A grade sent the prompt: a trigger test's chat. */
+"grade" | 
 /**  A start a newer purlis wrote. */
 "unknown";
 
@@ -9141,6 +9289,15 @@ export type SharedFolder = {
 	says: string,
 };
 
+/**
+ *  **What the person is shown before attaching**: the proof, which is handed back to attach, and
+ *  the bytes of each of its screenshots, PNG in base64, in its order, which the window draws.
+ */
+export type ShowingProof = {
+	proof: ShownProof,
+	pictures: string[],
+};
+
 /**  One ask, as the registry lists it and its row draws it. */
 export type Shown = {
 	/**  The chat that asked. */
@@ -9181,6 +9338,30 @@ export type Shown = {
 	 *  not shown and no Allow is offered. Absent for any other ask.
 	 */
 	writes?: WritesShown | null,
+};
+
+/**
+ *  **What attaching would send**, shown to the person before anything goes, and handed back
+ *  unchanged to [`attach_browser_proof`].
+ */
+export type ShownProof = {
+	/**  The request's page. */
+	request: string,
+	/**  `#12` or `!12`. */
+	number: string,
+	/**  The repo it is in, `owner/name`. */
+	path: string,
+	/**  Where the pictures are kept on the forge, and who can open them there. */
+	keptAt: string,
+	/**
+	 *  The line said before the pictures: public and permanent to the repo's readers, and
+	 *  whether the repo is public.
+	 */
+	warning: string,
+	/**  The comment's words, before the pictures. */
+	words: string,
+	/**  The pictures, in the order they go. */
+	shots: ProofShot[],
 };
 
 /**
@@ -9261,6 +9442,11 @@ export type SkillBudget = {
 	 *  all of it is then listed (ADR 0102 §4).
 	 */
 	still_over: BudgetStillOver | null,
+	/**
+	 *  Which of the chat's workspace and persona pin a skill (SK-15d): where the pins are
+	 *  undone in the Skill studio when they alone are past the budget.
+	 */
+	pinned_by: SkillPinner[],
 };
 
 /**
@@ -9317,6 +9503,13 @@ export type SkillDetails = {
 	used_by: string[],
 	/**  Whether the project holds more skills than the graph reads. */
 	uses_cut: boolean,
+	/**
+	 *  Every workspace and persona that pins it (SK-15d), so no router hides it from their
+	 *  chats: the workspaces first, then the personas.
+	 */
+	pinned_by: SkillPinner[],
+	/**  Of those, each whose pins a chat reads none of, and why (SK-15d). */
+	pins_refused: SkillPinsRefused[],
 };
 
 /**  One version's diff. */
@@ -9372,6 +9565,69 @@ export type SkillFit =
 export type SkillGrade = {
 	passed: number,
 	fixtures: number,
+};
+
+/**  **What grading a copy would run, before anything runs** (decision 22). */
+export type SkillGradePlan = {
+	/**  The trigger tests it runs, in the file's order. */
+	tests: GradeQuery[],
+	/**  The chats it runs in all, each one turn, and how many times each test runs in each arm. */
+	chats: number,
+	runs: number,
+	/**  Why the trigger tests could not be read, where they were not. */
+	tests_refused: string | null,
+	/**  The trigger tests left out, each with why: a query no chat can be started on. */
+	left_out: GradeLeftOut[],
+	/**  The outcome evals the skill has, shown and not run (#3235 grades them). */
+	outcome_evals: number,
+	outcomes_refused: string | null,
+	estimate: GradeEstimate | null,
+	/**  The grade of this skill running now, where one is. */
+	running: string | null,
+	/**  The tokens a grade may spend before it stops, and whether this machine set it. */
+	token_cap: number | null,
+	cap_set_here: boolean,
+	/**
+	 *  The cost a grade may reach besides, where its chats say what they cost: the cap's tokens
+	 *  at the dearest price (`grades::cap::Cap::cost_usd`).
+	 */
+	cost_cap_usd: number | null,
+	/**  The longest one of its chats runs, in minutes: the plan's "up to". */
+	chat_minutes: number,
+	/**
+	 *  The profile its chats run on, and the sandbox they run in there, by its name, or why no
+	 *  grade can run on it (the operator's ruling of 2026-10-26).
+	 */
+	profile: string | null,
+	sandbox: string | null,
+	refused: string | null,
+	/**
+	 *  What pressing Grade consents to: handed back with the press, and a grade on another plan
+	 *  is refused.
+	 */
+	consent: string | null,
+};
+
+/**
+ *  **One step of a grade**, as [`EVENT`] tells the window: how many of its chats have run, and,
+ *  once it is over, how it ended and what it says.
+ */
+export type SkillGradeStep = {
+	plane: PlaneId,
+	skill: string,
+	grade: string,
+	ran: number,
+	of: number,
+	/**  What its chats have spent so far, where they said, and the cap it is held to. */
+	tokens: number | null,
+	cap: number | null,
+	/**  How it ended, once it has. */
+	ended: GradeEnded | null,
+	/**
+	 *  What the window says of its end: why its chats did not start, or that it was not
+	 *  recorded.
+	 */
+	said: string | null,
 };
 
 /**  Where a project skill reaches, as the studio sets it. */
@@ -9434,8 +9690,8 @@ export type SkillLintLevel =
 "warns";
 
 /**
- *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Runs panel,
- *  then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
+ *  **One panel on a skill's tab** (ADR 0101 §6), as the window draws it: purlis's Grades and Runs
+ *  panels, then each panel an extension that declares `studio-panel` adds, each answered in panel blocks
  *  or refused with the core's sentence.
  */
 export type SkillPanel = {
@@ -9452,7 +9708,30 @@ export type SkillPanel = {
  *  **Which panel on a skill's tab**, as the window holds it: purlis's Runs panel, or one an
  *  extension adds, by its id and the panel's.
  */
-export type SkillPanelKey = { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+export type SkillPanelKey = { kind: "grades" } | { kind: "runs" } | { kind: "extension"; extension: string; panel: string };
+
+/**
+ *  **Whose pins a pin is** (SK-15d, #3232): a workspace's or a persona's, by name. The core's
+ *  `PinnedBy`.
+ */
+export type SkillPinner = { at: "workspace"; name: string } | { at: "persona"; name: string };
+
+/**
+ *  **Why a chat reads none of a pinner's pins** (SK-15d): the core's `PinsRefused`, with whose
+ *  list it is.
+ */
+export type SkillPinsRefused = {
+	by: SkillPinner,
+	/**
+	 *  What is wrong, in a clause: `"Not A Name" is not a skill's name (…)`, `the list holds more
+	 *  than 64 pins`.
+	 */
+	why: string,
+	/**  The entry that is not a skill's name, which Unpin takes out; null for too many. */
+	bad: string | null,
+	/**  The file the list is written in, relative to the project. */
+	file: string,
+};
 
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
@@ -9589,6 +9868,11 @@ export type SkillsMissing = {
 	broken: SkillBroken[],
 	/**  The project's skills the repo the chat works in leaves out, each with why (SK-53). */
 	by_a_repo: SkillBroken[],
+	/**
+	 *  The repo's own skills named like one of purlis's built-in skills, which the chat's
+	 *  program loads beside purlis's (SK-37).
+	 */
+	beside_a_built_in: string[],
 };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
@@ -9852,6 +10136,11 @@ export type Studio = {
 	clashes: StudioClash[],
 	/**  What it offers to start from (SK-22, #2785): the core's `skills::first_open`. */
 	first: StudioFirst,
+	/**
+	 *  Why a chat reads none of the pins of the workspace or the persona it is filtered to,
+	 *  where it reads none (SK-15d): its rows' Pin switches then say so.
+	 */
+	pins_refused: SkillPinsRefused | null,
 };
 
 /**
@@ -9869,6 +10158,11 @@ export type StudioClash = {
 	outside: Level,
 	owner: Owner,
 	outcome: ClashOutcome,
+	/**
+	 *  What the row of the plane's copy says of it, in the core's words
+	 *  (`purlis_core::skills::clash_said`, SK-46): the same line `purlis skill list` prints.
+	 */
+	said: string,
 };
 
 /**
@@ -10049,6 +10343,11 @@ export type StudioSkill = {
 	hidden: SkillHiddenOn[],
 	/**  Whether that chat's workspace or persona pins it, so no router hides it. */
 	pinned: boolean,
+	/**
+	 *  Which of the studio's workspace and persona have it in their pins, as written (SK-15d):
+	 *  what the row's Pin switch shows. Empty for a skill from outside the plane.
+	 */
+	pinned_by: SkillPinner[],
 };
 
 /**
@@ -10462,6 +10761,39 @@ export type ThisMachine = {
 	/**  Why this machine keeps no store at all, or null when it does. */
 	forgetful: string | null,
 };
+
+/**  Who drove a browser at a moment of its chat's timeline (#2017). */
+export type TimelineBy = "agent" | "person" | "purlis";
+
+/**  One moment of a chat's browser timeline, as the window draws it (#2017). */
+export type TimelineMoment = {
+	/**  When, in seconds since 1970. */
+	at: number,
+	/**  Which of the chat's browsers (`b1`). */
+	browser: string,
+	by: TimelineBy,
+	/**  What was done, in words that hold nothing typed. */
+	did: string,
+	/**  The page it left: its scheme, host, port and path. */
+	page: string | null,
+	/**  Its screenshot's number, to read with [`chat_browser_timeline_shot`]. */
+	shot: number | null,
+	unkept: TimelineUnkept | null,
+};
+
+/**  **A chat whose browser timeline moved** (#2017): a tab of it reads it again. */
+export type TimelineMoved = {
+	plane: PlaneId,
+	/**  The chat's id. */
+	chat: string,
+};
+
+/**
+ *  Why a moment of a chat's browser timeline keeps no screenshot it had (#2017): let go to keep
+ *  within the timeline's bounds, too large to keep, or answered while the person or purlis
+ *  drove the browser.
+ */
+export type TimelineUnkept = "bound" | "too_large" | "driven";
 
 /**  What the operating system has already spent of the window's own title bar. */
 export type TitleBarRoom = {
@@ -10955,6 +11287,8 @@ export type WindowApart = {
 	token: string,
 	from: string,
 	distance: number | null,
+	/**  Whether the rule is held alone: only its own sides give way to it (#3130). */
+	alone: boolean,
 };
 
 /**  One theme draft, as the strip and the close of its chat name it. */

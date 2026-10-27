@@ -45,16 +45,19 @@
   Claude Code, Codex and opencode, whether everything it asks for applies there, and what is left
   out, carried over or not applied. A skill of a program's own or a repo's that would widen a
   chat is marked. A manual-only skill now stays out of the chat's choice, and costs nothing in
-  its budget, on all three. The editor's live lint also warns of a description too short to say
-  when to use the skill, a skill it names that does not exist, and a program the skill runs that
-  this machine does not have. A chat that starts without a skill it would have loaded, because
-  the skill is broken, says which and why on its tab, with a way to the Skill studio.
+  its budget, on all three. Its badge says it runs only when asked for, and so does a Codex
+  skill, its own or a repo's, that Codex's own settings keep out of its choice (#3050). The
+  editor's live lint also warns of a description too short to say when to use the skill, a
+  skill it names that does not exist, and a program the skill runs that this machine does not
+  have. A chat that starts without a skill it would have loaded, because the skill is broken,
+  says which and why on its tab, with a way to the Skill studio.
 - **Move your project's skills into the Skill studio in one step** (Skill studio preview,
   #2784). `purlis doctor --fix project-skills` moves every skill in the project's
   `.claude/skills` into its `skills/`, shared with every workspace as before. It rewrites the old
   `charter:<skill>` names to `purlis:<skill>`, but never inside quoted code or an image name. It
   all goes in one commit that `git revert` undoes. It checks first that every chat keeps its
-  skills, and changes nothing if one would lose one. From then on every chat in the project gets
+  skills, and changes nothing if one would lose one or if two skills or folders differ only in
+  case, which a disk that ignores case reads as one. From then on every chat in the project gets
   those skills, the Skill studio switched on or off, and Codex chats get them too. Clones stop
   getting a copy of `.claude/skills`. Your clones lose their copies at once and a teammate's the
   next time a chat starts there, while a copy someone edited is kept and named. It says what it
@@ -92,6 +95,24 @@
   offered *Move them*, the same one-commit move as `purlis doctor --fix project-skills`. The
   commit reaches everyone in the project, and a teammate on an older purlis opens it read-only
   until they update.
+- **Grade a skill's trigger tests** (Skill studio preview, #2779). A skill can carry trigger tests:
+  queries it should start on, and near misses it should leave alone. _Grade…_ on a skill's tab
+  first shows what a grade runs: how many chats, each test as the chat will read it (a character
+  no reader would see marked), what the skill's last grade spent, and that the chats are paid for
+  by the profile you pick, as any chat is. A grade stops once its chats have spent 200,000 tokens,
+  or the cap you set in the plan for this machine, or once they cost that many tokens would at
+  the dearest price, where Claude Code says what they cost, and says what it spent. Nothing runs until you
+  press _Grade_. Each test then
+  runs in a chat of its own, three times with the skill and three times without it, in a
+  throwaway folder, only in the project's full sandbox, with none of your own Allows, no tools
+  but purlis's that only read, and only on a Claude Code profile that keeps its permission
+  prompts; the plan says why when a grade cannot run. A chat that asks you something is ended
+  there and does not count. A grade of a skill kept on this machine stays on this machine. Those chats get no tab, and each ends as soon as
+  the skill starts. The tab says how far the grade has got and offers _Stop_. The skill's
+  _Grades_ panel shows each grade: the version it graded, what it ran on, the tests passed, each
+  side's pass rate and the difference the skill made. Each version in its history shows its
+  newest grade. Grades are kept in the project beside its skill runs, so the team sees them, and
+  a run a grade started says so. `purlis skill grade` prints the same plan and the grades.
 
 - **A large library stays reachable without flooding a chat** (Skill studio preview, #2778).
   Once a chat's skills are past purlis's skill budget, it is handed the skills you pinned,
@@ -101,6 +122,11 @@
   `-p <persona>`, and the router never hides it. The Skill studio and `purlis skill list` say
   which skills are pinned and why any other is hidden, and _Use skill…_ marks the hidden ones,
   says how many are in the index skill, and still starts them for you.
+- **Pin and unpin a skill in the Skill studio** (Skill studio preview, #3232). Each skill's row
+  in the studio for a workspace's chats or a persona's has a _Pinned_ switch, one commit each
+  way. A skill's tab lists every workspace and persona that pins it, each with _Unpin_. Where a
+  chat's pinned skills alone are past the budget, its Skills chip and _Use skill…_ name the
+  studio to unpin them in, such as _Skill studio · ops_.
 
 ### Fixed
 
@@ -123,3 +149,8 @@
   skills folder purlis can't read whole leaves out all of the project's skills. The chat's tab
   now names each skill it starts without because of its repo, and why. The Skill studio and
   `purlis skill list` list them under each program.
+- **A repo skill named like a built-in one is said, not hidden** (Skill studio preview, #3027).
+  A clone's own `secrets` skill is loaded by Claude Code and Codex beside purlis's built-in
+  `secrets`, and a chat may use the repo's. The Skill studio used to call the repo's copy
+  hidden. It now marks the built-in skill with the clash, the repo's row warns that its name
+  is a built-in one's, and a chat started in that repo says so on its tab.

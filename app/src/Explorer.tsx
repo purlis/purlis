@@ -6,6 +6,7 @@ import { NamedNotRead } from "./ExplorerRefused";
 import { Notice } from "./Notice";
 import {
   useEffect,
+  useContext,
   useId,
   useMemo,
   useRef,
@@ -64,6 +65,8 @@ import { touchingIn, touchSaid, useTouching, type Touching } from "./touching";
 import { Button, ToggleButton } from "./ui/button/Button";
 import { TextField } from "./ui/field/Field";
 import { PanelSectionTitle } from "./ui/panel/Panel";
+import { Count } from "./ui/badge/Badge";
+import { HeadActions } from "./viewHead";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -234,6 +237,7 @@ export function Explorer({
   part = "whole",
   onAddToChat,
   onGoToWorkspace,
+  reveal,
 }: {
   /** The project, for reading a branch's folders. Without one no folder is read. */
   plane?: PlaneId;
@@ -274,6 +278,12 @@ export function Explorer({
   /** A workspace's repo was pressed in the plane root's files (issue 1916, ruling F2): that
    *  workspace's tab is selected on the strip. */
   onGoToWorkspace?: (workspace: string) => void;
+  /**
+   * **A folder of the project's own files to bring into view** (#3266, the Skills view's Show in
+   * Explorer), at the plane root: each time `asked` moves, the folders above it are opened and
+   * the keyboard lands on its row once it is drawn. Elsewhere Explorer draws no plane files.
+   */
+  reveal?: { folder: string; asked: number };
 }) {
   const has = (section: SectionId) => PART_SECTIONS[part].includes(section);
   /** Whether this draws the plane root's files (issue 1916): the strip is on the plane root,
@@ -504,6 +514,42 @@ export function Explorer({
     // Only when the cockpit comes or goes; what it draws is read as it is then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cockpitKey, workspace]);
+
+  // **Show in Explorer** (#3266): on each ask, the folders above the one asked for are opened
+  // (as React has state follow a prop, while drawing), then its row is given the keyboard as soon
+  // as it is drawn: a folder is read as it opens.
+  const [revealSeen, setRevealSeen] = useState(reveal?.asked);
+  const [revealing, setRevealing] = useState<string>();
+  /** The ask whose row has had the keyboard: each ask lands once. */
+  const revealed = useRef(reveal?.asked);
+  if (reveal !== undefined && atRoot && reveal.asked !== revealSeen) {
+    setRevealSeen(reveal.asked);
+    const parts = reveal.folder.split("/").filter((part) => part !== "");
+    const top = { repo: PLANE_ROOT.repo, piece: PLANE_ROOT.piece };
+    const above = parts.slice(0, -1).map((_, at) => parts.slice(0, at + 1).join("/"));
+    setExpanded((was) => {
+      const now = new Set(was);
+      for (const folder of above) now.add(fileFold(PLANE_ROOT.workspace, { ...top, folder }));
+      return now;
+    });
+    setRevealing(fileRow({ ...top, folder: parts.join("/") }));
+  }
+  useEffect(() => {
+    const wanted = revealing;
+    if (wanted === undefined || revealed.current === revealSeen) return;
+    // A folded *Files* section draws none of its rows: it is opened first.
+    if (closed.has("files")) {
+      setSectionOpen("files", true, plane);
+      return;
+    }
+    const row = [...(navRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])].find(
+      (el) => el.dataset.row === wanted,
+    );
+    if (row === undefined) return;
+    revealed.current = revealSeen;
+    row.scrollIntoView?.({ block: "nearest" });
+    row.focus();
+  });
 
   /** Steps back out of the cockpit to the whole workspace. */
   const leave = () => onFocus?.(undefined);
@@ -1213,17 +1259,21 @@ function Section({
   closed: boolean;
   /** The project whose sections these are: a fold is kept for it (B-11). */
   project: string | undefined;
-  /** A view's own title rather than a fold (#1737): the Repos view's, in the Panel. */
+  /** A view's own title rather than a fold (#1737): the Repos view's, in the Panel. Its region's
+   *  head is that title where there is one (#3330), so it draws none of its own there. */
   bare?: boolean;
   children: ReactNode;
 }) {
   const body = useId();
+  const headed = useContext(HeadActions) !== undefined;
   if (bare) {
     return (
       <div className="explorer-section" data-section={id}>
-        <PanelSectionTitle className="explorer-section-head" mark={FolderGit2}>
-          {title}
-        </PanelSectionTitle>
+        {!headed && (
+          <PanelSectionTitle className="explorer-section-head" mark={FolderGit2}>
+            {title}
+          </PanelSectionTitle>
+        )}
         <div id={body} className="explorer-section-body">
           {children}
         </div>
@@ -1341,12 +1391,8 @@ function PieceCount({ pieces, refused }: { pieces?: readonly unknown[]; refused?
     );
   if (pieces === undefined) return <span className="piece-count pending ui-text-meta">…</span>;
   return (
-    <span
-      className="piece-count ui-text-meta ui-text-strong"
-      aria-label={`${pieces.length} branches`}
-    >
-      {pieces.length}
-    </span>
+    // Its number is the row's name's last word, as it always was: the tree row says the rest.
+    <Count className="piece-count">{pieces.length}</Count>
   );
 }
 

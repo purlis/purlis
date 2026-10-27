@@ -631,7 +631,7 @@ describe("a chat the project's instructions changed under", () => {
     render(<App />);
     await screen.findByRole("button", { name: /Start chat one fresh/ });
     await userEvent.click(screen.getByRole("button", { name: "Split right" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
     await waitFor(() =>
       expect(screen.getAllByTestId("pane").map((p) => p.textContent)).toEqual([
         "session 1",

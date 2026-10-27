@@ -1485,7 +1485,8 @@ fn every_import_is_drawn_through_the_consent_floors() {
     let ember = drawn(&ember);
     let shown = draw(ember.first());
     let held = shown.held.expect("the floors hold");
-    assert_eq!(held.floors, [Floor::DangerApart]);
+    // Its warm accent is near purlis's waiting amber too (#3130).
+    assert_eq!(held.floors, [Floor::DangerApart, Floor::WaitingApart]);
     assert_eq!(
         shown.theme.expect("drawn").value("accent.base"),
         built_in_for(Appearance::Dark).value("accent.base")

@@ -57,21 +57,20 @@
  * size Tailwind no longer has, a corner it keeps of its own (`rounded-2xl`), and a value of a
  * class's own (`p-[7px]`, `text-[13px]`).
  *
- * **Each kind of control is one class, in `components`** (#1834). `primitives/controls.css` draws the
- * button, field, select, checkbox, radio, switch, segmented control and menu from the tokens
- * alone, in the layer above `App.css`, so a view rule that reaches a classed control cannot
- * redraw it and the window's focus floor does not pull its ring inside. A view still places a
- * control; `docs/ui-primitives.md` lists the classes.
- *
- * **A component family draws itself from its wrapper's attributes** (#2904). `ui/<family>/` holds
- * each family's one wrapper over its React Aria primitive and its stylesheet, keyed on
- * `data-scope`, `data-part`, `data-variant` and React Aria's state attributes, in the same layer
- * as the control classes it replaces; `docs/ui-primitives.md` lists the families.
+ * **Every control is a component family, in `components`** (#1834, #2904, #3294). `ui/<family>/`
+ * holds each family's one wrapper over its React Aria primitive and its stylesheet, keyed on
+ * `data-scope`, `data-part`, `data-variant` and React Aria's state attributes, from the tokens
+ * alone, in the layer above `App.css`, so a view rule that reaches a control cannot redraw it
+ * and the window's focus floor does not pull its ring inside. A view still places a control;
+ * `docs/ui-primitives.md` lists the families. They replaced one stylesheet of control classes,
+ * which is gone. A family whose stylesheet needs a place of its own is imported by name below;
+ * every other one takes the `@families` line's place, by name, as the window is built
+ * (`ui/stylesheets.ts`), so a new family adds no line here.
  *
  * **What the window draws over itself is one surface** (#1845). `primitives/overlays.css`, after
- * the controls in the same layer, gives a dialog, a popover, a menu and a tooltip one ground,
- * border, corner and elevation, and the scrim behind a modal question; a view only places and
- * sizes its overlay.
+ * the control families in the same layer, gives a dialog, a popover, a menu and a tooltip one
+ * ground, border, corner and elevation, and the scrim behind a modal question; a view only places
+ * and sizes its overlay.
  *
  * **A theme's component parts are drawn over the controls** (#2903). The engine writes one
  * stylesheet for the parts a theme sets (`purlis_core::theme::parts`), which `theme.ts` puts in
@@ -108,7 +107,6 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./App.css" layer(charter);
 @import "./primitives/collections.css" layer(components);
-@import "./primitives/controls.css" layer(components);
 @import "./ui/button/button.css" layer(components);
 @import "./ui/field/field.css" layer(components);
 @import "./ui/select/select.css" layer(components);
@@ -117,6 +115,10 @@
 @import "./ui/empty-state/empty-state.css" layer(components);
 @import "./ui/status/status.css" layer(components);
 @import "./ui/harness-icon/harness-icon.css" layer(components);
+@import "./ui/card/card.css" layer(components);
+@import "./ui/notice/notice.css" layer(components);
+@import "./ui/badge/badge.css" layer(components);
+@import "./ui/separator/separator.css" layer(components);
 @import "./ui/dialog/dialog.css" layer(components);
 @import "./ui/tabs/tabs.css" layer(components);
 @import "./ui/rail/rail.css" layer(components);
@@ -127,8 +129,10 @@
 @import "./ui/popover/popover.css" layer(components);
 @import "./ui/menu/menu.css" layer(components);
 @import "./ui/list/list.css" layer(components);
+/* @families: every other src/ui/<family>/<family>.css, by name */
 /* A chat's pane places the families inside it: the band, the header, the terminal (#3142). */
 @import "./paneFrame.css" layer(components);
+@import "./ui/tree/tree.css" layer(components);
 @import "./primitives/text.css" layer(components);
 @import "./theme/forced-colors.css" layer(forced);
 

@@ -20,6 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { builtStyles } from "../ui/stylesheets";
 import { GEOMETRY_PROPERTIES } from "./geometry";
 import { LITERALS, dataUrls, mixesNoColourOfItsOwn } from "./literal";
 import { MOTION_TOKENS, motionProperty } from "./motion";
@@ -389,7 +390,10 @@ describe("the stylesheet and the vocabulary agree", () => {
   /** Every stylesheet of the window's own that `styles.css` imports, outside `theme/`: App.css,
    *  the control baseline and each primitive's sheet (ADR 0094). A new sheet is read here by
    *  being imported, so none can draw outside this check. */
-  const ownSheets = [...bridge.matchAll(/@import "\.\/([^"]+\.css)"/g)]
+  // As the window is built from it: a family the `@families` line brings in is read too.
+  const ownSheets = [
+    ...builtStyles(join(process.cwd(), "src")).matchAll(/@import "\.\/([^"]+\.css)"/g),
+  ]
     .map((hit) => hit[1])
     .filter((path) => !path.startsWith("theme/"));
   const css = ownSheets.map((path) => nonEmpty(`src/${path}`)).join("\n");
@@ -446,6 +450,8 @@ describe("the stylesheet and the vocabulary agree", () => {
    * - `--dialog-height`: the height a dialog of the family is given by its call site
    *   (`ui/dialog/Dialog.tsx`, `height`, #2910), at most the window's less 48 px. It differs from
    *   dialog to dialog.
+   * - `--tree-depth`: how deep a tree's row is, its level less one (`ui/tree/Tree.tsx`, #2911),
+   *   which React Aria knows once it has built the collection. It differs from row to row.
    *
    * Each is here rather than in `TOKENS` because neither is a colour and a theme has no
    * business with either, and neither is in `App.css` because the Rust that decides the number
@@ -453,7 +459,13 @@ describe("the stylesheet and the vocabulary agree", () => {
    * differ. Listed by hand, so that adding one is a decision somebody makes in this file
    * rather than a hole that opens quietly; the test below holds each to being really set.
    */
-  const fromTheWindow = ["--least", "--chip", "--window-controls", "--dialog-height"];
+  const fromTheWindow = [
+    "--least",
+    "--chip",
+    "--window-controls",
+    "--dialog-height",
+    "--tree-depth",
+  ];
 
   /**
    * **What the primitives measure and set** on the content of an overlay they position: a

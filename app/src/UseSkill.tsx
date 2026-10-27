@@ -20,7 +20,12 @@ import { RowBelow, RowDescription, RowLabel } from "./ui/list/Row";
 import { Button } from "./ui/button/Button";
 import { counted } from "./dispatches";
 import { codeSpans } from "./PanelList";
-import { useSkillStudioOn } from "./skillStudio";
+import {
+  scopeOfPinner,
+  SKILL_STUDIO_TITLE,
+  skillStudioTitle,
+  useSkillStudioOn,
+} from "./skillStudio";
 import {
   commands,
   type ChatSkill,
@@ -44,7 +49,7 @@ export function budgetSaid(budget: SkillBudget): string {
 /** The budget in a few words, for a chat tab's menu row: `12 of 30 skills`, and that it is near
  *  or past the budget where it warns. */
 export function budgetShort(budget: SkillBudget): string {
-  const short = `${budget.skills} of ${budget.most_skills} skills`;
+  const short = `${budget.skills} of ${counted(budget.most_skills, "skill", "skills")}`;
   return budget.warns === null ? short : `${short}, near the budget`;
 }
 
@@ -65,10 +70,17 @@ export function warnsSaid(budget: SkillBudget): string | undefined {
   if (budget.still_over === "not-hideable")
     return `purlis's own skills and the ones this chat's program and repos bring are past purlis's skill budget by themselves, so all of them are listed. Turn some of the program's or repos' skills off in the Skill studio.`;
   if (budget.still_over === "pins")
-    return `This chat's pinned skills are past purlis's skill budget, so all of them are listed. Unpin some with \`purlis skill pin <name> -w <workspace> --off\` (or \`-p <persona>\` for a persona's pin), or make some manual-only.`;
+    return `This chat's pinned skills are past purlis's skill budget, so all of them are listed. Unpin some in ${unpinIn(budget)}, or make some manual-only.`;
   if (budget.hidden > 0)
     return `This chat's ${what} past purlis's skill budget, so ${counted(budget.hidden, "skill is", "skills are")} hidden behind the index skill, which the chat loads them from. Make some skills manual-only, or turn some off for this workspace.`;
   return `This chat's ${what} near or past purlis's skill budget, past which some are hidden behind the index skill. Make some skills manual-only, or turn some off for this workspace.`;
+}
+
+/** Where a chat's pins are undone (SK-15d): the studio of each of its workspace and persona that
+ *  pins a skill, by its tab's title, or the studio itself where the window was not told. */
+function unpinIn(budget: SkillBudget): string {
+  const where = budget.pinned_by.map((by) => skillStudioTitle(scopeOfPinner(by)));
+  return where.length === 0 ? SKILL_STUDIO_TITLE : where.join(" or ");
 }
 
 /** What the filter over a chat's skills calls them. */
@@ -97,9 +109,14 @@ export function skillsMatching(skills: readonly ChatSkill[], query: string): Cha
  * A manual-only skill is listed with the others and marked: it runs only when it is asked for by
  * name, which is what this does. It costs nothing in the budget: every chat leaves it out of its
  * listing.
+ *
+ * **Opened on one skill** (`picks`, the Skills view's Use in this chat, #3266), it is that skill
+ * picked as the chat's skills arrive: typed at once where it asks for nothing, its boxes where it
+ * does. One the chat does not have leaves the list, filtered to its name, saying so.
  */
 export function UseSkill({
   chat,
+  picks,
   skills,
   trouble,
   busy,
@@ -108,6 +125,8 @@ export function UseSkill({
 }: {
   /** The chat it types into, as its tab shows it. */
   chat: string;
+  /** The skill it opens on, by name, where one was asked for. */
+  picks?: string;
   /** What the chat has, or `undefined` while it is being read. */
   skills?: ChatSkills;
   /** Why the last pick typed nothing, in the core's sentence. */
@@ -118,15 +137,28 @@ export function UseSkill({
   onUse: (skill: string, values: string[]) => void;
   onCancel: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [picked, setPicked] = useState<ChatSkill>();
-  const [values, setValues] = useState<string[]>([]);
+  const [query, setQuery] = useState(picks ?? "");
+  const named = picks === undefined ? undefined : skills?.skills.find((one) => one.name === picks);
+  const [picked, setPicked] = useState<ChatSkill | undefined>(() =>
+    named?.takes_arguments ? named : undefined,
+  );
+  const [values, setValues] = useState<string[]>(() => (named === undefined ? [] : boxesOf(named)));
   const content = useRef<HTMLDivElement>(null);
   const listId = useId();
   const listed = skills?.skills ?? [];
   const shown = skillsMatching(listed, query);
   const budget = skills?.budget ?? null;
   const warning = budget === null ? undefined : warnsSaid(budget);
+
+  // **The skill it was opened on** (`picks`): drawn picked where it asks for something, typed at
+  // once where it asks for nothing. The window draws this dialog again once the chat's skills are
+  // read (its key), so what it starts with is decided once, from them.
+  const typed = useRef(false);
+  useEffect(() => {
+    if (named === undefined || named.takes_arguments || typed.current) return;
+    typed.current = true;
+    onUse(named.name, []);
+  }, [named, onUse]);
 
   // The first box of whatever is on screen takes the keys: the filter, or the first argument.
   useEffect(() => {
@@ -140,7 +172,7 @@ export function UseSkill({
       return;
     }
     setPicked(skill);
-    setValues(skill.arguments.length > 0 ? skill.arguments.map(() => "") : [""]);
+    setValues(boxesOf(skill));
   };
 
   // **On the dialog family** (#2910): picking a skill that takes arguments asks for them in
@@ -276,8 +308,13 @@ export function UseSkill({
   );
 }
 
+/** The boxes a skill's arguments start in: one empty box per argument, or the one of its hint. */
+function boxesOf(skill: ChatSkill): string[] {
+  return skill.arguments.length > 0 ? skill.arguments.map(() => "") : [""];
+}
+
 /** Opens Use skill… for chat `session`: the one way in, for the catalogue's rows and the chip. */
-export type OpenUseSkill = (session: number) => void;
+export type OpenUseSkill = (session: number, picks?: string) => void;
 
 const Opener = createContext<OpenUseSkill>(() => undefined);
 

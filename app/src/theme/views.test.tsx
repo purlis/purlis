@@ -695,6 +695,8 @@ const ORDINARY: Answers = {
   workspace_saving: REPO_SAVING,
   session_record: RECORD,
   dispatches: { rows: DISPATCHES, undrawn: 1 },
+  // Grade reads its plan on its own, for a grade running already (SK-16).
+  skill_grade_plan: { running: null },
   skill_details: {
     copies: [
       {
@@ -761,6 +763,8 @@ const ORDINARY: Answers = {
     ],
     used_by: ["release"],
     uses_cut: false,
+    pinned_by: [],
+    pins_refused: [],
   },
   // The skill tab's panels, as the core answers them (ADR 0101 §6): the Runs panel's table.
   skill_panels: [
@@ -1000,6 +1004,7 @@ const ORDINARY: Answers = {
         outside: "repo",
         owner: { kind: "repo", name: "api" },
         outcome: "both-load",
+        said: "the repo api has a skill of this name too, and a chat there gets both",
       },
     ],
     harnesses: [

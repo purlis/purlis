@@ -56,6 +56,7 @@ use serde_json::{Map, Value};
 use super::registry::{self, Vault};
 use super::{Ctx, VaultError, keyring};
 use crate::names::KEYCHAIN_IDENTITY_PREFIX;
+use crate::tui::Markup;
 
 /// The keyring service every moved identity item is written under, before its random id. The
 /// `@` cannot begin a vault name ([`registry::name_ok`]), so no vault's own service
@@ -500,7 +501,7 @@ pub fn hold_again_with(
         let _keys = match keyring::lock_keys_named(ctx, vault, keyring::A_WRITE_WAITS) {
             Ok(held) => held,
             Err(e) => {
-                out.failed.push((source.clone(), e.message));
+                out.failed.push((source.clone(), e.message.to_string()));
                 continue;
             }
         };
@@ -520,7 +521,7 @@ pub fn hold_again_with(
             Ok(keyring::Held::ToTheApp) => out.held += 1,
             Ok(_) => out.not_held.push(source.clone()),
             Err(e) if e.kind == super::Kind::WouldAsk => out.would_ask += 1,
-            Err(e) => out.failed.push((source.clone(), e.message)),
+            Err(e) => out.failed.push((source.clone(), e.message.to_string())),
         }
     }
     out
@@ -1221,11 +1222,10 @@ pub(super) fn keep_with(
     let mut stored: Vec<(String, String)> = Vec::new();
     let undo = |stored: &[(String, String)], why: VaultError| {
         if forget_with(store, ctx, stored) > 0 {
-            return VaultError::new(format!(
-                "{} A token purlis had just stored could not be removed again from {}.",
-                why.message,
+            return VaultError::new(why.message.then(Markup::from(format!(
+                " A token purlis had just stored could not be removed again from {}.",
                 keyring::STORE_NAME
-            ));
+            ))));
         }
         why
     };

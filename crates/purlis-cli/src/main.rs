@@ -106,6 +106,23 @@ enum Command {
         /// runner's own pin.
         #[arg(long)]
         pair: bool,
+        /// With --pair, on a cluster runner: pair with the link key the runner's pod made as it
+        /// started, at FILE, rather than make one (#2056).
+        #[arg(long, requires = "pair", value_name = "FILE", hide = true)]
+        key_made_at_start: Option<std::path::PathBuf>,
+        /// On a cluster runner's pod, as it starts and before anything else runs there: make
+        /// the runner's link key at FILE and write its public half to --publish (#2056).
+        #[arg(
+            long,
+            conflicts_with = "pair",
+            requires = "publish",
+            value_name = "FILE",
+            hide = true
+        )]
+        make_key: Option<std::path::PathBuf>,
+        /// With --make-key: where the public half is written, for the cluster to show.
+        #[arg(long, requires = "make_key", value_name = "FILE", hide = true)]
+        publish: Option<std::path::PathBuf>,
     },
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
@@ -472,7 +489,11 @@ enum Command {
     ///
     /// Hidden: nobody types it. Each harness starts it for a chat the app armed.
     #[command(name = "mcp", hide = true)]
-    Mcp,
+    Mcp {
+        /// A grade's chat (SK-16): the tools that only read, and no other.
+        #[arg(long = "graded", hide = true)]
+        graded: bool,
+    },
 
     /// Scan what is staged here as a chat's commit would be scanned: secrets and personal data
     /// in the lines it adds, and what the allowlist lets through. Commits nothing.
@@ -870,8 +891,8 @@ fn serve() -> ExitCode {
 
 /// `purlis bridge`: a runner's pipe to its host's link socket, or its pairing.
 #[cfg(unix)]
-fn bridge(pair: bool) -> ExitCode {
-    match bridge::run(pair) {
+fn bridge(asked: bridge::Asked) -> ExitCode {
+    match bridge::run(asked) {
         Ok(code) => ExitCode::from(code),
         Err(why) => {
             voice::err(why.to_string());
@@ -882,7 +903,7 @@ fn bridge(pair: bool) -> ExitCode {
 
 /// `purlis bridge`: a runner's pipe, on macOS and Linux only.
 #[cfg(not(unix))]
-fn bridge(_pair: bool) -> ExitCode {
+fn bridge() -> ExitCode {
     voice::err("a runner's bridge runs on macOS and Linux only");
     ExitCode::FAILURE
 }
@@ -1068,7 +1089,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         }
         // Its read tools answer and every tool that writes is refused at the call (#1051):
         // `tests/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
-        | Command::Mcp => ReadOnly::RunsAndSays,
+        | Command::Mcp { .. } => ReadOnly::RunsAndSays,
         _ => ReadOnly::Refused,
     }
 }
@@ -3240,7 +3261,7 @@ fn run(command: Command) -> Result<u8, String> {
         | Command::Dispatch { .. }
         | Command::Report(_)
         | Command::ShellGuard { .. }
-        | Command::Mcp
+        | Command::Mcp { .. }
         | Command::GitHook { .. }
         | Command::Scan { .. }
         | Command::Workspace(WorkspaceCommand::Remove { .. })
@@ -4245,8 +4266,31 @@ fn main() -> ExitCode {
         return serve();
     }
     // Needs no project: a runner's bridge to its own host, or its pairing (ADR 0078 §2, §3).
-    if let Command::Bridge { pair } = &cli.command {
-        return bridge(*pair);
+    if let Command::Bridge {
+        pair,
+        key_made_at_start,
+        make_key,
+        publish,
+    } = &cli.command
+    {
+        #[cfg(not(unix))]
+        {
+            let _ = (pair, key_made_at_start, make_key, publish);
+            return bridge();
+        }
+        #[cfg(unix)]
+        let asked = match (make_key, publish) {
+            (Some(handoff), Some(published)) => bridge::Asked::MakeKey {
+                handoff: handoff.clone(),
+                published: published.clone(),
+            },
+            _ if *pair => bridge::Asked::Pair {
+                key_made_at_start: key_made_at_start.clone(),
+            },
+            _ => bridge::Asked::Pipe,
+        };
+        #[cfg(unix)]
+        return bridge(asked);
     }
     // Needs no project: the app that started the chat answers it, from its own record (#1450).
     if let Command::Persona(memory::PersonaCommand::Where { now }) = &cli.command {
@@ -4301,14 +4345,14 @@ fn main() -> ExitCode {
     }
     // After the gate: on a project this purlis cannot write, the server starts, and refuses
     // each tool that writes at its call (#1051).
-    if let Command::Mcp = &cli.command {
+    if let Command::Mcp { graded } = &cli.command {
         // Started by the harness, as a hook is (#1421).
         purlis_core::sandbox::started_by_the_harness();
         // A chat holds this server for its whole life: the config home stays where it is until
         // it ends (`renamelocal::busy::LOCK`, D-RN5-11).
         let _holds = purlis_core::machine::config_root_if_there()
             .and_then(|root| purlis_core::renamelocal::busy::hold_shared(&root));
-        return match mcp::serve() {
+        return match mcp::serve(*graded) {
             Ok(code) => ExitCode::from(code),
             Err(why) => {
                 voice::err(why.to_string());

@@ -1,11 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import {
   commands,
   SKILL_RUNS_PANEL,
+  type SkillLevel,
   type SkillPanel,
   type SkillPanelKey,
   type SkillStats,
@@ -15,6 +16,7 @@ import {
 import type { Offer } from "./actions";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
+import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import { SkillDetailsPanel } from "./SkillDetails";
 import { AnsweredBlocks } from "./Views";
 
@@ -85,45 +87,54 @@ function SkillTotals({ plane, name, changed }: { plane: string; name: string; ch
     <section aria-labelledby="skill-totals-heading" data-testid="skill-totals">
       <h2 id="skill-totals-heading">Totals</h2>
       {GROUPINGS.map(({ key, heading, column, none }) => (
-        <table
+        <Table
           key={key}
-          className="ui-table"
+          caption={heading}
           aria-label={`Runs of ${name}, ${heading.toLowerCase()}`}
           data-testid={`skill-totals-${key}`}
         >
-          <caption>{heading}</caption>
-          <thead>
-            <tr>
-              <th scope="col">{column}</th>
-              <th scope="col">Runs</th>
-              <th scope="col">Tool calls</th>
-              <th scope="col">Errors</th>
-              <th scope="col">Refused</th>
-              <th scope="col">Asks</th>
-              <th scope="col">Tokens</th>
-              <th scope="col">Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats[key].map((row: StatsRow) => (
-              <tr key={`${row.group.kind}:${row.group.kind === "named" ? row.group.name : ""}`}>
-                <th scope="row">{groupSaid(row.group, none)}</th>
-                <td>
-                  {counted(row.runs, "run", "runs")}
-                  {row.ended < row.runs ? `, ${row.ended} ended` : ""}
-                </td>
-                <td>{row.tool_calls}</td>
-                <td>{row.tool_errors}</td>
-                <td>{row.refusals}</td>
-                <td>{row.asks}</td>
-                <td>{row.tokens ?? "Not reported"}</td>
-                <td>{timeSaid(row.ms)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          <TableHeader>
+            <TableColumn isRowHeader>{column}</TableColumn>
+            <TableColumn>Runs</TableColumn>
+            <TableColumn align="end">Tool calls</TableColumn>
+            <TableColumn align="end">Errors</TableColumn>
+            <TableColumn align="end">Refused</TableColumn>
+            <TableColumn align="end">Asks</TableColumn>
+            <TableColumn align="end">Tokens</TableColumn>
+            <TableColumn align="end">Time</TableColumn>
+          </TableHeader>
+          <TableBody>
+            {stats[key].map((row: StatsRow) => {
+              const id = `${row.group.kind}:${row.group.kind === "named" ? row.group.name : ""}`;
+              return (
+                <TableRow key={id} id={id} textValue={groupSaid(row.group, none)}>
+                  <TableCell>{groupSaid(row.group, none)}</TableCell>
+                  <TableCell>
+                    {counted(row.runs, "run", "runs")}
+                    {row.ended < row.runs ? `, ${row.ended} ended` : ""}
+                  </TableCell>
+                  <TableCell align="end">{row.tool_calls}</TableCell>
+                  <TableCell align="end">{row.tool_errors}</TableCell>
+                  <TableCell align="end">{row.refusals}</TableCell>
+                  <TableCell align="end">{row.asks}</TableCell>
+                  <TableCell align="end">{row.tokens ?? "Not reported"}</TableCell>
+                  <TableCell align="end">{timeSaid(row.ms)}</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       ))}
     </section>
+  );
+}
+
+/** Whether two levels are one: the same place, shared or this machine's alike. */
+function sameLevel(a: SkillLevel, b: SkillLevel): boolean {
+  return (
+    a.at === b.at &&
+    a.local === b.local &&
+    ("name" in a ? a.name : null) === ("name" in b ? b.name : null)
   );
 }
 
@@ -155,9 +166,19 @@ export function SkillTab({
 }) {
   const [panels, setPanels] = useState<SkillPanel[]>();
   const [refused, setRefused] = useState<string>();
+  // A grade that ended (SK-16): its scorecard and the history's grade are read again.
+  const [graded, setGraded] = useState(0);
+  const regraded = useCallback(() => setGraded((n) => n + 1), []);
+  // The copy the details show (#3353): the Grades panel is of that copy alone. Until the details
+  // say, the core reads the copy they show first.
+  const [level, setLevel] = useState<SkillLevel | null>(null);
+  const shownCopy = useCallback(
+    (next: SkillLevel) => setLevel((was) => (was !== null && sameLevel(was, next) ? was : next)),
+    [],
+  );
   useEffect(() => {
     let live = true;
-    void commands.skillPanels(plane, name).then((answer) => {
+    void commands.skillPanels(plane, name, level).then((answer) => {
       if (!live) return;
       if (answer.status === "ok") {
         setPanels(answer.data);
@@ -167,12 +188,18 @@ export function SkillTab({
     return () => {
       live = false;
     };
-  }, [plane, name, changed]);
+  }, [plane, name, changed, graded, level]);
 
   return (
     <div className="skill-tab" data-testid="skill-tab">
       {/* No heading with the skill's name: its tab says it (#3147). */}
-      <SkillDetailsPanel plane={plane} name={name} changed={changed} />
+      <SkillDetailsPanel
+        plane={plane}
+        name={name}
+        changed={changed + graded}
+        onGraded={regraded}
+        onCopy={shownCopy}
+      />
       <SkillTotals plane={plane} name={name} changed={changed} />
       {refused !== undefined ? (
         <EmptyState

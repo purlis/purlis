@@ -215,8 +215,14 @@ impl Report {
                 // One bit of the prompt, and only on the event that carries one: whether the
                 // person typed `/smart-close` (#1332). The prompt never leaves the hook.
                 smart_close: event == Event::UserPromptSubmit
-                    && field("prompt")
-                        .is_some_and(|prompt| crate::state::smart_close_typed(&prompt)),
+                    && field("prompt").is_some_and(|prompt| {
+                        crate::state::smart_close_typed(
+                            &prompt,
+                            chat_harness(env)
+                                .as_deref()
+                                .and_then(crate::harness::Harness::of_registry_or_kind),
+                        )
+                    }),
                 unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
                 // Only a `Stop` of the chat's own can end its turn, so only there is it asked.
                 helpers_at_work: event == Event::Stop
@@ -237,14 +243,14 @@ impl Report {
                     .then(|| field("model"))
                     .flatten()
                     .and_then(|model| crate::state::Model::new(&model)),
-                // Which line starts the prompt holds, as digests and never its words: how a
-                // skill Use skill… typed is known to be in it (#2775).
-                prompt_marks: if event == Event::UserPromptSubmit {
-                    field("prompt")
-                        .map(|prompt| crate::skillspan::PromptMarks::of(&prompt))
-                        .unwrap_or_default()
-                } else {
-                    crate::skillspan::PromptMarks::default()
+                // What the prompt holds, as digests salted by the chat and never its words: how
+                // a skill Use skill… typed (#2775) or a curation action's prompt (#2783) is
+                // known to be in it, marked only as far as the chat's harness needs (#3029).
+                prompt_marks: match event {
+                    Event::UserPromptSubmit => field("prompt")
+                        .map(|prompt| prompt_marks(&prompt, env))
+                        .unwrap_or_default(),
+                    _ => crate::skillspan::PromptMarks::default(),
                 },
             },
         })
@@ -256,6 +262,29 @@ impl Report {
         let mut kept = self.clone();
         kept.detail.prompt_marks = crate::skillspan::PromptMarks::default();
         kept
+    }
+}
+
+/// **What a hook marks of the prompt the person sent** (SK-38, #3029), under the chat's salt
+/// ([`crate::skillspan::PromptSalt`]): every stretch of its lines where the chat's harness
+/// confirms a typed skill by the prompt (Codex, opencode), and only its lead where the harness
+/// names the skill a prompt started (Claude Code), as a curation action's prompt is known by its
+/// lead on every harness; a first line of six words or fewer is its own lead, and so is
+/// digested whole ([`crate::skillspan::PromptMarks::lead_of`]). Nothing outside a chat that has an id, or on a
+/// harness purlis does not know. The salt separates chats and hides nothing (#3369).
+fn prompt_marks(
+    prompt: &str,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> crate::skillspan::PromptMarks {
+    use crate::skillspan::{Confirmed, PromptMarks, PromptSalt};
+    let harness = crate::harness::Harness::of_chat(chat_harness(env).as_deref());
+    match (
+        PromptSalt::read(env),
+        harness.map(crate::harness::Harness::typed_start),
+    ) {
+        (Some(salt), Some(Confirmed::ByPrompt)) => PromptMarks::of(prompt, &salt),
+        (Some(salt), Some(Confirmed::ByName)) => PromptMarks::lead_of(prompt, &salt),
+        _ => PromptMarks::default(),
     }
 }
 
@@ -814,6 +843,11 @@ impl ChatTokens {
     }
 
     /// Forgets `chat`'s token: a line for it is dropped from now on.
+    /// **Whether chat `chat`'s token is held**: it has started and not been forgotten (#2050).
+    pub fn holds(&self, chat: u32) -> bool {
+        self.held().contains_key(&chat)
+    }
+
     pub fn forget(&self, chat: u32) {
         self.unrecorded_forgotten(chat);
         self.held().remove(&chat);
@@ -1414,6 +1448,11 @@ pub struct BrowseAsk {
     /// The act's own id: a retry with the same id answers again and acts on nothing.
     pub call_id: String,
     pub asked: Browsing,
+    /// **It waited for the window** (#2050): a runner's host kept it while its desktop was away
+    /// and hands it on now. A login that waited is asked of the person afresh, never performed
+    /// on an answer they gave before. Set by the host alone: a hook line's own is cleared.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub waited: bool,
 }
 
 /// What a chat asks of its browsers ([`BrowseAsk`]).
@@ -4812,6 +4851,29 @@ mod tests {
     }
 
     #[test]
+    fn opencode_s_own_name_for_smart_close_is_heard_in_an_opencode_chat_alone() {
+        // opencode knows purlis's built-in skills as `purlis-<name>`; nowhere else is that name
+        // purlis's, so a skill named so in another chat is its own.
+        let heard = |harness: Option<&str>| {
+            let mut pairs = vec![(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")];
+            pairs.extend(harness.map(|harness| (HARNESS_ENV, harness)));
+            let env = env_of(&pairs);
+            Report::read(
+                Event::UserPromptSubmit,
+                &prompt_payload("/purlis-smart-close"),
+                &env,
+            )
+            .expect("a report")
+            .detail
+            .smart_close
+        };
+        assert!(heard(Some("opencode")));
+        assert!(!heard(Some("claude")));
+        assert!(!heard(Some("codex")));
+        assert!(!heard(None));
+    }
+
+    #[test]
     fn a_typed_smart_close_is_one_bit_of_the_prompt_and_the_prompt_goes_nowhere() {
         let env = env_of(&[(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")]);
         for typed in [
@@ -7697,6 +7759,7 @@ mod tests {
                 command: vec!["kubectl".to_owned(), "get".to_owned(), "pods".to_owned()],
                 ..Default::default()
             },
+            ..Default::default()
         };
         let line = line_with(Some(&ChatToken::from("t")), &ask).unwrap();
         let (read, token) = read_line(std::str::from_utf8(&line).unwrap()).expect("a line");
@@ -9472,3 +9535,7 @@ mod tests {
 #[cfg(all(test, unix))]
 #[path = "hookwire/delivery_tests.rs"]
 mod delivery_tests;
+
+#[cfg(test)]
+#[path = "hookwire/prompt_marks_tests.rs"]
+mod prompt_marks_tests;

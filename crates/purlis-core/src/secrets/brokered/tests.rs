@@ -266,7 +266,7 @@ fn a_chats_command_gets_its_personas_secret_and_never_the_value_back() {
 
 /// D-PE-ruling-2: a chat cannot have a declared tool, or an approved server's exact line, run
 /// its own code beside the credential through a variable that makes a program load code: the
-/// run starts without each, and keeps the chat's other variables.
+/// run starts without each, and keeps the chat's language.
 #[test]
 fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
     let project = project();
@@ -274,7 +274,7 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
         project.path(),
         "team",
         sh(
-            r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$GCONV_PATH][$LOCPATH][$GIO_EXTRA_MODULES][$GTK_MODULES][$KEPT]""#,
+            r#"echo "[$NODE_OPTIONS][$DYLD_INSERT_LIBRARIES][$LD_PRELOAD][$PYTHONPATH][$GCONV_PATH][$LOCPATH][$GIO_EXTRA_MODULES][$GTK_MODULES][$LANG]""#,
         ),
     );
     want.env = vec!["X=TOKEN".into()];
@@ -287,13 +287,171 @@ fn a_run_starts_without_the_chats_variables_that_make_a_program_load_code() {
         ("LOCPATH", "/work/locale"),
         ("GIO_EXTRA_MODULES", "/work/gio"),
         ("GTK_MODULES", "mine"),
-        ("KEPT", "kept"),
+        ("LANG", "kept"),
     ] {
         want.environment.push((name.into(), value.into()));
     }
     let frames = served(&asker(project.path(), Some("devops")), want);
     assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
     assert_eq!(stdout(&frames), "[][][][][][][][][kept]\n");
+}
+
+/// #2047: a brokered tool runs with an environment of its own. Of the chat's variables it keeps
+/// only the language, the terminal and the like: no home or settings folder, no file of
+/// settings and no program a chat names reaches the tool, and its `HOME` and `XDG_*` folders
+/// are in the run's own temp folder.
+#[test]
+fn a_tool_runs_with_an_environment_of_its_own() {
+    let project = project();
+    // The chat's home and settings folders, which the run sets again in its own temp folder.
+    let homes = [
+        ("HOME", "/work"),
+        ("XDG_CONFIG_HOME", "/work/.config"),
+        ("XDG_DATA_HOME", "/work/.data"),
+    ];
+    let chats = [
+        ("GIT_CONFIG_GLOBAL", "/work/gitconfig"),
+        ("GIT_CONFIG_COUNT", "1"),
+        ("GIT_SSH_COMMAND", "/work/ssh"),
+        ("AWS_CONFIG_FILE", "/work/aws"),
+        ("KUBECONFIG", "/work/kube"),
+        ("PAGER", "/work/pager"),
+        ("EDITOR", "/work/editor"),
+        ("GOTRACEBACK", "crash"),
+        ("ANYTHING_ELSE", "chats"),
+    ];
+    let script = chats
+        .iter()
+        .map(|(name, _)| format!("[${{{name}:-}}]"))
+        .collect::<String>();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(&format!(
+            r#"echo "{script}"; echo "[$LANG][$LC_ALL][$TERM][$TZ]"; case "$HOME" in "$TMPDIR") echo home ;; esac; case "$XDG_CONFIG_HOME" in "$TMPDIR"/*) echo config ;; esac; case "$XDG_DATA_HOME" in "$TMPDIR"/*) echo data ;; esac; test -n "$X" && echo handed"#
+        )),
+    );
+    want.env = vec!["X=TOKEN".into()];
+    for (name, value) in homes.into_iter().chain(chats) {
+        want.environment.push((name.into(), value.into()));
+    }
+    for (name, value) in [
+        ("LANG", "en_GB.UTF-8"),
+        ("LC_ALL", "C"),
+        ("TERM", "xterm"),
+        ("TZ", "UTC"),
+    ] {
+        want.environment.push((name.into(), value.into()));
+    }
+    let frames = served(&asker(project.path(), Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(
+        stdout(&frames),
+        format!(
+            "{}\n[en_GB.UTF-8][C][xterm][UTC]\nhome\nconfig\ndata\nhanded\n",
+            "[]".repeat(chats.len())
+        )
+    );
+}
+
+/// #2047: an approved credentialed server's line starts from what every brokered run does and
+/// the variables its approved entry sets. A variable the chat sets that names a package
+/// manager's settings, the interpreter a launcher picks or git's global settings never reaches
+/// it, and its home is the run's own.
+#[test]
+fn an_approved_servers_run_starts_from_its_entrys_variables_and_no_other_of_the_chats() {
+    let project = project();
+    let root = project.path();
+    let persona = root.join("personas/devops");
+    std::fs::create_dir_all(&persona).unwrap();
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nname: devops\nvault: team\ndelegate-when: deploys\n---\n# devops\n",
+    )
+    .unwrap();
+    let risky = [
+        ("npm_config_userconfig", "/work/npmrc"),
+        ("NPM_CONFIG_USERCONFIG", "/work/npmrc"),
+        ("PIP_CONFIG_FILE", "/work/pip.conf"),
+        ("UV_PYTHON", "/work/python"),
+        ("UV_INDEX_URL", "https://index.example.com"),
+        ("GIT_CONFIG_GLOBAL", "/work/gitconfig"),
+    ];
+    let script = risky
+        .iter()
+        .map(|(name, _)| format!("[${{{name}:-}}]"))
+        .collect::<String>()
+        + r#"[$SERVER_URL]"; case "$HOME" in "$TMPDIR") echo home ;; esac"#;
+    let script = format!("echo \"{script}");
+    let entry = serde_json::json!({
+        "type": "stdio",
+        "command": "/bin/sh",
+        "args": ["-c", script],
+        "env": {"SERVER_URL": "https://server.example.com"},
+        "secrets": {"X": "TOKEN"},
+    });
+    std::fs::write(
+        persona.join("mcp.json"),
+        serde_json::json!({"mcpServers": {"server": entry}}).to_string(),
+    )
+    .unwrap();
+    let fingerprint =
+        crate::personaverbs::mcp::fingerprint(Some("team"), &entry).expect("it needs consent");
+    crate::personaverbs::mcp::approve(
+        root,
+        &crate::personaverbs::state_dir(root),
+        "devops",
+        &[fingerprint],
+    )
+    .unwrap();
+    let mut want = wanted(root, "team", sh(&script));
+    want.env = vec!["X=TOKEN".into()];
+    want.environment
+        .push(("SERVER_URL".into(), "https://server.example.com".into()));
+    want.environment.push(("HOME".into(), "/work".into()));
+    for (name, value) in risky {
+        want.environment.push((name.into(), value.into()));
+    }
+    let frames = served_as_asked(&asker(root, Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(
+        stdout(&frames),
+        format!(
+            "{}[https://server.example.com]\nhome\n",
+            "[]".repeat(risky.len())
+        )
+    );
+}
+
+/// #2047: a brokered tool's process keeps no core dump, which would hold its values. This
+/// covers the run's own limit (`no_core_files`, from #3405). It can go red only where each test
+/// has a process of its own, as under nextest on CI: under plain `cargo test` another test's
+/// run in the same process may have lowered the limit already, which can only make it pass.
+#[cfg(unix)]
+#[test]
+fn a_tools_run_keeps_no_core_dump() {
+    use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
+    // The app's own soft limit as high as it may go, so the run's is lowered, not inherited.
+    // Where the hard limit is nothing already, no process here can write a core file, and there
+    // is nothing for this to show.
+    let given = getrlimit(Resource::Core);
+    if given.maximum == Some(0) {
+        return;
+    }
+    let _ = setrlimit(
+        Resource::Core,
+        Rlimit {
+            current: given.maximum,
+            maximum: given.maximum,
+        },
+    );
+    let project = project();
+    let mut want = wanted(project.path(), "team", sh("ulimit -c"));
+    want.env = vec!["X=TOKEN".into()];
+    let frames = served(&asker(project.path(), Some("devops")), want);
+    let _ = setrlimit(Resource::Core, given);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "0\n");
 }
 
 /// #1667 with #1350: a run's ssh signs with the chat's own agent. The run hands the chat's
@@ -311,8 +469,8 @@ fn a_run_hands_the_chats_ssh_agent_on_as_it_is() {
     assert_eq!(stdout(&frames), "[/agents/chat-7.sock]\n");
 }
 
-/// #1407 review: a variable that is not UTF-8 (a path in another encoding) is handed on as its
-/// bytes, where it used to be dropped without a word.
+/// #1407 review: a variable that is not UTF-8 (a locale's name in another encoding) is handed
+/// on as its bytes, where it used to be dropped without a word.
 #[cfg(unix)]
 #[test]
 fn a_variable_that_is_not_utf8_reaches_the_child_as_its_bytes() {
@@ -321,11 +479,13 @@ fn a_variable_that_is_not_utf8_reaches_the_child_as_its_bytes() {
     let mut want = wanted(
         project.path(),
         "team",
-        sh(r#"printf '%s' "$RAW" | od -An -tx1 | tr -d ' \n'"#),
+        sh(r#"printf '%s' "$LC_CTYPE" | od -An -tx1 | tr -d ' \n'"#),
     );
     want.env = vec!["X=TOKEN".into()];
-    want.environment
-        .push(("RAW".into(), OsString::from_vec(vec![b'a', 0xff, b'b'])));
+    want.environment.push((
+        "LC_CTYPE".into(),
+        OsString::from_vec(vec![b'a', 0xff, b'b']),
+    ));
     let line = serde_json::to_string(&want).unwrap();
     let want: Wanted = serde_json::from_str(&line).unwrap();
     let frames = served(&asker(project.path(), Some("devops")), want);
@@ -2725,6 +2885,7 @@ fn served_recorded(asker: &Asker, wanted: Wanted) -> (Vec<Frame>, Vec<RunBlocked
     serve_recorded(
         &asker,
         wanted,
+        None,
         reader,
         Box::new(wire.clone()),
         Wrap::Unwrapped,
@@ -4391,4 +4552,206 @@ fn under_a_service_a_brokered_run_is_logged_by_its_program_and_never_its_vault()
         "the program is said: {logged}"
     );
     assert!(!logged.contains("team"), "the vault was logged: {logged}");
+}
+
+// ----------------------------------------------------------------------------------------
+// A runner's host: a declared tool run on the values its desktop handed (#2047)
+
+/// A runner's project: no vault and no registry, only the chat's folder `work`.
+fn a_runners_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join("work")).unwrap();
+    tmp
+}
+
+/// The values a runner's desktop sent for a run of `KUBECONFIG`.
+fn kubeconfig_handed() -> Handed {
+    Handed::of(
+        7,
+        "sh",
+        "a-run",
+        [("KUBECONFIG".to_owned(), KUBECONFIG.to_owned())],
+    )
+}
+
+/// Every frame a runner's host wrote for `wanted`, run unwrapped on `handed`, the values its
+/// desktop sent for that one run, as the tool `asker`'s start armed; the asker's connection held
+/// open until the run is done, or gone from the start where `gone`.
+fn served_handed_to(asker: &Asker, wanted: Wanted, handed: Handed, gone: bool) -> Vec<Frame> {
+    let (asker, wanted) = as_tool(asker.clone(), wanted);
+    let (reader, _keep) = held_open();
+    let reader = if gone {
+        Box::new(std::io::Cursor::new(Vec::new())) as Box<dyn BufRead + Send>
+    } else {
+        reader
+    };
+    let wire = Wire::default();
+    serve_handed_wrapped(
+        &asker,
+        wanted,
+        handed,
+        reader,
+        Box::new(wire.clone()),
+        Wrap::Unwrapped,
+    );
+    let bytes = wire.0.lock().unwrap().clone();
+    String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("every line is a frame"))
+        .collect()
+}
+
+fn served_handed(asker: &Asker, wanted: Wanted, handed: Handed) -> Vec<Frame> {
+    served_handed_to(asker, wanted, handed, false)
+}
+
+/// Every file under `dir`, read whole, that holds `value`.
+fn files_holding(dir: &Path, value: &str) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(files_holding(&path, value));
+        } else if std::fs::read(&path)
+            .is_ok_and(|bytes| String::from_utf8_lossy(&bytes).contains(value))
+        {
+            found.push(path);
+        }
+    }
+    found
+}
+
+/// Nothing of the value is left where the run was: in the project, in the run's temporary
+/// folder `tmp`, in its credential file, or in any frame.
+fn nothing_left(project: &Path, tmp: Option<&Path>, frames: &[Frame]) {
+    assert_eq!(
+        files_holding(project, "k8s-s3cret"),
+        Vec::<PathBuf>::new(),
+        "no value is left in the project"
+    );
+    if let Some(tmp) = tmp {
+        assert!(
+            !tmp.exists(),
+            "its temporary folder {} went with it",
+            tmp.display()
+        );
+    }
+    let wire = serde_json::to_string(frames).unwrap();
+    assert!(!wire.contains("k8s-s3cret"), "{wire}");
+    assert!(!wire.contains(&b64(KUBECONFIG.as_bytes())), "{wire}");
+}
+
+#[test]
+fn a_runners_host_runs_a_declared_tool_on_the_values_its_desktop_handed_and_keeps_none() {
+    let project = a_runners_project();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(
+            r#"echo "$KUBECONFIG"; echo "$TMPDIR"; cat "$KUBECONFIG" > "$TMPDIR/copy"; cat "$KUBECONFIG"; cat "$KUBECONFIG" >&2"#,
+        ),
+    );
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+
+    let frames = served_handed(
+        &asker(project.path(), Some("devops")),
+        want,
+        kubeconfig_handed(),
+    );
+
+    assert_eq!(frames.first(), Some(&Frame::Started), "{frames:?}");
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    let out = stdout(&frames);
+    let mut lines = out.lines();
+    let file = PathBuf::from(lines.next().unwrap());
+    let tmp = PathBuf::from(lines.next().unwrap());
+    assert!(out.contains("***"), "the value is masked on stdout: {out}");
+    assert!(stderr(&frames).contains("***"), "and on stderr");
+    assert!(!file.exists(), "its file went with the run");
+    nothing_left(project.path(), Some(&tmp), &frames);
+}
+
+#[test]
+fn a_runners_run_that_fails_keeps_none_of_its_values() {
+    let project = a_runners_project();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"echo "$TMPDIR"; cat "$KUBECONFIG" > "$TMPDIR/copy"; exit 3"#),
+    );
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+
+    let frames = served_handed(
+        &asker(project.path(), Some("devops")),
+        want,
+        kubeconfig_handed(),
+    );
+
+    assert_eq!(frames.last(), Some(&Frame::Exit(3)), "{frames:?}");
+    let tmp = PathBuf::from(stdout(&frames).lines().next().unwrap().to_owned());
+    nothing_left(project.path(), Some(&tmp), &frames);
+}
+
+#[test]
+fn a_runners_run_stopped_as_its_asker_goes_keeps_none_of_its_values() {
+    let project = a_runners_project();
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"cat "$KUBECONFIG" > "$TMPDIR/copy"; sleep 30"#),
+    );
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+    let began = std::time::Instant::now();
+
+    let frames = served_handed_to(
+        &asker(project.path(), Some("devops")),
+        want,
+        kubeconfig_handed(),
+        true,
+    );
+
+    assert!(began.elapsed() < Duration::from_secs(10), "it was stopped");
+    assert!(
+        matches!(frames.last(), Some(Frame::Exit(code)) if *code != 0),
+        "{frames:?}"
+    );
+    nothing_left(project.path(), None, &frames);
+}
+
+#[test]
+fn a_runners_run_logs_none_of_its_values() {
+    let project = a_runners_project();
+    let mut want = wanted(project.path(), "team", sh("true"));
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+    let asker = asker(project.path(), Some("devops"));
+
+    let logged = logged_as_a_service(|| {
+        served_handed(&asker, want.clone(), kubeconfig_handed());
+    });
+
+    assert!(logged.contains("ran"), "the run is logged: {logged}");
+    assert!(!logged.contains("k8s-s3cret"), "{logged}");
+    assert!(!logged.contains("team"), "nor the vault: {logged}");
+}
+
+#[test]
+fn the_values_sent_for_a_run_say_their_keys_alone() {
+    let handed = kubeconfig_handed();
+    let said = format!("{handed:?}");
+    assert!(said.contains("KUBECONFIG"), "{said}");
+    assert!(!said.contains("k8s-s3cret"), "{said}");
+    let line = serde_json::to_string(&handed).unwrap();
+    let back: Handed = serde_json::from_str(&line).unwrap();
+    assert_eq!(back, handed, "crosses the link whole");
+    assert!(back.is_for(7, "sh", "a-run"));
+    assert!(
+        !back.is_for(7, "sh", "another-run"),
+        "never for another run"
+    );
+    assert!(!back.is_for(8, "sh", "a-run"), "nor another chat's");
+    assert!(!back.is_for(7, "kubectl", "a-run"), "nor another tool's");
 }

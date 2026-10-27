@@ -256,6 +256,16 @@ pub const STEPS: &[Step] = &[
         1.0,
         1.0,
     ),
+    // The separator part's width (#2912, #2877): the line between two groups inside a surface,
+    // 0 for none. Its colour is the `separator` family's part.
+    step(
+        "separator.width",
+        "--separator-width",
+        Px,
+        (0.0, 2.0),
+        1.0,
+        1.0,
+    ),
     // The focus ring: never thinner than a hairline, so it stays visible.
     step(
         "focus-ring.width",

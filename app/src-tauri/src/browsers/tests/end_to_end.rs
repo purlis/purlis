@@ -512,10 +512,11 @@ impl crate::chatbrowsers::Driver for Acting {
     fn start(
         &self,
         root: &Path,
+        pool: Option<&str>,
         reach: purlis_session_protocol::browsing::BrowserReach,
         kept: Option<purlis_session_protocol::browsing::KeptLogin>,
     ) -> Result<String, crate::chatbrowsers::NotStarted> {
-        self.browsers.start(root, reach, kept)
+        self.browsers.start(root, pool, reach, kept)
     }
 
     fn act(
@@ -550,6 +551,14 @@ impl crate::chatbrowsers::Driver for Acting {
 
     fn driven(&self) -> Result<Vec<String>, String> {
         self.browsers.driven()
+    }
+
+    fn note(&self, root: &Path, program: &str, note: &crate::chatbrowsers::Note) {
+        self.browsers.note(root, program, note);
+    }
+
+    fn taken_back(&self, root: &Path, program: &str) {
+        self.browsers.taken_back(root, program);
     }
 }
 
@@ -1047,7 +1056,9 @@ fn the_engines_sandbox_and_this_machines_chrome_in_homes_of_their_own() {
 
     let notice = crate::enginesandbox::notice()
         .expect("the Notice reads")
-        .expect("the Notice stands");
+        .into_iter()
+        .find(|notice| notice.machine == crate::enginesandbox::EngineMachine::Here)
+        .expect("this machine's Notice stands");
     let command = notice.command.expect("a command to add the profile");
     assert!(command.contains("sudo apparmor_parser -r"), "{command}");
     assert_eq!(notice.chrome, Some(chrome.display().to_string()));

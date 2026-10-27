@@ -85,8 +85,8 @@ impl std::fmt::Display for Refusal {
     }
 }
 
-/// A value of the frontmatter, as purlis read it: no anchors, aliases or tags.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A value of a YAML document, as purlis read it: no anchors, aliases or tags.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Node {
     /// A scalar and whether it was written plain (so `true` is a boolean).
     Scalar {
@@ -279,28 +279,7 @@ fn folded(key: &str) -> String {
 /// is `---`.
 pub fn parse(text: &str) -> Result<Frontmatter, Refusal> {
     let (yaml, body) = fenced(text).ok_or(Refusal::NoFrontmatter)?;
-    let mut parser = Parser::new_from_str(yaml);
-    let mut next = || -> Result<Event, Refusal> {
-        parser
-            .next_token()
-            .map(|(event, _)| event)
-            .map_err(|why| Refusal::NotYaml(why.info().to_owned()))
-    };
-    if next()? != Event::StreamStart {
-        return Err(Refusal::NotAMapping);
-    }
-    if next()? != Event::DocumentStart {
-        return Err(Refusal::NotAMapping);
-    }
-    let root = node(next()?, &mut next, 0)?;
-    match next()? {
-        Event::DocumentEnd => {}
-        _ => return Err(Refusal::NotAMapping),
-    }
-    if next()? != Event::StreamEnd {
-        return Err(Refusal::NotAMapping);
-    }
-    let Node::Map(pairs) = root else {
+    let Node::Map(pairs) = document(yaml)? else {
         return Err(Refusal::NotAMapping);
     };
     let mut entries: Vec<(String, Node)> = Vec::new();
@@ -326,6 +305,89 @@ pub fn parse(text: &str) -> Result<Frontmatter, Refusal> {
         entries.push((key, value));
     }
     Ok(Frontmatter { entries, body })
+}
+
+/// **The one YAML document `yaml` is, read failing closed**: refused where it does not parse,
+/// is not one document, reuses part of itself or carries a tag, or nests past [`MOST_NESTED`].
+/// The one reader of untrusted YAML here, for a frontmatter ([`parse`]) and for a file a harness
+/// reads beside a `SKILL.md` ([`flag_at`]).
+fn document(yaml: &str) -> Result<Node, Refusal> {
+    let mut parser = Parser::new_from_str(yaml);
+    let mut next = || -> Result<Event, Refusal> {
+        parser
+            .next_token()
+            .map(|(event, _)| event)
+            .map_err(|why| Refusal::NotYaml(why.info().to_owned()))
+    };
+    if next()? != Event::StreamStart {
+        return Err(Refusal::NotAMapping);
+    }
+    if next()? != Event::DocumentStart {
+        return Err(Refusal::NotAMapping);
+    }
+    let root = node(next()?, &mut next, 0)?;
+    match next()? {
+        Event::DocumentEnd => {}
+        _ => return Err(Refusal::NotAMapping),
+    }
+    if next()? != Event::StreamEnd {
+        return Err(Refusal::NotAMapping);
+    }
+    Ok(root)
+}
+
+/// **The boolean the YAML file `yaml` sets at `keys`, each a mapping's key inside the one
+/// before** (SK-39), read by the one strict reader ([`document`]). `None` where it sets none so:
+/// the file is refused, any mapping in it sets a key twice, a key on the way is missing, or the
+/// last value is anything but a plain `true` or `false`. It fails closed, so a caller that acts
+/// on one value acts only where the file says it plainly. It names no file: an adapter says
+/// which one its harness reads.
+pub fn flag_at(yaml: &str, keys: &[&str]) -> Option<bool> {
+    let mut at = document(yaml).ok()?;
+    if !keys_once(&at) {
+        return None;
+    }
+    for key in keys {
+        let Node::Map(pairs) = at else {
+            return None;
+        };
+        at = pairs
+            .into_iter()
+            .find(|(k, _)| matches!(k, Node::Scalar { text, .. } if text == key))?
+            .1;
+    }
+    match at {
+        Node::Scalar { text, plain: true } if text == "true" => Some(true),
+        Node::Scalar { text, plain: true } if text == "false" => Some(false),
+        _ => None,
+    }
+}
+
+/// Whether no mapping in `node` sets one key twice: a reader that refuses such a file, as a
+/// harness's may, would read none of it. A scalar key is compared by its text alone, however it
+/// is quoted, so `policy` and `"policy"` are one key. Each mapping's keys are checked in one
+/// pass.
+fn keys_once(node: &Node) -> bool {
+    /// What a key is compared by: a scalar's text, or a whole list or mapping.
+    #[derive(PartialEq, Eq, Hash)]
+    enum Key<'a> {
+        Text(&'a str),
+        Whole(&'a Node),
+    }
+    match node {
+        Node::Scalar { .. } => true,
+        Node::Seq(items) => items.iter().all(keys_once),
+        Node::Map(pairs) => {
+            let mut seen = std::collections::HashSet::with_capacity(pairs.len());
+            pairs.iter().all(|(key, value)| {
+                let compared = match key {
+                    Node::Scalar { text, .. } => Key::Text(text),
+                    whole => Key::Whole(whole),
+                };
+                seen.insert(compared) && keys_once(key) && keys_once(value)
+            })
+        }
+    }
 }
 
 /// The node `event` starts, `depth` lists and mappings in, reading the rest of it with `next`:
@@ -506,6 +568,12 @@ impl Frontmatter {
     /// harness to read), and, where `without_description`, a manual-only skill's description
     /// left out. Refused where a kept field has a value it cannot take.
     pub fn emit(&self, honours: &crate::Honours) -> Result<String, Refusal> {
+        self.emit_named(honours, None)
+    }
+
+    /// [`Self::emit`], its `name` written as `name` where one is given: the name the set holds
+    /// the skill by, where a route hands it under one of its own ([`crate::Route::built_in_name`]).
+    fn emit_named(&self, honours: &crate::Honours, name: Option<&str>) -> Result<String, Refusal> {
         let without_description = honours.manual == crate::ManualOnly::WithoutDescription;
         let drop_description = without_description && self.manual();
         let keep_agent = self.agent_kept(honours);
@@ -522,7 +590,10 @@ impl Frontmatter {
             {
                 continue;
             }
-            let value = written(node, &shape).ok_or(Refusal::BadValue(field))?;
+            let value = match name {
+                Some(name) if field == Field::Name => scalar(name, false),
+                _ => written(node, &shape).ok_or(Refusal::BadValue(field))?,
+            };
             out.push_str(&format!("{}: {value}\n", field.key()));
         }
         out.push_str("---\n");
@@ -545,8 +616,17 @@ impl Frontmatter {
 /// `text`**: the frontmatter purlis writes ([`Frontmatter::emit`]), then the skill's body as it
 /// is. Refused, handing nothing, where the frontmatter is refused ([`parse`]).
 pub(crate) fn handed(text: &str, honours: &crate::Honours) -> Result<String, Refusal> {
+    handed_as(text, honours, None)
+}
+
+/// [`handed`], its `name` written as `name` where one is given ([`Frontmatter::emit_named`]).
+pub(crate) fn handed_as(
+    text: &str,
+    honours: &crate::Honours,
+    name: Option<&str>,
+) -> Result<String, Refusal> {
     let read = parse(text)?;
-    let mut out = read.emit(honours)?;
+    let mut out = read.emit_named(honours, name)?;
     out.push_str(&text[read.body..]);
     Ok(out)
 }

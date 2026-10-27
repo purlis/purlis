@@ -466,9 +466,11 @@ fn an_opencode_chat_is_armed_through_its_environment_and_nothing_on_its_line() {
     let plugin = plane.root().join("plugin");
     let kit = purlis_core::harness::Kit {
         skills: None,
+        laid_out: None,
         binary: &binary,
         plugin: Some(&plugin),
         persona: None,
+        graded: false,
     };
     let purlis_core::harness::StateHooks::ThisSessionOnly { args, env, .. } =
         Harness::Opencode.state_hooks(kit, Some(plane.root()), &ready.plugins, None)
@@ -648,9 +650,11 @@ fn armed_with(
     let plugin = root.join("plugin");
     let kit = purlis_core::harness::Kit {
         skills: None,
+        laid_out: None,
         binary: &binary,
         plugin: Some(&plugin),
         persona: None,
+        graded: false,
     };
     match harness.state_hooks(kit, Some(root), plugins, None) {
         purlis_core::harness::StateHooks::ThisSessionOnly { args, .. } => args,

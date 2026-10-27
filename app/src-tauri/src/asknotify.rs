@@ -289,6 +289,8 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::Browser => "Asks what its browser may reach",
         AskSource::BrowserNeedsYou => "Needs you in its browser",
         AskSource::BrowserSite => "Asks to let its browser reach a new site",
+        AskSource::PoolLogin => "Asks to log its browser in on a pool's runner",
+        AskSource::PoolTool => "Asks to send a tool its vault values for a run on a pool's runner",
     }
 }
 

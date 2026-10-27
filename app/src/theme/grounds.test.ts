@@ -33,17 +33,30 @@ import { describe, expect, it } from "vitest";
 import { property, TOKENS, type Token } from "./theme";
 
 const SRC = join(process.cwd(), "src");
-const PARTS = join(process.cwd(), "..", "crates", "purlis-core", "src", "theme", "parts.rs");
+const THEME = join(process.cwd(), "..", "crates", "purlis-core", "src", "theme");
 
-/** Each family's grounds as the manifest lists them, read out of the core's source: written out
- *  (`grounds: &[…]`), or named by a shared list (`grounds: CONTROL_GROUNDS`, `const … = &[…];`). */
-function manifestGrounds(source: string): Map<string, string[]> {
+/** Each family's grounds, as the engine's manifest lists them: from each family's own file,
+ *  `parts_<family>.rs` (ADR 0103 amended 2026-10-26), a shared list named there read from that
+ *  file first and then from `parts.rs`, which the file imports it from. */
+function engineGrounds(): Map<string, string[]> {
+  const parts = readFileSync(join(THEME, "parts.rs"), "utf8");
+  const grounds = new Map<string, string[]>();
+  for (const name of readdirSync(THEME).filter((one) => /^parts_\w+\.rs$/.test(one))) {
+    if (name.endsWith("_tests.rs")) continue;
+    const own = readFileSync(join(THEME, name), "utf8");
+    for (const [family, listed] of manifestGrounds(`${parts}\n${own}`, own))
+      grounds.set(family, listed);
+  }
+  return grounds;
+}
+
+function manifestGrounds(source: string, families = source): Map<string, string[]> {
   const tokens = (list: string) => [...list.matchAll(/"([^"]+)"/g)].map(([, token]) => token);
   const shared = new Map<string, string[]>();
   for (const [, name, list] of source.matchAll(/\nconst ([A-Z_]+): &\[&str\] = &\[([^\]]*)\];/g))
     shared.set(name, tokens(list));
   const grounds = new Map<string, string[]>();
-  for (const [, name, list, named] of source.matchAll(
+  for (const [, name, list, named] of families.matchAll(
     /Family \{\s*name: "([^"]+)",[\s\S]*?\n\s*grounds: (?:&\[([^\]]*)\]|([A-Z_]+),)/g,
   ))
     grounds.set(name, named === undefined ? tokens(list) : (shared.get(named) ?? []));
@@ -635,18 +648,11 @@ const CLASSLESS: readonly string[] = [
   // The band a chat row takes for a moment once it is revealed (`revealTask.ts` sets the
   // attribute as it runs); the row is a `.ui-row`, which holds no button.
   ".chats-section [data-revealed]",
-  // A selected or current table row's cells: the one table whose rows are current (a wanted
-  // skill's row, `SkillTab.tsx`, set by an expression) holds no button.
-  '.ui-table tbody tr:is([aria-selected="true"], [aria-current]:not([aria-current="false"])) > *',
   // Selected words, not a box anything stands on.
   ':root[data-theme-draws~="selection.background"] :not(.cm-editor, .cm-editor *)::selection',
-  // The handle between two panes, which the panel library draws, and which holds nothing.
-  "[data-separator]",
-  "[data-separator]:hover",
-  "[data-separator][data-dragging]",
-  // A region panel's ground (`ui/panel`, #2913), set by the family's attributes on a library's
-  // panel: `surface.base`, the window's own, which the button family already lists.
-  '[data-scope="panel"][data-part="root"]',
+  // The line between the bottom panel's halves, a handle the panel library draws, which holds
+  // nothing.
+  ".panel-halves > [data-separator]",
   // The editor's toolbar (`ui/tabs`, #2914): its attributes are spread by `editorToolbar`, and its
   // ground is listed by class in ENGINE_GROUNDS.
   '[data-scope="editor"][data-part="toolbar"]',
@@ -654,6 +660,10 @@ const CLASSLESS: readonly string[] = [
   // family's (`tabPart`), and it holds no button.
   '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"]:hover',
   '[data-scope="tabs"][data-part="tab"] [data-part="closer"][data-scope="tabs"][data-keeps]:hover',
+  // A card's ground (`ui/card`, #2912), set by the family's attributes on the element a screen
+  // asks for: `surface.raised`, which the button family lists, and in Purlis `surface.base`
+  // (its `card.root.fill`), which the engine holds to the button's grounds.
+  '[data-scope="card"][data-part="root"]',
 ];
 
 /**
@@ -814,8 +824,8 @@ describe("the grounds a button is drawn on", () => {
   const read = readGrounds(sources(SRC), sheets());
 
   it("are, in the window, exactly the grounds the button family's manifest lists", () => {
-    const listed = manifestGrounds(readFileSync(PARTS, "utf8")).get("button");
-    expect(listed, "the button family's grounds in parts.rs").toBeDefined();
+    const listed = engineGrounds().get("button");
+    expect(listed, "the button family's grounds in parts_button.rs").toBeDefined();
     const where = read.found;
     const found = [...where.keys()].sort();
     expect(found).toContain("surface.base");

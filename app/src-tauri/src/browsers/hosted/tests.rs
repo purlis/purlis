@@ -471,6 +471,7 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
                 "c-{}",
                 calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ),
+            waited: false,
             asked,
         };
         if let Some(answer) = browserneedsyou::answered_first(&chats, &needs, &browse, 1000) {
@@ -480,6 +481,7 @@ fn a_captcha_page_raises_an_ask_and_the_chat_is_told_only_that_the_person_finish
             .answer(
                 Some(&driver),
                 &window.root,
+                None,
                 &browse,
                 &BrowserReach::default,
                 false,
@@ -957,6 +959,7 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
         user: Some(Secret::new("ada@shop.example.test".into())),
         password: Secret::new("correct horse battery staple".into()),
         keep: None,
+        identity: None,
     };
     Driver::log_in(&browsers, &program, login).unwrap();
 
@@ -972,10 +975,14 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
     let typed = |by| Said::Typed {
         browser: program.clone(),
         by,
+        origin: None,
     };
     assert_eq!(
         said.iter().map(|(_, one)| one.clone()).collect::<Vec<_>>(),
         [
+            Said::Opened {
+                browser: program.clone()
+            },
             drives(Drives::Person),
             typed(Typist::Person),
             drives(Drives::Agent),
@@ -1002,7 +1009,7 @@ fn the_event_log_says_who_drives_a_browser_and_that_someone_typed_never_what() {
             .unwrap();
     }
     let written = std::fs::read_to_string(log.path().join(purlis_core::eventlog::FILE)).unwrap();
-    assert_eq!(written.lines().count(), 6);
+    assert_eq!(written.lines().count(), 7);
     for never in [
         "KeyQ",
         "\"Q\"",
@@ -1048,7 +1055,13 @@ fn a_person_sending_their_browser_to_an_address_hands_it_back_in_the_log() {
     };
     assert_eq!(
         *said.lock().unwrap(),
-        [driver(Drives::Person), driver(Drives::Agent)]
+        [
+            Said::Opened {
+                browser: program.clone()
+            },
+            driver(Drives::Person),
+            driver(Drives::Agent)
+        ]
     );
 }
 
@@ -1072,6 +1085,7 @@ fn a_window_started_again_says_nothing_of_a_login_the_host_refuses_as_the_person
         user: None,
         password: Secret::new("correct horse battery staple".into()),
         keep: None,
+        identity: None,
     };
     let refused = Driver::log_in(&again, &program, login);
 
@@ -1119,5 +1133,348 @@ fn a_browser_view_is_told_its_pages_origin_alone_as_the_page_moves() {
             Some("http://localhost:5173".to_owned()),
             Some("https://docs.example.test".to_owned())
         ]
+    );
+}
+
+/// A window whose host runs stand-in browsers, and whose links to pool `builds`'s runner reach a
+/// runner whose browsers are stand-ins of their own (#2050).
+struct WithARunner {
+    window: Window,
+    on_the_runner: StandInBrowsers,
+    _store: tempfile::TempDir,
+}
+
+fn a_window_with_a_runner() -> WithARunner {
+    let store = tempfile::tempdir().unwrap();
+    let on_the_runner = StandInBrowsers::in_folder(store.path().join("runner-browsers"));
+    // A runner keeps its projects where it keeps them (#2046).
+    let runner = Hosting::running_with(ComposesNothing, StandIns::default())
+        .with_browsers(on_the_runner.clone())
+        .keeping_projects_in(store.path().join("projects"));
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let here_store = tempfile::tempdir().unwrap();
+    let started = StandInBrowsers::in_folder(here_store.path().join("browsers"));
+    let hosting =
+        Hosting::running_with(ComposesNothing, StandIns::default()).with_browsers(started.clone());
+    let connection =
+        crate::hostedsessions::tests::in_memory_with_a_runner(hosting, runner, &runtime);
+    let project = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(project.path()).unwrap();
+    std::fs::write(root.join(purlis_core::plane::MANIFEST), "").unwrap();
+    WithARunner {
+        window: Window {
+            browsers: WindowBrowsers::new(connection),
+            started,
+            root,
+            _dirs: (here_store, project),
+            _runtime: runtime,
+        },
+        on_the_runner,
+        _store: store,
+    }
+}
+
+#[test]
+fn a_runner_chats_browser_starts_on_its_pools_runner_and_is_driven_there() {
+    use crate::chatbrowsers::Driver;
+    let with = a_window_with_a_runner();
+    let window = &with.window;
+
+    let program = window
+        .browsers
+        .start(
+            &window.root,
+            Some("builds"),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .expect("it starts on the runner");
+    let browsed = window
+        .browsers
+        .act(
+            &program,
+            "c-1",
+            purlis_session_protocol::browsing::Act::Pages,
+            purlis_session_protocol::browsing::BrowserReach::default(),
+        )
+        .expect("its act reaches it there");
+
+    assert!(browsed.settled);
+    assert_eq!(with.on_the_runner.started().len(), 1, "on the runner");
+    assert!(
+        window.started.started().is_empty(),
+        "and not on this machine"
+    );
+    assert_eq!(with.on_the_runner.started()[0].shown().acts.len(), 1);
+    assert_eq!(window.browsers.pool_of(&program).as_deref(), Some("builds"));
+}
+
+#[test]
+fn a_runner_browsers_view_says_its_pool_and_the_persons_input_reaches_it_there() {
+    use crate::chatbrowsers::Driver;
+    let with = a_window_with_a_runner();
+    let window = &with.window;
+    let program = window
+        .browsers
+        .start(
+            &window.root,
+            Some("builds"),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .unwrap();
+    let screen = with.on_the_runner.started()[0].clone();
+
+    let watching = window
+        .browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Box::new(|_| {}),
+            Arc::new(|_| {}),
+        )
+        .expect("its view attaches on the runner");
+    window.browsers.take_over(&program).unwrap();
+    let typed = window
+        .browsers
+        .input(
+            &program,
+            BrowserInput::Key {
+                aim: "p1:0".into(),
+                action: KeyAct::Down,
+                key: "a".into(),
+                physical: "KeyA".into(),
+                key_code: 65,
+                modifiers: 0,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(
+        watching.pool.as_deref(),
+        Some("builds"),
+        "its chip names its pool"
+    );
+    assert_eq!(typed, InputOutcome::Taken);
+    assert_eq!(screen.shown().inputs.len(), 1);
+}
+
+#[test]
+fn a_runner_chats_browser_is_never_opened_from_a_kept_login() {
+    use crate::chatbrowsers::Driver;
+    let with = a_window_with_a_runner();
+    let window = &with.window;
+
+    window
+        .browsers
+        .start(
+            &window.root,
+            Some("builds"),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            Some(purlis_session_protocol::browsing::KeptLogin {
+                profile: "claude".into(),
+                persona: "steward".into(),
+                login: "shop-login".into(),
+                identity: "0123456789abcdef0123456789abcdef".into(),
+                address: "https://shop.example.test/login".into(),
+            }),
+        )
+        .expect("it starts, from no kept login");
+
+    assert_eq!(with.on_the_runner.started()[0].shown().kept, None);
+}
+
+#[test]
+fn typing_is_said_on_the_origin_of_the_page_and_the_log_holds_no_path_query_or_value() {
+    // #2842: the person types on a page whose view was told where it is, and purlis logs in on
+    // a page it answers with; the log names each page by its origin alone.
+    use crate::chatbrowsers::Driver;
+    use purlis_core::eventlog::browsing::{Said, Typist};
+    use purlis_core::eventlog::{ArgsKey, Entry, Log, Recorder};
+    use purlis_session_protocol::browsing::{Browsed, LogIn, PageSaid, Secret};
+
+    let Window {
+        browsers,
+        started,
+        root,
+        _dirs,
+        _runtime,
+    } = window();
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let program = browsers.open(&root).unwrap();
+    let screen = started.started()[0].clone();
+    screen.shown().address = "https://shop.example.test/basket?item=42#pay".into();
+    let origins: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+    let heard = Arc::clone(&origins);
+    browsers
+        .watch(
+            &program,
+            BrowserViewRole::Focused,
+            Box::new(|_, _| {}),
+            Box::new(move |origin| heard.lock().unwrap().push(origin)),
+            Arc::new(|_| {}),
+        )
+        .unwrap();
+    until("the view hears where its page is", || {
+        screen.makes(b"frame");
+        !origins.lock().unwrap().is_empty()
+    });
+    let aim = format!("p1:{}", screen.shown().document);
+    browsers.take_over(&program).unwrap();
+    let typed = browsers
+        .input(
+            &program,
+            BrowserInput::Key {
+                aim,
+                action: KeyAct::Down,
+                key: "h".into(),
+                physical: "KeyH".into(),
+                key_code: 72,
+                modifiers: 0,
+            },
+        )
+        .unwrap();
+    assert_eq!(typed, InputOutcome::Taken);
+    browsers.hand_back(&program).unwrap();
+    screen.answers(Ok(Browsed {
+        settled: true,
+        page: Some(PageSaid {
+            page: "p1".into(),
+            address: "https://accounts.example.test:8443/welcome?session=s3cret".into(),
+            title: "Welcome, Ada".into(),
+            current: true,
+        }),
+        ..Browsed::default()
+    }));
+    let login = LogIn {
+        address: "https://accounts.example.test:8443/login?next=%2Fbasket".into(),
+        user: Some(Secret::new("ada@shop.example.test".into())),
+        password: Secret::new("correct horse battery staple".into()),
+        keep: None,
+        identity: None,
+    };
+    Driver::log_in(&browsers, &program, login).unwrap();
+
+    let said = said.lock().unwrap().clone();
+    let typing: Vec<&Said> = said
+        .iter()
+        .filter(|one| matches!(one, Said::Typed { .. }))
+        .collect();
+    assert_eq!(
+        typing,
+        [
+            &Said::Typed {
+                browser: program.clone(),
+                by: Typist::Person,
+                origin: Some("https://shop.example.test".into()),
+            },
+            &Said::Typed {
+                browser: program.clone(),
+                by: Typist::Purlis,
+                origin: Some("https://accounts.example.test:8443".into()),
+            },
+        ]
+    );
+
+    // Written and read back: no path, query, fragment, title or value is in the log.
+    let log = tempfile::tempdir().unwrap();
+    let mut recorder = Recorder::new(
+        Log::open(log.path(), "01J9ZZDEVICE0000000000000").unwrap(),
+        ArgsKey::open(log.path()).unwrap(),
+    );
+    for said in said {
+        recorder
+            .apply(Entry::Browser {
+                plane: root.clone(),
+                number: None,
+                said,
+            })
+            .unwrap();
+    }
+    let written = std::fs::read_to_string(log.path().join(purlis_core::eventlog::FILE)).unwrap();
+    assert!(
+        written.contains("\"origin\":\"https://shop.example.test\""),
+        "{written}"
+    );
+    for never in [
+        "/basket",
+        "item=42",
+        "#pay",
+        "/welcome",
+        "session=s3cret",
+        "/login",
+        "next=",
+        "Welcome, Ada",
+        "ada@",
+        "correct horse",
+        "KeyH",
+        "\"h\"",
+    ] {
+        assert!(
+            !written.contains(never),
+            "{never:?} is in the log: {written}"
+        );
+    }
+}
+
+#[test]
+fn a_browsers_end_the_window_did_not_ask_for_is_said_crashed_and_one_it_asked_for_is_not() {
+    // #2842: a chat's close and the kill switch are ends the window asked for; an engine that
+    // ends by itself crashed.
+    use crate::chatbrowsers::Driver;
+    use purlis_core::eventlog::browsing::{Closer, Said};
+    use purlis_session_protocol::session::Exit;
+
+    let Window {
+        browsers,
+        started,
+        root,
+        _dirs,
+        _runtime,
+    } = window();
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let closed = browsers.open(&root).unwrap();
+    let crashing = browsers.open(&root).unwrap();
+    let stopped = browsers.open(&root).unwrap();
+    let screens = started.started();
+
+    Driver::close(&browsers, &closed).unwrap();
+    screens[1].ends(Exit::Signal("SIGSEGV".into()));
+    until("the crash is said", || {
+        said.lock()
+            .unwrap()
+            .iter()
+            .any(|one| matches!(one, Said::Crashed { .. }))
+    });
+    browsers.stop_every_browser();
+    // Long enough for an end the host tells of to be said, were it said.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    let ends: Vec<Said> = said
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|one| !matches!(one, Said::Opened { .. }))
+        .cloned()
+        .collect();
+    assert_eq!(
+        ends,
+        [
+            Said::Crashed { browser: crashing },
+            Said::Closed {
+                browser: stopped,
+                by: Closer::KillSwitch
+            },
+        ],
+        "a close the window asked for is said by whoever asked it, never as a crash"
     );
 }

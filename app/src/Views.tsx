@@ -83,7 +83,10 @@ import {
 import { HeadingOffer } from "./PanelSection";
 import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
+import { ShortcutsView } from "./keys/ShortcutsView";
 import { BrowserView } from "./BrowserView";
+import { BrowserTimeline } from "./BrowserTimeline";
+import { isBrowserTimeline } from "./browserTimelines";
 import { BROWSER_VIEW, isBrowser } from "./browsers";
 import { SessionRecordTab } from "./SessionRecordTab";
 import { useSessionOffers } from "./sessionOffers";
@@ -110,6 +113,7 @@ import { SkillTab } from "./SkillTab";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
+  SHORTCUTS_VIEW,
   SETTINGS_TAB_TITLE,
   settingsLevelOf,
   settingsView,
@@ -131,6 +135,14 @@ import {
 } from "./planeChanged";
 import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import {
+  Table as DataTable,
+  TableBody,
+  TableCell,
+  TableColumn,
+  TableHeader,
+  TableRow,
+} from "./ui/table/Table";
 
 /** What `workspaceSettingsView` names Settings at a workspace's level (SE-20). */
 const WORKSPACE_SETTINGS = "workspace-settings";
@@ -453,6 +465,19 @@ export function ViewPane({
       />
     );
   }
+  // **The keyboard shortcuts** (#2921): the key registry's cheat sheet, with no title of its own
+  // (the operator's ruling of 2026-10-24, #3147): the tab is its name.
+  if (view.from === null && view.view === SHORTCUTS_VIEW.view) {
+    return (
+      <section
+        className="view-pane view-alone"
+        data-testid="view-pane-shortcuts"
+        aria-label={title}
+      >
+        <ShortcutsView />
+      </section>
+    );
+  }
   const about = aboutOf(view, offered);
   const beside = offered.filter(
     (one) =>
@@ -538,6 +563,10 @@ export function ViewPane({
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
              browser, so a pane that comes to show another one opens its own view. */
           <BrowserView key={`${plane}\u0000${view.key}`} plane={plane} program={view.key} />
+        ) : isBrowserTimeline(view) ? (
+          /* A chat's browser timeline (#2017), keyed by the chat's id, which it keeps across a
+             launch. */
+          <BrowserTimeline key={`${plane}\u0000${view.key}`} plane={plane} chat={view.key} />
         ) : isRepoInstructions(view) ? (
           /* The agent instructions a workspace's repo carries, offered to its memory (FR-18a):
              a preview whose press is the only thing that writes. Keyed by both, as a
@@ -1290,7 +1319,7 @@ export type TableBlock = Extract<PanelBlock, { kind: "table" }>;
 
 /**
  * **Rows of words under named columns** — `purlis_core::panel::Block::Table`: a skill's Runs
- * panel, and a studio panel's. A `<table>` with headed columns, so a screen reader reads each
+ * panel, and a studio panel's. The table family's data table (`ui/table`), so a screen reader reads each
  * cell with its column; the row the tab was opened on (`current`) is marked and scrolled to.
  * With no rows, the block's own claim and what to do, as a list's empty state says them.
  */
@@ -1336,35 +1365,35 @@ export function Table({
     );
   }
   return (
-    <table className="ui-table" aria-label={table.caption}>
-      <thead>
-        <tr>
-          {table.columns.map((column, at) => (
-            /* By position: two columns may share a heading, and the order is the producer's. */
-            <th key={at} scope="col">
-              {column}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
+    <DataTable aria-label={table.caption}>
+      <TableHeader>
+        {table.columns.map((column, at) => (
+          /* By position: two columns may share a heading, and the order is the producer's. */
+          <TableColumn key={at} id={`column-${at}`} isRowHeader={at === 0}>
+            {column}
+          </TableColumn>
+        ))}
+      </TableHeader>
+      <TableBody>
         {table.rows.map((row) => {
           const isCurrent = current !== undefined && row.key === current;
           return (
-            <tr
+            <TableRow
               key={row.key}
+              id={row.key}
+              textValue={row.cells[0] ?? row.key}
               ref={isCurrent ? shown : undefined}
               data-testid={`table-row-${row.key}`}
-              aria-current={isCurrent || undefined}
+              current={isCurrent}
             >
               {row.cells.map((cell, at) => (
-                <td key={at}>{cell}</td>
+                <TableCell key={at}>{cell}</TableCell>
               ))}
-            </tr>
+            </TableRow>
           );
         })}
-      </tbody>
-    </table>
+      </TableBody>
+    </DataTable>
   );
 }
 

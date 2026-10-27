@@ -107,6 +107,9 @@ pub struct SkillBudget {
     /// What is still past the budget with all the router may hide hidden, where something is:
     /// all of it is then listed (ADR 0102 §4).
     pub still_over: Option<BudgetStillOver>,
+    /// Which of the chat's workspace and persona pin a skill (SK-15d): where the pins are
+    /// undone in the Skill studio when they alone are past the budget.
+    pub pinned_by: Vec<crate::skillchange::SkillPinner>,
 }
 
 /// What Use skill… offers a chat, and its budget.
@@ -146,27 +149,37 @@ const COPIED: crate::references::Copied = crate::references::Copied {
 /// Why a skill is typed into no chat that runs no tool purlis knows: the words Use skill… says.
 const NO_TOOL: &str = "This chat runs no tool purlis knows, so it has no skills to use here.";
 
+/// Why a skill is typed into no chat whose start has not given it its id yet.
+const NOT_STARTED: &str =
+    "This chat has not started yet, so nothing was typed. Try again once it has.";
+
 /// A count the window draws: a `u32`, as large as it gets.
 fn small(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-/// The skills of chat `session` of `held`, as the core works them out, or `None` for a chat that
-/// is not open or runs no tool purlis knows the skills of. One read of the chat.
-fn of_the_chat(held: &Held, session: u32) -> Option<purlis_core::skills::ChatSkills> {
+/// The skills of chat `session` of `held`, as the core works them out, and the salt its prompts
+/// are digested under, or `None` for a chat that is not open or runs no tool purlis knows the
+/// skills of. One read of the chat.
+fn of_the_chat(
+    held: &Held,
+    session: u32,
+) -> Option<(
+    purlis_core::skills::ChatSkills,
+    Option<purlis_core::skillspan::PromptSalt>,
+)> {
     let chat = held.chats().skills_of(session)?;
     let built_in =
         crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-    Some(purlis_core::skills::for_use_skill(
-        &purlis_core::skills::Running {
-            plane: held.root(),
-            workspace: chat.workspace.as_deref(),
-            persona: chat.persona.as_deref(),
-            harness: chat.harness?,
-            built_in: built_in.as_deref(),
-            plane_skills: true,
-        },
-    ))
+    let skills = purlis_core::skills::for_use_skill(&purlis_core::skills::Running {
+        plane: held.root(),
+        workspace: chat.workspace.as_deref(),
+        persona: chat.persona.as_deref(),
+        harness: chat.harness?,
+        built_in: built_in.as_deref(),
+        plane_skills: true,
+    });
+    Some((skills, chat.salt))
 }
 
 /// `skills`, for the window: none for a chat that runs no tool purlis knows.
@@ -208,6 +221,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
                     .count(),
             ),
             still_over: skills.still_over.map(Into::into),
+            pinned_by: skills.pinned_by.iter().cloned().map(Into::into).collect(),
         }),
     }
 }
@@ -226,7 +240,11 @@ pub(crate) async fn chat_skills(
         if !purlis_core::skills::studio_on_here() {
             return Ok(ChatSkills::none(false));
         }
-        Ok(shown(of_the_chat(&held, session).as_ref()))
+        Ok(shown(
+            of_the_chat(&held, session)
+                .map(|(skills, _)| skills)
+                .as_ref(),
+        ))
     })
     .await
 }
@@ -254,9 +272,21 @@ pub(crate) fn use_skill(
     if !purlis_core::skills::studio_on_here() {
         return Err("The Skill studio is not turned on on this machine.".to_owned());
     }
-    let skills = of_the_chat(&held, session).ok_or_else(|| NO_TOOL.to_owned())?;
-    let typing = skills.typed(&skill, &values)?;
+    let (skills, salt) = of_the_chat(&held, session).ok_or_else(|| NO_TOOL.to_owned())?;
+    let typing = typing_of(&skills, salt.as_ref(), &skill, &values)?;
     typed_and_held(&held, session, typing, &|text| clipboard.put_text(text))
+}
+
+/// What Use skill… types to start `skill` of `skills` with `values`, its text digested under
+/// the chat's `salt`; refused for a chat that has no id yet, whose prompts nothing could match.
+fn typing_of(
+    skills: &purlis_core::skills::ChatSkills,
+    salt: Option<&purlis_core::skillspan::PromptSalt>,
+    skill: &str,
+    values: &[String],
+) -> Result<purlis_core::skills::Typing, String> {
+    let salt = salt.ok_or_else(|| NOT_STARTED.to_owned())?;
+    skills.typed(skill, values, salt)
 }
 
 /// `typing` typed into chat `session` of `held` unsent, or copied with the reason, with `copy`

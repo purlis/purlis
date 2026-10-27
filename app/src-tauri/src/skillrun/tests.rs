@@ -32,6 +32,18 @@ fn call(chat: u32, id: &str, skill: Option<&str>) -> ToolCall {
     }
 }
 
+/// A skill call that starts `skill`, which the hook found is the copy at `origin`.
+fn call_of(chat: u32, skill: &str, origin: purlis_core::skills::Origin) -> ToolCall {
+    let mut call = call(chat, "toolu_1", Some(skill));
+    if let Some(started) = call.skill.as_mut() {
+        started.level = Some(purlis_core::skills::runs::Level {
+            origin,
+            local: false,
+        });
+    }
+    call
+}
+
 fn report(chat: u32, event: Event) -> Report {
     Report {
         chat,
@@ -67,6 +79,7 @@ fn a_skill_started_puts_its_run_on_the_chats_tab_counting_its_tool_calls_until_t
     let open = |tool_calls| {
         Some(OpenRun {
             skill: "deploy".to_owned(),
+            name: "deploy".to_owned(),
             id: RUN.to_owned(),
             tool_calls,
         })
@@ -115,7 +128,8 @@ fn a_refused_skill_call_or_a_sub_agents_stop_changes_nothing() {
 #[test]
 fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into() {
     let (runs, told) = listening();
-    use purlis_core::skillspan::{Confirmed, PromptMarks, Typed};
+    use purlis_core::skillspan::{Confirmed, PromptMarks, PromptSalt, Typed};
+    let salt = PromptSalt::of_chat("01JB00000000000000000000C4").unwrap();
     runs.typed(
         4,
         Typed {
@@ -123,7 +137,7 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
             run: RUN.parse().unwrap(),
             workspace: None,
             level: None,
-            text: PromptMarks::digest("$deploy"),
+            text: PromptMarks::digest("$deploy", &salt),
             confirmed: Confirmed::ByPrompt,
         },
     );
@@ -131,7 +145,7 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
     assert_eq!(told.try_iter().count(), 0);
 
     let mut sent = report(4, Event::UserPromptSubmit);
-    sent.detail.prompt_marks = PromptMarks::of("$deploy");
+    sent.detail.prompt_marks = PromptMarks::of("$deploy", &salt);
     runs.reported(&sent);
     runs.heard(&call(4, "toolu_1", None));
     runs.reported(&report(4, Event::Stop));
@@ -140,9 +154,73 @@ fn a_skill_use_skill_typed_is_on_the_chats_tab_from_the_prompt_it_was_typed_into
     let open = |tool_calls| {
         Some(OpenRun {
             skill: "deploy".to_owned(),
+            name: "deploy".to_owned(),
             id: RUN.to_owned(),
             tool_calls,
         })
     };
     assert_eq!(said, vec![open(0), open(1), None]);
+}
+
+#[test]
+fn a_runs_chip_opens_the_skill_the_core_counts_it_a_run_of_never_a_second_parsing_of_its_name() {
+    use purlis_core::skills::Origin;
+    let (runs, _told) = listening();
+    // opencode is handed the built-in `secrets` as `purlis-secrets` (#3279).
+    runs.heard(&call_of(4, "purlis-secrets", Origin::BuiltIn));
+    // A plane skill whose own name starts so is its own.
+    runs.heard(&call_of(5, "purlis-notes", Origin::Project));
+    // Claude Code starts a built-in under purlis's plugin.
+    runs.heard(&call_of(6, "purlis:secrets", Origin::BuiltIn));
+
+    let named: Vec<_> = runs
+        .now([4, 5, 6])
+        .into_iter()
+        .filter_map(|told| told.run.map(|run| (run.skill, run.name)))
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("purlis-secrets".to_owned(), "secrets".to_owned()),
+            ("purlis-notes".to_owned(), "purlis-notes".to_owned()),
+            ("purlis:secrets".to_owned(), "secrets".to_owned()),
+        ]
+    );
+}
+
+/// SK-16 (#2779): a grade watching a chat is told each skill that starts in it once, and the end
+/// of its turn; a chat it does not watch tells it nothing.
+#[test]
+fn a_grade_watching_a_chat_is_told_each_skill_it_started_and_the_end_of_its_turn() {
+    let (runs, _told) = listening();
+    let watched = runs.watch(4);
+
+    runs.heard(&call(5, "toolu_0", Some("other")));
+    runs.heard(&call(4, "toolu_1", None));
+    runs.heard(&call(4, "toolu_2", Some("deploy")));
+    runs.heard(&call(4, "toolu_3", None));
+    runs.reported(&report(4, Event::Stop));
+    runs.unwatch(4);
+    runs.heard(&call(4, "toolu_4", Some("deploy")));
+
+    assert_eq!(
+        watched.try_iter().collect::<Vec<_>>(),
+        vec![Watched::Started("deploy".to_owned()), Watched::TurnEnded],
+    );
+}
+
+/// SK-16 (the review of #3229): a grade watching a chat is told when it asks the person, by a
+/// call put to them or by a notice that it waits.
+#[test]
+fn a_grade_watching_a_chat_is_told_when_it_asks_the_person() {
+    let (runs, _told) = listening();
+    let watched = runs.watch(4);
+    let mut asked = call(4, "toolu_1", None);
+    asked.decision = Decision::Ask;
+    runs.heard(&asked);
+    runs.reported(&report(4, Event::Notification));
+    assert_eq!(
+        watched.try_iter().collect::<Vec<_>>(),
+        vec![Watched::Asked, Watched::Asked],
+    );
 }

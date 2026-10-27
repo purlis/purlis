@@ -105,7 +105,7 @@ fn purlis_classic_draws_the_window_s_own_marks() {
 }
 
 #[test]
-fn purlis_s_icon_set_is_eleven_views_in_the_grammar() {
+fn purlis_s_icon_set_is_every_rail_view_in_the_grammar() {
     let dir = tempfile::tempdir().unwrap();
     folder(
         dir.path(),

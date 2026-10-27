@@ -182,6 +182,15 @@ The one exemption is `terminal.ansi.black`, held to 1.5:1 — ANSI black on a da
 in every theme there has ever been, because it is the colour a program picks when it means
 _recede_; it still has to be visible, and purlis-dark measures 2.13:1.
 
+**A state's colour or the danger colour drawn as a part's words is held as words**, at 4.5:1, not
+at a mark's 3:1 (#3041, #3254): a warning button's words, a badge's or a count's digits, a danger
+answer's words, a danger menu row's and a field's error. `parts/state_words_tests.rs` walks the
+parts manifest and fails on one with no pair, in every look the window draws: at rest, under the
+pointer, pressed as a toggle and open (#3255). A look the window never draws is left out, by the
+manifest's `DRAWN_ONLY` (a danger button is never a toggle, a danger row never opens a submenu),
+and a part drawn on fewer grounds than its family is read on those, by `PART_GROUNDS` (a field's
+error only under a field that can refuse). An app guard holds each list to the components.
+
 **The pairs are read from the stylesheets too** (DS-6, #629). A rule in `App.css` or
 `styles.css` that sets one token as its text and another as its background draws one on the
 other, and `contrast.test.ts` fails, naming the rule, until that pair is in the engine's list
@@ -664,7 +673,7 @@ path in a sentence.
 
 **The consent floors hold whenever a theme is drawn** (ADR 0097 §6). Every answer `resolve`
 gives, the theme the window is handed as it is created, and the theme specimen, is drawn by
-`draw`, which holds five floors for any theme from any source. `draw` takes an appearance with
+`draw`, which holds these floors for any theme from any source. `draw` takes an appearance with
 its theme options' values already layered on it, so the floors hold in every combination of
 appearance and option values, and no option value can bring a consent surface below its floor:
 
@@ -683,6 +692,11 @@ appearance and option values, and no option value can bring a consent surface be
   is a `danger.*` token;
 - **danger is distinguishable from primary**: `danger.base` and `accent.base` at least 0.1 apart
   in OKLab, five times the least difference a person can see, as the theme writes them;
+- **waiting is distinguishable from the accent** (#3130): `state.waiting` and `accent.base` at
+  least 0.1 apart in OKLab, as the theme writes them and in every workspace tint, so the waiting
+  edge of an ask or a Notice never reads as a chosen or primary mark. The tint gives the accent
+  less colour at a hue that would bring it near the waiting amber (a yellow or an orange
+  workspace);
 - **the state marks meet the mark floor**: every pair of `PAIRS` whose front is a `state.*`
   token or `needs-you.base`, the title bar's needs-you hand on its hovered `control.hover`
   included.
@@ -692,7 +706,8 @@ workspace palette colour. When a theme breaks one, purlis draws Purlis Classic's
 appearance for the `danger.*`, `needs-you.*` and `state.*` tokens of each pair that fails, and
 for the pair's other token when Classic's colour still fails on it. A floor between tokens none
 of which is a consent token (Allow apart from Keep blocked, an answer's words on its button) is
-held by drawing Classic's values for each of them. The rest of the theme draws
+held by drawing Classic's values for each of them; waiting too near the accent is held by
+drawing Classic's waiting colour. The rest of the theme draws
 as written, and one Notice in the Inbox names the theme and the floors it breaks.
 
 **The window only applies.** It is handed a resolved theme, every token's final value and the
@@ -1506,6 +1521,7 @@ are no geometry token: they are the window's own family and its one monospace fa
 | `--window-gutter`       | 0px                                                          |
 | `--panel-corner-radius` | 0px                                                          |
 | `--panel-border-width`  | 1px                                                          |
+| `--separator-width`    | 1px                                                          |
 | `--focus-ring-width`    | 2px                                                          |
 | `--focus-ring-offset`   | 2px                                                          |
 | `--focus-ring-inset`    | -2px                                                         |
@@ -1553,6 +1569,7 @@ engine's (`purlis_core::theme::geometry::STEPS`), which the published schema car
 | `window.gutter` | `--window-gutter` | 0 to 16 px | 0 | 0 |
 | `panel.corner-radius` | `--panel-corner-radius` | 0 to 24 px | 0 | 0 |
 | `panel.border-width` | `--panel-border-width` | 0 to 2 px | 1 | 1 |
+| `separator.width` | `--separator-width` | 0 to 2 px | 1 | 1 |
 | `focus-ring.width` | `--focus-ring-width` | 1 to 4 px | 2 | 2 |
 | `focus-ring.offset` | `--focus-ring-offset` | 0 to 4 px | 2 | 2 |
 | `focus-ring.inset` | `--focus-ring-inset` | -4 to 0 px | -2 | -2 |
@@ -1672,21 +1689,20 @@ the focus rings, #2867):
   and their min, max, block and inline forms, or a custom property only they read) is not a step
   of the scale, so the guard does not read it either (#2319): a dialog's width, an icon's square
   and a strip's cap on a tab are each that box's own.
-- **`controls.guard.test.ts`** fails on a control that does not wear its class
-  (`docs/ui-primitives.md`, "The control classes"): a `<button>` or a Radix trigger without
-  `asChild` (a row, segment or menu row; a button of the button family is `Button`, never a
-  native `<button>`), an `<input>` or `<textarea>` (none: a box is the field family's
-  `TextField` or `TextArea`; a checkbox `ui-checkbox`, a radio `ui-radio`), a `<select>` (none: a
-  select is the select family's `Select`), a `<table>` (`ui-table`), and a Radix menu's content and rows
-  (`ui-menu`, `ui-menu-item`). **It holds two heights too** (#2449): a `height`, `min-height`,
-  `block-size` or `min-block-size` set on a control is `--size-control`, and one set on a strip
-  or a pane header is `--size-chrome`. A control is `--size-chrome` only as the small form: a
-  `.ui-segmented-sm`, or a control whose selector puts it inside a strip. A
-  field of several lines is a whole number of controls. A control is what the rule's subject
-  names (each selector of a list on its own, a nested rule as its full selector, an `:is()` or
-  `:where()` as each selector in it): a `button`, `select`, `textarea` or non-toggle `input`, a
-  primitive control class, or a class some component gives a control (a list's row and a
-  segment are their list's). A strip or a pane header is a class named for one (`-bar`,
+- **`controls.guard.test.ts`** fails on a native control that is not its family's and does not
+  wear its class (`docs/ui-primitives.md`, "Every control is a family's"): a `<button>` or a
+  Radix trigger without `asChild` (a list's row or a tree's row, `ui-row` or `ui-tree-row`; a
+  button is the button family's `Button`, a segment the choice family's), an `<input>` or
+  `<textarea>` (none: a box is the field family's `TextField` or `TextArea`, a checkbox or a
+  radio the choice family's), a `<select>` (none: the select family's `Select`), a `<table>`
+  (none: the table family's `Table` or `ControlTable`, #2911), and a Radix menu's content and rows (none: the menu family's). **It holds two
+  heights too** (#2449): a `height`, `min-height`, `block-size` or `min-block-size` set on a
+  control is `--size-control`, and one set on a strip or a pane header is `--size-chrome`. A
+  control is `--size-chrome` only as the small form: a control whose selector puts it inside a
+  strip. A field of several lines is a whole number of controls. A control is what the rule's
+  subject names (each selector of a list on its own, a nested rule as its full selector, an
+  `:is()` or `:where()` as each selector in it): a `button`, `select`, `textarea` or non-toggle
+  `input`, or a class some component gives a control (a list's row is its list's). A strip or a pane header is a class named for one (`-bar`,
   `-strip`, `-head`, `-tabs`, `strip-*`, the three strips, `.pane-chips`, the status line; not
   a chart's bar or a side's column) and the rows of controls a strip or a pane's top line draws
   as part of itself (`.pane-task-ends`, `.tab-tasks`, and the top line's chips). **The pane's

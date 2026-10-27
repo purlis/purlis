@@ -14,8 +14,8 @@
      edge.
    - **At most the window less 48 px tall**: the scrim's 24 px above and below. A dialog given a
      height takes the lesser of its own and that.
-   - **As wide as its size**, never as its content: standard 560 px, wide 780 px (a list beside
-     its details), each at most the window less a 16 px gutter on each side (`--space-6`).
+   - **As wide as its size**, never as its content: standard 600 px, wide 800 px (a list beside
+     its details; the operator's ruling on #2918), each at most the window less a 16 px gutter on each side (`--space-6`).
    - **Header, body, footer**: three rows, the body the only one that scrolls, so the footer and
      its answers are always in view and a control the keyboard is on is never under it
      (WCAG 2.4.11).
@@ -71,7 +71,7 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   flex: none;
-  inline-size: min(560px, 100%);
+  inline-size: min(600px, 100%);
   max-block-size: 100%;
   min-block-size: 0;
   overflow: hidden;
@@ -85,7 +85,7 @@
 }
 
 [data-scope="dialog"][data-part="root"][data-size="wide"] {
-  inline-size: min(780px, 100%);
+  inline-size: min(800px, 100%);
 }
 
 /* A height of its own, whatever its content: the lesser of it and the window's less 48 px. */
@@ -173,7 +173,7 @@
 /* The footer's rule: its own part, a line the width of the dialog, and never a control's border
    (#2804). */
 [data-scope="dialog"][data-part="separator"] {
-  block-size: 1px;
+  block-size: var(--separator-width);
   background-color: var(--border-subtle);
 }
 

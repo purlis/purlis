@@ -1795,6 +1795,7 @@ describe("what a task asks, on its session's tab (#1508)", () => {
   beforeEach(() => {
     clock.now = 1_000_000;
     vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+    vi.spyOn(performance, "now").mockImplementation(() => clock.now);
   });
   afterEach(() => vi.restoreAllMocks());
   /** Time enough for a question to settle. */

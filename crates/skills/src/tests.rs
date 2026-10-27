@@ -1228,7 +1228,7 @@ fn where_purlis_builds_what_the_harness_is_handed_the_narrower_repo_copy_wins() 
                 "review",
                 Origin::Workspace,
                 false,
-                "hidden by the repo skill of this name".to_owned()
+                "hidden by the skill of this name in the repo api".to_owned()
             )],
             "{route:?}"
         );
@@ -1278,34 +1278,17 @@ fn a_skill_turned_off_clashes_with_nothing_and_a_plugins_namespaced_skill_never_
 }
 
 #[test]
-fn a_built_in_skill_never_loses_to_a_repo_or_harness_copy_of_its_name_on_any_route() {
-    // SK-6 (#2769): a clone could otherwise replace purlis's own `secrets` on Codex and opencode.
+fn a_built_in_skill_is_handed_beside_a_repo_or_harness_copy_of_its_name_and_both_are_a_clash() {
+    // SK-6 (#2769): a clone never replaces purlis's own `secrets`. SK-37 (#3027): nor does
+    // purlis hide the clone's, since every program reads a repo's and the person's skills itself
+    // and purlis never turns off a built-in's name, so both load and the pair is a clash.
     let plane = Plane::new();
     let built_in = plane.root.join("../plugin/skills");
     skill(&built_in, "secrets", &whole("secrets"));
-    let set = || {
-        skill_set(
-            Some(&plane.root),
-            &Machine {
-                built_in: Some(&built_in),
-                kept_local: Some(&|_| Ok(())),
-                harness: None,
-                made_since: None,
-            },
-            &Chat {
-                workspace: None,
-                persona: None,
-                names: &[],
-                turned_off: &[],
-                harness: HarnessSkills {
-                    route: Route::Plugin,
-                },
-            },
-        )
-    };
-
-    for route in [Route::Plugin, Route::Config, Route::Briefing] {
-        let got = set().with_outside(
+    // The config route names it `purlis-secrets`, which no copy here has
+    // (`a_built_in_skill_on_the_config_route_goes_by_a_name_of_its_own`).
+    for route in [Route::Plugin, Route::Briefing] {
+        let got = built_in_set(&plane, &built_in, route).with_outside(
             route,
             [
                 outside("secrets", Origin::Repo, repo("api"), false),
@@ -1314,16 +1297,264 @@ fn a_built_in_skill_never_loses_to_a_repo_or_harness_copy_of_its_name_on_any_rou
         );
         assert_eq!(
             effective(&got),
-            [("secrets", Origin::BuiltIn, false)],
+            [
+                ("secrets", Origin::BuiltIn, false),
+                ("secrets", Origin::Repo, false),
+                ("secrets", Origin::Harness, false),
+            ],
             "{route:?}"
         );
-        let hidden: Vec<String> = got.left_out.iter().map(|l| l.reason.to_string()).collect();
+        assert_eq!(got.built_in_dir(), Some(built_in.as_path()), "{route:?}");
+        assert_eq!(left_out(&got), [], "{route:?}");
+        let built_in_copy = At {
+            origin: Origin::BuiltIn,
+            local: false,
+        };
         assert_eq!(
-            hidden, ["hidden by purlis's built-in skill of this name"; 2],
+            got.clashes,
+            [
+                Clash {
+                    name: "secrets".to_owned(),
+                    plane: built_in_copy,
+                    outside: Origin::Repo,
+                    owner: repo("api"),
+                    outcome: Outcome::BothLoad,
+                },
+                Clash {
+                    name: "secrets".to_owned(),
+                    plane: built_in_copy,
+                    outside: Origin::Harness,
+                    owner: Owner::You,
+                    outcome: Outcome::BothLoad,
+                },
+            ],
             "{route:?}"
         );
-        assert!(got.clashes.is_empty(), "{route:?}");
+        assert_eq!(
+            got.beside_a_built_in()
+                .map(|clash| (clash.name.as_str(), clash.outside))
+                .collect::<Vec<_>>(),
+            [("secrets", Origin::Repo), ("secrets", Origin::Harness)],
+            "{route:?}"
+        );
     }
+}
+
+#[test]
+fn a_clash_with_a_project_skill_is_not_one_beside_a_built_in() {
+    let plane = Plane::new();
+    skill(&plane.project(), "review", &whole("review"));
+
+    let set = plane.set(None).with_outside(
+        Route::Config,
+        [outside("review", Origin::Repo, repo("api"), false)],
+    );
+
+    assert_eq!(set.clashes.len(), 1, "{:?}", set.clashes);
+    assert_eq!(set.beside_a_built_in().count(), 0);
+}
+
+/// The set of a chat at `plane`'s root on `route`, with the built-in skills in `built_in`.
+fn built_in_set(plane: &Plane, built_in: &Path, route: Route) -> SkillSet {
+    skill_set(
+        Some(&plane.root),
+        &Machine {
+            built_in: Some(built_in),
+            kept_local: Some(&|_| Ok(())),
+            harness: None,
+            made_since: None,
+        },
+        &Chat {
+            workspace: None,
+            persona: None,
+            names: &[],
+            turned_off: &[],
+            harness: HarnessSkills { route },
+        },
+    )
+}
+
+#[test]
+fn a_built_in_skill_on_the_config_route_goes_by_a_name_of_its_own() {
+    // opencode's route: the harness reads every skill by its bare name, purlis's and the clone's
+    // alike, so purlis's `secrets` is `purlis-secrets` there and nowhere else.
+    let plane = Plane::new();
+    let built_in = plane.root.join("../plugin/skills");
+    skill(&built_in, "secrets", &whole("secrets"));
+
+    let set = built_in_set(&plane, &built_in, Route::Config);
+    assert_eq!(
+        effective(&set),
+        [("purlis-secrets", Origin::BuiltIn, false)]
+    );
+    assert_eq!(
+        set.effective[0].skill.path,
+        built_in.join("secrets/SKILL.md"),
+        "still the bundle's own skill"
+    );
+    assert_eq!(
+        set.in_the_folder()
+            .map(|e| e.skill.name.as_str())
+            .collect::<Vec<_>>(),
+        ["purlis-secrets"],
+        "the set's folder holds it, under that name"
+    );
+
+    for route in [Route::Plugin, Route::Briefing, Route::Mcp] {
+        let set = built_in_set(&plane, &built_in, route);
+        assert_eq!(
+            effective(&set),
+            [("secrets", Origin::BuiltIn, false)],
+            "{route:?} is as it was"
+        );
+        assert_eq!(set.in_the_folder().count(), 0, "{route:?}");
+    }
+}
+
+#[test]
+fn on_the_config_route_a_repo_or_harness_skill_of_a_built_in_skills_bare_name_is_another_skill() {
+    let plane = Plane::new();
+    let built_in = plane.root.join("../plugin/skills");
+    skill(&built_in, "secrets", &whole("secrets"));
+
+    let got = built_in_set(&plane, &built_in, Route::Config).with_outside(
+        Route::Config,
+        [
+            outside("secrets", Origin::Repo, repo("api"), false),
+            outside("secrets", Origin::Harness, Owner::You, false),
+        ],
+    );
+
+    assert_eq!(
+        effective(&got),
+        [
+            ("purlis-secrets", Origin::BuiltIn, false),
+            ("secrets", Origin::Repo, false),
+            ("secrets", Origin::Harness, false),
+        ],
+        "both are in the set, each by its own name"
+    );
+    assert!(got.left_out.is_empty(), "{:?}", got.left_out);
+    assert!(got.clashes.is_empty(), "{:?}", got.clashes);
+}
+
+#[test]
+fn on_the_config_route_a_built_in_skills_own_name_is_kept_from_the_plane_and_a_clash_elsewhere() {
+    let plane = Plane::new();
+    let built_in = plane.root.join("../plugin/skills");
+    skill(&built_in, "secrets", &whole("secrets"));
+    skill(&plane.project(), "purlis-secrets", &whole("purlis-secrets"));
+    skill(&plane.project(), "secrets", &whole("secrets"));
+    skill(&plane.project(), "purlis-deploy", &whole("purlis-deploy"));
+
+    let got = built_in_set(&plane, &built_in, Route::Config).with_outside(
+        Route::Config,
+        [
+            outside("purlis-secrets", Origin::Repo, repo("api"), false),
+            outside("purlis-secrets", Origin::Harness, Owner::You, false),
+        ],
+    );
+
+    // opencode reads the repo's and the person's copies itself, beside purlis's, under the one
+    // name: both stay in the set, and each is a clash in which the chat may use either.
+    assert_eq!(
+        effective(&got),
+        [
+            ("purlis-deploy", Origin::Project, false),
+            ("purlis-secrets", Origin::BuiltIn, false),
+            ("purlis-secrets", Origin::Repo, false),
+            ("purlis-secrets", Origin::Harness, false),
+        ],
+        "a `purlis-` name no built-in skill takes is the plane's to use"
+    );
+    let clashes: Vec<(&str, Origin, Origin, Outcome)> = got
+        .clashes
+        .iter()
+        .map(|c| (c.name.as_str(), c.plane.origin, c.outside, c.outcome))
+        .collect();
+    assert_eq!(
+        clashes,
+        [
+            (
+                "purlis-secrets",
+                Origin::BuiltIn,
+                Origin::Repo,
+                Outcome::EitherOne
+            ),
+            (
+                "purlis-secrets",
+                Origin::BuiltIn,
+                Origin::Harness,
+                Outcome::EitherOne
+            ),
+        ]
+    );
+    // The plane's copy is purlis's to leave out, and is.
+    assert_eq!(
+        left_out(&got),
+        [
+            (
+                "purlis-secrets",
+                Origin::Project,
+                false,
+                "purlis's own skill goes by this name in this program, so this skill never \
+                 loads: rename it"
+                    .to_owned()
+            ),
+            (
+                "secrets",
+                Origin::Project,
+                false,
+                "a built-in skill has this name, and a built-in skill is never replaced".to_owned()
+            ),
+        ],
+        "the bare name stays the built-in skill's, as on every route"
+    );
+
+    // Elsewhere a plane skill may be named so: Claude Code knows it as `skills:purlis-secrets`.
+    let plugin = built_in_set(&plane, &built_in, Route::Plugin);
+    assert!(
+        effective(&plugin).contains(&("purlis-secrets", Origin::Project, false)),
+        "{:?}",
+        plugin.left_out
+    );
+}
+
+#[test]
+fn a_persona_names_a_built_in_skill_by_its_bare_name_on_the_config_route_too() {
+    let plane = Plane::new();
+    let built_in = plane.root.join("../plugin/skills");
+    skill(&built_in, "secrets", &whole("secrets"));
+    let names = [Reference::BuiltIn("secrets".to_owned())];
+
+    let set = skill_set(
+        Some(&plane.root),
+        &Machine {
+            built_in: Some(&built_in),
+            kept_local: Some(&|_| Ok(())),
+            harness: None,
+            made_since: None,
+        },
+        &Chat {
+            workspace: None,
+            persona: Some("reviewer"),
+            names: &names,
+            turned_off: &[],
+            harness: HarnessSkills {
+                route: Route::Config,
+            },
+        },
+    );
+
+    assert_eq!(
+        effective(&set),
+        [("purlis-secrets", Origin::BuiltIn, false)]
+    );
+    assert!(
+        set.left_out.is_empty(),
+        "never \"no such built-in\": {:?}",
+        set.left_out
+    );
 }
 
 // ---- lifecycle (SK-19, #2782) -------------------------------------------------------------
@@ -1658,4 +1889,35 @@ fn a_repo_skills_folder_purlis_could_not_list_takes_no_name_and_leaves_out_every
         .with_outside(Route::Plugin, [crowded()]);
     assert_eq!(set.from_the_plane().count(), 2);
     assert!(set.effective.iter().all(|e| e.origin != Origin::Repo));
+}
+
+#[test]
+fn a_reason_a_repo_gives_names_the_repo_and_reads_for_the_chat_in_it_on_its_tab() {
+    // #3234: in the studio and the list, and on the tab of a chat in that repo, which already
+    // says "because of the repo it works in".
+    let hidden = Reason::HiddenByRepo {
+        repo: "api".to_owned(),
+    };
+    let unread = Reason::RepoUnread {
+        repo: "web".to_owned(),
+    };
+
+    assert_eq!(
+        hidden.to_string(),
+        "hidden by the skill of this name in the repo api"
+    );
+    assert_eq!(
+        hidden.to_its_chat(),
+        "the repo api has its own copy, which loads in its place"
+    );
+    assert_eq!(
+        unread.to_its_chat(),
+        "purlis could not read the skills folder of web whole, so it is left out in case the \
+         repo has its own"
+    );
+    assert!(hidden.of_a_repo() && unread.of_a_repo());
+    assert_eq!(
+        Reason::TurnedOff.to_its_chat(),
+        Reason::TurnedOff.to_string()
+    );
 }

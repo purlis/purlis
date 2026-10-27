@@ -100,14 +100,14 @@ const START_OPTIONS = {
  */
 async function openAChat() {
   await userEvent.click(await screen.findByRole("button", { name: "New tab" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
 /** Splits the pane in front. A split starts a harness too, so it picks as well — there is
  *  no path in this app by which a chat starts on a profile nobody chose. */
 async function splitInto(which: "Split right" | "Split down") {
   await userEvent.click(screen.getByRole("button", { name: which }));
-  await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 }
 
 /**
@@ -309,7 +309,7 @@ describe("App", () => {
     const page = heading.closest(".body");
     if (page === null) throw new Error("the opener is drawn outside the window's body");
     const lists = await waitFor(() => {
-      const found = page.querySelectorAll(".notice-list:not([hidden])");
+      const found = page.querySelectorAll("[data-scope=notice-list]:not([hidden])");
       expect(found).toHaveLength(1);
       expect(found[0].querySelectorAll("[data-cause]")).toHaveLength(2);
       return found;
@@ -550,7 +550,7 @@ describe("App", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Split right" }));
     await userEvent.click(await screen.findByRole("radio", { name: /^codex/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Start" }));
+    await userEvent.click(screen.getByRole("button", { name: "Start chat" }));
 
     await waitFor(() => expect(panes()).toEqual(["session 1", "session 2"]));
     expect(tabs(), "both panes are drawn in the one tab").toHaveLength(1);
@@ -646,7 +646,7 @@ describe("App", () => {
     await splitInto("Split right");
 
     await userEvent.click(paneDoing(1).getByRole("button", { name: "Split down" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Start chat" }));
 
     // Session 3 is beside session 1 and not beside session 2: the pane that was pressed is
     // the one that divided. Read off the DOM order, which is the layout's own order.

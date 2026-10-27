@@ -5,12 +5,13 @@ import { memo, useRef } from "react";
 import { Globe } from "lucide-react";
 import type { Catalogued, Offer } from "./actions";
 import type { BrowserDriver, ChatBrowser } from "./bindings";
-import { addressChip, chatBrowserTitle, thisDevice } from "./browsers";
+import { addressChip, chatBrowserTitle, deviceOf } from "./browsers";
 import { Menued } from "./Menus";
 import { THUMBNAIL_ACROSS, useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { useProjectShown } from "./projectShown";
 import { onAMac } from "./tabKeys";
 import { Button } from "./ui/button/Button";
+import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -50,7 +51,7 @@ export function browserSaid(
   const driver = shown.browser.driver;
   return [
     chatBrowserTitle(shown.chat, shown.browser.name),
-    addressChip(origin ?? null, thisDevice(mac)).said,
+    addressChip(origin ?? null, deviceOf(shown.browser.pool ?? null, mac)).said,
     ...(driver !== null ? [DRIVEN[driver].said] : []),
   ];
 }
@@ -119,12 +120,10 @@ export function TabBrowsers({
   return (
     <span className="tab-browsers">
       <Tooltip tip={said}>
-        <span className="count-pill tab-browsers-count" role="img" aria-label={said}>
+        <Count role="img" aria-label={said}>
           <Globe aria-hidden="true" />
-          <span className="count-pill-chats" aria-hidden="true">
-            {used.length}
-          </span>
-        </span>
+          <span aria-hidden="true">{used.length}</span>
+        </Count>
       </Tooltip>
       {used.map((shown) => (
         <TabBrowser key={shown.browser.program} shown={shown} onOpen={onOpen} />
@@ -226,7 +225,15 @@ function BrowserRow({
   const driver = shown.browser.driver;
   return (
     <Menued
-      on={{ on: "browser", program: shown.browser.program, handTo }}
+      on={{
+        on: "browser",
+        program: shown.browser.program,
+        handTo,
+        // Its chat's browser timeline, while that chat is open (#2017).
+        ...(shown.browser.was === null && !shown.browser.unended
+          ? { session: shown.browser.session }
+          : {}),
+      }}
       offers={offers}
       onPress={onPress ?? (() => undefined)}
     >

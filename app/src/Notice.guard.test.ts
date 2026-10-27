@@ -520,6 +520,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "being read again after the branch moved, which goes when the new one comes",
   },
   "editor/ToYourEditor.tsx": { count: 1, why: "the piece files' read refusal, inside the editor" },
+  "keys/ShortcutsView.tsx": {
+    count: 1,
+    why: "a filter that matches no shortcut says so where the cheat sheet's list was (#2921)",
+  },
   "references.tsx": {
     count: 1,
     why: "the reference picker saying it found no chat, inside its menu",
@@ -579,6 +583,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   "ui/field/Field.tsx": {
     count: 1,
     why: "a field's error line under its box, why its value is refused, in either of the family's boxes (#2905)",
+  },
+  "ui/table/TableBar.tsx": {
+    count: 1,
+    why: "how many rows of a table are chosen, a live value said as it changes (#2911)",
   },
 };
 
@@ -701,7 +709,8 @@ describe("the window's standing lines", () => {
   it("are all Notices, but for the live regions listed with why", () => {
     const counted: Record<string, number> = {};
     for (const { name, text } of sources()) {
-      if (name === "Notice.tsx") continue;
+      // The Notice, and the family it is drawn by: a card's message is its live region (#3344).
+      if (name === "Notice.tsx" || name === "ui/notice/Notice.tsx") continue;
       const n = tags(text, (tag) => tag !== "Notice").filter(({ attrs }) => live(attrs)).length;
       if (n > 0) counted[name] = n;
     }

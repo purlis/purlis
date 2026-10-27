@@ -17,16 +17,19 @@ pub struct Opencode;
 /// The one opencode adapter.
 pub static ADAPTER: Opencode = Opencode;
 
-/// The directories an opencode chat's skills sit in, the built-in one first: what the shim
-/// appends to `skills.paths`.
+/// The directory an opencode chat's skills sit in: what the shim appends to `skills.paths`. It
+/// is the `skills/` of the set's folder the host laid out ([`crate::skills::linked`]), which
+/// holds the built-in skills as `purlis-<name>` beside the plane's
+/// ([`crate::skills::Route::names_built_ins_its_own`]): opencode reads every skill by its bare
+/// `name`, in this folder and the clone's and the person's own alike, and a skill of the clone's
+/// named as a built-in one would otherwise be a second skill of that name, of which opencode
+/// keeps whichever it read last (measured on 1.18.33). The bundle's own `skills/` is never
+/// handed. No folder, none of them.
 fn skill_dirs(kit: Kit<'_>) -> Vec<std::path::PathBuf> {
     let set = crate::skills::for_chat(kit, Harness::Opencode);
-    let linked =
-        crate::skills::linked(&set, kit).map(|folder| folder.join(crate::skills::DIR_IN_BUNDLE));
-    set.built_in_dir()
-        .map(std::path::Path::to_path_buf)
+    crate::skills::linked(&set, kit)
+        .map(|folder| folder.join(crate::skills::DIR_IN_BUNDLE))
         .into_iter()
-        .chain(linked)
         .collect()
 }
 
@@ -52,10 +55,10 @@ impl HarnessAdapter for Opencode {
     /// `OPENCODE_PERMISSION`, the same merge), and a call to it is refused. opencode merges
     /// objects key by key, so the operator's own rules stand beside it.
     ///
-    /// Its skills are its set's ([`crate::skills::for_chat`]): the built-in skills' directory,
-    /// and the `skills/` of the folder of links to the plane's that the host laid out
-    /// ([`crate::skills::linked`]), are handed to the shim as its option, which adds them to the skills opencode discovers for
-    /// this process ([`Harness::skills`]).
+    /// Its skills are its set's ([`crate::skills::for_chat`]): the `skills/` of the set's folder
+    /// the host laid out ([`crate::skills::linked`]), the built-in skills as `purlis-<name>`
+    /// beside the plane's, is handed to the shim as its option, which adds it to the skills
+    /// opencode discovers for this process ([`Harness::skills`], [`skill_dirs`]).
     ///
     /// It cannot report `SessionEnd`: quitting opencode fires no event and runs no exit
     /// handler in a plugin (measured). The app sees the process end.
@@ -211,6 +214,12 @@ impl HarnessAdapter for Opencode {
         true
     }
 
+    /// No grade runs here until purlis can hold its chats to the grade's limits and read their
+    /// spend on this harness (#3272).
+    fn can_grade(&self) -> bool {
+        false
+    }
+
     /// The wrap's program first, with the profile written for where the chat opens, then the
     /// chat's whole line. Its traffic is pointed at charter's egress proxy, the only place the
     /// profile lets it connect, and its temp directory is its own.
@@ -330,9 +339,11 @@ mod tests {
         let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(bundle.path()),
                 persona: None,
+                graded: false,
             },
             None,
             &crate::harness_plugin::Chosen::new(),
@@ -356,7 +367,8 @@ mod tests {
     #[test]
     fn an_opencode_chat_denies_each_skill_turned_off_except_a_built_in_skills_name() {
         // SK-6 (#2769): opencode's `permission.skill` goes by the name alone, so a built-in
-        // skill's name is never denied, whatever a file says.
+        // skill's name is never denied, whatever a file says. It is `purlis-secrets` here, so a
+        // skill of the person's or the clone's named `secrets` is another, and is denied.
         let bundle = tempfile::tempdir().expect("a bundle");
         let shim = crate::opencode::shim_in(bundle.path());
         std::fs::create_dir_all(shim.parent().expect("a parent")).expect("dirs");
@@ -370,14 +382,21 @@ mod tests {
         .expect("its SKILL.md");
         let chosen = crate::harness_plugin::Chosen {
             plugins: std::collections::BTreeMap::new(),
-            skills_off: ["review".to_owned(), "secrets".to_owned()].into(),
+            skills_off: [
+                "review".to_owned(),
+                "secrets".to_owned(),
+                "purlis-secrets".to_owned(),
+            ]
+            .into(),
         };
         let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
             Kit {
                 skills: None,
+                laid_out: None,
                 binary: std::path::Path::new("/bin/charter"),
                 plugin: Some(bundle.path()),
                 persona: None,
+                graded: false,
             },
             None,
             &chosen,
@@ -393,7 +412,58 @@ mod tests {
         let config: serde_json::Value = serde_json::from_str(config).expect("JSON");
         assert_eq!(
             config["permission"],
-            serde_json::json!({ "skill": { "review": "deny" } })
+            serde_json::json!({ "skill": { "review": "deny", "secrets": "deny" } })
+        );
+    }
+
+    /// The shim is handed the set's folder the host laid out, which holds the built-in skills
+    /// as `purlis-<name>`, and never the bundle's own `skills/`, whose `secrets` is a bare name.
+    #[test]
+    fn an_opencode_chat_is_handed_the_set_s_folder_alone_never_the_bundle_s_skills() {
+        let bundle = tempfile::tempdir().expect("a bundle");
+        let shim = crate::opencode::shim_in(bundle.path());
+        std::fs::create_dir_all(shim.parent().expect("a parent")).expect("dirs");
+        std::fs::write(&shim, "").expect("the shim");
+        let secrets = bundle.path().join("skills/secrets");
+        std::fs::create_dir_all(&secrets).expect("a built-in skill");
+        std::fs::write(
+            secrets.join("SKILL.md"),
+            "---\nname: secrets\ndescription: Keeps secrets.\n---\n",
+        )
+        .expect("its SKILL.md");
+        let folder = bundle.path().join("set");
+        let handed = |laid_out| {
+            let StateHooks::ThisSessionOnly { env, .. } = ADAPTER.arm(
+                Kit {
+                    skills: None,
+                    laid_out,
+                    binary: std::path::Path::new("/bin/charter"),
+                    plugin: Some(bundle.path()),
+                    persona: None,
+                    graded: false,
+                },
+                None,
+                &crate::harness_plugin::Chosen::new(),
+                None,
+            ) else {
+                panic!("armed per session");
+            };
+            let config = env
+                .iter()
+                .find(|(name, _)| name == crate::opencode::CONFIG_ENV)
+                .map(|(_, value)| value.clone())
+                .expect("the session config");
+            let config: serde_json::Value = serde_json::from_str(&config).expect("JSON");
+            config["plugin"][0].clone()
+        };
+
+        assert_eq!(
+            handed(Some(folder.as_path()))[1]["skills"],
+            folder.join("skills").display().to_string()
+        );
+        assert!(
+            handed(None).is_string(),
+            "no folder: the shim with no skills option, never the bundle's"
         );
     }
 }

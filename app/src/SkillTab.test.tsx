@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillTab, groupSaid } from "./SkillTab";
 import type { Offer } from "./actions";
@@ -10,7 +10,14 @@ import type { SkillStats } from "./bindings";
 
 const NO_TOTALS: SkillStats = { by_harness: [], by_persona: [], by_workspace: [] };
 
-const EMPTY_PAGE = { copies: [], uses: [], used_by: [], uses_cut: false };
+const EMPTY_PAGE = {
+  copies: [],
+  uses: [],
+  used_by: [],
+  uses_cut: false,
+  pinned_by: [],
+  pins_refused: [],
+};
 
 afterEach(() => {
   cleanup();
@@ -69,6 +76,7 @@ function runsPanel(rows: { key: string; cells: string[] }[]) {
 describe("a skill's Runs panel", () => {
   it("lists each run's signals, never a verdict, and marks the run the chip opened it on", async () => {
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       if (cmd === "skill_panels")
@@ -112,6 +120,7 @@ describe("a skill's Runs panel", () => {
 
   it("says there are no runs yet, and how one starts", async () => {
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       if (cmd === "skill_panels") return [runsPanel([])];
@@ -130,6 +139,7 @@ describe("a skill's Runs panel", () => {
     const table = panel.blocks[panel.blocks.length - 1] as { empty: { offer: string | null } };
     table.empty.offer = "chat.new";
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       if (cmd === "skill_panels") return [panel];
@@ -155,6 +165,7 @@ describe("a skill's Runs panel", () => {
 describe("a panel an extension adds to a skill's tab", () => {
   it("is drawn after purlis's own, under its title and the extension's name", async () => {
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_stats") return NO_TOTALS;
       if (cmd === "skill_panels")
@@ -212,6 +223,7 @@ describe("a skill's totals", () => {
       ms: 65_000,
     });
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_panels") return [runsPanel([])];
       if (cmd === "skill_stats")
@@ -241,6 +253,7 @@ describe("a skill's totals", () => {
 
   it("shows nothing to total before a skill has run", async () => {
     mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
       if (cmd === "skill_details") return EMPTY_PAGE;
       if (cmd === "skill_panels") return [runsPanel([])];
       if (cmd === "skill_stats") return NO_TOTALS;
@@ -255,5 +268,50 @@ describe("a skill's totals", () => {
     expect(groupSaid({ kind: "named", name: "ops" }, "No persona")).toBe("ops");
     expect(groupSaid({ kind: "none" }, "No persona")).toBe("No persona");
     expect(groupSaid({ kind: "not-recorded" }, "No persona")).toBe("Not recorded");
+  });
+});
+
+describe("a skill's Grades panel", () => {
+  it("is of the copy the tab shows: the first, then the one picked (#3353)", async () => {
+    const copy = (label: string, local: boolean) => ({
+      level: { at: "project", local },
+      label,
+      lifecycle: { state: "active" },
+      unread: false,
+      owners: [],
+      unused_days: null,
+      versions: [],
+      uncommitted: {
+        group: { kind: "none" },
+        runs: 0,
+        ended: 0,
+        tool_calls: 0,
+        tool_errors: 0,
+        refusals: 0,
+        asks: 0,
+        tokens: null,
+        ms: 0,
+      },
+    });
+    const levels: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "skill_grade_plan") return { running: null };
+      if (cmd === "skill_details")
+        return {
+          ...EMPTY_PAGE,
+          copies: [copy("project", false), copy("project, this machine", true)],
+        };
+      if (cmd === "skill_stats") return NO_TOTALS;
+      if (cmd === "skill_panels") {
+        levels.push((args as { level: unknown }).level);
+        return [runsPanel([])];
+      }
+      return null;
+    });
+    render(<SkillTab plane="p" name="deploy" changed={0} />);
+
+    await waitFor(() => expect(levels).toContainEqual({ at: "project", local: false }));
+    fireEvent.click(await screen.findByRole("button", { name: "project, this machine" }));
+    await waitFor(() => expect(levels.at(-1)).toEqual({ at: "project", local: true }));
   });
 });

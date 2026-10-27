@@ -111,6 +111,8 @@ struct World {
     needs_you: Vec<crate::browserneedsyou::Waiting>,
     /// The chats whose browser's sites wait on the person (#2018).
     browser_sites: Vec<crate::chatbrowsers::SitesWait>,
+    pool_logins: Vec<crate::chatbrowsers::PoolLoginWaits>,
+    pool_tools: Vec<crate::pooltools::PoolToolWaits>,
     /// What the project's committed file declares it expects (ADR 0093).
     declared: purlis_core::sandbox::services::Declared,
 }
@@ -137,6 +139,8 @@ impl World {
             browsers: Vec::new(),
             needs_you: Vec::new(),
             browser_sites: Vec::new(),
+            pool_logins: Vec::new(),
+            pool_tools: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
@@ -169,6 +173,8 @@ impl World {
             browsers: self.browsers.clone(),
             needs_you: self.needs_you.clone(),
             browser_sites: self.browser_sites.clone(),
+            pool_logins: self.pool_logins.clone(),
+            pool_tools: self.pool_tools.clone(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,
@@ -1714,4 +1720,95 @@ fn a_chats_browser_sites_ask_offers_everyone_only_where_the_projects_sandbox_is_
     };
     assert_eq!(ids(true), ["chat", "you", "project", KEEP]);
     assert_eq!(ids(false), ["chat", "you", KEEP]);
+}
+
+#[test]
+fn a_runner_chats_browser_login_asks_whether_its_persona_may_log_in_on_the_pool() {
+    let mut world = World::new();
+    world.pool_logins = vec![crate::chatbrowsers::PoolLoginWaits {
+        session: 6,
+        persona: "steward".into(),
+        bound: purlis_core::poollogins::Bound {
+            pool: "builds".into(),
+            definition: "d".repeat(64),
+            image: "a".repeat(64),
+            runner: "01JB0RUNNER0000000000000000".into(),
+            runner_key: "ab".repeat(32),
+            runner_image: "a".repeat(64),
+            engine: "this machine's Docker".into(),
+        },
+        login: "shop-login".into(),
+        identity: "id-shop-login".into(),
+        since: 1_700_000_000,
+        changed: false,
+    }];
+
+    let asks = world.asks();
+
+    let ask = asks
+        .iter()
+        .find(|one| one.source == AskSource::PoolLogin)
+        .expect("its Ask is listed");
+    assert_eq!(ask.session, 6);
+    assert_eq!(ask.answer, AnswerPath::PoolLogin);
+    assert_eq!(ids(ask), [super::POOL_LOGIN_ALLOW, KEEP]);
+    assert_eq!(
+        ask.options[0].label, "Allow on pool builds",
+        "the line names its answer"
+    );
+    assert!(ask.says.contains("shop-login"), "{}", ask.says);
+    assert_eq!(
+        ask.says,
+        "Wants its browser logged in with shop-login on pool builds, which runs on this \
+         machine's Docker. Allow on pool builds fills steward's shop-login there from your \
+         vault; the runner keeps none"
+    );
+}
+
+#[test]
+fn each_run_of_a_runner_chats_tool_asks_whether_its_values_may_be_sent_for_that_run() {
+    let mut world = World::new();
+    let waits = |run: u32, waited: bool| crate::pooltools::PoolToolWaits {
+        session: 6,
+        run,
+        persona: "devops".into(),
+        bound: purlis_core::poollogins::Bound {
+            pool: "builds".into(),
+            definition: "d".repeat(64),
+            image: "a".repeat(64),
+            runner: "01JB0RUNNER0000000000000000".into(),
+            runner_key: "ab".repeat(32),
+            runner_image: "a".repeat(64),
+            engine: "this machine's Docker".into(),
+        },
+        tool: "kubectl".into(),
+        vault: "team".into(),
+        since: 1_700_000_000,
+        waited,
+    };
+    world.pool_tools = vec![waits(1, false), waits(2, true)];
+
+    let asks = world.asks();
+
+    let tools: Vec<&Shown> = asks
+        .iter()
+        .filter(|one| one.source == AskSource::PoolTool)
+        .collect();
+    assert_eq!(tools.len(), 2, "one Ask per run");
+    let ask = tools[0];
+    assert_eq!(ask.session, 6);
+    assert_eq!(ask.answer, AnswerPath::PoolTool { run: 1 });
+    assert_eq!(ids(ask), [super::POOL_TOOL_ALLOW, KEEP]);
+    assert_eq!(ask.options[0].label, "Allow this run");
+    assert_eq!(
+        ask.says,
+        "Wants to run kubectl on pool builds, which runs on this machine's Docker, with \
+         devops's values from vault team. Allow this run sends them from your vault for this \
+         run alone; the runner keeps none"
+    );
+    assert!(
+        tools[1].says.starts_with("Asked while you were away. "),
+        "{}",
+        tools[1].says
+    );
 }

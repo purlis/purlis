@@ -42,7 +42,7 @@ use purlis_skills::runs::{Call, Closed, Ended, Heard, Open, Spans, Start, Starte
 const FAILED: &str = "posttoolusefailure";
 
 /// How long a typed skill is held for its prompt: ten minutes.
-pub const HELD_FOR_MS: u64 = 10 * 60 * 1000;
+const HELD_FOR_MS: u64 = 10 * 60 * 1000;
 
 /// **How a chat shows that the prompt sent was the one a skill was typed into**: its harness
 /// adapter says ([`crate::harness::HarnessAdapter::typed_start_named`]).
@@ -72,7 +72,8 @@ pub struct Tracker {
 /// turn it is sent in opens are theirs.
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Prompted {
-    /// [`StartedBy::Curation`] or [`StartedBy::Trigger`]; any other start is held for nothing.
+    /// [`StartedBy::Curation`], [`StartedBy::Trigger`] or [`StartedBy::Grade`]; any other start
+    /// is held for nothing.
     pub by: StartedBy,
     /// The prompt's lead, the digest of its first six words. Never the text itself.
     pub lead: u64,
@@ -89,17 +90,17 @@ impl std::fmt::Debug for Prompted {
 }
 
 impl Prompted {
-    /// The prompt `prompt`, put in a chat by `by`.
-    pub fn of(by: StartedBy, prompt: &str) -> Self {
+    /// The prompt `prompt`, put in a chat by `by`, digested under the chat's `salt`.
+    pub fn of(by: StartedBy, prompt: &str, salt: &PromptSalt) -> Self {
         Self {
             by,
-            lead: PromptMarks::lead(prompt),
+            lead: PromptMarks::lead(prompt, salt),
         }
     }
 }
 
 /// A skill Use skill… typed into a chat, unsent: the run its prompt opens.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Typed {
     /// The skill, by the name the chat's harness knows it by.
     pub skill: String,
@@ -116,10 +117,24 @@ pub struct Typed {
         deserialize_with = "purlis_skills::runs::level_or_none"
     )]
     pub level: Option<purlis_skills::runs::Level>,
-    /// The text typed, as [`PromptMarks`] digests it: what a prompt that holds it holds. Never
-    /// the text itself.
+    /// The text typed, as [`PromptMarks`] digests it under the chat's [`PromptSalt`]: what a
+    /// prompt that holds it holds. Never the text itself.
     pub text: u64,
     pub confirmed: Confirmed,
+}
+
+/// Which skill and run, and never the digest of the text typed: a debug dump of one says
+/// nothing of what was typed.
+impl std::fmt::Debug for Typed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Typed")
+            .field("skill", &self.skill)
+            .field("run", &self.run)
+            .field("workspace", &self.workspace)
+            .field("level", &self.level)
+            .field("confirmed", &self.confirmed)
+            .finish_non_exhaustive()
+    }
 }
 
 /// One typed skill held for a chat.
@@ -143,14 +158,50 @@ pub struct Reported {
     pub opened: Vec<Open>,
 }
 
+/// **The salt a chat's prompts are digested under** (SK-38, #3029): the chat's own id (ADR
+/// 0066), which its hooks read from [`crate::hookwire::CHAT_ID_ENV`] and the window from the chat
+/// it typed into. Each chat's digests of the same words differ, so a table of likely prompts
+/// made once matches no chat's filter. **It separates chats and hides nothing:** the id is no
+/// secret (it names the chat's records on disk), so whoever holds a filter and its chat's id can
+/// still test a guess against it (#3369). Its `Debug` shows nothing all the same.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PromptSalt(String);
+
+impl PromptSalt {
+    /// The salt of the chat whose id is `id`; none for an empty one.
+    pub fn of_chat(id: &str) -> Option<Self> {
+        let id = id.trim();
+        (!id.is_empty()).then(|| Self(id.to_owned()))
+    }
+
+    /// The salt of the chat a hook runs in, from its environment `env`; none outside a chat the
+    /// app started.
+    pub fn read(env: &dyn Fn(&str) -> Option<String>) -> Option<Self> {
+        crate::envvar::lookup(crate::hookwire::CHAT_ID_ENV, env).and_then(|id| Self::of_chat(&id))
+    }
+}
+
+impl std::fmt::Debug for PromptSalt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PromptSalt(..)")
+    }
+}
+
 /// **A prompt's marks** (SK-12): which stretches of its lines a prompt holds, as a 256-bit Bloom
 /// filter of the digests of each line's word-by-word stretches, so a typed skill's text can be
 /// checked against the prompt it was sent in without the prompt leaving its hook. A stretch
 /// starts at any word of a line and runs on for at most [`PromptMarks::SPAN`] words, so a skill
 /// typed after another on the same line is found too; at most [`PromptMarks::MOST`] are marked,
-/// in the order the prompt reads.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// in the order the prompt reads. Every digest is keyed by the chat's [`PromptSalt`] (SK-38),
+/// and its `Debug` shows none of its bits.
+#[derive(Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PromptMarks([u64; 4]);
+
+impl std::fmt::Debug for PromptMarks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PromptMarks(..)")
+    }
+}
 
 impl PromptMarks {
     /// The most stretches one prompt marks.
@@ -158,8 +209,10 @@ impl PromptMarks {
     /// The most words one stretch runs to.
     pub const SPAN: usize = 6;
 
-    /// The marks of `prompt`: every stretch of each of its lines, white space collapsed.
-    pub fn of(prompt: &str) -> Self {
+    /// The marks of `prompt` under `salt`: every stretch of each of its lines, white space
+    /// collapsed. What a chat whose typed skills are confirmed by the prompt sends
+    /// ([`Confirmed::ByPrompt`]).
+    pub fn of(prompt: &str, salt: &PromptSalt) -> Self {
         let mut marks = Self::default();
         let mut marked = 0;
         for line in prompt.lines() {
@@ -174,7 +227,7 @@ impl PromptMarks {
                         stretch.push(' ');
                     }
                     stretch.push_str(word);
-                    marks.mark(Self::digest(&stretch));
+                    marks.mark(Self::digest(&stretch, salt));
                     marked += 1;
                 }
             }
@@ -182,12 +235,25 @@ impl PromptMarks {
         marks
     }
 
+    /// The marks of `prompt`'s lead alone under `salt`: the one stretch a curation action's or a
+    /// trigger's prompt is known by ([`Prompted`]), and no filter of the rest. What a chat whose
+    /// typed skills its harness names sends ([`Confirmed::ByName`]). **A first line of six words
+    /// or fewer is its own lead**, so such a line is digested whole: a custom curation action's
+    /// prompt may be that short ("Tidy alpha."), and is known by nothing else.
+    pub fn lead_of(prompt: &str, salt: &PromptSalt) -> Self {
+        let mut marks = Self::default();
+        if prompt.split_whitespace().next().is_some() {
+            marks.mark(Self::lead(prompt, salt));
+        }
+        marks
+    }
+
     /// The digest of `prompt`'s lead: the first [`Self::SPAN`] words of its first line, the
     /// first stretch [`Self::of`] marks of a prompt that begins with it, however long the rest.
-    fn lead(prompt: &str) -> u64 {
+    fn lead(prompt: &str, salt: &PromptSalt) -> u64 {
         let first = prompt.lines().next().unwrap_or_default();
         let lead: Vec<&str> = first.split_whitespace().take(Self::SPAN).collect();
-        Self::digest(&lead.join(" "))
+        Self::digest(&lead.join(" "), salt)
     }
 
     /// Whether nothing is marked: no prompt, or one of no words.
@@ -195,12 +261,15 @@ impl PromptMarks {
         self.0.iter().all(|bits| *bits == 0)
     }
 
-    /// The digest of `text` a prompt that holds it as a stretch of a line is marked with: its
-    /// words, white space collapsed.
-    pub fn digest(text: &str) -> u64 {
-        use sha2::Digest;
+    /// The digest of `text` under `salt` that a prompt holding it as a stretch of a line is
+    /// marked with: HMAC-SHA256 of its words, white space collapsed, keyed by the salt.
+    pub fn digest(text: &str, salt: &PromptSalt) -> u64 {
+        use hmac::{KeyInit, Mac};
         let words = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        let hash = sha2::Sha256::digest(words.as_bytes());
+        let mut keyed = hmac::Hmac::<sha2::Sha256>::new_from_slice(salt.0.as_bytes())
+            .expect("HMAC takes a key of any length");
+        keyed.update(words.as_bytes());
+        let hash = keyed.finalize().into_bytes();
         let mut first = [0u8; 8];
         first.copy_from_slice(&hash[..8]);
         u64::from_le_bytes(first)
@@ -288,7 +357,10 @@ impl Tracker {
     /// the next prompt that holds its lead is theirs, and so are the runs its turn opens at the
     /// top. The one put there last stands. Any other start is held for nothing.
     pub fn prompted(&mut self, key: &str, prompted: Prompted) {
-        if matches!(prompted.by, StartedBy::Curation | StartedBy::Trigger) {
+        if matches!(
+            prompted.by,
+            StartedBy::Curation | StartedBy::Trigger | StartedBy::Grade
+        ) {
             self.prompted.insert(key.to_owned(), prompted);
         }
     }

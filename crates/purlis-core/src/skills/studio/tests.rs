@@ -154,3 +154,169 @@ fn an_empty_runs_panel_offers_a_new_chat() {
     };
     assert_eq!(table.empty.offer.as_deref(), Some("chat.new"));
 }
+
+/// One grade of `deploy` whose arm with the skill passed every test and whose arm without it
+/// passed half, on its commit.
+fn a_grade() -> super::super::grades::Graded {
+    use purlis_skills::grade::{Arm, ArmScore, GradeEnd, GradeReport, Stat, TriggerScore};
+    let stat = |mean: f64, stddev: f64| Stat {
+        mean,
+        stddev,
+        min: mean,
+        max: mean,
+    };
+    let score = |arm: Arm, pass: bool| TriggerScore {
+        query: "ship it".into(),
+        should_trigger: true,
+        arm,
+        runs: 3,
+        triggered: if pass { 3 } else { 0 },
+        rate: Some(if pass { 1.0 } else { 0.0 }),
+        pass: Some(pass),
+        chats: Vec::new(),
+    };
+    let arm = |arm: Arm, mean: f64, stddev: f64| ArmScore {
+        arm,
+        pass_rate: Some(stat(mean, stddev)),
+        tokens: None,
+        seconds: None,
+        chats: 6,
+        not_run: 0,
+    };
+    super::super::grades::Graded {
+        v: super::super::grades::VERSION,
+        grade: "g1".into(),
+        skill: "deploy".into(),
+        level: Some("skills".into()),
+        tree: "a".repeat(40),
+        commit: Some("0123456789abcdef0123456789abcdef01234567".into()),
+        harness: Some("claude".into()),
+        profile: Some("work".into()),
+        ts: "2026-10-25T10:00:05+00:00".into(),
+        runs: 3,
+        report: GradeReport {
+            grader: purlis_skills::grade::BUILT_IN.into(),
+            triggers: vec![score(Arm::With, true), score(Arm::Without, false)],
+            arms: vec![arm(Arm::With, 1.0, 0.0), arm(Arm::Without, 0.5, 0.12)],
+            delta: Some(0.5),
+            ended: GradeEnd::Whole,
+            not_started: None,
+            cap: None,
+            spent_tokens: None,
+            cost_cap_usd: None,
+            spent_usd: None,
+        },
+        spent: super::super::grades::Spent {
+            chats: 12,
+            tokens: None,
+            cost_usd: None,
+        },
+    }
+}
+
+#[test]
+fn the_grades_panel_is_a_scorecard_of_each_grade_against_no_skill() {
+    let blocks = grades_blocks(&[a_grade()], "deploy");
+    let [Block::Note { text, .. }, Block::Table(table)] = blocks.as_slice() else {
+        panic!("{blocks:?}");
+    };
+    assert!(text.contains("3 times each"), "{text}");
+    assert_eq!(table.caption, "Grades of deploy");
+    assert_eq!(
+        table.rows[0].cells,
+        [
+            "2026-10-25 10:00 UTC",
+            "0123456789ab",
+            "Claude Code",
+            "1 of 1",
+            "100%",
+            "50% ± 12",
+            "+50 points",
+            "12 chats",
+            "Finished",
+        ]
+    );
+    assert_eq!(table.columns.len(), table.rows[0].cells.len());
+}
+
+#[test]
+fn a_skill_with_no_grades_says_so_and_how_one_is_made() {
+    let blocks = grades_blocks(&[], "deploy");
+    let [Block::Table(table)] = blocks.as_slice() else {
+        panic!("{blocks:?}");
+    };
+    assert_eq!(table.empty.headline, "No grades of deploy yet");
+    assert!(table.empty.body.as_deref().unwrap().contains("Grade"));
+}
+
+#[test]
+fn purlis_s_own_panels_are_its_grades_then_its_runs() {
+    let plane = tempfile::tempdir().expect("a project");
+    let keys: Vec<PanelKey> = own_panels(plane.path(), "deploy", None)
+        .into_iter()
+        .map(|panel| panel.key)
+        .collect();
+    assert_eq!(keys, [PanelKey::Grades, PanelKey::Runs]);
+}
+
+/// #3353 (L4), #3275: same-named copies at two levels are two skills, so the Grades panel reads
+/// the rows of the copy it shows alone, and with no level named, of the copy the tab shows first.
+#[test]
+fn the_grades_panel_shows_one_copys_grades_alone() {
+    let plane = tempfile::tempdir().expect("a project");
+    let root = plane.path();
+    for folder in ["skills/deploy", "skills.local/deploy"] {
+        std::fs::create_dir_all(root.join(folder)).unwrap();
+        std::fs::write(
+            root.join(folder).join("SKILL.md"),
+            "---\nname: deploy\ndescription: Ships it.\n---\n",
+        )
+        .unwrap();
+    }
+    let shared = Level::project();
+    let local = Level::project().local(true);
+    let row = |id: &str, level: &Level| {
+        let mut one = a_grade();
+        one.grade = id.to_owned();
+        one.level = level.rel();
+        one.tree = "uncommitted".to_owned();
+        one.commit = None;
+        serde_json::to_string(&one).unwrap()
+    };
+    let committed = root.join("personas/_grades");
+    std::fs::create_dir_all(&committed).unwrap();
+    std::fs::write(
+        committed.join("2026-10.laptop.jsonl"),
+        format!("{}\n", row("shared-one", &shared)),
+    )
+    .unwrap();
+    let mine = crate::plane::state_dir(root).join(super::super::grades::LOCAL_DIR);
+    std::fs::create_dir_all(&mine).unwrap();
+    std::fs::write(
+        mine.join("2026-10.jsonl"),
+        format!("{}\n", row("local-one", &local)),
+    )
+    .unwrap();
+    let keys = |level: Option<&Level>| -> Vec<String> {
+        let blocks = GradesPanel { plane: root, level }.blocks("deploy").unwrap();
+        let table = blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::Table(table) => Some(table),
+                _ => None,
+            })
+            .expect("a table");
+        table.rows.iter().map(|row| row.key.clone()).collect()
+    };
+    assert_eq!(keys(Some(&shared)), ["shared-one"]);
+    assert_eq!(keys(Some(&local)), ["local-one"]);
+    let first = Level::every(root)
+        .into_iter()
+        .find(|level| level.named(root, "deploy").is_some())
+        .unwrap();
+    assert_eq!(
+        keys(None),
+        keys(Some(&first)),
+        "the copy the tab shows first"
+    );
+}

@@ -57,6 +57,8 @@ struct Exactly {
     method: http::Method,
     path_and_query: String,
     body: Option<Value>,
+    /// A call with a file: the file's name and bytes, sent in a form rather than as JSON.
+    form: Option<(String, Vec<u8>)>,
 }
 
 impl wiremock::Match for Exactly {
@@ -65,6 +67,24 @@ impl wiremock::Match for Exactly {
         if let Some(query) = request.url.query() {
             asked.push('?');
             asked.push_str(query);
+        }
+        if let Some((name, bytes)) = &self.form {
+            let kind = request
+                .headers
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default();
+            let holds = |needle: &[u8]| request.body.windows(needle.len()).any(|w| w == needle);
+            return request.method == self.method
+                && request.url.path() == self.path_and_query
+                && kind.starts_with("multipart/form-data; boundary=")
+                && holds(format!("filename=\"{name}\"").as_bytes())
+                && holds(bytes)
+                && request
+                    .headers
+                    .get("authorization")
+                    .and_then(|v| v.to_str().ok())
+                    == Some(&format!("Bearer {TOKEN}"));
         }
         let body = if request.body.is_empty() {
             None
@@ -113,6 +133,7 @@ fn json_of(field: &Field) -> (String, Value) {
             };
             (name.clone(), v)
         }
+        Field::File(..) => panic!("a file is sent in a form, never as JSON"),
     }
 }
 
@@ -122,6 +143,26 @@ fn body_of(fields: &[Field]) -> serde_json::Map<String, Value> {
     let mut body = serde_json::Map::new();
     for field in fields {
         let (name, value) = json_of(field);
+        // `a[][k]`: key `k` of the last object of list `a`, a new one where it has `k`.
+        if let Some((list, key)) = name
+            .split_once("[][")
+            .and_then(|(list, rest)| Some((list, rest.strip_suffix(']')?)))
+        {
+            let items = body
+                .entry(list.to_string())
+                .or_insert_with(|| Value::Array(Vec::new()))
+                .as_array_mut()
+                .expect("a list field");
+            if items.last().is_none_or(|last| last.get(key).is_some()) {
+                items.push(Value::Object(serde_json::Map::new()));
+            }
+            items
+                .last_mut()
+                .and_then(Value::as_object_mut)
+                .expect("a list of objects")
+                .insert(key.to_string(), value);
+            continue;
+        }
         match name.strip_suffix("[]") {
             Some(list) => body
                 .entry(list.to_string())
@@ -139,12 +180,40 @@ fn body_of(fields: &[Field]) -> serde_json::Map<String, Value> {
 
 /// The HTTP request a recorded call is, read from the recording.
 fn expected(kind: Kind, call: &Call) -> Exactly {
+    if let [Field::File(_, name, content)] = call.fields.as_slice() {
+        use base64::Engine as _;
+        let Endpoint::Rest {
+            method: Some(method),
+            path,
+        } = &call.endpoint
+        else {
+            panic!("a file goes in a write");
+        };
+        return Exactly {
+            kind,
+            method: method.word().parse().unwrap(),
+            path_and_query: format!("/{path}"),
+            body: None,
+            form: Some((
+                name.clone(),
+                base64::engine::general_purpose::STANDARD
+                    .decode(content)
+                    .unwrap(),
+            )),
+        };
+    }
     assert!(
         call.fields.iter().all(|f| {
-            let name = json_of(f).0;
-            !name.trim_end_matches("[]").contains('[')
+            let name = match f {
+                Field::Text(name, _) | Field::Typed(name, _) => name.clone(),
+                Field::File(..) => panic!("a file is a call's one field"),
+            };
+            let flat = name
+                .split_once("[][")
+                .map_or(name.as_str(), |(list, _)| list);
+            !flat.trim_end_matches("[]").contains('[')
         }),
-        "a recording here names no nested field but a list"
+        "a recording here names no nested field but a list, or a list of objects"
     );
     match &call.endpoint {
         Endpoint::Graphql => {
@@ -155,6 +224,7 @@ fn expected(kind: Kind, call: &Call) -> Exactly {
                 method: http::Method::POST,
                 path_and_query: "/graphql".into(),
                 body: Some(serde_json::json!({"query": json_of(query).1, "variables": variables})),
+                form: None,
             }
         }
         Endpoint::Rest { method: None, path } => {
@@ -167,6 +237,7 @@ fn expected(kind: Kind, call: &Call) -> Exactly {
                 method: http::Method::GET,
                 path_and_query: format!("/{path}"),
                 body: None,
+                form: None,
             }
         }
         Endpoint::Rest {
@@ -177,6 +248,7 @@ fn expected(kind: Kind, call: &Call) -> Exactly {
             method: method.word().parse().unwrap(),
             path_and_query: format!("/{path}"),
             body: Some(Value::Object(body_of(&call.fields))),
+            form: None,
         },
     }
 }

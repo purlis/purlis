@@ -34,6 +34,7 @@ use super::run::{self, Ran, RunError};
 use super::{Cause, Ctx, VaultError};
 use crate::counts::{counted, plural};
 use crate::names::ONEPASSWORD_TAG;
+use crate::tui::Markup;
 
 /// Every item charter writes carries this tag, and `<TAG>:<vault>` (`purlis`, #1261). Nothing
 /// reads it back but the legacy-layout check, which looks for [`OLD_TAG`].
@@ -113,12 +114,17 @@ pub fn op_vault(vault: &Vault) -> Result<String, VaultError> {
         .unwrap_or_default();
     not_a_flag("op-vault", &vault.name, &v)?;
     if v.is_empty() {
-        return Err(VaultError::new(format!(
-            "vault '{}' has no 'op-vault' configured — which 1Password vault should its items \
-             live in? Re-register it:\n  purlis vault add {} --provider 1password --op-vault \
-             <NAME>",
-            vault.name, vault.name
-        )));
+        return Err(VaultError::new(Markup::lines([
+            Markup::from(format!(
+                "vault '{}' has no 'op-vault' configured — which 1Password vault should its \
+                 items live in? Re-register it:",
+                vault.name
+            )),
+            Markup::from(format!(
+                "  purlis vault add {} --provider 1password --op-vault <NAME>",
+                vault.name
+            )),
+        ])));
     }
     Ok(v)
 }
@@ -234,7 +240,7 @@ fn fail(vault: &Vault, what: &str, ran: &Ran, write: bool) -> VaultError {
             ..VaultError::new(format!("{note} {hint}"))
         };
     }
-    let mut causes: Vec<&str> = if write {
+    let mut causes: Vec<&'static str> = if write {
         vec![
             "the token can read this vault but can not write to it — a service-account token \
              fails here while every read succeeds",
@@ -247,12 +253,16 @@ fn fail(vault: &Vault, what: &str, ran: &Ran, write: bool) -> VaultError {
         ]
     };
     causes.push("`op` is not signed in, or its session has expired");
-    let listed: String = causes.iter().map(|c| format!("    - {c}\n")).collect();
-    VaultError::new(format!(
+    let mut lines = vec![Markup::from(format!(
         "{note} purlis did not recognise this failure. Causes, roughly in order of how often \
-         they are the real one:\n{listed}  Run the same `op` command yourself to see what it said \
-         — purlis withholds op's output because it can contain the secret."
-    ))
+         they are the real one:"
+    ))];
+    lines.extend(causes.iter().map(|c| Markup::new().own("    - ").own(c)));
+    lines.push(Markup::from(
+        "  Run the same `op` command yourself to see what it said — purlis withholds op's \
+         output because it can contain the secret.",
+    ));
+    VaultError::new(Markup::lines(lines))
 }
 
 /// `get`: one field via `op read` — one call, and only this secret.
@@ -526,7 +536,7 @@ pub fn set(ctx: &Ctx, vault: &Vault, key: &str, value: &str) -> Result<(), Vault
                  for every way a read can fail, so purlis cannot tell which happened"
                     .to_string()
             } else {
-                e.message
+                e.message.to_string()
             };
             Err(VaultError::new(format!(
                 "wrote '{key}' to 1Password item '{item}' in '{v}' but could not read it back, so \
@@ -564,7 +574,7 @@ pub fn health(ctx: &Ctx, vault: &Vault) -> (bool, String) {
     }
     let item = match op_item(vault) {
         Ok(item) => item,
-        Err(e) => return (false, e.message),
+        Err(e) => return (false, e.message.to_string()),
     };
     let n = match keys(ctx, vault) {
         Ok(k) => k.len(),

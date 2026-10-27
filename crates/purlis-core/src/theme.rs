@@ -115,7 +115,7 @@ pub use archive::{
     unpack,
 };
 pub use check::{FAINT, FITS, Finding, Fit, PAIRS, Pair, Report, TEXT_TIERS, TIER_GROUNDS};
-pub use floors::{ALLOW_APART, ALLOW_FROM_PRIMARY, DANGER_APART, Floor, Held};
+pub use floors::{ALLOW_APART, ALLOW_FROM_PRIMARY, DANGER_APART, Floor, Held, WAITING_APART};
 pub use fonts::{
     BOLD, CLASSIC_MONO, CLASSIC_TERMINAL, CLASSIC_UI, Face, Font, Fonts, MOST_FACES,
     MOST_FONT_BYTES, Measured, NORMAL, SETTLED, Style, StyleDrawn, served, styles_drawn,
@@ -142,8 +142,9 @@ pub use resolve::{Drawn, Inputs, Offered, On, draw, follow, resolve};
 pub use schema::{schema, schema_text};
 pub use tiers::Lifted;
 pub use tint::{
-    ACCENT_KIN, APART, Apart, Hue, PALETTE, Rule, Tint, apart_chroma, apart_chroma_of, chroma_for,
-    held_apart, hue_of, tint_hex, tint_hex_within, tinted,
+    ACCENT_KIN, APART, Apart, Hue, Most, PALETTE, Rule, Tint, WAITING_KIN, apart_chroma,
+    apart_chroma_of, chroma_for, chroma_of, held_apart, hue_of, most_at, tint_hex, tint_hex_within,
+    tinted,
 };
 pub use typed::Typed;
 use vocabulary::{
@@ -189,16 +190,9 @@ mod measured_tests;
 mod native_tests;
 #[cfg(test)]
 mod options_tests;
-#[cfg(test)]
-mod parts_activity_tests;
-#[cfg(test)]
-mod parts_choice_tests;
-#[cfg(test)]
-mod parts_select_tests;
-#[cfg(test)]
-mod parts_shell_tests;
-#[cfg(test)]
-mod parts_tabs_tests;
+// Every family's own tests, `parts_<family>_tests.rs`, declared by `build.rs` (`families`), so a
+// family's pull request adds its file and no line here.
+include!(concat!(env!("OUT_DIR"), "/theme_parts_tests.rs"));
 #[cfg(test)]
 mod parts_tests;
 #[cfg(test)]

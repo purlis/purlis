@@ -95,6 +95,13 @@ impl HarnessAdapter for ClaudeCode {
         StateHooks::ThisSessionOnly {
             args: [
                 args,
+                // A grade's chat loads no MCP server but purlis's (SK-16): none of the person's
+                // own, nor a project's, nor a connector.
+                if kit.graded {
+                    words(["--strict-mcp-config"])
+                } else {
+                    Vec::new()
+                },
                 words([
                     // charter's MCP server (HP-7), before `--settings`: `--mcp-config` takes every
                     // word up to the next flag, and the chat's own words end the line.
@@ -109,6 +116,7 @@ impl HarnessAdapter for ClaudeCode {
                         sandbox,
                         &denied_tools(kit),
                         screened.as_ref(),
+                        kit.graded,
                     ),
                 ]),
             ]
@@ -306,6 +314,30 @@ impl HarnessAdapter for ClaudeCode {
         false
     }
 
+    /// Yes (SK-16): a grade's chat is armed with purlis's MCP server alone and its read tools
+    /// (`--strict-mcp-config`), is denied the tools that start a sub-agent, and says what it
+    /// spent, so purlis holds it to the grade's limits.
+    fn can_grade(&self) -> bool {
+        true
+    }
+
+    /// The person's own settings that start every chat with its prompts off, or that purlis
+    /// cannot read; a command that turns them off ([`crate::dispatchunattended::bypass_in`]);
+    /// and a command that starts the chat in any mode but the two that ask (#3352), as the
+    /// command's `--permission-mode` outranks the one a grade's session settings pin.
+    fn grade_refused(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        if let Some(why) = settings_keep_a_grade_from_running(env) {
+            return Some(why);
+        }
+        crate::dispatchunattended::bypass_in(command)
+            .or_else(|| mode_that_does_not_ask(command))
+            .map(|flag| prompts_off_by(&flag))
+    }
+
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
     /// `armed`), beside the project settings its arming decided to load ([`project`], ADR 0067
     /// as amended 2026-10-15), and there it is allowed the chat's hook socket, which only the
@@ -407,6 +439,7 @@ pub(crate) fn reporting_on(
 /// bundled plugin's (`hooks/hooks.json`), so a chat has one place those are declared and none is
 /// armed twice. The permission hook ([`permission_hook`]) can allow, so it is never put in a
 /// file a chat can write; it rides on this argument instead.
+#[allow(clippy::too_many_arguments)]
 fn settings(
     binary: &std::path::Path,
     cwd: Option<&std::path::Path>,
@@ -415,6 +448,7 @@ fn settings(
     sandbox: Option<&crate::sandbox::claude::Settings>,
     denied_tools: &[String],
     screened: Option<&project::Screened>,
+    graded: bool,
 ) -> String {
     let mut settings = serde_json::Map::new();
     // The project's own choice of Claude Code's plugins first (charter-app#274, ADR 0050): a
@@ -583,6 +617,11 @@ fn settings(
         rules.extend(twins.into_iter().map(serde_json::Value::String));
         permissions[bucket] = serde_json::Value::Array(rules);
     }
+    // **A grade's chat keeps its permission prompts** (SK-16): its mode is the default one
+    // whatever the person's own settings set, as a session's settings outrank theirs.
+    if graded {
+        permissions["defaultMode"] = serde_json::json!(DEFAULT_MODE);
+    }
     settings.insert("permissions".to_owned(), permissions);
     settings.insert("hooks".to_owned(), permission_hook(binary));
     serde_json::Value::Object(settings).to_string()
@@ -594,9 +633,10 @@ fn settings(
 /// server is there only once this machine approved it, wrapped in `secret exec`; purlis's own
 /// is written last, so no entry of a persona's file can take its name.
 fn mcp_config(kit: Kit<'_>) -> String {
-    let mut config: serde_json::Value =
-        serde_json::from_str(&crate::chattools::claude_code_config(kit.binary))
-            .unwrap_or_else(|_| serde_json::json!({ "mcpServers": {} }));
+    let mut config: serde_json::Value = serde_json::from_str(
+        &crate::chattools::claude_code_config_as(kit.binary, kit.graded),
+    )
+    .unwrap_or_else(|_| serde_json::json!({ "mcpServers": {} }));
     let Some(of) = kit.persona else {
         return config.to_string();
     };
@@ -613,10 +653,138 @@ fn mcp_config(kit: Kit<'_>) -> String {
 
 /// The tools the chat's persona denies it ([`crate::personaverbs::chatstart::denied_tools`]).
 fn denied_tools(kit: Kit<'_>) -> Vec<String> {
-    kit.persona.map_or_else(Vec::new, |of| {
+    let mut denied = kit.persona.map_or_else(Vec::new, |of| {
         crate::personaverbs::chatstart::denied_tools(of.root, of.persona)
+    });
+    // A grade's chat starts no sub-agent (SK-16, the review of #3229): what a sub-agent spends
+    // is not in the tokens its chat reports, so a grade could pass its cap unseen.
+    if kit.graded {
+        denied.extend(SUB_AGENT_TOOLS.map(str::to_owned));
+    }
+    denied
+}
+
+/// Claude Code's permission mode that asks before each tool its rules do not allow.
+const DEFAULT_MODE: &str = "default";
+
+/// The permission mode that asks for nothing.
+const BYPASS_MODE: &str = "bypassPermissions";
+
+/// The most of a person's own Claude Code settings read.
+const MOST_SETTINGS_BYTES: usize = 1024 * 1024;
+
+/// **Whether a person's own Claude Code settings, `text`, start every chat with its permission
+/// prompts off** (`permissions.defaultMode: bypassPermissions`), read with a JSON parser. `None`
+/// for a text that does not read as Claude Code's settings, which a caller refuses on: what it
+/// says cannot be known (the review of #3229).
+fn bypass_by_default(text: &str) -> Option<bool> {
+    if text.len() > MOST_SETTINGS_BYTES {
+        return None;
+    }
+    if text.trim().is_empty() {
+        return Some(false);
+    }
+    let doc: serde_json::Value = serde_json::from_str(text).ok()?;
+    let top = doc.as_object()?;
+    let Some(permissions) = top.get("permissions") else {
+        return Some(false);
+    };
+    match permissions.as_object()?.get("defaultMode") {
+        None => Some(false),
+        Some(serde_json::Value::String(mode)) => Some(mode == BYPASS_MODE),
+        Some(_) => None,
+    }
+}
+
+/// **Why a grade's chat may not start on a profile whose command holds `flag`**: one that keeps
+/// the chat from ever asking. The one sentence each such flag is refused with.
+fn prompts_off_by(flag: &str) -> String {
+    format!(
+        "This profile's command turns the program's permission prompts off ({}), and a grade \
+         never runs on one: pick another profile.",
+        crate::shown::one_line(flag, 60)
+    )
+}
+
+/// **Claude Code's permission modes a grade's chat may start in** (#3352): each asks before a
+/// tool its rules do not allow, so a grade's "end at the first ask" fires. Every other mode
+/// (`acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`, and any a later version adds) is
+/// refused.
+const GRADED_MODES: [&str; 2] = [DEFAULT_MODE, PLAN_MODE];
+
+/// Claude Code's permission mode that plans and asks before it acts.
+const PLAN_MODE: &str = "plan";
+
+/// **The `--permission-mode` in `command` that names a mode a grade's chat may not start in**,
+/// as it is written, or `None`: read in each spelling [`crate::dispatchunattended::bypass_in`]
+/// reads (`--permission-mode <mode>`, `--permission-mode=<mode>`, the mode quoted or spaced),
+/// every one of them, and one with no mode after it, which takes the next word purlis adds.
+fn mode_that_does_not_ask(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command.iter().enumerate().find_map(|(at, word)| {
+        if !is_flag(word) {
+            return None;
+        }
+        let (flag, attached) = split(word);
+        if flag != PERMISSION_MODE_FLAG {
+            return None;
+        }
+        let value = attached.or_else(|| command.get(at + 1).map(String::as_str));
+        let plain = value.map(|value| value.replace(['"', '\'', ' '], ""));
+        if plain.is_some_and(|mode| GRADED_MODES.contains(&mode.as_str())) {
+            return None;
+        }
+        Some(match (attached, value) {
+            (None, Some(value)) => format!("{flag} {value}"),
+            _ => word.clone(),
+        })
     })
 }
+
+/// The flag Claude Code starts a chat in a permission mode by.
+const PERMISSION_MODE_FLAG: &str = "--permission-mode";
+
+/// Why a grade cannot know whether a chat keeps its permission prompts: the person's Claude Code
+/// settings are not where purlis can read them.
+const SETTINGS_UNREAD: &str = "purlis could not read this profile's Claude Code settings, so it \
+     cannot tell whether its chats keep their permission prompts, and a grade never runs on one \
+     that does not.";
+
+/// **Why the person's own Claude Code settings, as the chat's environment `env` finds them, keep
+/// a grade from running**, or `None`: settings that start every chat with its permission prompts
+/// off, or settings purlis cannot find or read, as what they say cannot be known (the review of
+/// #3229). No settings file is none of either.
+fn settings_keep_a_grade_from_running(env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+    let unreadable = || Some(SETTINGS_UNREAD.to_owned());
+    let Some(dir) = env.dir("CLAUDE_CONFIG_DIR", ".claude") else {
+        return unreadable();
+    };
+    let file = dir.join("settings.json");
+    let text = match std::fs::metadata(&file) {
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(_) => return unreadable(),
+        Ok(meta) if !meta.is_file() || meta.len() > MOST_SETTINGS_BYTES as u64 => {
+            return unreadable();
+        }
+        Ok(_) => match std::fs::read_to_string(&file) {
+            Ok(text) => text,
+            Err(_) => return unreadable(),
+        },
+    };
+    match bypass_by_default(&text) {
+        Some(false) => None,
+        Some(true) => Some(
+            "Your Claude Code settings start every chat with its permission prompts off, and a \
+             grade never runs on one: turn that off in Claude Code's settings first."
+                .to_owned(),
+        ),
+        None => unreadable(),
+    }
+}
+
+/// **Claude Code's tools that start a sub-agent**: `Task`, by the name it has had, and `Agent`,
+/// the name newer versions give it. A grade's chat is denied both.
+const SUB_AGENT_TOOLS: [&str; 2] = ["Task", "Agent"];
 
 /// The Claude Code settings files a chat at `cwd` reads from its project: `.claude/settings.json`
 /// and `.claude/settings.local.json` in `cwd` and in each folder above it, up to the nearer of
@@ -797,575 +965,4 @@ fn status_line(binary: &std::path::Path) -> serde_json::Value {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_reference_is_written_as_claude_codes_own_mention() {
-        use crate::reference::{Lines, Reference};
-        let r = |path, lines, folder| ADAPTER.reference(&Reference::for_tests(path, lines, folder));
-        assert_eq!(r("src/main.rs", None, false), "@src/main.rs");
-        assert_eq!(r("src", None, true), "@src/");
-        assert_eq!(
-            r(
-                "src/main.rs",
-                Some(Lines {
-                    first: 10,
-                    last: 20
-                }),
-                false
-            ),
-            "@src/main.rs#L10-20"
-        );
-        assert_eq!(
-            r("src/main.rs", Some(Lines::one(7)), false),
-            "@src/main.rs#L7"
-        );
-        assert_eq!(
-            r("my dir/note one.txt", Some(Lines::one(2)), false),
-            "@\"my dir/note one.txt#L2\""
-        );
-        assert_eq!(r("lib/c++", None, false), "@\"lib/c++\"");
-        assert_eq!(r("out-", None, true), "@\"out-/\"");
-        assert_eq!(r("/abs/x.rs", None, false), "@/abs/x.rs");
-        assert_eq!(r("a#b.rs", None, false), "a#b.rs");
-    }
-
-    /// Claude Code 2.1.288 turns a paste beginning with `!` into an empty input into bash mode,
-    /// and reads `/…` as a slash command: no reference begins with either, its plain-words
-    /// fallback (a `#` or a `"` in the path) included.
-    #[test]
-    fn a_reference_never_begins_as_bash_mode_or_a_slash_command() {
-        use crate::reference::{Reference, starts_safely};
-        let r = |path| ADAPTER.reference(&Reference::for_tests(path, None, false));
-        assert_eq!(r("!cmd${IFS}x#y"), "./!cmd${IFS}x#y");
-        assert_eq!(r("!cmd"), "@./!cmd");
-        assert_eq!(r("/abs/a#b"), "\"/abs/a#b\"");
-        for path in [
-            "!x",
-            "!x#y",
-            "/abs/x",
-            "/abs/a#b",
-            "/abs/a\"b c",
-            "#x",
-            "-x",
-        ] {
-            assert!(starts_safely(&r(path)), "{path} -> {}", r(path));
-        }
-    }
-
-    fn adapter() -> &'static dyn HarnessAdapter {
-        &ADAPTER
-    }
-
-    #[test]
-    fn a_sandbox_compiled_for_another_harness_arms_no_claude_code_chat() {
-        // ADR 0067, fail closed: a Codex sandbox handed to the Claude Code adapter would
-        // otherwise start a Claude Code chat with no sandbox at all. The adapter itself
-        // refuses it, not only `Harness::state_hooks`.
-        let (plane, codex) = crate::harness::testing::sandbox_compiled_for(Harness::Codex);
-        let codex = codex.expect("starts");
-
-        let hooks = adapter().arm(
-            Kit {
-                skills: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(std::path::Path::new("/app/plugin")),
-                persona: None,
-            },
-            Some(plane.path()),
-            &crate::harness_plugin::Chosen::new(),
-            Some(&codex),
-        );
-        assert_eq!(hooks, StateHooks::None);
-    }
-
-    #[test]
-    fn the_claude_code_adapter_arms_claude_code() {
-        assert_eq!(adapter().harness(), Harness::ClaudeCode);
-    }
-
-    #[test]
-    fn the_claude_code_adapter_arms_a_chat_with_the_bundled_plugin_for_that_chat_alone() {
-        let empty = tempfile::tempdir().expect("a directory");
-        let hooks = adapter().arm(
-            Kit {
-                skills: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(std::path::Path::new("/app/plugin")),
-                persona: None,
-            },
-            Some(empty.path()),
-            &crate::harness_plugin::Chosen::new(),
-            None,
-        );
-        let StateHooks::ThisSessionOnly {
-            args,
-            env,
-            cannot_report,
-        } = hooks
-        else {
-            panic!("armed per session");
-        };
-        assert_eq!(args[..2], ["--plugin-dir", "/app/plugin"]);
-        assert!(args.contains(&"--settings".to_owned()), "{args:?}");
-        assert_eq!(
-            env,
-            [("CHARTER_HOOK_BINARY".to_owned(), "/bin/charter".to_owned())]
-        );
-        assert!(cannot_report.is_empty());
-    }
-
-    #[test]
-    fn a_claude_code_chat_is_handed_charter_s_mcp_server_for_that_chat_alone() {
-        // HP-7: `--mcp-config` loads a server for this session and writes nothing.
-        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
-            Kit {
-                skills: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(std::path::Path::new("/app/plugin")),
-                persona: None,
-            },
-            None,
-            &crate::harness_plugin::Chosen::new(),
-            None,
-        ) else {
-            panic!("armed per session");
-        };
-        let at = args
-            .iter()
-            .position(|arg| arg == "--mcp-config")
-            .expect("--mcp-config");
-        let config: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
-        assert_eq!(
-            config["mcpServers"]["purlis"],
-            serde_json::json!({"type": "stdio", "command": "/bin/charter", "args": ["mcp"]})
-        );
-        // `--mcp-config` takes every word up to the next flag, so a flag follows it and the
-        // chat's own words that end the line are never read as a config.
-        assert!(args[at + 2].starts_with("--"), "{args:?}");
-    }
-
-    /// The words a chat as `persona` in `plane` is armed with: its `--mcp-config` and its
-    /// `--settings`, parsed.
-    fn armed_as(
-        plane: &crate::personaverbs::tests_plane::Plane,
-        persona: &str,
-    ) -> (serde_json::Value, serde_json::Value) {
-        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
-            Kit {
-                skills: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(std::path::Path::new("/app/plugin")),
-                persona: Some(crate::harness::As {
-                    root: plane.root(),
-                    persona,
-                }),
-            },
-            Some(plane.root()),
-            &crate::harness_plugin::Chosen::new(),
-            None,
-        ) else {
-            panic!("armed per session");
-        };
-        let word = |flag: &str| {
-            let at = args.iter().position(|arg| arg == flag).expect(flag);
-            serde_json::from_str::<serde_json::Value>(&args[at + 1]).expect("JSON")
-        };
-        (word("--mcp-config"), word("--settings"))
-    }
-
-    #[test]
-    fn a_persona_chat_is_started_with_its_persona_s_approved_mcp_servers_and_no_other() {
-        // #1451, D-1451-17: the generated sub-agent carried these servers, and it is retired.
-        // The chat that runs as the persona is started with them, on the same `--mcp-config`
-        // that carries purlis's own server, for that chat alone.
-        use crate::personaverbs::tests_plane::{OPS_APPROVED, Plane};
-        let plane = Plane::daily_with_ops();
-
-        // Nobody approved the two that take a credential: only the plain one is started.
-        let (config, _) = armed_as(&plane, "ops");
-        let servers = config["mcpServers"].as_object().expect("servers");
-        let mut names: Vec<&str> = servers.keys().map(String::as_str).collect();
-        names.sort_unstable();
-        assert_eq!(names, ["purlis", "status"]);
-        assert_eq!(
-            servers["purlis"],
-            serde_json::json!({"type": "stdio", "command": "/bin/charter", "args": ["mcp"]})
-        );
-
-        // Approved, as it was for the sub-agent: each is run through `secret exec` of the
-        // persona's vault by purlis's own binary, and no credential is in the config.
-        crate::personaverbs::mcp::approve(
-            plane.root(),
-            &plane.state(),
-            "ops",
-            &OPS_APPROVED.map(String::from),
-        )
-        .expect("recorded");
-        let (config, _) = armed_as(&plane, "ops");
-        let servers = config["mcpServers"].as_object().expect("servers");
-        assert_eq!(servers.len(), 4, "{servers:?}");
-        assert_eq!(servers["grafana"]["command"], "/bin/charter");
-        assert_eq!(
-            servers["grafana"]["args"].as_array().expect("args")[..3],
-            ["secret", "exec", "ops"].map(serde_json::Value::from)
-        );
-        assert_eq!(servers["gsc"]["args"][3], "--file");
-        let text = config.to_string();
-        assert!(
-            !text.contains("\"secrets\"") && !text.contains("secret_files"),
-            "{text}"
-        );
-
-        // Another persona's chat in the same project gets none of them.
-        let (config, _) = armed_as(&plane, "steward");
-        assert_eq!(config["mcpServers"].as_object().expect("servers").len(), 1);
-    }
-
-    #[test]
-    fn a_persona_chat_is_denied_the_tools_its_persona_disallows() {
-        // #1451, D-1451-18: `disallowed-tools:` was the sub-agent's deny-list. It is the
-        // chat's now, as deny rules of its own settings, which outrank every allow.
-        use crate::personaverbs::tests_plane::Plane;
-        let plane = Plane::fixture("minimal");
-        plane.write(
-            "personas/reviewer/persona.md",
-            "---\nname: reviewer\ndisallowed-tools: Write, Edit, Bash(git push:*)\n---\n",
-        );
-
-        let (_, settings) = armed_as(&plane, "reviewer");
-        assert_eq!(
-            settings["permissions"]["deny"],
-            serde_json::json!(["Write", "Edit", "Bash(git push:*)"])
-        );
-        // The allows purlis pre-approves are still there, and a persona with no deny-list
-        // adds no deny rule.
-        assert!(settings["permissions"]["allow"].as_array().is_some());
-        let (_, settings) = armed_as(&plane, "steward");
-        assert_eq!(settings["permissions"].get("deny"), None);
-    }
-
-    #[test]
-    fn a_browser_tool_a_persona_disallows_is_denied_beside_the_browser_tools_allow() {
-        // #2245: the browser tools are allowed on the chat's browser Ask, and a persona's
-        // `disallowed-tools:` still takes one away: its deny outranks the allow beside it.
-        use crate::personaverbs::tests_plane::Plane;
-        let plane = Plane::fixture("minimal");
-        plane.write(
-            "personas/reviewer/persona.md",
-            "---\nname: reviewer\ndisallowed-tools: mcp__purlis__browser_click\n---\n",
-        );
-
-        let (_, settings) = armed_as(&plane, "reviewer");
-        assert_eq!(
-            settings["permissions"]["deny"],
-            serde_json::json!(["mcp__purlis__browser_click"])
-        );
-        let allow = settings["permissions"]["allow"].as_array().expect("allow");
-        assert!(allow.contains(&serde_json::json!("mcp__purlis__browser_click")));
-        assert!(allow.contains(&serde_json::json!("mcp__purlis__browser_open")));
-    }
-
-    /// Whether a rule of `allow` lets `command` run in Claude Code without asking: a `Bash(…)`
-    /// rule by its glob, as the dispatch guard's tests match one.
-    fn bash_allowed(allow: &[serde_json::Value], command: &str) -> bool {
-        allow
-            .iter()
-            .filter_map(serde_json::Value::as_str)
-            .any(|rule| {
-                rule.strip_prefix("Bash(")
-                    .and_then(|rule| rule.strip_suffix(')'))
-                    .is_some_and(|glob| crate::pypath::fnmatch(command, glob))
-            })
-    }
-
-    #[test]
-    fn a_task_chat_runs_the_read_only_purlis_commands_its_brief_runs_without_asking() {
-        // Reported 2026-10-09: a task whose brief ran `purlis persona where` and `purlis
-        // dispatch list` stopped on the harness's permission prompt in a tab nobody was at,
-        // and waited there on the person. A task chat is armed as any chat running as its
-        // persona is, so this is the settings a task gets.
-        use crate::personaverbs::tests_plane::Plane;
-        let plane = Plane::fixture("minimal");
-        let (_, task) = armed_as(&plane, "steward");
-        let allow = task["permissions"]["allow"].as_array().expect("allow");
-
-        for command in [
-            "purlis persona where",
-            "purlis dispatch list",
-            "purlis dispatch note \"half way\"",
-            "purlis dispatch ask \"which cluster?\"",
-            "purlis dispatch report --outcome done \"all green\"",
-        ] {
-            assert!(bash_allowed(allow, command), "{command:?} asks: {allow:?}");
-        }
-        for tool in [
-            "persona_where",
-            "dispatch_list",
-            "dispatch_read",
-            "dispatch_report",
-        ] {
-            let rule = serde_json::json!(format!("mcp__purlis__{tool}"));
-            assert!(allow.contains(&rule), "{rule} asks");
-        }
-
-        // Never more than any other chat the app starts, the one that asked included: a task
-        // is armed with the same allows, by the same code.
-        let empty = tempfile::tempdir().expect("a directory");
-        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
-            Kit {
-                skills: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(std::path::Path::new("/app/plugin")),
-                persona: None,
-            },
-            Some(empty.path()),
-            &crate::harness_plugin::Chosen::new(),
-            None,
-        ) else {
-            panic!("armed per session");
-        };
-        let at = args
-            .iter()
-            .position(|arg| arg == "--settings")
-            .expect("--settings");
-        let asker: serde_json::Value = serde_json::from_str(&args[at + 1]).expect("JSON");
-        assert_eq!(asker["permissions"]["allow"], task["permissions"]["allow"]);
-    }
-
-    #[test]
-    fn a_read_allowed_by_name_reaches_nothing_beside_it() {
-        // `purlis persona where` takes no argument a chat would pass, so its rule is the whole
-        // line: anything after it, or another word of `persona`, still asks.
-        let allow: Vec<serde_json::Value> = READ_ALLOW
-            .iter()
-            .map(|rule| serde_json::json!(rule))
-            .collect();
-        assert!(bash_allowed(&allow, "purlis persona where"));
-        for asks in [
-            "purlis persona where --now 2026-10-07T14:00:00",
-            "purlis persona where; touch x",
-            "purlis persona remember x",
-            "purlis persona",
-        ] {
-            assert!(!bash_allowed(&allow, asks), "{asks:?}");
-        }
-    }
-
-    #[test]
-    fn a_brokered_commit_is_allowed_by_its_two_words_and_no_other_worktree_word_is() {
-        // #1476: the commit asks no approval, and the harness asking beside it stopped a task
-        // in a tab nobody was at. Every other `worktree` word still asks.
-        let allow: Vec<serde_json::Value> = WORKTREE_COMMIT_ALLOW
-            .iter()
-            .map(|rule| serde_json::json!(rule))
-            .collect();
-        assert!(bash_allowed(&allow, "purlis worktree commit -m one --all"));
-        assert!(bash_allowed(
-            &allow,
-            "purlis worktree commit -m one src/a.rs"
-        ));
-        for asks in [
-            "purlis worktree add thing piece",
-            "purlis worktree remove piece",
-            "purlis worktree",
-            "purlis commit -m one",
-        ] {
-            assert!(!bash_allowed(&allow, asks), "{asks:?}");
-        }
-    }
-
-    /// What a Claude Code chat in a project laid out with `manifest` and, when there is one, a
-    /// `.claude/settings.json` holding `project`, starts with: its arguments, and its
-    /// `--settings` parsed. Sandboxed as a start decides, at the level the manifest gives.
-    fn started_in(manifest: &str, project: Option<&str>) -> (Vec<String>, serde_json::Value) {
-        let dir = tempfile::tempdir().expect("a project");
-        let root = dir.path().canonicalize().expect("a real folder");
-        let off = manifest == OFF;
-        let manifest = if off { FLOOR } else { manifest };
-        std::fs::write(root.join("charter.toml"), manifest).expect("charter.toml");
-        if let Some(project) = project {
-            std::fs::create_dir_all(root.join(".claude")).expect(".claude");
-            std::fs::write(root.join(".claude/settings.json"), project).expect("settings");
-        }
-        let machine = crate::sandbox::Machine {
-            env: crate::secrets::Env::of(&[("PATH", "/opt/none")]),
-            home: None,
-            os: crate::sandbox::Os::MacOs,
-        };
-        let applied = match crate::sandbox::decide(
-            Harness::ClaudeCode,
-            &root,
-            &machine,
-            &|_| true,
-            None,
-            None,
-        ) {
-            Ok(Some(crate::sandbox::Decided::Sandboxed(applied))) if !off => Some(applied),
-            _ => None,
-        };
-        let StateHooks::ThisSessionOnly { args, .. } = adapter().arm(
-            Kit {
-                skills: None,
-                binary: std::path::Path::new("/bin/charter"),
-                plugin: Some(std::path::Path::new("/app/plugin")),
-                persona: None,
-            },
-            Some(&root),
-            &crate::harness_plugin::Chosen::new(),
-            applied.as_ref(),
-        ) else {
-            panic!("armed per session");
-        };
-        let at = args
-            .iter()
-            .position(|arg| arg == "--settings")
-            .expect("--settings");
-        let settings = serde_json::from_str(&args[at + 1]).expect("JSON");
-        (args, settings)
-    }
-
-    const ON: &str = "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n";
-    const FLOOR: &str = "schema = 1\n";
-    /// A chat started with no sandbox, as an `off` starts it: armed with none.
-    const OFF: &str = "off";
-
-    /// A project file holding keys beyond what a sandboxed chat keeps, beside rules it does.
-    const BEYOND: &str = r#"{
-        "permissions": {
-            "allow": ["Bash(make *)"],
-            "deny": ["Bash(rm -rf *)"],
-            "ask": ["Bash(git push *)"]
-        },
-        "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "true"}]}]},
-        "sandbox": {"enabled": false}
-    }"#;
-
-    fn limited_to_the_person_s_settings(args: &[String]) -> bool {
-        args.windows(2)
-            .any(|pair| pair[0] == "--setting-sources" && pair[1] == "user")
-    }
-
-    #[test]
-    fn a_sandboxed_chat_loads_no_project_settings_beyond_what_it_keeps() {
-        // ADR 0067 as amended 2026-10-15, at the full sandbox and at the floor.
-        for manifest in [ON, FLOOR] {
-            let (args, _) = started_in(manifest, Some(BEYOND));
-            assert!(
-                limited_to_the_person_s_settings(&args),
-                "{manifest}: {args:?}"
-            );
-            // Before `--mcp-config`, which takes every word up to the next flag.
-            let sources = args.iter().position(|a| a == "--setting-sources");
-            let mcp = args.iter().position(|a| a == "--mcp-config");
-            assert!(sources < mcp, "{args:?}");
-        }
-        // A chat at `off` is not sandboxed, and loads what it always did.
-        let (args, _) = started_in(OFF, Some(BEYOND));
-        assert!(
-            !args.iter().any(|arg| arg == "--setting-sources"),
-            "{args:?}"
-        );
-    }
-
-    #[test]
-    fn a_sandboxed_chat_in_a_project_holding_only_what_it_keeps_loads_the_project() {
-        for manifest in [ON, FLOOR, OFF] {
-            for project in [
-                None,
-                Some(r#"{"permissions": {"deny": ["Bash(rm -rf *)"]}, "model": "sonnet"}"#),
-            ] {
-                let (args, _) = started_in(manifest, project);
-                assert!(
-                    !args.iter().any(|arg| arg == "--setting-sources"),
-                    "{manifest} {project:?}: {args:?}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_project_s_deny_and_ask_rules_are_carried_and_nothing_else_of_it() {
-        for manifest in [ON, FLOOR] {
-            let (_, settings) = started_in(manifest, Some(BEYOND));
-            let rules = |bucket: &str| -> Vec<String> {
-                settings["permissions"][bucket]
-                    .as_array()
-                    .map(|rules| {
-                        rules
-                            .iter()
-                            .filter_map(|rule| rule.as_str().map(str::to_owned))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            };
-            assert!(rules("deny").contains(&"Bash(rm -rf *)".to_owned()));
-            assert!(rules("ask").contains(&"Bash(git push *)".to_owned()));
-            assert!(!rules("allow").contains(&"Bash(make *)".to_owned()));
-            // purlis's own hook only, and its own sandbox as compiled.
-            let hooks = settings["hooks"].as_object().expect("hooks");
-            assert_eq!(hooks.keys().collect::<Vec<_>>(), ["PermissionRequest"]);
-            assert_eq!(settings["sandbox"]["enabled"], true);
-        }
-    }
-
-    #[test]
-    fn nothing_turns_a_claude_code_chat_s_hooks_off_behind_charter() {
-        let command = ["claude".to_owned(), "--bare".to_owned()];
-        assert_eq!(adapter().disarmed_by(&command, &[]), None);
-    }
-
-    #[test]
-    fn doctor_says_a_claude_code_chat_is_armed_with_the_bundled_plugin() {
-        assert_eq!(
-            adapter().armed_with(),
-            "the app arms each chat with its own plugin, purlis@inline"
-        );
-    }
-
-    #[test]
-    fn the_claude_code_adapter_hands_a_chat_claude_code_s_own_plugins() {
-        assert_eq!(adapter().plugins().harness(), "claude");
-    }
-
-    #[test]
-    fn a_chat_outside_any_project_reads_only_its_own_folders_settings() {
-        // D-RN8-12's walk stops at the nearer of the project root and the first `.git`, and a
-        // folder in neither never climbs: not to `/`, not into the home directory.
-        let dir = tempfile::tempdir().expect("a directory");
-        let chat = dir.path().join("loose/chat");
-        std::fs::create_dir_all(&chat).expect("the chat's folder");
-        assert_eq!(
-            project_settings_files(Some(&chat)),
-            [
-                chat.join(".claude/settings.json"),
-                chat.join(".claude/settings.local.json")
-            ]
-        );
-        assert!(project_settings_files(None).is_empty());
-    }
-
-    #[test]
-    fn the_walk_stops_at_the_nearer_of_the_git_root_and_the_project_root() {
-        let dir = tempfile::tempdir().expect("a directory");
-        let project = dir.path().join("project");
-        let repo = project.join("workspaces/alpha/repo");
-        let chat = repo.join("src");
-        std::fs::create_dir_all(&chat).expect("folders");
-        std::fs::create_dir_all(project.join(".git")).expect("the project's git");
-        std::fs::write(project.join("charter.toml"), "schema = 1\n").expect("manifest");
-        std::fs::create_dir_all(repo.join(".git")).expect("the clone's git");
-        let read = project_settings_files(Some(&chat));
-        assert_eq!(read.last(), Some(&repo.join(".claude/settings.local.json")));
-        assert!(!read.iter().any(|p| p.starts_with(project.join(".claude"))));
-
-        let layer = project.join("workspaces/alpha");
-        let read = project_settings_files(Some(&layer));
-        assert_eq!(
-            read.last(),
-            Some(&project.join(".claude/settings.local.json"))
-        );
-        assert_eq!(read.len(), 6, "{read:?}");
-    }
-}
+mod tests;

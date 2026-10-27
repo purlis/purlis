@@ -4604,6 +4604,7 @@ fn run_brokered_waits_for_a_starting_chat_and_names_only_its_personas_server() {
                 }),
                 ..Wanted::default()
             },
+            ..Ask::default()
         };
         let said = Arc::clone(&said);
         crate::vaults::run_brokered(
@@ -4650,6 +4651,129 @@ fn run_brokered_waits_for_a_starting_chat_and_names_only_its_personas_server() {
         "a process's words",
     );
     assert_eq!(said.lock().unwrap().len(), 1);
+}
+
+/// A brokered run serves only chats of this machine: a `secret exec` heard over a pool's link
+/// goes the pool's way (`pooltools::run_on_its_runner`, #3405's routing, which this covers),
+/// never to this machine's own run, so a chat number this app does not have open is refused as
+/// the pool's chat.
+#[cfg(unix)]
+#[test]
+fn a_brokered_run_heard_over_a_pools_link_never_runs_on_this_machine() {
+    use purlis_core::secrets::brokered::{Ask, Frame, Wanted};
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let (planes, _told) = planes_telling();
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("it is held");
+    let chat = 42;
+
+    let wire: Arc<Mutex<Vec<u8>>> = Arc::default();
+    struct Wire(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Wire {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let ask = Ask {
+        chat,
+        secret_exec: Wanted {
+            vault: "team".to_owned(),
+            command: vec!["gh".to_owned()],
+            ..Wanted::default()
+        },
+        ..Ask::default()
+    };
+    crate::hooks::heard_from(Some("builders".to_owned()), || {
+        crate::vaults::run_brokered(
+            &held,
+            &id,
+            &|_| {},
+            &|_| {},
+            ask,
+            Box::new(std::io::Cursor::new(Vec::new())),
+            Box::new(Wire(Arc::clone(&wire))),
+            Arc::new(|_| {}),
+        );
+    });
+    let bytes = wire.lock().unwrap().clone();
+    let frames: Vec<Frame> = String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("a frame"))
+        .collect();
+    assert!(
+        matches!(
+            frames.as_slice(),
+            [Frame::Refused { code: 1, why }] if why.contains("on pool builders")
+        ),
+        "{frames:?}"
+    );
+}
+
+/// The second guard (#2047): a `secret exec` heard over this machine's own link, for a chat the
+/// router says runs on a pool's runner, is refused before the chat's record is looked for, and
+/// nothing runs here for it.
+#[cfg(unix)]
+#[test]
+fn a_brokered_run_for_a_pools_chat_over_this_machines_link_is_refused() {
+    use purlis_core::secrets::brokered::{Ask, Frame, Wanted};
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let host = Pretend::default();
+    let (planes, _told) = planes_on(&host);
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("it is held");
+    let chat = 42;
+    host.runs_on_pool(chat, "builders");
+
+    let wire: Arc<Mutex<Vec<u8>>> = Arc::default();
+    struct Wire(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Wire {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let ask = Ask {
+        chat,
+        secret_exec: Wanted {
+            vault: "team".to_owned(),
+            command: vec!["gh".to_owned()],
+            ..Wanted::default()
+        },
+        ..Ask::default()
+    };
+    crate::vaults::run_brokered(
+        &held,
+        &id,
+        &|_| {},
+        &|_| {},
+        ask,
+        Box::new(std::io::Cursor::new(Vec::new())),
+        Box::new(Wire(Arc::clone(&wire))),
+        Arc::new(|_| {}),
+    );
+    let bytes = wire.lock().unwrap().clone();
+    let frames: Vec<Frame> = String::from_utf8(bytes)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("a frame"))
+        .collect();
+    assert!(
+        matches!(
+            frames.as_slice(),
+            [Frame::Refused { code: 1, why }] if why.contains("runs on pool 'builders'")
+        ),
+        "{frames:?}"
+    );
 }
 
 /// qw381: a brokered run from a chat the app is still starting waits for the chat's record,
@@ -7159,4 +7283,72 @@ fn a_claude_chat_that_was_cleared_is_recorded_under_its_new_conversation() {
     );
     held.close_chat(session).expect("it closes");
     planes.close(&held.id).expect("it closes");
+}
+
+/// #2047: a `secret exec` heard over a pool's link is decided by the window's gate for a runner
+/// chat's tool, and never reaches the run on this desktop: here, for a chat this window does not
+/// have open, the runner's words, not this desktop's.
+#[cfg(unix)]
+#[test]
+fn a_secret_exec_heard_over_a_pools_link_never_reaches_the_run_on_this_desktop() {
+    use purlis_core::secrets::brokered::{Ask, Frame, Wanted};
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = a_plane(&dir.path().join("plane"));
+    let (planes, _told) = planes_telling();
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("it is held");
+    let run = |pool: Option<&str>| -> Vec<Frame> {
+        let wire: Arc<Mutex<Vec<u8>>> = Arc::default();
+        struct Wire(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Wire {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let ask = Ask {
+            chat: 9,
+            secret_exec: Wanted {
+                vault: "team".to_owned(),
+                command: vec!["kubectl".to_owned()],
+                ..Wanted::default()
+            },
+            runs_as: Some("kubectl".to_owned()),
+            run: Some("r1".to_owned()),
+            ..Ask::default()
+        };
+        crate::hooks::heard_from(pool.map(str::to_owned), || {
+            crate::vaults::run_brokered(
+                &held,
+                &id,
+                &|_| {},
+                &|_| {},
+                ask,
+                Box::new(std::io::Cursor::new(Vec::new())),
+                Box::new(Wire(Arc::clone(&wire))),
+                Arc::new(|_| {}),
+            );
+        });
+        let bytes = wire.lock().unwrap().clone();
+        String::from_utf8(bytes)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("a frame"))
+            .collect()
+    };
+
+    let over_the_pool = run(Some("builds"));
+    let here = run(None);
+
+    assert!(
+        matches!(over_the_pool.as_slice(), [Frame::Refused { why, .. }] if why.contains("on pool builds")),
+        "{over_the_pool:?}"
+    );
+    assert!(
+        matches!(here.as_slice(), [Frame::Refused { why, .. }] if !why.contains("pool")),
+        "this desktop's own words for its own chats: {here:?}"
+    );
 }

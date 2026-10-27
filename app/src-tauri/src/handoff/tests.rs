@@ -3080,6 +3080,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             chat,
             browser: None,
             call_id: "c-1".to_owned(),
+            waited: false,
             asked: purlis_core::hookwire::Browsing::Act(
                 purlis_session_protocol::browsing::Act::Pages,
             ),

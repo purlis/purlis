@@ -212,6 +212,7 @@ const VIEWS: Partial<Record<ViewId, React.ReactNode>> = {
   chats: <div data-testid="v-chats">chats</div>,
   explorer: <div data-testid="v-explorer">explorer</div>,
   search: <div data-testid="v-search">search</div>,
+  skills: <div data-testid="v-skills">skills</div>,
   changes: <div data-testid="v-changes">changes</div>,
   repos: <div data-testid="v-repos">repos</div>,
   todos: <div data-testid="v-todos">todos</div>,
@@ -228,7 +229,18 @@ const VIEWS: Partial<Record<ViewId, React.ReactNode>> = {
   inbox: <div data-testid="v-inbox">inbox</div>,
   personas: <div data-testid="v-personas">personas</div>,
   sessions: <div data-testid="v-sessions">sessions</div>,
-  vaults: <div data-testid="v-vaults">vaults</div>,
+  // A section with provenance and an action, as an extension's panel draws (#3330).
+  vaults: (
+    <PanelSection
+      testid="panel-vaults"
+      mark={Flame}
+      title="Vaults"
+      provenance="ext/keys"
+      actions={<button type="button">New vault</button>}
+    >
+      <div data-testid="v-vaults">vaults</div>
+    </PanelSection>
+  ),
   "panel:ext/stats/burn": <div data-testid="v-burn">burn</div>,
 };
 
@@ -240,6 +252,7 @@ function WithViews({
   badge,
   badges,
   panels = [],
+  previews,
 }: {
   from: Arrangement;
   to?: Arrangement;
@@ -248,6 +261,8 @@ function WithViews({
   /** Badges by view, in place of {@link badge}'s one on Chats. */
   badges?: Partial<Record<ViewId, React.ReactNode>>;
   panels?: { view: PanelViewId; name: string; mark: LucideIcon }[];
+  /** The views behind a preview that is on (#3266). */
+  previews?: readonly ViewId[];
 }) {
   const [arrangement, setArrangement] = useState(from);
   return (
@@ -258,6 +273,7 @@ function WithViews({
         content={CONTENT}
         views={VIEWS}
         panels={panels}
+        previews={previews}
         badges={badges ?? { chats: badge }}
         onPick={onPick}
         centre={<div data-testid="centre">centre</div>}
@@ -285,8 +301,10 @@ describe("the activity bar of a region with views (#1673)", () => {
     // Its own column, outside the side panel.
     expect(slot("left").contains(bar())).toBe(false);
     expect(bar().closest(".activity-column")).toHaveAttribute("data-side", "left");
-    // The open view's tab names the view: pressing it again does nothing (R121).
-    expect(tipOf(within(bar()).getByRole("tab", { name: "Chats" }))).toEqual("Chats");
+    // The open view's tab says a press puts the side away (R121 as amended, #3329).
+    expect(tipOf(within(bar()).getByRole("tab", { name: "Chats" }))).toEqual(
+      "ChatsPut the Navigation region away",
+    );
   });
 
   it("selects the open view's tab and shows that view alone, the other mounted and hidden", () => {
@@ -445,6 +463,51 @@ describe("the right side's activity bar (#1678)", () => {
 });
 
 /**
+ * **The Skills view, behind the Skill studio's preview** (#3266): its tab under Search only while
+ * the preview is on; while it is off the side opens on Chats, and the pick comes back with it.
+ */
+describe("the Skills view's place on the left (#3266)", () => {
+  const SKILLS: readonly ViewId[] = ["skills"];
+  const picked: Arrangement = DEFAULT_ARRANGEMENT.map((one) =>
+    one.id === "navigation" ? { ...one, view: "skills" } : one,
+  );
+
+  it("sits under Search while the preview is on, and nowhere while it is off", () => {
+    const { rerender } = render(<WithViews from={DEFAULT_ARRANGEMENT} />);
+    const names = () =>
+      within(bar())
+        .getAllByRole("tab")
+        .map((tab) => tab.getAttribute("aria-label"));
+    expect(names()).toEqual(["Chats", "Explorer", "Search"]);
+
+    rerender(
+      <StrictMode>
+        <WithViews from={DEFAULT_ARRANGEMENT} previews={SKILLS} />
+      </StrictMode>,
+    );
+    expect(names()).toEqual(["Chats", "Explorer", "Search", "Skills"]);
+  });
+
+  it("falls back to Chats while the preview is off, and is back when it is on", () => {
+    const { rerender } = render(<WithViews from={picked} />);
+    expect(screen.getByRole("tabpanel", { name: "Chats" })).toContainElement(
+      screen.getByTestId("v-chats"),
+    );
+    expect(screen.queryByRole("tab", { name: "Skills" })).toBeNull();
+
+    rerender(
+      <StrictMode>
+        <WithViews from={picked} previews={SKILLS} />
+      </StrictMode>,
+    );
+    expect(screen.getByRole("tabpanel", { name: "Skills" })).toContainElement(
+      screen.getByTestId("v-skills"),
+    );
+    expect(screen.getByRole("tab", { name: "Skills" })).toHaveAttribute("aria-selected", "true");
+  });
+});
+
+/**
  * **The Panel and its left half** (spec #1736, P-1, P-5; #1737): a full-width slot under both
  * sidebars and the editor, its halves switched by the Lower icons of each side's activity bar.
  */
@@ -578,12 +641,13 @@ describe("the Panel's right half (#1738)", () => {
 
     const head = half("right").querySelector(".half-head") as HTMLElement;
     expect(within(head).getByRole("heading", { name: "Memory" })).toBeInTheDocument();
-    // The half's title is the one section label (#1920), as a sidebar section's is.
-    wears(within(head).getByRole("heading", { name: "Memory" }), "label", "the half's title");
+    // The half's title is a view's title (#3340, the prototype's Q1 A): a strong body.
+    wears(within(head).getByRole("heading", { name: "Memory" }), "body", "the half's title", true);
     wears(
       within(half("left")).getByRole("heading", { name: "Repos" }),
-      "label",
+      "body",
       "the other half's title",
+      true,
     );
     // The view's own action is on the half's line, and its title is said once, there.
     expect(within(head).getByRole("button", { name: "New memory" })).toBeInTheDocument();
@@ -604,6 +668,24 @@ describe("the Panel's right half (#1738)", () => {
         .getAllByRole("button")
         .map((one) => one.getAttribute("aria-label")),
     ).toEqual(["Put the panel's left half away"]);
+  });
+
+  it("heads a sidebar's view once: its title, provenance and actions on the side's head (#3330)", () => {
+    const vaults = DEFAULT_ARRANGEMENT.map((one) =>
+      one.id === "aside" ? { ...one, view: "vaults" as const } : one,
+    );
+    render(<WithViews from={vaults} />);
+
+    const head = slot("right").querySelector(".side-head") as HTMLElement;
+    expect(within(head).getByRole("heading", { name: "Vaults" })).toBeInTheDocument();
+    expect(within(head).getByRole("button", { name: "New vault" })).toBeInTheDocument();
+    // Whose panel it is stays in sight (ADR 0041 item 5), on the head now.
+    expect(head).toHaveTextContent("ext/keys");
+    // One title: the section draws no head of its own.
+    expect(within(slot("right")).getAllByRole("heading", { name: /vaults/i })).toHaveLength(1);
+    expect(
+      slot("right").querySelector('[data-scope="panel-section"][data-part="head"]'),
+    ).toBeNull();
   });
 
   it("titles the half after the view that is open, and draws only that view's actions", async () => {
@@ -861,10 +943,11 @@ describe("a moved view keeps what it held (#1752)", () => {
     expect(box.closest(".slot-right")).not.toBeNull();
     expect(box).toHaveValue("kept");
     expect(mounted.get("memory")).toBe(was);
-    // In the sidebar, on its own heading.
+    // In the sidebar, on the sidebar's head, the view's one title (#3330).
     const button = screen.getByRole("button", { name: "New memory" });
     expect(button.closest(".half-head")).toBeNull();
-    expect(button.closest('[data-scope="panel-section"][data-part="head"]')).not.toBeNull();
+    expect(button.closest(".side-head")).not.toBeNull();
+    expect(document.querySelector('[data-scope="panel-section"][data-part="head"]')).toBeNull();
   });
 
   it("keeps the keyboard in a view moved while the person is in it", () => {
