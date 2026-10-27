@@ -277,3 +277,13 @@
   padding-inline: var(--space-4);
   column-gap: var(--space-4);
 }
+
+/* **A tree's rows in a view are a view's rows** too (the Chats view, #3342): 30px, and scrolled
+   into sight below the top and a group's name. Over the tree row's own height
+   (`primitives/collections.css`), which this sheet comes after. */
+[data-scope="panel-section"][data-frame] .ui-tree-row {
+  --ui-row-height: calc(var(--size-control) + var(--space-1));
+  scroll-margin-block-start: calc(
+    var(--panel-section-top-size) + var(--size-chrome) + var(--space-2)
+  );
+}

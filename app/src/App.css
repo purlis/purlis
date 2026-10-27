@@ -3333,12 +3333,6 @@ body {
   flex: 1 1 0;
   min-width: 0;
   font: inherit;
-  /* 30px, a sidebar view's row (#3342): the control's height and a step. */
-  --ui-row-height: calc(var(--size-control) + var(--space-1));
-  /* Scrolled into sight below the view's top and a workspace's name, never under them. */
-  scroll-margin-block-start: calc(
-    var(--panel-section-top-size) + var(--size-chrome) + var(--space-2)
-  );
 }
 
 /* **The marks, one size on every row** (DS-11). The state's mark stands first, in a column of
