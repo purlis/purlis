@@ -848,34 +848,32 @@ pub struct Running<'a> {
     pub built_in: Option<&'a Path>,
     /// Whether its set holds the plane's skills: the flag, as at a chat's start.
     pub plane_skills: bool,
-    /// The folder it was started in: the clone whose repo skills its start read
-    /// ([`crate::hoststart::ChatSkills::read`]), so its set is routed as the one it was handed
-    /// (#3245).
-    pub cwd: Option<&'a Path>,
+    /// Where its plane skills came from, as its start read them once
+    /// ([`crate::hoststart::ChatSkills::read`]): its scope (a Try it's own, SK-9) and the repo
+    /// skills of its clone, so its set is routed as the one it was handed, with nothing read
+    /// again (#3245). `None`, or one that read none (`on` off), for the plane's root and no clone.
+    pub start: Option<&'a crate::hoststart::ChatSkills>,
 }
 
 impl Running<'_> {
     /// Its set, routed as its start routed it ([`lay_out_for_chat`]): from the same built-in
-    /// skills and harness, and its plane skills read as its start read them
-    /// ([`crate::hoststart::ChatSkills::read`]): the same scope (a Try it's own, SK-9), workspace,
-    /// persona and repo skills of the same clone (#3245).
+    /// skills, harness, scope, workspace, persona and repo skills (#3245).
     fn set(&self) -> SkillSet {
-        let read = crate::hoststart::ChatSkills::read(
-            self.plane_skills,
-            self.plane,
-            Some(self.harness),
-            self.cwd,
-            self.persona,
-        );
-        // The workspace its start resolved, which `read` works out from the same folder; a Try
-        // it's chat has none.
-        let workspace = self.workspace.filter(|_| !read.tried);
-        let at = read.on.then_some(PlaneSkills {
-            plane: &read.root,
-            workspace,
-            repo: &read.repo,
+        // A start that read no plane skills (`on` off, or a runner's chat, whose host read
+        // them) holds no scope of its own: the plane's root, and no clone.
+        let start = self.start.filter(|start| start.on);
+        let tried = start.is_some_and(|start| start.tried);
+        let at = self.plane_skills.then(|| PlaneSkills {
+            plane: start.map_or(self.plane, |start| start.root.as_path()),
+            workspace: self.workspace.filter(|_| !tried),
+            repo: start.map_or(&[], |start| start.repo.as_slice()),
         });
-        routed(self.built_in, at, read.persona.as_deref(), self.harness)
+        routed(
+            self.built_in,
+            at,
+            self.persona.filter(|_| !tried),
+            self.harness,
+        )
     }
 }
 

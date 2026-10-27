@@ -664,29 +664,34 @@ fn use_skill_offers_a_try_its_draft_alone_as_its_arming_hands_it() {
     );
     skill_at(root, "skills/release", "release", "Cuts it.");
     let tried_out = try_out(root, &id).unwrap();
-    fn chat<'a>(root: &'a Path, cwd: Option<&'a Path>) -> crate::skills::Running<'a> {
-        crate::skills::Running {
-            plane: root,
-            workspace: None,
-            persona: None,
-            harness: crate::harness::Harness::ClaudeCode,
-            built_in: None,
-            plane_skills: true,
-            cwd,
-        }
-    }
-    let offered = |cwd: Option<&Path>| -> Vec<String> {
-        crate::skills::for_use_skill(&chat(root, cwd))
+    let harness = crate::harness::Harness::ClaudeCode;
+    // What each chat's start read, once (#3234).
+    let in_the_try =
+        crate::hoststart::ChatSkills::read(true, root, Some(harness), Some(&tried_out.piece), None);
+    let at_the_root =
+        crate::hoststart::ChatSkills::read(true, root, Some(harness), Some(root), None);
+    let chat = |start| crate::skills::Running {
+        plane: root,
+        workspace: None,
+        persona: None,
+        harness,
+        built_in: None,
+        plane_skills: true,
+        start: Some(start),
+    };
+    let offered = |start| -> Vec<String> {
+        crate::skills::for_use_skill(&chat(start))
             .offered
             .into_iter()
             .map(|one| one.effective.skill.name)
             .collect()
     };
 
-    assert_eq!(offered(Some(&tried_out.piece)), ["deploy"]);
-    assert!(offered(None).contains(&"release".to_owned()));
+    assert!(in_the_try.tried);
+    assert_eq!(offered(&in_the_try), ["deploy"]);
+    assert!(offered(&at_the_root).contains(&"release".to_owned()));
     assert_ne!(
-        crate::skills::stamp_of(&chat(root, Some(&tried_out.piece))),
-        crate::skills::stamp_of(&chat(root, None)),
+        crate::skills::stamp_of(&chat(&in_the_try)),
+        crate::skills::stamp_of(&chat(&at_the_root)),
     );
 }

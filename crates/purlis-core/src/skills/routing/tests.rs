@@ -60,7 +60,7 @@ fn running<'a>(root: &'a Path, bundle: &'a Path, persona: Option<&'a str>) -> Ru
         harness: Harness::ClaudeCode,
         built_in: Some(bundle),
         plane_skills: true,
-        cwd: None,
+        start: None,
     }
 }
 
@@ -74,7 +74,7 @@ fn stamp(root: &Path, built_in: Option<&Path>) -> crate::skills::Stamp {
         harness: Harness::Codex,
         built_in,
         plane_skills: true,
-        cwd: None,
+        start: None,
     })
 }
 
@@ -718,9 +718,13 @@ fn use_skill_and_the_stamp_of_a_chat_in_a_clone_route_its_repo_skills_as_its_fol
         .collect();
     assert!(handed.iter().any(|name| name == INDEX), "{handed:?}");
 
+    // What its start read, once: the clone's repo skills among it.
+    let start =
+        crate::hoststart::ChatSkills::read(true, root, Some(Harness::Codex), Some(&clone), None);
+    assert_eq!(start.repo.len(), 5);
     let in_the_clone = Running {
         harness: Harness::Codex,
-        cwd: Some(&clone),
+        start: Some(&start),
         ..running(root, &bundle, None)
     };
     let chat = for_use_skill(&in_the_clone);
@@ -739,7 +743,7 @@ fn use_skill_and_the_stamp_of_a_chat_in_a_clone_route_its_repo_skills_as_its_fol
     }
 
     let elsewhere = Running {
-        cwd: None,
+        start: None,
         ..in_the_clone
     };
     assert!(hidden(&for_use_skill(&elsewhere)).is_empty());
