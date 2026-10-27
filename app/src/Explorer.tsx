@@ -404,7 +404,9 @@ export function Explorer({
     () =>
       new Map(
         [...statuses].flatMap(([key, read]) =>
-          // A status with nothing in it (a core that answered nothing) indexes nothing.
+          // A status with nothing in it indexes nothing. The core always answers one; the check is
+          // for a test's mocked core that answers every command it was not told about with `null`
+          // (`theme/chrome.test.tsx`), which the closed repo rows' reads (#3343) now reach.
           read.status === undefined || read.status === null
             ? []
             : [[key, indexed(read.status)] as const],
