@@ -208,7 +208,7 @@ pub fn read_skill_md_of(
 /// reads one.
 pub(crate) fn read_held(
     folder: &crate::held::Folder,
-    name: &std::ffi::OsStr,
+    name: impl AsRef<std::ffi::OsStr>,
 ) -> Result<String, Refusal> {
     read_held_as(folder, name, crate::held::HardLinks::Refused)
 }
@@ -216,7 +216,7 @@ pub(crate) fn read_held(
 /// [`read_held`], a hard link read or refused as `hard_links` says.
 pub(crate) fn read_held_as(
     folder: &crate::held::Folder,
-    name: &std::ffi::OsStr,
+    name: impl AsRef<std::ffi::OsStr>,
     hard_links: crate::held::HardLinks,
 ) -> Result<String, Refusal> {
     use crate::held::NotRead;

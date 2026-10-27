@@ -30,15 +30,24 @@ pub fn in_bundle(plugin: &Path) -> Option<PathBuf> {
 /// ([`crate::held::Folder`]). A folder that is a link to a folder is left out as a link
 /// ([`Missing::Link`]), and so is the level where any part of `rel` is one, whatever it leads to:
 /// what is listed of a skill, and every file a load names of it, is inside it.
+///
+/// **A level of more names than purlis reads of one folder** ([`crate::held::MOST_NAMES`],
+/// SK-52) is read for none of them, and left out once as [`Missing::Crowded`]; one whose names
+/// cannot be read whole lists nothing.
 pub fn scan(root: &Path, rel: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
-    use crate::held::{Folder, Kind, Opened};
+    use crate::held::{Folder, Follow, Kind, NotListed, Opened};
     let level = match Folder::walk(root, rel) {
         Opened::Folder(level) => level,
         Opened::Link => return vec![Err((root.join(rel), Missing::Link))],
         Opened::Absent => return Vec::new(),
     };
+    let names = match level.names() {
+        Ok(names) => names,
+        Err(NotListed::Crowded) => return vec![Err((root.join(rel), Missing::Crowded))],
+        Err(NotListed::Unreadable) => return Vec::new(),
+    };
     let mut out = Vec::new();
-    for name in level.names() {
+    for name in names {
         let path = level.shown().join(&name);
         match level.kind(&name) {
             Some(Kind::Folder) => {}
@@ -50,7 +59,7 @@ pub fn scan(root: &Path, rel: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
             }
             _ => continue,
         }
-        match level.child(&name) {
+        match level.child(&name, Follow::NoLink) {
             Opened::Folder(folder) => {
                 out.push(whole(&folder).map_err(|missing| (path, missing)));
             }
@@ -75,12 +84,12 @@ pub fn scan_dir(dir: &Path) -> Vec<Result<Skill, (PathBuf, Missing)>> {
 /// skill's own file is ([`crate::handed::read_skill_md`]).
 fn whole(folder: &crate::held::Folder) -> Result<Skill, Missing> {
     use crate::Refusal;
-    let text = crate::handed::read_held(folder, FILE.as_ref()).map_err(|why| match why {
+    let text = crate::handed::read_held(folder, FILE).map_err(|why| match why {
         Refusal::TooLarge => Missing::TooLarge,
         // A link, or a plain file with a second name (a hard link): either reaches past it.
         Refusal::FileLink
             if matches!(
-                folder.kind(FILE.as_ref()),
+                folder.kind(FILE),
                 Some(crate::held::Kind::Link { .. } | crate::held::Kind::File)
             ) =>
         {
