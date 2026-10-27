@@ -709,7 +709,7 @@ pub fn sandbox_runner(
 }
 
 /// **The service-on-this-Mac adapter** (qw384): a port of this machine chat `session`'s
-/// sandbox refused, held now, is an ask as a host is. Allow is offered for this chat and for
+/// sandbox refused, to connect to or to listen on (#2019), held now, is an ask as a host is. Allow is offered for this chat and for
 /// the person (never once, never everyone's: it is this machine's and lasts past a run), at
 /// each level `locks` leaves open; then Keep blocked. A port the block did not name is typed in
 /// its Notice, so it is answered there ([`AnswerPath::InItsPane`]).
@@ -719,30 +719,41 @@ pub fn sandbox_port(
     locks: &purlis_core::sandbox::policy::Locks,
 ) -> Option<Shown> {
     use crate::sandboxing::{GrantLevel, GrantWhat};
-    use purlis_core::sandbox::grant::What;
-    if block.what != GrantWhat::Port {
-        return None;
-    }
+    // A port to listen on (#2019) is asked about as a port to connect to is, at the same two
+    // scopes, in its own words.
+    let listen = match block.what {
+        GrantWhat::Port => false,
+        GrantWhat::Listen => true,
+        _ => return None,
+    };
     let order = [GrantLevel::Chat, GrantLevel::You];
     let named: Option<u16> = block.target.parse().ok();
     let levels: Vec<GrantLevel> = order
         .into_iter()
         .filter(|level| match named {
-            Some(port) => locks
-                .refuses_grant(&What::Port(port), (*level).into())
-                .is_none(),
+            Some(port) => block
+                .what
+                .of_port(port)
+                .is_some_and(|what| locks.refuses_grant(&what, (*level).into()).is_none()),
             None => {
                 locks.port_grants_refused().is_none()
                     && locks.scope_removed((*level).into()).is_none()
             }
         })
         .collect();
-    let says = match named {
-        Some(port) => format!(
+    let says = match (named, listen) {
+        (Some(port), false) => format!(
             "The sandbox refused the service on this Mac at port {port}. Allowing it {}.",
             purlis_core::sandbox::localport::RISK
         ),
-        None => "The sandbox refused a service on this Mac at a port it did not name".to_owned(),
+        (None, false) => {
+            "The sandbox refused a service on this Mac at a port it did not name".to_owned()
+        }
+        (Some(port), true) => format!(
+            "This chat wants to run a server on port {port}. Allowing it {}.",
+            purlis_core::sandbox::localport::listen_risk(port)
+        ),
+        (None, true) => "This chat wants to run a server on a port it did not name".to_owned(),
     };
     Some(Shown {
         session,
@@ -758,7 +769,7 @@ pub fn sandbox_port(
                 shown: crate::taskblocks::BlockShown {
                     operation: block.operation.clone(),
                     kind: block.kind.clone(),
-                    what: GrantWhat::Port,
+                    what: block.what,
                     target: block.target.clone(),
                 },
             },

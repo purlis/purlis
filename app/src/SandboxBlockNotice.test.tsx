@@ -676,6 +676,64 @@ describe("a service on this Mac's Notice (qw384)", () => {
   });
 });
 
+describe("a server's Notice (#2019)", () => {
+  const SERVER: ChatBlocked = {
+    ...UNNAMED,
+    harness: "codex",
+    operation: "listen",
+    kind: "local-service",
+    said: "listening on a port of this Mac",
+    offer: "listen",
+    target: "5173",
+    route:
+      "Allowing it lets this chat run a server that its browser, its commands and your own " +
+      "browser reach at http://127.0.0.1:5173, through purlis on this Mac. purlis checks each " +
+      "request's address, and keeps your browser's cookies from the server. A page the server " +
+      "sends runs in your browser as a site of this Mac: it can read your other local apps' " +
+      "cookies that are not HttpOnly, send requests to those apps as you, and send what it " +
+      "reads to the internet. Open it in the chat's own browser unless you trust it. Nothing on another " +
+      "machine connects to it.",
+    levels: ["chat", "you"],
+  };
+
+  it("names the port, says how it is reached, and sends that one port", async () => {
+    const { sent } = drawn(SERVER);
+
+    expect(screen.getByText("5173")).toBeTruthy();
+    expect(screen.getAllByText(/through purlis on this Mac/).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "listen", kind: "local-service", what: "listen", target: "5173" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+
+  it("asks for a port the refusal did not name, pre-filled from the output to check", async () => {
+    const { sent } = drawn({ ...SERVER, target: null, suggested: "5173" });
+    const box = screen.getByRole("textbox", { name: "Port to allow" });
+    expect(box).toHaveValue("5173");
+    expect(box).toHaveAccessibleDescription(/from the command's output: check it/);
+    await userEvent.click(screen.getByRole("button", { name: "Allow only for this chat" }));
+    await waitFor(() =>
+      expect(sent("allow_sandbox_block")).toEqual([
+        {
+          plane: PLANE,
+          session: 4,
+          shown: { operation: "listen", kind: "local-service", what: "listen", target: "5173" },
+          level: "chat",
+        },
+      ]),
+    );
+  });
+});
+
 describe("an Allow that restarts the chat says beforehand what will end (#1986)", () => {
   const FOLDER: ChatBlocked = {
     ...UNNAMED,

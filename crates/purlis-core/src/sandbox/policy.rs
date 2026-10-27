@@ -541,6 +541,7 @@ impl Locks {
             grant::What::Write(_) => self.write_grants_refused(),
             grant::What::Socket(_) | grant::What::Service(_) => self.socket_grants_refused(),
             grant::What::Port(_) => self.port_grants_refused(),
+            grant::What::Listen(_) => self.listen_grants_refused(),
         }
     }
 
@@ -582,6 +583,7 @@ impl Locks {
             grant::What::Write(_) => self.write_grants_refused(),
             grant::What::Socket(_) | grant::What::Service(_) => self.socket_grants_refused(),
             grant::What::Port(_) => self.port_grants_refused(),
+            grant::What::Listen(_) => self.listen_grants_refused(),
             grant::What::Host(_) => None,
         };
         let a_list_of_hosts = matches!(what, grant::What::Host(_))
@@ -652,6 +654,17 @@ impl Locks {
         self.no_socket_grants.then(|| {
             format!(
                 "Policy forbids allowing a chat a service on this Mac. {}",
+                self.locked_by()
+            )
+        })
+    }
+
+    /// Why no chat may be allowed to run a server on this Mac (#2019): the lock that holds
+    /// services on this Mac holds servers too, said in a server's words.
+    pub fn listen_grants_refused(&self) -> Option<String> {
+        self.no_socket_grants.then(|| {
+            format!(
+                "Policy forbids allowing a chat to run a server on this Mac. {}",
                 self.locked_by()
             )
         })

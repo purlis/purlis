@@ -1730,3 +1730,45 @@ fn no_planes_workspace_folder_is_moved_aside_and_any_other_workspaces_folder_is_
         );
     }
 }
+
+/// #2019: a wrapped chat at the floor serves on its own socket, and reaches its door, as at the
+/// full level: the rules that let it are written after the floor's denials, which hold the
+/// folder the sockets are in and every port of this machine.
+#[test]
+fn a_wrapped_chat_at_the_floor_serves_on_its_own_socket_and_no_other() {
+    let (_dir, root) = project();
+    let linux = Machine {
+        os: Os::Linux,
+        ..machine_with(Path::new("/opt/none"))
+    };
+    let port = 5173;
+    let mut chat = grant::Grants::default();
+    chat.add(&grant::What::Listen(port));
+    let compiled = Compiled::floor(&root, &linux, &chat);
+    let folder = super::door::root_in(None).join("0123456789abcdef");
+    let socket = localport::serve_socket(&folder, port);
+    let tmp = root.join(".tmp-chat");
+    let ports = [port];
+    let served = Some((folder.as_path(), ports.as_slice()));
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let compile = compiler(harness).expect("a compiler");
+        let profile = match compile(&compiled).expect("compiled") {
+            Form::Codex(wrap) => codex::profile_serving(&wrap, &root, &tmp, &[4040], None, served),
+            Form::Opencode(wrap) => {
+                opencode::profile_serving(&wrap, &root, &tmp, &[4040], None, served)
+            }
+            Form::ClaudeCode(_) => unreachable!(),
+        }
+        .expect("a profile");
+        assert!(
+            profile.contains(&localport::seatbelt_rule(port)),
+            "{harness:?}: no way to its door"
+        );
+        let read = purlis_linux_sandbox::profile::Profile::parse(&profile).expect("read whole");
+        assert!(read.serves_at(&socket), "{harness:?}");
+        assert!(
+            !read.serves_at(Path::new("/run/user/1000/bus")),
+            "{harness:?}"
+        );
+    }
+}

@@ -2576,6 +2576,7 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             )),
             grants_as: None,
             skills: None,
+            plane_skills: true,
             skills_read: Default::default(),
         },
     );
@@ -2650,6 +2651,7 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 composed_by_its_host: false,
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
                 skills_read: Default::default(),
             },
         );
@@ -3088,6 +3090,7 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 composed_by_its_host: false,
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
                 skills_read: Default::default(),
             },
         );
@@ -5618,6 +5621,34 @@ fn a_chat_whose_sandbox_narrowed_while_no_window_was_there_is_reattached_and_off
     );
 }
 
+/// #3443: a grade's chat a crash left running in the session host is never put back: its grade
+/// ended with the run it was in (SK-16). Nothing reattaches it, so the launch's end of what was
+/// not reattached (#2006) ends it, and no chat of it is opened or started.
+#[test]
+fn a_graded_chat_a_crash_left_in_the_session_host_is_ended_at_relaunch() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane.path(), host.clone());
+
+    let open = chats.put_back(
+        &left_running_in(
+            plane.path(),
+            Chat {
+                graded: true,
+                ..a_resumable_chat_in(plane.path())
+            },
+        ),
+        SIZE,
+    );
+    chats.close_what_was_not_reattached();
+
+    assert!(open.is_empty(), "no chat of it is opened");
+    assert!(host.reattached().is_empty(), "nothing reattached it");
+    assert!(host.openings().is_empty(), "nothing was started");
+    assert_eq!(host.closed_left(), [3], "the host ended it");
+}
+
 /// Whether chat 3, reattached from `host` on the project at `plane`, is judged to run with no
 /// sandbox at all, as a browser login judges it (#2560).
 fn reattached_runs_unconfined(plane: &std::path::Path, host: Pretend) -> (Chats, bool) {
@@ -7279,6 +7310,7 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 composed_by_its_host: false,
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
                 skills_read: Default::default(),
             },
         );
@@ -7720,6 +7752,7 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 composed_by_its_host: false,
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
                 skills_read: Default::default(),
             },
         );
@@ -7773,6 +7806,7 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 ran: Some(purlis_session_protocol::session::RunSandbox::Off),
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
                 skills_read: Default::default(),
             },
         );
@@ -7966,6 +8000,7 @@ fn two_chats_asking_live(plane: &std::path::Path) -> (Chats, [Arc<Told>; 2]) {
                 )),
                 grants_as: None,
                 skills: None,
+                plane_skills: true,
                 skills_read: Default::default(),
             },
         );
@@ -8074,7 +8109,9 @@ fn allowing_a_host_once_from_a_notice_is_refused_and_reaches_no_chat() {
 
 /// #2770: **a running chat whose skills changed is told so**, where its harness does not take the
 /// change in by itself: a Claude Code chat for an edit to a skill's text, which a Codex chat reads
-/// from where it lies, and both for a skill added. A chat on no harness is never told.
+/// from where it lies, and both for a skill added. A chat on no harness is never told. One whose
+/// start the plane's skills did not reach (the Skill studio's flag off, #3445) was stamped
+/// empty, so with the flag on now it is offered the restart that hands it them.
 #[test]
 fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     let plane = tempfile::tempdir().expect("a plane");
@@ -8090,10 +8127,11 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     };
     skill("deploy", "one");
     let chats = restartable_chats_of(plane.path(), Pretend::default());
-    for (session, harness) in [
-        (1, Some(Harness::ClaudeCode)),
-        (2, Some(Harness::Codex)),
-        (3, None),
+    for (session, harness, plane_skills) in [
+        (1, Some(Harness::ClaudeCode), true),
+        (2, Some(Harness::Codex), true),
+        (3, None, true),
+        (4, Some(Harness::ClaudeCode), false),
     ] {
         lock(&chats.open).insert(
             session,
@@ -8110,27 +8148,96 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 ran: None,
                 grants_as: None,
                 skills: harness.map(|harness| {
-                    purlis_core::skills::stamp_of(&purlis_core::skills::Running {
+                    purlis_core::skills::stamp_now(&purlis_core::skills::Running {
                         plane: plane.path(),
                         workspace: None,
                         persona: None,
                         harness,
                         built_in: None,
-                        plane_skills: true,
+                        plane_skills,
                         start: None,
                     })
                 }),
+                plane_skills,
                 skills_read: Default::default(),
             },
         );
     }
-    assert_eq!(chats.skills_changed_while_on(), Vec::<u32>::new());
+    assert_eq!(chats.skills_changed_while_on(), [4], "the flag is on now");
+    // Use skill… is told what its start read, never a constant.
+    assert!(chats.skills_of(1).expect("open").plane_skills);
+    assert!(!chats.skills_of(4).expect("open").plane_skills);
 
     // A Codex chat reads the SKILL.md purlis wrote for it at its start (SK-8), so an edit to a
     // body waits for a restart there too.
     skill("deploy", "two");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2]);
+    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
 
     skill("triage", "one");
-    assert_eq!(chats.skills_changed_while_on(), [1, 2]);
+    assert_eq!(chats.skills_changed_while_on(), [1, 2, 4]);
+}
+
+/// #2019: a chat serving on a port is not told its sandbox is older once its own door listens
+/// there: a compile then finds the port in use, which changes no grant.
+#[test]
+fn a_chat_serving_on_its_port_is_not_behind_once_its_door_listens() {
+    use purlis_core::sandbox::{Confines, Widened};
+    let started = Confines {
+        widened: Widened {
+            ports: vec![8080, 5173],
+            listens: vec![5173],
+            listen_only: vec![5173],
+            ..Widened::default()
+        },
+        ..Confines::default()
+    };
+    let now = Confines {
+        widened: Widened {
+            ports: vec![8080],
+            unserved: vec![5173],
+            ..Widened::default()
+        },
+        ..Confines::default()
+    };
+    assert_eq!(Settled::of(&started), Settled::of(&now));
+    // A grant taken back still is.
+    let taken = Confines {
+        widened: Widened {
+            ports: vec![8080],
+            ..Widened::default()
+        },
+        ..Confines::default()
+    };
+    assert_ne!(Settled::of(&started), Settled::of(&taken));
+}
+
+/// #2019: a chat serving on a port is owed a restart once the grant to serve there is taken
+/// back, even where a grant to connect to the same port still stands; a chat that does not
+/// serve there is owed none. First runs on CI: the chat's door listens on the port.
+#[test]
+fn a_chat_serving_on_a_port_is_owed_a_restart_once_its_grant_is_taken_back() {
+    let plane = a_sandboxed_plane();
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|listener| listener.local_addr())
+        .expect("a free port")
+        .port();
+    purlis_core::sandbox::local::grant_listen(plane.path(), port).expect("kept");
+    purlis_core::sandbox::local::grant_port(plane.path(), port).expect("kept");
+    let (chats, _host) = armed_for_opencode(plane.path());
+    let ready = ready_under(
+        Harness::Opencode,
+        a_sandbox_for(Harness::Opencode, plane.path()),
+    );
+    let chat = Chat {
+        cwd: Some(plane.path().to_path_buf()),
+        ..chat("/bin/sh", "c", None)
+    };
+    let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+    assert_eq!(
+        chats.owe_restart_serving(None, port.wrapping_add(1)),
+        Vec::<u32>::new()
+    );
+    assert_eq!(chats.owe_restart_serving(None, port), vec![session]);
+    assert!(chats.owed_restarts().contains(&session));
+    chats.close(session).expect("closed");
 }
