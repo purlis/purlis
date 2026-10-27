@@ -2740,7 +2740,7 @@ fn dispatch_noting(
                         handoff: wanted.mode() == Mode::Handoff,
                     },
                 ) {
-                    Requested::Covered(its) => Some(its),
+                    Requested::Covered(its) => Some(*its),
                     Requested::NeedsGrant { pending } => {
                         return Ok(Dispatched::Held {
                             from: pair.asking.clone(),

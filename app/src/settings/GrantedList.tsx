@@ -34,26 +34,30 @@ function when(at: number | null): string {
   return new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** What each kind of Allow lets a chat do, as the list says it: one sentence for each. */
+const ALLOWS: Record<SandboxGrant["what"], (one: SandboxGrant) => string> = {
+  host: (one) => `Reach ${one.target}`,
+  vault: (one) => `Use vault ${one.target} as ${one.persona ?? "a persona"}`,
+  "persona-hosts": (one) =>
+    `Chats as ${one.persona ?? "a persona"}${one.for_no_persona ? " and every chat that names no persona" : ""} reach ${one.target}`,
+  socket: (one) =>
+    `Connect to the local socket ${one.target}${one.expected ? " (this project expects it)" : ""}`,
+  service: (one) =>
+    `Reach the system service ${one.target}${one.expected ? " (this project expects it)" : ""}`,
+  port: (one) =>
+    `Connect to the service on this Mac at port ${one.target} (Codex and opencode chats; Claude Code chats not yet)`,
+  listen: (one) =>
+    `Run a server on port ${one.target}, reached through purlis on this Mac (Codex and opencode chats). Removing it restarts the chats serving there once their turn ends. They serve until then`,
+  browser: (one) =>
+    `Chats as ${one.persona ?? "a persona"} open a browser without asking, reaching ${one.target}`,
+  "browser-site": (one) =>
+    `Browsers open, send and type on ${one.target} (browsers only; chats' commands still ask)`,
+  write: (one) => `Write ${one.target} and everything in it`,
+};
+
 /** One Allow, as a sentence: what it allows, at which scope, who allowed it and when. */
 export function grantSaid(one: SandboxGrant): string {
-  const allows =
-    one.what === "host"
-      ? `Reach ${one.target}`
-      : one.what === "vault"
-        ? `Use vault ${one.target} as ${one.persona ?? "a persona"}`
-        : one.what === "persona-hosts"
-          ? `Chats as ${one.persona ?? "a persona"}${one.for_no_persona ? " and every chat that names no persona" : ""} reach ${one.target}`
-          : one.what === "socket"
-            ? `Connect to the local socket ${one.target}${one.expected ? " (this project expects it)" : ""}`
-            : one.what === "service"
-              ? `Reach the system service ${one.target}${one.expected ? " (this project expects it)" : ""}`
-              : one.what === "port"
-                ? `Connect to the service on this Mac at port ${one.target} (Codex and opencode chats; Claude Code chats not yet)`
-                : one.what === "browser"
-                  ? `Chats as ${one.persona ?? "a persona"} open a browser without asking, reaching ${one.target}`
-                  : one.what === "browser-site"
-                    ? `Browsers open, send and type on ${one.target} (browsers only; chats' commands still ask)`
-                    : `Write ${one.target} and everything in it`;
+  const allows = ALLOWS[one.what](one);
   const by =
     one.level !== "project"
       ? "allowed by you"
@@ -73,6 +77,7 @@ function removed(one: SandboxGrant): string {
   if (one.what === "socket") return `connecting to ${one.target}`;
   if (one.what === "service") return `reaching ${one.target}`;
   if (one.what === "port") return `connecting to port ${one.target}`;
+  if (one.what === "listen") return `a server on port ${one.target}`;
   if (one.what === "browser") return `Always for ${one.persona ?? "a persona"}'s browser`;
   if (one.what === "browser-site") return `browsers reaching ${one.target}`;
   return `writing ${one.target}`;

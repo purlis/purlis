@@ -18,6 +18,7 @@ import {
   queueRuns,
   redRun,
   refusal,
+  requiredNames,
   sortChecks,
 } from "./land.mjs";
 
@@ -92,6 +93,38 @@ const runs = (list) => ({ total_count: list.length, workflow_runs: list });
 const queued = (entry) => ({ data: { enqueuePullRequest: { mergeQueueEntry: entry } } });
 const polled = (pr) => ({ data: { repository: { pullRequest: pr } } });
 
+// Main's rules (the rulesets' rules for the branch) and its branch, with the checks they require.
+const rulesFor = (contexts) =>
+  contexts.length === 0
+    ? []
+    : [
+        {
+          type: "required_status_checks",
+          ruleset_id: 1,
+          parameters: {
+            required_status_checks: contexts.map((context) => ({
+              context,
+              integration_id: 15368,
+            })),
+            strict_required_status_checks_policy: false,
+          },
+        },
+      ];
+const branchFor = (contexts) => ({
+  name: "main",
+  protected: contexts.length > 0,
+  protection:
+    contexts.length === 0
+      ? {
+          enabled: false,
+          required_status_checks: { enforcement_level: "off", contexts: [] },
+        }
+      : {
+          enabled: true,
+          required_status_checks: { enforcement_level: "everyone", contexts },
+        },
+});
+
 // The rules of a pull request that lands cleanly; a test overrides the ones it is about.
 function rules(over = {}) {
   const all = {
@@ -99,6 +132,15 @@ function rules(over = {}) {
     mainCi: { match: "workflows/ci.yml/runs", replies: [{ out: runs([ciRun()]) }] },
     waiting: { match: "status=action_required", replies: [{ out: runs([]) }] },
     rerun: { match: "^run rerun", replies: [{ out: "" }] },
+    // By default main requires nothing by name, so `gh pr checks --required` alone decides.
+    ruleset: {
+      match: "^api repos/purlis/purlis/rules/branches/main",
+      replies: [{ out: [] }],
+    },
+    branch: {
+      match: "^api repos/purlis/purlis/branches/main",
+      replies: [{ out: branchFor([]) }],
+    },
     checks: {
       match: "^pr checks 7",
       replies: [{ out: [check("rust (fmt, clippy, test)", "pass"), check("stories", "skipping")] }],
@@ -239,6 +281,31 @@ test("checks sort into still going and failed, by gh's bucket", () => {
     sorted.failing.map((c) => c.name),
     ["c", "e"],
   );
+});
+
+test("a required check that has not posted is still going", () => {
+  const sorted = sortChecks(
+    [check("rust", "pass"), check("web", "fail")],
+    ["rust", "web", "scenario tests (ubuntu-24.04)"],
+  );
+  assert.deepEqual(sorted.pending, [
+    { name: "scenario tests (ubuntu-24.04)", state: "not posted yet" },
+  ]);
+  assert.deepEqual(
+    sorted.failing.map((c) => c.name),
+    ["web"],
+  );
+  // With no names known, what gh lists is all there is.
+  assert.deepEqual(sortChecks([check("rust", "pass")]).pending, []);
+});
+
+test("the required names are those of main's rulesets and of its branch protection, together", () => {
+  assert.deepEqual(
+    requiredNames(rulesFor(["rust", "docs"]), branchFor(["docs", "web"]).protection),
+    ["rust", "docs", "web"],
+  );
+  assert.deepEqual(requiredNames([], branchFor([]).protection), []);
+  assert.deepEqual(requiredNames([{ type: "merge_queue", parameters: {} }], undefined), []);
 });
 
 test("a drop's reason is only one given since this enqueue", () => {
@@ -441,6 +508,112 @@ test("runs waiting on approval are rerun, then given a moment, before the checks
   assert.ok(got.took >= 1000, `took ${got.took}ms`);
   // With nothing rerun, there is no pause.
   assert.ok(land(["7", "--sha", HEAD], {}, { LAND_SETTLE_SECONDS: "2" }).took < 2000);
+});
+
+test("a required check that has never posted is refused without --watch, naming it", () => {
+  const required = ["rust (fmt, clippy, test)", "scenario tests (ubuntu-24.04)"];
+  const got = land(["7", "--sha", HEAD], {
+    branch: {
+      match: "^api repos/purlis/purlis/branches/main",
+      replies: [{ out: branchFor(required) }],
+    },
+    checks: {
+      match: "^pr checks 7",
+      replies: [{ out: [check("rust (fmt, clippy, test)", "pass")] }],
+    },
+  });
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /still going; run again when they finish, or with --watch/);
+  assert.match(got.stderr, /scenario tests \(ubuntu-24\.04\): not posted yet/);
+  assert.doesNotMatch(got.stderr, /rust \(fmt/);
+  assert.equal(enqueueCall(got.calls), undefined);
+});
+
+test("with none reported yet, each required check is named as not posted", () => {
+  const got = land(["7", "--sha", HEAD], {
+    ruleset: {
+      match: "^api repos/purlis/purlis/rules/branches/main",
+      replies: [{ out: rulesFor(["docs (build, links, reachable)"]) }],
+    },
+    checks: {
+      match: "^pr checks 7",
+      replies: [{ err: "no required checks reported on the 'x' branch", exit: 1 }],
+    },
+  });
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /docs \(build, links, reachable\): not posted yet/);
+});
+
+test("with --watch, after a rerun it waits until every required check has posted and passed", () => {
+  // #3539: the rerun runs' checks had not posted when the checks were read, so the tool read
+  // nothing pending and enqueued, and GitHub refused: "5 of 9 required status checks are expected".
+  const required = ["rust (fmt, clippy, test)", "stories", "docs (build, links, reachable)"];
+  const got = land(["7", "--sha", HEAD, "--watch"], {
+    waiting: {
+      match: "status=action_required",
+      replies: [{ out: runs([{ id: 41, name: "docs", html_url: "https://ci/41" }]) }],
+    },
+    ruleset: {
+      match: "^api repos/purlis/purlis/rules/branches/main",
+      replies: [{ out: rulesFor(["stories"]) }],
+    },
+    branch: {
+      match: "^api repos/purlis/purlis/branches/main",
+      replies: [{ out: branchFor(required) }],
+    },
+    checks: {
+      match: "^pr checks 7",
+      replies: [
+        {
+          out: [check("rust (fmt, clippy, test)", "pass"), check("stories", "pass")],
+        },
+        {
+          out: [check("rust (fmt, clippy, test)", "pass"), check("stories", "pass")],
+        },
+        {
+          out: [
+            check("rust (fmt, clippy, test)", "pass"),
+            check("stories", "pass"),
+            check("docs (build, links, reachable)", "pending"),
+          ],
+          exit: 8,
+        },
+        {
+          out: [
+            check("rust (fmt, clippy, test)", "pass"),
+            check("stories", "pass"),
+            check("docs (build, links, reachable)", "pass"),
+          ],
+        },
+      ],
+    },
+  });
+  assert.equal(got.status, 0, got.stderr);
+  const said = lines(got.calls);
+  const checkReads = said
+    .map((line, i) => (line.startsWith("pr checks") ? i : -1))
+    .filter((i) => i >= 0);
+  assert.equal(checkReads.length, 4);
+  assert.ok(said.indexOf("run rerun 41 --repo purlis/purlis") < checkReads[0]);
+  assert.ok(checkReads[3] < said.findIndex((line) => line.includes("enqueuePullRequest")));
+  assert.match(got.stdout, /#7 merged/);
+});
+
+test("with --watch, a required check that never posts is given up on, named, and not enqueued", () => {
+  const got = land(
+    ["7", "--sha", HEAD, "--watch"],
+    {
+      branch: {
+        match: "^api repos/purlis/purlis/branches/main",
+        replies: [{ out: branchFor(["recorded behaviour"]) }],
+      },
+    },
+    { LAND_CHECKS_FOR_SECONDS: "3" },
+  );
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /still going after 3 seconds/);
+  assert.match(got.stderr, /recorded behaviour: not posted yet/);
+  assert.equal(enqueueCall(got.calls), undefined);
 });
 
 test("a draft is marked ready, and its checks read again, before the enqueue", () => {

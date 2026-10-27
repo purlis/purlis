@@ -369,12 +369,17 @@ impl HarnessAdapter for Codex {
                     .to_owned(),
             );
         };
-        let profile = crate::sandbox::codex::profile(
+        // The doors its confinement opened (#2019): a socket for each, in its own folder.
+        let served = confinement.served();
+        let profile = crate::sandbox::codex::profile_serving(
             wrap,
             cwd,
             tmp,
             &confinement.proxy_ports(),
             at.hook_socket,
+            served
+                .as_ref()
+                .map(|(folder, ports)| (*folder, ports.as_slice())),
         )
         .map_err(|why| crate::sandbox::seatbelt::not_started(lead, why, !at.no_opt_out))?;
         let mut charters = charters;

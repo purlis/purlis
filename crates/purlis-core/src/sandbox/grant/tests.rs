@@ -785,6 +785,98 @@ fn a_port_on_this_mac_allowed_for_a_chat_reaches_its_start_as_that_port_alone() 
     assert!(!other.reach.lists_exactly(loopback, 50795));
 }
 
+/// #2019: a port a chat was allowed to serve on reaches its start alone: its sandbox makes and
+/// binds its own socket for it in its folder, never a TCP port, and connects to the door on that
+/// port, which becomes a named local port of its reach, carried for its browser by its literal
+/// address; another port stays refused to the chat and its browser.
+#[test]
+fn a_port_a_chat_may_listen_on_is_bound_reached_and_named_for_its_browser_alone() {
+    use crate::sandbox::browser_reach::{Lane, Refusal, Verdict};
+    let project = project();
+    let mut chat = Grants::default();
+    chat.add(&What::Listen(3000));
+    chat.add(&What::Listen(3000));
+    assert_eq!(chat.listens, vec![3000]);
+    assert!(!chat.is_empty());
+
+    let granted = compiled_with(&project, Os::MacOs, &chat);
+    assert_eq!(granted.widened.listens, vec![3000]);
+    assert_eq!(granted.widened.ports, vec![3000]);
+    let loopback: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+    assert!(granted.reach.lists_exactly(loopback, 3000));
+    assert!(!granted.reach.lists_exactly(loopback, 3001));
+
+    let mut own_rules = crate::sandbox::seatbelt::Own::default();
+    crate::sandbox::seatbelt::widen(&mut own_rules, &granted.widened).expect("widens");
+    let folder = std::path::Path::new("/data/serve/chat-1");
+    crate::sandbox::seatbelt::served(&mut own_rules, folder, &granted.widened.listens)
+        .expect("served");
+    for rule in [
+        "(allow network-bind (local unix-socket (path-literal \"/data/serve/chat-1/3000.sock\")))",
+        "(allow network-inbound (local unix-socket (path-literal \"/data/serve/chat-1/3000.sock\")))",
+        "(allow network-outbound (remote ip \"localhost:3000\"))",
+    ] {
+        assert!(own_rules.after.contains(&rule.to_owned()), "{rule}");
+    }
+    // No TCP port is ever bound: the door listens on the chat's port.
+    assert!(
+        !own_rules
+            .after
+            .iter()
+            .any(|rule| rule.contains("network-bind") && !rule.contains("unix-socket"))
+    );
+
+    let own: [std::net::IpAddr; 1] = ["192.0.2.10".parse().unwrap()];
+    let lane = Lane::of(granted.reach.clone());
+    assert!(matches!(
+        lane.decide("127.0.0.1", 3000, false, &own),
+        Verdict::Carry { .. }
+    ));
+    assert!(matches!(
+        lane.decide("::1", 3000, true, &own),
+        Verdict::Carry { .. }
+    ));
+    assert_eq!(
+        lane.decide("127.0.0.1", 3001, false, &own),
+        Verdict::Refused(Refusal::ThisMachine)
+    );
+
+    // A chat allowed nothing listens on nothing, and its browser reaches no port of this Mac.
+    let other = compiled_with(&project, Os::MacOs, &Grants::default());
+    assert!(other.widened.listens.is_empty());
+    assert_eq!(
+        Lane::of(other.reach).decide("127.0.0.1", 3000, false, &own),
+        Verdict::Refused(Refusal::ThisMachine)
+    );
+}
+
+/// #2019: a port allowed to listen on for this project on this machine reaches every chat's
+/// start there, and its Remove takes it off the next.
+#[test]
+fn a_port_to_listen_on_kept_for_this_project_reaches_every_chats_start() {
+    let project = project();
+    crate::sandbox::local::grant_listen(&project.root, 5173).expect("kept");
+    assert_eq!(
+        crate::sandbox::local::granted_listens(&project.root),
+        vec![5173]
+    );
+    let granted = compiled_with(&project, Os::MacOs, &Grants::default());
+    assert_eq!(granted.widened.listens, vec![5173]);
+    crate::sandbox::local::revoke_listen(&project.root, 5173).expect("removed");
+    let after = compiled_with(&project, Os::MacOs, &Grants::default());
+    assert!(after.widened.listens.is_empty());
+}
+
+#[test]
+fn a_listen_grant_is_told_and_audited_by_its_number() {
+    let what = What::Listen(3000);
+    assert_eq!(what.word(), "listen");
+    assert_eq!(what.target(), "3000");
+    assert!(what.machine_only());
+    assert!(!what.machine_wide());
+    assert_eq!(what.to_string(), "running a server on port 3000");
+}
+
 #[test]
 fn a_port_grant_is_told_and_audited_by_its_number() {
     let what = What::Port(50795);
@@ -818,4 +910,32 @@ fn once_and_this_chat_are_the_one_chat_levels() {
     .filter(|level| level.one_chat())
     .collect();
     assert_eq!(one_chat, [Level::Once, Level::Chat]);
+}
+
+/// #2019: no door ever opens for a Claude Code chat, so a grant to serve on a port gives it
+/// nothing: no port in its sandbox's settings, and none its proxy carries.
+#[test]
+fn a_claude_code_chat_is_given_nothing_for_a_grant_to_serve_on_a_port() {
+    let project = project();
+    let port = 51_999;
+    let mut chat = Grants::default();
+    chat.add(&What::Listen(port));
+    let granted = compiled_with(&project, Os::MacOs, &chat);
+    assert_eq!(granted.widened.listen_only, [port]);
+    let applied = crate::sandbox::applied_of(
+        crate::harness::Harness::ClaudeCode,
+        crate::sandbox::compiler(crate::harness::Harness::ClaudeCode).expect("a compiler"),
+        &granted,
+        &project.root,
+        &Machine {
+            env: crate::secrets::Env::of(&[]),
+            home: Some(project.home.clone()),
+            os: Os::MacOs,
+        },
+    )
+    .expect("compiles");
+    let confines = applied.confines();
+    assert!(!confines.widened.ports.contains(&port), "{confines:?}");
+    assert!(confines.widened.listens.is_empty());
+    assert!(confines.reach.withdrew(port));
 }
