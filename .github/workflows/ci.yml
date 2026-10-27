@@ -56,18 +56,21 @@ env:
   NEXTEST_VERSION: "0.9.146"
 
 jobs:
-  # The Rust suite in two parts on two runners, each building the tests and running half of
-  # them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
-  # request waits on (2026-10-10). Part 1 also runs fmt, clippy and the doctests, which part 2's
-  # half of the tests outlasted by three minutes on #1712. Each part builds for itself: a build handed from one job to the next
-  # saves runner minutes, not the wait, since no test can start before the build ends.
-  # `rust-checks` below carries the required check's name and passes when both parts did.
+  # The Rust suite in three parts on three runners, each building the tests and running a third
+  # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
+  # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
+  # start at once (no queue on 2026-10-14..27), so a part costs runner minutes, not wait. Part 1
+  # also runs the doctests and the schema check (fmt and clippy are `lint`'s). Each part builds
+  # for itself: a build handed from one job to the next saves runner minutes, not the wait, since
+  # no test can start before the build ends. An optimised test build was tried and dropped
+  # (#3553: 21 to 32 minutes to build cold, then the runners stopped). `rust-checks` below
+  # carries the required check's name and passes when every part did.
   rust:
-    name: rust tests (part ${{ matrix.part }} of 2)
+    name: rust tests (part ${{ matrix.part }} of 3)
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -134,9 +137,9 @@ jobs:
       # its test — and kills each one by pid. `--reap` is safe here because the runner is the
       # job's own machine.
       #
-      # `count:` deals each binary's tests out in turn, so each part gets half of every binary.
+      # `count:` deals each binary's tests out in turn, so each part gets a third of every binary.
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition count:${{ matrix.part }}/2 -E 'not test(/::in_a_docker_pool$/)'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition count:${{ matrix.part }}/3 -E 'not test(/::in_a_docker_pool$/)'
       # The slowest tests and test binaries, as notices on the run: what makes the step above
       # slow, readable through the checks API without the job's log. A report, so it never turns
       # the job red.
@@ -159,10 +162,10 @@ jobs:
           tools/theme-schema-since-release.sh
           cargo nextest run --workspace --locked --run-ignored only
           -E 'package(purlis-core) & test(/the_schema_only_grows_since_the_last_release$/)'
-  # The required check `rust (fmt, clippy, test)`: green only when both parts of `rust` are.
+  # The required check `rust (fmt, clippy, test)`: green only when every part of `rust` is.
   # `!cancelled()` so a red part still reports here as red, not as skipped, which a required
   # check would count as passing.
-  # fmt and clippy, beside the two parts rather than in part 1: a check build of its own, 1.5
+  # fmt and clippy, beside the parts of `rust` rather than in part 1: a check build of its own, 1.5
   # minutes that part 1 waited on before its tests (2026-10-12).
   lint:
     name: rust (fmt, clippy)
@@ -214,7 +217,7 @@ jobs:
       # The app's `e2e` feature, so what only the scenario build compiles (`ipc_commands.rs`'s
       # `e2e_only` and what it calls, #2836) is linted too.
       - run: cargo clippy -p purlis-app --lib --features e2e --locked -- -D warnings
-  # The required check `rust (fmt, clippy, test)`: green only when the lint and both parts of
+  # The required check `rust (fmt, clippy, test)`: green only when the lint and every part of
   # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.
   rust-checks:
@@ -223,7 +226,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: The lint and both parts passed
+      - name: The lint and every part passed
         env:
           RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
         run: test "$RESULTS" = "success success"
