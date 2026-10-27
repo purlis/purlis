@@ -7,45 +7,15 @@
 //! rule that differed from Python's by one separator would add a line Python leaves out —
 //! or leave out one Python adds.
 
-/// Whether `c` ends a line for `str.splitlines`: wider than `\n`, and the reason this exists.
-fn is_line_break(c: char) -> bool {
-    matches!(
-        c,
-        '\n' | '\r'
-            | '\u{0b}'
-            | '\u{0c}'
-            | '\u{1c}'
-            | '\u{1d}'
-            | '\u{1e}'
-            | '\u{85}'
-            | '\u{2028}'
-            | '\u{2029}'
-    )
-}
+use purlis_skills::fence::is_line_break;
 
-/// `text.splitlines(keepends=True)`: every line with its own terminator, `\r\n` as one.
+/// `text.splitlines(keepends=True)`: every line with its own terminator, `\r\n` as one
+/// (`purlis_skills::fence::lines`, #3482).
 pub fn lines_with_ends(text: &str) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut start = 0;
-    let mut chars = text.char_indices().peekable();
-    while let Some((at, c)) = chars.next() {
-        if !is_line_break(c) {
-            continue;
-        }
-        let mut end = at + c.len_utf8();
-        if c == '\r'
-            && let Some(&(next, '\n')) = chars.peek()
-        {
-            end = next + 1;
-            chars.next();
-        }
-        out.push(&text[start..end]);
-        start = end;
-    }
-    if start < text.len() {
-        out.push(&text[start..]);
-    }
-    out
+    purlis_skills::fence::lines(text)
+        .into_iter()
+        .map(|line| &text[line.start..line.next])
+        .collect()
 }
 
 /// A line without its terminator — what `str.splitlines()` yields for it.

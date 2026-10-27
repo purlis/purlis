@@ -88,6 +88,8 @@
 
 use std::path::{Path, PathBuf};
 
+use purlis_skills::fence::py_strip;
+
 use crate::contain;
 
 /// `$CHARTER_WORKSPACE` — the per-session pin a launcher hands a chat.
@@ -277,11 +279,6 @@ fn tty_name() -> Option<String> {
     {
         None
     }
-}
-
-/// Python's `str.strip()`: every Unicode whitespace character, from both ends.
-fn py_strip(text: &str) -> &str {
-    crate::memstore::py_strip(text)
 }
 
 // --------------------------------------------------------------------------------------- //
