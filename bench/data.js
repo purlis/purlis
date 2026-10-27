@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793132762413,
+  "lastUpdate": 1793134730196,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27216,6 +27216,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0135435,
             "unit": "ms",
             "extra": "median of 5 runs: 100.430, 100.833, 102.014, 102.021, 102.410 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "45af7a0f7a84b728f8fcc711c2cf39400c0bad9a",
+          "message": "Start a chat: next number placeholder, Start chat key hint, dialogs at max(24px, 6vh) (#3376, #3377, #3389) (#3490)\n\n* Dialog family: anchor at max(24px, 6vh), as the prototype (#3389)\n\nThe scrim places every dialog max(24px, 6vh) below the window's top,\nas prototype B does (audit R2), and keeps 24px clear of the bottom, so\na dialog is at most the window less that top less 24px. Still a fixed\ntop: a change in content moves only the bottom edge. dialog.css,\nDialog.tsx's rules and docs/ui-primitives.md say so; a cascade test\npins it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Start a chat: the Name placeholder names the next chat's number (#3376)\n\nStartOptions carries next_number, one past the highest number the\nplane's sessions have dealt (Chats::next_number), read as the picker\nopens. The Name field's placeholder reads \"steward 10\" and follows the\npersona picked; an older answer with no number keeps \"and its number\".\nA unit test pins each, and a chats test pins that the number named is\nthe one the next start takes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Start a chat: Start chat with a key hint, the button family's shortcut part (#3377)\n\nThe button family gets a shortcut part (since NEXT in the manifest; the\nschema and the themes doc table are regenerated): a kbd after the\nwords, small and mono, drawn from its data-key and hidden from a screen\nreader, so the button's name and words stay its own. shortcutOff keeps\nits room undrawn while the key does not press it (R163).\n\nStart a chat's main action reads \"Start chat\" with the dialog's chord\ninside it (the key registry's spelling, Cmd+Return or Ctrl+Enter); an\napproval or a start without the sandbox, which the chord never sends,\nkeeps the hint's room and draws nothing in it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-27T20:01:45Z",
+          "tree_id": "4831f450e1c1760c05628fda5a057eceb8dc076e",
+          "url": "https://github.com/purlis/purlis/commit/45af7a0f7a84b728f8fcc711c2cf39400c0bad9a"
+        },
+        "date": 1793134724688,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3307905,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.310, 0.316, 0.331, 0.333, 0.336 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.508238499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.368, 16.456, 16.508, 16.551, 16.552 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.05207899999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.675, 100.974, 101.052, 101.149, 101.634 ms"
           }
         ]
       }
