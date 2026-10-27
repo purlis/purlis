@@ -10,6 +10,10 @@
  * built, an import of each family stylesheet `styles.css` does not name, in the families' names'
  * order. So a pull request that adds a family adds its folder and nothing else here.
  *
+ * A family's forced-colours sheet, `src/ui/<family>/forced-colors.css` (#3387), is put the same
+ * way in the place of {@link FORCED}, into the `forced` layer, before the window's own
+ * (`theme/forced-colors.css`).
+ *
  * Whatever reads `styles.css` for the sheets it imports reads it through {@link builtStyles}, as
  * the build does, or a family that came in through the marker would escape it.
  */
@@ -19,6 +23,49 @@ import { join } from "node:path";
 
 /** The line of `styles.css` that the families' imports take the place of. */
 export const FAMILIES = "/* @families: every other src/ui/<family>/<family>.css, by name */";
+
+/** The line of `styles.css` that the families' forced-colours sheets take the place of. */
+export const FORCED = "/* @forced: every src/ui/<family>/forced-colors.css, by name */";
+
+/**
+ * Whether `path` is a forced-colours sheet, the window's (`theme/forced-colors.css`) or a
+ * family's: it draws in the system's colours alone, which `forced-colors.test.ts` holds, so the
+ * tests that hold every other sheet to the theme's tokens leave it out, as they do `theme/`.
+ */
+export function isForcedColoursSheet(path: string): boolean {
+  return /(?:^|\/)forced-colors\.css$/.test(path);
+}
+
+/** A family's forced-colours sheet, as `styles.css` would name it. */
+export function forcedSheet(family: string): string {
+  return `./ui/${family}/forced-colors.css`;
+}
+
+/**
+ * `styles` with {@link FORCED} turned into an import, into the `forced` layer, of each of
+ * `families`' forced-colours sheets, by name. `styles` without the marker throws, as
+ * {@link withEveryFamily} does.
+ */
+export function withEveryForcedSheet(styles: string, families: readonly string[]): string {
+  const lines = styles.split("\n");
+  const at = lines.indexOf(FORCED);
+  if (at < 0) throw new Error(`styles.css has no line ${FORCED}`);
+  const imports = [...families].sort().map((one) => `@import "${forcedSheet(one)}" layer(forced);`);
+  return [...lines.slice(0, at), ...imports, ...lines.slice(at + 1)].join("\n");
+}
+
+/** Every family with a forced-colours sheet of its own under `ui`, the folder `src/ui`. */
+export function forcedFamiliesIn(ui: string): string[] {
+  return readdirSync(ui, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => existsSync(join(ui, name, "forced-colors.css")));
+}
+
+/** `styles` with both markers expanded from `ui`, the folder `src/ui`, as the build does. */
+export function withTheFamilies(styles: string, ui: string): string {
+  return withEveryForcedSheet(withEveryFamily(styles, familiesIn(ui)), forcedFamiliesIn(ui));
+}
 
 /** A family's stylesheet, by the family: `./ui/<family>/<family>.css`, as `styles.css` names it. */
 export function familySheet(family: string): string {
@@ -56,8 +103,5 @@ export function familiesIn(ui: string): string[] {
 /** **`styles.css` as the window is built from it**: read from `src`, the app's `src` folder, with
  *  every family's import in its marker's place. */
 export function builtStyles(src: string): string {
-  return withEveryFamily(
-    readFileSync(join(src, "styles.css"), "utf8"),
-    familiesIn(join(src, "ui")),
-  );
+  return withTheFamilies(readFileSync(join(src, "styles.css"), "utf8"), join(src, "ui"));
 }
