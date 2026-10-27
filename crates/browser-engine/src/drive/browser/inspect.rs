@@ -1068,7 +1068,7 @@ fn front_end_event(
                 json!({ "sessionId": ack }),
                 Some(&open.front_session),
             );
-            if ack < 4 {
+            if ack < 30 {
                 probe(inner, open);
             }
         }

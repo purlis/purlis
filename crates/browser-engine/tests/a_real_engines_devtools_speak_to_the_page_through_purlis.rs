@@ -97,30 +97,30 @@ fn the_engines_own_devtools_open_for_the_person_and_reach_the_page_through_purli
     );
     assert_eq!(first.aim.page.as_str(), "devtools");
     // The front end runs as a hosted one: the engine's embedder interface never reaches it.
+    // Asked as it loads and as it first paints: once it has its host, it says so.
+    let hosted = |told: &str| {
+        told.starts_with("front end: ")
+            && told.contains(r#""host":"undefined""#)
+            && told.contains(r#""hosted":true"#)
+    };
     let start = Instant::now();
-    while !browser
-        .inspector_told()
-        .iter()
-        .any(|told| told.starts_with("front end: "))
-    {
+    while !browser.inspector_told().iter().any(|told| hosted(told)) {
+        assert!(
+            !browser
+                .inspector_told()
+                .iter()
+                .any(|told| told.contains(r#""hosted":false"#)
+                    || told.contains(r#""host":"object""#)),
+            "the front end does not run as a hosted one: {:?}",
+            browser.inspector_told()
+        );
         assert!(
             start.elapsed() < Duration::from_secs(20),
-            "the front end was never asked how it runs: {:?}",
+            "the front end never said it runs as a hosted one: {:?}",
             browser.inspector_told()
         );
         std::thread::sleep(Duration::from_millis(50));
     }
-    let found = browser
-        .inspector_told()
-        .into_iter()
-        .find(|told| told.starts_with("front end: "))
-        .unwrap();
-    // Said in the CI log, where the D-line reads it.
-    println!("{found}");
-    assert!(
-        found.contains(r#""host":"undefined""#) && found.contains(r#""hosted":true"#),
-        "the front end does not run as a hosted one: {found}"
-    );
     assert!(
         ends.lock().unwrap().is_empty(),
         "{:?}",
