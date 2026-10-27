@@ -139,8 +139,17 @@ export function ciToolsOf(files, read) {
   return ci;
 }
 
-const namedIn = (text, name) =>
-  new RegExp(`(^|[^A-Za-z0-9_-])${name.replace(/[.]/g, "\\.")}($|[^A-Za-z0-9_-])`, "m").test(text);
+// Whether `text` names `name` as a whole file name: not inside a longer one, so `bench.mjs` is
+// not named by `stress-bench.mjs`. A plain scan, not a pattern built from the name.
+const NAME_CHAR = /[A-Za-z0-9_-]/;
+export function namedIn(text, name) {
+  for (let at = text.indexOf(name); at !== -1; at = text.indexOf(name, at + 1)) {
+    const before = at === 0 ? "" : text[at - 1];
+    const after = text[at + name.length] ?? "";
+    if (!NAME_CHAR.test(before) && !NAME_CHAR.test(after)) return true;
+  }
+  return false;
+}
 
 const isBinary = (path) =>
   /\.(png|jpe?g|gif|ico|icns|webp|woff2?|ttf|otf|gz|zip|wasm|pdf|mp4|bin)$/i.test(path);
