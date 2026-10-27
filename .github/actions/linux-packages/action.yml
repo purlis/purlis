@@ -43,6 +43,7 @@ runs:
       with:
         path: ~/.cache/linux-packages
         key: ${{ steps.key.outputs.key }}
+        restore-keys: ${{ steps.key.outputs.restore }}
     - id: install
       shell: bash
       env:

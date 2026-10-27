@@ -18,7 +18,7 @@ const script = join(dirname(fileURLToPath(import.meta.url)), "linux-packages.sh"
 
 // A machine to run the script on: a bin/ of stand-ins, an archives/ apt downloads into, a log
 // of every apt-get call, and the files GitHub hands a step for its outputs and its summary.
-function machine({ failUpdates = 0, failInstalls = 0, failOffline = false, manyInstalled = false } = {}) {
+function machine({ failUpdates = 0, failInstalls = 0, failOffline = false, manyInstalled = false, imageVersion = "20261005.1" } = {}) {
   const root = mkdtempSync(join(tmpdir(), "linux-packages-"));
   const bin = join(root, "bin");
   const archives = join(root, "archives");
@@ -76,7 +76,7 @@ exit 0`,
         GITHUB_OUTPUT: output,
         GITHUB_STEP_SUMMARY: summary,
         ImageOS: "ubuntu24",
-        ImageVersion: "20261005.1",
+        ImageVersion: imageVersion,
         LINUX_PACKAGES_SUDO: "",
         LINUX_PACKAGES_ARCHIVES: archives,
         LINUX_PACKAGES_PAUSE: "0",
@@ -94,6 +94,7 @@ exit 0`,
 
 // The step output file is appended to, as GitHub's is, so the last key= line is this run's.
 const keyOf = (r) => [...r.output.matchAll(/^key=(.*)$/gm)].at(-1)?.[1];
+const restoreOf = (r) => [...r.output.matchAll(/^restore=(.*)$/gm)].at(-1)?.[1];
 
 test("the cache key is the package list, whatever its order, and the runner image", () => {
   const { run } = machine();
@@ -103,7 +104,21 @@ test("the cache key is the package list, whatever its order, and the runner imag
   assert.ok(a, "no key= line in the step's output");
   assert.equal(a, b);
   assert.notEqual(a, c);
-  assert.match(a, /ubuntu24-20261005\.1/);
+  assert.match(a, /ubuntu24-.*20261005\.1/);
+});
+
+test("a new runner image restores the last image's packages, and saves under a key of its own", () => {
+  // GitHub rolls a new image out over days, so a run lands on either. With the image only in the
+  // exact key, a new image found no cache and asked a slow mirror (2026-10-22 to 10-27: 41 runs
+  // failed on "apt-get did not finish in time"). The restore prefix leaves the image out; the
+  // install already falls back to the mirror when the restored files do not fit.
+  const old = machine({ imageVersion: "20261012.334.1" }).run("key", "--tauri");
+  const now = machine({ imageVersion: "20261023.334.3" }).run("key", "--tauri");
+  assert.notEqual(keyOf(old), keyOf(now));
+  assert.ok(restoreOf(now), "no restore= line in the step's output");
+  assert.equal(restoreOf(old), restoreOf(now));
+  assert.ok(keyOf(old).startsWith(restoreOf(now)), `${keyOf(old)} does not start with ${restoreOf(now)}`);
+  assert.doesNotMatch(restoreOf(now), /20261023/);
 });
 
 test("--tauri names the same list as writing Tauri's packages out", () => {
@@ -171,6 +186,18 @@ test("a cache the image no longer fits falls back to the mirror", () => {
   assert.ok(r.apt.some((l) => l.includes("update")));
   assert.match(r.stdout + r.stderr, /::warning[^\n]*apt-get said: E: Unable to correct problems/);
   assert.match(r.summary, /from the mirror/);
+});
+
+test("files from another image that do not fit are not kept with the new image's", () => {
+  // A restore from the last image's key brings its files; when they do not install, the files
+  // saved after the mirror must be this image's alone, or every later run fails offline again.
+  const { root, run } = machine({ failOffline: true });
+  const cache = join(root, "cache");
+  mkdirSync(cache);
+  writeFileSync(join(cache, "libold_0.9_amd64.deb"), "");
+  const r = run("install", "--cache", cache, "socat");
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(readdirSync(cache).sort(), ["libbar_1%3a2.0_amd64.deb", "libfoo_1.0-1_amd64.deb"]);
 });
 
 test("a mirror that hangs once is tried once more", () => {

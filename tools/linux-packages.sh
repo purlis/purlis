@@ -9,9 +9,13 @@
 #
 # `--tauri` adds Tauri's Linux build dependencies, which this file names once for every job.
 #
-# `key` writes `key=...` to $GITHUB_OUTPUT: the runner image and the package list, in any order.
+# `key` writes `key=...` to $GITHUB_OUTPUT: the package list, in any order, and the runner image.
 # The image is in it because the .deb files a run downloads are the ones that image lacked; on
-# the next image they may not fit, and a new key starts over from the mirror.
+# the next image they may not fit. It also writes `restore=...`, the key without the image: GitHub
+# rolls a new image out over days, and a run on it restores the last image's files instead of
+# asking the mirror (2026-10-22 to 10-27, 41 runs failed on a slow mirror after missing the cache).
+# If those files do not fit, `install` says so and goes on to the mirror, and main saves the new
+# image's files under its own key.
 #
 # `install` installs PACKAGE... and says in the job summary how long it took and from where.
 #   - With `--cache DIR` holding .deb files (`.github/actions/linux-packages` restores them
@@ -92,7 +96,11 @@ if [ "$mode" = key ]; then
   else
     hash=$(printf '%s\n' "$packages" | shasum -a 256 | cut -c1-16)
   fi
-  echo "key=linux-packages-v1-${ImageOS:-linux}-${ImageVersion:-unknown}-$(uname -m)-$hash" >> "$OUTPUT"
+  restore="linux-packages-v2-${ImageOS:-linux}-$(uname -m)-$hash-"
+  {
+    echo "key=$restore${ImageVersion:-unknown}"
+    echo "restore=$restore"
+  } >> "$OUTPUT"
   exit 0
 fi
 
@@ -167,6 +175,8 @@ if [ -n "$cache" ]; then
   # Only the files of the versions now installed, so a file apt left from something else
   # never rides along into the cache.
   installed=$(dpkg-query -W -f='${Package}_${Version}_${Architecture}\n')
+  # Only this install's files: any left from a restore of another image's key did not fit.
+  rm -f "$cache"/*.deb
   mkdir -p "$cache"
   kept=0
   for deb in "$ARCHIVES"/*.deb; do
