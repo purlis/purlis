@@ -1169,6 +1169,43 @@ const ARCHIVE_REF: ViewRef = { from: null, view: "memory-archive", key: "shared"
 const VAULT_REF: ViewRef = { from: null, view: "vault", key: "ops" };
 const TODO_REF: ViewRef = { from: null, view: "todo", key: "alpha/20260302-091400-review" };
 
+/** This machine and two runners, for the Devices view (#2052). */
+const DEVICES_SHOWN = {
+  version: "0.9.0",
+  placement: {
+    here: {
+      chats: [{ plane: "/plane", session: 1, name: "lint" }],
+      browsers: [{ plane: "/plane", session: 1, name: "b1", chat: "lint" }],
+    },
+    runners: [
+      {
+        pool: "builds",
+        runner: "builds",
+        draining: false,
+        on: { chats: [{ plane: "/plane", session: 2, name: "verify" }], browsers: [] },
+      },
+      { pool: "qa", runner: "qa", draining: true, on: { chats: [], browsers: [] } },
+    ],
+    unkept: [],
+  },
+  pools: [
+    {
+      pool: "builds",
+      limits: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
+      millicpus: 2000,
+    },
+  ],
+};
+
+/** What each runner answers: that it runs, on another version than this machine's. */
+const DEVICE_ANSWERS = {
+  standing: { state: "running" },
+  link: { state: "linked" },
+  version: "0.8.1",
+  contacted: 1_800_000_000,
+  holds: { open: [], chats: 2, browsers: 1 },
+};
+
 const STATES: State[] = [
   { name: "a persona", view: PERSONA, drawn: /Charter defects go upstream/ },
   {
@@ -1224,6 +1261,18 @@ const STATES: State[] = [
     },
   },
   { name: "Saving", view: { from: null, view: "saving", key: "" }, drawn: /site/ },
+  {
+    name: "Devices, runners that answer on another version, and the use per pool",
+    view: { from: null, view: "devices", key: "" },
+    answers: { devices: DEVICES_SHOWN, device_runner: DEVICE_ANSWERS },
+    drawn: /CPUs requested/,
+  },
+  {
+    name: "Devices that could not be read",
+    view: { from: null, view: "devices", key: "" },
+    answers: { devices: new Error("runners.json could not be read: permission denied") },
+    drawn: /permission denied/,
+  },
   {
     name: "a browser whose view the host refused",
     view: { from: null, view: "browser", key: "01J9ZQ8000000000000000000D" },

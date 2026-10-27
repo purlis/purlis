@@ -94,8 +94,8 @@ describe("contactSaid", () => {
     const now = new Date(2026, 9, 27, 12, 30);
     const today = new Date(2026, 9, 27, 9, 5).getTime() / 1000;
     const before = new Date(2026, 9, 25, 9, 5).getTime() / 1000;
-    expect(contactSaid(today, now, "en-GB")).toBe("Last answered at 09:05");
-    expect(contactSaid(before, now, "en-GB")).toBe("Last answered 25 Oct at 09:05");
+    expect(contactSaid(today, now, "en-GB")).toBe("Last answered at 9:05");
+    expect(contactSaid(before, now, "en-GB")).toBe("Last answered 25 Oct at 9:05");
   });
 });
 
