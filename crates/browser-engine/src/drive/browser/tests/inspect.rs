@@ -469,3 +469,32 @@ fn what_devtools_put_into_a_field_of_the_page_is_kept_out_once_the_browser_is_ha
     let read = snapshot(&browser, 2);
     assert!(!read.contains("console-set-Secret8"), "{read}");
 }
+
+#[test]
+fn devtools_watched_before_their_page_has_loaded_are_cast_once_it_has() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    browser.show_inspector(Arc::new(|_| {}));
+    wait_for("the front end is cast", || {
+        engine
+            .sent("Page.startScreencast")
+            .iter()
+            .any(|s| s.session.as_deref() == Some("S-FRONT-1"))
+    });
+    let asked = || {
+        engine
+            .sent("Page.startScreencast")
+            .iter()
+            .filter(|s| s.session.as_deref() == Some("S-FRONT-1"))
+            .count()
+    };
+    let before = asked();
+    engine.emit(
+        "Page.loadEventFired",
+        json!({ "timestamp": 1.0 }),
+        Some("S-FRONT-1"),
+    );
+    wait_for("the front end is cast again once loaded", || {
+        asked() > before
+    });
+}

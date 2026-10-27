@@ -200,6 +200,9 @@ pub(crate) struct Inspection {
     shows: AtomicU64,
     ended: AtomicBool,
     behind: AtomicBool,
+    /// Whether its frames are asked for: asked again once its page has loaded, since the
+    /// engine refuses a screencast while the page moves to DevTools' own process.
+    showing: AtomicBool,
     tell: Mutex<Option<Told>>,
     /// The methods the front end asked of the page, by name alone, the first
     /// [`MOST_HEARD`] of them.
@@ -242,6 +245,9 @@ impl Inspection {
             }
             "Page.frameNavigated" if params.pointer("/frame/parentId").is_none() => {
                 self.shows.fetch_add(1, Ordering::SeqCst);
+            }
+            "Page.loadEventFired" if self.showing.load(Ordering::SeqCst) => {
+                self.queue(Work::Show);
             }
             _ => {}
         }
@@ -427,6 +433,7 @@ impl Browser {
             shows: AtomicU64::new(0),
             ended: AtomicBool::new(false),
             behind: AtomicBool::new(false),
+            showing: AtomicBool::new(false),
             tell: Mutex::new(Some(ended)),
             heard: Mutex::new(Vec::new()),
             told: Mutex::new(Vec::new()),
@@ -492,6 +499,7 @@ impl Browser {
     pub fn show_inspector(&self, frames: Arc<dyn Fn(Painted) + Send + Sync>) {
         if let Some(open) = lock(&self.inner.inspection).clone() {
             *lock(&open.sink) = Some(frames);
+            open.showing.store(true, Ordering::SeqCst);
             open.queue(Work::Show);
         }
     }
@@ -500,6 +508,7 @@ impl Browser {
     pub fn hide_inspector(&self) {
         if let Some(open) = lock(&self.inner.inspection).clone() {
             *lock(&open.sink) = None;
+            open.showing.store(false, Ordering::SeqCst);
             open.queue(Work::Hide);
         }
     }
@@ -719,8 +728,8 @@ fn run(weak: &Weak<Inner>, open: &Arc<Inspection>, todo: &Receiver<Work>) {
                         json!({ "format": "jpeg", "quality": super::super::screencast::QUALITY, "everyNthFrame": 1 }),
                         Some(&open.front_session),
                     );
-                    if started.is_err() {
-                        open.noted("Page.startScreencast refused");
+                    if let Err(why) = started {
+                        open.noted(&format!("Page.startScreencast refused: {why}"));
                     }
                 }
                 Work::Hide => {
