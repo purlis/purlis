@@ -291,8 +291,14 @@ fn a_frontmatter_no_fence_line_closes_is_an_error_and_a_value_holding_dashes_is_
     // #3460: the file opens like a frontmatter, and no line that is only `---` closes it, so
     // every key reads as none. A `---` inside a value is text and closes nothing.
     let p = plane(&[
-        ("open", "---\nname: open\nrole: Open---\nskills: a\n\n# Open\n"),
-        ("dashes", &clean("dashes").replace("role: Clean", "role: Clean --- nights")),
+        (
+            "open",
+            "---\nname: open\nrole: Open---\nskills: a\n\n# Open\n",
+        ),
+        (
+            "dashes",
+            &clean("dashes").replace("role: Clean", "role: Clean --- nights"),
+        ),
     ]);
     let open = linter(&p).structural_errors("open");
     assert_eq!(open.len(), 1, "{:?}", messages(&open));

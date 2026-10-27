@@ -206,7 +206,13 @@ fn create_writes_a_value_holding_three_dashes_and_reads_it_back_as_written() {
     assert_eq!(rc, 0, "{}", heard.err);
     let text = plane.read("personas/qa/persona.md");
     let pairs = crate::personas::frontmatter(&text);
-    let said = |key: &str| pairs.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+    let said = |key: &str| {
+        pairs
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    };
     assert_eq!(said("delegate-when"), Some("Use when: x --- y"));
     assert_eq!(said("draft"), Some("true"));
 }

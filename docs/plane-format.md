@@ -3189,11 +3189,13 @@ curation actions is offered.
     `name, role, vault, routing, delegate-when` (`charter/commands.py:2597`); purlis's
     `init` writes `name, role, vault, delegate-when`, since `routing` is retired (charter#369).
   - Body: everything after the closing `---` line, stripped.
-  - **Writing (2026-10-27, #3244, #3460).** Every purlis write of a key (`skills:`,
-    `pinned-skills:`, `profile:`, `icon:`, `color:`, the `persona-agents` fix) goes through one
-    writer (`purlis_skills::fence::with_keys`): the key's first line is rewritten where it
-    stands, keeping its line break; a later line of the same key goes; a key with no line
-    gains one, last in the frontmatter. Every other line, `# note`, blank line and the order of
+  - **Writing (2026-10-27, #3244, #3460).** Every purlis write of a key's value (`skills:`,
+    `pinned-skills:`, `profile:`, `icon:`, `color:`) goes through one writer
+    (`purlis_skills::fence::with_keys`): the key's first line is rewritten where it stands,
+    keeping its line break; a later line of the same key goes; a key whose line is empty takes
+    the `- item` lines under it along; a key with no line gains one, last in the frontmatter.
+    The `persona-agents` fix, which renames `model:` to `profile:` where the line stands, finds
+    its lines with the same parser. Every other line, `# note`, blank line and the order of
     the keys, and the body, is kept byte for byte. A value that cannot be one line reading back
     as itself (a line break in it, or a blank at either end) is refused with a sentence, and
     what is written is read back before it is kept.

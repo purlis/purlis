@@ -525,12 +525,12 @@ pub fn key_issues(root: &Path, name: &str) -> Vec<String> {
     issues
 }
 
-/// Why the definition's frontmatter reads as none though the file opens like one (#3460): its
-/// first line is no `---` line, or no later `---` line closes it ([`purlis_skills::fence`]).
+/// Why the definition's frontmatter reads as none though the file opens one (#3460): its first
+/// line is `---` and no later `---` line closes it ([`purlis_skills::fence::unclosed`]).
 /// Every key then reads as none, its `skills:` and `pinned-skills:` included, so it is an error.
 fn frontmatter_refusal(root: &Path, name: &str) -> Option<String> {
     let text = crate::personas::load_text(root, name)?;
-    (text.starts_with("---") && purlis_skills::fence::Fence::find(&text).is_none()).then(|| {
+    purlis_skills::fence::unclosed(&text).then(|| {
         "its frontmatter is not one purlis reads, so none of its keys reach purlis (its role, \
          skills, pinned skills and profile read as none). A frontmatter opens on a first line \
          that is only `---` and ends at the next line that is only `---`: add that closing line"
@@ -725,11 +725,14 @@ fn read_skill(file: &Path) -> Option<(String, bool)> {
     let fence = purlis_skills::fence::Fence::find(&text)?;
     let mut name: Option<String> = None;
     let mut human_only = false;
-    for line in fence.line_texts() {
-        if let Some(value) = line.strip_prefix("name:") {
-            name = Some(value.trim().trim_matches(['"', '\'']).to_string());
-        } else if let Some(value) = line.strip_prefix("disable-model-invocation:") {
-            human_only = value.trim().eq_ignore_ascii_case("true");
+    for entry in fence.entries() {
+        match entry.key {
+            // A harness reads this file as YAML, so a quoted name is the name inside its quotes.
+            "name" => name = Some(entry.value.trim_matches(['"', '\'']).to_string()),
+            "disable-model-invocation" => {
+                human_only = entry.value.eq_ignore_ascii_case("true");
+            }
+            _ => {}
         }
     }
     let name = name.filter(|n| !n.is_empty()).or_else(|| {

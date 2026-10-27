@@ -150,7 +150,9 @@ pub(crate) fn frontmatter_block(text: &str) -> Option<(usize, usize)> {
 /// without its break. Empty where there is no frontmatter. What a reader of a key that spans
 /// lines (a block list) reads.
 pub(crate) fn frontmatter_lines(text: &str) -> Vec<&str> {
-    Fence::find(text).map(|f| f.line_texts()).unwrap_or_default()
+    Fence::find(text)
+        .map(|f| f.line_texts())
+        .unwrap_or_default()
 }
 
 /// The briefing section that lists `skills`, or none when there are none.

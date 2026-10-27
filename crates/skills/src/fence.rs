@@ -48,6 +48,8 @@ pub struct Fence<'a> {
     close: usize,
     /// The first byte after the closing fence's line and its break.
     body: usize,
+    /// Where the opening fence's line ends: its break runs from here to [`Self::open`].
+    open_end: usize,
 }
 
 impl<'a> Fence<'a> {
@@ -67,6 +69,7 @@ impl<'a> Fence<'a> {
             open: first.next,
             close: close.start,
             body: close.next,
+            open_end: first.end,
         })
     }
 
@@ -130,8 +133,7 @@ impl<'a> Fence<'a> {
     /// The break the opening fence's line ends with, `\n` or `\r\n`: what a line the writer
     /// adds ends with, so a file keeps the breaks it was written with.
     fn newline(&self) -> &'a str {
-        let first = lines(self.text)[0];
-        &self.text[first.end..first.next]
+        &self.text[self.open_end..self.open]
     }
 }
 
@@ -207,7 +209,9 @@ pub fn holds(value: &str) -> bool {
 /// writer of the line format.
 ///
 /// A key's first line is rewritten where it stands, keeping its break; any later line of it goes,
-/// since a later line would answer instead. A key with no line gains one, last in the
+/// since a later line would answer instead. A key line with an empty value takes the `- item`
+/// lines right under it along, as they are its value (a block list), so none is left to read
+/// as another key's. A key with no line gains one, last in the
 /// frontmatter. Every other byte, the person's other lines, notes and order and the body, is left
 /// as written. What is written is read back before it is answered, and a value that would not
 /// read back as itself is refused, so what purlis writes is what it reads.
@@ -242,14 +246,25 @@ pub fn with_keys(text: &str, keys: &[(&str, Option<&str>)]) -> Result<String, Un
     let mut out = String::with_capacity(text.len() + 64);
     out.push_str(&text[..open]);
     let mut placed = vec![false; keys.len()];
+    // Set while the lines are the `- item` lines under a key being rewritten: they are its
+    // value, so they go with the line they are under.
+    let mut items_of_ours = false;
     for line in fence.lines() {
         let whole = &text[line.start..line.next];
-        let Some(at) = entry_of(&text[line.start..line.end])
-            .and_then(|(key, _)| keys.iter().position(|(k, _)| *k == key))
-        else {
+        let written = &text[line.start..line.end];
+        if items_of_ours && written.trim_start().starts_with('-') {
+            continue;
+        }
+        items_of_ours = false;
+        let Some((at, empty)) = entry_of(written).and_then(|(key, value)| {
+            keys.iter()
+                .position(|(k, _)| *k == key)
+                .map(|at| (at, value.is_empty()))
+        }) else {
             out.push_str(whole);
             continue;
         };
+        items_of_ours = empty;
         if let (Some(value), false) = (keys[at].1, placed[at]) {
             out.push_str(&said(keys[at].0, value));
             out.push_str(&text[line.end..line.next]);

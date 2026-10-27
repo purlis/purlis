@@ -43,7 +43,11 @@ fn only_a_line_of_three_dashes_and_blanks_is_a_fence() {
     assert_eq!(fence.pairs(), vec![pair("name", "n"), pair("role", "r")]);
     assert_eq!(fence.body(), "body\n");
     // A first line that is not a fence opens nothing.
-    for none in ["---name: n\n---\n", " ---\nname: n\n---\n", "name: n\n---\nx\n---\n"] {
+    for none in [
+        "---name: n\n---\n",
+        " ---\nname: n\n---\n",
+        "name: n\n---\nx\n---\n",
+    ] {
         assert_eq!(Fence::find(none), None, "{none:?}");
     }
 }
@@ -104,6 +108,24 @@ fn unknown_keys_notes_order_and_the_body_are_kept_byte_for_byte() {
 }
 
 #[test]
+fn a_block_list_under_a_key_goes_with_its_line() {
+    let text = "---\npinned-skills:\n  - x\nskills:\n  - a\n  - b\nrole: r\n---\n";
+    assert_eq!(
+        with_keys(text, &[("skills", None)]),
+        Ok("---\npinned-skills:\n  - x\nrole: r\n---\n".to_owned())
+    );
+    assert_eq!(
+        with_keys(text, &[("skills", Some("a, b, c"))]),
+        Ok("---\npinned-skills:\n  - x\nskills: a, b, c\nrole: r\n---\n".to_owned())
+    );
+    // Another key's items are left as written.
+    assert_eq!(
+        with_keys(text, &[("role", Some("q"))]),
+        Ok(text.replace("role: r", "role: q"))
+    );
+}
+
+#[test]
 fn a_key_written_twice_is_one_line_where_the_first_stood() {
     let text = "---\nprofile: a\nname: ops\nprofile: b\n---\n";
     assert_eq!(
@@ -137,7 +159,9 @@ fn a_value_that_would_not_read_back_as_itself_is_refused_and_nothing_is_written(
         let refused = with_keys(text, &[("role", Some(value))]).unwrap_err();
         assert!(matches!(refused, Unwritten::Value { .. }), "{value:?}");
         assert!(
-            refused.to_string().contains("as one line that reads back the same"),
+            refused
+                .to_string()
+                .contains("as one line that reads back the same"),
             "{refused}"
         );
     }
@@ -150,7 +174,11 @@ fn a_value_that_would_not_read_back_as_itself_is_refused_and_nothing_is_written(
 #[test]
 fn what_the_writer_writes_the_reader_reads_back() {
     let text = "---\nname: n\nicon: old\n---\nbody --- here\n";
-    let keys = [("icon", Some("star")), ("color", Some("#00ff00")), ("name", None)];
+    let keys = [
+        ("icon", Some("star")),
+        ("color", Some("#00ff00")),
+        ("name", None),
+    ];
     let written = with_keys(text, &keys).unwrap();
     assert_eq!(
         pairs(&written),
@@ -172,5 +200,8 @@ fn lines_split_as_python_splits_them_with_their_spans() {
 fn an_unclosed_frontmatter_is_refused_not_written_over() {
     let refused = with_keys("---\nname: n\n", &[("icon", Some("star"))]).unwrap_err();
     assert_eq!(refused, Unwritten::Unclosed("icon".to_owned()));
-    assert!(refused.to_string().contains("no `---` line closes"), "{refused}");
+    assert!(
+        refused.to_string().contains("no `---` line closes"),
+        "{refused}"
+    );
 }

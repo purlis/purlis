@@ -100,10 +100,9 @@ fn write(plane: &Path, persona: &str, key: &str, entries: &[String]) -> Result<(
     let text = crate::contain::read_text_no_link(plane, &file)
         .map_err(|why| format!("purlis could not read {}: {why}", file.display()))?;
     // A comma list reads back as these entries only when none holds a comma or a blank end.
-    if let Some(odd) = entries
-        .iter()
-        .find(|entry| entry.is_empty() || entry.contains(',') || entry.trim() != entry.as_str())
-    {
+    if let Some(odd) = entries.iter().find(|entry| {
+        entry.is_empty() || entry.contains(',') || !purlis_skills::fence::holds(entry)
+    }) {
         return Err(format!(
             "{} cannot list '{}' on its `{key}:` line: a comma list's entry holds no comma \
              and no blank end, so nothing was written.",
