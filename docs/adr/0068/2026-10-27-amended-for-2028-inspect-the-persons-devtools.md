@@ -20,8 +20,10 @@ be confirmed**, and carries the number its D-line has in the pull request.
 3. **The front end is the engine's own, a constant** (D-2028-3). It is the engine's bundled
    DevTools page, the one page purlis opens at an address that is neither http, https nor
    `about:blank`: never an address anyone wrote, in a context nothing else uses. It is held to
-   that page: one that leaves it is closed. The engine's embedder interface is put out of its
-   reach before its own scripts run, so it runs as a hosted front end. Spec #2008's "only http
+   that page: one that leaves it is closed. The engine does give such a page its embedder
+   interface (found on a real engine in CI); purlis puts it out of the front end's reach before
+   any of its scripts run, and of the hosts offered to the front end takes only DevTools' own
+   hosted one, so it runs as a hosted front end that asks nothing of the engine (D-2028-11). Spec #2008's "only http
    and https navigate" protects against a page or an agent opening other schemes, and every
    address either writes, the front end's own navigations of the page included, is still held
    to http and https.
@@ -68,3 +70,7 @@ be confirmed**, and carries the number its D-line has in the pull request.
     DevTools alone, never the browser. No event, log line or timeline holds what DevTools
     showed or were sent; while they are open the engine keeps only method names, for the
     host's log and the tests.
+11. **What the engine gives the front end** (D-2028-11). On a real engine, a page at the bundled
+    DevTools address is given the engine's embedder interface. The real-engine test asks the
+    front end how it runs once it has loaded, and holds that the interface is out of its reach
+    and that it runs as a hosted front end.

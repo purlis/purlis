@@ -89,8 +89,6 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
   // The engine's embedder interface never reaches the front end, however and whenever the
   // engine installs it, and the front end runs as a hosted one: of what is offered as its host,
   // only a hosted one is taken (DevTools' own stand-in host), so the engine's never is.
-  const errors = [];
-  globalThis.addEventListener('error', (e) => { if (errors.length < 5) errors.push(String(e.message).slice(0, 160)); });
   try {
     Object.defineProperty(globalThis, 'DevToolsHost', { get() { return undefined; }, set() {}, configurable: false });
   } catch (e) {}
@@ -138,7 +136,7 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
       }
     }
   };
-  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver, errors: () => [...errors], sockets: () => open.length }), writable: false, configurable: false });
+  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver, sockets: () => open.length }), writable: false, configurable: false });
 })()";
 
 /// What runs in the front end before its own scripts: [`STAND_IN_SOURCE`].
@@ -154,7 +152,6 @@ pub(crate) const DELIVER: &str =
 /// names what it found and nothing the front end showed.
 const HOSTED: &str = r"JSON.stringify({
   host: typeof globalThis.DevToolsHost,
-  errors: (globalThis.__purlisInspector && globalThis.__purlisInspector.errors) ? globalThis.__purlisInspector.errors() : null,
   sockets: (globalThis.__purlisInspector && globalThis.__purlisInspector.sockets) ? globalThis.__purlisInspector.sockets() : null,
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
 })";
