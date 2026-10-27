@@ -157,7 +157,7 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
 
     // Show. The two rungs in the order they resolve.
     if let Some(cur) = declared(root) {
-        say(Say::Out(cur));
+        say(Say::Out(crate::shown::answer(&cur)));
         say(Say::Info(
             "declared front door (charter.toml [persona] default). Change: purlis persona \
              default <name>  ·  clear: --clear"
@@ -167,7 +167,7 @@ pub fn default_command(root: &Path, name: Option<&str>, clear: bool, say: Sink) 
     }
     match legacy_default(root) {
         Some(cur) => {
-            say(Say::Out(cur.clone()));
+            say(Say::Out(crate::shown::answer(&cur)));
             say(Say::Info(
                 format!(
                     "committed team-wide default (personas/.default) — the legacy location. Move \
@@ -399,6 +399,30 @@ mod tests {
 
     fn manifest(root: &Path) -> String {
         std::fs::read_to_string(root.join(crate::plane::MANIFEST)).unwrap()
+    }
+
+    /// #3287: the name `persona default` prints is a script's answer, and a name read from
+    /// a committed file. An ordinary name is printed as it is; a hidden character in one is
+    /// marked, so a script reads it as a name no persona has rather than one that hides.
+    #[test]
+    fn the_default_it_prints_marks_a_hidden_character_3287() {
+        let dir = plane("[persona]\ndefault = \"devops\"\n");
+        let (code, said) = run(dir.path(), None, false);
+        assert_eq!((code, said[0].as_str()), (0, "devops"), "{said:?}");
+
+        let dir = plane("[persona]\ndefault = \"dev\\u001b[8mops\"\n");
+        let (code, said) = run(dir.path(), None, false);
+        assert_eq!(
+            (code, said[0].as_str()),
+            (0, "dev⟦U+001B⟧[8mops"),
+            "{said:?}"
+        );
+
+        let dir = plane("");
+        std::fs::create_dir_all(dir.path().join("personas")).unwrap();
+        std::fs::write(dir.path().join("personas/.default"), "o\u{202e}ps\n").unwrap();
+        let (code, said) = run(dir.path(), None, false);
+        assert_eq!((code, said[0].as_str()), (0, "o⟦U+202E⟧ps"), "{said:?}");
     }
 
     #[test]

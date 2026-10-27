@@ -91,3 +91,32 @@ describe("the answers under a repository's instruction files", () => {
     expect(add.compareDocumentPosition(notNow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+/**
+ * **The preview marks what the core's one rule hides** (SK-51, #3202): the very characters that
+ * untick a file, each as `⟦U+XXXX⟧`, while a joiner inside an emoji and the file's own line ends
+ * read as text.
+ */
+describe("a repository's instruction file holding a character that draws as nothing", () => {
+  it("draws each as the core's mark, and an emoji's joiner as text", async () => {
+    core([
+      [
+        {
+          ...AGENTS,
+          text: "Runㅤ make️ check \u{1F468}‍\u{1F469}.\nThen‮ ship.\n",
+          standing: { kind: "offered", caution: "It holds characters that draw as nothing" },
+        },
+      ],
+    ]);
+    render(<RepoInstructionsTab plane={PLANE} workspace="alpha" onClose={vi.fn()} />);
+
+    await screen.findByText("svc/AGENTS.md");
+    const marks = Array.from(document.querySelectorAll("mark.invisible-char")).map(
+      (one) => one.textContent,
+    );
+    expect(marks).toEqual(["⟦U+3164⟧", "⟦U+FE0F⟧", "⟦U+202E⟧"]);
+    expect(document.querySelector("pre.repo-instruction-text")?.textContent).toBe(
+      "Run⟦U+3164⟧ make⟦U+FE0F⟧ check \u{1F468}‍\u{1F469}.\nThen⟦U+202E⟧ ship.\n",
+    );
+  });
+});

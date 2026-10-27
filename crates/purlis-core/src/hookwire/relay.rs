@@ -154,6 +154,10 @@ pub enum Replied {
     /// A report, a tool call or a refused commit is taken, and this is what the host records of
     /// it in the event log (#2003): what the window's hearing would have written itself.
     Record(Entry),
+    /// A report, a tool call or a refused commit is taken, and this is what the host records of
+    /// it, naming no project (1.40, #3400): what the window sends a host that said it records a
+    /// line under the project as it holds it ([`Replied::without_path`]).
+    Line(LineRecord),
     /// It is not, for `why`: its hook spools it where it may.
     NotTaken { why: String },
     /// An ask's answer.
@@ -173,6 +177,71 @@ pub enum Replied {
     /// runs ([`brokered::Ask::runs_as`]). The host runs it itself on them, for that one run,
     /// and keeps none. Its `Debug` names the keys alone.
     Handed(brokered::Handed),
+}
+
+/// **What the window sends back to record of a hook line, naming no project** (1.40, #3400): an
+/// [`Entry::Report`], [`Entry::Tool`] or [`Entry::Refused`] without its `plane`. The host that
+/// heard the line records it under the project as it holds it, so where the window keeps the
+/// project never crosses to it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "entry", rename_all = "snake_case")]
+pub enum LineRecord {
+    /// [`Entry::Report`]'s.
+    Report {
+        report: super::Report,
+        followed: crate::eventlog::Followed,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        begun: Option<String>,
+    },
+    /// [`Entry::Tool`]'s.
+    Tool { call: super::ToolCall },
+    /// [`Entry::Refused`]'s.
+    Refused { chat: u32 },
+}
+
+impl LineRecord {
+    /// The entry it is, of the project at `plane`.
+    pub fn at(self, plane: std::path::PathBuf) -> Entry {
+        match self {
+            LineRecord::Report {
+                report,
+                followed,
+                begun,
+            } => Entry::Report {
+                plane,
+                report,
+                followed,
+                begun,
+            },
+            LineRecord::Tool { call } => Entry::Tool { plane, call },
+            LineRecord::Refused { chat } => Entry::Refused { plane, chat },
+        }
+    }
+}
+
+impl Replied {
+    /// **The reply as a host that records a line under the project as it holds it is sent it**
+    /// (1.40, #3400): a hook line's record names no project ([`Replied::Line`]). Any other reply
+    /// is sent as it is.
+    pub fn without_path(self) -> Replied {
+        match self {
+            Replied::Record(Entry::Report {
+                report,
+                followed,
+                begun,
+                ..
+            }) => Replied::Line(LineRecord::Report {
+                report,
+                followed,
+                begun,
+            }),
+            Replied::Record(Entry::Tool { call, .. }) => Replied::Line(LineRecord::Tool { call }),
+            Replied::Record(Entry::Refused { chat, .. }) => {
+                Replied::Line(LineRecord::Refused { chat })
+            }
+            other => other,
+        }
+    }
 }
 
 /// How long the host waits for the window to take a report, a tool call or a refused commit,
@@ -351,6 +420,13 @@ impl Relaying {
         *lock(&self.root) = Some(root.to_path_buf());
     }
 
+    /// Where its project is on this machine, where it was told ([`Self::of_project_at`]): what
+    /// a line's record that names no project is of. `None` where it was not told, and such a
+    /// record is then not taken.
+    fn at(&self) -> Option<std::path::PathBuf> {
+        lock(&self.root).clone()
+    }
+
     /// The number the next line is handed on as.
     #[cfg(test)]
     pub(crate) fn next_number(&self) -> u64 {
@@ -434,6 +510,19 @@ impl Relaying {
         {
             (keeping.unheard)(heard);
         }
+        // A record naming no project is of the one this channel is of, which the keeping
+        // records it under (#3400).
+        let reply = reply.map(|replied| match replied {
+            Replied::Line(line) => match self.at() {
+                Some(root) => Replied::Record(line.at(root)),
+                None => Replied::NotTaken {
+                    why: "a record naming no project came back for a line of a channel that \
+                          knows of none, so it was not recorded"
+                        .to_owned(),
+                },
+            },
+            other => other,
+        });
         match reply {
             Ok(Replied::Taken) => Ok(()),
             Ok(Replied::Record(entry)) if of_the_line(&entry, heard) => self.record(entry),

@@ -5,7 +5,8 @@
 //!
 //! - **Handed to the supervisor** ([`supervised`]): every call a path or an address decides
 //!   (opening, making, moving, linking, removing a file, changing its mode or times, and
-//!   connecting a socket), which the supervisor judges and performs itself.
+//!   connecting a socket, and listening on one), which the supervisor judges and performs
+//!   itself.
 //! - **Refused** ([`refused`]), each with the error a program can take in its stride: every
 //!   call of the x32 ABI; a change of a file's owner or extended attributes; datagram, raw and packet sockets, and a stream socket of any family but unix, IPv4, IPv6
 //!   and the kernel's own routing table; TCP Fast Open, which connects without `connect`;
@@ -53,6 +54,7 @@ pub(super) fn supervised_calls() -> Vec<i64> {
         SYS_FCHMODAT2,
         libc::SYS_utimensat,
         libc::SYS_connect,
+        libc::SYS_listen,
     ];
     #[cfg(target_arch = "x86_64")]
     calls.extend([

@@ -660,6 +660,7 @@ const DIALOGS: Opened[] = [
               hidden: 0,
               still_over: null,
               pinned_by: [],
+              pins_together: null,
               warns: "both",
             },
           }}
@@ -667,6 +668,7 @@ const DIALOGS: Opened[] = [
           busy={false}
           onUse={nothing}
           onCancel={nothing}
+          onOpenStudio={nothing}
         />,
       ),
   },

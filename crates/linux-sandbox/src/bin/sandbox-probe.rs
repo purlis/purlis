@@ -104,6 +104,68 @@ mod probe {
                 let mut back = [0u8; 2];
                 stream.read_exact(&mut back)
             })),
+            // A socket that listens with no bind of its own: the kernel would bind it to a port
+            // it picks, on every interface.
+            "listen-unbound" => {
+                let family = if word(1) == "6" {
+                    nix::sys::socket::AddressFamily::Inet6
+                } else {
+                    nix::sys::socket::AddressFamily::Inet
+                };
+                nix(nix::sys::socket::socket(
+                    family,
+                    nix::sys::socket::SockType::Stream,
+                    nix::sys::socket::SockFlag::empty(),
+                    None,
+                )
+                .and_then(|socket| {
+                    nix::sys::socket::listen(&socket, nix::sys::socket::Backlog::new(1)?)
+                }))
+            }
+            // A thread with a descriptor table of its own listens on its own socket, never
+            // bound, at the number where the process's table holds a bound one.
+            "listen-unshared" => {
+                use nix::sys::socket::{
+                    AddressFamily, Backlog, SockFlag, SockType, UnixAddr, bind, listen, socket,
+                };
+                use std::os::fd::AsRawFd;
+                let bound = socket(
+                    AddressFamily::Unix,
+                    SockType::Stream,
+                    SockFlag::empty(),
+                    None,
+                )
+                .map_err(|why| format!("{why:?}"))?;
+                bind(
+                    bound.as_raw_fd(),
+                    &UnixAddr::new_abstract(word(1).as_bytes())
+                        .map_err(|why| format!("{why:?}"))?,
+                )
+                .map_err(|why| format!("{why:?}"))?;
+                std::thread::spawn(move || {
+                    let mut at = bound;
+                    nix(
+                        nix::sched::unshare(nix::sched::CloneFlags::CLONE_FILES).and_then(|()| {
+                            let own = socket(
+                                AddressFamily::Inet,
+                                SockType::Stream,
+                                SockFlag::empty(),
+                                None,
+                            )?;
+                            nix::unistd::dup2(&own, &mut at)?;
+                            listen(&at, Backlog::new(1)?)
+                        }),
+                    )
+                })
+                .join()
+                .unwrap_or_else(|_| Err("the thread panicked".to_owned()))
+            }
+            // A server on an abstract unix socket: bound, then listening.
+            "abstract-listen" => {
+                use std::os::linux::net::SocketAddrExt;
+                io(std::os::unix::net::SocketAddr::from_abstract_name(word(1))
+                    .and_then(|at| std::os::unix::net::UnixListener::bind_addr(&at)))
+            }
             "abstract" => {
                 use std::os::linux::net::SocketAddrExt;
                 let at = std::os::unix::net::SocketAddr::from_abstract_name(word(1))
