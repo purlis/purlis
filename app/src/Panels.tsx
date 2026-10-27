@@ -23,7 +23,7 @@ import { catalogueMenu } from "./Menus";
 import { useSessionOffers } from "./sessionOffers";
 import { PanelList, type CheckOfRow } from "./PanelList";
 import { doneSlugOf, todoDoneId, todoReopenId } from "./todos";
-import { PersonaAtWork } from "./ChatRows";
+import { PersonaAtWork, usePersonasAtWork } from "./ChatRows";
 import { HeadingOffer, PanelSection } from "./PanelSection";
 import { Vaults, type VaultsSaid } from "./Vaults";
 import { Chart, Facts, Table } from "./Views";
@@ -91,6 +91,7 @@ export function Panels({
   atRoot = false,
   rootPanels,
   personaChats,
+  chatPersonasHere,
 }: {
   /** The view this draws: one of the right side's own, or an extension's panel (#1678). */
   view: ViewId;
@@ -136,6 +137,9 @@ export function Panels({
   /** Each persona's chats, by number (#3341): a persona's row says whether one is at work or
    *  asks for the person. */
   personaChats?: ReadonlyMap<string, readonly number[]>;
+  /** The personas of the focused workspace's chats, at work or at rest (#3483): with the ones
+   *  its session records name, the Personas view's In this workspace. */
+  chatPersonasHere?: ReadonlySet<string>;
 }) {
   const { panels, trouble } = state;
   // Each view is still the "for you" side's (ADR 0038), and says whose: the tab names the view,
@@ -157,6 +161,18 @@ export function Panels({
    *  scroll, with no room of its own around it, and the view's top is held at the top of it. */
   const aside = "panels panels-view ui-text-body";
   const all = [...(panels?.contributed ?? []), ...contributed];
+  /** Who works in the focused workspace (#3483): a persona one of its session records names,
+   *  or one of its chats runs as. No persona lives in a workspace (`personas/` is the plane's),
+   *  so this is where each has worked, and none with no workspace focused. */
+  const personasHere =
+    workspace === undefined
+      ? NO_PERSONAS
+      : new Set([
+          ...(panels?.sessions ?? []).flatMap((record) =>
+            record.persona === null ? [] : [record.persona],
+          ),
+          ...(chatPersonasHere ?? NO_PERSONAS),
+        ]);
   const draw = (panel: PanelView, at: string) => (
     <Contributed
       key={panel.key}
@@ -168,6 +184,7 @@ export function Panels({
       shownRow={shownRow}
       onShowRow={onShowRow}
       personaChats={personaChats}
+      personasHere={personasHere}
     />
   );
 
@@ -317,6 +334,7 @@ function Contributed({
   shownRow,
   onShowRow,
   personaChats,
+  personasHere,
 }: {
   panel: PanelView;
   /** The focused workspace, which charter's todos panel writes to. */
@@ -327,8 +345,18 @@ function Contributed({
   shownRow: string | undefined;
   onShowRow: (row: string | undefined) => void;
   personaChats?: ReadonlyMap<string, readonly number[]>;
+  personasHere: ReadonlySet<string>;
 }) {
   const Mark = MARKS[panel.mark] ?? Circle;
+  /** The personas with a chat at work or asking: the Personas view's Working now (#3483), read
+   *  as each row's mark reads its state, so a row's group and its mark agree. */
+  const atWork = usePersonasAtWork(panel.key === PERSONAS ? personaChats : undefined);
+  const personaGroupOf = (row: { key: string }): PersonaGroup =>
+    atWork.has(row.key)
+      ? "Working now"
+      : personasHere.has(row.key)
+        ? "In this workspace"
+        : "On the plane";
   const open = shownRow?.startsWith(`${panel.key}/`)
     ? shownRow.slice(panel.key.length + 1)
     : undefined;
@@ -438,7 +466,13 @@ function Contributed({
           <PanelList
             /* By position, as above. */
             key={at}
-            rows={panel.key === TODOS ? block.rows.filter(todosOf(todosShown)) : block.rows}
+            rows={
+              panel.key === TODOS
+                ? block.rows.filter(todosOf(todosShown))
+                : panel.key === PERSONAS
+                  ? byPersonaGroup(block.rows, personaGroupOf)
+                  : block.rows
+            }
             empty={panel.key === TODOS && todosShown === "done" ? NOTHING_DONE : block.empty}
             label={panel.title}
             testid={`list-${named(panel)}`}
@@ -476,7 +510,14 @@ function Contributed({
             }}
             checkOf={todoCheck}
             // The open todos under their days, then the done ones (ADR 0106).
-            groupOf={panel.key === TODOS ? todoGroupOf : undefined}
+            // And the personas under who is at work, who works here, and the rest (#3483).
+            groupOf={
+              panel.key === TODOS
+                ? todoGroupOf
+                : panel.key === PERSONAS
+                  ? personaGroupOf
+                  : undefined
+            }
             menuOf={(row) =>
               panel.key === TODOS
                 ? /* Open, Mark done, and Forget (SI-3, #1214): the catalogue's rows for this todo
@@ -517,6 +558,25 @@ function Contributed({
 
 /** No chats: what a persona with none running is handed. */
 const NO_CHATS: readonly number[] = [];
+
+/** No personas: who works in no workspace. */
+const NO_PERSONAS: ReadonlySet<string> = new Set();
+
+/**
+ * **The Personas view's groups** (#3483, the prototype's Q1 A), in the order they are drawn:
+ * the personas with a chat at work or asking, then the ones who work in the focused workspace,
+ * then the rest of the plane's. The shared store is the plane's, so it is among the rest.
+ */
+const PERSONA_GROUPS = ["Working now", "In this workspace", "On the plane"] as const;
+type PersonaGroup = (typeof PERSONA_GROUPS)[number];
+
+/** `rows` in their groups' order, each group in the order the panel gave its rows. */
+function byPersonaGroup<T extends { key: string }>(
+  rows: readonly T[],
+  groupOf: (row: T) => PersonaGroup,
+): T[] {
+  return PERSONA_GROUPS.flatMap((group) => rows.filter((row) => groupOf(row) === group));
+}
 
 /** charter's own panels, by the key `purlis_core::panel::Panel::key` gives them. */
 const TODOS = "charter/todos";
