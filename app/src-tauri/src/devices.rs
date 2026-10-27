@@ -516,7 +516,7 @@ pub async fn device_runner(
                 machine.docker.running(&kept.made).map_err(|why| why.0),
                 || {
                     // As it is: a runner is never woken to be asked.
-                    let to = crate::runnerlinks::ToARunner::of_kept_as_it_is(&machine, &kept)
+                    let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)
                         .map_err(|why| PoolLink::Down { why })?;
                     crate::runnerlinks::listed(&to)
                 },
