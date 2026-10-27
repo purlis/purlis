@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793128525282,
+  "lastUpdate": 1793130709694,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27132,6 +27132,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7742155,
             "unit": "ms",
             "extra": "median of 5 runs: 100.511, 101.025, 101.774, 102.322, 102.754 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "00c80fe048ebf02e147b9db5b21344429add4644",
+          "message": "Browsers: a chat's server behind purlis's front door (#2019) (#3319)\n\n* Move the tests of the modules #2019 changes into each module's folder\n\nA move alone: each touched <module>_tests.rs becomes <module>/tests.rs\n(or a file under <module>/tests/), with only its declaration and one\ninclude path changed (CONTRIBUTING, Where tests live).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* A chat may be allowed a port to serve on: the grant, its Ask and its Notice (#2019)\n\nRound 1's grant kind (listen), kept for this chat or this project on this\nmachine, its Ask, Notice, Granted list row and the line the chat is told.\nWhat it compiles to follows in the front door's commits.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* A chat's server behind purlis's front door (#2019)\n\nA chat allowed to serve on port N listens on a socket of its own in the\nfolder purlis keeps for it, and purlis's door listens on 127.0.0.1:N and\n[::1]:N in its place: Host and Origin checked, cookies kept in a jar of\nthe door's own, upgrades carried. On macOS the profile names that one\nsocket; on Linux the supervisor binds it, for a server that asks for its\nport at any address too. `purlis listen N -- <command>` runs a server\nthere, with a shim for Node.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* A chat's server: its Ask, its door's copy, and how it is told to start (#2019)\n\nThe Ask says what running a server means; a port below 1024 is never\none, and a port something on this Mac listens on is asked about as a\nservice; a refused server on a port the chat serves on already is told\nhow to start it, with no Allow; Remove restarts the chats serving there.\nTests on macOS for real, under Node 20 and 22 with Vite and Next.js.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* listen is a core word; the supervisor writes a server's folder; the Vite check reads past colours\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5TC8WYHDCQEK6MEJ038EB72\nPurlis-Persona: steward\n\n* The door carries only to the socket bound at its own path; a bind of another family is refused\n\nThe core words' list counts listen. The listen's and the bind's doc comments are each above\ntheir own function again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* test: the sandboxed server's bound name is its socket's, as the door checks it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* The bind is told by the listen's word for it, not a second one\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* The door reads a server's bound name up to its first NUL, as macOS keeps the padding\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Move the rest of the tests of the modules #2019 changes into each module's folder\n\nA move alone (CONTRIBUTING, Where tests live): each <module>_tests.rs\nbecomes <module>/tests.rs or a file under <module>/tests/, and the inline\ntest modules of harness/opencode, off_the_main_thread and the command\nline's core words become files, their bodies unindented once. Only\ndeclarations and one include path change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Review of #3319: a chat's server is bound, reached and told only where its door opens\n\n- Linux: the supervisor binds a unix socket for a chat only at an absolute\n  path its profile names to serve on, where the chat may make and take away\n  a socket; `default` names no bind. What was left at that path, but a\n  folder, is taken away first.\n- A port given for a listen grant alone is connected to only where its door\n  opened: a port something listens on as the chat starts is neither served\n  nor reached, one that gets no door is withdrawn from the chat's proxy, and\n  a Claude Code chat, for which no door opens, is given nothing for it.\n- The door uses its jar only for a request from its own page or the person\n  (Sec-Fetch-Site), keeps no cookie longer than a browser does and holds\n  each jar to a size, carries only into the folder it opened on, and on\n  macOS holds its port on every interface so a later server cannot bind it\n  there.\n- No chat writes in the folder chats' sockets are in, but its own socket.\n- What was left where a socket goes is cleared; a chat whose servers could\n  not be served is told so, and why.\n- The Ask says what a page a chat's server sends can do in the person's own\n  browser. A listen held by policy, a port served on already, and a chat\n  not served are each said in their own words.\n- `purlis listen` writes its shim new, under a name of its own.\n- Removing a project's server grant owes its chats a restart whatever else\n  still lets them connect there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* The door's pinned folder is copied, as it is Copy\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Review of #3319: a floor chat serves, and a serving chat is not taken for behind\n\n- At the floor the rules that let a chat serve on its socket, and connect to\n  its door, are written after the floor's denials, as at the full level.\n- What a chat is compared by to tell whether its sandbox is older is what it\n  was granted, not whether something listened on a port as it compiled: the\n  chat's own door listening there changes nothing.\n- A chat on a runner is told of no port given for a grant to serve on alone:\n  a runner opens no door.\n- Tests: a port in use is neither served nor reached; a port that gets no\n  door is withdrawn from the chat's proxy; a Claude Code chat is given\n  nothing for the grant; a serving chat is owed its restart.\n- Copy: what a page can do says \"as you\"; a port something holds is said\n  to be held.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* test: a wrapped chat at the floor serves on its own socket and no other; the risk says as you\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T18:35:58Z",
+          "tree_id": "e666f53b71ea135f8aa915cce39bd415458329c9",
+          "url": "https://github.com/purlis/purlis/commit/00c80fe048ebf02e147b9db5b21344429add4644"
+        },
+        "date": 1793130704121,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6608985,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.643, 0.655, 0.661, 0.676, 0.688 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.641313,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.630, 16.641, 16.641, 16.661, 16.684 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.08134100000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.448, 101.564, 102.081, 102.717, 103.018 ms"
           }
         ]
       }
