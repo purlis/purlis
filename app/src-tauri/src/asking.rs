@@ -1533,6 +1533,7 @@ pub fn sign_in(wait: &purlis_core::profilestore::sign_in::Wait) -> Shown {
         since: None,
         held_until: None,
         writes: None,
+        lines: None,
     }
 }
 
