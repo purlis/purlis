@@ -146,7 +146,9 @@ impl<'a> Env<'a> {
         }
     }
 
-    fn var(&self, name: &str) -> Option<String> {
+    /// `name`'s value in the chat's variables, else in this process's where it may look, unless
+    /// it is empty.
+    pub(crate) fn var(&self, name: &str) -> Option<String> {
         crate::envvar::lookup(name, |name| {
             self.chat
                 .iter()

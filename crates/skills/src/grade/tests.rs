@@ -66,8 +66,32 @@ fn tokens(tokens: u64) -> Limits {
     Limits {
         tokens,
         cost_usd: None,
+        priced: None,
+        unpriced_usd_per_million: None,
     }
 }
+
+/// A cap of `tokens` and a limit of `usd`, priced at `usd_per_million` from `model`, where a
+/// chat that says no cost counts at [`DEAREST`].
+fn limited(tokens: u64, usd: f64, model: Option<&str>, usd_per_million: f64) -> Limits {
+    Limits {
+        tokens,
+        cost_usd: Some(usd),
+        priced: Some(Priced {
+            usd_per_million,
+            from: if model.is_some() {
+                PricedFrom::Model
+            } else {
+                PricedFrom::Dearest
+            },
+            model: model.map(str::to_owned),
+        }),
+        unpriced_usd_per_million: Some(DEAREST),
+    }
+}
+
+/// The dearest price a test's limit counts a chat that says no cost at.
+const DEAREST: f64 = 75.0;
 
 fn request() -> GradeRequest {
     GradeRequest {
@@ -384,6 +408,7 @@ fn a_started_chat_that_says_nothing_of_its_spend_stops_a_capped_grade_however_it
         ChatEnd::TimedOut,
         ChatEnd::Asked,
         ChatEnd::OverCap,
+        ChatEnd::OverLimit,
         ChatEnd::Cancelled,
     ] {
         let mut host = Silent(end.clone(), 0);
@@ -423,15 +448,95 @@ fn a_grade_stops_at_its_cost_bound_before_its_tokens() {
         }
     }
     let mut host = Dear(0);
-    let limits = Limits {
-        tokens: 200_000,
-        cost_usd: Some(5.0),
-    };
+    let limits = limited(200_000, 5.0, Some("claude-sonnet-4-6"), 15.0);
     let report = grade(&request(), &mut host, Some(limits));
     assert_eq!(host.0, 3, "the third chat passes $5");
-    assert_eq!(report.ended, GradeEnd::OverCap);
     assert_eq!(
-        (report.cost_cap_usd, report.spent_usd),
-        (Some(5.0), Some(6.0))
+        report.ended,
+        GradeEnd::OverLimit,
+        "its record says it stopped at its dollar limit, not its tokens"
     );
+    assert_eq!(
+        (report.cost_cap_usd, report.spent_usd, report.counted_usd),
+        (Some(5.0), Some(6.0), None)
+    );
+    assert_eq!(
+        report.priced,
+        Some(Priced {
+            usd_per_million: 15.0,
+            from: PricedFrom::Model,
+            model: Some("claude-sonnet-4-6".into()),
+        }),
+        "the record keeps the price its limit was worked out at"
+    );
+}
+
+#[test]
+fn a_chat_the_host_ended_at_the_limit_is_no_run_and_ends_the_grade_there() {
+    struct AtTheLimit;
+    impl Chats for AtTheLimit {
+        fn run(&mut self, _: &RunChat, _: Option<u64>) -> ChatRan {
+            ChatRan {
+                chat: Some("01".into()),
+                started: Vec::new(),
+                tokens: Some(10),
+                cost_usd: Some(5.5),
+                ms: 10,
+                end: ChatEnd::OverLimit,
+            }
+        }
+        fn cancelled(&self) -> bool {
+            false
+        }
+    }
+    let report = grade(
+        &request(),
+        &mut AtTheLimit,
+        Some(limited(200_000, 5.0, Some("claude-opus-4-5"), 25.0)),
+    );
+    assert_eq!(report.ended, GradeEnd::OverLimit);
+    assert_eq!(report.arm(Arm::With).unwrap().not_run, 1);
+}
+
+#[test]
+fn a_chat_that_says_its_tokens_and_not_its_cost_counts_at_the_dearest_price() {
+    // Each chat says 1,000 tokens and no cost: $0.075 at $75 a million. A limit of $0.20 is
+    // passed at the third, though the token cap is far off.
+    let mut host = Scripted::of(a_good_skill);
+    let report = grade(
+        &request(),
+        &mut host,
+        Some(limited(200_000, 0.2, None, DEAREST)),
+    );
+    assert_eq!(host.asked.len(), 3);
+    assert_eq!(report.ended, GradeEnd::OverLimit);
+    assert_eq!(report.spent_usd, None, "no cost was said, so none is shown");
+    let counted = report.counted_usd.unwrap();
+    assert!((counted - 0.225).abs() < 1e-9, "{counted}");
+    assert_eq!(report.priced.unwrap().from, PricedFrom::Dearest);
+}
+
+#[test]
+fn the_token_cap_is_named_where_both_are_reached_at_once() {
+    // 1,000 tokens a chat at $75 a million: a cap of 2,000 tokens is a limit of $0.15, and the
+    // second chat reaches both.
+    let mut host = Scripted::of(a_good_skill);
+    let report = grade(
+        &request(),
+        &mut host,
+        Some(limited(2000, 0.15, None, DEAREST)),
+    );
+    assert_eq!(host.asked.len(), 2);
+    assert_eq!(report.ended, GradeEnd::OverCap);
+}
+
+#[test]
+fn a_limit_on_no_cost_never_counts_what_a_chat_said() {
+    // A limit without a price for unpriced tokens counts only what chats said they cost.
+    let mut host = Scripted::of(a_good_skill);
+    let mut limits = limited(200_000, 0.2, None, DEAREST);
+    limits.unpriced_usd_per_million = None;
+    let report = grade(&request(), &mut host, Some(limits));
+    assert_eq!(report.ended, GradeEnd::Whole);
+    assert_eq!(report.counted_usd, None);
 }

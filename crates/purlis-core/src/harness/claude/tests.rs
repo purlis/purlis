@@ -821,3 +821,46 @@ fn a_profile_command_that_starts_in_a_mode_that_asks_nobody_keeps_a_grade_from_r
         );
     }
 }
+
+#[test]
+fn a_grades_model_is_its_flag_then_anthropic_model_then_your_settings() {
+    let config = tempfile::tempdir().unwrap();
+    std::fs::write(
+        config.path().join("settings.json"),
+        r#"{"model": "claude-haiku-4-5"}"#,
+    )
+    .unwrap();
+    let dir = (
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    );
+    let only_settings = [dir.clone()];
+    let with_env = [
+        dir,
+        ("ANTHROPIC_MODEL".to_owned(), "claude-sonnet-4-6".to_owned()),
+    ];
+    let model = |words: &[&str], chat: &[(String, String)]| {
+        adapter().grade_model(&line(words), &settings_in(chat))
+    };
+    assert_eq!(
+        model(&[], &only_settings).as_deref(),
+        Some("claude-haiku-4-5")
+    );
+    assert_eq!(
+        model(&[], &with_env).as_deref(),
+        Some("claude-sonnet-4-6"),
+        "ANTHROPIC_MODEL outranks the settings"
+    );
+    assert_eq!(
+        model(&["--model", "opus"], &with_env).as_deref(),
+        Some("opus"),
+        "the flag outranks both"
+    );
+    assert_eq!(
+        model(&["--model=sonnet", "--model", "haiku"], &with_env).as_deref(),
+        Some("haiku"),
+        "the last flag is the one Claude Code reads"
+    );
+    assert_eq!(model(&["--model"], &[]), None, "a flag with no model says none");
+    assert_eq!(model(&[], &[]), None, "nothing says it: Claude Code's own default");
+}

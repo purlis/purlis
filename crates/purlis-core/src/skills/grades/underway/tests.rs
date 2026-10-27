@@ -33,7 +33,7 @@ fn starting(id: &str, level: &Level) -> Graded {
         profile: Some("work".into()),
         ts: "2026-10-27T01:00:00+00:00".into(),
         runs: 3,
-        report: interrupted_report(50_000, Some(1.5)),
+        report: interrupted_report(50_000, Some(1.5), None),
         spent: Spent::default(),
     }
 }

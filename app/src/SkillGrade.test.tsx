@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { SkillGrade, costSaid, endedSaid } from "./SkillGrade";
+import { SkillGrade, costSaid, endedSaid, limitSaid } from "./SkillGrade";
 import type { SkillGradePlan } from "./bindings";
 
 afterEach(() => {
@@ -29,6 +29,7 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     running: null,
     token_cap: 200000,
     cost_cap_usd: 15,
+    priced: { usd_per_million: 75, of_the_model: false, model: null },
     cap_set_here: false,
     chat_minutes: 5,
     profile: "work",
@@ -70,7 +71,7 @@ describe("Grade, cost first", () => {
     expect(cost.textContent).toContain("has not been graded here before");
     expect(cost.textContent).toContain("its account pays for them");
     expect(cost.textContent).toContain(
-      "It stops once its chats have spent 200,000 tokens, the default cap, or cost $15.00 where they say what they cost.",
+      "It stops once its chats have spent 200,000 tokens, the default cap, or cost $15.00, its tokens at the dearest known price of $75.00 a million tokens, as the profile names no model.",
     );
     expect(screen.getAllByTestId("skill-grade-test")[1].textContent).toContain(
       "holds a character no reader would see",
@@ -162,7 +163,7 @@ describe("a grade's token cap", () => {
     fireEvent.click(screen.getByRole("button", { name: "Set the cap" }));
     await waitFor(() =>
       expect(screen.getByTestId("skill-grade-cost").textContent).toContain(
-        "have spent 50,000 tokens, the cap you set on this machine, or cost $3.75 where",
+        "have spent 50,000 tokens, the cap you set on this machine, or cost $3.75, its tokens at the dearest known price",
       ),
     );
     expect(asked.find((one) => one.cmd === "skill_grade_set_cap")?.args).toMatchObject({
@@ -186,6 +187,43 @@ describe("a grade's token cap", () => {
       }),
     ).toBe(
       "Stopped at its cap of 200,000 tokens after 9 chats, having spent 201,345 tokens. What ran is scored in Grades below.",
+    );
+  });
+});
+
+describe("a grade's dollar limit (#3469)", () => {
+  it("says the price it was worked out at: the model's, or the dearest and why", () => {
+    expect(
+      limitSaid(
+        plan({
+          cost_cap_usd: 3,
+          priced: { usd_per_million: 15, of_the_model: true, model: "claude-sonnet-4-6" },
+        }),
+      ),
+    ).toBe("$3.00, its tokens at claude-sonnet-4-6's $15.00 a million tokens");
+    expect(limitSaid(plan())).toBe(
+      "$15.00, its tokens at the dearest known price of $75.00 a million tokens, as the profile names no model",
+    );
+    expect(
+      limitSaid(plan({ priced: { usd_per_million: 75, of_the_model: false, model: "opus-9" } })),
+    ).toContain("as opus-9's price is not known");
+  });
+
+  it("says a grade stopped at its dollar limit", () => {
+    expect(
+      endedSaid({
+        plane: "p",
+        skill: "deploy",
+        grade: "g",
+        ran: 3,
+        of: 12,
+        tokens: 30000,
+        cap: 200000,
+        ended: "over-limit",
+        said: null,
+      }),
+    ).toBe(
+      "Stopped at its dollar limit after 3 chats, having spent 30,000 tokens. What ran is scored in Grades below.",
     );
   });
 });

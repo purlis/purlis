@@ -217,10 +217,16 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
         && report
             .delta
             .is_none_or(|delta| (-1.0..=1.0).contains(&delta))
-        && [report.cost_cap_usd, report.spent_usd]
+        && [report.cost_cap_usd, report.spent_usd, report.counted_usd]
             .into_iter()
             .flatten()
             .all(amount)
+        && report.priced.as_ref().is_none_or(|priced| {
+            amount(priced.usd_per_million)
+                && priced.usd_per_million <= price::DEAREST_USD_PER_MILLION
+                && priced.model.as_deref().is_none_or(price::model_id)
+        })
+        && (report.ended != grade::GradeEnd::OverLimit || report.cost_cap_usd.is_some())
         && report
             .not_started
             .as_deref()
@@ -571,6 +577,20 @@ pub fn ready_to_grade(
     Ok(ready)
 }
 
+/// **The price a grade's chat started as `ready` has its dollar limit worked out at** (#3469):
+/// that of the model its harness's adapter says it runs on
+/// ([`crate::harness::HarnessAdapter::grade_model`]), or the dearest where it says none or its
+/// price is not known ([`price::of_model`]).
+pub fn priced(ready: &crate::start::Ready) -> grade::Priced {
+    let command: Vec<String> = std::iter::once(ready.program.clone())
+        .chain(ready.command.iter().cloned())
+        .collect();
+    let model = ready.harness.map(crate::harness::Harness::adapter).and_then(|adapter| {
+        adapter.grade_model(&command, &crate::harness_plugin::Env::of(&ready.env))
+    });
+    price::of_model(model.as_deref())
+}
+
 /// **Why a grade's chat may not start as `ready` would start it**, or the sandbox level it would
 /// run at (the review of #3229, the operator's ruling of 2026-10-26): a grade's chats run only on
 /// a harness whose adapter says it can hold a chat to the grade's limits (its spend, its MCP
@@ -666,6 +686,7 @@ fn commit_of(root: &Path, level: &Level, name: &str, content: &Content) -> Optio
 }
 
 pub mod cap;
+pub mod price;
 pub mod underway;
 
 #[cfg(test)]

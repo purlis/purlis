@@ -338,6 +338,20 @@ impl HarnessAdapter for ClaudeCode {
             .map(|flag| prompts_off_by(&flag))
     }
 
+    /// Claude Code's own order: the last `--model` in the command, then `ANTHROPIC_MODEL`, then
+    /// `model` in the person's Claude Code settings; `None` where none says, and Claude Code
+    /// picks.
+    fn grade_model(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        model_flag_in(command)
+            .or_else(|| env.var(MODEL_VARIABLE))
+            .or_else(|| model_in_settings(env))
+            .filter(|model| !model.trim().is_empty())
+    }
+
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
     /// `armed`), beside the project settings its arming decided to load ([`project`], ADR 0067
     /// as amended 2026-10-15), and there it is allowed the chat's hook socket, which only the
@@ -740,6 +754,44 @@ fn mode_that_does_not_ask(command: &[String]) -> Option<String> {
         })
     })
 }
+
+/// **The model the last `--model` in `command` names**, where one names a model.
+fn model_flag_in(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command
+        .iter()
+        .enumerate()
+        .filter(|(_, word)| is_flag(word))
+        .filter_map(|(at, word)| {
+            let (flag, attached) = split(word);
+            (flag == MODEL_FLAG).then(|| {
+                attached
+                    .map(str::to_owned)
+                    .or_else(|| command.get(at + 1).filter(|next| !is_flag(next)).cloned())
+            })
+        })
+        .last()
+        .flatten()
+}
+
+/// `model` in the person's Claude Code settings, where they read and say one.
+fn model_in_settings(env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+    let file = env.dir("CLAUDE_CONFIG_DIR", ".claude")?.join("settings.json");
+    let meta = std::fs::metadata(&file).ok()?;
+    if !meta.is_file() || meta.len() > MOST_SETTINGS_BYTES as u64 {
+        return None;
+    }
+    let text = std::fs::read_to_string(&file).ok()?;
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()?
+        .get("model")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// The flag Claude Code starts a chat on a model by, and the variable it reads after it.
+const MODEL_FLAG: &str = "--model";
+const MODEL_VARIABLE: &str = "ANTHROPIC_MODEL";
 
 /// The flag Claude Code starts a chat in a permission mode by.
 const PERMISSION_MODE_FLAG: &str = "--permission-mode";

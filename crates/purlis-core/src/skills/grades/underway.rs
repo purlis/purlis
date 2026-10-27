@@ -44,8 +44,12 @@ fn dir(root: &Path) -> PathBuf {
 }
 
 /// **The report of a grade purlis stopped under before it was scored**: no chat scored, the caps
-/// it was held to, interrupted.
-pub fn interrupted_report(cap: u64, cost_cap_usd: Option<f64>) -> GradeReport {
+/// it was held to and the price its dollar limit was worked out at, interrupted.
+pub fn interrupted_report(
+    cap: u64,
+    cost_cap_usd: Option<f64>,
+    priced: Option<grade::Priced>,
+) -> GradeReport {
     GradeReport {
         grader: grade::BUILT_IN.to_owned(),
         triggers: Vec::new(),
@@ -57,6 +61,8 @@ pub fn interrupted_report(cap: u64, cost_cap_usd: Option<f64>) -> GradeReport {
         spent_tokens: None,
         cost_cap_usd,
         spent_usd: None,
+        counted_usd: None,
+        priced,
     }
 }
 
@@ -75,6 +81,7 @@ pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Pat
             report: interrupted_report(
                 graded.report.cap.unwrap_or_default(),
                 graded.report.cost_cap_usd,
+                graded.report.priced.clone(),
             ),
             spent: Spent::default(),
             ..graded.clone()
