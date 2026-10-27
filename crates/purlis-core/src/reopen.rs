@@ -247,6 +247,13 @@ pub struct Chat {
     /// not reported yet, which leaves `Assisted-by: <harness>`, and every record written before
     /// this field — not a format change, for [`Self::pinned`]'s reason.
     pub model: Option<String>,
+    /// **Whether the plane's skills reached the chat at its start** (#3466): the Skill studio's
+    /// flag as the window that started it read it (`purlis_core::skills::reach_chats_here`). A
+    /// chat reattached from the session host (#2006) takes this, not the flag as read at its
+    /// reattach, so its arming, its Notice, its stamp and Use skill… keep its start's word.
+    /// `None` is a chat whose start in this launch has not returned or did not happen, and every
+    /// record written before this field: a reattach then reads the flag again, as before. Not a format change, for [`Self::pinned`]'s reason.
+    pub plane_skills: Option<bool>,
 }
 
 impl Chat {
@@ -1577,6 +1584,14 @@ struct ChatOnDisk {
     /// reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     model: String,
+    /// The Skill studio's flag the chat started with, or absent — see [`Chat::plane_skills`].
+    /// A value that is not a flag reads as absent.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    plane_skills: Option<bool>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -1801,6 +1816,7 @@ impl From<&Record> for OnDisk {
                     resumed_from: chat.identity.resumed_from.clone().unwrap_or_default(),
                     pid: chat.pid.unwrap_or_default(),
                     model: chat.model.clone().unwrap_or_default(),
+                    plane_skills: chat.plane_skills,
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -1885,6 +1901,7 @@ impl From<ChatOnDisk> for Chat {
             },
             pid: (chat.pid > 0).then_some(chat.pid),
             model: crate::state::Model::new(&chat.model).map(|model| model.as_str().to_owned()),
+            plane_skills: chat.plane_skills,
         }
     }
 }
