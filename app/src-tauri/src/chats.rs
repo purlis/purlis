@@ -1373,7 +1373,8 @@ impl Chats {
     /// purlis's server and read tools alone (`purlis_core::hoststart::Arming::graded`).
     ///
     /// `skills` is where its plane skills come from, read once at its start
-    /// (`purlis_core::hoststart::ChatSkills::read`, #3234), as its tab's Notice reads them.
+    /// (`purlis_core::hoststart::ChatSkills::read`, #3234), as its tab's Notice reads them: read
+    /// only once the arming's fail-closed checks have passed (#3461).
     ///
     /// **Fail closed.** A sandbox compiled for another harness, or one the harness is not armed
     /// to carry here (the app shipped without its plugin or its binary), refuses the chat rather
@@ -1388,7 +1389,7 @@ impl Chats {
         persona: Option<&str>,
         env: &[(String, String)],
         graded: bool,
-        skills: &purlis_core::hoststart::ChatSkills,
+        skills: &dyn std::ops::Deref<Target = purlis_core::hoststart::ChatSkills>,
     ) -> Result<Armed, String> {
         purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
             root: &self.project,
@@ -3301,35 +3302,21 @@ impl Chats {
             )
         }));
         // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
-        // arms it below and what its tab's Notice says are both worked out from this.
-        let skills = if on_the_runner {
-            purlis_core::hoststart::ChatSkills::default()
-        } else {
-            purlis_core::hoststart::ChatSkills::read(
-                purlis_core::skills::reach_chats_here(&self.project),
-                &self.project,
-                harness,
-                chat.cwd.as_deref(),
-                runs_as.as_deref(),
-            )
-        };
-        // A skill its persona names that this machine does not have (SK-5, #2768), or one it
-        // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
-        // tab's Notice says which, never a silent drop.
-        let skills_missing = if reattaching || on_the_runner {
-            None
-        } else {
-            purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
-                |not| SkillsMissing {
-                    persona: runs_as.clone(),
-                    missing: not.missing,
-                    no_built_in: not.no_built_in,
-                    broken: not.broken.into_iter().map(SkillBroken::from).collect(),
-                    by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
-                    beside_a_built_in: not.beside_a_built_in,
-                },
-            )
-        };
+        // arms it below and what its tab's Notice says are both worked out from this. Read once
+        // its arming has checked the start is not refused (#3461).
+        let skills = std::cell::LazyCell::new(|| {
+            if on_the_runner {
+                purlis_core::hoststart::ChatSkills::default()
+            } else {
+                purlis_core::hoststart::ChatSkills::read(
+                    purlis_core::skills::reach_chats_here(&self.project),
+                    &self.project,
+                    harness,
+                    chat.cwd.as_deref(),
+                    runs_as.as_deref(),
+                )
+            }
+        });
         // A sandboxed Claude Code chat whose project's own settings it does not load says which
         // keys, in the window only (ADR 0067 as amended 2026-10-15). Its arming read the same
         // files and decided the same way.
@@ -3430,6 +3417,23 @@ impl Chats {
                 chat.graded,
                 &skills,
             )?
+        };
+        // A skill its persona names that this machine does not have (SK-5, #2768), or one it
+        // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
+        // tab's Notice says which, never a silent drop.
+        let skills_missing = if reattaching || on_the_runner {
+            None
+        } else {
+            purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
+                |not| SkillsMissing {
+                    persona: runs_as.clone(),
+                    missing: not.missing,
+                    no_built_in: not.no_built_in,
+                    broken: not.broken.into_iter().map(SkillBroken::from).collect(),
+                    by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
+                    beside_a_built_in: not.beside_a_built_in,
+                },
+            )
         };
         let hooks = match &settings_watched {
             Some(Err(why)) => {

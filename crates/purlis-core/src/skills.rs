@@ -1684,6 +1684,26 @@ pub struct HarnessInTheStudio {
     pub repo_left_out: Vec<StudioRow>,
 }
 
+impl HarnessInTheStudio {
+    /// **The clashes of a row this harness's chats in a repo start without**
+    /// ([`Self::repo_left_out`], #3461): the repo's copy that took the plane copy's name. What
+    /// `purlis skill list --json` and `show --json` put on that row, as they put each clash on
+    /// the row of the copy purlis hands ([`StudioList::clashes_of`]), so a reader of either has
+    /// whose copy won without reading the row's left-out line. None for a row left out because
+    /// a clone could not be read whole.
+    pub fn clashes_of_left_out<'a>(
+        &'a self,
+        row: &'a StudioRow,
+    ) -> impl Iterator<Item = &'a Clash> + 'a {
+        self.set.clashes.iter().filter(move |clash| {
+            clash.outcome == Outcome::RepoWins
+                && clash.name == row.name
+                && clash.plane.origin == row.origin
+                && clash.plane.local == row.local
+        })
+    }
+}
+
 /// **Every harness in the Skill studio** (SK-6, #2769), for a chat in the plane at `plane`, at
 /// its root or in `workspace` (whose clones' own skills are listed), whose plane skills are
 /// `set` ([`in_the_studio`]), or `set_on` a harness's own route where it names built-in skills
