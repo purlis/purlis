@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793066646566,
+  "lastUpdate": 1793068778970,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -26376,6 +26376,48 @@ window.BENCHMARK_DATA = {
             "value": 103.3745375,
             "unit": "ms",
             "extra": "median of 5 runs: 102.499, 103.305, 103.375, 103.935, 104.617 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5e77715398f7d536813f980bc2a8f808df7fd260",
+          "message": "SK-46 and #3234: the CLI marks clashes as the studio does; a chat reads its repo skills once (#3436)\n\n* SK-46: purlis skill list marks clashes the way the studio does\n\nA skill from outside the plane with the name of one purlis hands is\nnow said on the row of purlis's copy by `purlis skill list` and `show`,\nin the same words the Skill studio uses. The words moved into the core\n(`skills::clash_said`), and the studio's StudioClash carries them as\n`said`, so the window and the command line cannot disagree.\n`StudioList::clashes_of` finds a row's clashes harness by harness from\nSK-37's clash model. `--json` lists them under each row's `clashes`.\n\nCloses #3149\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A chat's repo skills are read once, and the left-out copy names its repo\n\nThe host now reads a chat's skill scope once, at its start\n(`hoststart::ChatSkills`): the Try it scope, the workspace, the persona\nand the clone's repo skills. What arms the chat (`Arming::skills`) and\nwhat its tab's Notice says (`skills_not_here`) both come from that one\nvalue, so they cannot disagree, and the tab no longer reads the clone a\nsecond time. `armed_as` folds into `armed`. `not_here` keeps its\ncwd form and calls the new `not_here_beside`, which takes the repo\nlist.\n\nA repo's narrower copy is now `Reason::HiddenByRepo { repo }`, which\nnames the repo as `RepoUnread` does. A chat's own tab says both\nreasons in words that fit after \"because of the repo it works in\"\n(`Reason::to_its_chat`).\n\nThe ticket's first item, skipping the repo read on Claude Code's\nplugin route, is left out on purpose. SK-37 (#3249) needs that read to\nfind a repo copy named like a built-in skill. The tab now reads no\nclone at all, which is what the item wanted.\n\nCloses #3234\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T01:32:28Z",
+          "tree_id": "da4821973a1741565744974ea1924cec603fd7e5",
+          "url": "https://github.com/purlis/purlis/commit/5e77715398f7d536813f980bc2a8f808df7fd260"
+        },
+        "date": 1793068774708,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3005875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.287, 0.294, 0.301, 0.307, 0.319 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.542071999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.140, 16.458, 16.542, 16.612, 16.725 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.323222,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.964, 101.192, 101.323, 101.629, 102.146 ms"
           }
         ]
       }
