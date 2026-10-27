@@ -903,14 +903,25 @@ impl Settled {
                 services.dedup();
                 services
             },
+            // As granted, not as this Mac was at the compile (#2019): a port given for a listen
+            // grant alone, and whether something listened on it then (the chat's own door, once
+            // it serves), change no grant.
             ports: {
-                let mut ports = confines.widened.ports.clone();
+                let widened = &confines.widened;
+                let mut ports: Vec<u16> = widened
+                    .ports
+                    .iter()
+                    .copied()
+                    .filter(|port| !widened.listen_only.contains(port))
+                    .collect();
                 ports.sort_unstable();
                 ports.dedup();
                 ports
             },
             listens: {
-                let mut listens = confines.widened.listens.clone();
+                let widened = &confines.widened;
+                let mut listens = widened.listens.clone();
+                listens.extend(&widened.unserved);
                 listens.sort_unstable();
                 listens.dedup();
                 listens
@@ -3241,10 +3252,18 @@ impl Chats {
         }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
-        let alone = sandbox
+        // Never a port given for a grant to serve on alone: a runner opens no door (#2019).
+        let alone: Vec<u16> = sandbox
             .filter(|_| on_the_runner)
-            .and_then(purlis_core::sandbox::Applied::plan)
-            .map(|plan| plan.given_for_this_chat_alone())
+            .and_then(|applied| {
+                let listen_only = applied.confines().widened.listen_only.clone();
+                applied.plan().map(|plan| {
+                    plan.given_for_this_chat_alone()
+                        .into_iter()
+                        .filter(|port| !listen_only.contains(port))
+                        .collect()
+                })
+            })
             .unwrap_or_default();
         // Whether this window's own reading of the chat's start compiled a sandbox for it, which
         // a runner's record of its run is held to below (#2692).

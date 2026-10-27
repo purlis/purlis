@@ -220,12 +220,14 @@ fn a_chat_not_served_is_told_in_words_that_agree_with_its_ports() {
     let one = unserved_said(&[5173]).expect("said");
     assert!(one.contains("serve on port 5173,"), "{one}");
     assert!(one.contains("does not serve on it this run"), "{one}");
+    assert!(one.contains("already holds it,"), "{one}");
     let two = unserved_said(&[3000, 5173]).expect("said");
     assert!(two.contains("serve on ports 3000 and 5173,"), "{two}");
     assert!(
         two.contains("does not serve on any of them this run"),
         "{two}"
     );
+    assert!(two.contains("already holds each of them,"), "{two}");
     assert_eq!(unserved_said(&[]), None);
     let failed = unservable_said(&[5173], "a folder is where its socket goes").expect("said");
     assert!(

@@ -8118,3 +8118,68 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
     skill("triage", "one");
     assert_eq!(chats.skills_changed_while_on(), [1, 2]);
 }
+
+/// #2019: a chat serving on a port is not told its sandbox is older once its own door listens
+/// there: a compile then finds the port in use, which changes no grant.
+#[test]
+fn a_chat_serving_on_its_port_is_not_behind_once_its_door_listens() {
+    use purlis_core::sandbox::{Confines, Widened};
+    let started = Confines {
+        widened: Widened {
+            ports: vec![8080, 5173],
+            listens: vec![5173],
+            listen_only: vec![5173],
+            ..Widened::default()
+        },
+        ..Confines::default()
+    };
+    let now = Confines {
+        widened: Widened {
+            ports: vec![8080],
+            unserved: vec![5173],
+            ..Widened::default()
+        },
+        ..Confines::default()
+    };
+    assert_eq!(Settled::of(&started), Settled::of(&now));
+    // A grant taken back still is.
+    let taken = Confines {
+        widened: Widened {
+            ports: vec![8080],
+            ..Widened::default()
+        },
+        ..Confines::default()
+    };
+    assert_ne!(Settled::of(&started), Settled::of(&taken));
+}
+
+/// #2019: a chat serving on a port is owed a restart once the grant to serve there is taken
+/// back, even where a grant to connect to the same port still stands; a chat that does not
+/// serve there is owed none. First runs on CI: the chat's door listens on the port.
+#[test]
+fn a_chat_serving_on_a_port_is_owed_a_restart_once_its_grant_is_taken_back() {
+    let plane = a_sandboxed_plane();
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|listener| listener.local_addr())
+        .expect("a free port")
+        .port();
+    purlis_core::sandbox::local::grant_listen(plane.path(), port).expect("kept");
+    purlis_core::sandbox::local::grant_port(plane.path(), port).expect("kept");
+    let (chats, _host) = armed_for_opencode(plane.path());
+    let ready = ready_under(
+        Harness::Opencode,
+        a_sandbox_for(Harness::Opencode, plane.path()),
+    );
+    let chat = Chat {
+        cwd: Some(plane.path().to_path_buf()),
+        ..chat("/bin/sh", "c", None)
+    };
+    let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
+    assert_eq!(
+        chats.owe_restart_serving(None, port.wrapping_add(1)),
+        Vec::<u32>::new()
+    );
+    assert_eq!(chats.owe_restart_serving(None, port), vec![session]);
+    assert!(chats.owed_restarts().contains(&session));
+    chats.close(session).expect("closed");
+}

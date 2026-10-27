@@ -911,3 +911,31 @@ fn once_and_this_chat_are_the_one_chat_levels() {
     .collect();
     assert_eq!(one_chat, [Level::Once, Level::Chat]);
 }
+
+/// #2019: no door ever opens for a Claude Code chat, so a grant to serve on a port gives it
+/// nothing: no port in its sandbox's settings, and none its proxy carries.
+#[test]
+fn a_claude_code_chat_is_given_nothing_for_a_grant_to_serve_on_a_port() {
+    let project = project();
+    let port = 51_999;
+    let mut chat = Grants::default();
+    chat.add(&What::Listen(port));
+    let granted = compiled_with(&project, Os::MacOs, &chat);
+    assert_eq!(granted.widened.listen_only, [port]);
+    let applied = crate::sandbox::applied_of(
+        crate::harness::Harness::ClaudeCode,
+        crate::sandbox::compiler(crate::harness::Harness::ClaudeCode).expect("a compiler"),
+        &granted,
+        &project.root,
+        &Machine {
+            env: crate::secrets::Env::of(&[]),
+            home: Some(project.home.clone()),
+            os: Os::MacOs,
+        },
+    )
+    .expect("compiles");
+    let confines = applied.confines();
+    assert!(!confines.widened.ports.contains(&port), "{confines:?}");
+    assert!(confines.widened.listens.is_empty());
+    assert!(confines.reach.withdrew(port));
+}

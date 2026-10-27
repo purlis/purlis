@@ -456,13 +456,18 @@ pub fn root_in(runtime: Option<&OsStr>) -> PathBuf {
 pub const FOLDER_ENV: &str = "PURLIS_SERVE_DIR";
 
 /// What a chat is told of `ports` it was allowed to serve on that it does not serve on this
-/// run: something on this Mac listens on each already.
+/// run: something on this Mac holds each already, listening there or bound to it.
 pub fn unserved_said(ports: &[u16]) -> Option<String> {
     let (named, there) = ports_named(ports)?;
+    let held = if ports.len() == 1 {
+        "holds it"
+    } else {
+        "holds each of them"
+    };
     Some(format!(
-        "This chat was allowed to serve on {named}, but something on this Mac already listens \
-         there, so it does not serve on {there} this run. Stop what listens there, then restart \
-         this chat."
+        "This chat was allowed to serve on {named}, but something on this Mac already {held}, \
+         so it does not serve on {there} this run. Stop what holds {there}, then restart this \
+         chat."
     ))
 }
 
@@ -527,7 +532,7 @@ impl Door {
         if port == 0 || in_use(port) {
             return Err(io::Error::new(
                 io::ErrorKind::AddrInUse,
-                format!("something on this Mac already listens on port {port}"),
+                format!("something on this Mac already holds port {port}"),
             ));
         }
         let folder = Pinned::of(socket)?;

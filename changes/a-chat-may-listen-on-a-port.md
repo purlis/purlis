@@ -7,8 +7,8 @@
   request's address, and keeps your browser's cookies from the server.
   - The chat's browser opens the server with no second ask, and so can your own browser.
   - A page the server sends runs in your browser as a site of this Mac. It can read your other
-    local apps' cookies that are not HttpOnly, send requests to those apps, and send what it
-    reads to the internet. Open it in the chat's own browser unless you trust it.
+    local apps' cookies that are not HttpOnly, send requests to those apps as you, and send
+    what it reads to the internet. Open it in the chat's own browser unless you trust it.
   - `purlis listen <port> -- <command>` starts a server there, for example
     `purlis listen 5173 -- npm run dev`, and Vite, Next.js and other Node servers run unchanged.
   - A port below 1024, or one something on this Mac already listens on, is never offered.

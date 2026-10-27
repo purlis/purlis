@@ -6753,3 +6753,16 @@ fn whatever_is_left_where_a_servers_socket_goes_is_cleared_but_a_folder() {
         "{refused}"
     );
 }
+
+/// #2019: a port something on this Mac listens on as a chat is compiled is neither served nor
+/// reached for a grant to serve on it, and is told.
+#[test]
+fn a_port_something_listens_on_is_neither_served_nor_reached_for_a_listen_grant() {
+    let taken = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port in use");
+    let port = taken.local_addr().expect("bound").port();
+    let widened = Widened::default().and_listens(&[port], &policy::Locks::default());
+    assert_eq!(widened.unserved, [port]);
+    assert!(widened.listens.is_empty());
+    assert!(!widened.ports.contains(&port));
+    assert!(widened.listen_only.is_empty());
+}

@@ -350,7 +350,7 @@ pub fn listen_risk_unnamed() -> String {
 const LISTEN_RISK_REST: &str = "purlis checks each request's address, and keeps your browser's \
      cookies from the server. A page the server sends runs in your browser as a site of this \
      Mac: it can read your other local apps' cookies that are not HttpOnly, send requests to \
-     those apps, and send what it reads to the internet. Open it in the chat's own browser \
+     those apps as you, and send what it reads to the internet. Open it in the chat's own browser \
      unless you trust it. Nothing on another machine connects to it";
 
 /// What a chat is told to start a server on `port` with, once it may (#2019).
