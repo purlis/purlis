@@ -793,14 +793,16 @@ describe("the explorer", () => {
     await expect($('[data-testid="explorer"] [data-row^="workspace:"]')).not.toBeExisting();
   });
 
-  it("is the files of the workspace the strip is on, and names it in its heading", async () => {
-    /** What the Files heading says its files are of. Read from the document, shown or not. */
+  it("is the files of the workspace the strip is on, and names it in its tree", async () => {
+    /** What the files' tree says it is of: *Files* is no fold since #3343, and the view's title
+     *  is its region's. Read from the document, shown or not. */
     const filesOf = () =>
       browser.execute(
         () =>
           document
-            .querySelector('[data-testid="explorer"] [data-section="files"] .section-of')
-            ?.textContent?.trim() ?? "",
+            .querySelector('[data-testid="explorer"] [data-section="files"] [role="treegrid"]')
+            ?.getAttribute("aria-label")
+            ?.replace(/^Files of /, "") ?? "",
       );
     const untilFilesOf = (name: string) =>
       browser.waitUntil(async () => (await filesOf()) === name, {
@@ -1036,7 +1038,8 @@ describe("the explorer", () => {
     });
     expect(dropped).toBe(true);
 
-    const said = await $('p[role="status"]');
+    // What the action answered: its closable notice at the top of the content (#3344).
+    const said = await $('.window-work > .action-result [role="status"]');
     await said.waitForExist({ timeout: 20_000 });
     await expect(said).toHaveText(expect.stringContaining("Nothing was sent."));
     await browser.waitUntil(

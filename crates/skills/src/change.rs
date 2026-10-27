@@ -250,23 +250,19 @@ pub fn check(text: &str, name: &str) -> Vec<Problem> {
 /// `text`, a `SKILL.md`, with its frontmatter's `name:` line saying `new`, every other byte as it
 /// was. `None` where its frontmatter has no `name:` line.
 pub fn with_name(text: &str, new: &str) -> Option<String> {
-    let (start, end) = crate::read::frontmatter_block(text)?;
-    let mut out = String::with_capacity(text.len() + new.len());
-    out.push_str(&text[..start]);
-    let mut found = false;
-    for line in text[start..end].split_inclusive('\n') {
-        let (body, ending) = split_ending(line);
-        match body.split_once(':') {
-            Some((key, _)) if !found && key.trim() == "name" => {
-                found = true;
-                let indent = &body[..body.len() - body.trim_start().len()];
-                out.push_str(&format!("{indent}name: {new}{ending}"));
-            }
-            _ => out.push_str(line),
-        }
-    }
-    out.push_str(&text[end..]);
-    found.then_some(out)
+    let fence = crate::fence::Fence::find(text)?;
+    let line = fence
+        .entries()
+        .into_iter()
+        .find(|entry| entry.key == "name")?
+        .line;
+    let body = &text[line.start..line.end];
+    let indent = &body[..body.len() - body.trim_start().len()];
+    Some(format!(
+        "{}{indent}name: {new}{}",
+        &text[..line.start],
+        &text[line.end..]
+    ))
 }
 
 /// Where each reference to a skill in the namespace `namespace` (`skills:<name>`) is in `text`,
@@ -333,14 +329,14 @@ pub fn references(text: &str, namespace: &str, name: &str) -> bool {
 /// one line (`skills: a, b`), or of a block list under it (`skills:` then `  - a` lines), within
 /// its frontmatter. The one place the list's items are found, for its rename and its readers.
 fn list_items(text: &str) -> Vec<(usize, usize)> {
-    let Some((start, end)) = crate::read::frontmatter_block(text) else {
+    let Some(fence) = crate::fence::Fence::find(text) else {
         return Vec::new();
     };
     let mut items = Vec::new();
-    let mut at = start;
     let mut in_block = false;
-    for line in text[start..end].split_inclusive('\n') {
-        let (body, _) = split_ending(line);
+    for line in fence.lines() {
+        let at = line.start;
+        let body = &text[line.start..line.end];
         let trimmed = body.trim_start();
         if in_block && let Some(item) = trimmed.strip_prefix('-') {
             let lead = body.len() - trimmed.len() + 1;
@@ -357,7 +353,6 @@ fn list_items(text: &str) -> Vec<(usize, usize)> {
         } else if !trimmed.is_empty() {
             in_block = false;
         }
-        at += line.len();
     }
     items.retain(|(a, b)| a < b);
     items
@@ -407,17 +402,6 @@ pub fn persona_names(text: &str, namespace: &str, name: &str) -> bool {
     list_items(text)
         .into_iter()
         .any(|(start, end)| item_names(&text[start..end], namespace, name))
-}
-
-/// A line and the line break it ends with (`\n`, `\r\n`, or none).
-fn split_ending(line: &str) -> (&str, &str) {
-    if let Some(body) = line.strip_suffix("\r\n") {
-        (body, "\r\n")
-    } else if let Some(body) = line.strip_suffix('\n') {
-        (body, "\n")
-    } else {
-        (line, "")
-    }
 }
 
 #[cfg(test)]

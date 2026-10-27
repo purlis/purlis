@@ -125,7 +125,9 @@ async function typeTheSkill(typed: string): Promise<void> {
   await browser.waitUntil(
     async () => {
       lines = await browser.execute(() =>
-        [...document.querySelectorAll('p[role="status"]')].map((one) => one.textContent ?? ""),
+        [...document.querySelectorAll('.window-work > .action-result [role="status"]')].map(
+          (one) => one.textContent ?? "",
+        ),
       );
       return lines.some((line) => line.includes(typed));
     },

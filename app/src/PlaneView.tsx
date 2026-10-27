@@ -108,6 +108,7 @@ import { FORGE_LOGIN, type LoginAsk } from "./RepoPicker";
 import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
+import { AddVision } from "./AddVision";
 import { cloneRepos, settleRepoClones, useRepoClones } from "./repoClones";
 import { StartChat } from "./StartChat";
 import {
@@ -125,7 +126,7 @@ import {
   type OpenUseSkill,
   type SkillBudgets,
 } from "./UseSkill";
-import { Explorer, type Spot } from "./Explorer";
+import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import {
   pieceFileTitle,
   pieceFileView,
@@ -186,6 +187,7 @@ import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
+import { workspaceMade } from "./actionResult";
 import { Inbox, landOnGroupIn, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
@@ -1055,6 +1057,13 @@ export const PlaneView = memo(function PlaneView({
   }>();
   /** The workspace being renamed, while its dialog is up: whether charter is renaming it now,
    *  and why the last attempt renamed nothing, in the core's words (charter#367). */
+  /** The workspace whose vision is being added (#3344), whether it is being saved, and why the
+   *  last Save recorded nothing. */
+  const [addingVision, setAddingVision] = useState<{
+    workspace: string;
+    busy: boolean;
+    trouble?: string;
+  }>();
   const [renamingWs, setRenamingWs] = useState<{
     workspace: string;
     busy: boolean;
@@ -1255,6 +1264,30 @@ export const PlaneView = memo(function PlaneView({
         });
       }),
     [],
+  );
+  /** What ⌘⇧F runs while the keyboard is in Explorer's files (#3343), kept by Explorer. */
+  const explorerSearchKey = useRef<SearchKeyHere | undefined>(undefined);
+  const keepExplorerSearchKey = useCallback((here: SearchKeyHere | undefined) => {
+    explorerSearchKey.current = here;
+  }, []);
+  /** **Search contents, from Explorer's filter** (#3343): the Search view on the scope the filter
+   *  found in, Branch or Workspace, with what it held; the switches as they were left. */
+  const searchContents = useCallback(
+    (kind: "branch" | "workspace", at: Place, query: string) => {
+      setSideSearch((was) => {
+        const kept = was === undefined ? undefined : searchOf(was);
+        const here = searchFromFocus(at, at.workspace);
+        return searchView({
+          ...here,
+          kind,
+          query: query !== "" ? query : (kept?.query ?? ""),
+          matching: kept?.matching ?? here.matching,
+        });
+      });
+      showSide("search");
+      requestAnimationFrame(() => giveViewTheKeyboard("search"));
+    },
+    [showSide],
   );
   const showSideView = useCallback(
     (view: ViewId) => {
@@ -4472,9 +4505,16 @@ export const PlaneView = memo(function PlaneView({
       // the workspace strip draws what is pinned. A pin the store refused leaves the
       // workspace made and says why, beside what charter said about making it.
       const pinned = await pinWorkspace(name, true);
-      const words = pinned.ok ? answer.data : [...answer.data, pinned.refused];
-      // charter's own lines, which say where it landed and whether it is LOCAL or LIVE.
-      setReport({ from: "workspace.create", refused: false, words: words.join(" ") });
+      // Said in the app's own words, with Open; the core's lines, where it landed and whether
+      // it is LOCAL or LIVE, are kept behind Details, less the lines written for an agent
+      // (#3344, `actionResult.ts`).
+      setReport(
+        workspaceMade(name, answer.data, {
+          onOpen: () => focusWorkspace(name),
+          onAddVision: () => setAddingVision({ workspace: name, busy: false }),
+          pinRefused: pinned.ok ? undefined : pinned.refused,
+        }),
+      );
       // The plane is read again rather than this window writing the workspace into its own
       // copy of the sidebar, and the strip lands on what was just made: it holds no chats, so
       // `picked` is the only thing that can put the window in it.
@@ -4487,6 +4527,8 @@ export const PlaneView = memo(function PlaneView({
         from: "workspace.create",
         refused: false,
         words: `Cloning ${repos.length} repo(s) into ${name}…`,
+        // Under way: the clone's result replaces it, and only that is kept (#3344).
+        progress: true,
       });
       const failed = await cloneRepos(plane, name, repos);
       setReport(
@@ -4511,7 +4553,36 @@ export const PlaneView = memo(function PlaneView({
       );
       setReplan((asked) => asked + 1);
     },
-    [pinWorkspace, plane],
+    [focusWorkspace, pinWorkspace, plane],
+  );
+
+  /**
+   * **Add a vision** (#3344): `purlis workspace vision`'s write, through the core's own broker.
+   * A refusal stays in the dialog, in the core's words; once recorded, the window says so.
+   */
+  const saveVision = useCallback(
+    async (workspace: string, vision: string) => {
+      setAddingVision({ workspace, busy: true });
+      const answer = await commands
+        .workspaceVision(plane, workspace, vision)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (answer.status === "error") {
+        setAddingVision({ workspace, busy: false, trouble: answer.error });
+        return;
+      }
+      setAddingVision(undefined);
+      setReport({
+        from: "workspace.vision",
+        refused: false,
+        title: answer.data,
+        words: "Its chats read it in its workspace.md.",
+        ways: [
+          { label: `Open ${workspace}`, onPress: () => focusWorkspace(workspace), primary: true },
+        ],
+      });
+      setReplan((asked) => asked + 1);
+    },
+    [focusWorkspace, plane],
   );
 
   /** Asks for a new vault. It makes nothing: the dialog asks, and `vault_create` makes one. */
@@ -7777,6 +7848,18 @@ export const PlaneView = memo(function PlaneView({
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
+      // ⌘⇧F in Explorer's files does what its Search contents link says (#3343): Search on the
+      // filter's scope, with its words.
+      const here = explorerSearchKey.current;
+      if (
+        "show" in which &&
+        which.show === "search" &&
+        here !== undefined &&
+        here.inside?.contains(document.activeElement) === true
+      ) {
+        here.run();
+        return;
+      }
       if ("toggle" in which) toggleRegionSeen(which.toggle);
       else showSideViewSeen(which.show);
     };
@@ -8783,6 +8866,9 @@ export const PlaneView = memo(function PlaneView({
                     onGoToWorkspace={focusWorkspace}
                     // The Skills view's Show in Explorer (#3266).
                     reveal={explorerReveal}
+                    // Search contents (#3343): Search on the filter's scope, with its words.
+                    onSearchContents={searchContents}
+                    onSearchKey={keepExplorerSearchKey}
                   />
                 )}
               />
@@ -9468,6 +9554,19 @@ export const PlaneView = memo(function PlaneView({
                 // The list is what is on disk: read again, so the repo leaves "Not cloned here".
                 rereadPanels();
               }}
+            />
+          )}
+
+          {addingVision && (
+            <AddVision
+              workspace={addingVision.workspace}
+              current={
+                sidebar?.workspaces.find((ws) => ws.name === addingVision.workspace)?.vision ?? ""
+              }
+              trouble={addingVision.trouble}
+              saving={addingVision.busy}
+              onSave={(vision) => void saveVision(addingVision.workspace, vision)}
+              onCancel={() => setAddingVision(undefined)}
             />
           )}
 

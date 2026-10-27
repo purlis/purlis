@@ -15,14 +15,17 @@ import {
 import { createPortal } from "react-dom";
 import { PersonaMark } from "./PersonaMark";
 import { NoticeWayGuard, useNoticeSettle } from "./noticeSettle";
-import { Button, ButtonRow } from "./ui/button/Button";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { Button, ButtonRow, IconButton } from "./ui/button/Button";
 import {
   NoticeBox,
   NoticeListBox,
+  NoticeMark,
   NoticeMessage,
   NoticeMoreSays,
   NoticeRow,
   NoticeStack,
+  NoticeTitle,
   NoticeUnder,
   NoticeWhose,
   type NoticeListAt,
@@ -90,6 +93,11 @@ export type NoticeAction = {
    *  §6). Only the look: its place, its words, its name and the keyboard's order are the
    *  Notice's as they were. */
   allows?: boolean;
+  /** The one way on a card Notice leads with (#3344): drawn as the filled primary. */
+  primary?: boolean;
+  /** A card Notice's disclosure (its Details, #3344): a ghost button led by a chevron that
+   *  points down while what it opens is open. Needs `opens`. */
+  disclosure?: boolean;
 };
 
 type Ways = {
@@ -113,22 +121,58 @@ type WayOut =
   | (Ways & { copy: string })
   | (Ways & { onDismiss: () => void });
 
-export type NoticeProps = WayOut & {
+/** What every Notice says: what it is about, its tone, its sentence and what a way out opened. */
+type Said = {
   /** What the line is about, stably: what a dismissal will be keyed by. */
   cause: string;
   tone?: "news" | "trouble";
-  at?: "inbox" | "pane";
-  /** The accessible name, where the sentence alone would not make a good one. */
-  label?: string;
-  /** The persona the line names, when it names one: its mark is drawn before the sentence
-   *  (#1449). */
-  persona?: string | null;
   /** The sentence (and anything else the line says before its ways out). */
   children: ReactNode;
   /** What a way out opened (a fix's form, #1250): drawn right after the line, outside its live
    *  region, and moved with it by the Inbox's list. */
   under?: ReactNode;
 };
+
+/** **A line Notice**: in a pane's row, the Inbox's list or alone on a page. */
+type LineProps = WayOut &
+  Said & {
+    at?: "inbox" | "pane";
+    /** The accessible name, where the sentence alone would not make a good one. */
+    label?: string;
+    /** The persona the line names, when it names one: its mark is drawn before the sentence
+     *  (#1449). */
+    persona?: string | null;
+    title?: never;
+    quiet?: never;
+  };
+
+/** A card's ways out: a fix, a link or its ×, never a command to copy (#3344). */
+type CardWayOut =
+  | (Ways & { copy?: never; fixes: readonly [NoticeAction, ...NoticeAction[]] })
+  | (Ways & { copy?: never; link: NoticeAction })
+  | (Ways & { copy?: never; onDismiss: () => void });
+
+/**
+ * **A card Notice** (#3344, the sidebar-views prototype's Q3 A): drawn as the family's card
+ * (`layout="card"`): its mark at the start, its title with × at the top right, its sentence
+ * (`children`) under the title, its ways on a row of their own under that, and what a way out
+ * opened inside the card. Only the title and the sentence are its live region, so opening its
+ * Details reads nothing out again. Never in a pane, whose row reads its line's live region, and
+ * with no persona, label or command to copy: the title names it.
+ */
+type CardProps = CardWayOut &
+  Said & {
+    at?: "inbox";
+    /** What happened, before its one sentence. */
+    title: ReactNode;
+    /** **Not a live region**: a copy of a Notice another one already said, as a result kept
+     *  under Results is of the result's notice. */
+    quiet?: boolean;
+    label?: never;
+    persona?: never;
+  };
+
+export type NoticeProps = LineProps | CardProps;
 
 /**
  * **Whose Notice this is, for a Notice of a chat that is not the one its pane shows** (#1486).
@@ -150,7 +194,17 @@ export const NoticeOf = createContext<{
 } | null>(null);
 
 export function Notice(props: NoticeProps) {
-  const { cause, tone = "news", at = "inbox", label, persona, children, under } = props;
+  const {
+    cause,
+    tone = "news",
+    at = "inbox",
+    label,
+    persona,
+    children,
+    under,
+    title,
+    quiet,
+  } = props;
   const { fixes, link, copy, onDismiss, dismissSays } = props as Ways;
   const list = useContext(Listed);
   const provided = useContext(NoticeOf);
@@ -171,6 +225,84 @@ export function Notice(props: NoticeProps) {
   // the notice family's root: in a pane the box itself, in the Inbox the list's row, and alone
   // (a Notice on a Settings page) the inline surface.
   const placement = at === "pane" ? "pane" : stacked ? "inbox" : "alone";
+  if (title !== undefined) {
+    const card = (
+      <NoticeBox
+        tone={tone}
+        placement={placement}
+        opened={under !== undefined}
+        asks={fixes !== undefined || link !== undefined}
+        layout="card"
+      >
+        <NoticeMark tone={tone} />
+        <NoticeMessage live={quiet !== true} cause={cause}>
+          {/* A refusal is told by more than its mark and its colour (WCAG 1.3.1, #3344). */}
+          {tone === "trouble" && <span className="sr-only">Not done: </span>}
+          <NoticeTitle>{title}</NoticeTitle>
+          {children}
+        </NoticeMessage>
+        {onDismiss && (
+          <IconButton
+            size="sm"
+            variant="ghost"
+            aria-label="Dismiss"
+            tooltip={dismissSays}
+            onPress={onDismiss}
+            data-way="dismiss"
+            icon={<X aria-hidden="true" />}
+          />
+        )}
+        {(fixes !== undefined || link !== undefined) && (
+          <ButtonRow size="sm">
+            {fixes?.map((fix) => (
+              <Button
+                key={fix.label}
+                size="sm"
+                variant={
+                  fix.allows === true
+                    ? "grants"
+                    : fix.primary === true
+                      ? "primary"
+                      : fix.disclosure === true
+                        ? "ghost"
+                        : "secondary"
+                }
+                icon={
+                  fix.disclosure !== true ? undefined : fix.opens?.open === true ? (
+                    <ChevronDown aria-hidden="true" />
+                  ) : (
+                    <ChevronRight aria-hidden="true" />
+                  )
+                }
+                data-way={fix.disclosure === true ? "disclosure" : "fix"}
+                aria-expanded={fix.opens?.open}
+                aria-controls={fix.opens?.open ? fix.opens.id : undefined}
+                aria-disabled={fix.busy || fix.off !== undefined || undefined}
+                aria-busy={fix.busy || undefined}
+                tooltip={fix.off}
+                onPress={
+                  fix.busy || fix.off !== undefined
+                    ? undefined
+                    : (press) => {
+                        if (mayAct(press.target)) fix.onPress();
+                      }
+                }
+              >
+                {fix.label}
+              </Button>
+            ))}
+            {link && (
+              <Button size="sm" onPress={link.onPress} data-way="link">
+                {link.label}
+              </Button>
+            )}
+          </ButtonRow>
+        )}
+        {under !== undefined && <NoticeUnder>{under}</NoticeUnder>}
+      </NoticeBox>
+    );
+    return stacked ? createPortal(card, host) : card;
+  }
   const line = (
     <ButtonRow
       size="sm"

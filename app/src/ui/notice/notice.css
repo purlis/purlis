@@ -263,3 +263,74 @@
   flex: none;
   align-self: flex-start;
 }
+
+/* ---------------------------------------------------------------------------------------------
+   A card (#3344, the sidebar-views prototype's Q3 A): what an action answered. Its mark at the
+   start; its title, with × at the top right; its sentence under the title; its ways on a row of
+   their own; and what a way out opened inside it. On the card's ground, with no hairline (the
+   Purlis no-hairline ruling): alone at most 640px wide, a row of the Inbox's list as the list's.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="notice"][data-part="root"][data-layout="card"] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-2) calc(var(--space-4) + var(--space-1));
+  align-items: start;
+  padding-block: calc(var(--space-4) + var(--space-1));
+  padding-inline: var(--space-5) var(--space-4);
+  font-size: var(--font-size-md);
+}
+
+[data-scope="notice"][data-part="root"][data-layout="card"][data-placement="alone"] {
+  max-inline-size: 640px;
+  border-width: 0;
+  background-color: var(--surface-overlay);
+}
+
+[data-scope="notice"][data-part="root"][data-layout="card"][data-placement="alone"][data-variant="trouble"] {
+  background-color: var(--danger-surface);
+}
+
+[data-scope="notice"][data-part="mark"] {
+  display: inline-grid;
+  margin-block-start: 1px;
+  color: var(--state-success);
+}
+
+[data-scope="notice"][data-part="root"][data-variant="trouble"] > [data-part="mark"] {
+  color: var(--danger-text);
+}
+
+[data-scope="notice"][data-part="mark"] svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+[data-scope="notice"][data-part="root"][data-layout="card"]
+  > [data-scope="notice"][data-part="message"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+[data-scope="notice"][data-part="title"] {
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+}
+
+[data-scope="notice"][data-part="root"][data-layout="card"] > [data-scope="button-row"] {
+  grid-column: 2;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+[data-scope="notice"][data-part="root"][data-layout="card"]
+  > [data-scope="notice"][data-part="under"] {
+  grid-column: 2 / 4;
+  margin-block-start: var(--space-3);
+  padding: 0;
+}

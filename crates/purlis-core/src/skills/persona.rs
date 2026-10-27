@@ -99,14 +99,20 @@ fn write(plane: &Path, persona: &str, key: &str, entries: &[String]) -> Result<(
     crate::contain::writable(plane, &file).map_err(|refused| refused.to_string())?;
     let text = crate::contain::read_text_no_link(plane, &file)
         .map_err(|why| format!("purlis could not read {}: {why}", file.display()))?;
-    let line = entries.join(", ");
-    let Some(next) = crate::personas::with_key(&text, key, (!line.is_empty()).then_some(&line))
-    else {
+    // A comma list reads back as these entries only when none holds a comma or a blank end.
+    if let Some(odd) = entries.iter().find(|entry| {
+        entry.is_empty() || entry.contains(',') || !purlis_skills::fence::holds(entry)
+    }) {
         return Err(format!(
-            "{} has no frontmatter to hold a `{key}:` line, so nothing was written.",
-            file.display()
+            "{} cannot list '{}' on its `{key}:` line: a comma list's entry holds no comma \
+             and no blank end, so nothing was written.",
+            file.display(),
+            crate::personas::one_line(odd)
         ));
-    };
+    }
+    let line = entries.join(", ");
+    let next = crate::personas::with_key(&text, key, (!line.is_empty()).then_some(&line))
+        .map_err(|why| format!("{} {why}, so nothing was written.", file.display()))?;
     if next == text {
         return Ok(());
     }
