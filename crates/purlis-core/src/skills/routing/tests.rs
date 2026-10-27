@@ -647,3 +647,52 @@ fn a_pinners_list_of_too_many_says_so_and_names_no_entry_sk15d() {
     assert_eq!(refused.bad, None);
     assert!(refused.why.contains("more than 64 pins"), "{}", refused.why);
 }
+
+/// #3391: a workspace's and a persona's pins, each under the most a chat reads and past it
+/// together, are each accepted, and the chat says the two together are not read, naming both
+/// and how many each holds.
+#[test]
+fn a_chat_whose_workspace_and_persona_pins_pass_64_together_says_so_3391() {
+    let (tmp, bundle) = a_plane_of(70);
+    let root = tmp.path();
+    let workspace = PinnedBy::Workspace("smart-ide".to_owned());
+    let persona = PinnedBy::Persona("reviewer".to_owned());
+    for at in 0..40 {
+        assert!(pin(root, &workspace, &format!("skill-{at:02}"), true).unwrap());
+    }
+    for at in 40..70 {
+        assert!(pin(root, &persona, &format!("skill-{at:02}"), true).unwrap());
+    }
+    // Each pinner alone is accepted.
+    assert_eq!(pins_refused(root, &workspace), None);
+    assert_eq!(pins_refused(root, &persona), None);
+
+    let chat = |persona| for_use_skill(&running(root, &bundle, persona));
+    assert_eq!(
+        chat(Some("reviewer")).pins_together,
+        Some(PinsTogether {
+            held: vec![
+                PinsHeld {
+                    by: workspace.clone(),
+                    pins: 40
+                },
+                PinsHeld {
+                    by: persona.clone(),
+                    pins: 30
+                },
+            ],
+            most: MOST_PINS,
+        })
+    );
+    // The workspace's alone is read.
+    assert_eq!(chat(None).pins_together, None);
+
+    // Ten of the persona's the workspace pins too: sixty names, which a chat reads.
+    for at in 60..70 {
+        assert!(pin(root, &persona, &format!("skill-{at:02}"), false).unwrap());
+    }
+    for at in 30..40 {
+        assert!(pin(root, &persona, &format!("skill-{at:02}"), true).unwrap());
+    }
+    assert_eq!(chat(Some("reviewer")).pins_together, None);
+}

@@ -110,6 +110,10 @@ pub struct SkillBudget {
     /// Which of the chat's workspace and persona pin a skill (SK-15d): where the pins are
     /// undone in the Skill studio when they alone are past the budget.
     pub pinned_by: Vec<crate::skillchange::SkillPinner>,
+    /// Where the chat reads none of its pins because its workspace's and its persona's together
+    /// pass the most it reads, though each alone is accepted (#3391): both, and how many each
+    /// pins. Null where its pins are read.
+    pub pins_together: Option<crate::skillchange::SkillPinsTogether>,
 }
 
 /// What Use skill… offers a chat, and its budget.
@@ -154,7 +158,7 @@ const NOT_STARTED: &str =
     "This chat has not started yet, so nothing was typed. Try again once it has.";
 
 /// A count the window draws: a `u32`, as large as it gets.
-fn small(n: usize) -> u32 {
+pub(crate) fn small(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
@@ -222,6 +226,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             ),
             still_over: skills.still_over.map(Into::into),
             pinned_by: skills.pinned_by.iter().cloned().map(Into::into).collect(),
+            pins_together: skills.pins_together.as_ref().map(Into::into),
         }),
     }
 }
