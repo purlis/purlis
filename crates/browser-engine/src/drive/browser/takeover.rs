@@ -41,8 +41,8 @@
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -50,8 +50,9 @@ use serde_json::{Value, json};
 use super::super::kept::Kept;
 use super::super::keys::{command_of, is_modifier};
 use super::super::tree::{FrameAx, NodeKey, Snapshot};
+use super::reading::Reading;
 use super::{ACTIVE_ELEMENT, FOCUSED_HERE, READ_VALUE};
-use super::{Browser, Session, read_trees, refusal};
+use super::{Browser, Session, refusal};
 use crate::cdp::CallError;
 use crate::drive::{
     ALT, Aim, CONTROL, Call, Driver, META, Modifiers, MouseButton, MouseKind, PersonInput, Refusal,
@@ -98,28 +99,10 @@ pub(crate) struct Typing {
     /// The read of a page's trees under way for the person's keys, or come and not yet used:
     /// every key that waits for the page waits on this one read (#3043).
     reading: Option<Arc<Reading>>,
-}
-
-/// A read of every frame's tree of a page for the person's keys (#3043): its page's target, the
-/// lease's epoch and the page's document number when it began, and its answer once it came.
-struct Reading {
-    target: String,
-    epoch: u64,
-    shows: u64,
-    /// The answer, and when it came.
-    answer: Mutex<Option<(Instant, ReadAnswer)>>,
-    came: Condvar,
-}
-
-/// What a read of a page's trees for the person's keys came to (#3043).
-type ReadAnswer = Result<Arc<Vec<FrameAx>>, Refusal>;
-
-impl Reading {
-    /// The read's answer is `answer`: every key waiting on it is told.
-    fn answered(&self, answer: ReadAnswer) {
-        *lock(&self.answer) = Some((Instant::now(), answer));
-        self.came.notify_all();
-    }
+    /// The read of each page (by target) the person's last key into it was blanked from, until
+    /// the hand-back: where a read of the page as their input is kept out does not come in
+    /// time, the groups of boxes on it are found in this one (#3277).
+    last_read: HashMap<String, Arc<Snapshot>>,
 }
 
 /// Whether input lands on what the person saw (#2638), with what judging it read: the page's
@@ -246,7 +229,11 @@ impl Browser {
             return self.epoch();
         }
         self.keep_typing_out();
-        lock(&self.typing).forget_reads();
+        {
+            let mut typing = lock(&self.typing);
+            typing.forget_reads();
+            typing.last_read.clear();
+        }
         // A button the person still holds is let go before the agent has the page (#2989).
         self.let_go_of_held(None);
         // What a login the person cut had filled is emptied before the agent has the page.
@@ -477,11 +464,14 @@ impl Browser {
                                 let shows = lock(&self.inner.state)
                                     .page(&target)
                                     .map_or(0, |page| page.shows);
-                                lock(&self.typing).focus = Some(Focused {
+                                let mut typing = lock(&self.typing);
+                                typing.last_read.insert(target.clone(), Arc::clone(&read));
+                                typing.focus = Some(Focused {
                                     field: field.clone(),
                                     read: std::sync::Arc::clone(&read),
                                     shows,
                                 });
+                                drop(typing);
                                 Some((field, read))
                             }
                             (Err(Refusal::NothingFocused), _) => {
@@ -628,7 +618,12 @@ impl Browser {
 
     /// Reads every page and every field the person typed into again, and keeps what they hold
     /// and each run of characters the person typed out of every later answer about every page.
+    /// The pages are read within [`Limits::key_reads_within`](crate::drive::Limits) in all, under
+    /// what the window waits for the hand-back or a press (#3277): where a page's read does not
+    /// come in time, the groups of boxes on it are found in the read the person's last key into
+    /// it was blanked from, and the log says so.
     fn keep_typing_out(&self) {
+        let by = Instant::now() + self.inner.limits.key_reads_within;
         let (dirty, runs, touched) = {
             let mut typing = lock(&self.typing);
             // Each run is kept out once: a run still growing is a run a press of the mouse or
@@ -645,8 +640,28 @@ impl Browser {
         held.run(&runs);
         let mut reads = Vec::new();
         for target in dirty {
-            if let Ok(read) = self.snapshot_of(&target) {
-                reads.push(read);
+            match self.trees_by(&target, by) {
+                Ok(trees) => reads.push(Arc::new(self.snapshot_from(&target, &trees))),
+                Err(why) => {
+                    let page = lock(&self.inner.state)
+                        .page(&target)
+                        .map_or_else(String::new, |page| format!(" {}", page.id));
+                    match lock(&self.typing).last_read.get(&target) {
+                        Some(read) => {
+                            tracing::warn!(
+                                "purlis: page{page} could not be read as the person's input \
+                                 was kept out ({why}), so the groups of boxes on it were \
+                                 rebuilt from the page as the person's last key read it"
+                            );
+                            reads.push(Arc::clone(read));
+                        }
+                        None => tracing::warn!(
+                            "purlis: page{page} could not be read as the person's input was \
+                             kept out ({why}), so no group of boxes on it was rebuilt: what \
+                             each field holds, and each run typed, is kept out"
+                        ),
+                    }
+                }
             }
             if let Some(page) = lock(&self.inner.state).page(&target) {
                 held.take_in(&page.scrubbed);
@@ -1054,45 +1069,26 @@ impl Browser {
             let mut typing = lock(&self.typing);
             match &typing.reading {
                 // Under way, or come and not used yet: every key waits on the one read.
-                Some(reading)
-                    if reading.target == target
-                        && reading.epoch == epoch
-                        && reading.shows == shows =>
-                {
+                Some(reading) if reading.is_of(target, epoch, shows) => {
                     (Arc::clone(reading), false)
                 }
                 _ => {
-                    let reading = Arc::new(Reading {
-                        target: target.to_owned(),
-                        epoch,
-                        shows,
-                        answer: Mutex::new(None),
-                        came: Condvar::new(),
-                    });
+                    let reading = Reading::new(target, epoch, shows);
                     typing.reading = Some(Arc::clone(&reading));
                     (reading, true)
                 }
             }
         };
         if begun {
-            self.begin_reading(target, &reading);
+            reading.begin(
+                Arc::clone(&self.inner.devtools),
+                self.frames_to_read(target),
+                self.inner.limits.tree_reads_within,
+                Refusal::PageUnreadInTime,
+            );
         }
-        let (came, answer) = {
-            let mut answer = lock(&reading.answer);
-            loop {
-                if let Some((came, answer)) = answer.as_ref() {
-                    break (*came, answer.clone());
-                }
-                let left = by.saturating_duration_since(Instant::now());
-                if left.is_zero() {
-                    return Err(Refusal::PageUnreadInTime);
-                }
-                answer = reading
-                    .came
-                    .wait_timeout(answer, left)
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .0;
-            }
+        let Some((came, answer)) = reading.wait(by, || false) else {
+            return Err(Refusal::PageUnreadInTime);
         };
         // Used, or failed: the next key that needs the page reads it anew.
         {
@@ -1111,34 +1107,6 @@ impl Browser {
             return Err(Refusal::PageUnreadInTime);
         }
         Ok((trees.as_ref().clone(), !begun))
-    }
-
-    /// Begins `reading` of every frame's tree of `target`'s page, on a thread of its own, each
-    /// frame's within [`Limits::tree_reads_within`](crate::drive::Limits) (#3043). A read past
-    /// that limit, or one that cannot begin, holds the keys waiting on it back.
-    fn begin_reading(&self, target: &str, reading: &Arc<Reading>) {
-        let frames = match self.frames_to_read(target) {
-            Ok(frames) => frames,
-            Err(why) => return reading.answered(Err(why)),
-        };
-        let devtools = Arc::clone(&self.inner.devtools);
-        let within = self.inner.limits.tree_reads_within;
-        let told = Arc::clone(reading);
-        let begun = std::thread::Builder::new()
-            .name("purlis-tree-read".into())
-            .spawn(move || {
-                told.answered(
-                    read_trees(&*devtools, frames, within)
-                        .map(Arc::new)
-                        .map_err(|why| match why {
-                            CallError::TimedOut => Refusal::PageUnreadInTime,
-                            other => refusal(other),
-                        }),
-                );
-            });
-        if begun.is_err() {
-            reading.answered(Err(Refusal::PageUnreadInTime));
-        }
     }
 
     /// Whether the document of `frame` on `session` has an element focused (or one inside a

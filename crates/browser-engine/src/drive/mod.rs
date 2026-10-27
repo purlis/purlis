@@ -499,6 +499,13 @@ pub enum Refusal {
          answers, so the key was held back: type it again in a moment"
     )]
     PageUnreadInTime,
+    /// The page's tree, read for an agent's call, was not read within the call's limit
+    /// (#3277): a read acts on nothing, so the call did nothing, and the read goes on.
+    #[error(
+        "the page is too large to read within this call's limit, so this call read nothing and \
+         did nothing; purlis goes on reading it: make the call again in a moment"
+    )]
+    PageReadTooLong,
     #[error(
         "the page has something focused that purlis cannot see, so the key was held back: click the field you mean to type into"
     )]
@@ -625,6 +632,13 @@ pub struct Limits {
     /// How long a read of a page's whole tree for the person's keys is used after it came
     /// (#3043): an older one is read anew.
     pub tree_read_kept_for: Duration,
+    /// How long an agent's snapshot, find or wait waits for its page's tree to be read before it
+    /// says the page took too long (#3277): with its settling, under the 85 s the window waits
+    /// for an act.
+    pub page_reads_within: Duration,
+    /// How long a read of a page's whole tree for an agent's call, which outlived the call it
+    /// was made for, is used by the next call after it came (#3277): an older one is read anew.
+    pub page_read_kept_for: Duration,
 }
 
 impl Default for Limits {
@@ -641,6 +655,8 @@ impl Default for Limits {
             key_reads_within: Duration::from_secs(20),
             tree_reads_within: Duration::from_secs(120),
             tree_read_kept_for: Duration::from_secs(10),
+            page_reads_within: Duration::from_secs(60),
+            page_read_kept_for: Duration::from_secs(60),
         }
     }
 }

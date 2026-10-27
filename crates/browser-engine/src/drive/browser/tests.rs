@@ -27,6 +27,7 @@ mod aim;
 mod drawn;
 mod login;
 mod reach;
+mod reading;
 mod takeover;
 
 const MAIN_FRAME: &str = include_str!("../../../tests/fixtures/devtools/ax-main-frame.json");
