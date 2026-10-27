@@ -362,14 +362,13 @@ impl Summary {
     /// A masked summary is not its action word for word, so nothing that lets the call run is
     /// offered beside it ([`super::hooked::shown_in_full`]).
     pub fn of(text: &str) -> Self {
-        // The white space that lays a text out is collapsed: a space, a tab, a line end or a
-        // line separator. A blank that only looks like a space (a no-break, an en or an
-        // ideographic space) stays where it stood: a reader cannot tell it from a space, and
-        // purlis's one rule marks it where the line is shown (SK-51, #3202).
-        let lays_out = |c: char| {
-            c.is_whitespace()
-                && (c == ' ' || c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
-        };
+        // The white space a command line is laid out with is collapsed: a space, a tab and a
+        // line end. Any other blank stays where it stood: one that only looks like a space (a
+        // no-break, an en or an ideographic space, SK-51, #3202), and a break a shell does not
+        // lay a line out with (a vertical tab, a form feed, a next line, a line or paragraph
+        // separator, #3470). Purlis's one rule marks it where the line is shown, so the window
+        // can say why it is not offered Allow.
+        let lays_out = |c: char| matches!(c, ' ' | '\t' | '\n' | '\r');
         let line = text
             .split(lays_out)
             .filter(|word| !word.is_empty())

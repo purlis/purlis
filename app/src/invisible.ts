@@ -147,10 +147,10 @@ function doesItsJob(cps: readonly number[], at: number): boolean {
   return false;
 }
 
-const alphabetic = (cp: number) => /\p{Alphabetic}/u.test(String.fromCodePoint(cp));
-
-/** A letter of the Brahmic scripts' blocks, Devanagari to Malayalam (U+0900-U+0D7F). */
-const brahmicLetter = (cp: number) => cp >= 0x0900 && cp <= 0x0d7f && alphabetic(cp);
+/** A letter of the Brahmic scripts' blocks, Devanagari to Malayalam (U+0900-U+0D7F): the
+ *  core's generated table, not this engine's `\p{Alphabetic}`, whose Unicode version is the
+ *  engine's own (#3470). */
+const brahmicLetter = (cp: number) => inTable(cp, UNICODE_RULE.brahmic_letter);
 
 /** A virama of those scripts: each block's U+0x4D, and Malayalam's two others. */
 const virama = (cp: number) =>
@@ -159,11 +159,5 @@ const virama = (cp: number) =>
 /** An emoji a presentation selector or a ZWJ may follow (Extended_Pictographic). */
 const pictographic = (cp: number) => inTable(cp, UNICODE_RULE.extended_pictographic);
 
-/** A letter of the Arabic script: its blocks and their presentation forms. */
-const arabicLetter = (cp: number) =>
-  alphabetic(cp) &&
-  ((cp >= 0x0600 && cp <= 0x06ff) ||
-    (cp >= 0x0750 && cp <= 0x077f) ||
-    (cp >= 0x08a0 && cp <= 0x08ff) ||
-    (cp >= 0xfb50 && cp <= 0xfdff) ||
-    (cp >= 0xfe70 && cp <= 0xfeff));
+/** A letter of the Arabic script: its blocks and their presentation forms (the core's table). */
+const arabicLetter = (cp: number) => inTable(cp, UNICODE_RULE.arabic_letter);

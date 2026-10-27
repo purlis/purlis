@@ -290,6 +290,30 @@ describe("the asks, grouped by chat", () => {
     ]);
   });
 
+  it("marks a line break the command holds, and says why only Deny is offered (#3470)", () => {
+    core();
+    // A next line, a vertical tab or a line separator is not how a shell lays a line out: the
+    // core keeps it in the command, marks it, and offers no Allow. The row says what it is.
+    for (const mark of ["⟦U+0085⟧", "⟦U+000B⟧", "⟦U+2028⟧"]) {
+      const { unmount } = draw([
+        {
+          ...permission(3, "lb", ["steward 3"], `Run a command: ls${mark}rm -rf x`),
+          options: [deny()],
+        },
+      ]);
+      expect(screen.getByText(mark).tagName).toBe("MARK");
+      expect(
+        screen.getByText(
+          `Allow is not offered. It holds ${mark}, a character that breaks the line here.`,
+        ),
+      ).toBeTruthy();
+      unmount();
+    }
+    expect(hiddenSaid("⟦U+00A0⟧")).toBe(
+      "Allow is not offered. It holds ⟦U+00A0⟧, a character that looks like another one here.",
+    );
+  });
+
   it("says nothing of a ⟦ the command wrote itself, which keeps its Allow (SK-51, #3202)", () => {
     core();
     draw([permission(3, "lb", ["steward 3"], "Run a command: echo ⟦U+27E6⟧U+00A0⟧")]);

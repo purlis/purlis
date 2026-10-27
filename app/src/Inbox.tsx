@@ -672,9 +672,16 @@ function WithWrites({
   );
 }
 
-/** Why a permission holding `mark` offers no Allow (SK-51, #3202). */
+/** The line breaks a command can hold that a shell does not lay a line out with, as their
+ *  marks: a vertical tab, a form feed, a next line, a line and a paragraph separator (#3470).
+ *  Only for what the row says; which characters keep Allow away is the core's rule. */
+const BREAKS = new Set(["\u000B", "\u000C", "\u0085", "\u2028", "\u2029"].map(markOf));
+
+/** Why a permission holding `mark` offers no Allow (SK-51, #3202; #3470). */
 export const hiddenSaid = (mark: string) =>
-  `Allow is not offered. It holds ${mark}, a character that looks like another one here.`;
+  `Allow is not offered. It holds ${mark}, a character that ${
+    BREAKS.has(mark) ? "breaks the line" : "looks like another one"
+  } here.`;
 
 /** What a row says of where it waits. */
 const SOURCE_SAID: Record<Shown["source"], string> = {
