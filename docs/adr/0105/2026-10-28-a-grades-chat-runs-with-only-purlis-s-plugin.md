@@ -12,10 +12,15 @@ with purlis's pins written over them, so purlis's own plugin is the one on
 (`harness_plugin::only_purlis_on`, asked by `skills::grades::ready_to_grade`). Nothing of the
 person's own settings is written: a chat outside the grade has its plugins as the harness's
 settings say. A plugin record purlis cannot read refuses the grade, since a grade that could not
-say which plugins were off would be read as measuring the skill alone.
+say which plugins were off would be read as measuring the skill alone. So is a profile whose own
+command loads a plugin with `--plugin-dir`, which no install record lists, and a harness whose
+plugin adapter cannot turn a plugin off for one chat. What purlis cannot reach is the
+organisation's managed settings, which outrank a session's: a plugin they force on stays on.
 
 **The record says which were off.** Each row of the eval record names them, by the harness's id,
-in `plugins_off` (purlis's pins left out). A row written before this has none.
+in `plugins_off`: every one any of its chats was handed off, purlis's own (its pins and the copy
+`purlis plugin install` writes) left out. A row written before this has none, and so has one whose
+grade started no chat, or was interrupted.
 
 **opencode never grades.** Its plugins are code it loads into its own process, and it has no
 switch that turns one off for a single chat. `can_grade` now answers with the reason where a

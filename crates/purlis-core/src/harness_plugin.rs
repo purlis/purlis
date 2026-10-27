@@ -163,6 +163,12 @@ pub trait Adapter: Sync {
     fn installed(&self, _env: &Env<'_>) -> Result<Vec<Plugin>, String> {
         Ok(Vec::new())
     }
+    /// Whether the harness takes a plugin turned off for one chat alone, so every one
+    /// [`Self::installed`] lists can be: what a grade's chat needs ([`only_purlis_on`], #3468).
+    /// The default is a harness that cannot (opencode).
+    fn turns_a_plugin_off_for_one_chat(&self) -> bool {
+        false
+    }
     /// The folders, relative to a clone, it finds a repo's own skills in, each a folder of skill
     /// folders: what a clone a chat works in can carry for it.
     fn repo_skill_dirs(&self) -> &'static [&'static str] {
@@ -330,6 +336,11 @@ impl Adapter for ClaudeCode {
         Ok(out)
     }
 
+    /// `enabledPlugins` in the chat's `--settings`, which wins for the keys it names.
+    fn turns_a_plugin_off_for_one_chat(&self) -> bool {
+        true
+    }
+
     fn skills_at(&self, env: &Env<'_>) -> Vec<SkillsAt> {
         skills::claude(self, env)
     }
@@ -406,6 +417,11 @@ impl Adapter for Codex {
             .collect();
         out.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(out)
+    }
+
+    /// `-c plugins."<id>".enabled=false`, taken for one session since codex-cli 0.163.0.
+    fn turns_a_plugin_off_for_one_chat(&self) -> bool {
+        true
     }
 
     fn skills_at(&self, env: &Env<'_>) -> Vec<SkillsAt> {
@@ -666,12 +682,20 @@ pub fn pins(adapter: &dyn Adapter) -> Chosen {
 /// **What a grade's chat on `adapter`'s harness is handed of its plugins** (P8, #3468): every
 /// plugin the harness has installed off, by the harness's id, read from its record under `env`
 /// and never written, and purlis's pins over them, so purlis's own plugin is the one on. A
-/// grade measures the skill alone. Refused where the record cannot be read: a grade that could
-/// not say which plugins were off does not run.
+/// grade measures the skill alone. Refused where the harness cannot turn a plugin off for one
+/// chat, or its record cannot be read: a grade that could not say which plugins were off does
+/// not run. A Try it's scratch chat takes the same set, leniently
+/// (`skills::verbs::drafts::alone_on`).
 pub fn only_purlis_on(
     adapter: &dyn Adapter,
     env: &Env<'_>,
 ) -> Result<BTreeMap<String, bool>, String> {
+    if !adapter.turns_a_plugin_off_for_one_chat() {
+        return Err(format!(
+            "{} cannot turn a plugin off for one chat",
+            adapter.title()
+        ));
+    }
     let mut plugins: BTreeMap<String, bool> = adapter
         .installed(env)?
         .into_iter()
@@ -681,15 +705,20 @@ pub fn only_purlis_on(
     Ok(plugins)
 }
 
-/// The ids in `plugins` that are off and not one of `adapter`'s pins: the harness's own plugins
-/// a chat was handed off, in id order, as a grade's record names them (#3468).
-pub fn off_besides_the_pins(
-    adapter: &dyn Adapter,
-    plugins: &BTreeMap<String, bool>,
-) -> Vec<String> {
+/// Whether `id` is purlis's own plugin under any id it has: a pin, or the copy `purlis plugin
+/// install` writes, under its current id ([`crate::plugin::FORMERLY`]).
+fn purlis_s_own(adapter: &dyn Adapter, id: &str) -> bool {
+    adapter.pinned().iter().any(|pin| pin.id == id)
+        || crate::plugin::FORMERLY.iter().any(|(_, new)| *new == id)
+}
+
+/// The ids in `plugins` that are off and none of purlis's own ([`purlis_s_own`]): the
+/// harness's own plugins a chat was handed off, in id order, as a grade's record names them
+/// (#3468).
+pub fn persons_plugins_off(adapter: &dyn Adapter, plugins: &BTreeMap<String, bool>) -> Vec<String> {
     plugins
         .iter()
-        .filter(|(id, on)| !**on && !adapter.pinned().iter().any(|pin| pin.id == id.as_str()))
+        .filter(|(id, on)| !**on && !purlis_s_own(adapter, id))
         .map(|(id, _)| id.clone())
         .collect()
 }

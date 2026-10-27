@@ -603,8 +603,8 @@ struct InChats<'a> {
     tell: &'a dyn Fn(u32, Option<u64>),
     /// The harness the chats ran on, as the first that started said.
     harness: Option<String>,
-    /// The plugins its chats were handed off, as the first that started was (#3468): each
-    /// chat's start reads them, so the first stands for them all.
+    /// The plugins its chats were handed off (#3468): every one any chat that started was handed
+    /// off, as each start reads the record again. `None` until one starts.
     plugins_off: Option<Vec<String>>,
 }
 
@@ -684,9 +684,14 @@ impl InChats<'_> {
                 .harness
                 .map(|harness| harness.name().to_owned());
         }
-        if self.plugins_off.is_none() {
-            self.plugins_off = Some(grades::plugins_off(&started.ready));
+        // Each chat's start reads the record again, so what any of them had off is named.
+        let off = self.plugins_off.get_or_insert_with(Vec::new);
+        for id in grades::plugins_off(&started.ready) {
+            if !off.contains(&id) {
+                off.push(id);
+            }
         }
+        off.sort();
         let session = started.session;
         let id = self.held.chats().chat_at(session).and_then(|at| at.id);
         // What the chat has spent so far, as its harness last said: read each look, so a chat

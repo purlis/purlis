@@ -88,7 +88,7 @@ pub trait HarnessAdapter: Sync {
     /// read tools), read what it spent, the operator's ruling of 2026-10-26, and turn off every
     /// plugin but purlis's own for that chat alone, so a grade measures the skill alone (P8,
     /// #3468). Where it cannot, the reason, as a clause the refusal is worded around
-    /// ([`crate::skills::grades::refused_on`]). No default: each adapter says, and every grade's
+    /// ([`crate::skills::grades::refused_because`]). No default: each adapter says, and every grade's
     /// chat on one that cannot is refused ([`crate::skills::grades::chat_refused`]).
     fn can_grade(&self) -> Result<(), String>;
 

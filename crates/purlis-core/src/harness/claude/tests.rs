@@ -821,3 +821,22 @@ fn a_profile_command_that_starts_in_a_mode_that_asks_nobody_keeps_a_grade_from_r
         );
     }
 }
+
+/// #3468, P8: a plugin the profile's own command loads (`--plugin-dir`) is not one a grade can
+/// turn off for its chat, so a grade never runs on such a profile.
+#[test]
+fn a_profile_command_that_loads_a_plugin_of_its_own_keeps_a_grade_from_running() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    for words in [&["--plugin-dir", "/mine"][..], &["--plugin-dir=/mine"]] {
+        let why = adapter()
+            .grade_refused(&line(words), &env)
+            .expect("refused");
+        assert!(why.contains("--plugin-dir"), "{why}");
+        assert!(why.contains("pick another profile"), "{why}");
+    }
+}

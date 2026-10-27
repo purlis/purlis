@@ -587,7 +587,10 @@ fn a_grade_records_which_plugins_its_chats_had_off() {
 /// #3468, P8: opencode's grade is refused with its own reason, and Codex's names who can.
 #[test]
 fn a_harness_that_cannot_grade_is_refused_with_its_own_reason() {
-    let opencode = refused_on(crate::harness::Harness::Opencode);
+    let reason = |harness: crate::harness::Harness| {
+        refused_because(&harness.adapter().can_grade().expect_err("cannot grade"))
+    };
+    let opencode = reason(crate::harness::Harness::Opencode);
     assert!(opencode.contains("plugins"), "{opencode}");
     assert!(opencode.contains("Claude Code"), "{opencode}");
     assert_eq!(
@@ -595,7 +598,7 @@ fn a_harness_that_cannot_grade_is_refused_with_its_own_reason() {
         0,
         "one sentence: {opencode}"
     );
-    let codex = refused_on(crate::harness::Harness::Codex);
+    let codex = reason(crate::harness::Harness::Codex);
     assert!(codex.contains("Claude Code"), "{codex}");
     assert!(!codex.contains("plugins"), "{codex}");
 }

@@ -335,9 +335,21 @@ impl HarnessAdapter for ClaudeCode {
         if let Some(why) = settings_keep_a_grade_from_running(env) {
             return Some(why);
         }
-        crate::dispatchunattended::bypass_in(command)
+        if let Some(flag) = crate::dispatchunattended::bypass_in(command)
             .or_else(|| mode_that_does_not_ask(command))
-            .map(|flag| prompts_off_by(&flag))
+        {
+            return Some(prompts_off_by(&flag));
+        }
+        // A plugin the command loads itself is not in the install record, so a grade could not
+        // turn it off for its chat (P8, #3468).
+        plugin_dir_in(command).map(|flag| {
+            format!(
+                "This profile's command loads a plugin of its own ({}), which a grade cannot turn \
+                 off for its chat, and a grade runs with only purlis's plugin on: pick another \
+                 profile.",
+                crate::shown::one_line(&flag, 60)
+            )
+        })
     }
 
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
@@ -715,6 +727,19 @@ fn prompts_off_by(flag: &str) -> String {
         crate::shown::one_line(flag, 60)
     )
 }
+
+/// **The `--plugin-dir` in `command`**, as it is written, or `None` (#3468): in either spelling,
+/// `--plugin-dir <dir>` or `--plugin-dir=<dir>`.
+fn plugin_dir_in(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command
+        .iter()
+        .find(|word| is_flag(word) && split(word).0 == PLUGIN_DIR_FLAG)
+        .cloned()
+}
+
+/// The flag Claude Code loads a plugin from a folder by, for one session.
+const PLUGIN_DIR_FLAG: &str = "--plugin-dir";
 
 /// **Claude Code's permission modes a grade's chat may start in** (#3352): each asks before a
 /// tool its rules do not allow, so a grade's "end at the first ask" fires. Every other mode

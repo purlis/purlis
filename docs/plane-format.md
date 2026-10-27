@@ -3781,8 +3781,8 @@ An end row, never a pass or a fail:
   otherwise; ADR 0105 as amended 2026-10-26); `spent`,
   `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not; and
   `plugins_off`, the ids of the harness's own plugins its chats were handed off (every one it had
-  installed, purlis's pins left out; #3468, ADR 0105 as amended 2026-10-28), absent in a row
-  written before.
+  installed, purlis's own left out; #3468, ADR 0105 as amended 2026-10-28), absent in a row
+  written before, one whose grade started no chat, and one recorded as interrupted.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
   16 MiB, each line at most 1 MiB; a line that

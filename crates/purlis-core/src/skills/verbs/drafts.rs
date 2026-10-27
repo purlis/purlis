@@ -918,13 +918,10 @@ pub fn alone_on(
     harness: crate::harness::Harness,
     env: &crate::harness_plugin::Env<'_>,
 ) -> crate::harness_plugin::Chosen {
-    let adapter = harness.adapter().plugins();
-    let plugins = adapter
-        .installed(env)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|plugin| (plugin.id, false))
-        .collect();
+    // The set a grade's chat takes, where the harness can turn a plugin off for one chat; a
+    // try is no measurement, so a record that cannot be read turns nothing off here.
+    let plugins =
+        crate::harness_plugin::only_purlis_on(harness.adapter().plugins(), env).unwrap_or_default();
     let skills_off = crate::skills::on_machine(harness, env)
         .into_iter()
         .filter_map(|found| match found {

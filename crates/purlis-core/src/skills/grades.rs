@@ -120,7 +120,9 @@ pub struct Graded {
     pub report: GradeReport,
     pub spent: Spent,
     /// The harness's own plugins its chats were handed off, by the harness's id (P8, #3468):
-    /// every one it had installed, purlis's own kept on. `None` in a row written before #3468.
+    /// every one it had installed, purlis's own kept on and left out here. `None` in a row
+    /// written before #3468, in one whose grade no chat of started, and in the row held while a
+    /// grade is under way (so an interrupted grade's record has none).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugins_off: Option<Vec<String>>,
 }
@@ -593,7 +595,8 @@ pub fn ready_to_grade(
         .map_err(|why| {
             format!(
                 "{why}, and a grade runs with every plugin but purlis's own off, so no grade \
-                 runs on this profile."
+                 runs on this profile: mend the record with the program's own plugin command, or \
+                 pick another profile."
             )
         })?;
     }
@@ -604,7 +607,7 @@ pub fn ready_to_grade(
 /// what its record says, purlis's pins left out.
 pub fn plugins_off(ready: &crate::start::Ready) -> Vec<String> {
     ready.harness.map_or_else(Vec::new, |harness| {
-        crate::harness_plugin::off_besides_the_pins(
+        crate::harness_plugin::persons_plugins_off(
             harness.adapter().plugins(),
             &ready.plugins.plugins,
         )
@@ -623,8 +626,8 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
         return Err(not_on_this_harness());
     };
     let adapter = harness.adapter();
-    if adapter.can_grade().is_err() {
-        return Err(refused_on(harness));
+    if let Err(why) = adapter.can_grade() {
+        return Err(refused_because(&why));
     }
     let command: Vec<String> = std::iter::once(ready.program.clone())
         .chain(ready.command.iter().cloned())
@@ -666,13 +669,10 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
     }
 }
 
-/// **Why a grade's chat is refused on `harness`, which cannot grade**, in one sentence: its
-/// adapter's reason ([`crate::harness::HarnessAdapter::can_grade`]), then the harnesses that
-/// can, so the core names none.
-pub fn refused_on(harness: crate::harness::Harness) -> String {
-    let Err(why) = harness.adapter().can_grade() else {
-        return not_on_this_harness();
-    };
+/// **Why a grade's chat is refused on a harness that cannot grade**, in one sentence: its
+/// adapter's reason `why` ([`crate::harness::HarnessAdapter::can_grade`]), then the harnesses
+/// that can, so the core names none.
+pub fn refused_because(why: &str) -> String {
     let can = can_grade_on();
     if can.is_empty() {
         return format!("{why}, and no program this purlis runs can grade yet, so no grade runs.");
