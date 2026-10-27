@@ -18,8 +18,17 @@ const script = join(dirname(fileURLToPath(import.meta.url)), "linux-packages.sh"
 
 // A machine to run the script on: a bin/ of stand-ins, an archives/ apt downloads into, a log
 // of every apt-get call, and the files GitHub hands a step for its outputs and its summary.
-function machine({ failUpdates = 0, failInstalls = 0, failOffline = false, manyInstalled = false } = {}) {
+// `osRelease` is the distribution's /etc/os-release, or null for none.
+function machine({
+  failUpdates = 0,
+  failInstalls = 0,
+  failOffline = false,
+  manyInstalled = false,
+  osRelease = "ID=ubuntu\nVERSION_CODENAME=noble\n",
+} = {}) {
   const root = mkdtempSync(join(tmpdir(), "linux-packages-"));
+  const release = join(root, "os-release");
+  if (osRelease !== null) writeFileSync(release, osRelease);
   const bin = join(root, "bin");
   const archives = join(root, "archives");
   mkdirSync(bin);
@@ -35,6 +44,8 @@ function machine({ failUpdates = 0, failInstalls = 0, failOffline = false, manyI
   write(
     "apt-get",
     `echo "apt-get $*" >> "${log}"
+# A sources list named on the command line is kept, so a test can read what it asked for.
+for a in "$@"; do case "$a" in Dir::Etc::SourceList=*) cp "\${a#*=}" "${root}/sources-seen" ;; esac; done
 kind=install
 case "$*" in *update*) kind=update ;; *--no-download*) kind=offline ;; esac
 n=$(cat "${root}/$kind.n" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "${root}/$kind.n"
@@ -80,6 +91,8 @@ exit 0`,
         LINUX_PACKAGES_SUDO: "",
         LINUX_PACKAGES_ARCHIVES: archives,
         LINUX_PACKAGES_PAUSE: "0",
+        LINUX_PACKAGES_OS_RELEASE: release,
+        RUNNER_TEMP: root,
       },
     });
     return {
@@ -93,7 +106,9 @@ exit 0`,
 }
 
 // The step output file is appended to, as GitHub's is, so the last key= line is this run's.
-const keyOf = (r) => [...r.output.matchAll(/^key=(.*)$/gm)].at(-1)?.[1];
+const outputOf = (r, name) =>
+  [...r.output.matchAll(new RegExp(`^${name}=(.*)$`, "gm"))].at(-1)?.[1];
+const keyOf = (r) => outputOf(r, "key");
 
 test("the cache key is the package list, whatever its order, and the runner image", () => {
   const { run } = machine();
@@ -103,7 +118,23 @@ test("the cache key is the package list, whatever its order, and the runner imag
   assert.ok(a, "no key= line in the step's output");
   assert.equal(a, b);
   assert.notEqual(a, c);
-  assert.match(a, /ubuntu24-20261005\.1/);
+  assert.match(a, /^linux-packages-v2-ubuntu24-[\w-]+-[0-9a-f]{16}-20261005\.1$/);
+});
+
+test("another runner image restores an older image's cache of the same list, and of no other", () => {
+  const { run } = machine();
+  const r = run("key", "socat", "bubblewrap");
+  const key = keyOf(r);
+  const prefix = outputOf(r, "prefix");
+  // The key is the prefix and the image, so a cache this list saved on any image shares it.
+  assert.equal(key, `${prefix}20261005.1`);
+  assert.ok(!keyOf(run("key", "bubblewrap")).startsWith(prefix));
+  // And the same cache under the name it was saved by before the image moved to the end.
+  const hash = prefix.match(/([0-9a-f]{16})-$/)[1];
+  assert.match(
+    outputOf(r, "previous"),
+    new RegExp(`^linux-packages-v1-ubuntu24-20261005\\.1-[\\w-]+-${hash}$`),
+  );
 });
 
 test("--tauri names the same list as writing Tauri's packages out", () => {
@@ -161,6 +192,35 @@ test("with the cache restored, the install never asks the mirror", () => {
   assert.match(r.summary, /from the cache/);
 });
 
+test("a cache refilled from the mirror holds the files now installed, and not the ones that did not fit", () => {
+  const { root, run } = machine({ failOffline: true });
+  const cache = join(root, "cache");
+  mkdirSync(cache);
+  writeFileSync(join(cache, "libfoo_0.9-1_amd64.deb"), "");
+  const r = run("install", "--cache", cache, "socat");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.output, /^save=true$/m);
+  assert.deepEqual(readdirSync(cache).sort(), [
+    "libbar_1%3a2.0_amd64.deb",
+    "libfoo_1.0-1_amd64.deb",
+  ]);
+});
+
+test("where the packages came from is a notice on the run, read without its log", () => {
+  const { root, run } = machine();
+  const cache = join(root, "cache");
+  mkdirSync(cache);
+  writeFileSync(join(cache, "libfoo_1.0-1_amd64.deb"), "");
+  assert.match(
+    run("install", "--cache", cache, "socat").stdout,
+    /^::notice title=Linux packages::1 packages installed in \d+ s from the cache, without asking the mirror\.$/m,
+  );
+  assert.match(
+    machine().run("install", "socat").stdout,
+    /^::notice title=Linux packages::1 packages installed in \d+ s from the mirror, on attempt 1 of 2\./m,
+  );
+});
+
 test("a cache the image no longer fits falls back to the mirror", () => {
   const { root, run } = machine({ failOffline: true });
   const cache = join(root, "cache");
@@ -179,6 +239,40 @@ test("a mirror that hangs once is tried once more", () => {
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.apt.filter((l) => l.startsWith("apt-get") && l.includes("update")).length, 2);
   assert.match(r.summary, /attempt 2 of 2/);
+});
+
+test("the second attempt asks another mirror, the distribution's own, for the update and the install", () => {
+  const { root, run } = machine({ failUpdates: 1 });
+  const r = run("install", "socat");
+  assert.equal(r.status, 0, r.stderr);
+  const [first, ...rest] = r.apt.filter((l) => l.startsWith("apt-get"));
+  assert.doesNotMatch(first, /SourceList/);
+  assert.equal(rest.length, 2, rest.join("\n"));
+  // That list alone: the image's own sources, its mirror among them, are left out.
+  const lists = rest.map((l) => l.match(/-o Dir::Etc::SourceList=(\S+)/)?.[1]);
+  assert.ok(lists[0], rest[0]);
+  assert.equal(lists[0], lists[1]);
+  for (const l of rest) assert.match(l, /-o Dir::Etc::SourceParts=\S+/);
+  const seen = readFileSync(join(root, "sources-seen"), "utf8");
+  for (const suite of ["noble", "noble-updates", "noble-security"])
+    assert.match(
+      seen,
+      new RegExp(
+        `^deb \\[signed-by=/usr/share/keyrings/ubuntu-archive-keyring\\.gpg\\] http://\\S+\\.ubuntu\\.com/\\S+ ${suite} main restricted universe multiverse$`,
+        "m",
+      ),
+    );
+  assert.match(r.stdout, /::warning[^\n]*trying once more from http:\/\/\S+\.ubuntu\.com/);
+  assert.match(r.summary, /attempt 2 of 2, from http:\/\/\S+\.ubuntu\.com/);
+});
+
+test("off Ubuntu there is no other mirror to ask, so the second attempt asks the same sources", () => {
+  for (const osRelease of ["ID=fedora\nVERSION_CODENAME=\n", null]) {
+    const { run } = machine({ failUpdates: 1, osRelease });
+    const r = run("install", "socat");
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(r.apt.every((l) => !l.includes("SourceList")));
+  }
 });
 
 test("a mirror that hangs twice fails the step with a message saying so", () => {

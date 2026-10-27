@@ -5,6 +5,13 @@
 # distribution's mirror took 1,285 s for an install that takes under 45 s, and a run on `main`
 # sat for over an hour. With this cache restored, the install does not ask the mirror at all.
 #
+# On a runner image `main` has not saved a cache on yet, it restores the newest cache of the same
+# package list from an older image (`prefix`), and when those files install, saves them under
+# this image's key (#3547). On 2026-10-27 two images ran side by side and `main` had saved for
+# only one, so every run on the other asked the mirror, and a slow mirror dropped pull requests
+# from the merge queue. `previous` is the same cache under its name before the image moved to the
+# end of the key; it can go once `main` has saved a v2 cache on each image in use.
+#
 # `tools/linux-packages.sh` does the work and says what it does; this action keys, restores and
 # saves the cache around it. The calling step gives it `timeout-minutes: 9`, a backstop above
 # the script's own limits.
@@ -43,6 +50,9 @@ runs:
       with:
         path: ~/.cache/linux-packages
         key: ${{ steps.key.outputs.key }}
+        restore-keys: |
+          ${{ steps.key.outputs.previous }}
+          ${{ steps.key.outputs.prefix }}
     - id: install
       shell: bash
       env:
@@ -53,7 +63,11 @@ runs:
         [ "$TAURI" = true ] && args+=(--tauri)
         read -ra names <<< "$PACKAGES"
         "$GITHUB_WORKSPACE/tools/linux-packages.sh" install "${args[@]}" "${names[@]}"
-    - if: steps.install.outputs.save == 'true' && steps.restore.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+    # Saved when this image's key missed and the files are this image's: downloaded now
+    # (`save`), or restored from another key and installed as they are.
+    - if: >-
+        github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true' &&
+        (steps.install.outputs.save == 'true' || steps.restore.outputs.cache-matched-key != '')
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/linux-packages
