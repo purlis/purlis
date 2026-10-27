@@ -3813,6 +3813,33 @@ body {
   cursor: pointer;
 }
 
+/* **What an action answered** (`ActionResultNotice.tsx`, #3344, the sidebar-views prototype's
+   Q3 A): a card Notice at the top of the content (its width is the card's, `notice.css`); what the core said, behind
+   Details, in mono on the code ground inside it. The same notice is listed under Results in the
+   Inbox's Notices, where the list's row is its box. */
+.action-result {
+  margin: var(--space-3) var(--space-5) 0;
+}
+
+/* A kept result's notice is drawn in the Results list's place; its keyboard handler is no box. */
+.action-result-kept {
+  display: contents;
+}
+
+.action-result-details {
+  margin: 0;
+  /* 8 and 10, as the prototype's details box. */
+  padding: var(--space-4) calc(var(--space-4) + var(--space-1));
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background-color: var(--terminal-background);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* **A refusal's way to its setting** (`SaidLink.tsx`, #1201): beside the last action's words, on
    the window's line under the title bar and on the palette's line, a link in the line's own
    colour, as a Notice's ways out are, set off by the space `SaidLink` draws before it. Its focus
