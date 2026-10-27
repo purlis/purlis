@@ -708,3 +708,46 @@ fn a_run_a_clear_begins_is_not_under_an_id_minted_within_the_clocks_margin_of_th
     assert_eq!(started.len(), 3, "{started:?}");
     assert_ne!(started[2], named);
 }
+#[test]
+fn the_log_is_read_from_a_cursor_as_a_link_reads_it_and_says_where_it_ends() {
+    use purlis_host::Record;
+    let dir = tempfile::tempdir().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let log = a_log_in(dir.path());
+    a_run_begun(&log, root.path(), 1, "01K6W0RKRUN0000000000000AA");
+
+    let (device, end) = log.log_end().unwrap();
+    assert_eq!(device, DEVICE);
+    assert!(end >= 1, "{end}");
+    let mut from_the_end = log.read_log(end).unwrap();
+    assert!(
+        from_the_end.read().unwrap().is_empty(),
+        "nothing after the end yet"
+    );
+    let mut from_the_start = log.read_log(0).unwrap();
+
+    a_run_begun(&log, root.path(), 2, "01K6W0RKRUN0000000000000BB");
+
+    let after_the_end: Vec<u64> = from_the_end
+        .read()
+        .unwrap()
+        .into_iter()
+        .map(|pushed| match pushed {
+            session::Pushed::Event(event) => {
+                assert_eq!(event.device_id, DEVICE);
+                event.seq
+            }
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert!(!after_the_end.is_empty());
+    assert!(
+        after_the_end.iter().all(|seq| *seq > end),
+        "{after_the_end:?}"
+    );
+    assert_eq!(
+        from_the_start.read().unwrap().len() as u64,
+        end + after_the_end.len() as u64,
+        "every line from the start"
+    );
+}

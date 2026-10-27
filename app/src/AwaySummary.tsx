@@ -30,6 +30,7 @@ import {
 import {
   awayByRunner,
   countedOnRunners,
+  runnerNote,
   runnerPartsSaid,
   runnerSaid,
   type RunnerSection,
@@ -121,14 +122,15 @@ function RunnerPart({ section, onGo }: { section: RunnerSection; onGo: (where: A
   return (
     <span>
       {" "}
-      On {section.pool}&rsquo;s runner:{" "}
+      On {section.pool}
+      {"'s runner: "}
       {runnerPartsSaid(section).map(({ part, says }, at) => (
         <Fragment key={part}>
           {at > 0 && ", "}
           <AwayPart says={says} items={section[part]} onGo={onGo} />
         </Fragment>
       ))}
-      .
+      {runnerNote(section, runnerPartsSaid(section).length > 0)}.
     </span>
   );
 }
@@ -177,8 +179,11 @@ export function useAwaySummary({
     () => awaySummaryOf({ away, finished: tasks, cameToNeed, states, nameOf, refusedAway }),
     [away, tasks, cameToNeed, states, nameOf, refusedAway],
   );
-  const runnersAway = useRunnersAway(plane, counted);
-  const whole = useMemo(() => awayByRunner(counted, runnersAway), [counted, runnersAway]);
+  const runnersAway = useRunnersAway(plane, away, counted);
+  const whole = useMemo(
+    () => awayByRunner(counted, runnersAway, { away, nameOf }),
+    [counted, runnersAway, away, nameOf],
+  );
   const total = countedAway(whole.here) + countedOnRunners(whole.runners);
   useEffect(() => counts(total), [counts, total]);
   return useMemo(
@@ -190,12 +195,16 @@ export function useAwaySummary({
 const NO_RUNNERS: readonly RunnerAway[] = [];
 
 /**
- * **Where the chats a summary counts run** (#2051): asked of the window's core once there is
- * something to count, and again as what it counts changes. Nothing is asked while the summary
- * counts nothing, so no time away costs a look; one the core cannot answer leaves every chat
- * this machine's, as the summary was before runners.
+ * **Where the chats a summary counts run, and what each runner's log says** (#2051, #3393): asked
+ * of the window's core once the person is back from a time away, and again as what it counts
+ * changes. Nothing is asked while there is no time away; one the core cannot answer leaves every
+ * chat this machine's, as the summary was before runners.
  */
-function useRunnersAway(plane: PlaneId | undefined, summary: AwaySummaryOf): readonly RunnerAway[] {
+function useRunnersAway(
+  plane: PlaneId | undefined,
+  away: readonly Away[],
+  summary: AwaySummaryOf,
+): readonly RunnerAway[] {
   const sessions = useMemo(() => {
     const chats = new Set<number>();
     for (const item of [...summary.done, ...summary.failed, ...summary.waiting]) {
@@ -204,27 +213,26 @@ function useRunnersAway(plane: PlaneId | undefined, summary: AwaySummaryOf): rea
     }
     return [...chats].sort((a, b) => a - b);
   }, [summary]);
-  const key = sessions.join(" ");
+  // A new time away asks again: what a runner's log says came in while the person was gone.
+  const back = away.length === 0 ? "" : String(away[away.length - 1].to);
+  const key = `${back}:${sessions.join(" ")}`;
   const [runners, setRunners] = useState<{ key: string; runners: readonly RunnerAway[] }>();
   useEffect(() => {
-    if (plane === undefined || key === "") return;
+    if (plane === undefined || back === "") return;
     let current = true;
-    commands
-      .runnersAway(
-        plane,
-        key.split(" ").map((one) => Number(one)),
-      )
-      .then(
-        (answered) => {
-          // Only a list is an answer: anything else leaves every chat this machine's.
-          if (current && answered.status === "ok" && Array.isArray(answered.data))
-            setRunners({ key, runners: answered.data });
-        },
-        () => undefined,
-      );
+    commands.runnersAway(plane, sessions).then(
+      (answered) => {
+        // Only a list is an answer: anything else leaves every chat this machine's.
+        if (current && answered.status === "ok" && Array.isArray(answered.data))
+          setRunners({ key, runners: answered.data });
+      },
+      () => undefined,
+    );
     return () => {
       current = false;
     };
+    // `sessions` is what `key` names: asked again only as the key changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plane, key]);
   return runners !== undefined && runners.key === key ? runners.runners : NO_RUNNERS;
 }

@@ -60,6 +60,14 @@ pub struct Event {
     pub body: serde_json::Value,
 }
 
+/// **When an event was written**, in milliseconds since 1970, read from its ULID's time part
+/// (ADR 0066: there is no timestamp field): `None` for an id that is not a ULID.
+pub fn written_at_ms(ulid: &str) -> Option<u64> {
+    ulid::Ulid::from_string(ulid)
+        .ok()
+        .map(|id| id.timestamp_ms())
+}
+
 /// The version of the envelope, and of every kind's body this module writes.
 pub const VERSION: u32 = 1;
 
@@ -554,6 +562,17 @@ impl Log {
     /// lock holds the log.
     pub fn durable(&self) -> std::sync::Arc<Durable> {
         std::sync::Arc::clone(&self.durable)
+    }
+
+    /// **Where the log ends**: its device and the `seq` of its last line, 0 for none (#3393): the
+    /// cursor a reader that holds none of it subscribes from.
+    pub fn ends_at(&self) -> (String, u64) {
+        (self.device.clone(), self.next.saturating_sub(1))
+    }
+
+    /// The device's directory it is written in, where a reader [`subscribe`]s.
+    pub fn written_in(&self) -> &Path {
+        &self.dir
     }
 }
 
@@ -2342,6 +2361,16 @@ impl Recorder {
     /// What makes this recorder's events durable: [`Durable::through`] after each write.
     pub fn durable(&self) -> std::sync::Arc<Durable> {
         self.log.durable()
+    }
+
+    /// Where its log ends ([`Log::ends_at`], #3393).
+    pub fn ends_at(&self) -> (String, u64) {
+        self.log.ends_at()
+    }
+
+    /// The directory its log is written in ([`Log::written_in`], #3393).
+    pub fn log_written_in(&self) -> &Path {
+        self.log.written_in()
     }
 
     /// How long a tool call ran, once both of its ends have been heard, in either order.

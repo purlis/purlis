@@ -487,7 +487,16 @@ async fn keep(
                             tell.send_replace(Standing::Linking);
                         }
                         match carry_over(*link, &client, &tell).await {
-                            Some(upstream) => {
+                            Err(NotCarried::StopRefused) => {
+                                // The runner did not take the stop: no link to it carries the
+                                // window on, the one being renewed neither (#2051).
+                                up = None;
+                                retiring = None;
+                                let why = "the runner did not take this machine's stop";
+                                tell.send_replace(Standing::Down(Down::because(why)));
+                                told.down(&client, why, false);
+                            }
+                            Ok(upstream) => {
                                 // The link it replaces ends once what was sent on it is
                                 // answered: the kept link is told the relay has moved then.
                                 retiring = up.replace(Arc::clone(&upstream));
@@ -499,7 +508,7 @@ async fn keep(
                             }
                             // The new link ended first: a link renewed ahead of its limit carries
                             // on until it ends, and with none, no link is up.
-                            None => match &up {
+                            Err(NotCarried::Ended) => match &up {
                                 Some(old) => {
                                     tell.send_replace(Standing::Up(Arc::clone(old)));
                                 }
@@ -878,23 +887,38 @@ async fn carry_over(
     link: Link,
     client: &Arc<ClientLink>,
     tell: &watch::Sender<Standing>,
-) -> Option<Arc<Upstream>> {
+) -> Result<Arc<Upstream>, NotCarried> {
     let upstream = Upstream::on(link, client);
-    // While this host is stopped, a stop is the first thing the new link carries (#2051).
-    if let Some(first) = &client.stop_first {
-        first.on(&upstream.client).await;
+    // While this host is stopped, a stop is the first thing the new link carries (#2051), and a
+    // link whose runner does not take it carries nothing of the window's.
+    if let Some(first) = &client.stop_first
+        && !first.on(&upstream.client).await
+    {
+        return Err(NotCarried::StopRefused);
     }
     let mut carried = Carried::default();
-    carry(&upstream, client, &mut carried).await.ok()?;
+    carry(&upstream, client, &mut carried)
+        .await
+        .map_err(|LinkEnded| NotCarried::Ended)?;
     tell.send_replace(Standing::Linking);
     let _ = client
         .changing
         .subscribe()
         .wait_for(|changing| *changing == 0)
         .await;
-    let refused = carry(&upstream, client, &mut carried).await.ok()?;
+    let refused = carry(&upstream, client, &mut carried)
+        .await
+        .map_err(|LinkEnded| NotCarried::Ended)?;
     not_held_on(client, refused);
-    Some(upstream)
+    Ok(upstream)
+}
+
+/// Why a new link carried nothing of the client's.
+enum NotCarried {
+    /// It ended first.
+    Ended,
+    /// Its runner did not take the stop it carried first while this host is stopped (#2051).
+    StopRefused,
 }
 
 /// The projects the new link's last pass could not hold are no longer kept for the client: no
@@ -1160,6 +1184,12 @@ async fn push_on(
         if client.scope != Scope::LocalUi && heard_by_the_window_alone(&pushed) {
             continue;
         }
+        // The other host's own event log is the window's alone (1.41, #3393).
+        if client.scope != Scope::LocalUi
+            && matches!(pushed, Pushed::Event(_) | Pushed::Missed { .. })
+        {
+            continue;
+        }
         match pushed {
             Pushed::Event(event) => client.hand_event(event).await,
             Pushed::ViewEnded { view, why } => {
@@ -1222,6 +1252,8 @@ fn the_windows_power(power: Power) -> bool {
             | Power::Code
             | Power::Browser
             | Power::LogIn
+            | Power::EventLog
+            | Power::Rearm
     )
 }
 
@@ -1266,6 +1298,21 @@ impl session::Host for Relay {
             return Err(Refusal {
                 code: session::NOT_ALLOWED.into(),
                 why: "a runner is unpaired as purlis removes it, never through a relaying host"
+                    .into(),
+            });
+        }
+        // While this host is stopped nothing starts on the runner either (#2051): its stop is
+        // carried first, and a start sent meanwhile is refused here, whatever the runner holds.
+        if matches!(command, Command::StartProgram(_) | Command::Start(_))
+            && self
+                .stop_first
+                .as_ref()
+                .is_some_and(|first| (first.stopped)())
+        {
+            return Err(Refusal {
+                code: session::STOPPED.into(),
+                why: "every chat is stopped by the kill switch; nothing starts on a runner until \
+                      it is re-armed in purlis's window"
                     .into(),
             });
         }

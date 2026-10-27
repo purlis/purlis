@@ -143,6 +143,7 @@ mod routedsessions;
 #[cfg(unix)]
 mod runnercode;
 mod runnerlinks;
+mod runnerlog;
 mod runnerwrites;
 mod sandboxchoose;
 mod sandboxing;

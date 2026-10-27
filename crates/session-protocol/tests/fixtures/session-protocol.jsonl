@@ -155,3 +155,7 @@
 {"reply":{"re":153,"ok":{"programs":[{"program":"01J9ZQ8000000000000000000D","kind":"browser","number":0,"process":4343,"sandbox":"off","cols":1280,"rows":800,"driver":"person","note":{"chat":3,"name":"b1","pinned":true},"logins":["0123456789abcdef0123456789abcdef"]}]}}}
 {"pushed":{"heard":{"project":"01J9PRJCT00000000000000000","heard":13,"line":{"report":{"chat":7,"event":"stop"}},"pathless":true}}}
 {"call":{"id":154,"command":"reply_heard","project":"01J9PRJCT00000000000000000","heard":13,"reply":{"line":{"entry":"report","report":{"chat":7,"event":"stop"},"followed":"no"}}}}
+{"call":{"id":155,"command":"log_end"}}
+{"reply":{"re":155,"ok":{"log_end":{"device":"01JB0RUNNER0000000000000000","seq":42}}}}
+{"call":{"id":156,"command":"stop_all"}}
+{"reply":{"re":156,"ok":{"kill_switch":{"stopped":true,"already":true,"runners":["qa/r1"]}}}}

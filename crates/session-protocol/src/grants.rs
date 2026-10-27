@@ -48,6 +48,7 @@
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
 //! | `cancel_engine_download`, and the pushed `engine_download`: a browser engine's first download (1.37) | yes | | | | | |
+//! | `log_end`, and the host's own event log pushed from a cursor for its device (1.41) | yes | | | | | relayed |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -196,6 +197,11 @@
 //!   runner with this device's key and run the runner's connector, which is a human act (ADR
 //!   0078 §2 and §4): no agent's scope reaches a link. A relaying host refuses it, so a window
 //!   whose link is relayed never asks the runner to relay again.
+//! - **A host's own event log is read by the window, on its own host or relayed** (1.41,
+//!   #3393, ADR 0078 §7). It is the audit's source and names what each chat ran, so only the
+//!   window reads it: on the desktop it reads this machine's from its own disk, and a runner's
+//!   through its host's relay, from a cursor of its own for that runner's device. Nothing of a
+//!   runner's log is copied into the desktop's. No other scope is pushed it.
 //! - **`take_code` and `give_code` are the window's, relayed for it** (1.34, #2046). They write
 //!   into a repository of a project the host holds, and read its branches back: what the window
 //!   decides moves between the desktop and a runner, as holding the project is. A relaying host
@@ -286,6 +292,9 @@ pub enum Power {
     /// `take_code` and `give_code` (1.34, #2046): a repository's history moved between the
     /// desktop and a runner as a git bundle.
     Code,
+    /// `log_end`, and the host's own event log pushed from a cursor for its device (1.41,
+    /// #3393): the window's, on its own host or relayed to a runner's.
+    EventLog,
 }
 
 impl Scope {
@@ -320,6 +329,7 @@ impl Scope {
                     | P::Unpair
                     | P::Code
                     | P::Rearm
+                    | P::EventLog
             ),
             S::FleetMcp => matches!(power, P::List | P::Stop | P::Subscribe),
             S::Approval => matches!(power, P::List | P::Answer | P::Stop | P::Subscribe),

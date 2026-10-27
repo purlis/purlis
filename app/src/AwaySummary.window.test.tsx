@@ -818,7 +818,15 @@ describe("while you were away, a section per runner (#2051)", () => {
       {
         pool: "qa",
         chats: [4],
-        branches: [{ workspace: "alpha", repo: "app", branch: "fix-login", ahead: 2 }],
+        branches: [
+          {
+            workspace: "alpha",
+            repo: "app",
+            branches: [{ pool: "qa", branch: "fix-login", ahead: 2 }],
+          },
+        ],
+        log: "read",
+        ended: [],
       },
     ];
     const held = await drawn();
@@ -830,7 +838,7 @@ describe("while you were away, a section per runner (#2051)", () => {
     const notice = await theSummary();
     await waitFor(() =>
       expect(said(notice)).toBe(
-        "While you were away: 1 task done. On qa\u2019s runner: 1 finished, 1 waiting on you, " +
+        "While you were away: 1 task done. On qa's runner: 1 finished, 1 waiting on you, " +
           "1 branch ready to push.",
       ),
     );
@@ -840,5 +848,36 @@ describe("while you were away, a section per runner (#2051)", () => {
     await waitFor(() =>
       expect(held.asked("workspace_focused").at(-1)).toMatchObject({ workspace: "alpha" }),
     );
+  });
+
+  it("says what a runner's own log says ended there, and a runner whose link is down (#3393)", async () => {
+    const at = LEFT + 20 * MINUTE;
+    runners = [
+      {
+        pool: "qa",
+        chats: [],
+        branches: [],
+        log: "read",
+        ended: [
+          { chat: 4, ended: "completed", at: at / 1000, device: "01JB0RUNNER0000000000000000" },
+        ],
+      },
+      { pool: "build", chats: [], branches: [], log: "link_down", ended: [] },
+    ];
+    await drawn();
+    await leave();
+    await comeBack(LEFT + 30 * MINUTE);
+
+    const notice = await theSummary();
+    const time = new Date(at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    await waitFor(() =>
+      expect(said(notice)).toBe(
+        "While you were away. On qa's runner: 1 finished. On build's runner: its link " +
+          "is down, so what happened there is not known yet.",
+      ),
+    );
+    expect(
+      within(notice).getByRole("button", { name: `1 finished: talk finished at ${time}` }),
+    ).toBeTruthy();
   });
 });

@@ -60,6 +60,8 @@ mod killswitch;
 #[cfg(unix)]
 mod lifetime;
 #[cfg(unix)]
+mod ownlog;
+#[cfg(unix)]
 mod reach;
 #[cfg(unix)]
 mod recording;
@@ -106,7 +108,7 @@ pub use purlis_session_protocol as protocol;
 #[cfg(unix)]
 pub use reach::{EveryRunner, REACHED_WITHIN, TRIED_AGAIN_EVERY};
 #[cfg(unix)]
-pub use recording::{Ended, Record, RecordsNothing, Stopped};
+pub use recording::{Ended, ReadsLog, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Keep, Relay};
 #[cfg(unix)]
