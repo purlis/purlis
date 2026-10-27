@@ -1198,12 +1198,8 @@ jobs:
         include:
           - shard: 1
             extras: true
-            app: false
-            expect: ""
           - shard: 2
             extras: false
-            app: false
-            expect: ""
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1282,29 +1278,6 @@ jobs:
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             cargo test --locked -p purlis-core --test claude_codes_own_sandbox_holds_the_settings_purlis_writes -- --nocapture
-      # **The app as it ships**, for a leg with `app: true` (none since 2026-10-28: macOS's is
-      # `app`'s macOS leg). Before the scenario build, which rewrites the same binary and `app/dist`.
-      - name: What this runner is
-        if: matrix.app
-        env:
-          EXPECT: ${{ matrix.expect }}
-        run: |
-          sw_vers
-          got=$(sw_vers -productVersion | cut -d. -f1)
-          uname -m
-          if [ "$got" != "$EXPECT" ]; then
-            echo "::warning::${{ matrix.os }} runs $got, but docs/platforms.md says it covers $EXPECT: update the row and this matrix"
-          fi
-      - name: Every shipped crate and npm package has its licence text
-        if: matrix.app
-        run: node tools/third-party-notices.mjs
-      - name: The app, as it ships, built
-        if: matrix.app
-        run: npx tauri build --debug --no-bundle
-        working-directory: app
-      - name: The window's main bundle carries no CodeMirror
-        if: matrix.app
-        run: node tools/main-chunk-has-no-codemirror.mjs
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
       # what drives it on macOS as well as Linux. It is in no build anyone is given.
       #
@@ -1486,12 +1459,8 @@ jobs:
         include:
           - shard: 1
             extras: false
-            app: false
-            expect: ""
           - shard: 2
             extras: true
-            app: false
-            expect: ""
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
