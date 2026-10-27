@@ -30,11 +30,12 @@
 #   - With `--cache DIR`, after an install from the mirror it copies into DIR the .deb files
 #     of exactly the versions now installed, and writes `save=true` to $GITHUB_OUTPUT.
 #
-# Before a second attempt it moves the first mirror of the image's list (LINUX_PACKAGES_MIRRORS,
+# Before a second attempt it makes the first mirror of the image's list (LINUX_PACKAGES_MIRRORS,
 # default /etc/apt/apt-mirrors.txt, which GitHub's ubuntu images read through apt's `mirror+file:`)
-# to its end: apt leaves a mirror only when it errors, never when it is slow, and on 2026-10-27
-# azure's stalled mid-download in every failed run while 635 of 645 good installs took under a
-# minute. An image without that list is retried as it is.
+# the last: the lines are renumbered `priority:1..N` in their new order, since apt tries the lowest
+# priority first whatever the line order (apt-transport-mirror(1)). apt leaves a mirror only when it
+# errors, never when it is slow, and on 2026-10-27 azure's stalled mid-download in every failed run
+# while 635 of 645 good installs took under a minute. An image without that list is retried as it is.
 #
 # Seams for tools/linux-packages.test.mjs: LINUX_PACKAGES_SUDO (default `sudo`),
 # LINUX_PACKAGES_ARCHIVES (default /var/cache/apt/archives), LINUX_PACKAGES_PAUSE (seconds
@@ -59,9 +60,11 @@ MIRRORS=${LINUX_PACKAGES_MIRRORS:-/etc/apt/apt-mirrors.txt}
 OUTPUT=${GITHUB_OUTPUT:-/dev/null}
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 
-# Every apt-get: retries per download, a stalled connection given up on, and a wait for the
-# dpkg lock an image's own unattended upgrade may hold, rather than failing at once.
-APT_OPTIONS="-y -q -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60"
+# Every apt-get: one retry per download, a stalled connection given up on, and a wait for the
+# dpkg lock an image's own unattended upgrade may hold, rather than failing at once. One retry, not
+# three: apt spends each on the same mirror before it goes on to the next one in the image's list,
+# and three of the 30 s timeout were the whole of INSTALL_SECONDS (GitHub's image lowers it too).
+APT_OPTIONS="-y -q -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60"
 
 usage() {
   echo "usage: $0 key [--tauri] PACKAGE... | $0 install [--cache DIR] [--tauri] PACKAGE..." >&2
@@ -182,7 +185,11 @@ while :; do
     # Read whole before it is written: `tee` empties the file as it opens it.
     first=$(grep -m 1 . "$MIRRORS")
     rest=$(grep . "$MIRRORS" | tail -n +2)
-    if printf '%s\n%s\n' "$rest" "$first" | $SUDO tee "$MIRRORS" > /dev/null; then
+    # Each line's own `priority:N` dropped, and the new order's number put in its place.
+    rotated=$(printf '%s\n%s\n' "$rest" "$first" \
+      | sed -E 's/[[:space:]]*priority:[0-9]+//' \
+      | awk '{ printf "%s\tpriority:%d\n", $0, NR }')
+    if printf '%s\n' "$rotated" | $SUDO tee "$MIRRORS" > /dev/null; then
       moved=", asking the next mirror first (${first%%[[:space:]]*} moved last)"
     fi
   fi

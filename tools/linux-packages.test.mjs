@@ -236,11 +236,18 @@ test("the attempt after a stalled one asks the next mirror first", () => {
   );
   const r = run("install", "socat");
   assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(readFileSync(mirrors, "utf8").trim().split("\n").map((l) => l.split("\t")[0]), [
-    "https://archive.ubuntu.com/ubuntu/",
-    "https://security.ubuntu.com/ubuntu/",
-    "http://azure.archive.ubuntu.com/ubuntu/",
-  ]);
+  // apt tries the lowest `priority:` first (apt-transport-mirror(1)), whatever the line order.
+  const priorities = Object.fromEntries(
+    readFileSync(mirrors, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => [l.split("\t")[0], Number(/priority:(\d+)/.exec(l)?.[1])]),
+  );
+  assert.deepEqual(priorities, {
+    "https://archive.ubuntu.com/ubuntu/": 1,
+    "https://security.ubuntu.com/ubuntu/": 2,
+    "http://azure.archive.ubuntu.com/ubuntu/": 3,
+  });
   assert.match(r.stdout + r.stderr, /::warning[^\n]*next mirror first/);
   assert.equal(r.apt.filter((l) => l.startsWith("apt-get") && l.includes("update")).length, 2);
 });
@@ -250,6 +257,16 @@ test("an image with no mirror list is retried as it is", () => {
   const r = run("install", "socat");
   assert.equal(r.status, 0, r.stderr);
   assert.ok(!existsSync(join(root, "apt-mirrors.txt")));
+});
+
+test("a failed download is retried once on its mirror, so apt can go on to the next", () => {
+  // apt spends every retry on the same mirror before it tries the next: three retries of a 30 s
+  // timeout were the 120 s an install is given, so it never reached the next mirror.
+  const { run } = machine();
+  const r = run("install", "socat");
+  assert.equal(r.status, 0, r.stderr);
+  const install = r.apt.find((l) => l.startsWith("apt-get") && l.includes(" install"));
+  assert.match(install, /-o Acquire::Retries=1 /);
 });
 
 test("a mirror that hangs once is tried once more", () => {
