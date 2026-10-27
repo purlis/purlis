@@ -16,7 +16,7 @@ const PRIMITIVES = ["react-aria-components", "react-aria", "react-stately"];
  * role. A family's own still-hand-drawn buttons are in its folder (`rawButtons`, in
  * `src/ui/<family>/lint.js`, #3387); `eslint.ui-rules.js` gathers them with these.
  */
-const NO_FAMILYS = {
+const UNFAMILIED = {
   roles: ["link"],
   classes: ["ui-settings-nav-item", "ui-settings-raw-file"],
 };
@@ -58,7 +58,7 @@ export default tseslint.config(
       ...Object.fromEntries(Object.keys(purlisUi.rules).map((name) => [`purlis/${name}`, "error"])),
       // A raw `<button>` left is a control of a family that has not moved yet (D-2904-9), said
       // by its role or its class: each family's own (`rawButtons`), and the ones no family has.
-      "purlis/button-family": ["error", { otherFamilies: rawButtons(NO_FAMILYS) }],
+      "purlis/button-family": ["error", { otherFamilies: rawButtons(UNFAMILIED) }],
     },
   },
   // **What each family's rule is still off in** (a family's `off`, in its `lint.js`), each

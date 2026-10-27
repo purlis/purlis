@@ -24,7 +24,7 @@ const buttonFamily = {
     messages: {
       oldClass:
         "`{{word}}` is the button family's old class: draw it as `<Button>`, `<IconButton>`, `<ToggleButton>` or `<ButtonRow>` from `ui/button/Button` with a `variant` and a `size` (docs/ui-primitives.md).",
-      raw: "A raw `<button>` is the button family's `<Button>`, `<IconButton>` or `<ToggleButton>` (`ui/button/Button`), unless it is another family's control: say which by its role or its family's class (`otherFamilies` in eslint.config.js).",
+      raw: "A raw `<button>` is the button family's `<Button>`, `<IconButton>` or `<ToggleButton>` (`ui/button/Button`), unless it is another family's control: say which by its role or its family's class (`rawButtons` in that family's `src/ui/<family>/lint.js`).",
     },
     schema: [
       {

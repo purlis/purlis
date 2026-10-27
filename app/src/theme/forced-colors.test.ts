@@ -266,6 +266,19 @@ describe("forced colours", () => {
       for (const property of it.keys())
         expect(property, property).not.toMatch(/width|outline|padding|margin|^border$/);
     }
+    // Every box the parts manifest says can be refused is reached by some family's refused
+    // selector: the manifest's families with the `invalid` state, read from the table the engine
+    // writes from it (`crates/purlis-core/docs/themes.md`, which a core test keeps in step).
+    const table = readFileSync(
+      join(process.cwd(), "..", "crates", "purlis-core", "docs", "themes.md"),
+      "utf8",
+    );
+    const refusable = [...table.matchAll(/^\| `([\w-]+)`[^\n]*\|([^|\n]*)\|\s*$/gm)]
+      .filter(([, , states]) => /`invalid`/.test(states))
+      .map(([, family]) => family);
+    expect(refusable.length).toBeGreaterThan(0);
+    for (const family of refusable)
+      expect(refused.join(" "), family).toContain(`[data-scope="${family}"]`);
   });
 
   it("outline what is opened over the window, taking no room", () => {
