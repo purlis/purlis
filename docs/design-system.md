@@ -134,7 +134,8 @@ stay as they are: they are brand, not theme.
 **Forced colours win** (#2328). On a platform that forces its contrast colours (Windows'
 contrast themes), the browser draws every colour in the system's palette, and what the window
 says with a background or a shadow alone would be lost. `app/src/theme/forced-colors.css`, the
-last layer of the window's stylesheet, says it again in system colours and with a shape: a solid
+last layer of the window's stylesheet (each family's own parts in its
+`app/src/ui/<family>/forced-colors.css`, imported just before it), says it again in system colours and with a shape: a solid
 `Highlight` ring wherever Tab lands; what is selected or current in `SelectedItem` and
 `SelectedItemText`, underlined (an icon tab keeps its edge); what cannot be used in `GrayText`;
 each state mark's shape in `CanvasText`; a count of chats that need you in `Mark` and
