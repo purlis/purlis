@@ -13,7 +13,13 @@ import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import type { ProfileRow, StartOptions } from "./bindings";
 import { StartChat } from "./StartChat";
-import { expectFocusInSight, pictureNow } from "./stories.testkit";
+import {
+  SHORT_WINDOW,
+  expectAnchored,
+  expectFocusInSight,
+  inAWindow,
+  pictureNow,
+} from "./stories.testkit";
 
 const PERSONAS = [
   "steward",
@@ -147,6 +153,8 @@ export const PrototypeB: Story = {
     // The keyboard starts on Cancel: a Return pressed by habit starts nothing.
     await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
     await pictureNow();
+    // At its fixed top, its bottom clear of the window's (R2).
+    expectAnchored(dialog);
     const box = boxOf(dialog);
 
     const filter = page.getByRole("searchbox", { name: "Filter personas" });
@@ -190,6 +198,29 @@ export const PrototypeB: Story = {
         "Started keycloak-master as keycloak-master on opencode",
       ),
     );
+  },
+};
+
+/**
+ * **In a short window** (#3389, #3510): at about 500 px the dialog is shorter than its 620 px,
+ * keeps its fixed top and the 24 px under it, and the footer, with Start, is inside the window,
+ * where the operator could not reach it before. No picture: the window is resized for this
+ * story alone.
+ */
+export const InAShortWindow: Story = {
+  parameters: { screenshot: false },
+  play: async () => {
+    const page = within(document.body);
+    const dialog = await page.findByRole("dialog", { name: "Start a chat" });
+    await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
+    if (await inAWindow(SHORT_WINDOW.width, SHORT_WINDOW.height))
+      await expect(dialog.getBoundingClientRect().height).toBeLessThan(620);
+    expectAnchored(dialog);
+    for (const name of ["Cancel", "Start chat"]) {
+      const answer = page.getByRole("button", { name }).getBoundingClientRect();
+      await expect(answer.top).toBeGreaterThanOrEqual(0);
+      await expect(answer.bottom).toBeLessThanOrEqual(window.innerHeight);
+    }
   },
 };
 

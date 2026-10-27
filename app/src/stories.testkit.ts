@@ -24,6 +24,64 @@ export async function pictureNow(): Promise<void> {
   if (typeof take === "function") await (take as () => Promise<void>)();
 }
 
+/** The global the story tests put their window-sizer on (`.storybook/cell.setup.ts`). */
+export const WINDOW_GLOBAL = "__PURLIS_STORY_WINDOW__";
+
+/** The short window the operator's complaint was of (#3389): about 500 px tall. */
+export const SHORT_WINDOW = { width: 800, height: 500 } as const;
+
+/**
+ * **The story's window is `height` px tall** (and `width` px wide), for the rest of its `play`:
+ * a story that checks where something sits against a short window, such as a dialog's fixed
+ * top and the 24 px it keeps clear of the bottom (#3510). The window is put back to its size
+ * after the story. Says whether it was resized: only a story test can, never Storybook's own
+ * page, where the window is the person's.
+ */
+export async function inAWindow(width: number, height: number): Promise<boolean> {
+  const size = (globalThis as Record<string, unknown>)[WINDOW_GLOBAL];
+  if (typeof size !== "function") return false;
+  await (size as (width: number, height: number) => Promise<void>)(width, height);
+  await waitFor(() => {
+    if (window.innerHeight !== height) throw new Error("not resized yet");
+  });
+  await nextFrame();
+  return true;
+}
+
+/** The share of the window's height a dialog's top sits below the window's top (R2, 6vh). */
+const DIALOG_TOP_SHARE = 0.06;
+
+/** How tall `length` (a token, `var(--space-7)`) is drawn in this cell, in px. */
+function lengthOf(length: string): number {
+  const probe = document.createElement("div");
+  probe.style.position = "absolute";
+  probe.style.blockSize = length;
+  document.body.append(probe);
+  const px = probe.getBoundingClientRect().height;
+  probe.remove();
+  return px;
+}
+
+/**
+ * **The dialog sits where R2 anchors it** (#3389, #3510): its top at 6vh of the window, never
+ * closer than `--space-7` (24 px at the default text size), and its bottom that far or more above
+ * the window's bottom, so neither its header nor its footer leaves the window, however short.
+ */
+export function expectAnchored(dialog: Element): void {
+  const clear = lengthOf("var(--space-7)");
+  const box = dialog.getBoundingClientRect();
+  const top = Math.max(clear, DIALOG_TOP_SHARE * window.innerHeight);
+  const floor = window.innerHeight - clear;
+  if (Math.abs(box.top - top) > 1)
+    throw new Error(
+      `the dialog's top is at ${box.top} px, not at ${top} px of a ${window.innerHeight} px window`,
+    );
+  if (box.bottom > floor + 0.5)
+    throw new Error(
+      `the dialog's bottom is at ${box.bottom} px, past ${floor} px of a ${window.innerHeight} px window`,
+    );
+}
+
 /** How long the keyboard may take to land: an engine may move it a frame or more late. */
 const LANDS_WITHIN_MS = 3_000;
 

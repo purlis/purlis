@@ -90,8 +90,9 @@ export function startAnswer({
     "aria-keyshortcuts": chord ? submitKeyShortcut() : undefined,
     // The key, said inside the button (R33): its room is kept, undrawn, while the key does not
     // press it, so turning to an approval or a start without the sandbox widens nothing (R163).
+    // Nor while the chat starts: the chord does nothing then, so "Starting…" names no key.
     shortcut: submitKeySaid(),
-    shortcutOff: !chord,
+    shortcutOff: !chord || starting,
     onPress,
   };
 }

@@ -92,7 +92,12 @@ describe("the theme specimen", () => {
     ).toBeInTheDocument();
     expect(within(settings).getByRole("group", { name: "Panels" })).toBeInTheDocument();
     expect(within(settings).getByRole("group", { name: "Show only" })).toBeInTheDocument();
-    expect(within(settings).getByRole("button", { name: "Save" })).toBeInTheDocument();
+    // The primary with its key, so a theme's `button.shortcut` is drawn too (#3510).
+    expect(
+      within(settings)
+        .getByRole("button", { name: "Save" })
+        .querySelector('[data-scope="button"][data-part="shortcut"]'),
+    ).toBeInTheDocument();
   });
 
   it("waits on each terminal's lines before it may say it is drawn", async () => {

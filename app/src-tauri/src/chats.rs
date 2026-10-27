@@ -5121,6 +5121,13 @@ impl Chats {
     /// plane has dealt. Only a guess for what to show — the Name field's placeholder,
     /// `steward 10` — since a chat started meanwhile takes it first; a start is dealt its
     /// number by the sessions, never by this.
+    ///
+    /// **Under the session host it can be low** (#3510): the host's counter is the one that
+    /// deals, and this window's mirror of it is restored from the record. A window that ended
+    /// without writing its record, after the host had dealt numbers to chats now gone, leaves
+    /// the mirror behind the host, so the placeholder names a number the start will pass. It is
+    /// never high, and the name the chat takes is the host's. Asking the host would take a
+    /// protocol command that peeks without dealing, for a placeholder.
     pub fn next_number(&self) -> u32 {
         self.sessions.dealt().saturating_add(1)
     }
