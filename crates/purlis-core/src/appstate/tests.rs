@@ -130,10 +130,7 @@ fn the_move_carries_drafts_and_local_grades_and_discards_the_rest() {
     for owner in ["workspaces/ops", "personas/steward"] {
         assert!(held(&root.join(owner)).is_some(), "{owner} is not held");
     }
-    assert_eq!(
-        moved.done.iter().map(|(name, _)| name.as_str()).count(),
-        STORES.len()
-    );
+    assert_eq!(moved.done.len(), STORES.len());
 }
 
 #[test]

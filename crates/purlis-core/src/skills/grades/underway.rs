@@ -235,10 +235,10 @@ fn put(
 
 /// **The grade `grade` ended**, recorded or not: it is no longer held as under way.
 pub fn ended(root: &Path, grade: &str) {
-    if plain(grade) {
-        if let Some(dir) = dir(root) {
-            let _ = std::fs::remove_file(dir.join(format!("{grade}.json")));
-        }
+    if plain(grade)
+        && let Some(dir) = dir(root)
+    {
+        let _ = std::fs::remove_file(dir.join(format!("{grade}.json")));
     }
 }
 
