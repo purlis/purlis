@@ -714,6 +714,8 @@ const CONTROL_GROUNDS: &[&str] = &[
     "control.aimed",
     "danger.surface",
     "danger.wash",
+    // An attention Notice's ground, under its ways out (#3678).
+    "attention.surface",
     "layer.project",
     "layer.workspace",
     "layer.chat",

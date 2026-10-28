@@ -750,7 +750,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
 | Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value` | `raised`, `ask` |
-| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble` |
+| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble`, `attention` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
 | Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's) | `root` | none |
@@ -784,6 +784,15 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   surface**: its fill is one of the grounds an answer that grants is measured on, and its edge's
   width is no theme's. The Inbox's list (`data-scope="notice-list"`) and a pane's row
   (`data-scope="notice-row"`) are the family's layout.
+- **Three tones** (#3678): `news` (nothing is wrong, the person is being told), `attention`
+  (nothing is wrong, but the person must decide: a change a chat made to review, a grade plan
+  that changed under them, a draft out of date) and `trouble` (something failed, and only then).
+  Attention stands on its own ground in every theme and appearance (`attention.surface`, its words
+  and mark `attention.text`), leads with a triangle (a card's mark, a line's first word, the band's
+  mark in a chat's pane) and says "Needs a decision:" to a reader, so it is never told by colour
+  alone; in forced colours it keeps a dotted outline, apart from trouble's dashes. Like every
+  Notice it is a polite `status`, never an `alert`. The Inbox lists trouble, then attention, then
+  news.
 - **A badge is a word or two; a count is a number.** Both are pills in 11px words, a badge on the
   count's ground or a wash in the colour of what it says, a count at the strong weight. Your hosts
   say each host's status in a badge (R66): "Waiting for you" on the amber wash until it is
@@ -801,7 +810,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   consent variants, keep theirs, and a refused field keeps its danger edge, drawn as an outline over the box's own edge that no part reaches (the focus ring takes its place while the field holds the caret).
 - **Stories hold them** (`Card.stories.tsx`, `Notice.stories.tsx`, `Badge.stories.tsx`,
   `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
-  Inbox's list, a Notice alone, every badge and count, the hosts' statuses, a badge's hint, and a
+  Inbox's list, a Notice alone, what needs a decision in all three places, every badge and count, the hosts' statuses, a badge's hint, and a
   line across a card and down a strip, each walked by the keyboard and checked by axe.
 ## The meter family
 

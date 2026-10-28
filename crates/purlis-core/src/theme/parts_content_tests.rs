@@ -88,7 +88,7 @@ fn the_content_families_are_in_the_manifest_since_next() {
         of("notice"),
         (
             named(&["root", "message", "whose"]),
-            vec![("news".into(), true), ("trouble".into(), true)]
+            vec![("news".into(), true), ("trouble".into(), true), ("attention".into(), true)]
         )
     );
     assert_eq!(

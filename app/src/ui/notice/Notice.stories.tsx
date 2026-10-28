@@ -11,7 +11,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { Notice, NoticeList, NoticePaneRow } from "../../Notice";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 
 /** A pane: its row of Notices above the terminal's place. */
 function APane() {
@@ -136,5 +136,97 @@ export const Alone: Story = {
     expectFocusInSight();
     await userEvent.tab();
     await expect(canvas.getByRole("button", { name: "Dismiss" })).toHaveFocus();
+  },
+};
+
+/**
+ * **What needs a decision** (#3678): nothing went wrong, but the person must choose. A card alone
+ * on a page (a skill a chat changed), a line in the Inbox's list between trouble and news, and a
+ * line in a pane. Each is a polite status, never an alert, says "Needs a decision" to a reader and
+ * shows its triangle, so it is not told by colour alone. The picture is the three of them.
+ */
+export const NeedsADecision: Story = {
+  render: () => (
+    <div
+      style={{
+        inlineSize: "28rem",
+        display: "grid",
+        gap: "var(--space-5)",
+        padding: "var(--space-5)",
+        background: "var(--surface-base)",
+      }}
+    >
+      <Notice
+        cause="skill-changed:grilling"
+        tone="attention"
+        title="A chat changed grilling"
+        fixes={[{ label: "Review the change", onPress: () => undefined, primary: true }]}
+        onDismiss={() => undefined}
+      >
+        Chats keep the version you accepted until you review this one.
+      </Notice>
+      <NoticeList>
+        <Notice cause="pin-dormant:ide" link={{ label: "Open the pins", onPress: () => undefined }}>
+          The pin on ide has not been used in a month.
+        </Notice>
+        <Notice
+          cause="draft-stale:review-pr"
+          tone="attention"
+          fixes={[{ label: "Ask the chat to redo it", onPress: () => undefined }]}
+        >
+          The draft of review-pr is out of date: the project&apos;s copy changed since.
+        </Notice>
+        <Notice
+          cause="window-trouble"
+          tone="trouble"
+          fixes={[{ label: "Try again", onPress: () => undefined }]}
+        >
+          The sample project could not be saved: its remote refused the push.
+        </Notice>
+      </NoticeList>
+      <div style={{ display: "flex", flexDirection: "column", blockSize: "8rem" }}>
+        <NoticePaneRow>
+          <Notice
+            cause="grade-plan-changed:7"
+            at="pane"
+            tone="attention"
+            label="Grade plan changed"
+            fixes={[{ label: "Look at the plan", onPress: () => undefined }]}
+          >
+            The grade plan changed while this chat ran.
+          </Notice>
+        </NoticePaneRow>
+      </div>
+    </div>
+  ),
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    // Every one is a polite status, and none an alert.
+    await waitFor(() => expect(canvas.getAllByRole("status").length).toBeGreaterThanOrEqual(5));
+    await expect(canvas.queryByRole("alert")).toBeNull();
+    const boxes = [
+      ...canvasElement.querySelectorAll<HTMLElement>(
+        '[data-scope="notice"][data-part="root"][data-variant="attention"]',
+      ),
+    ];
+    await expect(boxes).toHaveLength(3);
+    for (const box of boxes) {
+      await expect(box).toHaveTextContent(/Needs a decision:/);
+    }
+    // Its mark on the card and on the Inbox's line; the pane's band draws its own.
+    await expect(boxes[0].querySelector('[data-part="mark"] svg')).not.toBeNull();
+    await expect(boxes[1].querySelector('[data-part="mark"] svg')).not.toBeNull();
+    // In the Inbox's list it stands after trouble and before news.
+    const order = [
+      ...canvasElement.querySelectorAll<HTMLElement>(
+        '[data-scope="notice-list"] [data-scope="notice"][data-part="root"]',
+      ),
+    ].map((one) => one.getAttribute("data-variant"));
+    await expect(order).toEqual(["trouble", "attention", "news"]);
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Review the change" }),
+      "Needs a decision: Tab lands on the card's fix",
+    );
+    expectFocusInSight();
   },
 };

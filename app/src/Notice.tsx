@@ -29,6 +29,7 @@ import {
   NoticeUnder,
   NoticeWhose,
   type NoticeListAt,
+  type NoticeTone,
 } from "./ui/notice/Notice";
 
 /**
@@ -51,9 +52,13 @@ import {
  * It is what a dismissal is keyed by once Dismiss lasts until the cause changes (NO-2), and it
  * is on the element as `data-cause` so a test can name the Notice it means.
  *
- * `tone` is `news` (nothing is wrong, the operator is being told) or `trouble` (something went
- * wrong), and it is only the look: a Notice is always a polite `status`, because it stands
- * until it is dealt with and an `alert` would interrupt a screen reader on every relaunch.
+ * `tone` is `news` (nothing is wrong, the operator is being told), `attention` (nothing is wrong,
+ * but the person must decide: a change to review, a plan that changed under them, a draft out of
+ * date, #3678) or `trouble` (something went wrong, and only then), and it is only the look: a
+ * Notice is always a polite `status`, because it stands until it is dealt with and an `alert`
+ * would interrupt a screen reader on every relaunch. Attention is drawn on its own ground with
+ * its mark, a triangle, and says "Needs a decision:" to a reader, so it is never told by colour
+ * alone.
  * `at` is where it stands: in the Inbox's Notices (`inbox`, the default, `NoticeList`, #1695), or
  * in its pane's row of Notices above the terminal, never over it (`pane`, `NoticePaneRow`,
  * #1647).
@@ -125,7 +130,7 @@ type WayOut =
 type Said = {
   /** What the line is about, stably: what a dismissal will be keyed by. */
   cause: string;
-  tone?: "news" | "trouble";
+  tone?: NoticeTone;
   /** The sentence (and anything else the line says before its ways out). */
   children: ReactNode;
   /** What a way out opened (a fix's form, #1250): drawn right after the line, outside its live
@@ -193,6 +198,12 @@ export const NoticeOf = createContext<{
   task?: boolean;
 } | null>(null);
 
+/** What an attention Notice says first to a reader, as its mark says it to the eye (#3678). */
+const NEEDS_A_DECISION = "Needs a decision: ";
+
+/** **The order of the tones in the Inbox's list**: trouble, then what needs a decision, then news. */
+const TONE_ORDER: Record<NoticeTone, number> = { trouble: 0, attention: 1, news: 2 };
+
 export function Notice(props: NoticeProps) {
   const {
     cause,
@@ -238,6 +249,7 @@ export function Notice(props: NoticeProps) {
         <NoticeMessage live={quiet !== true} cause={cause}>
           {/* A refusal is told by more than its mark and its colour (WCAG 1.3.1, #3344). */}
           {tone === "trouble" && <span className="sr-only">Not done: </span>}
+          {tone === "attention" && <span className="sr-only">{NEEDS_A_DECISION}</span>}
           <NoticeTitle>{title}</NoticeTitle>
           {children}
         </NoticeMessage>
@@ -314,6 +326,10 @@ export function Notice(props: NoticeProps) {
           above a sentence that takes the next one whole (#1481). */}
       {persona != null && at !== "pane" && <PersonaMark persona={persona} />}
       <NoticeMessage>
+        {/* Attention is told by its mark and its words, not its colour alone (#3678). In a
+            chat's pane the band draws the mark itself (`paneFrame.css`). */}
+        {tone === "attention" && at !== "pane" && <NoticeMark tone="attention" />}
+        {tone === "attention" && <span className="sr-only">{NEEDS_A_DECISION}</span>}
         {persona != null && at === "pane" && <PersonaMark persona={persona} />}
         {of !== null && <NoticeWhose>{of.whose}: </NoticeWhose>}
         {children}
@@ -395,7 +411,8 @@ export function Notice(props: NoticeProps) {
 }
 
 /**
- * **How important a Notice is, by the family of its cause** (V91i): trouble before news, then
+ * **How important a Notice is, by the family of its cause** (V91i): trouble, then attention, then
+ * news ({@link TONE_ORDER}), then
  * this order, then the one drawn first. A family is the cause up to its first `:`; one not in
  * the list comes after every one that is.
  *
@@ -477,7 +494,7 @@ export const ANSWERS: ReadonlySet<string> = new Set([
   "away-summary",
 ]);
 
-type Stacked = { cause: string; tone: "news" | "trouble"; host: HTMLElement };
+type Stacked = { cause: string; tone: NoticeTone; host: HTMLElement };
 type Entry = Stacked & { seq: number };
 
 /** What the Inbox's list is to the Notices drawn inside it. */
@@ -487,7 +504,8 @@ const Listed = createContext<{
 
 /**
  * **A project's Notices, listed in its Inbox** (#1695, V91i): every `at="inbox"` Notice drawn
- * anywhere inside it, the most important first ({@link IMPORTANCE}), trouble before news. They
+ * anywhere inside it, the most important first ({@link IMPORTANCE}), trouble before what needs
+ * a decision before news. They
  * stood under the strip, two at a time with the rest behind "+N more", until the band folded
  * into the Inbox (spec #1688, I-4): there every one is listed, with its ways out.
  *
@@ -543,9 +561,7 @@ export function NoticeList({
     () =>
       [...entries.values()].sort(
         (a, b) =>
-          Number(b.tone === "trouble") - Number(a.tone === "trouble") ||
-          rank(a.cause) - rank(b.cause) ||
-          a.seq - b.seq,
+          TONE_ORDER[a.tone] - TONE_ORDER[b.tone] || rank(a.cause) - rank(b.cause) || a.seq - b.seq,
       ),
     [entries],
   );

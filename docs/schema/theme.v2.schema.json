@@ -388,7 +388,7 @@
               "layer.divider"
             ]
           },
-          "maxItems": 130
+          "maxItems": 132
         },
         "hues": {
           "description": "A workspace colour's hue in this theme: the hue of this colour. A workspace's own #rrggbb is always its own hue.",
@@ -5459,6 +5459,24 @@
         "notice.root.trouble.gap": {
           "$ref": "#/$defs/part-gap"
         },
+        "notice.root.attention.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "notice.root.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.root.attention.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "notice.root.attention.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "notice.root.attention.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "notice.root.attention.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
         "notice.message.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -5477,6 +5495,12 @@
         "notice.message.trouble.font-size": {
           "$ref": "#/$defs/part-font-size"
         },
+        "notice.message.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.message.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "notice.whose.text": {
           "$ref": "#/$defs/part-text"
         },
@@ -5493,6 +5517,12 @@
           "$ref": "#/$defs/part-text"
         },
         "notice.whose.trouble.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "notice.whose.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "notice.whose.attention.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
         "option-card.root.fill": {
@@ -9991,6 +10021,12 @@
         "danger.wash": {
           "$ref": "#/$defs/colour"
         },
+        "attention.surface": {
+          "$ref": "#/$defs/colour"
+        },
+        "attention.text": {
+          "$ref": "#/$defs/colour"
+        },
         "wash.warning": {
           "$ref": "#/$defs/colour"
         },
@@ -11059,6 +11095,8 @@
         "danger.surface",
         "danger.text",
         "danger.wash",
+        "attention.surface",
+        "attention.text",
         "wash.warning",
         "diff.deleted",
         "diff.inserted",
@@ -11195,6 +11233,8 @@
         "danger.surface",
         "danger.text",
         "danger.wash",
+        "attention.surface",
+        "attention.text",
         "wash.warning",
         "diff.deleted",
         "diff.inserted",
@@ -11330,6 +11370,8 @@
         "danger.surface",
         "danger.text",
         "danger.wash",
+        "attention.surface",
+        "attention.text",
         "wash.warning",
         "diff.deleted",
         "diff.inserted",

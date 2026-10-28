@@ -56,6 +56,8 @@ pub const TOKENS: &[&str] = &[
     "danger.surface",
     "danger.text",
     "danger.wash",
+    "attention.surface",
+    "attention.text",
     "wash.warning",
     "diff.deleted",
     "diff.inserted",
@@ -202,7 +204,7 @@ pub const TINTED: &[&str] = &[
 /// keeps each colour's luminance, so a pair these draw keeps its contrast at every hue.
 ///
 /// The rest are never a tint's: the consent and state colours (`needs-you.*`, `danger.*`,
-/// `state.*`) are purlis's to hold (ADR 0097 §6); the diff washes, the icon colours, the syntax
+/// `attention.*`, `state.*`) are purlis's to hold (ADR 0097 §6); the diff washes, the icon colours, the syntax
 /// roles and the other markdown and chart colours carry their meaning in their hue; the terminal
 /// is handed its colours once, as an object, and a workspace switch does not redraw it; the
 /// selection, caret, placeholder and scrollbar may be left to the platform; the window's
