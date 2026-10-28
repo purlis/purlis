@@ -195,6 +195,15 @@ pub struct ChatForSkills {
     pub plane_skills: bool,
 }
 
+/// One chat open here that its start routed by a router extension ([`Chats::routings`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatRouted {
+    pub session: u32,
+    pub workspace: Option<String>,
+    pub persona: Option<String>,
+    pub routed: purlis_core::skills::router::Routed,
+}
+
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Drafting {
@@ -225,6 +234,9 @@ pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>) + Send + Sy
 /// number, its id, the run's id, why it began and what it is (ADR 0066, #868), and whether its
 /// `run.started` is held until the start goes on. What the event log is told.
 pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began, &Attributes, RunSaid) + Send + Sync>;
+
+/// Told a chat's number and its routing record as its run begins (SK-15b).
+pub type Routed = Box<dyn Fn(u32, &purlis_core::skills::router::Record) + Send + Sync>;
 
 /// When a run's `run.started` is written (#2250).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -631,6 +643,12 @@ pub struct Chats {
     reattached: Mutex<Option<Starting>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
+    /// What asks a chat's router extension at its start (SK-15b): none until the app hands one,
+    /// so a chat whose workspace or persona chose one is routed by the built-in router.
+    router: Mutex<Option<Arc<dyn purlis_core::skills::router::AskRouter>>>,
+    /// Told each chat's routing record as its run begins, where its start asked a router
+    /// extension (SK-15b): what the event log is told.
+    routed: Mutex<Option<Routed>>,
     /// Told, by number, what became of a start whose run was held ([`RunSaid::Held`]).
     #[allow(clippy::type_complexity)]
     settled: Mutex<Option<Box<dyn Fn(u32, HeldStart) + Send + Sync>>>,
@@ -1164,6 +1182,8 @@ impl Chats {
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
+            router: Mutex::new(None),
+            routed: Mutex::new(None),
             settled: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
@@ -1268,6 +1288,17 @@ impl Chats {
     /// begins: the chat's id, which a relaunch keeps, a new run's id, and why (ADR 0066).
     pub fn when_a_run_begins(&self, tell: Beginning) {
         *lock(&self.beginning) = Some(tell);
+    }
+
+    /// Asks a chat's router extension at its start with `router` (SK-15b, ADR 0102 §5).
+    pub fn asks_routers_with(&self, router: Arc<dyn purlis_core::skills::router::AskRouter>) {
+        *lock(&self.router) = Some(router);
+    }
+
+    /// Calls `tell` with each chat's routing record as its run begins, where its start asked a
+    /// router extension (SK-15b): after the run's own `run.started` is told.
+    pub fn when_a_chat_is_routed(&self, tell: Routed) {
+        *lock(&self.routed) = Some(tell);
     }
 
     /// Calls `tell` with the number of a chat whose run began [`RunSaid::Held`] once its project
@@ -3421,6 +3452,9 @@ impl Chats {
         // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
         // arms it below and what its tab's Notice says are both worked out from this. Read once
         // its arming has checked the start is not refused (#3461).
+        // And routed by the router its persona or workspace chose, asked now where it is an
+        // extension's (SK-15b).
+        let router = lock(&self.router).clone();
         let skills = std::cell::LazyCell::new(|| {
             if on_the_runner {
                 purlis_core::hoststart::ChatSkills::default()
@@ -3431,6 +3465,11 @@ impl Chats {
                     harness,
                     chat.cwd.as_deref(),
                     runs_as.as_deref(),
+                )
+                .routed_by(
+                    built_in_skills_here().as_deref(),
+                    harness,
+                    router.as_ref(),
                 )
             }
         });
@@ -4014,6 +4053,14 @@ impl Chats {
                 plane_skills,
             },
         );
+        // Its routing record, after its run began (SK-15b): a chat reattached began none here.
+        if !reattaching
+            && !on_the_runner
+            && let Some(routed) = skills.routed.as_ref()
+            && let Some(tell) = lock(&self.routed).as_ref()
+        {
+            tell(session, &routed.record);
+        }
         lock(&self.sizes).insert(session, size);
         // Screened once more now its program runs: a change since the screen its arming made is
         // answered to the start, which starts it again on the person's settings.
@@ -4940,6 +4987,25 @@ impl Chats {
                 .and_then(purlis_core::skillspan::PromptSalt::of_chat),
             cwd: running.chat.cwd.clone(),
         })
+    }
+
+    /// **Every chat open here that its start routed by a router extension** (SK-15b), by number,
+    /// with where it works and as whom: what the Skill studio shows of the router's timings.
+    pub fn routings(&self) -> Vec<ChatRouted> {
+        let open = lock(&self.open);
+        let mut out: Vec<ChatRouted> = open
+            .iter()
+            .filter_map(|(session, running)| {
+                Some(ChatRouted {
+                    session: *session,
+                    workspace: running.workspace.clone(),
+                    persona: running.persona().started_as,
+                    routed: running.skills_read.routed.clone()?,
+                })
+            })
+            .collect();
+        out.sort_by_key(|one| one.session);
+        out
     }
 
     /// **The personas chat `session` is named by** (#2691): the one it was started as, whose

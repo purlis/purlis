@@ -3958,6 +3958,9 @@ pub fn run() {
                         windows::emit_for_plane(&window, &told.plane.clone(), doing::EVENT, &told);
                     })
                 })
+                // Each chat's router extension is asked with the app's one executor (SK-15b),
+                // so quitting stops what it asked too.
+                .asking_routers_with(app.state::<views::Views>().executor())
                 // The skill run open in a chat, each time it opens, counts a call or ends:
                 // the chip on the chat's tab (SK-3). In memory only.
                 .telling_skill_runs({

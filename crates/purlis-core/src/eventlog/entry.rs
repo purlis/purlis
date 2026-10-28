@@ -107,6 +107,13 @@ pub enum Entry {
         number: u32,
         prompted: crate::skillspan::Prompted,
     },
+    /// Chat `number`'s start asked a router extension which of its skills to hide (SK-15b): its
+    /// routing record, under its run ([`Recorder::skill_routed`]).
+    SkillRouted {
+        plane: PathBuf,
+        number: u32,
+        record: crate::skills::router::Record,
+    },
     /// What the window said of a browser (#2293): who drives it, that someone typed into it,
     /// or that it was handed to a chat, under chat `number` where it is a chat's
     /// ([`Recorder::browser`]).
@@ -232,6 +239,13 @@ impl Recorder {
                 self.skill_prompted(&plane, number, prompted);
                 Ok(Vec::new())
             }
+            Entry::SkillRouted {
+                plane,
+                number,
+                record,
+            } => self
+                .skill_routed(&plane, number, &record)
+                .map(|event| event.into_iter().collect()),
         }
     }
 

@@ -1373,6 +1373,9 @@ struct Identity {
     held: Option<Began>,
     /// The trust event held with it, written just before it (#2252).
     held_trust: Option<HeldTrust>,
+    /// Its start's routing record, told while its `run.started` is held (SK-15b): written just
+    /// after it, and never for a start taken back.
+    held_routed: Option<crate::skills::router::Record>,
 }
 
 /// A start's trust event held with its run's `run.started` ([`Recorder::begin_held`]): the
@@ -1606,6 +1609,10 @@ pub struct Recorder {
     /// the chat's next report hands it to its run ([`Recorder::skill_prompted`]): held from
     /// before the chat starts, so it is there however soon the chat's first prompt comes.
     prompted: HashMap<(PathBuf, u32), crate::skillspan::Prompted>,
+    /// The routing record of each chat run whose start asked a router extension, by the run: its
+    /// id, and whether it fell back, which every skill run the chat opens names
+    /// ([`Recorder::skill_routed`], SK-15b). Held up to [`PROMPTED_HELD`] runs.
+    routings: HashMap<String, (String, bool)>,
     /// Every run this writer began in the log, ended or not, up to [`RUNS_HELD`]: an id no run
     /// a clear begins may take (#3394).
     begun: std::collections::HashSet<String>,
@@ -1626,6 +1633,9 @@ const CLOCKS_AGREE_WITHIN_MS: u64 = 5 * 60 * 1000;
 /// How many chats' prompts [`Recorder::skill_prompted`] holds at most: a start that never
 /// reported is let go when there are more.
 const PROMPTED_HELD: usize = 256;
+
+/// The kind of a chat's routing record (SK-15b).
+pub const ROUTED: &str = "skill.routed";
 
 /// One end of a tool call, heard and waiting for the other.
 #[derive(Debug, Clone, Copy)]
@@ -1705,6 +1715,7 @@ impl Recorder {
             kill_switch_skipped: None,
             skills: crate::skillspan::Tracker::default(),
             prompted: HashMap::new(),
+            routings: HashMap::new(),
             begun: std::collections::HashSet::new(),
             begun_until_ms: 0,
         }
@@ -1967,6 +1978,7 @@ impl Recorder {
                 attributes: Attributes::default(),
                 held: None,
                 held_trust: None,
+                held_routed: None,
             },
         );
     }
@@ -2503,6 +2515,13 @@ impl Recorder {
         if let Some(level) = opened.whose.level {
             body["skill_level"] = level.word().into();
         }
+        // The routing its chat started under (SK-15b): every run it opens names it.
+        if let Some((routing, fell_back)) = self.routings.get(span_of(under)) {
+            body["routing"] = routing.as_str().into();
+            if *fell_back {
+                body["routing_fell_back"] = true.into();
+            }
+        }
         self.append(under, "skill.started", body)?;
         let starting = crate::skilluse::Starting::of_open(opened, who.harness.as_deref());
         crate::skilluse::started(
@@ -2571,6 +2590,46 @@ impl Recorder {
         }
         self.prompted
             .insert((plane.to_path_buf(), number), prompted);
+    }
+
+    /// **Chat `number` of `plane` was routed at its start by a router extension** (SK-15b, ADR
+    /// 0102 §6): its routing record, `skill.routed`, under the chat's run, which every skill run
+    /// it opens names from now on.
+    pub fn skill_routed(
+        &mut self,
+        plane: &Path,
+        number: u32,
+        record: &crate::skills::router::Record,
+    ) -> io::Result<Option<Event>> {
+        // A start whose run is held may still be taken back: its record waits with it.
+        if let Some(who) = self.chats.get_mut(&(plane.to_path_buf(), number))
+            && who.held.is_some()
+        {
+            who.held_routed = Some(record.clone());
+            return Ok(None);
+        }
+        let Some(who) = self.identity(plane, number)? else {
+            let body = serde_json::to_value(record).map_err(io::Error::other)?;
+            return self.of_no_run(number, ROUTED, body).map(Some);
+        };
+        self.routed_under(&who, record).map(Some)
+    }
+
+    /// Writes `record` under `who`'s run, which every skill run it opens names from now on.
+    fn routed_under(
+        &mut self,
+        who: &Identity,
+        record: &crate::skills::router::Record,
+    ) -> io::Result<Event> {
+        let body = serde_json::to_value(record).map_err(io::Error::other)?;
+        if self.routings.len() >= PROMPTED_HELD {
+            self.routings.clear();
+        }
+        self.routings.insert(
+            who.run.clone(),
+            (record.routing.clone(), record.fell_back.is_some()),
+        );
+        self.write(Some(&who.chat), Some(&who.run), None, ROUTED, body)
     }
 
     /// Closes every skill run open in `under`'s chat run as `ended`.
@@ -2711,6 +2770,7 @@ impl Recorder {
                 attributes: attributes.clone(),
                 held: Some(cause),
                 held_trust: trust,
+                held_routed: None,
             },
         );
     }
@@ -2727,6 +2787,7 @@ impl Recorder {
             return Ok(None);
         };
         let trust = who.held_trust.take();
+        let routed = who.held_routed.take();
         let who = who.clone();
         // Its start's trust event first, as at any start, made durable as the host makes it.
         // One the log refuses costs the record of the sandbox coming back on, never the run.
@@ -2743,8 +2804,15 @@ impl Recorder {
         let ended = self.end_children(&who.chat, RunState::Completed, Cause::Superseded);
         ended?;
         let body = who.attributes.body(cause, &self.log.device);
-        self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)
-            .map(Some)
+        let started = self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)?;
+        // Its start's routing record, held with it (SK-15b): one the log refuses costs the
+        // record, never the run.
+        if let Some(record) = routed
+            && let Err(why) = self.routed_under(&who, &record)
+        {
+            tracing::warn!(error = %why, "the event log did not keep a held routing record");
+        }
+        Ok(Some(started))
     }
 
     /// Chat `number`'s start whose run is held ([`Recorder::begin_held`]) was put aside: its
@@ -2877,6 +2945,7 @@ impl Recorder {
             },
             held: None,
             held_trust: None,
+            held_routed: None,
         };
         if cause == Began::Clear {
             // The cleared run is superseded, and its children and skill runs end with it,

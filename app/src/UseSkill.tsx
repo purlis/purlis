@@ -180,6 +180,8 @@ export function UseSkill({
   const listed = skills?.skills ?? [];
   const shown = skillsMatching(listed, query);
   const budget = skills?.budget ?? null;
+  // How its router extension did at its start (SK-15b): its timing, or why it fell back.
+  const routing = skills?.routing ?? null;
   const warning = budget === null ? undefined : warnsSaid(budget);
   const together = budget?.pins_together ?? null;
   const togetherSaid = budget === null ? undefined : pinsTogetherSaid(budget);
@@ -240,6 +242,16 @@ export function UseSkill({
             {budgetSaid(budget)}
           </p>
         )}
+        {routing !== null &&
+          (routing.fell_back ? (
+            <p className="honest use-skill-over" role="status" data-testid="use-skill-routing">
+              <TriangleAlert aria-hidden="true" /> {routing.said}
+            </p>
+          ) : (
+            <p className="use-skill-budget" data-testid="use-skill-routing">
+              {routing.said}
+            </p>
+          ))}
         {together !== null && (
           <div
             className="honest use-skill-over use-skill-pins-together"

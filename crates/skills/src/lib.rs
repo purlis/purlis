@@ -77,7 +77,9 @@ pub use read::{
 };
 use reference::Seen;
 pub use reference::{BUILT_IN_PREFIXES, OnMachine, Reference};
-pub use router::{Hidden, HiddenWhy, INDEX, Index, Router, Routing, StillOver};
+pub use router::{
+    Candidate, Candidates, Hidden, HiddenWhy, INDEX, Index, Line, Router, Routing, StillOver,
+};
 pub use share::{Shared, named, named_at, share};
 pub use stamp::{Reload, Stamp};
 

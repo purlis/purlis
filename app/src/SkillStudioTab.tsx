@@ -14,6 +14,7 @@ import {
   type SkillTemplateId,
   type SkillUsers,
   type Studio,
+  type StudioRouter,
   type StudioSkill,
 } from "./bindings";
 import { counted } from "./dispatches";
@@ -504,6 +505,8 @@ export function SkillStudioTab({
   const pinner = pinnerOf(scope);
   const pinRows = pinRowsOf(studio.skills);
   const refusedPins = pinner === null ? null : (studio.pins_refused ?? null);
+  // Which router its chats are routed by (SK-15b): an answer from before it says none.
+  const router = studio.router ?? null;
   const pinOf = (skill: StudioSkill) => {
     if (pinner === null || pinRows.get(skill.name) !== skill) return null;
     const pinned = skill.pinned_by.some((by) => by.at === pinner.at && by.name === pinner.name);
@@ -566,6 +569,7 @@ export function SkillStudioTab({
           />
         </p>
       )}
+      {router !== null && <StudioRouterLine router={router} />}
       <div
         className="skill-levels"
         role="group"
@@ -1264,4 +1268,32 @@ function showSources(heading: HTMLHeadingElement | null): void {
 /** `text` with its first letter lower-cased, to go inside a sentence. */
 function lowerFirst(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+/**
+ * **Which router this studio's chats are routed by** (SK-15b, ADR 0102 §5, §6), where it is an
+ * extension's or the choice names none, and how the router did at the start of each such chat
+ * open now: its timing, or why it fell back on the built-in router. Nothing for the built-in
+ * router, which every chat has unless a workspace or persona chooses another.
+ */
+export function StudioRouterLine({ router }: { router: StudioRouter }) {
+  if (router.extension === null && !router.problem) return null;
+  return (
+    <div
+      className={router.problem ? "honest use-skill-over" : "honest"}
+      role={router.problem ? "status" : undefined}
+      data-testid="skill-studio-router"
+    >
+      <p>{router.said}</p>
+      {router.chats.length > 0 && (
+        <ul className="skill-studio-routed">
+          {router.chats.map((one) => (
+            <li key={one.session} data-fell-back={one.routing.fell_back}>
+              {`Chat ${one.session}: ${one.routing.said}`}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
