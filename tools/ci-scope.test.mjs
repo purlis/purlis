@@ -371,7 +371,8 @@ test("no file that holds the repository's root reads an agent's steering file by
 // it is named here as walking only code whose changes run every scope (`crates/`,
 // `app/src-tauri/`; not `app/src/`, which runs no Rust since #3596).
 const WALK_ONLY_CODE = {
-  "app/src-tauri/src/savefix/tests.rs": "crates/ and app/src-tauri/ sources",
+  "app/src-tauri/src/savefix/tests.rs":
+    "crates/ and app/src-tauri/ sources; its app/src walk is in WINDOW_WALK_MISSES (#3609)",
   "app/src-tauri/src/tests.rs": "reads LICENSE and NOTICE, which run everything",
   "app/src/community.test.ts": "root files and .github/, which run everything",
   "app/src/copy.rust.test.ts": "crates/purlis-core/src and app/src-tauri/src",
@@ -444,8 +445,14 @@ const WINDOW_WALK_MISSES = {
     "a unit test of the app crate, whose test build needs Tauri: one call site of mergeSaveRequest",
 };
 
-function rustNamesOfWindow() {
-  const files = git("ls-files");
+// `files` is every tracked path, `read` reads one. Each string literal of a Rust file is read
+// from the file's folder (`include_str!`), its crate's folder (`CARGO_MANIFEST_DIR`, and
+// `"../src"` from it), the root, and the folder above its crate when the file climbs there with
+// `.parent()` from `CARGO_MANIFEST_DIR`. A path built from pieces (`root.join("app").join("src")`,
+// `["app", "src"]`) is no one literal, so a file with `"app"` and `"src"` as literals of their
+// own within three lines of each other, that lists or reads files, is taken as walking `app/src`.
+const SPLIT_READS = /read_dir|"ls-files"|read_to_string|fs::read\b|WalkDir/;
+function windowNamesIn(files, read) {
   const tracked = new Set(files);
   const folders = new Set();
   for (const f of files) {
@@ -457,22 +464,91 @@ function rustNamesOfWindow() {
     return d;
   };
   const named = [];
-  for (const file of files.filter((p) => /^(crates|app\/src-tauri|tests)\/.*\.rs$/.test(p))) {
-    for (const line of read(file).split("\n")) {
-      if (/^\s*\/\//.test(line)) continue;
+  for (const file of files.filter((p) => p.endsWith(".rs"))) {
+    const code = read(file)
+      .split("\n")
+      .filter((line) => !/^\s*\/\//.test(line));
+    const crate = crateOf(file);
+    const whole = code.join("\n");
+    // `.parent()` on `CARGO_MANIFEST_DIR` itself, on its line or the two after it.
+    const climbs = code.some(
+      (line, i) =>
+        line.includes("CARGO_MANIFEST_DIR") &&
+        code.slice(i, i + 3).some((next) => next.includes(".parent()")),
+    );
+    const places = [posix.dirname(file), crate, ".", ...(climbs ? [posix.dirname(crate)] : [])];
+    const seen = new Set();
+    for (const line of code) {
       for (const [, literal] of line.matchAll(/"([^"\\]*src[^"\\]*)"/g)) {
         const rel = literal.replace(/^\//, "");
-        for (const at of [posix.dirname(file), crateOf(file), "."]) {
+        for (const at of places) {
           const path = posix.normalize(posix.join(at, rel));
           if (path !== "app/src" && !path.startsWith("app/src/")) continue;
-          if (tracked.has(path)) named.push({ file, path, folder: false });
-          else if (folders.has(path)) named.push({ file, path, folder: true });
+          const folder = !tracked.has(path);
+          if (folder && !folders.has(path) && path !== "app/src") continue;
+          if (seen.has(path)) continue;
+          seen.add(path);
+          named.push({ file, path, folder });
         }
       }
+    }
+    const at = (re) => code.flatMap((line, i) => (re.test(line) ? [i] : []));
+    const apps = at(/"app"/);
+    const pieced = at(/"src"/).some((i) => apps.some((j) => Math.abs(i - j) <= 3));
+    if (!seen.has("app/src") && pieced && SPLIT_READS.test(whole)) {
+      named.push({ file, path: "app/src", folder: true });
     }
   }
   return named;
 }
+const rustNamesOfWindow = () => windowNamesIn(git("ls-files"), read);
+
+test("the search finds the window's sources named by pieces, from any crate", () => {
+  const files = {
+    "app/src/a.ts": "",
+    "app/src/ui/b.css": "",
+    "app/src-tauri/Cargo.toml": "",
+    "app/src-tauri/src/x.rs": [
+      'let s = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("src");',
+      "for e in std::fs::read_dir(s) {}",
+    ].join("\n"),
+    "crates/c/Cargo.toml": "",
+    "crates/c/tests/y.rs": [
+      'let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");',
+      'walk(&root.join("app").join("src"));',
+      "fn walk(d: &Path) { for e in std::fs::read_dir(d).unwrap() {} }",
+    ].join("\n"),
+    "crates/c/tests/z.rs":
+      'const P: [&str; 2] = ["app", "src"]; let t = std::fs::read_to_string(p);',
+    "crates/c/tests/only_names.rs": 'let a = "app"; let b = "src";',
+    "app/src-tauri/src/own.rs": [
+      'let s = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");',
+      "for e in std::fs::read_dir(s) {}",
+    ].join("\n"),
+    "crates/c/tests/far.rs": [
+      'let a = "app";',
+      ...Array(5).fill("//"),
+      "x();",
+      "y();",
+      "z();",
+      "w();",
+      'let b = dir.join("src"); std::fs::read_dir(b);',
+    ].join("\n"),
+    "operator/Cargo.toml": "",
+    "operator/src/w.rs": 'include_str!("../../app/src/ui/b.css")',
+    "tools/probe/src/v.rs": 'let p = "app/src/a.ts"; std::fs::read_to_string(p);',
+  };
+  const found = windowNamesIn(Object.keys(files), (p) => files[p]).map(
+    ({ file, path, folder }) => `${file} ${folder ? "walks" : "reads"} ${path}`,
+  );
+  assert.deepEqual(found.sort(), [
+    "app/src-tauri/src/x.rs walks app/src",
+    "crates/c/tests/y.rs walks app/src",
+    "crates/c/tests/z.rs walks app/src",
+    "operator/src/w.rs reads app/src/ui/b.css",
+    "tools/probe/src/v.rs reads app/src/a.ts",
+  ]);
+});
 
 test("every file of the window's sources that Rust names is one Rust reads, or is guarded", () => {
   const named = rustNamesOfWindow();
