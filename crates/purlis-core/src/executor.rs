@@ -836,7 +836,9 @@ impl Executor {
         // A router's question is bounded from here, its wait for its slot and its confined start
         // inside its deadline (ADR 0102 §6); every other from its program's start.
         let bound = match asked {
-            Asked::Studio(extension::studio::Ask::Route { .. }) => Bound {
+            Asked::Studio(
+                extension::studio::Ask::Route { .. } | extension::studio::Ask::Prompt { .. },
+            ) => Bound {
                 deadline: self.router_deadline,
                 until: Some(Instant::now() + self.router_deadline),
             },

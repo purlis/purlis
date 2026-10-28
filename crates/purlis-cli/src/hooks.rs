@@ -410,8 +410,10 @@ pub fn sessionstart(payload: &str, now: Option<&str>) {
 /// `additionalContext`: the heartbeat; the commitment gate
 /// ([`purlis_core::commitgate`], charter#369), which tells a prompt asking for work with a real
 /// fork in it to scout and ask before building; and any report a chat this one handed work to
-/// has sent back (charter-app#259), quoted as data, never typed into the chat; and one line when
-/// where the chat is working has changed ([`crate::whereworking`], #1450).
+/// has sent back (charter-app#259), quoted as data, never typed into the chat; one line when
+/// where the chat is working has changed ([`crate::whereworking`], #1450); and what the chat's
+/// router points the prompt at, where its start armed it for a router that reads prompts
+/// (SK-15c).
 ///
 /// Of the rest of the Python handler, the persona roster went with `routing:`, which is
 /// retired, and "control plane updated" is the window's to say, as a mark on the chat's tab
@@ -423,6 +425,16 @@ pub fn userpromptsubmit(payload: &str, now: Option<&str>) {
             return;
         }
         let mut parts: Vec<String> = purlis_core::commitgate::nudge(hook).into_iter().collect();
+        // What this chat's router points the prompt at (SK-15c): only where the chat's start
+        // armed it for a router that reads prompts, so no other chat's prompt leaves this hook.
+        if env(purlis_core::skills::PROMPT_ROUTER_ENV).as_deref() == Some("1")
+            && let Some(prompt) = hook
+                .payload
+                .get("prompt")
+                .and_then(serde_json::Value::as_str)
+        {
+            parts.extend(crate::dispatch::pointed(prompt));
+        }
         // The app's number for this chat, which is what a report is left under. A chat the app
         // did not start has none, and nothing was left for it.
         let chat: Option<u32> = env(purlis_core::hookwire::CHAT_ENV).and_then(|id| id.parse().ok());

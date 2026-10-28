@@ -533,3 +533,202 @@ fn a_skill_pinned_since_the_chat_s_start_is_listed_and_the_rest_of_the_answer_st
     );
     assert_eq!(fake.asked().len(), 1, "the router is not asked again");
 }
+
+// ---------------------------------------------------------------------------------------
+// On each prompt, a router that reads prompts (SK-15c, #3231; ADR 0102 §3)
+// ---------------------------------------------------------------------------------------
+
+/// `fake`, as a router whose approval said it reads prompts.
+struct Reading(Arc<Fake>);
+
+impl AskRouter for Reading {
+    fn ask(
+        &self,
+        extension: &str,
+        ask: &Ask<'_>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+        self.0.ask(extension, ask)
+    }
+
+    fn reads_prompts(&self, _: &str) -> bool {
+        true
+    }
+}
+
+fn reading(fake: &Arc<Fake>) -> Arc<dyn AskRouter> {
+    Arc::new(Reading(Arc::clone(fake)))
+}
+
+fn left_out() -> Vec<(String, String)> {
+    vec![
+        ("deploy".to_owned(), "Deploys the service.".to_owned()),
+        ("release".to_owned(), "Cuts a release.".to_owned()),
+    ]
+}
+
+fn relevance() -> Result<Chosen, String> {
+    Ok(Chosen::Extension("relevance".to_owned()))
+}
+
+#[test]
+fn a_router_s_pick_reaches_the_prompt_as_a_pointer_in_purlis_s_own_words() {
+    let fake = Fake::answering(serde_json::json!({ "pointed": ["release"] }));
+
+    let prompted = on_prompt(
+        relevance(),
+        &left_out(),
+        "cut the 1.2 release",
+        &reading(&fake),
+        ROUTER_DEADLINE,
+    )
+    .expect("asked");
+
+    let pointer = prompted.pointer.expect("a pointer");
+    assert!(
+        pointer.contains("- `release`: Cuts a release."),
+        "{pointer}"
+    );
+    assert!(pointer.contains("skill_load"), "{pointer}");
+    assert!(!pointer.contains("deploy"), "{pointer}");
+    assert_eq!(prompted.record.fell_back, None);
+    assert!(prompted.record.prompt);
+    assert_eq!(prompted.record.pointed, ["release"]);
+    let body = serde_json::to_string(&prompted.record).unwrap();
+    assert!(
+        !body.contains("1.2"),
+        "the record holds nothing of the prompt: {body}"
+    );
+
+    let asked = fake.asked();
+    assert_eq!(asked.len(), 1);
+    let line = &asked[0].1;
+    assert_eq!(line["ask"], "prompt");
+    assert_eq!(line["prompt"], "cut the 1.2 release");
+    assert_eq!(line["skills"][1]["line"], "Cuts a release.");
+    let mut keys: Vec<&String> = line.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        ["ask", "prompt", "skills"],
+        "nothing else of the chat"
+    );
+}
+
+#[test]
+fn a_slow_router_adds_no_pointer_and_marks_the_record() {
+    let slow = Arc::new(Fake {
+        wait: Duration::from_secs(2),
+        answer: Ok(serde_json::json!({ "pointed": ["release"] })),
+        asked: Mutex::default(),
+    });
+
+    let began = Instant::now();
+    let prompted = on_prompt(
+        relevance(),
+        &left_out(),
+        "go",
+        &reading(&slow),
+        ROUTER_DEADLINE,
+    )
+    .expect("asked");
+    let took = began.elapsed();
+
+    assert!(
+        took < ROUTER_DEADLINE + Duration::from_millis(400),
+        "{took:?}"
+    );
+    assert_eq!(prompted.pointer, None);
+    assert_eq!(prompted.record.fell_back, Some(FellBack::Slow));
+    assert!(prompted.record.prompt);
+}
+
+#[test]
+fn a_router_pointing_at_a_skill_the_list_has_is_not_taken() {
+    let fake = Fake::answering(serde_json::json!({ "pointed": ["handoff"] }));
+
+    let prompted = on_prompt(
+        relevance(),
+        &left_out(),
+        "go",
+        &reading(&fake),
+        ROUTER_DEADLINE,
+    )
+    .expect("asked");
+
+    assert_eq!(prompted.pointer, None);
+    assert_eq!(prompted.record.fell_back, Some(FellBack::Wrong));
+}
+
+#[test]
+fn nothing_is_asked_of_a_router_that_reads_no_prompts_or_where_the_list_leaves_nothing_out() {
+    let fake = Fake::answering(serde_json::json!({ "pointed": ["release"] }));
+    // Its approval said nothing of prompts: never handed one.
+    assert_eq!(
+        on_prompt(
+            relevance(),
+            &left_out(),
+            "go",
+            &as_asker(&fake),
+            ROUTER_DEADLINE
+        ),
+        None
+    );
+    assert_eq!(
+        on_prompt(relevance(), &[], "go", &reading(&fake), ROUTER_DEADLINE),
+        None
+    );
+    assert_eq!(
+        on_prompt(
+            Ok(Chosen::BuiltIn),
+            &left_out(),
+            "go",
+            &reading(&fake),
+            ROUTER_DEADLINE
+        ),
+        None
+    );
+    assert!(fake.asked().is_empty());
+}
+
+#[test]
+fn every_harness_purlis_ships_has_a_prompt_hook_for_a_router_s_pointer() {
+    for harness in Harness::ALL {
+        assert!(harness.prompt_hook(), "{harness:?}");
+    }
+}
+
+#[test]
+fn a_start_routed_by_a_router_that_reads_prompts_keeps_what_its_list_leaves_out() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let fake = Fake::hiding(&["skill-02"]);
+
+    let read = |asker: &Arc<dyn AskRouter>| started(root, &bundle, None, asker);
+    let not_reading = read(&as_asker(&fake)).routed.expect("routed");
+    assert!(
+        !not_reading.points(),
+        "a router that reads no prompts is never handed one"
+    );
+    let reads = read(&reading(&fake)).routed.expect("routed");
+    assert!(reads.points());
+    assert_eq!(
+        reads.left_out,
+        [("skill-02".to_owned(), "Does thing 2.".to_owned())]
+    );
+
+    // On a prompt: asked about exactly those, and its pick reaches the pointer.
+    let pick = Fake::answering(serde_json::json!({ "pointed": ["skill-02"] }));
+    let prompted = reads
+        .on_prompt("do thing two", &reading(&pick))
+        .expect("asked");
+    assert_eq!(
+        prompted
+            .pointer
+            .as_deref()
+            .map(|text| text.contains("- `skill-02`: Does thing 2.")),
+        Some(true)
+    );
+    let asked = pick.asked();
+    assert_eq!(asked[0].1["skills"].as_array().map(Vec::len), Some(1));
+}

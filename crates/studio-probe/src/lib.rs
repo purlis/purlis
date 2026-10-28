@@ -119,6 +119,7 @@ fn studio(ask: &serde_json::Value) -> serde_json::Value {
             ],
         }),
         "route" => routed(ask),
+        "prompt" => pointed(ask),
         other => serde_json::json!({ "error": format!("the probe has no answer to {other:?}") }),
     }
 }
@@ -151,6 +152,30 @@ fn routed(ask: &serde_json::Value) -> serde_json::Value {
         .map(|name| serde_json::json!({ "skill": name, "why": "hidden by the probe" }))
         .collect();
     serde_json::json!({ "hidden": hidden })
+}
+
+/// The start of the names the probe's router points a prompt at.
+pub const POINTS: &str = "probe-point";
+
+/// **A router's pointers for a prompt**: every skill it was asked about whose name starts with
+/// [`POINTS`], where the prompt is not empty.
+fn pointed(ask: &serde_json::Value) -> serde_json::Value {
+    let prompt = ask
+        .get("prompt")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let pointed: Vec<&str> = ask
+        .get("skills")
+        .and_then(serde_json::Value::as_array)
+        .map(|skills| {
+            skills
+                .iter()
+                .filter_map(|one| one.get("name").and_then(serde_json::Value::as_str))
+                .filter(|name| !prompt.is_empty() && name.starts_with(POINTS))
+                .collect()
+        })
+        .unwrap_or_default();
+    serde_json::json!({ "pointed": pointed })
 }
 
 /// **One thing tried from inside the sandbox**, and what happened, as one line: `ok` and what it

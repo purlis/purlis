@@ -468,8 +468,8 @@ pub(super) fn declares(declared: &Declared) -> Vec<String> {
         out.push(if router.reads_prompts {
             format!(
                 "a skill router, “{}” — decides which skills each chat that chooses it lists, \
-                 asked at the chat's start within {} ms, and it reads every prompt of every such \
-                 chat",
+                 asked at the chat's start and on each of its prompts, within {} ms each, and it \
+                 reads every prompt of every such chat",
                 router.title,
                 ROUTER_DEADLINE.as_millis()
             )
@@ -820,6 +820,61 @@ pub enum Ask<'a> {
         budget: RouteBudget,
         besides: RouteBudget,
     },
+    /// **Which of the skills a chat's list leaves out suit this prompt** (SK-15c, ADR 0102
+    /// §3), asked of a router that declares it reads prompts, on each prompt: the prompt, cut to
+    /// [`MOST_PROMPT_BYTES`] ([`prompt_handed`]), and each skill by its name and the one line
+    /// its chat's index skill gives it. Never the chat's id, its prompt salt (SK-38) or anything
+    /// else of the chat.
+    Prompt {
+        prompt: HandedPrompt<'a>,
+        skills: &'a [PromptSkill],
+    },
+}
+
+/// **A prompt as a router is handed it** ([`prompt_handed`]): its text in the question, and
+/// nothing of it in a debug dump, as SK-38 holds a chat's prompt filter (`PromptMarks`).
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct HandedPrompt<'a>(&'a str);
+
+impl<'a> HandedPrompt<'a> {
+    /// `prompt`, cut to [`MOST_PROMPT_BYTES`] on a character.
+    pub fn of(prompt: &'a str) -> Self {
+        Self(prompt_handed(prompt))
+    }
+}
+
+impl std::fmt::Debug for HandedPrompt<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HandedPrompt({} bytes)", self.0.len())
+    }
+}
+
+/// One skill a router that reads prompts is asked about ([`Ask::Prompt`]): one its chat's list
+/// leaves out, by its name and its line in the chat's index skill.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PromptSkill {
+    pub name: String,
+    pub line: String,
+}
+
+/// The most bytes of a prompt a router is handed.
+pub const MOST_PROMPT_BYTES: usize = 16 << 10;
+
+/// The most skills a router points one prompt at.
+pub const MOST_POINTED: usize = 5;
+
+/// **`prompt` as a router is handed it**: its first [`MOST_PROMPT_BYTES`] bytes, cut on a
+/// character.
+pub fn prompt_handed(prompt: &str) -> &str {
+    if prompt.len() <= MOST_PROMPT_BYTES {
+        return prompt;
+    }
+    let mut at = MOST_PROMPT_BYTES;
+    while !prompt.is_char_boundary(at) {
+        at -= 1;
+    }
+    &prompt[..at]
 }
 
 /// One skill a router is asked about ([`Ask::Route`]).
@@ -850,7 +905,7 @@ impl Ask<'_> {
             Self::Findings { .. } => Capability::SkillLint,
             Self::Template { .. } => Capability::SkillTemplate,
             Self::Panel { .. } => Capability::StudioPanel,
-            Self::Route { .. } => Capability::SkillRouter,
+            Self::Route { .. } | Self::Prompt { .. } => Capability::SkillRouter,
         }
     }
 
@@ -865,6 +920,17 @@ impl Ask<'_> {
             Self::Panel { panel, .. } if !declared.panels.iter().any(|it| it.id == *panel) => Some(
                 format!("'{extension}' adds no panel {panel:?} to a skill's tab"),
             ),
+            // A prompt is handed only to a router whose approval said it reads them (SK-15c).
+            Self::Prompt { .. }
+                if !declared
+                    .router
+                    .as_ref()
+                    .is_some_and(|router| router.reads_prompts) =>
+            {
+                Some(format!(
+                    "'{extension}' does not read prompts, so purlis hands it none"
+                ))
+            }
             _ => None,
         }
     }
@@ -1220,6 +1286,47 @@ pub fn routed_of(
             Ok((one.skill, line))
         })
         .collect()
+}
+
+/// A router's pointers.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Pointed {
+    pointed: Vec<String>,
+}
+
+/// **The skills a router that reads prompts points a prompt at** (SK-15c), read from its
+/// answer `doc`: each one of the `asked`, once, at most [`MOST_POINTED`]. Only names: what the
+/// chat is told of each is purlis's own line, never the router's words.
+pub fn pointed_of(
+    extension: &str,
+    asked: &[&str],
+    doc: &serde_json::Map<String, serde_json::Value>,
+) -> Result<Vec<String>, String> {
+    if doc
+        .get("pointed")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|list| list.len() > MOST_POINTED)
+    {
+        return Err(format!(
+            "'{extension}' pointed at more than {MOST_POINTED} skills for one prompt"
+        ));
+    }
+    let answered: Pointed = answer_of(extension, doc, "pointers")?;
+    let mut out: Vec<String> = Vec::with_capacity(answered.pointed.len());
+    for name in answered.pointed {
+        if !asked.contains(&name.as_str()) {
+            return Err(format!(
+                "'{extension}' pointed at {:?}, which is not one of the skills it was asked about",
+                crate::shown::readable(&name, 64)
+            ));
+        }
+        if out.contains(&name) {
+            return Err(format!("'{extension}' pointed at {name} twice"));
+        }
+        out.push(name);
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

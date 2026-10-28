@@ -1035,6 +1035,10 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     } else {
         plugins
     };
+    let points = skills
+        .routed
+        .as_ref()
+        .is_some_and(crate::skills::router::Routed::points);
     let at = on.then_some(crate::skills::PlaneSkills {
         plane: skills_root,
         workspace,
@@ -1058,9 +1062,14 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             folder.display().to_string(),
         )
     });
+    // Whether its prompt hook hands its prompts to the app for its router (SK-15c): only where
+    // a router that reads prompts was chosen for it, and its list leaves skills out.
+    let prompt_router =
+        points.then(|| (crate::skills::PROMPT_ROUTER_ENV.to_owned(), "1".to_owned()));
     match harness.state_hooks(armed, cwd, plugins, sandbox) {
         StateHooks::ThisSessionOnly { args, mut env, .. } => {
             env.extend(held);
+            env.extend(prompt_router);
             Ok((args, env))
         }
         // A grade's chat is never started without its limits.

@@ -649,6 +649,7 @@ fn in_the_app(
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)
+            | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::Task(_),
         )
@@ -696,6 +697,7 @@ pub(crate) fn ticketed() -> Ticketed {
             | Answer::Vaults { .. }
             | Answer::Keys { .. }
             | Answer::Working(_)
+            | Answer::Pointed { .. }
             | Answer::Dispatched { .. }
             | Answer::NeedsGrant { .. }
             | Answer::WaitingOnMemory { .. }

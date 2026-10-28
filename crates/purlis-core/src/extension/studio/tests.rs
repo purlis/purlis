@@ -1320,3 +1320,105 @@ fn a_routers_answer_is_read_failing_closed() {
         "{refused}"
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// A router that reads prompts (SK-15c, #3231; ADR 0102 §3)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_router_that_reads_prompts_is_asked_the_prompt_and_the_skills_not_in_the_list() {
+    let skills = [PromptSkill {
+        name: "deploy".to_owned(),
+        line: "Deploys.".to_owned(),
+    }];
+    let ask = Ask::Prompt {
+        prompt: HandedPrompt::of("ship it"),
+        skills: &skills,
+    };
+    assert!(
+        !format!("{ask:?}").contains("ship it"),
+        "a debug dump says nothing of the prompt"
+    );
+    assert_eq!(ask.capability(), Capability::SkillRouter);
+    assert_eq!(
+        ask.line(),
+        serde_json::json!({
+            "ask": "prompt",
+            "prompt": "ship it",
+            "skills": [{ "name": "deploy", "line": "Deploys." }],
+        })
+    );
+    let reads = |reads_prompts: bool| Declared {
+        router: Some(DeclaredRouter {
+            title: "R".to_owned(),
+            reads_prompts,
+        }),
+        ..Declared::default()
+    };
+    assert_eq!(ask.unoffered("r", &reads(true)), None);
+    let refused = ask
+        .unoffered("r", &reads(false))
+        .expect("never handed a prompt");
+    assert!(refused.contains("does not read prompts"), "{refused}");
+    assert!(
+        Ask::Route {
+            skills: &[],
+            budget: RouteBudget {
+                skills: 1,
+                chars: 1
+            },
+            besides: RouteBudget {
+                skills: 0,
+                chars: 0
+            },
+        }
+        .unoffered("r", &reads(false))
+        .is_none(),
+        "a router that reads no prompt is still asked at a chat's start"
+    );
+}
+
+#[test]
+fn a_prompt_is_handed_cut_to_its_bound_on_a_character() {
+    let long = "é".repeat(MOST_PROMPT_BYTES);
+    let handed = prompt_handed(&long);
+    assert!(handed.len() <= MOST_PROMPT_BYTES);
+    assert!(handed.chars().all(|c| c == 'é'));
+    assert_eq!(prompt_handed("short"), "short");
+}
+
+#[test]
+fn a_routers_pointers_are_read_failing_closed() {
+    let asked = ["deploy", "lint"];
+    assert_eq!(
+        pointed_of(
+            "r",
+            &asked,
+            &doc(serde_json::json!({ "pointed": ["lint"] }))
+        ),
+        Ok(vec!["lint".to_owned()])
+    );
+    assert_eq!(
+        pointed_of("r", &asked, &doc(serde_json::json!({ "pointed": [] }))),
+        Ok(Vec::new())
+    );
+    for bad in [
+        serde_json::json!({}),
+        serde_json::json!({ "pointed": ["release"] }),
+        serde_json::json!({ "pointed": ["lint", "lint"] }),
+        serde_json::json!({ "pointed": [{ "skill": "lint" }] }),
+        serde_json::json!({ "pointed": ["lint"], "why": "x" }),
+    ] {
+        assert!(
+            pointed_of("r", &asked, &doc(bad.clone())).is_err(),
+            "{bad} was taken"
+        );
+    }
+    let many: Vec<String> = (0..=MOST_POINTED).map(|at| format!("s-{at}")).collect();
+    let names: Vec<&str> = many.iter().map(String::as_str).collect();
+    assert!(
+        pointed_of("r", &names, &doc(serde_json::json!({ "pointed": many })))
+            .expect_err("too many")
+            .contains(&format!("more than {MOST_POINTED}"))
+    );
+}
