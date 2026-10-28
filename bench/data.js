@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793204294393,
+  "lastUpdate": 1793205980983,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28434,6 +28434,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8404675,
             "unit": "ms",
             "extra": "median of 5 runs: 101.795, 101.835, 101.840, 102.648, 103.180 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c8ad5baff21e0e05b7beea8c5dcb5e107eff1e38",
+          "message": "Runners: a pool's own time before its runner suspends itself (#3471) (#3705)\n\n* docs: a pool's suspendAfter in runners.json (#3471)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* core: a pool keeps its suspendAfter and its runner is made with it (#3471)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* cli: purlis serve --suspends-unlinked takes the pool's duration (#3471)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* window: a pool's Suspends after, set as it is added and said on its row (#3471)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* fix: is_multiple_of, and the add test closes its sign-in dialog (#3471)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* review: changelog fragment, minutes in the suspend log, an older image named, ADR 0089 amendment (#3471)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T16:11:33Z",
+          "tree_id": "5fdacf127963616cab80165efbe41454aedeaadf",
+          "url": "https://github.com/purlis/purlis/commit/c8ad5baff21e0e05b7beea8c5dcb5e107eff1e38"
+        },
+        "date": 1793205975242,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5356575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.525, 0.532, 0.536, 0.536, 0.537 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.409944000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.230, 16.398, 16.410, 16.446, 16.516 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.550625,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.640, 100.768, 101.551, 103.093, 103.551 ms"
           }
         ]
       }
