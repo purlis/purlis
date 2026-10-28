@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793178712413,
+  "lastUpdate": 1793181144504,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28056,6 +28056,48 @@ window.BENCHMARK_DATA = {
             "value": 104.3494835,
             "unit": "ms",
             "extra": "median of 5 runs: 103.809, 103.868, 104.349, 105.209, 105.396 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4b1fca3ef8e8d725ee087e2c8fc86f264ba0fb0a",
+          "message": "Comments name the CLI's tests where #3613 moved them (tests/it/) (#3628)\n\nSix comments still pointed at crates/purlis-cli/tests/<file>.rs, which\n#3614 moved into tests/it/. ADRs and the recorded fixture are left as\nwritten.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T09:25:51Z",
+          "tree_id": "e00487d409048b5c58438c5256b524ec92c0a500",
+          "url": "https://github.com/purlis/purlis/commit/4b1fca3ef8e8d725ee087e2c8fc86f264ba0fb0a"
+        },
+        "date": 1793181139926,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.514002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.501, 0.508, 0.514, 0.523, 0.528 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.0400535,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.329, 16.685, 17.040, 17.147, 17.222 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.453823,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.578, 103.714, 104.454, 105.063, 105.704 ms"
           }
         ]
       }
