@@ -30,6 +30,10 @@ pub(crate) fn written(method: &str, params: &Value) -> Vec<String> {
         }
         "Debugger.setScriptSource" => in_code(text("scriptSource")),
         "Page.addScriptToEvaluateOnNewDocument" => in_code(text("source")),
+        "Page.reload" => in_code(text("scriptToEvaluateOnLoad")),
+        "Debugger.setBreakpoint"
+        | "Debugger.setBreakpointByUrl"
+        | "Debugger.setBreakpointOnFunctionCall" => in_code(text("condition")),
         "Page.handleJavaScriptDialog" => vec![text("promptText").to_owned()],
         "Input.dispatchKeyEvent" => vec![text("text").to_owned()],
         "Runtime.setVariableValue" | "Debugger.setVariableValue" | "Debugger.setReturnValue" => {

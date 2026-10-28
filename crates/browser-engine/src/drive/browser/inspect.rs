@@ -53,7 +53,7 @@ use super::super::tree::NodeKey;
 use super::takeover::{button_bit, key_event, metrics, mouse_event, typed};
 use super::{Browser, Inner, refusal};
 use crate::cdp::{Tap, Tapped};
-use crate::drive::{Aim, Driver, MouseKind, PageId, Painted, PersonInput, Refusal, lock};
+use crate::drive::{Aim, Call, Driver, MouseKind, PageId, Painted, PersonInput, Refusal, lock};
 
 /// The front end the engine ships, told that its connection is the stand-in's.
 pub const FRONT_END: &str =
@@ -156,6 +156,7 @@ pub(crate) const HOSTED: &str = r"JSON.stringify({
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
 })";
 
+#[cfg(feature = "test-support")]
 /// The function that copies its argument as a page's own Copy does, in the page it runs in: a
 /// constant, the text its argument.
 pub(crate) const COPY_AS_A_PAGE: &str = r"function (text) {
@@ -250,6 +251,8 @@ pub(crate) struct Inspection {
     /// told to DevTools, and never reached by them.
     ours: Mutex<HashSet<i64>>,
     ours_unique: Mutex<HashSet<String>>,
+    /// The scripts of those worlds, by id: never told to DevTools, never reached by them.
+    our_scripts: Mutex<HashSet<String>>,
     /// The methods the front end asked of the page, by name alone, the first [`MOST_HEARD`].
     heard: Mutex<Vec<String>>,
     /// What the engine told of the front end's own page, by method, and which of purlis's
@@ -431,6 +434,7 @@ impl Browser {
             main_context: Mutex::new(None),
             ours: Mutex::new(HashSet::new()),
             ours_unique: Mutex::new(HashSet::new()),
+            our_scripts: Mutex::new(HashSet::new()),
             heard: Mutex::new(Vec::new()),
             told: Mutex::new(Vec::new()),
         });
@@ -552,7 +556,7 @@ impl Browser {
 
     /// **For the tests: copies `text` as the person's copy in DevTools does** (#2028), in a page
     /// of a browser context of DevTools' own, thrown away after: whether it was copied.
-    #[doc(hidden)]
+    #[cfg(feature = "test-support")]
     pub fn copy_in_a_context_of_devtools(&self, text: &str) -> bool {
         self.inner.copy_apart(text)
     }
@@ -668,6 +672,9 @@ impl Browser {
     /// wrote into a page is kept out as a run of the person's keys is.
     pub(super) fn after_devtools(&self) {
         self.stop_inspecting();
+        // A page left unread at an earlier hand-back: the person has driven it again since, and
+        // this hand-back is theirs to say it is done with.
+        lock(&self.inner.devtools_unread).clear();
         if !self.inner.devtools_opened.swap(false, Ordering::SeqCst) {
             return;
         }
@@ -699,11 +706,21 @@ impl Browser {
 
     /// **Reads again each page that could not be read at the hand-back** (#2028), keeping out
     /// what its fields hold: refused [`Refusal::NotKeptOutYet`] while one still cannot be read,
-    /// so nothing DevTools wrote into it is answered before it is kept out. A page gone since
-    /// is let go.
-    pub(super) fn devtools_read_again(&self) -> Result<(), Refusal> {
+    /// so nothing DevTools wrote into it is answered before it is kept out. A page gone since,
+    /// or one that has loaded another document, is let go; and a call that leaves such a page
+    /// (back, or to another address) goes, since it throws that document away.
+    pub(super) fn devtools_read_again(&self, call: &Call) -> Result<(), Refusal> {
         let unread: Vec<String> = lock(&self.inner.devtools_unread).iter().cloned().collect();
         if unread.is_empty() {
+            return Ok(());
+        }
+        let leaves = match call {
+            Call::Back { page } | Call::Navigate { page, .. } => self
+                .target(page.as_ref())
+                .is_ok_and(|target| unread.contains(&target)),
+            _ => false,
+        };
+        if leaves {
             return Ok(());
         }
         let mut still = false;
@@ -830,6 +847,7 @@ impl Inner {
 
     /// Copies `text` in a blank page of a context of DevTools' own, thrown away after: whether
     /// it was copied.
+    #[cfg(feature = "test-support")]
     pub(crate) fn copy_apart(&self, text: &str) -> bool {
         let mut copied = false;
         if self.ended() {
@@ -951,6 +969,17 @@ fn run(weak: &Weak<Inner>, open: &Arc<Inspection>, todo: &Receiver<Work>) {
                         if ours(open, event) {
                             continue;
                         }
+                        // Paused inside purlis's own script: it goes on at once, and DevTools
+                        // are never told.
+                        if event.method == "Debugger.paused" && paused_in_ours(open, &event.params)
+                        {
+                            let _ = inner.devtools.call(
+                                "Debugger.resume",
+                                json!({}),
+                                event.session_id.as_deref(),
+                            );
+                            continue;
+                        }
                     }
                     match for_the_front_end(tapped, open.root().as_deref()) {
                         Some(message) => {
@@ -1027,10 +1056,20 @@ fn probe(inner: &Inner, open: &Inspection) -> Option<InspectEnded> {
         json!({ "expression": HOSTED, "returnByValue": true }),
         Some(&open.front_session),
     );
-    let found = found.ok()?;
-    let found = found.pointer("/result/value").and_then(Value::as_str)?;
+    // A question the front end does not answer, or answers in words that do not read, ends
+    // DevTools as a host that reached it does.
+    let Ok(found) = found else {
+        open.noted("front end: not answered");
+        return Some(InspectEnded::Ended);
+    };
+    let Some(found) = found.pointer("/result/value").and_then(Value::as_str) else {
+        open.noted("front end: not said");
+        return Some(InspectEnded::Ended);
+    };
     open.noted(&format!("front end: {found}"));
-    let read: Value = serde_json::from_str(found).ok()?;
+    let Ok(read) = serde_json::from_str::<Value>(found) else {
+        return Some(InspectEnded::Ended);
+    };
     let reached = read["host"] != "undefined" || read["guarded"] != true || read["hosted"] == false;
     if reached {
         tracing::warn!(
@@ -1040,13 +1079,28 @@ fn probe(inner: &Inner, open: &Inspection) -> Option<InspectEnded> {
     reached.then_some(InspectEnded::Ended)
 }
 
+/// Whether a pause stopped in a script of purlis's own world.
+fn paused_in_ours(open: &Inspection, params: &Value) -> bool {
+    let scripts = lock(&open.our_scripts);
+    params["callFrames"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|frame| {
+            frame
+                .pointer("/location/scriptId")
+                .and_then(Value::as_str)
+                .is_some_and(|script| scripts.contains(script))
+        })
+}
+
 /// Whether `event` tells of one of purlis's own worlds in the page: kept, and never told to
 /// DevTools.
 fn ours(open: &Inspection, event: &crate::cdp::Event) -> bool {
     match event.method.as_str() {
         "Runtime.executionContextCreated" => {
             let context = &event.params["context"];
-            if context["name"] != super::world::WORLD_NAME
+            if !context["name"].as_str().is_some_and(super::world::is_ours)
                 || context["auxData"]["type"] != "isolated"
             {
                 return false;
@@ -1064,6 +1118,15 @@ fn ours(open: &Inspection, event: &crate::cdp::Event) -> bool {
             let unique = event.params["executionContextUniqueId"].as_str();
             id.is_some_and(|id| lock(&open.ours).contains(&id))
                 || unique.is_some_and(|unique| lock(&open.ours_unique).contains(unique))
+        }
+        // A script of purlis's own world is never DevTools' to see.
+        "Debugger.scriptParsed" | "Debugger.scriptFailedToParse" => {
+            let context = event.params["executionContextId"].as_i64();
+            let ours = context.is_some_and(|id| lock(&open.ours).contains(&id));
+            if ours && let Some(script) = event.params["scriptId"].as_str() {
+                lock(&open.our_scripts).insert(script.to_owned());
+            }
+            ours
         }
         _ => false,
     }
@@ -1219,10 +1282,12 @@ fn to_the_page(inner: &Inner, open: &Inspection, payload: &str) -> Option<String
     let origins = inner.origins_of(&open.inspected);
     let ours = lock(&open.ours).clone();
     let ours_unique = lock(&open.ours_unique).clone();
+    let our_scripts = lock(&open.our_scripts).clone();
     let reach = allowed::Reach {
         origins: &origins,
         ours: &ours,
         ours_unique: &ours_unique,
+        our_scripts: &our_scripts,
     };
     if let Some(why) = allowed::refused(method, &params, &reach) {
         if let Some(name) = crate::cdp::method_name(method) {

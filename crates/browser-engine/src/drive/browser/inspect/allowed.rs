@@ -21,6 +21,8 @@ pub(crate) struct Reach<'a> {
     pub origins: &'a HashSet<String>,
     pub ours: &'a HashSet<i64>,
     pub ours_unique: &'a HashSet<String>,
+    /// The scripts of purlis's own worlds in the page, by id.
+    pub our_scripts: &'a HashSet<String>,
 }
 
 /// The methods allowed of the domains listed by method.
@@ -190,7 +192,6 @@ const METHODS: &[(&str, &[&str])] = &[
             "addInspectedHeapObject",
             "collectGarbage",
             "getHeapObjectId",
-            "getObjectByHeapObjectId",
             "getSamplingProfile",
             "startSampling",
             "startTrackingHeapObjects",
@@ -657,6 +658,10 @@ fn names_our_world(params: &Value, reach: &Reach<'_>) -> bool {
                     && value
                         .as_str()
                         .is_some_and(|unique| reach.ours_unique.contains(unique)))
+                || (key == "scriptId"
+                    && value
+                        .as_str()
+                        .is_some_and(|script| reach.our_scripts.contains(script)))
                 || names_our_world(value, reach)
         }),
         Value::Array(values) => values.iter().any(|value| names_our_world(value, reach)),
@@ -695,6 +700,7 @@ mod tests {
         let origins = origins();
         let ours: HashSet<i64> = [7].into_iter().collect();
         let ours_unique: HashSet<String> = ["purlis-world".to_owned()].into_iter().collect();
+        let our_scripts: HashSet<String> = ["71".to_owned()].into_iter().collect();
         refused(
             method,
             &params,
@@ -702,6 +708,7 @@ mod tests {
                 origins: &origins,
                 ours: &ours,
                 ours_unique: &ours_unique,
+                our_scripts: &our_scripts,
             },
         )
     }
@@ -852,6 +859,29 @@ mod tests {
                 "{method}"
             );
         }
+    }
+
+    #[test]
+    fn purlis_own_scripts_and_objects_by_heap_id_are_never_reached() {
+        assert!(
+            check(
+                "Debugger.setBreakpoint",
+                json!({ "location": { "scriptId": "71", "lineNumber": 0 } })
+            )
+            .is_some()
+        );
+        assert!(check("Debugger.getScriptSource", json!({ "scriptId": "71" })).is_some());
+        assert_eq!(
+            check("Debugger.getScriptSource", json!({ "scriptId": "72" })),
+            None
+        );
+        assert!(
+            check(
+                "HeapProfiler.getObjectByHeapObjectId",
+                json!({ "objectId": "1" })
+            )
+            .is_some()
+        );
     }
 
     #[test]

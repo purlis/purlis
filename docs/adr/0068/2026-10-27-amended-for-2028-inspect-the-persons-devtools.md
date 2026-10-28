@@ -24,7 +24,7 @@ be confirmed**, and carries the number its D-line has in the pull request.
    interface (found on a real engine in CI); purlis puts it out of the front end's reach before
    any of its scripts run, and of the hosts offered to the front end takes only DevTools' own
    hosted one, so it runs as a hosted front end that asks nothing of the engine (D-2028-11).
-   Where the engine's interface reaches the front end all the same, or the guard did not hold,
+   Where the engine's interface reaches the front end all the same, or the guard did not hold, or the front end does not answer how it runs,
    DevTools close. Spec #2008's "only http
    and https navigate" protects against a page or an agent opening other schemes, and every
    address either writes, the front end's own navigations of the page included, is still held
@@ -32,17 +32,20 @@ be confirmed**, and carries the number its D-line has in the pull request.
 4. **What DevTools may ask of the page is an allow-list** (D-2028-4). Every message the front
    end sends is checked before it reaches the page, and anything not listed is refused. Every
    method is listed by name, so a method a later engine adds, to any domain, is refused until
-   it is listed; and so are a session other than DevTools' own and those attached under it, an
-   origin other than the inspected page's, and purlis's own world in the page, which DevTools
-   are never told of. Cookies are read for the page's own origins alone and never written; a
-   resource is loaded from the page's own origins alone; no file is read or dragged in; what a
+   it is listed; and so are a session other than DevTools' own and those attached under it, and
+   an origin other than the inspected page's. purlis's own world in the page is never told to
+   DevTools: its contexts and its scripts are kept from them, a call that names either is
+   refused, no object is reached by its heap id, and a pause inside one of its scripts goes on
+   at once, unseen. Cookies are read for the page's own origins alone and never written; a
+   resource is asked of the page's own origins alone; no file is read or dragged in; what a
    cache holds is not read by an id that does not say whose it is; and the page's lifecycle
    and virtual time are not set. The front end's own requests to the web are failed where
    requests are held.
 5. **Nothing DevTools set outlasts Done** (D-2028-5). DevTools close as the person hands the
    browser back: their sessions are detached, which undoes what they set for themselves (a
    breakpoint, an override, throttling, emulation, blocked requests), and their context, with
-   all it kept, is thrown away. purlis's own worlds in every page are made afresh. What
+   all it kept, is thrown away. purlis's own worlds in every page are made afresh, under a name
+   the engine has not made one by, so none DevTools reached is used again. What
    DevTools changed in a page itself (its markup, its storage) is the person's change to the
    page, kept as item 6 says.
 6. **What DevTools wrote is kept out as the person's typing is** (D-2028-6). At the hand-back
@@ -52,7 +55,9 @@ be confirmed**, and carries the number its D-line has in the pull request.
    stored item, a script added to the page, a dialog's answer, a key's text), from six
    characters, is kept out as a run of the person's keys is; and what the person typed into
    DevTools is kept out too. A page that cannot be read at the hand-back holds the agent's
-   calls, refused in words, until it can be read and what its fields hold is kept out.
+   calls, refused in words that say what to do, until it can be read and what its fields hold
+   is kept out; a call that leaves the page (back, or to another address) goes, the page's
+   next document lets go of the hold, and so does the person's next hand-back.
 7. **No remote-debugging endpoint** (D-2028-7). Nothing listens on a port or a socket. The
    front end's `WebSocket` is a stand-in that opens no connection; what it sends reaches the
    driver as a binding's call from the front end's own main world, and the page's answers are

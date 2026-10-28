@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 
 use super::takeover::key;
 use super::{browser, browser_judged, id, snapshot, wait_for};
+use crate::WebAddress;
 use crate::drive::{
     Aim, Call, Content, Gate, InspectEnded, MouseButton, MouseKind, PageId, Painted, PersonInput,
     Refusal,
@@ -628,7 +629,13 @@ fn purlis_own_worlds_are_made_afresh_after_devtools_were_open() {
     let _ends = inspected(&browser, &engine);
     browser.hand_back();
     snapshot(&browser, 2);
-    assert!(engine.sent("Page.createIsolatedWorld").len() > made);
+    let worlds = engine.sent("Page.createIsolatedWorld");
+    assert!(worlds.len() > made);
+    // Under a name of its own, so the engine makes a new world, not the one it had.
+    let before = &worlds[made - 1].params["worldName"];
+    let after = &worlds.last().unwrap().params["worldName"];
+    assert_ne!(before, after);
+    assert!(after.as_str().unwrap().starts_with("purlis"));
 }
 
 #[test]
@@ -935,4 +942,167 @@ fn the_agents_paste_is_withheld_once_devtools_were_open_and_its_other_keys_go() 
             },
         )
         .expect("a key that pastes nothing goes");
+}
+
+#[test]
+fn a_page_never_read_at_the_hand_back_lets_the_agent_leave_it_and_a_second_hand_back_lets_go() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    let mut earlier = super::super::lock(&engine.hook).take();
+    engine.on(move |sent, engine| {
+        if sent.method == "Accessibility.getFullAXTree" {
+            return Some(Err(crate::cdp::CallError::TimedOut));
+        }
+        earlier.as_mut().and_then(|hook| hook(sent, engine))
+    });
+    browser.hand_back();
+    let refused = browser.call(&id(2), Call::Pages).unwrap_err();
+    assert_eq!(refused, Refusal::NotKeptOutYet);
+    let said = refused.to_string();
+    assert!(!said.contains("in a moment"), "{said}");
+    assert!(
+        said.contains("go back") || said.contains("another address"),
+        "{said}"
+    );
+    // Leaving the page is let through: it throws the page's document away.
+    let went = browser.call(
+        &id(3),
+        Call::Navigate {
+            page: None,
+            address: WebAddress::parse("http://fixture.test/other.html").unwrap(),
+        },
+    );
+    assert_ne!(went, Err(Refusal::NotKeptOutYet));
+    // A second hand-back lets go of the hold.
+    browser.take_over();
+    browser.hand_back();
+    assert_ne!(
+        browser.call(&id(4), Call::Pages),
+        Err(Refusal::NotKeptOutYet)
+    );
+}
+
+#[test]
+fn devtools_reach_no_object_by_its_heap_id_and_never_see_purlis_own_scripts() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context":{"id":9,"origin":"http://fixture.test","name":"purlis","uniqueId":"PURLIS-9","auxData":{"isDefault":false,"type":"isolated","frameId":"PAGE-1"}}}),
+        Some("S-INSPECTED"),
+    );
+    engine.emit(
+        "Debugger.scriptParsed",
+        json!({"scriptId":"71","url":"","executionContextId":9,"hash":"x"}),
+        Some("S-INSPECTED"),
+    );
+    engine.emit(
+        "Debugger.scriptParsed",
+        json!({"scriptId":"72","url":"http://fixture.test/app.js","executionContextId":3,"hash":"y"}),
+        Some("S-INSPECTED"),
+    );
+    front_end_sends(
+        &engine,
+        &json!({"id": 11, "method": "HeapProfiler.getObjectByHeapObjectId", "params": {"objectId": "1"}}),
+    );
+    front_end_sends(
+        &engine,
+        &json!({"id": 12, "method": "Debugger.setBreakpoint", "params": {"location": {"scriptId": "71", "lineNumber": 0}}}),
+    );
+    front_end_sends(
+        &engine,
+        &json!({"id": 13, "method": "Debugger.getScriptSource", "params": {"scriptId": "72"}}),
+    );
+    wait_for("all are answered", || {
+        let handed = handed_to_the_front_end(&engine);
+        [11, 12, 13]
+            .iter()
+            .all(|n| handed.iter().any(|m| m["id"] == *n))
+    });
+    let handed = handed_to_the_front_end(&engine);
+    let answer = |n: i64| handed.iter().find(|m| m["id"] == n).unwrap().clone();
+    assert!(answer(11).get("error").is_some());
+    assert!(answer(12).get("error").is_some());
+    assert!(answer(13).get("error").is_none());
+    assert!(
+        handed.iter().all(|m| m["params"]["scriptId"] != "71"),
+        "{handed:?}"
+    );
+    assert!(handed.iter().any(|m| m["params"]["scriptId"] == "72"));
+}
+
+#[test]
+fn devtools_paused_in_purlis_own_script_go_on_at_once_and_are_never_told() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    engine.emit(
+        "Runtime.executionContextCreated",
+        json!({"context":{"id":9,"origin":"http://fixture.test","name":"purlis","uniqueId":"PURLIS-9","auxData":{"isDefault":false,"type":"isolated","frameId":"PAGE-1"}}}),
+        Some("S-INSPECTED"),
+    );
+    engine.emit(
+        "Debugger.scriptParsed",
+        json!({"scriptId":"71","url":"","executionContextId":9,"hash":"x"}),
+        Some("S-INSPECTED"),
+    );
+    engine.emit(
+        "Debugger.paused",
+        json!({"reason":"exception","callFrames":[{"callFrameId":"f","functionName":"","location":{"scriptId":"71","lineNumber":0},"scopeChain":[],"this":{"type":"undefined"}}]}),
+        Some("S-INSPECTED"),
+    );
+    engine.emit("DOM.documentUpdated", json!({}), Some("S-INSPECTED"));
+    wait_for("the page's next word reaches DevTools", || {
+        handed_to_the_front_end(&engine)
+            .iter()
+            .any(|m| m["method"] == "DOM.documentUpdated")
+    });
+    assert!(
+        handed_to_the_front_end(&engine)
+            .iter()
+            .all(|m| m["method"] != "Debugger.paused")
+    );
+    assert!(
+        engine
+            .sent("Debugger.resume")
+            .iter()
+            .any(|s| s.session.as_deref() == Some("S-INSPECTED"))
+    );
+}
+
+#[test]
+fn devtools_close_where_the_front_end_does_not_answer_how_it_runs() {
+    for answer in [
+        Err(crate::cdp::CallError::TimedOut),
+        Ok(json!({ "result": { "type": "string", "value": "not json" } })),
+    ] {
+        let (browser, engine) = browser();
+        answers_devtools(&engine);
+        let mut earlier = super::super::lock(&engine.hook).take();
+        let answer = Mutex::new(Some(answer));
+        engine.on(move |sent, engine| {
+            if sent.method == "Runtime.evaluate"
+                && sent.params["expression"] == super::super::inspect::HOSTED
+            {
+                return answer.lock().unwrap().take();
+            }
+            earlier.as_mut().and_then(|hook| hook(sent, engine))
+        });
+        browser.take_over();
+        let ends: Ends = Arc::default();
+        let told = Arc::clone(&ends);
+        browser
+            .inspect(
+                1000,
+                600,
+                Box::new(move |why| told.lock().unwrap().push(why)),
+            )
+            .unwrap();
+        engine.emit(
+            "Page.loadEventFired",
+            json!({ "timestamp": 1.0 }),
+            Some("S-FRONT-1"),
+        );
+        wait_for("DevTools close", || !browser.inspecting());
+        assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Ended]);
+    }
 }

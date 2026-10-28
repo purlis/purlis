@@ -51,6 +51,17 @@ fn set_system_clipboard(text: &str) -> bool {
     child.wait().is_ok_and(|status| status.success())
 }
 
+/// Puts the machine's clipboard back as it was when dropped.
+struct PutBack(Option<String>);
+
+impl Drop for PutBack {
+    fn drop(&mut self) {
+        if let Some(was) = &self.0 {
+            set_system_clipboard(was);
+        }
+    }
+}
+
 /// Says `what` beside the run on CI, whatever the test harness keeps of its output.
 fn notice(what: &str) {
     let line = if std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
@@ -77,6 +88,9 @@ fn what_is_copied_in_devtools_is_never_pasted_by_the_agent_and_the_machines_own_
     let Some((browser, _data, _site)) = started() else {
         return;
     };
+    // The developer's own clipboard, where this runs on their machine, is put back after.
+    let kept = system_clipboard();
+    let _put_back = PutBack(kept);
     let ours = set_system_clipboard(THEIRS);
     open(&browser, "two-fields.html");
     let from = ref_on(&find(&browser, "Copy from"), "textbox \"Copy from\"");

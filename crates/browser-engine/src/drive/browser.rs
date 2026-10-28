@@ -3910,6 +3910,13 @@ impl Inner {
                         if let Some(frame) = text("/frame/id") {
                             self.worlds.left(&frame);
                         }
+                        // A page left unread at the hand-back that loads another document is
+                        // read anew: what DevTools wrote into the old one went with it (#2028).
+                        if params.pointer("/frame/parentId").is_none()
+                            && let Some(target) = state.page_of_session(session)
+                        {
+                            lock(&self.devtools_unread).remove(&target);
+                        }
                         state.frame_seen(session, &params["frame"], true);
                     }
                 }

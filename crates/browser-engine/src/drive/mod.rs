@@ -594,8 +594,9 @@ pub enum Refusal {
     /// they wrote into it is not yet known to be kept out (#2028): nothing is answered until it
     /// is.
     #[error(
-        "purlis could not yet read a page to keep what the person did in DevTools out of your \
-         answers, so this call was not carried out: try it again in a moment"
+        "purlis could not read a page the person had DevTools open on, to keep what they did \
+         there out of your answers, so this call was not carried out: go back, or go to another \
+         address in that page, or ask the person to take the browser over and hand it back"
     )]
     NotKeptOutYet,
     /// DevTools were open on this browser, and what the person copied there may be what a paste

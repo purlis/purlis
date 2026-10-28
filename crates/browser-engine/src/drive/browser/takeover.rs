@@ -298,7 +298,7 @@ impl Browser {
         self.acting_epoch.store(epoch, Ordering::SeqCst);
         let _carrying = Carrying::under(Driver::Agent, epoch);
         // What DevTools wrote into a page not read at the hand-back is kept out first (#2028).
-        self.devtools_read_again()?;
+        self.devtools_read_again(&call)?;
         let answer = self.run(call);
         if self.cut() {
             return Err(Refusal::Interrupted);
