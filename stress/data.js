@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793183685980,
+  "lastUpdate": 1793186484462,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8222,6 +8222,42 @@ window.BENCHMARK_DATA = {
             "value": 289.6,
             "unit": "MB",
             "extra": "median of 6 samples: 265.9, 304.8, 296, 288.9, 290.3, 222.6 MB; window 170.4 MB, session host 121.9 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4b1fca3ef8e8d725ee087e2c8fc86f264ba0fb0a",
+          "message": "Comments name the CLI's tests where #3613 moved them (tests/it/) (#3628)\n\nSix comments still pointed at crates/purlis-cli/tests/<file>.rs, which\n#3614 moved into tests/it/. ADRs and the recorded fixture are left as\nwritten.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T09:25:51Z",
+          "tree_id": "e00487d409048b5c58438c5256b524ec92c0a500",
+          "url": "https://github.com/purlis/purlis/commit/4b1fca3ef8e8d725ee087e2c8fc86f264ba0fb0a"
+        },
+        "date": 1793186480791,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 689,
+            "unit": "MB",
+            "extra": "median of 3 samples: 593, 689, 751 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 435.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 427.8, 432.9, 434, 436.5, 437.6, 557.7 MB; window 244.6 MB, session host 190.3 MB"
           }
         ]
       }
