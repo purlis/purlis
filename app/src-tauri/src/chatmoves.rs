@@ -463,9 +463,12 @@ impl crate::planes::Held {
         let sessions = self.chats().sessions();
         let came = match (&one.from, &one.to) {
             (None, Some(pool)) => {
-                to_a_runner(pool, &mover.chat, &|pool, profile| {
-                    self.chats().ready_profile_on(pool, profile)
-                }, &|| sessions.move_in(pool, &mover.chat))?;
+                to_a_runner(
+                    pool,
+                    &mover.chat,
+                    &|pool, profile| self.chats().ready_profile_on(pool, profile),
+                    &|| sessions.move_in(pool, &mover.chat),
+                )?;
                 Vec::new()
             }
             (Some(pool), None) => {
