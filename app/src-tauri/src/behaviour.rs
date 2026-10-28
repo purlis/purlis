@@ -699,10 +699,26 @@ impl OnTheRunner {
 
     /// The runner has a profile of its own named `name`, of `harness` (`claude` or `codex`,
     /// whose stand-in the parity image runs, `tests/parity/runner.Dockerfile`), signed in with
-    /// no key, its harness the program `program` is on this machine. A Codex profile is signed
-    /// in by the file Codex keeps its sign-in in.
+    /// no key, its harness the program `program` is on this machine. A Codex profile is one
+    /// for sandboxed chats only, its folder where purlis makes such a profile's (#2037): under
+    /// the runner's data home, in use once its first browser has started.
     fn signs_in_as(&self, harness: &str, name: &str, program: &Path) {
         use purlis_core::profilestore::{Folders, MachineProfile};
+        let folder = if harness == "codex" {
+            let browsers = self.prints(&format!(
+                "ls -d \"$HOME\"/.local/share/*/{} | head -n 1",
+                purlis_core::datahome::BROWSERS
+            ));
+            let data = Path::new(browsers.trim())
+                .parent()
+                .expect("the runner's data home, where its browsers are")
+                .to_path_buf();
+            data.join(purlis_core::profilestore::DIR)
+                .join(name)
+                .join(purlis_core::profilestore::CONFIG)
+        } else {
+            PathBuf::from(format!("/home/purlis/.{harness}-{name}"))
+        };
         let config = tempfile::tempdir().expect("a config home to write it in");
         purlis_core::profilestore::update(config.path(), |store| {
             store.profiles.push(MachineProfile {
@@ -710,7 +726,7 @@ impl OnTheRunner {
                 harness: harness.to_owned(),
                 title: name.to_owned(),
                 folders: Folders {
-                    config: PathBuf::from(format!("/home/purlis/.{harness}-{name}")),
+                    config: folder.clone(),
                     data: None,
                 },
                 adopted: None,
@@ -733,7 +749,8 @@ impl OnTheRunner {
         self.runs(
             false,
             &format!(
-                "mkdir -p {at} \"$HOME\"/.{harness}-{name} && umask 077 && cat > {at}/{}",
+                "mkdir -p {at} && mkdir -p -m 0700 '{}' && umask 077 && cat > {at}/{}",
+                folder.display(),
                 purlis_core::profilestore::FILE
             ),
             &store,
@@ -741,7 +758,10 @@ impl OnTheRunner {
         if harness == "codex" {
             self.runs(
                 false,
-                &format!("printf '{{\"parity\":true}}' > \"$HOME\"/.codex-{name}/auth.json"),
+                &format!(
+                    "printf '{{\"parity\":true}}' > '{}'/auth.json",
+                    folder.display()
+                ),
                 b"",
             );
         }
