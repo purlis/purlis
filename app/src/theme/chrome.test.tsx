@@ -662,6 +662,7 @@ const DIALOGS: Opened[] = [
               pins_together: null,
               warns: "both",
             },
+            repos: [],
           }}
           trouble="the chat is in the middle of a turn"
           busy={false}

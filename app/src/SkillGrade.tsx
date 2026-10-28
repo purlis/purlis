@@ -40,6 +40,8 @@ export function endedSaid(step: SkillGradeStep): string {
       return `The grade stopped: its chats did not start. ${step.said ?? ""}`.trim();
     case "over-cap":
       return `Stopped at its cap of ${tokensSaid(step.cap ?? 0)} after ${chats}${spent}. What ran is scored in Grades below.`;
+    case "over-limit":
+      return `Stopped at its dollar limit after ${chats}${spent}. What ran is scored in Grades below.`;
     case "spend-not-reported":
       return `Stopped after ${chats}: ${step.said ?? "a chat did not say what it spent, so the grade could not be held to its cap."}`;
     case "failed":
@@ -59,6 +61,20 @@ export function costSaid(plan: SkillGradePlan): string {
   if (estimate.tokens !== null) parts.push(`about ${tokensSaid(estimate.tokens)}`);
   if (estimate.cost_usd !== null) parts.push(`about $${estimate.cost_usd.toFixed(2)}`);
   return `From its last grade, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
+}
+
+/** The dollar limit a grade is held to, and the price it was worked out at (#3469): the model's,
+ *  or the dearest known where the model or its price is not. */
+export function limitSaid(plan: SkillGradePlan): string {
+  const limit = `$${(plan.cost_cap_usd ?? 0).toFixed(2)}`;
+  const price = `$${(plan.priced.usd_per_million ?? 0).toFixed(2)} a million tokens`;
+  if (plan.priced.of_the_model)
+    return `${limit}, its tokens at ${plan.priced.model ?? "its model"}'s ${price}`;
+  const why =
+    plan.priced.model === null
+      ? "as no model is named for its chats"
+      : `as ${plan.priced.model}'s price is not known`;
+  return `${limit}, its tokens at the dearest known price of ${price}, ${why}`;
 }
 
 /**
@@ -311,9 +327,8 @@ function GradePlan({
             {counted(plan.runs, "time", "times")} without it, up to{" "}
             {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min. {costSaid(plan)} It
             stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
-            {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or cost
-            ${(plan.cost_cap_usd ?? 0).toFixed(2)} where they say what they cost. The chats run on
-            the profile you pick
+            {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or cost{" "}
+            {limitSaid(plan)}. The chats run on the profile you pick
             {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of your
             own Allows and no tools but purlis's that only read, and its account pays for them as
             for any chat.

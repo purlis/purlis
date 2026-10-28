@@ -189,6 +189,8 @@ pub struct ChatForSkills {
     pub start: purlis_core::hoststart::ChatSkills,
     /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
     pub salt: Option<purlis_core::skillspan::PromptSalt>,
+    /// The folder it was started in: which of its workspace's clones it works in (#3462).
+    pub cwd: Option<PathBuf>,
     /// Whether the plane's skills reached it at its start ([`Running::plane_skills`], #3445).
     pub plane_skills: bool,
 }
@@ -409,15 +411,30 @@ struct Running {
     skills: Option<purlis_core::skills::Stamp>,
     /// **Whether the plane's skills reached it at its start** (#3445): the Skill studio's flag
     /// as this window read it once as the chat started (`purlis_core::skills::reach_chats_here`),
-    /// which its arming, its Notice, its stamp and Use skill… all take. Two cases it can only
-    /// approximate, as its stamp always has: a chat reattached from the session host (#2006)
-    /// takes the flag as read at its reattach, since nothing records its first start's; and a
-    /// runner's chat is armed by its runner (#2446), so this is this machine's word for it.
+    /// which its arming, its Notice, its stamp and Use skill… all take. A chat reattached from
+    /// the session host (#2006) takes its first start's, from its record (#3466), or the flag
+    /// as read at its reattach where a record written before that has none. A runner's chat is
+    /// armed by its runner (#2446), so this is this machine's word for it.
     plane_skills: bool,
     /// **Where its plane skills came from, read once at its start** (#3234): what its restart's
     /// stamp and Use skill… route it from again, so neither reads its clone a second time and
     /// both see the set it was handed (#3245).
     skills_read: purlis_core::hoststart::ChatSkills,
+}
+
+/// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
+/// `reattaching` from the session host keeps the flag its first start read, `recorded`, where its
+/// record has one; any other start reads the Skill studio's flag now (`read`).
+fn plane_skills_at_start(
+    reattaching: bool,
+    recorded: Option<bool>,
+    read: impl FnOnce() -> bool,
+) -> bool {
+    if reattaching {
+        recorded.unwrap_or_else(read)
+    } else {
+        read()
+    }
 }
 
 /// **The personas a chat is named by** (#2691), from one read of the app's record of its run
@@ -1412,7 +1429,8 @@ impl Chats {
     /// purlis's server and read tools alone (`purlis_core::hoststart::Arming::graded`).
     ///
     /// `skills` is where its plane skills come from, read once at its start
-    /// (`purlis_core::hoststart::ChatSkills::read`, #3234), as its tab's Notice reads them.
+    /// (`purlis_core::hoststart::ChatSkills::read`, #3234), as its tab's Notice reads them: read
+    /// only once the arming's fail-closed checks have passed (#3461).
     ///
     /// **Fail closed.** A sandbox compiled for another harness, or one the harness is not armed
     /// to carry here (the app shipped without its plugin or its binary), refuses the chat rather
@@ -1427,7 +1445,7 @@ impl Chats {
         persona: Option<&str>,
         env: &[(String, String)],
         graded: bool,
-        skills: &purlis_core::hoststart::ChatSkills,
+        skills: &dyn std::ops::Deref<Target = purlis_core::hoststart::ChatSkills>,
     ) -> Result<Armed, String> {
         purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
             root: &self.project,
@@ -3395,38 +3413,27 @@ impl Chats {
             )
         }));
         // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
-        // here, so its arming, its Notice, its stamp and Use skill… take the same word.
-        let plane_skills = purlis_core::skills::reach_chats_here(&self.project);
+        // here, so its arming, its Notice, its stamp and Use skill… take the same word; a chat
+        // reattached keeps its start's, where its record has it (#3466).
+        let plane_skills = plane_skills_at_start(reattaching, chat.plane_skills, || {
+            purlis_core::skills::reach_chats_here(&self.project)
+        });
         // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
-        // arms it below and what its tab's Notice says are both worked out from this.
-        let skills = if on_the_runner {
-            purlis_core::hoststart::ChatSkills::default()
-        } else {
-            purlis_core::hoststart::ChatSkills::read(
-                plane_skills,
-                &self.project,
-                harness,
-                chat.cwd.as_deref(),
-                runs_as.as_deref(),
-            )
-        };
-        // A skill its persona names that this machine does not have (SK-5, #2768), or one it
-        // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
-        // tab's Notice says which, never a silent drop.
-        let skills_missing = if reattaching || on_the_runner {
-            None
-        } else {
-            purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
-                |not| SkillsMissing {
-                    persona: runs_as.clone(),
-                    missing: not.missing,
-                    no_built_in: not.no_built_in,
-                    broken: not.broken.into_iter().map(SkillBroken::from).collect(),
-                    by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
-                    beside_a_built_in: not.beside_a_built_in,
-                },
-            )
-        };
+        // arms it below and what its tab's Notice says are both worked out from this. Read once
+        // its arming has checked the start is not refused (#3461).
+        let skills = std::cell::LazyCell::new(|| {
+            if on_the_runner {
+                purlis_core::hoststart::ChatSkills::default()
+            } else {
+                purlis_core::hoststart::ChatSkills::read(
+                    plane_skills,
+                    &self.project,
+                    harness,
+                    chat.cwd.as_deref(),
+                    runs_as.as_deref(),
+                )
+            }
+        });
         // A sandboxed Claude Code chat whose project's own settings it does not load says which
         // keys, in the window only (ADR 0067 as amended 2026-10-15). Its arming read the same
         // files and decided the same way.
@@ -3527,6 +3534,23 @@ impl Chats {
                 chat.graded,
                 &skills,
             )?
+        };
+        // A skill its persona names that this machine does not have (SK-5, #2768), or one it
+        // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
+        // tab's Notice says which, never a silent drop.
+        let skills_missing = if reattaching || on_the_runner {
+            None
+        } else {
+            purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
+                |not| SkillsMissing {
+                    persona: runs_as.clone(),
+                    missing: not.missing,
+                    no_built_in: not.no_built_in,
+                    broken: not.broken.into_iter().map(SkillBroken::from).collect(),
+                    by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
+                    beside_a_built_in: not.beside_a_built_in,
+                },
+            )
         };
         let hooks = match &settings_watched {
             Some(Err(why)) => {
@@ -3930,6 +3954,9 @@ impl Chats {
                 unsandboxed.is_some()
             },
             identity,
+            // The Skill studio's flag this start took (#3466): what its record keeps, and what
+            // a later reattach of it takes.
+            plane_skills: Some(plane_skills),
             ..chat.clone()
         };
         // What a start says on its tab was said at the start it reattached to (#2006); what
@@ -3983,7 +4010,7 @@ impl Chats {
                 composed_by_its_host: on_the_runner,
                 grants_as: grants_persona_of(chat, &self.project),
                 skills: stamp,
-                skills_read: skills,
+                skills_read: (*skills).clone(),
                 plane_skills,
             },
         );
@@ -4911,6 +4938,7 @@ impl Chats {
                 .id
                 .as_deref()
                 .and_then(purlis_core::skillspan::PromptSalt::of_chat),
+            cwd: running.chat.cwd.clone(),
         })
     }
 
@@ -5117,6 +5145,14 @@ impl Chats {
             .collect()
     }
 
+    /// The number the next chat started here would take (#3376): one past the highest this
+    /// plane has dealt. Only a guess for what to show — the Name field's placeholder,
+    /// `steward 10` — since a chat started meanwhile takes it first; a start is dealt its
+    /// number by the sessions, never by this.
+    pub fn next_number(&self) -> u32 {
+        self.sessions.dealt().saturating_add(1)
+    }
+
     /// What was open, to write down.
     pub fn record(&self) -> Record {
         // The chats a launch has still to start are written as they were recorded, each in
@@ -5158,6 +5194,8 @@ impl Chats {
             .map(|chat| Chat {
                 pid: None,
                 model: None,
+                // Not started this launch, so no flag of a start of its (#3466).
+                plane_skills: None,
                 ..chat.clone()
             })
             .collect();
@@ -5192,6 +5230,9 @@ impl Chats {
                     active: front == Some(session),
                     pid: None,
                     model: None,
+                    // Its start is under way, and the flag it takes is not known yet (#3466):
+                    // a later reattach reads it again rather than take an earlier run's.
+                    plane_skills: None,
                     ..one.chat.clone()
                 });
             };

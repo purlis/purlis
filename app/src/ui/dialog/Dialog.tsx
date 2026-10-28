@@ -14,9 +14,10 @@
  *   is never under the footer (WCAG 2.4.11): the two never overlap.
  * - **The width is the size's, never the content's**: `standard` (600 px) or `wide` (800 px,
  *   only for a list beside its details; the operator's ruling on #2918), each at most the window's width less its gutters.
- * - **The height follows the content up to the window less 48 px**; a dialog given a `height`
- *   takes the lesser of the two and keeps it whatever its content.
- * - **Anchored at a fixed top**, so a change in its content moves only its bottom edge.
+ * - **The height follows the content up to the window less its top less 24 px**; a dialog given
+ *   a `height` takes the lesser of the two and keeps it whatever its content.
+ * - **Anchored at a fixed top**, `max(24px, 6vh)` down (R2), so a change in its content moves
+ *   only its bottom edge.
  * - **At most three answers, each in its place**: Cancel leads, the main action trails, and one
  *   other answer may stand between them. They are props, not children, so a fourth, or a main
  *   action anywhere but last, cannot be written.
@@ -128,7 +129,7 @@ interface Surface {
   /** Esc, Cancel, or any other way out the person takes. */
   onClose: () => void;
   size?: DialogSize;
-  /** A height of its own, in px, taken whatever its content, at most the window's less 48 px. */
+  /** A height of its own, in px, taken whatever its content, at most the window's less its top less 24 px. */
   height?: number;
   /** Where the keyboard starts (see the family's rules). */
   initialFocus?: InitialFocus;

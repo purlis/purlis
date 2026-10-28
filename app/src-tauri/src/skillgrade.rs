@@ -84,6 +84,27 @@ pub struct GradeEstimate {
     pub chats_then: u32,
 }
 
+/// **The price a grade's dollar limit is worked out at** (`grades::price`), as the plan says it.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct GradePrice {
+    /// Dollars a million tokens.
+    pub usd_per_million: f64,
+    /// Whether it is the price of the model the chats run on, rather than the dearest known.
+    pub of_the_model: bool,
+    /// The model the chats run on, where the profile says one.
+    pub model: Option<String>,
+}
+
+impl From<&grading::Priced> for GradePrice {
+    fn from(priced: &grading::Priced) -> GradePrice {
+        GradePrice {
+            usd_per_million: priced.usd_per_million,
+            of_the_model: priced.from == grading::PricedFrom::Model,
+            model: priced.model.clone(),
+        }
+    }
+}
+
 /// **What grading a copy would run, before anything runs** (decision 22).
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct SkillGradePlan {
@@ -105,9 +126,10 @@ pub struct SkillGradePlan {
     /// The tokens a grade may spend before it stops, and whether this machine set it.
     pub token_cap: f64,
     pub cap_set_here: bool,
-    /// The cost a grade may reach besides, where its chats say what they cost: the cap's tokens
-    /// at the dearest price (`grades::cap::Cap::cost_usd`).
+    /// The dollar limit a grade is held to besides (the operator's ruling G12, #3469): the cap's
+    /// tokens at `priced` (`grades::cap::Cap::cost_usd`).
     pub cost_cap_usd: f64,
+    pub priced: GradePrice,
     /// The longest one of its chats runs, in minutes: the plan's "up to".
     pub chat_minutes: u32,
     /// The profile its chats run on, and the sandbox they run in there, by its name, or why no
@@ -122,16 +144,17 @@ pub struct SkillGradePlan {
 
 /// **Whether a grade's chats can run on `profile`** (the project's default where none) in the
 /// project at `root`: the profile's name and the sandbox's, or why not (R1 and R2 of the
-/// operator's ruling of 2026-10-26).
+/// operator's ruling of 2026-10-26); and the price its dollar limit is worked out at there
+/// (`grades::priced`), the dearest where no chat could start.
 fn chats_on(
     root: &std::path::Path,
     profile: Option<String>,
-) -> (Option<String>, Result<String, String>) {
+) -> (Option<String>, Result<String, String>, grading::Priced) {
     let profile = match profile {
         Some(profile) => profile,
         None => match crate::curation::default_profile(root, "no grade can run") {
             Ok((profile, _)) => profile,
-            Err(why) => return (None, Err(why)),
+            Err(why) => return (None, Err(why), grades::price::of_model(None)),
         },
     };
     let start = purlis_core::start::Start {
@@ -141,7 +164,11 @@ fn chats_on(
         made: purlis_core::sandbox::Made::Window,
         ..Default::default()
     };
-    let checked = grades::ready_to_grade(&start, root).map(|ready| {
+    let ready = grades::ready_to_grade(&start, root);
+    let priced = ready
+        .as_ref()
+        .map_or_else(|_| grades::price::of_model(None), grades::priced);
+    let checked = ready.map(|ready| {
         ready
             .sandbox
             .as_ref()
@@ -152,14 +179,14 @@ fn chats_on(
             .title()
             .to_owned()
     });
-    (Some(profile), checked)
+    (Some(profile), checked, priced)
 }
 
 impl SkillGradePlan {
     fn of(
         planned: &Planned,
         running: Option<String>,
-        on: (Option<String>, Result<String, String>),
+        on: (Option<String>, Result<String, String>, grading::Priced),
     ) -> Self {
         let tests = planned
             .request
@@ -177,7 +204,7 @@ impl SkillGradePlan {
                     .collect()
             })
             .unwrap_or_default();
-        let (profile, sandbox) = on;
+        let (profile, sandbox, priced) = on;
         SkillGradePlan {
             tests,
             chats: planned.plan.map(|plan| plan.chats).unwrap_or_default(),
@@ -213,7 +240,8 @@ impl SkillGradePlan {
             }),
             running,
             token_cap: planned.cap.tokens as f64,
-            cost_cap_usd: planned.cap.cost_usd(),
+            cost_cap_usd: planned.cap.cost_usd(&priced),
+            priced: (&priced).into(),
             cap_set_here: planned.cap.from == grades::cap::From::Yours,
             chat_minutes: u32::try_from(grades::CHAT_TIME.as_secs() / 60).unwrap_or(u32::MAX),
             profile,
@@ -233,6 +261,8 @@ pub enum GradeEnded {
     ChatsDidNotStart,
     /// It reached its token cap.
     OverCap,
+    /// It reached its dollar limit (#3469).
+    OverLimit,
     /// A chat did not say what it spent, so the cap could not be held.
     SpendNotReported,
     /// A fault in purlis ended it before it was scored (#3353): recorded as interrupted.
@@ -246,6 +276,7 @@ impl From<GradeEnd> for GradeEnded {
             GradeEnd::Cancelled => GradeEnded::Stopped,
             GradeEnd::ChatsDidNotStart => GradeEnded::ChatsDidNotStart,
             GradeEnd::OverCap => GradeEnded::OverCap,
+            GradeEnd::OverLimit => GradeEnded::OverLimit,
             GradeEnd::SpendNotReported => GradeEnded::SpendNotReported,
             // Recorded at a start for a grade purlis stopped under, never told as one ends.
             GradeEnd::Interrupted => GradeEnded::Failed,
@@ -392,7 +423,7 @@ pub(crate) async fn skill_grade_start(
                 "{skill} has no trigger tests to grade, so nothing was started."
             ));
         };
-        let (profile, on) = chats_on(&root, profile);
+        let (profile, on, priced) = chats_on(&root, profile);
         on?;
         let profile = profile.ok_or("The grade did not start: no profile was found.")?;
         let id = purlis_core::reopen::mint();
@@ -420,7 +451,9 @@ pub(crate) async fn skill_grade_start(
         let cap = planned.cap.tokens;
         let limits = grading::Limits {
             tokens: cap,
-            cost_usd: Some(planned.cap.cost_usd()),
+            cost_usd: Some(planned.cap.cost_usd(&priced)),
+            priced: Some(priced),
+            unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
         };
         let grade = id.clone();
         // Held as under way while it runs (#3353): a crash, a fault or a quit before it ends
@@ -437,19 +470,29 @@ pub(crate) async fn skill_grade_start(
             ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
             runs: request.runs,
             spent: Spent::default(),
-            report: grades::underway::interrupted_report(cap, limits.cost_usd),
+            report: grades::underway::interrupted_report(
+                cap,
+                limits.cost_usd,
+                limits.priced.clone(),
+            ),
             plugins_off: None,
         };
-        if let Err(why) = grades::underway::began(&root, &level, &under_way) {
-            tracing::warn!(
-                "purlis: grade {grade} is not held as under way ({why}): a crash before it ends \
-                 loses it"
-            );
-        }
+        // Its lock is held while the grade runs (#3466): what tells a start it runs.
+        let marker = match grades::underway::began(&root, &level, &under_way) {
+            Ok(marker) => Some(marker),
+            Err(why) => {
+                tracing::warn!(
+                    "purlis: grade {grade} is not held as under way ({why}): a crash before it \
+                     ends loses it"
+                );
+                None
+            }
+        };
         let held_at = root.clone();
         std::thread::Builder::new()
             .name("purlis-grade".to_owned())
             .spawn(move || {
+                let marker = std::cell::RefCell::new(marker);
                 let tell = |ran: u32,
                             tokens: Option<u64>,
                             ended: Option<GradeEnded>,
@@ -475,6 +518,7 @@ pub(crate) async fn skill_grade_start(
                         held: &held,
                         snapshot: &copy.snapshot,
                         cost_left: limits.cost_usd,
+                        unpriced_at: limits.unpriced_usd_per_million,
                         skill: &skill,
                         profile: &profile,
                         stop: &stop,
@@ -483,7 +527,7 @@ pub(crate) async fn skill_grade_start(
                         harness: None,
                         plugins_off: None,
                     };
-                    let report = grading::grade(&request, &mut chats, Some(limits));
+                    let report = grading::grade(&request, &mut chats, Some(limits.clone()));
                     let harness = chats.harness.take();
                     let plugins_off = chats.plugins_off.take();
                     let spent = chats.spent;
@@ -502,6 +546,7 @@ pub(crate) async fn skill_grade_start(
                         &purlis_core::machine::this_log_name(),
                     );
                     grades::underway::ended(&root, &grade);
+                    drop(marker.borrow_mut().take());
                     running().remove(&grade);
                     let said = match (&graded.report.not_started, recorded) {
                         (Some(why), _) => Some(why.clone()),
@@ -526,6 +571,8 @@ pub(crate) async fn skill_grade_start(
                 };
                 held_to_its_end(&grade, run, || {
                     // Recorded as interrupted, unless the fault came once it was recorded whole.
+                    // Its lock let go of first: a start reads a held lock as a grade that runs.
+                    drop(marker.borrow_mut().take());
                     let said = if record_interrupted(&root).contains(&grade) {
                         FAILED
                     } else {
@@ -595,6 +642,10 @@ struct InChats<'a> {
     snapshot: &'a purlis_core::skills::verbs::drafts::Snapshot,
     /// What the grade may still cost, where its chats say: a chat that passes it is ended.
     cost_left: Option<f64>,
+    /// What a chat that says its tokens and no cost is counted at against [`Self::cost_left`],
+    /// in dollars a million: the grade's own `Limits::unpriced_usd_per_million`, as the runner
+    /// counts it.
+    unpriced_at: Option<f64>,
     skill: &'a str,
     profile: &'a str,
     stop: &'a AtomicBool,
@@ -619,9 +670,24 @@ impl Chats for InChats<'_> {
         if let Some(tokens) = ran.tokens {
             *self.spent.tokens.get_or_insert(0) += tokens;
         }
-        if let Some(cost) = ran.cost_usd {
-            *self.spent.cost_usd.get_or_insert(0.0) += cost;
-            self.cost_left = self.cost_left.map(|left| left - cost);
+        // As the runner counts it: a cost no reader could hold is no cost.
+        match (
+            ran.cost_usd.filter(|cost| cost.is_finite() && *cost >= 0.0),
+            ran.tokens,
+        ) {
+            (Some(cost), _) => {
+                *self.spent.cost_usd.get_or_insert(0.0) += cost;
+                self.cost_left = self.cost_left.map(|left| left - cost);
+            }
+            // Tokens said and no cost: counted at the dearest price, as the runner counts them.
+            (None, Some(tokens)) => {
+                if let Some(at) = self.unpriced_at {
+                    self.cost_left = self
+                        .cost_left
+                        .map(|left| left - tokens as f64 * at / 1_000_000.0);
+                }
+            }
+            (None, None) => {}
         }
         if matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut) {
             self.spent.chats += 1;
@@ -730,7 +796,7 @@ impl InChats<'_> {
                 if let (Some(left), Some(now)) = (self.cost_left, cost_now())
                     && now > left
                 {
-                    break ChatEnd::OverCap;
+                    break ChatEnd::OverLimit;
                 }
                 match heard.recv_timeout(LOOK_EVERY) {
                     Ok(Watched::Started(name)) => {

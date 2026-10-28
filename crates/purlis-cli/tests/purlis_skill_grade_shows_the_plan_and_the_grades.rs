@@ -94,7 +94,10 @@ fn skill_grade_says_what_a_grade_runs_and_spends_then_each_grade() {
         text.contains("A grade stops once its chats have spent 200000 tokens (the default;"),
         "{text}"
     );
-    assert!(text.contains("or once they cost $15.00"), "{text}");
+    assert!(
+        text.contains("or once they cost $15.00, its tokens at the dearest known price of $75.00"),
+        "{text}"
+    );
     assert!(
         text.contains("1 of 1 test passed  with 100%  without 50%  difference +50 points"),
         "{text}"

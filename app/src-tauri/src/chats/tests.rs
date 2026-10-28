@@ -5090,6 +5090,29 @@ fn the_counter_a_quit_records_counts_the_chats_that_closed_too() {
 }
 
 #[test]
+fn the_next_number_the_picker_names_is_the_one_the_next_start_takes() {
+    // Start a chat's Name placeholder says `steward 10` by it (#3376): one past the highest
+    // dealt, so a chat that closed has spent its number too.
+    let dir = tempfile::tempdir().unwrap();
+    let claude = a_claude(dir.path());
+    let chats = Chats::new();
+    assert_eq!(chats.next_number(), 1);
+    chats.start(&chat(&claude, "ide.7", None), SIZE).unwrap();
+    let going = chats.start(&chat(&claude, "ide.8", None), SIZE).unwrap();
+    chats.close(going).expect("it closes");
+
+    let named = chats.next_number();
+    let next = chats.start(&chat(&claude, "ide.9", None), SIZE).unwrap();
+
+    assert_eq!(named, going + 1);
+    assert_eq!(
+        named, next,
+        "the placeholder named a number the start did not take"
+    );
+    chats.end_all();
+}
+
+#[test]
 fn a_record_written_before_chats_kept_their_numbers_is_put_back_as_it_always_was() {
     // Every operator has one of these at the first launch after this change, and it says
     // nothing about which chat was which. Dealing them in order is what the app did
@@ -8239,4 +8262,36 @@ fn a_chat_serving_on_a_port_is_owed_a_restart_once_its_grant_is_taken_back() {
     assert_eq!(chats.owe_restart_serving(None, port), vec![session]);
     assert!(chats.owed_restarts().contains(&session));
     chats.close(session).expect("closed");
+}
+
+#[test]
+fn a_reattached_chat_keeps_the_studio_flag_its_start_read_3466() {
+    let never = || -> bool { panic!("the flag was read again") };
+    assert!(plane_skills_at_start(true, Some(true), never));
+    assert!(!plane_skills_at_start(true, Some(false), never));
+    // A record written before the flag was kept: read again, as before.
+    assert!(plane_skills_at_start(true, None, || true));
+    // A start that is not a reattach reads the flag now, whatever the record said.
+    assert!(!plane_skills_at_start(false, Some(true), || false));
+}
+
+#[test]
+fn the_flag_a_chat_started_with_is_what_its_record_keeps_3466() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, _wrote) = recorded();
+    // A record put back from an earlier run says the opposite of what this start reads: a fresh
+    // start reads the flag, and the record keeps that.
+    let first = chats
+        .start(&chat(&a_claude(dir.path()), "ide.6", None), SIZE)
+        .unwrap();
+    let now = lock(&chats.open)[&first].plane_skills;
+    let _ = chats.close(first);
+    let put_back = Chat {
+        plane_skills: Some(!now),
+        ..chat(&a_claude(dir.path()), "ide.7", Some(ID))
+    };
+    let session = chats.start(&put_back, SIZE).unwrap();
+    assert_eq!(lock(&chats.open)[&session].plane_skills, now);
+    assert_eq!(chats.record().chats[0].plane_skills, Some(now));
+    let _ = chats.close(session);
 }

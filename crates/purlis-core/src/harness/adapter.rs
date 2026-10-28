@@ -106,6 +106,22 @@ pub trait HarnessAdapter: Sync {
         None
     }
 
+    /// **The model a grade's chat on this harness runs on**, as `command` (the program, then the
+    /// profile's own words) under the chat's environment `env` would start it, where the
+    /// harness's words say one (#3469): what its dollar limit is priced from
+    /// ([`crate::skills::grades::price`]). `None` where they leave it to the harness's own
+    /// default, which the limit then prices at the dearest. Asked only where
+    /// [`Self::can_grade`] says `true`; the default is a harness whose model purlis does not
+    /// read.
+    fn grade_model(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        let _ = (command, env);
+        None
+    }
+
     /// The chat's whole line under `form`, the sandbox [`Self::sandbox_compiler`] compiled,
     /// from `words`: the program, the profile's `command`, then `armed` (what [`Self::arm`]
     /// gave), then `charters`, charter's own words — where the chat opens, `at`; or the one

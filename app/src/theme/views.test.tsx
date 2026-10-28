@@ -67,6 +67,7 @@ import type { ViewRef } from "../tabs";
 import { complaints } from "./complaints.testkit";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme";
 import { forgetGroups } from "../settings/links";
+import { forgetDevicesForTests } from "../devices";
 import { findSelectNamed, pickIn } from "../ui/select/select.testkit";
 
 afterEach(() => {
@@ -1141,6 +1142,74 @@ const ARCHIVE_REF: ViewRef = { from: null, view: "memory-archive", key: "shared"
 const VAULT_REF: ViewRef = { from: null, view: "vault", key: "ops" };
 const TODO_REF: ViewRef = { from: null, view: "todo", key: "alpha/20260302-091400-review" };
 
+/** This machine and two runners, for the Devices view (#2052). */
+const DEVICES_SHOWN = {
+  version: "0.9.0",
+  placement: {
+    here: {
+      chats: [{ plane: "/plane", session: 1, name: "lint" }],
+      browsers: [{ plane: "/plane", session: 1, program: "p-lint-b1", name: "b1", chat: "lint" }],
+    },
+    runners: [
+      {
+        pool: "builds",
+        runner: "builds",
+        draining: false,
+        on: { chats: [{ plane: "/plane", session: 2, name: "verify" }], browsers: [] },
+      },
+      { pool: "qa", runner: "qa", draining: true, on: { chats: [], browsers: [] } },
+    ],
+    unkept: [{ plane: "/plane", session: 7, name: "orphan", pool: "removed" }],
+    unkept_browsers: [{ plane: "/plane", session: 7, name: "b2", chat: "orphan", pool: "removed" }],
+  },
+  owned: false,
+  pools: [
+    {
+      pool: "builds",
+      limits: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
+      millicpus: 2000,
+    },
+  ],
+};
+
+/** What each runner answers: that it runs, on another version than this machine's. */
+const DEVICE_ANSWERS = {
+  standing: { state: "running" },
+  link: { state: "linked" },
+  version: "0.8.1",
+  contacted: 1_800_000_000,
+  holds: { open: [], browsers_open: [], chats: 2, browsers: 1 },
+};
+
+/** A runner's answer in each other state a Devices row draws. */
+const DEVICE_SAYS = {
+  suspended: {
+    ...DEVICE_ANSWERS,
+    standing: { state: "suspended" },
+    link: null,
+    version: null,
+    contacted: null,
+  },
+  silent: {
+    ...DEVICE_ANSWERS,
+    link: {
+      state: "down",
+      why: "the runner did not answer in time, after the link was made and the container checked as it was made",
+    },
+    version: null,
+  },
+  rekeyed: { ...DEVICE_ANSWERS, link: { state: "key_changed" }, version: null },
+  unread: {
+    ...DEVICE_ANSWERS,
+    standing: {
+      state: "unknown",
+      why: "Cannot connect to the Docker daemon. Is the docker daemon running?",
+    },
+    link: null,
+    version: null,
+  },
+};
+
 const STATES: State[] = [
   { name: "a persona", view: PERSONA, drawn: /Charter defects go upstream/ },
   {
@@ -1196,6 +1265,54 @@ const STATES: State[] = [
     },
   },
   { name: "Saving", view: { from: null, view: "saving", key: "" }, drawn: /site/ },
+  {
+    name: "Devices, runners that answer on another version, and the use per pool",
+    view: { from: null, view: "devices", key: "" },
+    answers: { devices: DEVICES_SHOWN, device_runner: DEVICE_ANSWERS },
+    drawn: /CPUs requested/,
+  },
+  ...(
+    [
+      ["suspended", DEVICE_SAYS.suspended, /Its container is stopped/],
+      ["that do not answer", DEVICE_SAYS.silent, /It does not answer/],
+      ["whose key changed", DEVICE_SAYS.rekeyed, /another key than the one/],
+      ["whose container could not be read", DEVICE_SAYS.unread, /Check that Docker runs/],
+    ] as const
+  ).map(([which, answer, drawn]) => ({
+    name: `Devices, runners ${which}, with chats on a pool no longer kept`,
+    view: { from: null, view: "devices", key: "" } as ViewRef,
+    answers: { devices: DEVICES_SHOWN, device_runner: answer },
+    drawn,
+  })),
+  {
+    name: "Devices, while they are read",
+    view: { from: null, view: "devices", key: "" },
+    // Never answered: the view stays on its reading line.
+    answers: { devices: new Promise(() => {}) },
+    drawn: /Reading this machine/,
+  },
+  {
+    name: "Devices, while each runner is asked",
+    view: { from: null, view: "devices", key: "" },
+    // Never answered: each runner's row stays on asking, Refresh beside them.
+    answers: { devices: DEVICES_SHOWN, device_runner: new Promise(() => {}) },
+    drawn: /Asking the runner how it is/,
+  },
+  {
+    name: "Devices, a runner purlis could not ask",
+    view: { from: null, view: "devices", key: "" },
+    answers: {
+      devices: DEVICES_SHOWN,
+      device_runner: new Error("No runner qa of pool qa is on this machine."),
+    },
+    drawn: /purlis could not ask this runner/,
+  },
+  {
+    name: "Devices that could not be read",
+    view: { from: null, view: "devices", key: "" },
+    answers: { devices: new Error("runners.json could not be read: permission denied") },
+    drawn: /permission denied/,
+  },
   {
     name: "a browser whose view the host refused",
     view: { from: null, view: "browser", key: "01J9ZQ8000000000000000000D" },
@@ -1699,6 +1816,8 @@ describe.each(Object.keys(BUILT_IN))("every view in %s", (theme) => {
     forgetDrafts();
     // Which group each Settings level shows is the window's, for as long as it runs (SE-22).
     forgetGroups();
+    // An ask of a runner a state left unanswered is not joined by the next state's.
+    forgetDevicesForTests();
   });
 
   it.each(STATES)("draws $name with tokens only", async (state) => {

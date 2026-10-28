@@ -3776,9 +3776,15 @@ An end row, never a pass or a fail:
   records it (the tree git holds of it, or `uncommitted`); `commit`, the commit that tree is, or
   null; `harness` and `profile`, the plain names its chats ran on; `ts`; `runs`, each fixture's
   runs per arm; `report`, the grade report as ADR 0105 §1 spells it, with the token cap it was
-  held to and what its chats spent (`cap`, `spent_tokens`, ADR 0105 §4), and the cost bound
+  held to and what its chats spent (`cap`, `spent_tokens`, ADR 0105 §4), and the dollar limit
   beside it and what they cost, where their harness said (`cost_cap_usd`, `spent_usd`, absent
-  otherwise; ADR 0105 as amended 2026-10-26); `spent`,
+  otherwise; ADR 0105 as amended 2026-10-26); the price that limit was worked out at, `priced`
+  `{usd_per_million, from, model}`, `from` `model` (the model its chats ran on, as its harness's
+  adapter reads it, `model` absent where none was said) or `dearest` (the dearest known price,
+  `purlis_core::skills::grades::price`), and `counted_usd`, what the limit counted where a chat
+  said its tokens and not its cost (its tokens at the dearest price; absent otherwise), both
+  since #3469 and absent in older rows; `report.ended` `over-limit` where it stopped at that
+  limit before its tokens' cap (ADR 0105 as amended 2026-10-27, the dollar limit); `spent`,
   `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not; and
   `plugins_off`, the ids of the harness's own plugins its chats were handed off (every one it had
   installed, purlis's own left out; #3468, ADR 0105 as amended 2026-10-28), absent in a row
@@ -3792,8 +3798,10 @@ An end row, never a pass or a fail:
   name; a test triggered more often than it ran, run more often than the grade's `runs`, with a
   rate that is not the two's share or a pass where nothing ran, or a chat that is no plain id; an
   arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
-  reason that holds a control character or passes 2 KiB, #3353; a `plugins_off` that is no list of
-  at most 256 ids a plugin could have, #3468) is skipped. At most 200 grades of a skill are answered, newest first
+  reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
+  1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469;
+  a `plugins_off` that is no list of at most 256 ids a plugin could have, #3468) is
+  skipped. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::grades_of`).
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
@@ -6053,6 +6061,7 @@ down rather than read off the code.
 | `chats[].resumed_from` | str | default `""` (absent) | the id of the chat whose session record **Resume** started this one from, taken from that record's `chat-id` (#871). Absent for every other chat, and for one resumed from a record written before `chat-id`, which names its chat only by number. `from` (above) carries the parent's chat id the same way, as its `id` (#872) |
 | `chats[].pid` | int | default `0` (absent) | the process the app started this chat's program as, while it runs (V82, #1018): what `commit-msg` and `purlis save` check that a commit runs below before they stamp provenance trailers. Taken from the running session at every write of the record, so one a record was put back with is replaced at the next write. It may be a wrapper profile's process; the harness runs below it. Written only while the chat's program runs: the record is written again when it ends, and the record written at quit names no pid. `0` reads as absent, and a chat with none stamps nothing. **A process that started after the record's last write (2 s of clock slack) is not the one it names** (#1021, `process::could_be_recorded`): provenance stamps nothing for it, and the check that refuses a vault's `--token-stdin` from inside a chat does not count it as the chat's (`secrets::setup::in_a_chat`) |
 | `chats[].model` | str | default `""` (absent) | the model the chat's harness said its program runs on, in the `model` of its `SessionStart` hook (ADR 0087 §6, #1021): what a provenance trailer's `Assisted-by: <harness>:<model>` names. Taken only from a report the board took as the chat's own harness (ADR 0024), never from a sub-agent's, and the latest one wins. Of the program that runs now, as `pid` is: a start knows none until its harness says, and the record written at quit names none. A value that is not one word of printable ASCII, at most 88 bytes (so `claude-code:<model>` fits a trailer value's 100), reads as absent, and absent leaves `Assisted-by: <harness>` |
+| `chats[].plane_skills` | bool | default absent (read the flag again) | whether the plane's skills reached the chat at its start: the Skill studio's flag as the window that started it read it (#3466). A chat reattached from the session host takes this rather than the flag as read at its reattach, so its arming, its Notice, its stamp and Use skill… keep its start's word; absent (a chat whose start in this launch has not returned or did not happen, and every record written before #3466) has a reattach read the flag again, and a chat started again always reads it. A value that is not a flag reads as absent |
 | `clone` | object | absent | the clone and the device that wrote this record (V43, amending [ADR 0066](adr/0066-a-chat-is-a-ulid-a-run-is-a-stretch-of-its-conversation-and-a-device-is-random.md)): `{"key": "<16 hex>", "root": "<path>", "device": "<ULID>"}`. The app stamps it onto every record it writes. Absent in a record written before V43, which adopts the clone it is opened in and keeps its ids. Held on the way in: a `key` that is not 16 lowercase hex characters or a `root` that is not absolute reads as the whole key absent |
 | `clone.key` | str | required in `clone` | the clone-key ([ADR 0079](adr/0079-search-runs-on-derived-sqlite-indexes-one-per-project-clone-and-one-per-machine.md) §8): the first 16 hex characters of the SHA-256 of the clone's canonical root path, over the path's bytes. **A launch on another device than `clone.device` reads nothing: the project was copied** (below). **A launch on the same device whose key differs looks for another clone holding these chats**: it reads the `reopen.json` at `root`, then at every project the machine store's recents remember opening (D-V43x), skipping any that is gone or is this very directory (same device and inode, so a firmlink, a bind mount or a hand-edited `root` naming this directory is the same clone). If one holds any of these chats' ids, the project was **copied**, and every chat is given a new `id` and `device` (and no `run`, until it starts) before any starts. Otherwise it was **moved**: the ids are kept and `clone` is rewritten. A copy whose original is unreachable **and** not among the projects this machine remembers reads as a move and keeps its ids, which V43 accepts |
 | `clone.root` | str | required in `clone` | the clone's canonical root when it wrote this, because a key cannot be followed back to a directory. Written only as the exact path: a clone whose root is not UTF-8 writes no `clone` at all, and every launch of it reads as a record from before V43 |
@@ -7240,13 +7249,16 @@ rewritten.
 
 ### `<state>/grades-under-way/<grade>.json`
 - **Format:** one JSON object per grade running on this machine (#3353): `pid`, the process that
-  runs it; `local`, whether its copy is this machine's alone; and `graded`, its eval record row as
+  runs it; `local`, whether its copy is this machine's alone; `locked`, whether the grade holds the
+  file's lock (#3466, `false` where absent); and `graded`, its eval record row as
   it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
   nothing spent). Written `0600` through no link when a grade starts
-  (`grades::underway::began`) and removed when it ends (`grades::underway::ended`). At the
-  project's next start, each file whose process no longer runs is recorded as it is, interrupted,
-  and removed (`grades::underway::interrupted`): so a crash, a fault or a quit never leaves a grade
-  running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
+  (`grades::underway::began`) and removed when it ends (`grades::underway::ended`). The grade
+  holds the file's `flock` while it runs, taken before the file is in its place, so the lock goes
+  with its process however that ends (#3466). At the project's next start, each file whose lock no
+  other holds, of a grade that took it, is recorded as it is, interrupted, and removed (`grades::underway::interrupted`),
+  whatever process number it names; where the lock cannot be asked, one whose process no longer
+  runs is: so a crash, a fault or a quit never leaves a grade running or loses it. A file that is a link, larger than 64 KiB, named by another id or not a
   sound row is removed unrecorded.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state, transient — it lasts as long as its grade.

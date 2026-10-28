@@ -5,6 +5,15 @@
 # distribution's mirror took 1,285 s for an install that takes under 45 s, and a run on `main`
 # sat for over an hour. With this cache restored, the install does not ask the mirror at all.
 #
+# On a runner image `main` has not saved a cache on yet, it restores the newest cache of the same
+# package list from an older image (`prefix`) (#3547). A pull request or a merge group installs
+# those files as they are when they fit. `main` installs from the mirror with them in apt's
+# archives directory (`--refresh`), so it downloads only what changed, and saves this image's
+# versions under this image's key: no cached file outlives one image. On 2026-10-27 two images ran side by side and `main` had saved for
+# only one, so every run on the other asked the mirror, and a slow mirror dropped pull requests
+# from the merge queue. `previous` is the same cache under its name before the image moved to the
+# end of the key; it can go once `main` has saved a v2 cache on each image in use.
+#
 # `tools/linux-packages.sh` does the work and says what it does; this action keys, restores and
 # saves the cache around it. The calling step gives it `timeout-minutes: 9`, a backstop above
 # the script's own limits.
@@ -43,17 +52,24 @@ runs:
       with:
         path: ~/.cache/linux-packages
         key: ${{ steps.key.outputs.key }}
+        restore-keys: |
+          ${{ steps.key.outputs.previous }}
+          ${{ steps.key.outputs.prefix }}
     - id: install
       shell: bash
       env:
         PACKAGES: ${{ inputs.packages }}
         TAURI: ${{ inputs.tauri }}
+        REFRESH: ${{ github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true' }}
       run: |
         args=(--cache "$HOME/.cache/linux-packages")
+        [ "$REFRESH" = true ] && args+=(--refresh)
         [ "$TAURI" = true ] && args+=(--tauri)
         read -ra names <<< "$PACKAGES"
         "$GITHUB_WORKSPACE/tools/linux-packages.sh" install "${args[@]}" "${names[@]}"
-    - if: steps.install.outputs.save == 'true' && steps.restore.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+    # Saved on `main` when this image's key missed, from the install that just asked the mirror
+    # (`save`), so what is saved is this image's versions.
+    - if: github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true' && steps.install.outputs.save == 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/linux-packages

@@ -33,7 +33,7 @@ fn starting(id: &str, level: &Level) -> Graded {
         profile: Some("work".into()),
         ts: "2026-10-27T01:00:00+00:00".into(),
         runs: 3,
-        report: interrupted_report(50_000, Some(1.5)),
+        report: interrupted_report(50_000, Some(1.5), None),
         spent: Spent::default(),
         plugins_off: None,
     }
@@ -43,7 +43,9 @@ fn starting(id: &str, level: &Level) -> Graded {
 fn a_grade_purlis_stopped_under_is_recorded_interrupted_at_the_next_start() {
     let (tmp, level) = project();
     let root = tmp.path();
-    let held = began(root, &level, &starting("g-crashed", &level)).expect("held");
+    let held = began(root, &level, &starting("g-crashed", &level))
+        .expect("held")
+        .into_path();
     assert!(held.exists());
     assert_eq!(interrupted(root, laptop, |_| false), ["g-crashed"]);
     assert!(!held.exists(), "held under way no more");
@@ -69,24 +71,30 @@ fn a_grade_that_ended_is_not_recorded_again() {
 }
 
 #[test]
-fn a_grade_another_running_purlis_holds_is_left_to_it() {
+fn a_grade_whose_marker_is_locked_is_left_to_whoever_holds_it_3466() {
+    // The grade holds its marker's lock while it runs: that is what says it runs, on every
+    // system, and not its process's number. Here `runs_here` says no grade runs, and the held
+    // lock still wins.
     let (tmp, level) = project();
     let root = tmp.path();
-    let held = began(root, &level, &starting("g-theirs", &level)).expect("held");
-    let mut theirs: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&held).unwrap()).unwrap();
-    // A process that runs, and is not this one.
-    theirs["pid"] = serde_json::json!(1);
-    std::fs::write(&held, theirs.to_string()).unwrap();
-    assert!(interrupted(root, laptop, |_| false).is_empty());
-    assert!(held.exists(), "left as it is");
+    let marker = began(root, &level, &starting("g-theirs", &level)).expect("held");
+    assert!(
+        interrupted(root, laptop, |_| false).is_empty(),
+        "a held lock reads as running"
+    );
+    assert!(marker.exists(), "left as it is");
+    // Its process ends, and the lock with it: the next start records it.
+    drop(marker);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-theirs"]);
 }
 
 #[test]
 fn a_held_file_that_is_not_a_sound_row_of_its_own_name_is_taken_away_unrecorded() {
     let (tmp, level) = project();
     let root = tmp.path();
-    let held = began(root, &level, &starting("g-one", &level)).expect("held");
+    let held = began(root, &level, &starting("g-one", &level))
+        .expect("held")
+        .into_path();
     std::fs::rename(&held, held.with_file_name("g-other.json")).unwrap();
     std::fs::write(held.with_file_name("g-junk.json"), "{ not json").unwrap();
     assert!(interrupted(root, laptop, |_| false).is_empty());
@@ -112,7 +120,9 @@ fn a_grade_this_purlis_runs_now_is_left_to_it() {
 fn a_grade_whose_row_cannot_be_written_is_kept_for_the_next_start() {
     let (tmp, level) = project();
     let root = tmp.path();
-    let held = began(root, &level, &starting("g-kept", &level)).expect("held");
+    let held = began(root, &level, &starting("g-kept", &level))
+        .expect("held")
+        .into_path();
     // This machine's record folder is a file: no row can go there.
     let record = crate::plane::state_dir(root).join(super::super::LOCAL_DIR);
     std::fs::write(&record, "not a folder").unwrap();
@@ -138,13 +148,56 @@ fn a_start_asks_this_machine_s_store_nothing_but_for_a_committed_row() {
     assert_eq!(interrupted(root, never, |_| false), ["g-local"]);
 }
 
+/// `held`'s file with its process set to `pid`.
+fn held_by(held: &Path, pid: u32) {
+    let mut row: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(held).unwrap()).unwrap();
+    row["pid"] = serde_json::json!(pid);
+    std::fs::write(held, row.to_string()).unwrap();
+}
+
+#[test]
+fn a_crashed_grade_is_recorded_though_another_process_now_has_its_pid_3466() {
+    let (tmp, level) = project();
+    let root = tmp.path();
+    let held = began(root, &level, &starting("g-reused", &level))
+        .expect("held")
+        .into_path();
+    // Process 1 runs on every unix: the pid a crashed purlis left is someone else's now.
+    held_by(&held, 1);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-reused"]);
+    assert!(!held.exists());
+}
+
+#[test]
+fn a_grade_that_could_not_lock_its_marker_is_read_by_its_process_3466() {
+    // A marker its grade never locked: a free lock says nothing, and the process number is
+    // read, as before #3466. This process runs it.
+    let (tmp, level) = project();
+    let root = tmp.path();
+    let held = began(root, &level, &starting("g-unlocked", &level))
+        .expect("held")
+        .into_path();
+    let mut row: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&held).unwrap()).unwrap();
+    assert_eq!(row["locked"], serde_json::json!(true), "began locked it");
+    row["locked"] = serde_json::json!(false);
+    std::fs::write(&held, row.to_string()).unwrap();
+    assert!(interrupted(root, laptop, |grade| grade == "g-unlocked").is_empty());
+    assert!(held.exists(), "left to the grade this process runs");
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-unlocked"]);
+}
+
 #[test]
 fn a_start_while_another_records_the_folder_waits_its_turn_and_records_once_3443() {
     // Two purlis processes starting one project at once: the second waits while the first holds
     // the folder's claim, then finds the stale grade recorded and records it never again.
     let (tmp, level) = project();
     let root = tmp.path().to_path_buf();
-    let held = began(&root, &level, &starting("g-both", &level)).expect("held");
+    // Its grade's process is gone, and its marker's lock with it (#3466).
+    let held = began(&root, &level, &starting("g-both", &level))
+        .expect("held")
+        .into_path();
     let theirs = std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)

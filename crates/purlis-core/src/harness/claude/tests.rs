@@ -840,3 +840,85 @@ fn a_profile_command_that_loads_a_plugin_of_its_own_keeps_a_grade_from_running()
         assert!(why.contains("pick another profile"), "{why}");
     }
 }
+
+#[test]
+fn a_grades_model_is_its_flag_then_anthropic_model_and_never_a_settings_file() {
+    let config = tempfile::tempdir().unwrap();
+    std::fs::write(
+        config.path().join("settings.json"),
+        r#"{"model": "claude-haiku-4-5"}"#,
+    )
+    .unwrap();
+    let dir = (
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    );
+    let only_settings = [dir.clone()];
+    let with_env = [
+        dir,
+        ("ANTHROPIC_MODEL".to_owned(), "claude-sonnet-4-6".to_owned()),
+    ];
+    let model = |words: &[&str], chat: &[(String, String)]| {
+        adapter().grade_model(&line(words), &settings_in(chat))
+    };
+    assert_eq!(
+        model(&[], &only_settings),
+        None,
+        "a project's settings may outrank yours, so neither prices the limit"
+    );
+    assert_eq!(
+        model(&[], &with_env).as_deref(),
+        Some("claude-sonnet-4-6"),
+        "ANTHROPIC_MODEL says it"
+    );
+    assert_eq!(
+        model(&["--model", "opus"], &with_env).as_deref(),
+        Some("opus"),
+        "the flag outranks both"
+    );
+    assert_eq!(
+        model(&["--model=sonnet", "--model", "haiku"], &with_env).as_deref(),
+        Some("haiku"),
+        "the last flag is the one Claude Code reads"
+    );
+    assert_eq!(
+        model(&["--model"], &[]),
+        None,
+        "a flag with no model says none"
+    );
+    assert_eq!(
+        model(&[], &[]),
+        None,
+        "nothing says it: Claude Code's own default"
+    );
+}
+
+#[test]
+fn a_family_alias_is_the_model_its_variable_remaps_it_to() {
+    let model = |words: &[&str], chat: &[(String, String)]| {
+        adapter().grade_model(&line(words), &settings_in(chat))
+    };
+    let remapped = [(
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(),
+        "claude-opus-4-1".to_owned(),
+    )];
+    assert_eq!(
+        model(&["--model", "haiku"], &remapped).as_deref(),
+        Some("claude-opus-4-1")
+    );
+    assert_eq!(model(&["--model", "haiku"], &[]).as_deref(), Some("haiku"));
+    assert_eq!(
+        model(&["--model", "sonnet"], &remapped).as_deref(),
+        Some("sonnet"),
+        "another family's variable leaves it"
+    );
+    let opus = [(
+        "ANTHROPIC_DEFAULT_SONNET_MODEL".to_owned(),
+        "claude-sonnet-4-5".to_owned(),
+    )];
+    assert_eq!(
+        model(&["--model", "opusplan"], &opus),
+        None,
+        "opusplan runs both, so a remap of either is priced at the dearest"
+    );
+}
