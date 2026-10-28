@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793186484462,
+  "lastUpdate": 1793190040783,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8258,6 +8258,42 @@ window.BENCHMARK_DATA = {
             "value": 435.3,
             "unit": "MB",
             "extra": "median of 6 samples: 427.8, 432.9, 434, 436.5, 437.6, 557.7 MB; window 244.6 MB, session host 190.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "15e802759eb5399bfda8962f3e2207bfc5ea2f7e",
+          "message": "Runners: Move to runner and Move here (#2048) (#3451)\n\n* Runners: a chat's work tree and conversation cross the link as it moves (#2048)\n\nSession protocol 1.42: take_code with `moving` takes a repository's work\ntree over where it is still what both ends last agreed\n(refs/purlis/moved/<branch>), give_code with `with_work` sends the work\ntree's uncommitted work back as its branch's snapshot, and\ntake_conversation / give_conversation carry a chat's conversation into\nand out of its profile's harness folder, held to the receiving device's\nown declaration of the harness. All the window's alone, relayed for it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: Move to runner and Move here on a chat's tab (#2048)\n\nA harness chat in a workspace moves to a pool's runner, and back, from\nits tab's menu. The move is checked and prepared in the background (the\nproject held on the runner, each clone's branch sent ahead) while the\nchat keeps working; the window switches it at the chat's next pause,\nand the core asks the board again, so a move never happens mid-turn.\nThe switch moves each clone's work tree and the conversation, sets the\nworkspace's chats to run there, and starts the chat again on its\nconversation in its place; the run it leaves ends only once the new one\nhas started. A move that fails leaves the chat where it was, and its\npane says why.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: ADR 0078 and the plane format say how a chat moves (#2048)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: a chat moves to a real Docker pool's runner and back in CI (#2048)\n\nThe pool job runs a_chat_moves_to_a_docker_pools_runner_and_back: a\nclone's work tree and a Claude Code conversation go to the runner, the\nchat works on there, and both come back onto the desktop's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: a chat's move is heard in its own window, and the Docker test writes its conversation through the shell's glob (#2048)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: the move commands are listed, the deferral cites its ticket, and 1.40-1.41 are held (#2048)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: a conversation that does not move says what moves instead (#2048)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: Move here on the person's three guards (#2048)\n\nRuled by the person on 2026-10-27: a runner chat's work comes onto this\nmachine's clones only from a runner shown to be the person's own (the\ncheck browser logins and tools use), never through a link, and the\nchat's tab names every file a tool here runs or reads that came back,\nevery file a save would refuse, and every link.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: the move's notices in the bindings, formatted (#2048)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: a move keeps its profile on the runner first, and speaks protocol 1.44 (#2048)\n\nThe chat's profile is kept on the target runner (#2049's keep_profile,\nthrough the start's own readiness check) as the move is prepared and\nagain before its conversation is written there. Renumbered to 1.44\nafter #3450 took 1.43; fixture frames now ids 159 to 162.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: a move's profile step, ownership and words, tested through Chats (#2048)\n\n- The move's profile step runs through Chats for both its preparation and\n  its switch (prepare_on_a_runner, move_to_a_runner), tested with a host\n  that runs nothing and a refusing pool readiness: nothing is sent ahead\n  or moved where the profile is not kept.\n- A refused move says the chat did not move and to ask for the move again\n  (onrunner::ready_to_move_on), never that nothing was started.\n- D-2048-13: a chat moves only to a pool whose runners are shown to be the\n  person's own, as Move here is held to; only such pools are offered.\n- A move whose start failed and whose workspace setting could not be put\n  back says on the chat's pane where it runs and how to set it back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T10:28:05Z",
+          "tree_id": "8ea26b0a004dc00232ddbe73001a82f92a1c8763",
+          "url": "https://github.com/purlis/purlis/commit/15e802759eb5399bfda8962f3e2207bfc5ea2f7e"
+        },
+        "date": 1793190036604,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 676,
+            "unit": "MB",
+            "extra": "median of 3 samples: 649, 676, 702 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 440,
+            "unit": "MB",
+            "extra": "median of 6 samples: 432.1, 437.7, 438.8, 441.1, 442.2, 601.3 MB; window 245.7 MB, session host 194.3 MB"
           }
         ]
       }
