@@ -639,6 +639,43 @@ pub fn ran(inspected: &serde_json::Value) -> Ran {
     }
 }
 
+/// **How a runner's container was made to suspend itself** (#3717), which its pool's
+/// `suspendAfter` does not say for a runner made before it: a runner made before purlis
+/// suspended runners (#2051) never does, and one made before a pool had its own time (#3471)
+/// keeps the time it was made with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MadeSuspending {
+    /// It was made with `serve` alone, and never suspends itself.
+    Never,
+    /// It suspends itself after this long without a link from its desktop.
+    After(std::time::Duration),
+}
+
+/// [`MadeSuspending`], from the command `docker inspect <container>` says it was made with
+/// (`Config.Cmd`, as [`Runner::create_args`] gives it); `None` where that is not a runner's
+/// `serve` as purlis makes one, a time outside [`suspend_after`]'s bounds included.
+pub fn made_suspending(inspected: &serde_json::Value) -> Option<MadeSuspending> {
+    let words: Vec<&str> = inspected
+        .pointer("/0/Config/Cmd")?
+        .as_array()?
+        .iter()
+        .map(serde_json::Value::as_str)
+        .collect::<Option<_>>()?;
+    match words.as_slice() {
+        ["serve"] => Some(MadeSuspending::Never),
+        ["serve", "--suspends-unlinked"] => Some(MadeSuspending::After(SUSPEND_AFTER)),
+        ["serve", flag] => {
+            let after = flag.strip_prefix("--suspends-unlinked=")?;
+            // Held to the bounds `purlis serve` holds it to: a time it refuses is none it
+            // suspends after.
+            crate::spelledtime::read(after, crate::spelledtime::UP_TO_HOURS)
+                .filter(|after| suspend_after(*after).is_ok())
+                .map(MadeSuspending::After)
+        }
+        _ => None,
+    }
+}
+
 /// [`check_on`], the container's running held to it only where `running` says so: a suspended
 /// runner is checked as it was made before it is started again (#2051).
 fn checked_on(
@@ -1905,6 +1942,16 @@ impl Docker {
             "docker container inspect",
         )?;
         Ok(ran(&inspected))
+    }
+
+    /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a
+    /// runner's `serve` as purlis makes one.
+    pub fn made_suspending(&self, made: &Made) -> Result<Option<MadeSuspending>, Refused> {
+        let inspected = self.json(
+            &["container", "inspect", made.container.as_str()],
+            "docker container inspect",
+        )?;
+        Ok(made_suspending(&inspected))
     }
 
     /// **[`Docker::check`], a suspended runner started again first** (#2051): a runner left a

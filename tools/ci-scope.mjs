@@ -137,7 +137,9 @@ export const READ_BY_RUST = [
 
 // The Rust tests that read every file of the window's sources (#3596): `ci.yml`'s `recorded`
 // job runs each one when `rust` is out of scope, beside the whole-tree guards, so a change to
-// the window that skips the Rust suite is still held to them. They link only the core.
+// the window that skips the Rust suite is still held to them. They link only the core. Here and
+// in `WHOLE_TREE_GUARDS`, `test` is a module of the crate's one test binary, `it`
+// (`tests/it/<test>.rs`, #3613), which the job picks by name.
 export const WINDOW_SOURCE_GUARDS = [
   { crate: "purlis-core", test: "no_old_name_is_spelled_in_the_window_or_its_assets" },
   { crate: "purlis-core", test: "every_deferral_names_its_ticket" },

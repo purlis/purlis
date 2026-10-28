@@ -40,7 +40,7 @@
 //! panel uses to find the row it then asks the cache about**, and `cistate` falls back to
 //! `contain::resolved` when the two spellings still differ.
 //!
-//! Pinned by `tests/the_refresher_writes_the_key_the_panel_reads.rs`, on the direct spelling
+//! Pinned by `tests/it/the_refresher_writes_the_key_the_panel_reads.rs`, on the direct spelling
 //! and through a link, because a fixture that writes the key the reader is about to build
 //! cannot catch this by construction.
 

@@ -208,3 +208,26 @@ fn what_a_removal_left_and_why_a_pool_was_refused_are_said_safely() {
         "docker create failed: ssh://…@host said no"
     );
 }
+
+/// How a runner was made to suspend is said as `runners.json` spells a pool's time (#3717).
+#[cfg(unix)]
+#[test]
+fn how_a_runner_was_made_to_suspend_is_said_as_a_pools_time_is() {
+    use purlis_core::dockerpool::MadeSuspending;
+    assert_eq!(suspends_shown(MadeSuspending::Never), PoolSuspends::Never);
+    assert_eq!(
+        suspends_shown(MadeSuspending::After(std::time::Duration::from_secs(
+            90 * 60
+        ))),
+        PoolSuspends::After {
+            after: "90m".into()
+        }
+    );
+    assert_eq!(
+        serde_json::to_value(PoolSuspends::After {
+            after: "24h".into()
+        })
+        .ok(),
+        Some(serde_json::json!({"made": "after", "after": "24h"}))
+    );
+}

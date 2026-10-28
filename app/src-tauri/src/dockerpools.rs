@@ -112,6 +112,34 @@ pub struct PoolVersion {
     pub named: Option<bool>,
     /// How many chats those older runners still keep, as purlis last found them (#2865).
     pub waiting: u32,
+    /// How its runner was made to suspend itself, as its container's command says (#3717): a
+    /// runner made before its pool's `suspendAfter` keeps what it was made with. None where it
+    /// could not be read.
+    #[specta(optional)]
+    pub suspends: Option<PoolSuspends>,
+}
+
+/// **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
+/// not the pool's own time.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "made", rename_all = "snake_case")]
+pub enum PoolSuspends {
+    /// It was made before purlis suspended runners (#2051), and never suspends itself.
+    Never,
+    /// It suspends itself after this long without a link from this machine, spelled as
+    /// `runners.json` spells it (`24h`, `90m`).
+    After { after: String },
+}
+
+#[cfg(unix)]
+/// `made`, as a row says it.
+pub(crate) fn suspends_shown(made: purlis_core::dockerpool::MadeSuspending) -> PoolSuspends {
+    match made {
+        purlis_core::dockerpool::MadeSuspending::Never => PoolSuspends::Never,
+        purlis_core::dockerpool::MadeSuspending::After(after) => PoolSuspends::After {
+            after: after_shown(after),
+        },
+    }
 }
 
 #[cfg(unix)]
@@ -390,6 +418,12 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         draining: u32::try_from(draining).unwrap_or(u32::MAX),
         named: crate::poolfollow::this_versions_image_named(),
         waiting: crate::poolfollow::waiting_on(&machine.config, name),
+        suspends: machine
+            .docker
+            .made_suspending(&kept.made)
+            .ok()
+            .flatten()
+            .map(suspends_shown),
     })
 }
 

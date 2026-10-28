@@ -9729,6 +9729,19 @@ export type PoolRow = {
 };
 
 /**
+ *  **How a pool's runner was made to suspend itself** (#3717), which its row says where it is
+ *  not the pool's own time.
+ */
+export type PoolSuspends = 
+/**  It was made before purlis suspended runners (#2051), and never suspends itself. */
+{ made: "never" } | 
+/**
+ *  It suspends itself after this long without a link from this machine, spelled as
+ *  `runners.json` spells it (`24h`, `90m`).
+ */
+{ made: "after"; after: string };
+
+/**
  *  **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
  *  when they differ, and whether purlis moves the pool along with the desktop.
  */
@@ -9757,6 +9770,12 @@ export type PoolVersion = {
 	named: boolean | null,
 	/**  How many chats those older runners still keep, as purlis last found them (#2865). */
 	waiting: number,
+	/**
+	 *  How its runner was made to suspend itself, as its container's command says (#3717): a
+	 *  runner made before its pool's `suspendAfter` keeps what it was made with. None where it
+	 *  could not be read.
+	 */
+	suspends?: PoolSuspends | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */

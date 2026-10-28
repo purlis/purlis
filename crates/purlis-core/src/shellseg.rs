@@ -54,7 +54,7 @@
 //! answers at a time, over 200,000 generated command lines. Its answers are recorded
 //! (`fixtures/corpora/shellseg-oracle.jsonl`, and `shellseg-generated.jsonl.gz`, a subset of the
 //! generated cases chosen to reach every branch the full run reached — ADR 0046), and
-//! `tests/the_shell_is_read_the_way_python_reads_it.rs` replays them with no Python present.
+//! `tests/it/the_shell_is_read_the_way_python_reads_it.rs` replays them with no Python present.
 //! Nothing in either is written by hand: a rule this module gets wrong changes an answer the
 //! Python already gave.
 //!
