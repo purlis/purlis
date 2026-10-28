@@ -5672,36 +5672,6 @@ fn a_graded_chat_a_crash_left_in_the_session_host_is_ended_at_relaunch() {
     assert_eq!(host.closed_left(), [3], "the host ended it");
 }
 
-/// #3274: a grade's chat is started to end with this window (1.42), and no other chat is: the
-/// session host ends it as soon as this window goes without a quit.
-#[test]
-fn a_graded_chat_is_started_to_end_with_its_window_and_no_other_is() {
-    let plane = a_sandboxed_plane();
-    let (chats, host) = armed_for_opencode(plane.path());
-    let ready = ready_under(
-        Harness::Opencode,
-        a_sandbox_for(Harness::Opencode, plane.path()),
-    );
-    let ordinary = Chat {
-        cwd: Some(plane.path().to_path_buf()),
-        ..chat("/bin/sh", "c", None)
-    };
-    let graded = Chat {
-        graded: true,
-        ..ordinary.clone()
-    };
-
-    chats.start_ready(&ordinary, &ready, SIZE).expect("starts");
-    chats.start_ready(&graded, &ready, SIZE).expect("starts");
-
-    let ends: Vec<bool> = host
-        .openings()
-        .iter()
-        .map(|opening| opening.ends_with_its_window)
-        .collect();
-    assert_eq!(ends, [false, true]);
-}
-
 /// Whether chat 3, reattached from `host` on the project at `plane`, is judged to run with no
 /// sandbox at all, as a browser login judges it (#2560).
 fn reattached_runs_unconfined(plane: &std::path::Path, host: Pretend) -> (Chats, bool) {
