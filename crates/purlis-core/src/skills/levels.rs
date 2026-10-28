@@ -142,46 +142,43 @@ fn write(state: &Path, id: &str, was: Option<&Record>, now: &Record) -> Result<(
 /// the chat (a restart) is kept as it is, so a folder made during its earlier run stays one it
 /// could have made.
 pub fn note(root: &Path, id: &str, name: &str) -> Result<(), String> {
-    let noted = note_on_disk(root, id, name);
-    if noted.is_err() {
-        // Held in this process instead, so a folder the chat makes is still not accepted.
-        unnoted_add(
-            root,
-            Record {
+    note_on_disk(root, id, name)
+}
+
+/// The record kept where a sandboxed chat's start could not be noted under its own id
+/// ([`note_or_hold`]): an open record no sweep removes, so every folder made since stays left out
+/// until the person accepts it, which adds it to this record as to every other ([`vouch`]).
+const UNNOTED: &str = "unnoted";
+
+/// **[`note`], or, where it cannot be noted, a record no sweep removes** ([`UNNOTED`]), so no
+/// folder made after the start reaches a chat unasked, and the person's Accept in the Skill
+/// studio lets each go as usual. `Ok(None)` where it was noted, `Ok(Some(why))` where it was not
+/// and the record holds, and `Err` where neither could be written: such a chat is not started.
+pub fn note_or_hold(root: &Path, id: &str, name: &str) -> Result<Option<String>, String> {
+    let Err(why) = note(root, id, name) else {
+        return Ok(None);
+    };
+    let held = crate::appstate::made(root).and_then(|state| {
+        if read(&state, UNNOTED).is_some() {
+            return Ok(());
+        }
+        write(
+            &state,
+            UNNOTED,
+            None,
+            &Record {
                 name: name.to_owned(),
                 levels: owners(root),
             },
-        );
-    }
-    noted
-}
-
-/// The starts this process could not note on disk ([`note`]), by the clone key of their plane: each
-/// counts as an open record for as long as the process runs.
-fn unnoted() -> &'static std::sync::Mutex<std::collections::HashMap<String, Vec<Record>>> {
-    static UNNOTED: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, Vec<Record>>>,
-    > = std::sync::OnceLock::new();
-    UNNOTED.get_or_init(Default::default)
-}
-
-fn unnoted_add(root: &Path, record: Record) {
-    if let Ok(mut held) = unnoted().lock() {
-        held.entry(crate::plane::CloneKey::of(root).to_string())
-            .or_default()
-            .push(record);
-    }
-}
-
-fn unnoted_of(root: &Path) -> Vec<(String, Record)> {
-    unnoted()
-        .lock()
-        .ok()
-        .and_then(|held| held.get(crate::plane::CloneKey::of(root).as_str()).cloned())
-        .unwrap_or_default()
-        .into_iter()
-        .map(|record| (String::new(), record))
-        .collect()
+        )
+    });
+    held.map_err(|also| {
+        format!(
+            "this sandboxed chat was not started: purlis could not keep the record of its \
+             project's folders ({why}; {also})"
+        )
+    })?;
+    Ok(Some(why))
 }
 
 /// **Why a sandboxed chat in the plane at `root` is not started**, where this machine keeps no app
@@ -240,6 +237,13 @@ fn records_in(state: &Path) -> Result<Vec<(String, Record)>, ()> {
         Err(_) => return Err(()),
     };
     let mut out: Vec<(String, Record)> = Vec::new();
+    // The record of starts that could not be noted, where there is one ([`UNNOTED`]).
+    match read(state, UNNOTED) {
+        Some(record) => out.push((UNNOTED.to_owned(), record)),
+        None if std::fs::symlink_metadata(state.join(rel_of(UNNOTED)))
+            .is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound) => {}
+        None => return Err(()),
+    }
     for entry in entries {
         let entry = entry.map_err(|_| ())?;
         let Some(id) = entry
@@ -251,7 +255,13 @@ fn records_in(state: &Path) -> Result<Vec<(String, Record)>, ()> {
         else {
             continue;
         };
-        out.push((id.clone(), read(state, &id).ok_or(())?));
+        match read(state, &id) {
+            Some(record) => out.push((id, record)),
+            // One removed while the folder was listed is no record.
+            None if std::fs::symlink_metadata(state.join(rel_of(&id)))
+                .is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound) => {}
+            None => return Err(()),
+        }
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
@@ -281,11 +291,11 @@ const UNREAD: &str = "purlis could not read which of this project's folders you 
      accept it in the Skill studio";
 
 /// [`made_since`], with `state` the project's app state, or `None` where there is none: then no
-/// sandboxed chat could have started there ([`refusal_for_a_sandboxed_start`]), and only the starts
-/// this process could not note hold anything. A record or the folders not accepted yet that
-/// cannot be read hold every workspace and persona folder.
+/// sandboxed chat could have started there ([`refusal_for_a_sandboxed_start`]), and nothing is
+/// held. A record or the folders not accepted yet that cannot be read hold every workspace and
+/// persona folder.
 fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
-    let mut records = unnoted_of(root);
+    let mut records = Vec::new();
     let mut held = Unaccepted::default();
     let mut unread = false;
     if let Some(state) = &state {
@@ -436,14 +446,15 @@ pub fn sweep(root: &Path, open: &[String]) {
             .is_some_and(|age| age < super::verbs::drafts::SWEEP_GRACE);
         if an_id(&id) && !open.contains(&id) && !young {
             // What it could have made stays left out until the person accepts it.
-            if let Some(record) = read(&state, &id) {
-                let was = unaccepted_or_all(&state, root);
-                let mut now = was.clone();
-                now.levels
-                    .extend(owners(root).difference(&record.levels).cloned());
-                if now != was && write_unaccepted(&state, &now).is_err() {
-                    continue;
-                }
+            // A record that cannot be read could have named any of them: every one is held.
+            let levels = read(&state, &id)
+                .map(|record| record.levels)
+                .unwrap_or_default();
+            let was = unaccepted_or_all(&state, root);
+            let mut now = was.clone();
+            now.levels.extend(owners(root).difference(&levels).cloned());
+            if now != was && write_unaccepted(&state, &now).is_err() {
+                continue;
             }
             remove(&state, &id);
         }

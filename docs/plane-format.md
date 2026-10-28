@@ -321,6 +321,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`frame/<chat>.transcript`](#framechattranscript)
   - [`frame/<frame-id>/` for a non-chat frame (e.g. the live plane's `probe-1`)](#frameframe-id-for-a-non-chat-frame-eg-the-live-planes-probe-1)
   - [`app/` — the desktop app's own state](#app--the-desktop-apps-own-state)
+  - [`app/app-state-id`](#appapp-state-id)
   - [`app/sandbox.json`](#appsandboxjson)
   - [`app/dispatch-never.json`](#appdispatch-neverjson)
   - [`app/sandbox-blocks.json`](#appsandbox-blocksjson)
@@ -5716,6 +5717,18 @@ plane, and because the two share a plane during the migration: an operator runni
 will see this directory, and whoever next changes the app should find its format written
 down rather than read off the code.
 
+### `app/app-state-id`
+- **Format:** 32 lowercase hex characters, the project's own random id (#3718), made with its
+  [app state](#dataapp-stateclone-key--the-apps-own-state-of-a-project) and written once, `0600`,
+  following no link (`appstate::made`). That folder's `owner` holds the same id, so a folder of
+  another project's at the same path is set aside and never read. A copy of the project gets an id
+  of its own at its first open (`appstate::follow_arrival`); a move keeps it.
+- **Status:** **internal**.
+- **Tier:** Clone state — this clone's name to its app state; losing it sets that state aside.
+- **Written by:** the app and the session host, never a chat: a chat's sandbox denies writing
+  `app/`.
+- **Git:** gitignored, under the state directory.
+
 ### `app/sandbox.json`
 - **Moved (ADR 0093):** this machine keeps these keys in
   [`~/.config/purlis/sandbox-grants/<clone key>.json`](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)
@@ -7790,22 +7803,26 @@ refuses a `<data>` under a project or inside any git work tree.
   local grade record, grades under way, grade-after-edit opt-ins, kept grade chats and records of
   the levels a sandboxed chat could have made, each below. `root` names the project's root as the
   kernel names it, and `owner` the project it belongs to, by the 32 hex characters of its state
-  folder's [`app/app-state-id`](#app--the-desktop-apps-own-state), each written when the folder is
+  folder's [`app/app-state-id`](#appapp-state-id), each written when the folder is
   made. A folder whose `owner` is not the project's own (a new project made at an older one's path)
   is renamed `<clone key>.foreign-<n>`, read no more, and a new one made. `moved-from-the-plane`, an
   empty file, says an older purlis's copies of these stores were moved out of the plane's state
   folder, once, at the project's open (`appstate::move_out_of_the_plane`): only the folder purlis
   was reading (the spelling `names::state` picks) is looked at, and the other is left unread; a
   state folder `$PURLIS_HOME` names may be shared by several clones, so its copies are left where
-  they are, and read no more. Drafts and local grades are carried, the rest removed, and nothing
+  they are, read no more, and nothing is marked. Where a folder that is not moved holds levels
+  records, every workspace and persona folder waits for the person's Accept again, once
+  (`asked-again-<which>`), before anything is marked. Drafts and local grades are carried, the rest removed, and nothing
   reads the plane's copies again. Each store is removed from the plane only once all of it is
   carried; a file is written beside its place and renamed in, and a line a grade file already
   holds is never added again. A project that moved, as its [record of open chats](#appreopenjson)
   says (V43), keeps its drafts, local grades and kept grade chats under its new clone key, where
-  the old key's `root` names the root the record names and its `owner` is the project's own
-  (`appstate::follow_move`, at the project's open); its opt-ins and levels records are not carried,
-  and every workspace and persona folder then waits for the person's Accept again. A copy starts
-  with none of it. Where the machine has no data home, or one in a project or a git work tree, the
+  the old key's `root` names the root the record names and its `owner` is the project's own, and
+  only once that root is no longer a project holding the same id (`appstate::follow_arrival`, at
+  the project's open); `moving-from-<old key>` marks a carry under way, taken up again at the
+  next open, and becomes `moved-from-<old key>` once it is whole. Its opt-ins and levels records
+  are not carried, and every workspace and persona folder then waits for the person's Accept
+  again. A copy starts with none of it, and an id of its own. Where the machine has no data home, or one in a project or a git work tree, the
   stores are unavailable and say so, none falls back to the plane, and a sandboxed chat is not
   started, since no record of its start could be kept. A fenced (test) build whose environment names
   no data home inside its fence keeps the folder in the project's own state folder, in

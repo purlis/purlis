@@ -38,12 +38,14 @@
    the root it is for and the id of the project it belongs to, kept in the project's own `app/`; a
    folder of another project's at the same path is set aside and never read. A project its record
    of open chats says moved (V43) carries its drafts, local grades and kept grade chats from the old
-   key's folder where that folder records the old root and the same project, never its opt-ins or
-   levels records, and its workspace and persona folders wait for Accept again. A copy carries
-   nothing. Where no app state can be kept, a sandboxed chat is not started; a start that could not
-   be noted is held in the process instead, and records that cannot be read hold every folder. The
-   move out of the plane reads only the state folder purlis was reading, and a state folder
-   `$PURLIS_HOME` names may be shared by clones: its copies are left in place and read no more.
+   key's folder where that folder records the old root and the same project, and that root is no
+   longer a project holding the same id; never its opt-ins or levels records, and its workspace and
+   persona folders wait for Accept again. A carry cut short is taken up again at the next open. A
+   copy gets an id of its own and none of the original's state. Where no app state can be kept, a
+   sandboxed chat is not started; a start that could not be noted is kept as an open record no
+   sweep removes, and records that cannot be read hold every folder. The move out of the plane
+   reads only the state folder purlis was reading; a state folder `$PURLIS_HOME` names may be
+   shared by clones, so its copies are left in place, read no more, and nothing is marked.
 6. **No cost at a chat's open.** The move runs once per project open, and after its mark is written
    it looks at that one name alone. A chat's start reads the same stores it read before, in their
    new place.

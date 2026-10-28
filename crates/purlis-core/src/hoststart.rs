@@ -516,6 +516,15 @@ pub fn compose_ready(
     }
     let persona = persona_of(&ready.env, root);
     let sandbox = ready.sandbox.as_ref();
+    // No app state, no record of the folders there at a sandboxed chat's start (#3718): such a
+    // chat is not started, and nothing about its start is written.
+    if sandbox.is_some()
+        && crate::skills::reach_chats_here(root)
+        && start.program.is_some()
+        && let Some(refused) = crate::skills::levels::refusal_for_a_sandboxed_start(root)
+    {
+        return Err(refused);
+    }
     // What the start decided about the sandbox, written before anything runs (ADR 0067 §7).
     let (trust, counted) =
         crate::sandbox::at_start(ready.unsandboxed.as_ref(), sandbox.is_some(), false, true);
@@ -531,13 +540,13 @@ pub fn compose_ready(
         let name = start
             .number
             .map_or_else(|| id.to_owned(), |number| number.to_string());
-        // No app state, no record of what was there: such a chat is not started.
-        if let Some(refused) = crate::skills::levels::refusal_for_a_sandboxed_start(root) {
-            return Err(refused);
-        }
-        if let Err(why) = crate::skills::levels::note(root, id, &name) {
-            // Held in this process instead (`levels::note`): no folder it makes is accepted.
-            tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
+        match crate::skills::levels::note_or_hold(root, id, &name) {
+            Ok(None) => {}
+            Ok(Some(why)) => tracing::warn!(
+                "purlis: a sandboxed chat's start was not noted for its skills ({why}); every \
+                 workspace and persona folder waits for the person's Accept"
+            ),
+            Err(refused) => return Err(refused),
         }
     }
     // Read once `armed` has checked the start is not refused (#3461), and routed by the router

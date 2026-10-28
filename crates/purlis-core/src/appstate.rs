@@ -23,7 +23,7 @@
 //!   store an older purlis kept in the plane's state folder is moved here or discarded, the copy
 //!   in the plane is removed, and [`MOVED_MARK`] says so. Nothing reads the plane's copy after
 //!   that.
-//! - **It follows the project** ([`follow_move`]): a project that moved, as its record of open
+//! - **It follows the project** ([`follow_arrival`]): a project that moved, as its record of open
 //!   chats says (V43), keeps its drafts and grades under its new clone key.
 
 use std::path::{Path, PathBuf};
@@ -90,7 +90,7 @@ pub fn in_data(data: &Path, root: &Path) -> PathBuf {
 }
 
 /// The file in a project's app state that names the project's root, as the kernel names it: what
-/// a move of the project is checked against ([`follow_move`]).
+/// a move of the project is checked against ([`follow_arrival`]).
 pub const ROOT_FILE: &str = "root";
 
 /// The file in a project's app state that names the project it belongs to, by the id in the
@@ -130,44 +130,106 @@ pub fn made(root: &Path) -> Result<PathBuf, String> {
     )
 }
 
-/// [`made`], in the data home `data`.
+/// [`made`], in the data home `data`: one call at a time for a project, across processes, under
+/// the `flock` of `<key>.lock` beside its folder.
 fn made_in(data: &Path, root: &Path) -> Result<PathBuf, String> {
     let all = data.join(DIR);
-    let mine = in_data(data, root);
     held_private(&all).map_err(|why| format!("{}: {why}", all.display()))?;
+    let mine = in_data(data, root);
+    let _held = locked(&mine)?;
+    made_locked(&mine, root)
+}
+
+/// How long a call waits for another to let go of a project's app state.
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The `flock` of `<key>.lock` beside the project's folder `mine`, held.
+fn locked(mine: &Path) -> Result<crate::filelock::Held, String> {
+    let name = mine.file_name().ok_or("no name")?.to_string_lossy();
+    let path = mine.with_file_name(format!("{name}.lock"));
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let file = crate::contain::nofollow(&mut options)
+        .open(&path)
+        .map_err(|why| format!("{}: {why}", path.display()))?;
+    crate::filelock::lock_within(file, LOCK_WAIT, "the project's app state")
+        .map_err(|why| why.to_string())
+}
+
+/// `text` written to `path` where no file is there yet, made new and private, following no link;
+/// what the file holds either way. Two writers never both write one.
+fn written_once(path: &Path, text: &str) -> Result<String, String> {
+    use std::io::Write as _;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    match crate::contain::nofollow(&mut options).open(path) {
+        Ok(mut file) => {
+            file.write_all(text.as_bytes())
+                .and_then(|()| file.sync_all())
+                .map_err(|why| why.to_string())?;
+            Ok(text.to_owned())
+        }
+        Err(why) if why.kind() == std::io::ErrorKind::AlreadyExists => {
+            record_text(path).ok_or_else(|| format!("{} could not be read", path.display()))
+        }
+        Err(why) => Err(why.to_string()),
+    }
+}
+
+/// [`made_in`], with the project's lock held.
+fn made_locked(mine: &Path, root: &Path) -> Result<PathBuf, String> {
     let plane_id = record_text(&plane_id_file(root));
-    if std::fs::symlink_metadata(&mine).is_ok() {
+    if std::fs::symlink_metadata(mine).is_ok() {
         let owner = record_text(&mine.join(OWNER));
         if owner.is_none() || owner != plane_id {
-            set_aside(&mine)?;
+            set_aside(mine)?;
         }
     }
-    held_private(&mine).map_err(|why| format!("{}: {why}", mine.display()))?;
+    held_private(mine).map_err(|why| format!("{}: {why}", mine.display()))?;
     if std::fs::symlink_metadata(mine.join(OWNER)).is_err() {
         let id = match plane_id {
             Some(id) => id,
             None => {
-                let id = random_id()?;
                 let file = plane_id_file(root);
                 let app = file.parent().ok_or("no folder")?;
                 crate::profiletrust::private_dir(app).map_err(|why| why.to_string())?;
-                crate::plane::write_private(root, &file, id.as_bytes())
-                    .map_err(|why| why.to_string())?;
-                id
+                written_once(&file, &random_id()?)?
             }
         };
-        crate::plane::write_private(&mine, &mine.join(OWNER), id.as_bytes())
-            .map_err(|why| why.to_string())?;
+        if written_once(&mine.join(OWNER), &id)? != id {
+            return Err("the project's app state names another project".to_owned());
+        }
     }
     if std::fs::symlink_metadata(mine.join(ROOT_FILE)).is_err() {
         let real = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
         let text = real
             .to_str()
             .ok_or_else(|| "the project's root is not text".to_owned())?;
-        crate::plane::write_private(&mine, &mine.join(ROOT_FILE), text.as_bytes())
-            .map_err(|why| why.to_string())?;
+        written_once(&mine.join(ROOT_FILE), text)?;
     }
-    Ok(mine)
+    Ok(mine.to_path_buf())
+}
+
+/// **The project at `root` is given an id of its own**, and its app state with it: what a copy of
+/// a project gets, so it never shares the original's ([`follow_arrival`]).
+fn reminted(data: &Path, root: &Path) -> Result<(), String> {
+    let mine = made_in(data, root)?;
+    let _held = locked(&mine)?;
+    let id = random_id()?;
+    crate::plane::write_private(root, &plane_id_file(root), id.as_bytes())
+        .map_err(|why| why.to_string())?;
+    crate::plane::write_private(&mine, &mine.join(OWNER), id.as_bytes())
+        .map_err(|why| why.to_string())
 }
 
 /// The folder `mine`, another project's, renamed beside itself as `<key>.foreign-<n>`.
@@ -273,23 +335,58 @@ pub fn move_out_of_the_plane(root: &Path) -> Moved {
     let Ok(into) = made(root) else {
         return Moved::default();
     };
+    let _ = moves_taken_up(root);
     let mark = into.join(MOVED_MARK);
     if std::fs::symlink_metadata(&mark).is_ok() {
         return Moved::default();
     }
     let picked = crate::names::state(root);
-    let states: Vec<PathBuf> = if crate::plane::state_dir(root) == picked {
-        vec![picked]
-    } else {
-        Vec::new()
-    };
-    let moved = move_from(root, &states, &into);
+    let named = crate::plane::state_dir(root);
+    if named != picked {
+        // `$PURLIS_HOME` names the state folder: nothing is moved, and nothing marked, so the
+        // plane's own folder is moved once purlis reads it. Its levels records are asked about
+        // again, once.
+        return Moved {
+            left: asked_again_for(root, &into, &named, "purlis-home")
+                .err()
+                .into_iter()
+                .collect(),
+            ..Moved::default()
+        };
+    }
+    let mut moved = move_from(root, std::slice::from_ref(&picked), &into);
+    // The other spelling is never read, so the levels records it holds are asked about again.
+    for other in crate::names::STATE_DIR
+        .spellings()
+        .map(|state| root.join(state))
+    {
+        if other != picked
+            && let Err(why) = asked_again_for(root, &into, &other, "other-spelling")
+        {
+            moved.left.push(why);
+        }
+    }
     if moved.left.is_empty()
-        && let Err(why) = crate::plane::write_private(&into, &mark, b"")
+        && let Err(why) = written_once(&mark, "")
     {
         tracing::warn!(target: "purlis::appstate", "purlis: the move out of the plane was not marked ({why})");
     }
     moved
+}
+
+/// Where the state folder `state`, which is not moved, holds levels records: every workspace and
+/// persona folder of the project waits for the person's Accept again, once, marked
+/// `asked-again-<which>` in the project's app state `into`.
+fn asked_again_for(root: &Path, into: &Path, state: &Path, which: &str) -> Result<(), String> {
+    let mark = into.join(format!("asked-again-{which}"));
+    if std::fs::symlink_metadata(state.join(crate::skills::levels::DIR)).is_err()
+        || std::fs::symlink_metadata(&mark).is_ok()
+    {
+        return Ok(());
+    }
+    crate::skills::levels::ask_again_in(into, root)
+        .map_err(|why| format!("the levels records were not asked about again ({why})"))?;
+    written_once(&mark, "").map(|_| ())
 }
 
 /// [`move_out_of_the_plane`] from the state folders `states`, into the project's app state
@@ -339,7 +436,7 @@ pub fn move_from(root: &Path, states: &[PathBuf], into: &Path) -> Moved {
     out
 }
 
-/// The stores a move of the project carries to its new clone key ([`follow_move`]): the person's
+/// The stores a move of the project carries to its new clone key ([`follow_arrival`]): the person's
 /// own work and records. Nothing that holds the person's word is carried: the grade-after-edit
 /// opt-ins are turned on again from a plan, and the levels records are asked about again.
 pub const CARRIED_ON_A_MOVE: [(&str, Carried); 3] = [
@@ -348,36 +445,115 @@ pub const CARRIED_ON_A_MOVE: [(&str, Carried); 3] = [
     (crate::skills::grades::kept::DIR_NAME, Carried::Moved),
 ];
 
-/// **The app's state of the project at `root` follows it from where it was** (#3718): what a
-/// project's open does when its record of open chats says the project moved
-/// (`reopen::Arrival::Moved`, V43), with `was` the clone the record names. Only where the old
-/// clone key's folder says it is that clone's own (its [`ROOT_FILE`] names `was.root`, and its
-/// [`OWNER`] is the project's [`PLANE_ID`], which moved with it): its
-/// drafts, local grades and kept grade chats are carried ([`CARRIED_ON_A_MOVE`]); its opt-ins and
-/// levels records are not, and where it held levels records every workspace and persona folder of
-/// the project waits for the person's Accept again. The old folder is removed once all of it is
-/// carried. Nothing for any other folder, and nothing where there is no data home.
-pub fn follow_move(root: &Path, was: &crate::reopen::CloneSeat) -> Moved {
+/// What a project's open found about where its record of open chats came from, for
+/// [`follow_arrival`]: the two V43 answers that concern its app state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arrived {
+    /// `reopen::Arrival::Moved`.
+    Moved,
+    /// `reopen::Arrival::Copied`.
+    Copied,
+}
+
+/// The mark in a project's app state of a carry from the old clone key `<key>` under way:
+/// `moving-from-<key>`, holding the old root, renamed `moved-from-<key>` once all of it is carried.
+const MOVING: &str = "moving-from-";
+
+/// The mark of a carry from `<key>` that is whole.
+const MOVED: &str = "moved-from-";
+
+/// **The app's state of the project at `root` follows where its record of open chats came from**
+/// (#3718), with `was` the clone the record names, at its open, before any chat is put back:
+///
+/// - **A copy** is given an id of its own and starts with none of the original's state. A record
+///   V43 reads as a move is a copy too while its old root is still a project holding the same id:
+///   the original keeps everything.
+/// - **A move** carries the old clone key's drafts, local grades and kept grade chats
+///   ([`CARRIED_ON_A_MOVE`]), only where the old key's folder says it is this project's (its
+///   [`ROOT_FILE`] names `was.root` and its [`OWNER`] is the project's [`PLANE_ID`], which moved
+///   with it). Its opt-ins and levels records are not carried, and where it held levels records
+///   every workspace and persona folder waits for the person's Accept again. The old folder is
+///   removed once all of it is carried; a carry cut short is taken up again at the next open
+///   ([`moves_taken_up`]).
+///
+/// Nothing where there is no data home.
+pub fn follow_arrival(root: &Path, was: &crate::reopen::CloneSeat, arrived: Arrived) -> Moved {
     match data_home(root) {
-        Some(data) => follow_move_in(&data, root, was),
+        Some(data) => follow_arrival_in(&data, root, was, arrived),
         None => Moved::default(),
     }
 }
 
-/// [`follow_move`], in the data home `data`.
-fn follow_move_in(data: &Path, root: &Path, was: &crate::reopen::CloneSeat) -> Moved {
+/// [`follow_arrival`], in the data home `data`.
+fn follow_arrival_in(
+    data: &Path,
+    root: &Path,
+    was: &crate::reopen::CloneSeat,
+    arrived: Arrived,
+) -> Moved {
     let mut out = Moved::default();
-    let old = data.join(DIR).join(was.key.as_str());
+    let here = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let id = record_text(&plane_id_file(root));
+    let original_there = was.root != here
+        && was.root.is_dir()
+        && id.is_some()
+        && record_text(&plane_id_file(&was.root)) == id;
+    if arrived == Arrived::Copied || original_there {
+        if let Err(why) = reminted(data, root) {
+            out.left
+                .push(format!("the copy was not given an id of its own ({why})"));
+        }
+        return out;
+    }
+    carried_from(data, root, was.key.as_str(), &was.root)
+}
+
+/// **Each carry from an old clone key that was cut short** ([`MOVING`]) taken up again, in the
+/// project at `root`: what its open does, a look at its own folder's names.
+pub fn moves_taken_up(root: &Path) -> Vec<Moved> {
+    let Some(data) = data_home(root) else {
+        return Vec::new();
+    };
+    let here = in_data(&data, root);
+    let Ok(entries) = std::fs::read_dir(&here) else {
+        return Vec::new();
+    };
+    let keys: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.strip_prefix(MOVING))
+                .and_then(crate::plane::CloneKey::parse)
+                .map(|key| key.to_string())
+        })
+        .collect();
+    keys.iter()
+        .filter_map(|key| {
+            let old_root = record_text(&here.join(format!("{MOVING}{key}")))?;
+            Some(carried_from(&data, root, key, Path::new(&old_root)))
+        })
+        .collect()
+}
+
+/// The carry of a move from the old clone key `key`, whose project was at `old_root`.
+fn carried_from(data: &Path, root: &Path, key: &str, old_root: &Path) -> Moved {
+    let mut out = Moved::default();
+    let old = data.join(DIR).join(key);
     let here = in_data(data, root);
     if old == here || !std::fs::symlink_metadata(&old).is_ok_and(|meta| meta.is_dir()) {
         return out;
     }
-    let its_own = was.root.to_str() == record_text(&old.join(ROOT_FILE)).as_deref()
-        && record_text(&old.join(OWNER)).is_some_and(|owner| {
-            record_text(&plane_id_file(root)).as_deref() == Some(owner.as_str())
-        });
-    if !its_own {
-        tracing::warn!(target: "purlis::appstate", "purlis: the app state of {} is another project's, so nothing was carried", was.root.display());
+    let id = record_text(&plane_id_file(root));
+    let its_own = old_root.to_str() == record_text(&old.join(ROOT_FILE)).as_deref()
+        && id.is_some()
+        && record_text(&old.join(OWNER)) == id;
+    // Never while the old root is still a project holding this same id: that one is a copy's
+    // original, and keeps what it has.
+    let original_there = old_root.is_dir() && record_text(&plane_id_file(old_root)) == id;
+    if !its_own || original_there {
+        tracing::warn!(target: "purlis::appstate", "purlis: the app state of {} is not this project's to carry, so nothing was carried", old_root.display());
         return out;
     }
     let into = match made_in(data, root) {
@@ -387,6 +563,16 @@ fn follow_move_in(data: &Path, root: &Path, was: &crate::reopen::CloneSeat) -> M
             return out;
         }
     };
+    let moving = into.join(format!("{MOVING}{key}"));
+    if std::fs::symlink_metadata(&moving).is_err() {
+        let Some(text) = old_root.to_str() else {
+            return out;
+        };
+        if let Err(why) = written_once(&moving, text) {
+            out.left.push(format!("the carry was not begun ({why})"));
+            return out;
+        }
+    }
     if std::fs::symlink_metadata(old.join(crate::skills::levels::DIR)).is_ok() {
         if let Err(why) = crate::skills::levels::ask_again_in(&into, root) {
             out.left.push(format!(
@@ -411,11 +597,14 @@ fn follow_move_in(data: &Path, root: &Path, was: &crate::reopen::CloneSeat) -> M
                 .push(format!("{name} was not carried: {}", missed.join("; ")));
         }
     }
-    if out.left.is_empty()
-        && let Err(why) = removed(&old)
-    {
-        out.left
-            .push(format!("the old app state was not removed ({why})"));
+    if out.left.is_empty() {
+        if let Err(why) = std::fs::rename(&moving, into.join(format!("{MOVED}{key}"))) {
+            out.left
+                .push(format!("the carry was not marked whole ({why})"));
+        } else if let Err(why) = removed(&old) {
+            out.left
+                .push(format!("the old app state was not removed ({why})"));
+        }
     }
     for line in &out.left {
         tracing::warn!(target: "purlis::appstate", "purlis: {line}");

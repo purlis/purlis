@@ -332,8 +332,10 @@ fn a_moved_project_keeps_its_drafts_and_grades_and_is_asked_about_its_folders_ag
     let old = project();
     let was = moved_from(data.path(), old.path());
     let new = moved_to(old.path());
+    // Moved: the old root is gone.
+    std::fs::remove_dir_all(old.path()).unwrap();
     let root = new.path();
-    let moved = follow_move_in(data.path(), root, &was);
+    let moved = follow_arrival_in(data.path(), root, &was, Arrived::Moved);
     assert!(moved.left.is_empty(), "{:?}", moved.left);
     let here = in_data(data.path(), root);
     assert!(here.join("skill-drafts/abc/draft.json").is_file());
@@ -364,14 +366,14 @@ fn a_move_whose_old_folder_names_another_project_carries_nothing() {
     was.root = elsewhere.path().canonicalize().unwrap();
     let new = moved_to(old.path());
     assert_eq!(
-        follow_move_in(data.path(), new.path(), &was),
+        follow_arrival_in(data.path(), new.path(), &was, Arrived::Moved),
         Moved::default()
     );
     // And a project that is not the old one's, though the record names its root.
     let was = crate::reopen::CloneSeat::of(old.path(), None);
     let stranger = project();
     assert_eq!(
-        follow_move_in(data.path(), stranger.path(), &was),
+        follow_arrival_in(data.path(), stranger.path(), &was, Arrived::Moved),
         Moved::default()
     );
     for root in [new.path(), stranger.path()] {
@@ -415,5 +417,129 @@ fn only_the_state_folder_purlis_reads_is_moved_and_the_other_is_left_unread() {
     assert!(
         other.join("skill-drafts/def/draft.json").is_file(),
         "and left as it is"
+    );
+}
+
+#[test]
+fn a_copy_read_as_a_move_takes_nothing_from_the_original_and_gets_an_id_of_its_own() {
+    let data = tempfile::tempdir().unwrap();
+    let original = project();
+    let was = moved_from(data.path(), original.path());
+    // `cp -R`: the copy carries the original's state folder, its id among it.
+    let copy = moved_to(original.path());
+    let root = copy.path();
+    made_in(data.path(), root).unwrap();
+    let moved = follow_arrival_in(data.path(), root, &was, Arrived::Moved);
+    assert!(moved.done.is_empty(), "{moved:?}");
+    let theirs = in_data(data.path(), original.path());
+    assert!(
+        theirs.join("skill-drafts/abc/draft.json").is_file(),
+        "the original keeps it"
+    );
+    assert!(theirs.join("skill-grade-after-edit.json").is_file());
+    let here = in_data(data.path(), root);
+    assert!(!here.join("skill-drafts").exists(), "the copy gets nothing");
+    let (mine, its) = (
+        record_text(&plane_id_file(root)),
+        record_text(&plane_id_file(original.path())),
+    );
+    assert_ne!(mine, its, "their ids differ");
+    assert_eq!(record_text(&here.join(OWNER)), mine);
+    assert_eq!(
+        record_text(&theirs.join(OWNER)),
+        its,
+        "the original is still its own"
+    );
+    // A copy V43 reads as one is given an id of its own too.
+    let again = moved_to(original.path());
+    made_in(data.path(), again.path()).unwrap();
+    follow_arrival_in(data.path(), again.path(), &was, Arrived::Copied);
+    assert_ne!(record_text(&plane_id_file(again.path())), its);
+}
+
+#[test]
+fn a_move_cut_short_is_taken_up_again_until_it_is_whole() {
+    let data = tempfile::tempdir().unwrap();
+    let old = project();
+    let was = moved_from(data.path(), old.path());
+    let new = moved_to(old.path());
+    std::fs::remove_dir_all(old.path()).unwrap();
+    let root = new.path();
+    // A draft of the same name with other bytes is in the way: the carry is not whole.
+    let here = made_in(data.path(), root).unwrap();
+    write(&here.join("skill-drafts/abc/draft.json"), "{\"other\":1}");
+    let moved = follow_arrival_in(data.path(), root, &was, Arrived::Moved);
+    assert!(!moved.left.is_empty());
+    let old_folder = data.path().join(DIR).join(was.key.as_str());
+    assert!(old_folder.exists(), "kept until whole");
+    assert!(here.join(format!("{MOVING}{}", was.key)).is_file());
+    // Once the way is clear, the carry is taken up again from its mark.
+    std::fs::remove_dir_all(here.join("skill-drafts")).unwrap();
+    let key = was.key.to_string();
+    let taken = carried_from(
+        data.path(),
+        root,
+        &key,
+        &std::path::PathBuf::from(record_text(&here.join(format!("{MOVING}{key}"))).unwrap()),
+    );
+    assert!(taken.left.is_empty(), "{:?}", taken.left);
+    assert!(here.join(format!("{MOVED}{key}")).is_file());
+    assert!(!old_folder.exists());
+    assert_eq!(
+        std::fs::read_to_string(here.join("skill-grades/2026-10.jsonl")).unwrap(),
+        "{\"row\":1}\n",
+        "no row added twice"
+    );
+}
+
+#[test]
+fn two_at_once_make_one_folder_bound_to_one_id() {
+    let data = tempfile::tempdir().unwrap();
+    let tmp = project();
+    let root = tmp.path().to_path_buf();
+    let made: Vec<Result<PathBuf, String>> = std::thread::scope(|scope| {
+        let calls: Vec<_> = (0..8)
+            .map(|_| scope.spawn(|| made_in(data.path(), &root)))
+            .collect();
+        calls.into_iter().map(|call| call.join().unwrap()).collect()
+    });
+    let here = in_data(data.path(), &root);
+    for one in &made {
+        assert_eq!(one.as_ref().unwrap(), &here);
+    }
+    assert_eq!(
+        record_text(&here.join(OWNER)),
+        record_text(&plane_id_file(&root))
+    );
+    let aside: Vec<_> = std::fs::read_dir(data.path().join(DIR))
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".foreign-"))
+        .collect();
+    assert!(aside.is_empty(), "nothing set aside");
+}
+
+#[test]
+fn levels_records_in_the_spelling_not_moved_are_asked_about_again_before_the_mark() {
+    let tmp = project();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
+    std::fs::create_dir_all(root.join(".charter")).unwrap();
+    let picked = crate::names::state(root);
+    let other = [root.join(".purlis"), root.join(".charter")]
+        .into_iter()
+        .find(|state| *state != picked)
+        .unwrap();
+    write(
+        &other.join("skill-levels/unaccepted.json"),
+        "{\"levels\":[]}",
+    );
+    let moved = move_out_of_the_plane(root);
+    assert!(moved.left.is_empty(), "{:?}", moved.left);
+    assert!(dir(root).unwrap().join(MOVED_MARK).is_file());
+    assert!(crate::skills::levels::made_since(root)(&root.join("workspaces/ops")).is_some());
+    assert!(
+        other.join("skill-levels/unaccepted.json").is_file(),
+        "left as it is, unread"
     );
 }

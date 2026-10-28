@@ -269,13 +269,38 @@ fn with_no_app_state_a_sandboxed_start_is_refused_and_nothing_is_left_out() {
 }
 
 #[test]
-fn a_start_that_could_not_be_noted_never_accepts_a_folder_made_since() {
+fn a_start_that_could_not_be_noted_never_accepts_a_folder_made_since_until_it_is_accepted() {
     let tmp = plane(&[]);
     let root = tmp.path();
-    assert!(note(root, "not-an-id", "7").is_err());
+    assert!(note_or_hold(root, "not-an-id", "7").unwrap().is_some());
     std::fs::create_dir_all(root.join("workspaces/later")).unwrap();
     assert!(made_since(root)(&root.join("workspaces/later")).is_some());
-    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+    assert_eq!(
+        made_since(root)(&root.join("workspaces/ops")),
+        None,
+        "there before"
+    );
+    // A sweep never takes the record away, and Accept lets the folder go.
+    sweep(root, &[]);
+    assert!(made_since(root)(&root.join("workspaces/later")).is_some());
+    accept(root, "workspaces/later").unwrap();
+    assert_eq!(made_since(root)(&root.join("workspaces/later")), None);
+}
+
+#[test]
+fn a_record_a_sweep_cannot_read_holds_every_folder_before_it_goes() {
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    let state = crate::appstate::made(root).unwrap();
+    std::fs::create_dir_all(state.join(DIR)).unwrap();
+    let record = state.join(DIR).join(format!("{CHAT}.json"));
+    std::fs::write(&record, "not json").unwrap();
+    noted_long_ago(root, CHAT);
+    sweep(root, &[]);
+    assert!(!record.exists());
+    for owner in ["workspaces/ops", "personas/steward"] {
+        assert!(made_since(root)(&root.join(owner)).is_some(), "{owner}");
+    }
 }
 
 #[test]
