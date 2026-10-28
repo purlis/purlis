@@ -1,7 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { delimiter } from "node:path";
+import { readdirSync } from "node:fs";
+import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import process from "node:process";
 import {
   anEmptyRecord,
@@ -24,6 +26,7 @@ import { theWindowHoldsTheRail } from "./rail.js";
 import { LOGS, PANIC_LOG, collectEvidence } from "./processes.js";
 import { type Evidence, coreLogTail, recordFailure } from "./failures.js";
 import { aSessionBegins, aSessionEnds, recordTiming } from "./timings.js";
+import { specsOfPart } from "./parts.js";
 
 /**
  * The scenario tests: WebdriverIO driving the real app, with the fake harness standing in for
@@ -93,7 +96,18 @@ export const config: WebdriverIO.Config = {
   runner: "local",
   // The state specs run separately, against a harness that reports through hooks
   // (`wdio.state.conf.ts`): the app reads `SHELL` once, and one run is one harness.
-  specs: ["./specs/**/*.e2e.ts"],
+  //
+  // One part of a split run when `PURLIS_E2E_PART` says which ("2/4", CI's `scenario` legs):
+  // cut by measured time, not WebdriverIO's equal count (`parts.ts`, #3615). `exclude` still
+  // applies to a part, so the specs run apart (below) stay apart.
+  specs: process.env.PURLIS_E2E_PART
+    ? specsOfPart(
+        readdirSync(join(dirname(fileURLToPath(import.meta.url)), "specs")).filter((name) =>
+          name.endsWith(".e2e.ts"),
+        ),
+        process.env.PURLIS_E2E_PART,
+      ).map((name) => `./specs/${name}`)
+    : ["./specs/**/*.e2e.ts"],
   // The state specs run separately (above). The stress spec runs separately too, and for a
   // different reason: it exists to give charter-app#16 — an app that died once while fifty
   // tabs were opening — a chance to recur where the evidence is kept. Fifty windows on a
