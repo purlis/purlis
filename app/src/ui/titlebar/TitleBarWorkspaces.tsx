@@ -28,11 +28,11 @@ import type {
   Ref,
 } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, House } from "lucide-react";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
 /** The family's variants, in the order the manifest names them. */
-export const TITLEBAR_VARIANTS = ["pinned", "unpinned"] as const;
+export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root"] as const;
 export type TitleBarVariant = (typeof TITLEBAR_VARIANTS)[number];
 
 type Native = Omit<
@@ -44,7 +44,7 @@ export interface WorkspaceChipProps extends Native {
   /** The workspace's name: what the chip says, and its name. */
   name: string;
   /** A pin, or the current workspace while it is not pinned, whose press pins it (R105). */
-  variant?: TitleBarVariant;
+  variant?: Exclude<TitleBarVariant, "root">;
   /** It is the workspace in front (R101). */
   current?: boolean;
   /** How many things wait on the person in it (R101); none draws no count. */
@@ -133,6 +133,48 @@ export function WorkspaceChip({
       {tooltip === undefined ? chip : <Tooltip tip={tooltip}>{chip}</Tooltip>}
       {description}
     </>
+  );
+}
+
+/**
+ * **The plane root's chip** (#3654, spec #3647): a house right after the project's name and
+ * outside the strip, so it never scrolls away, the `root` variant of the workspace's chip. It is
+ * always drawn and has no pin to let go. It takes the chosen look while the plane root is in
+ * front, as a chip does while its workspace is; its name is the root's, "Plane root", as the
+ * workspace popover's row and the palette say it.
+ */
+export function RootChip({
+  current,
+  onPress,
+  ref,
+  ...handed
+}: Omit<Native, "onClick" | "aria-label"> & {
+  /** The plane root is in front. */
+  current: boolean;
+  onPress: () => void;
+  ref?: Ref<HTMLButtonElement>;
+  /** `data-*` attributes reach the element as they are. */
+  [attribute: `data-${string}`]: string | number | boolean | undefined;
+}) {
+  // What a context menu around it hands it (`asChild`) reaches the button with the press.
+  const marked = useMarked({ ...handed, onClick: onPress }, current);
+  return (
+    <Tooltip tip="Plane root">
+      <button
+        type="button"
+        {...marked}
+        ref={ref}
+        // A Tab stop of its own, before the strip's one (it is not in the strip).
+        tabIndex={0}
+        aria-label="Plane root"
+        aria-current={current ? "true" : undefined}
+        data-scope="titlebar"
+        data-part="workspace"
+        data-variant="root"
+      >
+        <House aria-hidden="true" />
+      </button>
+    </Tooltip>
   );
 }
 

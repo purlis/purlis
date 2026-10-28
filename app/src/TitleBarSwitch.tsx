@@ -34,6 +34,7 @@ import {
   AllWorkspaces,
   PinnedStrip,
   ProjectCrumb,
+  RootChip,
   TitleBarProject,
   TitleBarSlash,
   WorkspaceChip,
@@ -133,7 +134,8 @@ export function TitleBarSwitch({
   /** The palette is up: the keys are not this bar's (a modal is the key registry's to find). */
   held?: boolean;
   does: SwitchDoes;
-  /** A chip's context menu, around the chip: the workspace's rows of the catalogue. */
+  /** A chip's context menu, around the chip: the workspace's rows of the catalogue, or the
+   *  plane root's for its chip (`OUTSIDE`). */
   menuOf?: (workspace: string, chip: ReactNode) => ReactNode;
 }) {
   const mac = onAMac();
@@ -316,6 +318,14 @@ export function TitleBarSwitch({
         />
       )}
       <TitleBarSlash />
+      {/* The plane root's chip (#3654): always here, outside the strip so it never scrolls
+          away, and with no pin to let go. Its menu is the root's, which has none either. */}
+      <Fragment key="root">
+        {withMenu(
+          OUTSIDE,
+          <RootChip current={focused === OUTSIDE} onPress={() => goTo(OUTSIDE)} />,
+        )}
+      </Fragment>
       {/* Drawn once its plane is read: which workspaces it has is the plane's answer. */}
       {workspaces !== undefined && (
         <PinnedStrip name="Pinned workspaces" ref={strip}>

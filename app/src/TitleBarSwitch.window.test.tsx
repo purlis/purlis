@@ -527,3 +527,71 @@ describe("choosing a project lands on the workspace it was last on (R81)", () =>
     expect(chips()).toEqual(["alpha", "gamma*"]);
   });
 });
+
+describe("the plane root's chip (#3654, spec #3647)", () => {
+  /** The root's chip: the house after the project's name, outside the strip. */
+  const root = () => within(bar()).getByRole("button", { name: "Plane root" });
+
+  it("stands right after the project's name, outside the strip, and brings the root in front", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    const chip = root();
+    // Outside the scrolling strip, so it never scrolls away.
+    expect(pins().contains(chip)).toBe(false);
+    // After the project's name and the slash, before the strip.
+    const project = within(bar()).getByTestId("title-project");
+    expect(project.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(chip.compareDocumentPosition(pins()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(chip).not.toHaveAttribute("aria-current");
+    await userEvent.click(chip);
+    // The root in front: no workspace's chip is current, and the root's takes the chosen look.
+    await waitFor(() => expect(chips()).toEqual(["alpha", "gamma"]));
+    expect(root()).toHaveAttribute("aria-current", "true");
+    expect(root()).toHaveAttribute("data-selected");
+    // Back to a pin, and the root's chip lets the chosen look go.
+    await userEvent.click(within(pins()).getByRole("button", { name: "gamma" }));
+    await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*"]));
+    expect(root()).not.toHaveAttribute("aria-current");
+  });
+
+  it("is reached from the keyboard, a Tab stop of its own", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    const chip = root();
+    expect(chip.tagName).toBe("BUTTON");
+    expect(chip).toHaveAttribute("tabindex", "0");
+    chip.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(root()).toHaveAttribute("aria-current", "true"));
+  });
+
+  it("can't be unpinned: not from itself, the popover nor the palette", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    // The chip draws only its house: no × and no pin of its own.
+    expect(root().querySelector('[data-part="plus"]')).toBeNull();
+    expect(
+      within(bar()).queryByRole("button", { name: /unpin plane root|pin plane root/i }),
+    ).toBeNull();
+    // Its context menu has no pin row.
+    fireEvent.contextMenu(root());
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).queryByRole("menuitem", { name: /pin/i })).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    // The popover's root row has no pin toggle.
+    await userEvent.click(within(pins()).getByRole("button", { name: "All workspaces" }));
+    await screen.findByRole("combobox", { name: "Go to a workspace in one…" });
+    expect(screen.queryByRole("button", { name: /pin plane root/i })).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    // The palette offers no pin of the root.
+    paletteKey();
+    const finder = await screen.findByRole("combobox");
+    await userEvent.type(finder, ">pin");
+    expect(
+      screen.queryByRole("option", { name: /pin.*plane root|pin workspace outside/i }),
+    ).toBeNull();
+  });
+});

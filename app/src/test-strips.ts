@@ -196,13 +196,16 @@ export async function showThePanel(view: string, testid = `panel-${view.toLowerC
 
 /**
  * **The title bar's workspace chips** (#2916): each pin of the project in front, and the one in
- * front when it is not pinned (the dashed chip), in the bar's order.
+ * front when it is not pinned (the dashed chip), in the bar's order. The plane root's chip is
+ * not one (#3654): it is the house before them.
  */
 export function workspaceChips(): HTMLElement[] {
   return [
     ...screen
       .getByTestId("title-bar")
-      .querySelectorAll<HTMLElement>('[data-scope="titlebar"][data-part="workspace"]'),
+      .querySelectorAll<HTMLElement>(
+        '[data-scope="titlebar"][data-part="workspace"]:not([data-variant="root"])',
+      ),
   ];
 }
 
