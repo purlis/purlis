@@ -368,6 +368,18 @@ impl HarnessAdapter for ClaudeCode {
         remapped(&model, env)
     }
 
+    /// Claude Code's three family aliases, as `claude --help` names them for `--model` (2.1.x):
+    /// each the family's newest model, so the list never goes stale with a release. A full
+    /// model id stays the profile's to name in its command.
+    fn grade_models(&self) -> &'static [&'static str] {
+        &["opus", "sonnet", "haiku"]
+    }
+
+    /// `--model <model>`: Claude Code takes the last one its line names.
+    fn model_words(&self, model: &str) -> Vec<String> {
+        vec![MODEL_FLAG.to_owned(), model.to_owned()]
+    }
+
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
     /// `armed`), beside the project settings its arming decided to load ([`project`], ADR 0067
     /// as amended 2026-10-15), and there it is allowed the chat's hook socket, which only the

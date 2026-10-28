@@ -47,16 +47,24 @@ fn planned(query: &str) -> Planned {
     }
 }
 
+/// Where a grade's chats run in a test: on `work`, checked as `checked`, priced at `priced`, its
+/// harness offering Claude Code's three models and none picked.
+fn on(checked: Result<String, String>, priced: grading::Priced) -> On {
+    On {
+        profile: Some("work".into()),
+        checked,
+        priced,
+        models: ["opus", "sonnet", "haiku"].map(str::to_owned).to_vec(),
+        model: None,
+    }
+}
+
 #[test]
 fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     let plan = SkillGradePlan::of(
         &planned("ship it\u{202e}now"),
         None,
-        (
-            Some("work".into()),
-            Ok("full sandbox".into()),
-            grades::price::of_model(None),
-        ),
+        on(Ok("full sandbox".into()), grades::price::of_model(None)),
     );
     assert_eq!(plan.chats, 6);
     assert_eq!(plan.runs, 3);
@@ -97,8 +105,7 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     let refused = SkillGradePlan::of(
         &planned("ship it"),
         None,
-        (
-            Some("work".into()),
+        on(
             Err("the sandbox is off".into()),
             grades::price::of_model(None),
         ),
@@ -116,8 +123,7 @@ fn the_plan_says_the_limit_at_the_price_of_the_model_its_chats_run_on() {
     let plan = SkillGradePlan::of(
         &planned("ship it"),
         None,
-        (
-            Some("work".into()),
+        on(
             Ok("full sandbox".into()),
             grades::price::of_model(Some("claude-sonnet-4-6")),
         ),
@@ -171,4 +177,24 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
         assert_eq!(failed.get(), panics, "{grade}");
         assert_eq!(running_of(&plane, "deploy"), None, "{grade} is not running");
     }
+}
+
+/// SK-60 (#3240): the plan offers the models the profile's harness can run, and says the one
+/// picked.
+#[test]
+fn the_plan_offers_the_models_the_profiles_harness_can_run() {
+    let plan = SkillGradePlan::of(
+        &planned("ship it"),
+        None,
+        On {
+            model: Some("sonnet".into()),
+            ..on(
+                Ok("full sandbox".into()),
+                grades::price::of_model(Some("sonnet")),
+            )
+        },
+    );
+    assert_eq!(plan.models, ["opus", "sonnet", "haiku"]);
+    assert_eq!(plan.model.as_deref(), Some("sonnet"));
+    assert_eq!(plan.priced.model.as_deref(), Some("sonnet"));
 }

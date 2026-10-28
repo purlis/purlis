@@ -122,6 +122,20 @@ pub trait HarnessAdapter: Sync {
         None
     }
 
+    /// **The models a person can pick for a grade's chats on this harness** (SK-60, #3240): the
+    /// names its own model flag takes, as a grade's plan offers them beside the profile's own
+    /// model. Asked only where [`Self::can_grade`] says it can; the default is a harness none is
+    /// offered for, whose grades run on the profile's own model.
+    fn grade_models(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// **The words that start a chat of this harness on `model`** (SK-60, #3240): its own model
+    /// flag and the model, put after the profile's own words, so the model picked is the last
+    /// one the line names. Pure: nothing is read. No default: each adapter says its harness's
+    /// flag.
+    fn model_words(&self, model: &str) -> Vec<String>;
+
     /// The chat's whole line under `form`, the sandbox [`Self::sandbox_compiler`] compiled,
     /// from `words`: the program, the profile's `command`, then `armed` (what [`Self::arm`]
     /// gave), then `charters`, charter's own words — where the chat opens, `at`; or the one

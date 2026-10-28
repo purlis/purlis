@@ -113,6 +113,7 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
         report: report(true),
         spent,
         plugins_off: Some(vec!["figma@claude-plugins-official".to_owned()]),
+        model: None,
     }
 }
 
@@ -347,6 +348,8 @@ fn a_row_that_says_more_than_purlis_writes_is_skipped() {
         ("ts", serde_json::json!("yesterday")),
         ("plugins_off", serde_json::json!(["figma@x\u{1b}[31m"])),
         ("plugins_off", serde_json::json!("figma@x")),
+        ("model", serde_json::json!("sonnet\u{202e}")),
+        ("model", serde_json::json!("two words")),
     ] {
         let mut row = serde_json::to_value(graded(
             root,
@@ -509,6 +512,7 @@ fn uncommitted_row() -> Graded {
             cost_usd: Some(0.04),
         },
         plugins_off: None,
+        model: None,
     }
 }
 
@@ -624,4 +628,24 @@ fn a_harness_that_cannot_grade_is_refused_with_its_own_reason() {
     let codex = reason(crate::harness::Harness::Codex);
     assert!(codex.contains("Claude Code"), "{codex}");
     assert!(!codex.contains("plugins"), "{codex}");
+}
+
+/// SK-60 (#3240): the record keeps the model its chats reported, the first that is a model's
+/// id, and reads it back.
+#[test]
+fn a_grade_records_the_model_its_chats_reported() {
+    assert_eq!(
+        reported_model(["", "two words", "claude-sonnet-4-5", "claude-opus-4-1"]),
+        Some("claude-sonnet-4-5".to_owned())
+    );
+    assert_eq!(reported_model(["\u{1b}[31m"]), None);
+    let plane = plane();
+    let root = plane.path();
+    let mut one = graded(root, "one", "2026-10-25T10:00:00+00:00", Spent::default());
+    one.model = Some("claude-sonnet-4-5".to_owned());
+    record(root, &Level::project(), &one, "laptop");
+    assert_eq!(
+        grades_of(root, "deploy", None)[0].model.as_deref(),
+        Some("claude-sonnet-4-5")
+    );
 }

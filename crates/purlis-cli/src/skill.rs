@@ -1305,7 +1305,11 @@ fn grade_said(
                 .delta
                 .map(|delta| format!("  difference {:+.0} points", delta * 100.0))
                 .unwrap_or_default(),
-            counted(one.spent.chats, "chat", "chats"),
+            match &one.model {
+                // The model its chats reported (SK-60): a model's id, which the record checks.
+                Some(model) => format!("{} on {model}", counted(one.spent.chats, "chat", "chats")),
+                None => counted(one.spent.chats, "chat", "chats"),
+            },
         ));
     }
     text

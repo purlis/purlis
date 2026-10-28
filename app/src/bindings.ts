@@ -1984,13 +1984,14 @@ export const commands = {
 	 */
 	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
 	/**
 	 *  **Grades the copy of `skill` at `level`**, on `profile` (the project's default where none
-	 *  is picked): its chats run one at a time behind the window, which is told each step
-	 *  ([`EVENT`]). The answer is the grade's id. Refused while a grade runs in the project.
+	 *  is picked) and `model` (the profile's own where none is, SK-60): its chats run one at a time
+	 *  behind the window, which is told each step ([`EVENT`]). The answer is the grade's id.
+	 *  Refused while a grade runs in the project.
 	 */
-	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, consent })),
+	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, model, consent })),
 	/**
 	 *  **Stops the grade `grade`**: the chat it runs now is ended, no other starts, and what ran is
 	 *  scored and recorded.
@@ -2001,7 +2002,7 @@ export const commands = {
 	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
 	 *  it before Grade is pressed. The answer is the plan of `skill` at `level` again, with it.
 	 */
-	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, profile, tokens })),
+	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, profile, model, tokens })),
 	/**  The project's skill sources. */
 	skillSources: (plane: PlaneId) => typedError<SkillSource[], string>(__TAURI_INVOKE("skill_sources", { plane })),
 	/**
@@ -11750,6 +11751,12 @@ export type SkillGradePlan = {
 	 *  grade can run on it (the operator's ruling of 2026-10-26).
 	 */
 	profile: string | null,
+	/**
+	 *  **The models its chats can be picked to run on** (SK-60, #3240), as the profile's harness
+	 *  offers them, and the one picked: `None` is the profile's own model.
+	 */
+	models: string[],
+	model: string | null,
 	sandbox: string | null,
 	refused: string | null,
 	/**

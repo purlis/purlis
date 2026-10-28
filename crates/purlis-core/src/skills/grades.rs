@@ -125,6 +125,11 @@ pub struct Graded {
     /// grade is under way (so an interrupted grade's record has none).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugins_off: Option<Vec<String>>,
+    /// **The model its chats ran on, as they reported it** (SK-60, #3240; ADR 0087 §6): the one
+    /// the first chat that said its model said, by the harness's own id for it. `None` in a row
+    /// written before #3240, and where no chat said ([`reported_model`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl Graded {
@@ -156,8 +161,19 @@ impl Graded {
                 ids.len() <= MOST_PLUGINS_OFF
                     && ids.iter().all(|id| crate::harness_plugin::id_ok(id))
             })
+            && self.model.as_deref().is_none_or(price::model_id)
             && report_holds_together(&self.report, self.runs)
     }
+}
+
+/// **The model a grade records its chats ran on** (SK-60, #3240), from `said`, what each chat
+/// reported in order: the first that is a model's id as a harness names one, so the record
+/// never holds words no reader could take for one.
+pub fn reported_model<'a>(said: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    said.into_iter()
+        .map(str::trim)
+        .find(|model| price::model_id(model))
+        .map(str::to_owned)
 }
 
 /// The most plugin ids a row read back names as off: far past any machine's installs.
@@ -589,9 +605,32 @@ pub fn ready_to_grade(
     start: &crate::start::Start,
     root: &Path,
 ) -> Result<crate::start::Ready, String> {
+    ready_to_grade_on(start, root, None)
+}
+
+/// **[`ready_to_grade`], on the model `model` the person picked** (SK-60, #3240): one of those
+/// its harness's adapter offers ([`models_for`]), started by that adapter's own words after the
+/// profile's ([`crate::harness::HarnessAdapter::model_words`]), so the chat runs on it and its
+/// dollar limit is priced from it ([`priced`]). `None` is the profile's own model. A model the
+/// adapter does not offer is refused, so nothing but a name it takes reaches the line.
+pub fn ready_to_grade_on(
+    start: &crate::start::Start,
+    root: &Path,
+    model: Option<&str>,
+) -> Result<crate::start::Ready, String> {
     let mut ready =
         crate::sandbox::policy::holding_no_kept_grants(|| crate::start::ready(start, root))?;
     chat_refused(&ready)?;
+    if let Some(model) = model {
+        let adapter = ready.harness.map(crate::harness::Harness::adapter);
+        let offered = models_for(&ready);
+        match adapter {
+            Some(adapter) if offered.contains(&model) => {
+                ready.command.extend(adapter.model_words(model));
+            }
+            _ => return Err(model_not_offered(model, offered)),
+        }
+    }
     if let Some(harness) = ready.harness {
         let adapter = harness.adapter().plugins();
         ready.plugins.plugins = crate::harness_plugin::only_purlis_on(
@@ -607,6 +646,31 @@ pub fn ready_to_grade(
         })?;
     }
     Ok(ready)
+}
+
+/// **The models a grade's chat that starts as `ready` can be picked to run on** (SK-60, #3240):
+/// what its harness's adapter offers ([`crate::harness::HarnessAdapter::grade_models`]), none
+/// for a chat on no harness.
+pub fn models_for(ready: &crate::start::Ready) -> &'static [&'static str] {
+    ready
+        .harness
+        .map_or(&[], |harness| harness.adapter().grade_models())
+}
+
+/// Why the model `model` is refused for a grade whose harness offers `offered`, in a sentence.
+fn model_not_offered(model: &str, offered: &[&str]) -> String {
+    let model = crate::shown::one_line(model, 60);
+    if offered.is_empty() {
+        return format!(
+            "A grade on this profile runs on the profile's own model, so it cannot be picked as \
+             {model}: pick the profile's own model."
+        );
+    }
+    format!(
+        "{model} is not a model a grade on this profile can pick: pick {}, or the profile's own \
+         model.",
+        offered.join(", ")
+    )
 }
 
 /// **The harness's own plugins a grade's chat that starts as `ready` is handed off** (#3468):

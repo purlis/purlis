@@ -3788,7 +3788,10 @@ An end row, never a pass or a fail:
   `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not; and
   `plugins_off`, the ids of the harness's own plugins its chats were handed off (every one it had
   installed, purlis's own left out; #3468, ADR 0105 as amended 2026-10-28), absent in a row
-  written before, one whose grade started no chat, and one recorded as interrupted.
+  written before, one whose grade started no chat, and one recorded as interrupted; and `model`,
+  the model its chats ran on as their harness reported it (the first that said one, by the
+  harness's own id; SK-60, #3240, ADR 0087 §6), absent in a row written before and where no chat
+  said.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
   16 MiB, each line at most 1 MiB; a line that
@@ -3800,8 +3803,8 @@ An end row, never a pass or a fail:
   arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
   reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
   1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469;
-  a `plugins_off` that is no list of at most 256 ids a plugin could have, #3468) is
-  skipped. At most 200 grades of a skill are answered, newest first
+  a `plugins_off` that is no list of at most 256 ids a plugin could have, #3468; a `model` that is
+  no plain id, #3240) is skipped. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::grades_of`).
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the

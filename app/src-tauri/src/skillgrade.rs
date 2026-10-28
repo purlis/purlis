@@ -135,6 +135,10 @@ pub struct SkillGradePlan {
     /// The profile its chats run on, and the sandbox they run in there, by its name, or why no
     /// grade can run on it (the operator's ruling of 2026-10-26).
     pub profile: Option<String>,
+    /// **The models its chats can be picked to run on** (SK-60, #3240), as the profile's harness
+    /// offers them, and the one picked: `None` is the profile's own model.
+    pub models: Vec<String>,
+    pub model: Option<String>,
     pub sandbox: Option<String>,
     pub refused: Option<String>,
     /// What pressing Grade consents to: handed back with the press, and a grade on another plan
@@ -142,19 +146,38 @@ pub struct SkillGradePlan {
     pub consent: Option<String>,
 }
 
-/// **Whether a grade's chats can run on `profile`** (the project's default where none) in the
-/// project at `root`: the profile's name and the sandbox's, or why not (R1 and R2 of the
-/// operator's ruling of 2026-10-26); and the price its dollar limit is worked out at there
-/// (`grades::priced`), the dearest where no chat could start.
-fn chats_on(
-    root: &std::path::Path,
+/// **Where a grade's chats run**, as [`chats_on`] reads it.
+struct On {
+    /// The profile, where one was found.
     profile: Option<String>,
-) -> (Option<String>, Result<String, String>, grading::Priced) {
+    /// The sandbox's name there, or why no grade can run on it.
+    checked: Result<String, String>,
+    /// The price its dollar limit is worked out at.
+    priced: grading::Priced,
+    /// The models its harness offers for a grade, and the one picked (SK-60, #3240).
+    models: Vec<String>,
+    model: Option<String>,
+}
+
+/// **Whether a grade's chats can run on `profile`** (the project's default where none) and on
+/// `model` (the profile's own where none) in the project at `root`: the profile's name and the
+/// sandbox's, or why not (R1 and R2 of the operator's ruling of 2026-10-26); the price its
+/// dollar limit is worked out at there (`grades::priced`), the dearest where no chat could start;
+/// and the models its harness offers (`grades::models_for`).
+fn chats_on(root: &std::path::Path, profile: Option<String>, model: Option<String>) -> On {
     let profile = match profile {
         Some(profile) => profile,
         None => match crate::curation::default_profile(root, "no grade can run") {
             Ok((profile, _)) => profile,
-            Err(why) => return (None, Err(why), grades::price::of_model(None)),
+            Err(why) => {
+                return On {
+                    profile: None,
+                    checked: Err(why),
+                    priced: grades::price::of_model(None),
+                    models: Vec::new(),
+                    model,
+                };
+            }
         },
     };
     let start = purlis_core::start::Start {
@@ -164,7 +187,17 @@ fn chats_on(
         made: purlis_core::sandbox::Made::Window,
         ..Default::default()
     };
-    let ready = grades::ready_to_grade(&start, root);
+    // The models are offered from the profile's own start, so a model that is refused leaves the
+    // others still on offer.
+    let models: Vec<String> = grades::ready_to_grade(&start, root)
+        .map(|ready| {
+            grades::models_for(&ready)
+                .iter()
+                .map(|model| (*model).to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    let ready = grades::ready_to_grade_on(&start, root, model.as_deref());
     let priced = ready
         .as_ref()
         .map_or_else(|_| grades::price::of_model(None), grades::priced);
@@ -179,15 +212,17 @@ fn chats_on(
             .title()
             .to_owned()
     });
-    (Some(profile), checked, priced)
+    On {
+        profile: Some(profile),
+        checked,
+        priced,
+        models,
+        model,
+    }
 }
 
 impl SkillGradePlan {
-    fn of(
-        planned: &Planned,
-        running: Option<String>,
-        on: (Option<String>, Result<String, String>, grading::Priced),
-    ) -> Self {
+    fn of(planned: &Planned, running: Option<String>, on: On) -> Self {
         let tests = planned
             .request
             .as_ref()
@@ -204,7 +239,13 @@ impl SkillGradePlan {
                     .collect()
             })
             .unwrap_or_default();
-        let (profile, sandbox, priced) = on;
+        let On {
+            profile,
+            checked: sandbox,
+            priced,
+            models,
+            model,
+        } = on;
         SkillGradePlan {
             tests,
             chats: planned.plan.map(|plan| plan.chats).unwrap_or_default(),
@@ -245,6 +286,8 @@ impl SkillGradePlan {
             cap_set_here: planned.cap.from == grades::cap::From::Yours,
             chat_minutes: u32::try_from(grades::CHAT_TIME.as_secs() / 60).unwrap_or(u32::MAX),
             profile,
+            models,
+            model,
             refused: sandbox.as_ref().err().cloned(),
             sandbox: sandbox.ok(),
             consent: planned.consent.clone(),
@@ -378,22 +421,26 @@ pub(crate) async fn skill_grade_plan(
     level: SkillLevel,
     skill: String,
     profile: Option<String>,
+    model: Option<String>,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what a grade runs", move || {
         flag_on()?;
         let planned = grades::planned(held.root(), &(&level).into(), &skill)?;
-        let on = chats_on(held.root(), profile);
+        let on = chats_on(held.root(), profile, model);
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
 }
 
 /// **Grades the copy of `skill` at `level`**, on `profile` (the project's default where none
-/// is picked): its chats run one at a time behind the window, which is told each step
-/// ([`EVENT`]). The answer is the grade's id. Refused while a grade runs in the project.
+/// is picked) and `model` (the profile's own where none is, SK-60): its chats run one at a time
+/// behind the window, which is told each step ([`EVENT`]). The answer is the grade's id.
+/// Refused while a grade runs in the project.
 #[tauri::command]
 #[specta::specta]
+// A command's arguments are the window's call, named one by one, as the other commands' are.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn skill_grade_start(
     app: tauri::AppHandle,
     planes: tauri::State<'_, Planes>,
@@ -401,6 +448,7 @@ pub(crate) async fn skill_grade_start(
     level: SkillLevel,
     skill: String,
     profile: Option<String>,
+    model: Option<String>,
     consent: String,
 ) -> Result<String, String> {
     let held = planes.held(&plane)?;
@@ -423,8 +471,14 @@ pub(crate) async fn skill_grade_start(
                 "{skill} has no trigger tests to grade, so nothing was started."
             ));
         };
-        let (profile, on, priced) = chats_on(&root, profile);
-        on?;
+        let On {
+            profile,
+            checked,
+            priced,
+            model,
+            ..
+        } = chats_on(&root, profile, model);
+        checked?;
         let profile = profile.ok_or("The grade did not start: no profile was found.")?;
         let id = purlis_core::reopen::mint();
         let stop = Arc::new(AtomicBool::new(false));
@@ -476,6 +530,7 @@ pub(crate) async fn skill_grade_start(
                 limits.priced.clone(),
             ),
             plugins_off: None,
+            model: None,
         };
         // Its lock is held while the grade runs (#3466): what tells a start it runs.
         let marker = match grades::underway::began(&root, &level, &under_way) {
@@ -526,14 +581,18 @@ pub(crate) async fn skill_grade_start(
                         tell: &|ran, tokens| tell(ran, tokens, None, None),
                         harness: None,
                         plugins_off: None,
+                        model: model.as_deref(),
+                        reported: Vec::new(),
                     };
                     let report = grading::grade(&request, &mut chats, Some(limits.clone()));
                     let harness = chats.harness.take();
                     let plugins_off = chats.plugins_off.take();
+                    let reported = grades::reported_model(chats.reported.iter().map(String::as_str));
                     let spent = chats.spent;
                     let graded = Graded {
                         harness,
                         plugins_off,
+                        model: reported,
                         ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
                         spent,
                         report,
@@ -602,6 +661,7 @@ pub(crate) async fn skill_grade_set_cap(
     level: SkillLevel,
     skill: String,
     profile: Option<String>,
+    model: Option<String>,
     tokens: f64,
 ) -> Result<SkillGradePlan, String> {
     let held = planes.held(&plane)?;
@@ -614,7 +674,7 @@ pub(crate) async fn skill_grade_set_cap(
         }
         grades::cap::set_token_cap(held.root(), tokens as u64)?;
         let planned = grades::planned(held.root(), &(&level).into(), &skill)?;
-        let on = chats_on(held.root(), profile);
+        let on = chats_on(held.root(), profile, model);
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
@@ -657,6 +717,11 @@ struct InChats<'a> {
     /// The plugins its chats were handed off (#3468): every one any chat that started was handed
     /// off, as each start reads the record again. `None` until one starts.
     plugins_off: Option<Vec<String>>,
+    /// The model the person picked for its chats, or `None` for the profile's own (SK-60).
+    model: Option<&'a str>,
+    /// The model each chat's harness said it ran on, in the order they ran (SK-60): what the
+    /// record keeps (`grades::reported_model`).
+    reported: Vec<String>,
 }
 
 impl Chats for InChats<'_> {
@@ -731,6 +796,7 @@ impl InChats<'_> {
                 starts_runs: Some(StartedBy::Grade),
             },
             SIZE,
+            self.model,
             |number| told = Some((number, watching.watch(number))),
         );
         let began = Instant::now();
@@ -820,6 +886,10 @@ impl InChats<'_> {
         let spent = id
             .as_deref()
             .and_then(|id| purlis_core::usage::spent(&root, id));
+        // What its harness said it ran on, read before the close forgets it (SK-60).
+        if let Some(model) = self.held.chats().model_of(session) {
+            self.reported.push(model);
+        }
         watching.unwatch(session);
         if let Err(why) = self.held.chats().close(session) {
             tracing::warn!("purlis: a grade's chat {session} did not close ({why})");

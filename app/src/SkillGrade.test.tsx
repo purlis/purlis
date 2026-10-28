@@ -3,6 +3,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { SkillGrade, costSaid, endedSaid, limitSaid } from "./SkillGrade";
@@ -33,6 +34,8 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     cap_set_here: false,
     chat_minutes: 5,
     profile: "work",
+    models: ["opus", "sonnet", "haiku"],
+    model: null,
     sandbox: "full sandbox",
     refused: null,
     consent: "c0ffee",
@@ -108,6 +111,63 @@ describe("Grade, cost first", () => {
     });
     await screen.findByText("Stopped after 4 chats. What ran is scored in Grades below.");
     expect(graded).toBe(1);
+  });
+
+  it("offers the models the profile's program can run, and grades on the one picked (SK-60)", async () => {
+    const asked: Array<{ cmd: string; args: Record<string, unknown> }> = [];
+    mockIPC(
+      (cmd, args) => {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "skill_grade_plan") {
+          const model = (args as { model: string | null }).model;
+          return plan({
+            model,
+            priced:
+              model === null
+                ? { usd_per_million: 75, of_the_model: false, model: null }
+                : { usd_per_million: 22.5, of_the_model: true, model },
+          });
+        }
+        if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+        if (cmd === "skill_grade_start") return "01GRADE";
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    await screen.findByTestId("skill-grade-cost");
+    await userEvent.click(screen.getByRole("button", { name: /Model deploy's grade runs on/ }));
+    for (const model of ["The profile's own model", "opus", "sonnet", "haiku"])
+      expect(await screen.findByRole("option", { name: model })).toBeTruthy();
+    await userEvent.click(screen.getByRole("option", { name: "sonnet" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-grade-cost").textContent).toContain(
+        "its tokens at sonnet's $22.50 a million tokens",
+      ),
+    );
+    expect(asked.filter((one) => one.cmd === "skill_grade_plan").at(-1)?.args).toMatchObject({
+      profile: null,
+      model: "sonnet",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Grade" }));
+    await screen.findByTestId("skill-grade-running");
+    expect(asked.find((one) => one.cmd === "skill_grade_start")?.args).toMatchObject({
+      model: "sonnet",
+      consent: "c0ffee",
+    });
+  });
+
+  it("offers no model where the profile's program offers none", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return plan({ models: [] });
+      if (cmd === "start_options") return { profiles: [] };
+      return null;
+    });
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    await screen.findByTestId("skill-grade-cost");
+    expect(screen.queryByRole("button", { name: /Model deploy's grade runs on/ })).toBeNull();
   });
 
   it("says a skill with no trigger tests has none, and starts nothing", async () => {

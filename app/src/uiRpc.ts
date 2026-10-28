@@ -1019,7 +1019,7 @@ export const commands = {
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
 	skillGradeStop: __WINDOW_ONLY_RESULT,
 	skillGradeSetCap: __WINDOW_ONLY_RESULT,
@@ -9845,6 +9845,12 @@ export type SkillGradePlan = {
 	 *  grade can run on it (the operator's ruling of 2026-10-26).
 	 */
 	profile: string | null,
+	/**
+	 *  **The models its chats can be picked to run on** (SK-60, #3240), as the profile's harness
+	 *  offers them, and the one picked: `None` is the profile's own model.
+	 */
+	models: string[],
+	model: string | null,
 	sandbox: string | null,
 	refused: string | null,
 	/**
