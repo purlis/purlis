@@ -1,0 +1,71 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: ci-health
+
+# A weekly report on the `ci` workflow (#3598). Between 2026-10-14 and 10-27 CI got twice as
+# slow and three times as flaky, and nobody saw it for two weeks: the numbers were all in the
+# API, but nothing read them. This reads the last seven whole days every Monday, writes them as
+# the run's job summary, and keeps them in one issue labelled `area:ci` (made the first time),
+# with a comment of the week's headline so whoever watches the issue hears of it.
+#
+# What it reports, and how many calls each costs, is written in `tools/ci-health.mjs`; its
+# numbers are tested on recorded API answers in `tools/ci-health.test.mjs`, run with the other
+# tools' tests in `ci`.
+#
+# **Evidence only (V70).** It reads the API and writes one issue. It never runs on a pull
+# request and no branch protection names it.
+
+on:
+  schedule:
+    # Monday 05:17 UTC: after the week's last day has ended everywhere the team works.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      sample:
+        description: "How many of the week's runs to read jobs and flaky tests from (~2,500 in a week)"
+        default: "600"
+      issue:
+        description: "Write the report into the area:ci issue"
+        type: boolean
+        default: true
+
+# Nothing by default: the one job below names exactly what it needs.
+permissions: {}
+
+concurrency:
+  group: ci-health
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: ci health (weekly report, evidence only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Read the repository (the tool) and its workflow runs; write the one issue.
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /tools/
+            /.nvmrc
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Report the week
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SAMPLE: ${{ inputs.sample || '600' }}
+          # A scheduled run has no inputs: it writes the issue.
+          ISSUE: ${{ github.event_name == 'schedule' || inputs.issue }}
+        run: |
+          set -euo pipefail
+          args=(--sample "$SAMPLE")
+          if [ "$ISSUE" = "true" ]; then args+=(--issue); fi
+          node tools/ci-health.mjs "${args[@]}"
