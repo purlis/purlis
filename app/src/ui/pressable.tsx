@@ -15,8 +15,9 @@
  *   hears it. **A disabled one with a hint keeps the focus** and does nothing
  *   (`ui/unavailable.ts`), described by its reason for good.
  * - **The element** ({@link renderPressed}): one that is unavailable but keeps the focus
- *   (`aria-disabled`, #1700) is drawn and themed as disabled, never as under the pointer or
- *   pressed, and every one is in WebKit's tab sequence (#190).
+ *   (`aria-disabled`, #1700, given by hand or by `isDisabled` with a hint) is drawn and themed as
+ *   disabled, never as under the pointer or pressed, and runs no press (#3522); every one is in
+ *   WebKit's tab sequence (#190).
  */
 import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from "react";
 import type { KeyboardEvent } from "react-aria-components";
@@ -118,10 +119,10 @@ export function usePressTip(
  * stop go on) and the native attributes it would drop. `own` is the call's own description.
  *
  * With a `tip` that keeps the focus, it is not disabled to React Aria (which would draw the
- * native `disabled`, out of the tab sequence) but said unavailable (`aria-disabled`), and the
- * call's own handlers but the focus's and the pointer's are dropped here, so React Aria is handed
- * nothing to run. What a trigger around it hands React Aria is dropped as the element is drawn
- * ({@link renderPressed}).
+ * native `disabled`, out of the tab sequence) but said unavailable (`aria-disabled`). Every
+ * handler but the focus's and the pointer's is dropped as the element is drawn
+ * ({@link renderPressed}), the call's own and a trigger's alike; here the call's are dropped too,
+ * so React Aria is handed no press to hold.
  */
 export function pressable(props: Record<string, unknown>, tip?: PressTip) {
   const native: Record<string, unknown> = {};
@@ -172,11 +173,13 @@ export function renderPressed(native: Record<string, unknown>, tip?: PressTip, o
             ? rest["aria-describedby"]
             : [own, opened ? tip.describedBy : null].filter(Boolean).join(" ") || undefined;
     }
-    // **It starts nothing** (#3116): a menu's or a popover's trigger around it hands React Aria
-    // its own press and keys (`PressResponder`), which reach the element as handlers the call
-    // never wrote. So the element itself keeps only the focus's and the pointer's (the tooltip's),
-    // as a raw unavailable button does (`ui/unavailable.ts`), and opens nothing.
-    const element = tip?.keepsFocus ? unavailable(rest) : rest;
+    // **It starts nothing** (#3116, #3522), whether it was made unavailable by `isDisabled` with
+    // a hint or by hand with `aria-disabled`: React Aria's press, and a menu's or a popover's
+    // trigger around it (`PressResponder`), reach the element as handlers the call never wrote.
+    // So the element itself keeps only the focus's and the pointer's (the tooltip's), as a raw
+    // unavailable button does (`ui/unavailable.ts`): it runs no press, submits no form and opens
+    // nothing.
+    const element = off ? unavailable(rest) : rest;
     return (
       <button
         {...element}

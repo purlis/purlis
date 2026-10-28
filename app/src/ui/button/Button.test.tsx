@@ -407,18 +407,74 @@ describe("a key a button's handler leaves alone", () => {
   });
 });
 
-describe("an unavailable button that opens a popover or a menu (#3116)", () => {
-  /** Each way a person presses it: the pointer, Enter, Space, a screen reader's press (a click
-   *  with no pointer before it), and the arrows a menu's trigger opens on. */
-  async function pressedEveryWay(button: HTMLElement) {
-    await userEvent.click(button);
-    button.focus();
-    await userEvent.keyboard("{Enter}");
-    await userEvent.keyboard(" ");
-    await userEvent.keyboard("{ArrowDown}");
-    await userEvent.keyboard("{ArrowUp}");
-    fireEvent.click(button, { detail: 0 });
-  }
+/** Each way a person presses a button: the pointer, Enter, Space, a screen reader's press (a
+ *  click with no pointer before it), and the arrows a menu's trigger opens on. */
+async function pressedEveryWay(button: HTMLElement) {
+  await userEvent.click(button);
+  button.focus();
+  await userEvent.keyboard("{Enter}");
+  await userEvent.keyboard(" ");
+  await userEvent.keyboard("{ArrowDown}");
+  await userEvent.keyboard("{ArrowUp}");
+  fireEvent.click(button, { detail: 0 });
+}
+
+describe("a button made unavailable by hand, with aria-disabled (#3522)", () => {
+  it("runs no press, from the pointer, the keyboard or a screen reader, and keeps the focus", async () => {
+    const pressed = vi.fn();
+    render(
+      <Button aria-disabled onPress={pressed}>
+        Allow
+      </Button>,
+    );
+    const allow = screen.getByRole("button", { name: "Allow" });
+    await pressedEveryWay(allow);
+    expect(pressed).not.toHaveBeenCalled();
+    expect(allow).toHaveFocus();
+    expect(allow).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("submits no form, and is a submit button again once it is available", async () => {
+    const submitted = vi.fn((event: Event) => event.preventDefault());
+    const form = (off: boolean) => (
+      <form onSubmit={(event) => submitted(event.nativeEvent)}>
+        <Button type="submit" aria-disabled={off || undefined}>
+          Go
+        </Button>
+      </form>
+    );
+    const { rerender } = render(form(true));
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(submitted).not.toHaveBeenCalled();
+    rerender(form(false));
+    expect(screen.getByRole("button", { name: "Go" })).toHaveAttribute("type", "submit");
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(submitted).toHaveBeenCalledTimes(1);
+  });
+
+  it("flips no toggle", async () => {
+    const changed = vi.fn();
+    render(
+      <ToggleButton aria-disabled onChange={changed}>
+        Wrap
+      </ToggleButton>,
+    );
+    const wrap = screen.getByRole("button", { name: "Wrap" });
+    await pressedEveryWay(wrap);
+    expect(changed).not.toHaveBeenCalled();
+    expect(wrap).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+describe("an unavailable button that opens a popover or a menu (#3116, #3522)", () => {
+  const ways = [
+    [
+      "with a tooltip saying why",
+      { isDisabled: true, tooltip: "Only the owner shares this project." },
+    ],
+    ["with no tooltip", { isDisabled: true }],
+    ["made unavailable by hand (#3522)", { "aria-disabled": true }],
+  ] as const;
 
   const opener = (tooltip?: string) => (
     <Button isDisabled tooltip={tooltip}>
@@ -426,13 +482,13 @@ describe("an unavailable button that opens a popover or a menu (#3116)", () => {
     </Button>
   );
 
-  for (const tooltip of ["Only the owner shares this project.", undefined])
-    describe(tooltip ? "with a tooltip saying why" : "with no tooltip", () => {
+  for (const [way, props] of ways)
+    describe(way, () => {
       it("opens no popover", async () => {
         const opened = vi.fn();
         render(
           <PopoverTrigger onOpenChange={opened}>
-            {opener(tooltip)}
+            <Button {...props}>Share</Button>
             <PopoverDialog aria-label="Share">shared</PopoverDialog>
           </PopoverTrigger>,
         );
@@ -445,7 +501,7 @@ describe("an unavailable button that opens a popover or a menu (#3116)", () => {
         const opened = vi.fn();
         render(
           <MenuTrigger onOpenChange={opened}>
-            {opener(tooltip)}
+            <Button {...props}>Share</Button>
             <Menu aria-label="Share">
               <MenuItem id="link" textValue="Copy link">
                 <MenuWords said="Copy link" />
