@@ -38,6 +38,9 @@ pub struct PoolRow {
     pub image: String,
     /// What its runner is held to: what the person set, and the defaults for the rest.
     pub limits: PoolLimitsShown,
+    /// How long its runner is left without a link from this machine before it suspends
+    /// itself, as `runners.json` spells it (`24h`, `90m`; #3471).
+    pub suspend_after: String,
 }
 
 /// What the Pools group draws: the pools, and the limits a new pool gets by default.
@@ -45,6 +48,9 @@ pub struct PoolRow {
 pub struct PoolsShown {
     pub pools: Vec<PoolRow>,
     pub defaults: PoolLimitsShown,
+    /// How long a new pool's runner is left without a link before it suspends itself, by
+    /// default: a day (`24h`, #3471).
+    pub suspend_after: String,
     /// Whether this machine's pools' runners are shown to be the person's own (D-2050-4): their
     /// engine is a local socket on this machine. A chat moves only to such a pool (#2048).
     #[specta(optional)]
@@ -60,6 +66,9 @@ pub struct PoolAdding {
     pub memory_mib: Option<u32>,
     pub processes: Option<u32>,
     pub tmp_mib: Option<u32>,
+    /// How long its runner is left without a link before it suspends itself, spelled as
+    /// `runners.json` spells it (`12h`); empty is a day (#3471).
+    pub suspend_after: Option<String>,
 }
 
 /// Where a pool's runner stands, as one link to it says.
@@ -127,7 +136,28 @@ fn row(pool: &Pool) -> PoolRow {
         name: pool.name().to_owned(),
         image: pool.image().as_str().to_owned(),
         limits: shown(pool.limits()),
+        suspend_after: after_shown(pool.suspend_after()),
     }
+}
+
+#[cfg(unix)]
+/// How long a runner is left without a link before it suspends, as `runners.json` spells it.
+fn after_shown(after: std::time::Duration) -> String {
+    purlis_core::spelledtime::spelled(after, purlis_core::spelledtime::UP_TO_HOURS)
+        .unwrap_or_else(|| format!("{}s", after.as_secs()))
+}
+
+/// `typed`, how long a pool's runner is left without a link before it suspends (`12h`, `90m`).
+pub fn suspend_after_of(typed: &str) -> Result<std::time::Duration, String> {
+    let typed = typed.trim();
+    let after = purlis_core::spelledtime::read(typed, purlis_core::spelledtime::UP_TO_HOURS)
+        .ok_or_else(|| {
+            format!(
+                "\"{typed}\" is not a time; write a whole number followed by h, m or s, such as \
+                 12h or 90m"
+            )
+        })?;
+    purlis_core::dockerpool::suspend_after(after).map_err(|why| why.0)
 }
 
 /// `typed`, a number of CPUs to the thousandth (`2`, `0.5`, `1.25`), in thousandths.
@@ -165,6 +195,12 @@ pub fn pool_of(adding: &PoolAdding) -> Result<Pool, String> {
         memory_mib: adding.memory_mib.map(u64::from),
         processes: adding.processes,
         tmp_mib: adding.tmp_mib.map(u64::from),
+        suspend_after: adding
+            .suspend_after
+            .as_deref()
+            .filter(|after| !after.trim().is_empty())
+            .map(suspend_after_of)
+            .transpose()?,
     };
     Pool::new(adding.name.trim(), image, set).map_err(|why| why.to_string())
 }
@@ -185,6 +221,7 @@ pub fn pools_on(config: &std::path::Path) -> Result<PoolsShown, String> {
             .map(row)
             .collect(),
         defaults: shown(Limits::default()),
+        suspend_after: after_shown(purlis_core::dockerpool::SUSPEND_AFTER),
         yours: Some(crate::poolprofiles::owned().is_ok()),
     })
 }

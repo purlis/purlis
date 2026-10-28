@@ -13,6 +13,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A pool's own time before its runner suspends itself.** Add a Docker pool… has a
+  **Suspends after** box: how long the pool's runner is left without a link from this machine
+  before it stops itself, keeping its home, such as `12h` or `90m`, from a minute to 30 days.
+  Empty is a day, as before. Each pool's row in Settings › This machine › Pools says its time,
+  and `runners.json` keeps it as the pool's `suspendAfter` (#3471).
 - **The event log keeps 30 days and can be followed from a cursor.** The host's event log
   (`<data>/events/<device>/`) is now written in segments: at 16 MiB a segment is sealed as
   `events.<first seq>.jsonl`, and a sealed segment whose newest event is more than 30 days old is

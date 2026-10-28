@@ -9609,6 +9609,11 @@ export type PoolAdding = {
 	memory_mib: number | null,
 	processes: number | null,
 	tmp_mib: number | null,
+	/**
+	 *  How long its runner is left without a link before it suspends itself, spelled as
+	 *  `runners.json` spells it (`12h`); empty is a day (#3471).
+	 */
+	suspend_after: string | null,
 };
 
 /**
@@ -9669,6 +9674,11 @@ export type PoolRow = {
 	image: string,
 	/**  What its runner is held to: what the person set, and the defaults for the rest. */
 	limits: PoolLimitsShown,
+	/**
+	 *  How long its runner is left without a link from this machine before it suspends
+	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
+	 */
+	suspend_after: string,
 };
 
 /**
@@ -9706,6 +9716,11 @@ export type PoolVersion = {
 export type PoolsShown = {
 	pools: PoolRow[],
 	defaults: PoolLimitsShown,
+	/**
+	 *  How long a new pool's runner is left without a link before it suspends itself, by
+	 *  default: a day (`24h`, #3471).
+	 */
+	suspend_after: string,
 	/**
 	 *  Whether this machine's pools' runners are shown to be the person's own (D-2050-4): their
 	 *  engine is a local socket on this machine. A chat moves only to such a pool (#2048).
