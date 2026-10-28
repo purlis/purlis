@@ -698,7 +698,7 @@ impl Browser {
         Browser::held_over_links_to(screen, program, stopping, LinkFrames::DEFAULT)
     }
 
-    /// [`Browser::new`], its views over a link between hosts held to `link` (#3297).
+    /// A browser of `screen`, its views over a link between hosts held to `link` (#3297).
     pub(crate) fn held_over_links_to(
         screen: Arc<dyn Screen>,
         program: impl Into<String>,
