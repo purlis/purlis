@@ -29,7 +29,14 @@ function Studio({ tab }: { tab: string }) {
   const next = NEXT[here];
   const path: Crumb[] = history.at.map((label) => ({ id: label, label }));
   return (
-    <div style={{ display: "grid", gridTemplateRows: "minmax(0, 1fr)", blockSize: 320 }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateRows: "minmax(0, 1fr)",
+        inlineSize: 760,
+        blockSize: 320,
+      }}
+    >
       <Panel variant="content">
         <ViewFrame
           label="Skill studio pages"
