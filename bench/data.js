@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793191005168,
+  "lastUpdate": 1793193766164,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28224,6 +28224,48 @@ window.BENCHMARK_DATA = {
             "value": 101.112356,
             "unit": "ms",
             "extra": "median of 5 runs: 99.746, 100.480, 101.112, 101.449, 103.000 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f47b2fe9583969dee4cfcb45e6bd230a79c7b3d8",
+          "message": "Browsers: the Browsers grid (#2027) (#3531)\n\n* Browsers: the Browsers grid (#2027)\n\nOpen browsers (the palette, and the Chats view's heading while a project\nhas a browser) opens a view tab of every browser in scope as a live tile,\na thumbnail view drawn from a 640-pixel frame. Its scope switch is the\nInbox's: this project, the workspace of the tab's strip, or every project\nthe window holds, kept as projects[path].browsers.scope. Each project\ntells the grid its own browsers (its chats', the pinned ones whose chat\nclosed, and the person's own its tabs show), and a press opens the view\nin its own project, which comes to the front.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers grid: its stories, keyboard and axe (#2027)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers grid stories: a tile is named by its label (D-2911-22)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers grid: a thumbnail with no frame yet shows its mark, framed (#2027)\n\nA hidden canvas was still laid out (display: block), taking the mark's room.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers grid: live tiles are bounded, and review fixes (#2027)\n\n- A tile asks for frames only while it is in sight, and at most 24 at once;\n  the rest keep the last frame they drew.\n- A project telling the grid the browsers it told last tells nobody.\n- A browser is the person's own only where no project's chat uses it, and\n  its title says so by that alone; a pinned browser whose chat's name was\n  not kept is named by its own name.\n- The Chats heading's button follows the grid's own tiles.\n- The scope switch says each count in words (\"3 browsers\").\n- A window test opens another project's tile in that project.\n- The component is named after its file; the frame width comment's\n  arithmetic holds (800 across).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers grid: tiles offered once a project is settled, and titles (#2027)\n\n- A project offers its tiles only once its tabs are back, so a tab a press\n  opened is not laid out over.\n- A grid press titles the tab as the tile is titled, and a pinned\n  browser whose chat's name was not kept is named by its own name on its\n  Chats row and tab too.\n- A tile listed again is in sight only once the observer says so again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers grid: story baselines (#2027)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers grid story: wait for focus with untilFocused (#2027)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T12:52:32Z",
+          "tree_id": "0792f5cb6ea44f9857f778a2ff3b30b4e59a3dca",
+          "url": "https://github.com/purlis/purlis/commit/f47b2fe9583969dee4cfcb45e6bd230a79c7b3d8"
+        },
+        "date": 1793193760614,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.690544,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.675, 0.687, 0.691, 0.697, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.514665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.422, 16.426, 16.515, 16.520, 16.687 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8705885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.916, 101.212, 101.871, 102.022, 102.785 ms"
           }
         ]
       }
