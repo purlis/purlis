@@ -6,14 +6,17 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { posix } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
   AGENT_STEERING,
   READ_BY_CODE,
+  READ_BY_RUST,
   SCOPES,
   WHOLE_TREE_GUARDS,
+  WINDOW_SOURCE_GUARDS,
   ciToolsOf,
   namedIn,
   scopesOf,
@@ -84,8 +87,6 @@ test("CI itself, a lockfile, the toolchain and a shared config run everything", 
 test("code runs everything", () => {
   for (const path of [
     "crates/purlis-core/src/lib.rs",
-    "app/src/App.tsx",
-    "app/src/App.test.tsx",
     "app/src-tauri/src/lib.rs",
     "app/src-tauri/plugin/skills/theme/SKILL.md",
     "crates/purlis-core/docs/themes.md",
@@ -96,6 +97,35 @@ test("code runs everything", () => {
   ]) {
     assert.deepEqual(of([path]), all, path);
   }
+});
+
+// #3596: of the last 120 merged pull requests, 28 changed only `app/` outside `app/src-tauri/`, and
+// each ran the whole Rust suite.
+const window = ["app", "scenario", "stories", "tools", "web"];
+
+test("the window's sources run the web checks, the app and the scenarios, not Rust", () => {
+  for (const path of [
+    "app/src/App.tsx",
+    "app/src/App.test.tsx",
+    "app/src/ui/button/Button.tsx",
+    "app/src/settings/project.ts",
+  ]) {
+    assert.deepEqual(of([path]), window, path);
+  }
+  assert.deepEqual(of(["app/src/App.tsx", "docs/a.md"]), [...window, "docs"].sort());
+});
+
+test("a file of the window's sources that Rust reads runs everything", () => {
+  for (const path of [
+    "app/src/bindings.ts",
+    "app/src/uiRpc.ts",
+    "app/src/theme/theme.ts",
+    "app/src/ui/button/button.css",
+    "app/src/App.css",
+  ]) {
+    assert.deepEqual(of([path]), all, path);
+  }
+  assert.deepEqual(of(["app/src/App.tsx", "app/src/bindings.ts"]), all);
 });
 
 test("every file at the root runs everything but an agent's steering", () => {
@@ -275,8 +305,8 @@ test("every doc the code reads by a relative path runs everything", () => {
       read.add(`docs/${[...rest.matchAll(/"([^"]+)"/g)].map((m) => m[1]).join("/")}`);
     }
   }
-  assert.ok(read.has("CHANGELOG.md"), "the search finds include_str!(\"../../../CHANGELOG.md\")");
-  assert.ok(read.has("docs/design-system.md"), "and join(.., \"docs\", ..)");
+  assert.ok(read.has("CHANGELOG.md"), 'the search finds include_str!("../../../CHANGELOG.md")');
+  assert.ok(read.has("docs/design-system.md"), 'and join(.., "docs", ..)');
   for (const path of read) {
     if (!tracked.has(path)) continue;
     assert.deepEqual(
@@ -337,10 +367,12 @@ test("no file that holds the repository's root reads an agent's steering file by
 });
 
 // A test that walks the repository from its root reads files of every scope: it is either a
-// whole-tree guard, which `recorded` runs on every change, or it is named here as walking only
-// code (whose changes run every scope).
+// guard, which `recorded` runs on every change (`WHOLE_TREE_GUARDS`, `WINDOW_SOURCE_GUARDS`), or
+// it is named here as walking only code whose changes run every scope (`crates/`,
+// `app/src-tauri/`; not `app/src/`, which runs no Rust since #3596).
 const WALK_ONLY_CODE = {
-  "app/src-tauri/src/savefix/tests.rs": "crates/ and app/src-tauri/ sources",
+  "app/src-tauri/src/savefix/tests.rs":
+    "crates/ and app/src-tauri/ sources; its app/src walk is in WINDOW_WALK_MISSES (#3609)",
   "app/src-tauri/src/tests.rs": "reads LICENSE and NOTICE, which run everything",
   "app/src/community.test.ts": "root files and .github/, which run everything",
   "app/src/copy.rust.test.ts": "crates/purlis-core/src and app/src-tauri/src",
@@ -348,12 +380,9 @@ const WALK_ONLY_CODE = {
   "crates/purlis-cli/tests/every_command_charter_names_is_one_it_has.rs":
     "crates/*/src, app/src-tauri/src and the plugin's skills",
   "crates/purlis-core/src/doctor/shadowed/tests.rs": "a plane's docs/; purlis's own is exempt",
-  "crates/purlis-core/tests/every_deferral_names_its_ticket.rs": "crates/, app/src-tauri, app/src",
   "crates/purlis-core/tests/every_git_call_goes_through_the_runner.rs":
     "crates/ and app/src-tauri/",
   "crates/purlis-core/tests/four_unsafe_blocks.rs": "crates/ and app/src-tauri/ Rust",
-  "crates/purlis-core/tests/no_old_name_is_spelled_in_the_window_or_its_assets.rs":
-    "app/src and the plugin",
   "crates/purlis-core/tests/only_the_resolver_builds_the_native_transport.rs": "shipped Rust",
   "crates/purlis-core/tests/only_the_updater_and_report_name_charters_own_address.rs":
     "shipped Rust",
@@ -363,10 +392,11 @@ const WALK_ONLY_CODE = {
 
 test("a test that walks the repository from its root is a whole-tree guard or walks code", () => {
   const walkers = rootedFiles().filter((p) => WALKS.test(read(p)));
-  const guards = new Set(
-    WHOLE_TREE_GUARDS.map(({ crate, test }) => `crates/${crate}/tests/${test}.rs`),
-  );
-  for (const path of guards) assert.ok(walkers.includes(path), `${path} is found as a walker`);
+  const guards = GUARD_FILES;
+  for (const { crate, test: name } of WHOLE_TREE_GUARDS) {
+    const path = `crates/${crate}/tests/${name}.rs`;
+    assert.ok(walkers.includes(path), `${path} is found as a walker`);
+  }
   for (const path of Object.keys(WALK_ONLY_CODE)) {
     assert.ok(walkers.includes(path), `${path} no longer walks from the root: take it out`);
   }
@@ -380,14 +410,195 @@ test("a test that walks the repository from its root is a whole-tree guard or wa
   }
 });
 
-test("the recorded job runs every whole-tree guard when Rust is out of scope", () => {
+test("the recorded job runs every guard when Rust is out of scope", () => {
   const ci = read(".github/workflows/ci.yml");
   const step = ci.slice(ci.indexOf("- name: The whole-tree guards"));
   assert.ok(step.length < ci.length, "ci.yml has the step");
   const run = step.slice(0, step.indexOf("\n      - "));
   assert.match(run, /needs\.changes\.outputs\.rust == 'false'/);
-  for (const { crate, test: name } of WHOLE_TREE_GUARDS) {
+  for (const { crate, test: name } of [...WHOLE_TREE_GUARDS, ...WINDOW_SOURCE_GUARDS]) {
     assert.ok(run.includes(`-p ${crate}`), crate);
     assert.ok(run.includes(`--test ${name}`), name);
+  }
+});
+
+// Every path under `app/src/` that Rust names (#3596): a string in a Rust file of the workspace
+// that, read from the file's folder (`include_str!`), its crate's folder (`CARGO_MANIFEST_DIR`)
+// or the repository's root (`root.join(..)`), is a tracked file or folder of the window's
+// sources. A file named is read by Rust: it is in `READ_BY_RUST`, or the test naming it is a guard
+// `recorded` runs, or it is named below with why it is not read. A folder named is walked: the
+// test is a guard, or it is a known miss below. Comment lines read nothing.
+const guardFile = ({ crate, test: name }) => `crates/${crate}/tests/${name}.rs`;
+const GUARD_FILES = new Set([...WHOLE_TREE_GUARDS, ...WINDOW_SOURCE_GUARDS].map(guardFile));
+
+// A Rust file that names a file of the window's sources without reading it, and why.
+const NAMED_NOT_READ = {
+  "crates/purlis-core/src/files/find.rs": "a fuzzy match's sample path, matched as text",
+  "crates/purlis-core/tests/a_file_is_found_by_fuzzy_name.rs":
+    "sample paths written into a fixture repository",
+};
+
+// A Rust test that walks the window's sources but is not run when Rust is out of scope, and why:
+// a change that breaks it is caught by the merge group, which runs every scope.
+const WINDOW_WALK_MISSES = {
+  "app/src-tauri/src/savefix/tests.rs":
+    "a unit test of the app crate, whose test build needs Tauri: one call site of mergeSaveRequest",
+};
+
+// `files` is every tracked path, `read` reads one. Each string literal of a Rust file is read
+// from the file's folder (`include_str!`), its crate's folder (`CARGO_MANIFEST_DIR`, and
+// `"../src"` from it), the root, and the folder above its crate when the file climbs there with
+// `.parent()` from `CARGO_MANIFEST_DIR`. A path built from pieces (`root.join("app").join("src")`,
+// `["app", "src"]`) is no one literal, so a file with `"app"` and `"src"` as literals of their
+// own within three lines of each other, that lists or reads files, is taken as walking `app/src`.
+const SPLIT_READS = /read_dir|"ls-files"|read_to_string|fs::read\b|WalkDir/;
+function windowNamesIn(files, read) {
+  const tracked = new Set(files);
+  const folders = new Set();
+  for (const f of files) {
+    for (let d = posix.dirname(f); d !== "."; d = posix.dirname(d)) folders.add(d);
+  }
+  const crateOf = (f) => {
+    let d = posix.dirname(f);
+    while (d !== "." && !tracked.has(`${d}/Cargo.toml`)) d = posix.dirname(d);
+    return d;
+  };
+  const named = [];
+  for (const file of files.filter((p) => p.endsWith(".rs"))) {
+    const code = read(file)
+      .split("\n")
+      .filter((line) => !/^\s*\/\//.test(line));
+    const crate = crateOf(file);
+    const whole = code.join("\n");
+    // `.parent()` on `CARGO_MANIFEST_DIR` itself, on its line or the two after it.
+    const climbs = code.some(
+      (line, i) =>
+        line.includes("CARGO_MANIFEST_DIR") &&
+        code.slice(i, i + 3).some((next) => next.includes(".parent()")),
+    );
+    const places = [posix.dirname(file), crate, ".", ...(climbs ? [posix.dirname(crate)] : [])];
+    const seen = new Set();
+    for (const line of code) {
+      for (const [, literal] of line.matchAll(/"([^"\\]*src[^"\\]*)"/g)) {
+        const rel = literal.replace(/^\//, "");
+        for (const at of places) {
+          const path = posix.normalize(posix.join(at, rel));
+          if (path !== "app/src" && !path.startsWith("app/src/")) continue;
+          const folder = !tracked.has(path);
+          if (folder && !folders.has(path) && path !== "app/src") continue;
+          if (seen.has(path)) continue;
+          seen.add(path);
+          named.push({ file, path, folder });
+        }
+      }
+    }
+    const at = (re) => code.flatMap((line, i) => (re.test(line) ? [i] : []));
+    const apps = at(/"app"/);
+    const pieced = at(/"src"/).some((i) => apps.some((j) => Math.abs(i - j) <= 3));
+    if (!seen.has("app/src") && pieced && SPLIT_READS.test(whole)) {
+      named.push({ file, path: "app/src", folder: true });
+    }
+  }
+  return named;
+}
+const rustNamesOfWindow = () => windowNamesIn(git("ls-files"), read);
+
+test("the search finds the window's sources named by pieces, from any crate", () => {
+  const files = {
+    "app/src/a.ts": "",
+    "app/src/ui/b.css": "",
+    "app/src-tauri/Cargo.toml": "",
+    "app/src-tauri/src/x.rs": [
+      'let s = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("src");',
+      "for e in std::fs::read_dir(s) {}",
+    ].join("\n"),
+    "crates/c/Cargo.toml": "",
+    "crates/c/tests/y.rs": [
+      'let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");',
+      'walk(&root.join("app").join("src"));',
+      "fn walk(d: &Path) { for e in std::fs::read_dir(d).unwrap() {} }",
+    ].join("\n"),
+    "crates/c/tests/z.rs":
+      'const P: [&str; 2] = ["app", "src"]; let t = std::fs::read_to_string(p);',
+    "crates/c/tests/only_names.rs": 'let a = "app"; let b = "src";',
+    "app/src-tauri/src/own.rs": [
+      'let s = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");',
+      "for e in std::fs::read_dir(s) {}",
+    ].join("\n"),
+    "crates/c/tests/far.rs": [
+      'let a = "app";',
+      ...Array(5).fill("//"),
+      "x();",
+      "y();",
+      "z();",
+      "w();",
+      'let b = dir.join("src"); std::fs::read_dir(b);',
+    ].join("\n"),
+    "operator/Cargo.toml": "",
+    "operator/src/w.rs": 'include_str!("../../app/src/ui/b.css")',
+    "tools/probe/src/v.rs": 'let p = "app/src/a.ts"; std::fs::read_to_string(p);',
+  };
+  const found = windowNamesIn(Object.keys(files), (p) => files[p]).map(
+    ({ file, path, folder }) => `${file} ${folder ? "walks" : "reads"} ${path}`,
+  );
+  assert.deepEqual(found.sort(), [
+    "app/src-tauri/src/x.rs walks app/src",
+    "crates/c/tests/y.rs walks app/src",
+    "crates/c/tests/z.rs walks app/src",
+    "operator/src/w.rs reads app/src/ui/b.css",
+    "tools/probe/src/v.rs reads app/src/a.ts",
+  ]);
+});
+
+test("every file of the window's sources that Rust names is one Rust reads, or is guarded", () => {
+  const named = rustNamesOfWindow();
+  assert.ok(
+    named.some((n) => n.path === "app/src/bindings.ts" && n.file === "app/src-tauri/src/lib.rs"),
+    'the search finds concat!(env!("CARGO_MANIFEST_DIR"), "/../src/bindings.ts")',
+  );
+  assert.ok(
+    named.some((n) => n.path === "app/src/ui/tabs/tabs.css"),
+    'and include_str!("../../../../app/src/ui/tabs/tabs.css")',
+  );
+  for (const { file, path, folder } of named) {
+    if (folder || GUARD_FILES.has(file) || file in NAMED_NOT_READ || file in WINDOW_WALK_MISSES) {
+      continue;
+    }
+    assert.deepEqual(
+      [...scopesOfPath(path, new Set())].sort(),
+      all,
+      `${file} reads ${path}: add it to READ_BY_RUST in tools/ci-scope.mjs`,
+    );
+  }
+  const namers = new Set(named.map((n) => n.file));
+  for (const file of Object.keys(NAMED_NOT_READ)) {
+    assert.ok(namers.has(file), `${file} no longer names the window's sources: take it out`);
+  }
+  for (const path of READ_BY_RUST) {
+    assert.ok(
+      named.some((n) => n.path === path || (path.endsWith("/") && n.path.startsWith(path))),
+      `${path} is no longer named by Rust: take it out of READ_BY_RUST`,
+    );
+  }
+});
+
+test("every Rust test that walks the window's sources is a guard, or a known miss", () => {
+  const walkers = new Set(
+    rustNamesOfWindow()
+      .filter((n) => n.folder)
+      .map((n) => n.file),
+  );
+  for (const guard of WINDOW_SOURCE_GUARDS) {
+    assert.ok(walkers.has(guardFile(guard)), `${guardFile(guard)} is found walking app/src`);
+  }
+  for (const file of Object.keys(WINDOW_WALK_MISSES)) {
+    assert.ok(walkers.has(file), `${file} no longer walks app/src: take it out`);
+  }
+  for (const file of walkers) {
+    assert.ok(
+      GUARD_FILES.has(file) || file in WINDOW_WALK_MISSES,
+      `${file} walks the window's sources: add it to WINDOW_SOURCE_GUARDS in ` +
+        "tools/ci-scope.mjs, or to WINDOW_WALK_MISSES here with why it cannot run there",
+    );
   }
 });
