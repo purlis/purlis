@@ -29,6 +29,8 @@ fn planned(query: &str) -> Planned {
         plan: Some(grading::plan(&request)),
         request: Some(request),
         estimate: None,
+        record_said: None,
+        record: grades::Read::default(),
         unseen: if query.contains('\u{202e}') {
             vec![0]
         } else {

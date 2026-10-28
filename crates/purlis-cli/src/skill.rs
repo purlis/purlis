@@ -438,8 +438,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         say: &mut said,
     };
     // A delete a crash or a quit cut short is finished or undone before any change (SK-35).
+    // And the skills this machine kept deleted past their time are removed (SK-33), but before a
+    // restore, which `purlis skill restore`'s list offered the person as they saw it.
     if writes {
         verbs::interrupted(&mut cx);
+        if !matches!(command, SkillCommand::Restore { .. }) {
+            verbs::expire_now(root);
+        }
     }
     // The studio's own list (SK-34, #3008): the plane's skills, and each harness's, the same
     // call the window makes.
@@ -692,8 +697,9 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             if deleted.is_empty() {
                 println!("No deleted skill can be restored here.");
             }
+            let now = std::time::SystemTime::now();
             for one in deleted {
-                println!("{}", restorable(&one.name, &one.level));
+                println!("{}", restorable(&one.name, &one.level, &one.stays(now)));
             }
             Ok(0)
         }
@@ -929,14 +935,25 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         },
         SkillCommand::Grade { name, at, json } => {
             let level = at.level();
-            match purlis_core::skills::grades::planned(root, &level, &name) {
+            // The terminal knows no profile: the estimate is the newest grade's whose chats ran.
+            match purlis_core::skills::grades::planned(root, &level, &name, None) {
                 Ok(planned) => {
-                    let graded = purlis_core::skills::grades::grades_of(root, &name, Some(&level));
+                    // The record as the plan read it, once: its rows, and what it left out
+                    // (`plan.record_said`).
                     if json {
-                        println!("{}", json!({ "plan": planned, "grades": graded }));
+                        println!(
+                            "{}",
+                            json!({ "plan": planned, "grades": planned.record.grades })
+                        );
                     } else {
                         let local_file = purlis_core::settings::Which::Local.file_at(root);
-                        print!("{}", grade_said(&planned, &graded, local_file));
+                        print!(
+                            "{}",
+                            grade_said(&planned, &planned.record.grades, local_file)
+                        );
+                        if let Some(said) = &planned.record_said {
+                            voice::warn(said.clone());
+                        }
                     }
                     Ok(0)
                 }
@@ -1098,8 +1115,13 @@ fn not_supported_line(said: &str) -> Markup {
     Markup::new().text(said)
 }
 
-fn restorable(name: &str, level: &Level) -> Markup {
-    Markup::new().text(name).own("  ").text(level)
+fn restorable(name: &str, level: &Level, stays: &str) -> Markup {
+    Markup::new()
+        .text(name)
+        .own("  ")
+        .text(level)
+        .own(" · ")
+        .text(stays)
 }
 
 /// What `skill uses` says of `name`: each skill it names, as its text says it, then each skill
@@ -1200,6 +1222,49 @@ fn versions_table(name: &str, history: &history::History) -> String {
     text
 }
 
+/// **What a grade should spend, from a grade before, in a line** (#3273): which grade it is
+/// worked out from, or that its cost is not known where that grade's chats did not say, or that
+/// there was none.
+fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> String {
+    let Some(estimate) = estimate else {
+        return "It has not been graded here before, so what a grade spends is not known yet.\n"
+            .to_owned();
+    };
+    let when = estimate.ts.get(..10).unwrap_or(&estimate.ts);
+    let on = match (&estimate.profile, &estimate.harness) {
+        (Some(profile), Some(harness)) => format!(
+            " on {profile} ({})",
+            purlis_core::skilluse::harness_title(harness)
+        ),
+        (Some(profile), None) => format!(" on {profile}"),
+        (None, Some(harness)) => format!(" on {}", purlis_core::skilluse::harness_title(harness)),
+        (None, None) => String::new(),
+    };
+    if estimate.chats_then == 0 {
+        return format!(
+            "Its last grade{on}, {when}, ran no chat, so what a grade spends is not known yet.\n"
+        );
+    }
+    let mut parts = Vec::new();
+    if let Some(tokens) = estimate.tokens {
+        parts.push(format!("about {tokens} tokens"));
+    }
+    if let Some(cost) = estimate.cost_usd {
+        parts.push(format!("about ${cost:.2}"));
+    }
+    if parts.is_empty() {
+        return format!(
+            "Its last grade{on}, {when}, did not say what its chats spent, so what a grade spends \
+             is not known.\n"
+        );
+    }
+    format!(
+        "From its grade{on}, {when}, of {}, a grade spends {}.\n",
+        counted(estimate.chats_then, "chat", "chats"),
+        parts.join(", ")
+    )
+}
+
 /// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
 fn grade_said(
     planned: &purlis_core::skills::grades::Planned,
@@ -1225,25 +1290,7 @@ fn grade_said(
                 counted(u32::from(request.runs), "time", "times"),
                 counted(u32::from(request.runs), "time", "times"),
             ));
-            match planned.estimate {
-                Some(estimate) if estimate.tokens.is_some() || estimate.cost_usd.is_some() => {
-                    let mut parts = Vec::new();
-                    if let Some(tokens) = estimate.tokens {
-                        parts.push(format!("about {tokens} tokens"));
-                    }
-                    if let Some(cost) = estimate.cost_usd {
-                        parts.push(format!("about ${cost:.2}"));
-                    }
-                    text.push_str(&format!(
-                        "From its last grade, of {}, a grade spends {}.\n",
-                        counted(estimate.chats_then, "chat", "chats"),
-                        parts.join(", ")
-                    ));
-                }
-                _ => text.push_str(
-                    "It has not been graded here before, so what a grade spends is not known yet.\n",
-                ),
-            }
+            text.push_str(&estimate_said(planned.estimate.as_ref()));
             for (at, test) in request.triggers.iter().enumerate() {
                 text.push_str(&format!(
                     "  {}. {}  ({})\n",

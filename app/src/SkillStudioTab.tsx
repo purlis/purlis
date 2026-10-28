@@ -464,7 +464,7 @@ export function SkillStudioTab({
       <ul>
         {deleted.map((one) => (
           <li key={one.id} data-testid={`deleted-${one.name}`}>
-            <code>{one.name}</code> · {one.label}{" "}
+            <code>{one.name}</code> · {one.label} · {one.stays}{" "}
             <Button
               size="sm"
               aria-label={`Restore ${one.name}`}

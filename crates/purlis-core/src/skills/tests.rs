@@ -494,6 +494,94 @@ fn a_skills_folder_no_chat_uses_is_removed_once_its_grace_has_passed_and_never_w
     );
 }
 
+/// An event log that counts the ends it was told of, and keeps nothing.
+#[cfg(unix)]
+#[derive(Clone, Default)]
+struct CountsEnds(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+#[cfg(unix)]
+impl purlis_host::Record for CountsEnds {
+    fn record(&self, _entry: serde_json::Value) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn ended(&self, _ended: &purlis_host::Ended<'_>) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_host_with_no_window_tidies_after_each_program_ends_and_keeps_a_folder_a_running_one_uses() {
+    use purlis_host::Record as _;
+    let tmp = tempfile::tempdir().unwrap();
+    let sets = tmp.path().join("skill-sets");
+    let skill = tmp.path().join("plane/skills/deploy");
+    std::fs::create_dir_all(&skill).unwrap();
+    std::fs::write(skill.join("SKILL.md"), "keep me").unwrap();
+    let unused = a_set_folder(&sets, A, &skill);
+    last_laid_out_long_ago(&unused);
+    // Used by a program that runs: this test's own process, noted after it started.
+    let used = a_set_folder(&sets, B, &skill);
+    last_laid_out_long_ago(&used);
+    std::fs::create_dir_all(sets.join(HELD).join(B)).unwrap();
+    std::fs::write(
+        sets.join(HELD).join(B).join(std::process::id().to_string()),
+        "",
+    )
+    .unwrap();
+    let ends = CountsEnds::default();
+    let host_log =
+        TidiesAfterEachEnd::of(ends.clone(), Some(sets.clone()), std::time::Duration::ZERO);
+
+    host_log.ended(&purlis_host::Ended {
+        project_path: tmp.path(),
+        number: 1,
+        exit: purlis_session_protocol::session::Exit::Code(0),
+        stopped: None,
+        watched: false,
+    });
+
+    assert_eq!(
+        ends.0.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "the end is the log's own still"
+    );
+    assert!(
+        within_ten_seconds(|| !unused.exists()),
+        "a folder no running program uses goes"
+    );
+    assert!(
+        used.join("skills/deploy").is_symlink(),
+        "one a running program uses is kept"
+    );
+    assert_eq!(
+        std::fs::read_to_string(skill.join("SKILL.md")).unwrap(),
+        "keep me"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_host_with_no_sets_folder_only_keeps_the_end() {
+    use purlis_host::Record as _;
+    let tmp = tempfile::tempdir().unwrap();
+    let ends = CountsEnds::default();
+    let host_log = TidiesAfterEachEnd::of(ends.clone(), None, std::time::Duration::ZERO);
+    host_log.ended(&purlis_host::Ended {
+        project_path: tmp.path(),
+        number: 1,
+        exit: purlis_session_protocol::session::Exit::Code(0),
+        stopped: None,
+        watched: true,
+    });
+    assert_eq!(ends.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        host_log.log_end().is_err(),
+        "what the log does not keep, it still does not"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn a_tidy_removes_only_the_folders_purlis_names_and_never_follows_a_link_out_of_the_sets() {
