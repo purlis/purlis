@@ -951,10 +951,6 @@ pub async fn device_runner(
 /// How long an ask of a runner waits on another ask of it already in flight.
 pub const WAITS_AT_MOST: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// How long each `docker` run an ask makes may take (an inspect, a version, the check before a
-/// link): a wedged engine answers nothing, and the ask goes on without it.
-pub const EACH_DOCKER_RUN_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
-
 /// What a runner not answered in time is said to be: not known, last answered when it last was.
 pub fn unanswered(last: Option<u64>) -> RunnerAsked {
     RunnerAsked {
@@ -977,12 +973,9 @@ fn ask_runner(
 ) -> Result<RunnerAsked, String> {
     let config = purlis_core::machine::config_root()
         .ok_or_else(|| "There is no config home on this machine.".to_owned())?;
-    let here = crate::runnerlinks::Machine::here(&config)?;
-    // Every `docker` run this ask makes is held to a time: a wedged engine holds up nothing.
-    let machine = crate::runnerlinks::Machine {
-        docker: here.docker.clone().within(EACH_DOCKER_RUN_WITHIN),
-        ..here
-    };
+    // Every `docker` run this ask makes only reads, so each is held to a time
+    // ([`purlis_core::dockerpool::READS_WITHIN`]): a wedged engine holds up nothing.
+    let machine = crate::runnerlinks::Machine::here(&config)?;
     let kept = purlis_core::runners::read(&config)
         .map_err(|why| why.to_string())?
         .into_iter()
