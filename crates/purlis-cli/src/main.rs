@@ -111,11 +111,19 @@ enum Command {
     /// session protocol. The app starts its own; this is the same host for a machine with no
     /// window, such as a runner.
     Serve {
-        /// A paired runner's host suspends itself after a day with no link from its desktop: it
-        /// stops serving, every chat ends, and its container stops with its home kept (#2051).
-        /// What a Docker pool's runner is made with; without it, a host never suspends.
-        #[arg(long)]
-        suspends_unlinked: bool,
+        /// A paired runner's host suspends itself after a day with no link from its desktop, or
+        /// after DURATION where one is given (`--suspends-unlinked=12h`: a whole number of `s`,
+        /// `m` or `h`, a minute to 30 days, a pool's `suspendAfter`, #3471): it stops serving,
+        /// every chat ends, and its container stops with its home kept (#2051). What a Docker
+        /// pool's runner is made with; without it, a host never suspends.
+        #[arg(
+            long,
+            num_args = 0..=1,
+            require_equals = true,
+            value_name = "DURATION",
+            value_parser = unlinked_for
+        )]
+        suspends_unlinked: Option<Option<std::time::Duration>>,
     },
     /// On a runner: join this standard input and output to the session host's link socket,
     /// for the connector the desktop runs (ADR 0078 §2). It holds no key and decides nothing.
@@ -829,10 +837,33 @@ fn emit(report: &purlis_core::news::Report) -> ExitCode {
     ExitCode::from(report.code)
 }
 
+/// `--suspends-unlinked`'s DURATION: a pool's `suspendAfter`, spelled and bounded as
+/// `runners.json` keeps it (#3471).
+fn unlinked_for(text: &str) -> Result<std::time::Duration, String> {
+    let after = purlis_core::spelledtime::read(text, purlis_core::spelledtime::UP_TO_HOURS)
+        .ok_or_else(|| {
+            format!(
+                "\"{text}\" is not a duration: write a whole number followed by s, m or h, \
+                 such as 24h"
+            )
+        })?;
+    purlis_core::dockerpool::suspend_after(after).map_err(|why| why.0)
+}
+
+/// How long `purlis serve` is left without a link before it suspends, as it was asked: never
+/// without `--suspends-unlinked`, a day with it bare, and its DURATION where one is given.
+fn suspends_after(asked: Option<Option<std::time::Duration>>) -> Option<std::time::Duration> {
+    #[cfg(unix)]
+    let a_day = purlis_host::UNLINKED_FOR;
+    #[cfg(not(unix))]
+    let a_day = purlis_core::dockerpool::SUSPEND_AFTER;
+    asked.map(|after| after.unwrap_or(a_day))
+}
+
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(not(unix))]
-fn serve(_suspends_unlinked: bool) -> ExitCode {
+fn serve(_suspends_after: Option<std::time::Duration>) -> ExitCode {
     voice::err("the session host runs on macOS and Linux only");
     ExitCode::FAILURE
 }
@@ -840,7 +871,7 @@ fn serve(_suspends_unlinked: bool) -> ExitCode {
 /// `purlis serve`: this user's session host, at the place the window's own host would take, so
 /// one finds the other serving and leaves it be.
 #[cfg(unix)]
-fn serve(suspends_unlinked: bool) -> ExitCode {
+fn serve(suspends_after: Option<std::time::Duration>) -> ExitCode {
     // A service: its standard error is its log, the journal or the container's (#2753), so the
     // core's `info` is said there too, redacted as the app's log is.
     purlis_core::applog::widen_for_a_service();
@@ -926,7 +957,7 @@ fn serve(suspends_unlinked: bool) -> ExitCode {
                 ))
             },
             pairing,
-            suspends_unlinked.then_some(purlis_host::UNLINKED_FOR),
+            suspends_after,
         ))
         .unwrap_or(1),
     )
@@ -4342,7 +4373,7 @@ fn main() -> ExitCode {
     }
     // Needs no project: one host serves every project of this user on this device (ADR 0068).
     if let Command::Serve { suspends_unlinked } = &cli.command {
-        return serve(*suspends_unlinked);
+        return serve(suspends_after(*suspends_unlinked));
     }
     // Needs no project: a runner's bridge to its own host, or its pairing (ADR 0078 §2, §3).
     if let Command::Bridge {
@@ -5067,3 +5098,7 @@ fn home_spelled(folder: &std::path::Path) -> String {
 #[cfg(test)]
 #[path = "main/tests/core_words.rs"]
 mod core_word_tests;
+
+#[cfg(test)]
+#[path = "main/tests/serve.rs"]
+mod serve_tests;
