@@ -24,6 +24,13 @@ const seconds = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 1
 const spread = (values) => ({ n: values.length, p50: percentile(values, 0.5), p90: percentile(values, 0.9) });
 
 /**
+ * The conclusions that count as red: a failure, a run its job limit ended, and a run whose
+ * workflow could not start. `cancelled` (a newer push or the merge queue superseded it),
+ * `action_required` (a fork's run waiting for approval) and `skipped` are neither red nor green.
+ */
+export const RED = ["failure", "timed_out", "startup_failure"];
+
+/**
  * What the runs list says of a week of `ci` runs (`GET /actions/workflows/ci.yml/runs`, which
  * answers each run's latest attempt).
  */
@@ -41,7 +48,7 @@ export function runStats(runs) {
     if (run.run_attempt > 1) greenOnRerun += 1;
     (walls[run.event] ??= []).push(seconds(run.run_started_at, run.updated_at));
   }
-  const decided = (conclusions.success ?? 0) + (conclusions.failure ?? 0);
+  const decided = (conclusions.success ?? 0) + RED.reduce((sum, red) => sum + (conclusions[red] ?? 0), 0);
   const wall = Object.fromEntries(Object.entries(walls).map(([event, values]) => [event, spread(values)]));
   return {
     runs: runs.length,
@@ -57,16 +64,19 @@ export function runStats(runs) {
  * Merge-queue time over the week's merged pull requests (GraphQL `search`, each with its
  * `AddedToMergeQueueEvent`s and `RemovedFromMergeQueueEvent`s): from the last time it entered the
  * queue to its merge, which is the wait an author sees. Each removal that was not the merge is
- * counted by its reason.
+ * counted by its reason, when it fell within the week (`from`..`to`, whole UTC days) if one is
+ * given: a pull request merged this week may have been put out last week. A pull request put
+ * out and not merged by the week's end is not among `prs`, so its removals are not counted.
  */
-export function queueStats(prs) {
+export function queueStats(prs, { from, to } = {}) {
+  const inWeek = (at) => (!from || at.slice(0, 10) >= from) && (!to || at.slice(0, 10) <= to);
   const waits = [];
   const ejected = {};
   for (const pr of prs) {
     let entered = null;
     for (const event of pr.timelineItems?.nodes ?? []) {
       if (event.__typename === "AddedToMergeQueueEvent") entered = event.createdAt;
-      if (event.__typename === "RemovedFromMergeQueueEvent" && event.reason !== "merged") {
+      if (event.__typename === "RemovedFromMergeQueueEvent" && event.reason !== "merged" && inWeek(event.createdAt)) {
         ejected[event.reason] = (ejected[event.reason] ?? 0) + 1;
       }
     }
@@ -137,6 +147,51 @@ export function slowestTests(lists, { limit = LIMIT } = {}) {
   return [...tests.values()].sort((a, b) => b.seconds - a.seconds).slice(0, limit);
 }
 
+/** The most runs one filtered runs list answers, however many pages are asked for. */
+export const LIST_CAP = 1000;
+
+/**
+ * The `created` filters that read `day`'s `total` runs: the day itself when one list holds them
+ * all, or equal slices of it small enough that each does (900 a slice leaves room for a busy hour).
+ */
+export function runWindows(day, total) {
+  if (total <= LIST_CAP) return [day];
+  const slices = Math.ceil(total / 900);
+  const start = Date.parse(`${day}T00:00:00Z`);
+  const stamp = (ms) => new Date(ms).toISOString().replace(".000Z", "Z");
+  return Array.from({ length: slices }, (_, i) => {
+    const from = start + Math.round((i * 86_400_000) / slices);
+    const to = start + Math.round(((i + 1) * 86_400_000) / slices) - 1000;
+    return `${stamp(from)}..${stamp(to)}`;
+  });
+}
+
+/**
+ * The report's issue, looked for page by page (`listPage(n)` answers page `n` of the `area:ci`
+ * issues, 100 a page) until it is found or the pages run out: the label holds every CI issue,
+ * and the report's may be far down the list.
+ */
+export async function locateIssue(listPage) {
+  for (let page = 1; page <= 100; page += 1) {
+    const issues = await listPage(page);
+    const found = findIssue(issues);
+    if (found || issues.length === 0) return found;
+  }
+  return undefined;
+}
+
+/** `--days N --sample N --issue`, each number a positive whole one. */
+export function parseArgs(argv) {
+  const number = (name, fallback) => {
+    const at = argv.indexOf(name);
+    if (at < 0) return fallback;
+    const value = argv[at + 1] ?? "";
+    if (!/^[1-9]\d*$/.test(value)) throw new Error(`${name} takes a positive whole number, not "${value}"`);
+    return Number(value);
+  };
+  return { days: number("--days", 7), sample: number("--sample", 600), issue: argv.includes("--issue") };
+}
+
 /** At most `max` of `items`, spread evenly over them; all of them when there are no more. */
 export function sample(items, max) {
   if (items.length <= max) return items;
@@ -180,6 +235,9 @@ export function report(week) {
     "",
     `**${headline(week)}**`,
     "",
+    ...(week.unread > 0
+      ? [`> [!WARNING]`, `> ${week.unread} of the week's runs could not be read: the runs list held them back. The numbers below are of the rest.`, ""]
+      : []),
     "### Runs",
     "",
     "| day | runs |",
@@ -203,9 +261,9 @@ export function report(week) {
     `${queue.merged} pull requests merged, ${queue.n} through the queue: from the last time each entered ` +
       `the queue to its merge, p50 ${minutes(queue.p50)} min, p90 ${minutes(queue.p90)} min.`,
     "",
-    `Put out of the queue unmerged: ${
+    `Put out of the queue unmerged during the week, among the pull requests merged by its end: ${
       Object.entries(queue.ejected).map(([why, n]) => `${why}: ${n}`).join(", ") || "never"
-    }.`,
+    }. One put out and not merged by then is not counted.`,
     "",
     `### Jobs`,
     "",
@@ -247,7 +305,8 @@ export function report(week) {
 // writes the report to $GITHUB_STEP_SUMMARY (or stdout), and with `--issue` into the one issue.
 //
 // The calls are bounded. `ci` runs ~400 times a day (488 on 2026-10-27), so the week's runs list
-// is ~30 pages of 100, asked day by day because a filtered runs list answers at most 1,000. Each
+// is ~30 pages of 100, asked day by day because a filtered runs list answers at most 1,000; a day
+// of more is read in slices (`runWindows`), and any run still not read is named in the report. Each
 // run's jobs and their annotations come from GraphQL, ten check suites a query (more and GitHub
 // refuses it as too costly), for `--sample` runs spread evenly over the week: 600 is ~60 queries,
 // about four minutes, ~400 of GraphQL's 5,000 points an hour. The slowest tests are read from the
@@ -336,14 +395,27 @@ async function measure({ repo, token, dayCount, sampleSize }) {
   const today = Date.parse(isoDay(Date.now()));
   const dayList = Array.from({ length: dayCount }, (_, i) => isoDay(today - (dayCount - i) * 86_400_000));
   const runs = [];
+  let unread = 0;
+  const list = (created, page) =>
+    call(`/repos/${repo}/actions/workflows/ci.yml/runs?created=${created}&per_page=100&page=${page}`, { token });
   for (const day of dayList) {
-    for (let page = 1; page <= 10; page += 1) {
-      const answer = await call(
-        `/repos/${repo}/actions/workflows/ci.yml/runs?created=${day}&per_page=100&page=${page}`,
-        { token },
-      );
-      runs.push(...answer.workflow_runs);
-      if (answer.workflow_runs.length < 100) break;
+    const first = await list(day, 1);
+    for (const created of runWindows(day, first.total_count)) {
+      const read = [];
+      let total = 0;
+      for (let page = 1; page <= LIST_CAP / 100; page += 1) {
+        const answer = created === day && page === 1 ? first : await list(created, page);
+        total = answer.total_count;
+        read.push(...answer.workflow_runs);
+        if (answer.workflow_runs.length < 100) break;
+      }
+      // A run that started between two pages can push one onto the next: the id keeps it once.
+      const fresh = read.filter((run, i) => read.findIndex((other) => other.id === run.id) === i);
+      runs.push(...fresh);
+      if (fresh.length < Math.min(total, LIST_CAP) || total > LIST_CAP) {
+        unread += Math.max(0, total - fresh.length);
+        console.log(`::warning title=ci-health::${created}: read ${fresh.length} of ${total} runs`);
+      }
     }
   }
   runs.sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -375,7 +447,8 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     from: dayList[0],
     to: dayList.at(-1),
     runs: runStats(runs),
-    queue: queueStats(prs),
+    queue: queueStats(prs, { from: dayList[0], to: dayList.at(-1) }),
+    unread,
     sampled: { runs: sampled.length, of: runs.length },
     jobs: jobStats(suites),
     flaky: flakyTests(suites),
@@ -386,11 +459,11 @@ async function measure({ repo, token, dayCount, sampleSize }) {
 
 /** Writes `body` into the report's one issue, made the first time, and comments `line` on it. */
 async function keepIssue({ repo, token, body, line }) {
-  const issues = await call(
-    `/repos/${repo}/issues?labels=${encodeURIComponent(ISSUE_LABEL)}&state=all&per_page=100`,
-    { token },
+  let issue = await locateIssue((page) =>
+    call(`/repos/${repo}/issues?labels=${encodeURIComponent(ISSUE_LABEL)}&state=all&per_page=100&page=${page}`, {
+      token,
+    }),
   );
-  let issue = findIssue(issues);
   if (issue) {
     await call(`/repos/${repo}/issues/${issue.number}`, { method: "PATCH", body: { body, state: "open" }, token });
   } else {
@@ -405,18 +478,15 @@ async function keepIssue({ repo, token, body, line }) {
 }
 
 async function main(argv) {
-  const flag = (name, fallback) => {
-    const at = argv.indexOf(name);
-    return at >= 0 ? argv[at + 1] : fallback;
-  };
+  const args = parseArgs(argv);
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GITHUB_TOKEN is not set");
   const repo = process.env.GITHUB_REPOSITORY ?? "purlis/purlis";
   const week = await measure({
     repo,
     token,
-    dayCount: Number(flag("--days", "7")),
-    sampleSize: Number(flag("--sample", "600")),
+    dayCount: args.days,
+    sampleSize: args.sample,
   });
   const body = report(week);
   const out = process.env.GITHUB_STEP_SUMMARY;
@@ -427,7 +497,7 @@ async function main(argv) {
     `read ${week.runs.runs} runs, the jobs of ${week.sampled.runs}, ${week.queue.merged} merged pull requests ` +
       `(${week.queue.n} through the queue), the slowest tests of ${week.slowestFrom} runs on main`,
   );
-  if (argv.includes("--issue")) {
+  if (args.issue) {
     const server = process.env.GITHUB_SERVER_URL ?? "https://github.com";
     const run = process.env.GITHUB_RUN_ID ? ` ([run](${server}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}))` : "";
     const number = await keepIssue({ repo, token, body, line: `${week.from} to ${week.to}: ${headline(week)}${run}` });

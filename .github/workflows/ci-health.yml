@@ -24,7 +24,10 @@ on:
     inputs:
       sample:
         description: "How many of the week's runs to read jobs and flaky tests from (~2,500 in a week)"
-        default: "600"
+        # A number by type here, and a positive whole one by `tools/ci-health.mjs`, which refuses
+        # anything else before it reads a run.
+        type: number
+        default: 600
       issue:
         description: "Write the report into the area:ci issue"
         type: boolean

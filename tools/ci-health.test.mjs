@@ -13,9 +13,12 @@ import {
   flakyTests,
   headline,
   jobStats,
+  locateIssue,
+  parseArgs,
   queueStats,
   report,
   runStats,
+  runWindows,
   sample,
   slowestTests,
 } from "./ci-health.mjs";
@@ -31,6 +34,22 @@ test("runs are counted per day, and cancelled runs count toward neither success 
   assert.deepEqual(stats.perDay, { "2026-10-27": 6 });
   assert.deepEqual(stats.conclusions, { success: 4, failure: 1, cancelled: 1 });
   assert.equal(stats.successRate, 0.8);
+});
+
+test("a run that timed out or never started counts as red, as a failure does", () => {
+  const red = [
+    { ...runs[2], id: 1, conclusion: "timed_out" },
+    { ...runs[2], id: 2, conclusion: "startup_failure" },
+  ];
+  assert.equal(runStats([...runs, ...red]).successRate, 4 / 7);
+});
+
+test("a day of more runs than one list answers is read in windows small enough for it", () => {
+  assert.deepEqual(runWindows("2026-10-27", 488), ["2026-10-27"]);
+  assert.deepEqual(runWindows("2026-10-27", 1500), [
+    "2026-10-27T00:00:00Z..2026-10-27T11:59:59Z",
+    "2026-10-27T12:00:00Z..2026-10-27T23:59:59Z",
+  ]);
 });
 
 test("a run that went green on its second attempt is counted as green only on a rerun", () => {
@@ -56,6 +75,12 @@ test("a pull request's queue time is from its last entry into the merge queue to
 
 test("each time the queue put a pull request out unmerged is counted by why", () => {
   assert.deepEqual(queueStats(merged).ejected, { merge_conflict: 1 });
+});
+
+test("only the week's own ejections are counted, not those of a merged pull request's earlier days", () => {
+  // #3577's one ejection was on 2026-10-28.
+  assert.deepEqual(queueStats(merged, { from: "2026-10-21", to: "2026-10-27" }).ejected, {});
+  assert.deepEqual(queueStats(merged, { from: "2026-10-22", to: "2026-10-28" }).ejected, { merge_conflict: 1 });
 });
 
 test("a pull request merged without the queue has no queue time", () => {
@@ -169,6 +194,38 @@ test("the report lists every flaky test with its count, and the jobs with their 
   assert.doesNotMatch(text, /\| quick check \|/);
   assert.match(text, /1 more job took under a minute at p90/);
   assert.match(text, /2 of the week's 6 runs/);
+});
+
+test("the report says how many runs it could not read, when the runs list held back some", () => {
+  assert.match(report({ ...week, unread: 12 }), /12 of the week's runs could not be read/);
+  assert.doesNotMatch(report(week), /could not be read/);
+});
+
+test("the report's one issue is looked for past the first page of area:ci issues", async () => {
+  const pages = {
+    1: Array.from({ length: 100 }, (_, i) => ({ number: 1000 + i, title: "other", labels: [{ name: "area:ci" }] })),
+    2: [{ number: 7, title: ISSUE_TITLE, labels: [{ name: "area:ci" }] }],
+  };
+  const asked = [];
+  const issue = await locateIssue(async (page) => {
+    asked.push(page);
+    return pages[page] ?? [];
+  });
+  assert.equal(issue.number, 7);
+  assert.deepEqual(asked, [1, 2]);
+});
+
+test("no issue is found once the pages run out", async () => {
+  assert.equal(await locateIssue(async (page) => (page === 1 ? [{ number: 1, title: "x", labels: [] }] : [])), undefined);
+});
+
+test("the sample and the days are positive whole numbers, and a flag is never taken for one", () => {
+  assert.deepEqual(parseArgs([]), { days: 7, sample: 600, issue: false });
+  assert.deepEqual(parseArgs(["--sample", "50", "--issue"]), { days: 7, sample: 50, issue: true });
+  assert.throws(() => parseArgs(["--sample", "--issue"]), /--sample/);
+  assert.throws(() => parseArgs(["--sample", "abc"]), /--sample/);
+  assert.throws(() => parseArgs(["--sample", "0"]), /--sample/);
+  assert.throws(() => parseArgs(["--days", "1.5"]), /--days/);
 });
 
 test("the report's one issue is found by its title and its label, open or not", () => {
