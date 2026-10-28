@@ -144,19 +144,23 @@ impl Cold {
         let Some(changes) = changes else {
             return true;
         };
-        changes.iter().any(|change| {
-            change.kind == Kind::Project
-                || match self {
-                    Self::Sections(name) => match change.workspace.as_deref() {
-                        Some(of) => of == name,
-                        None => change.kind == Kind::Workspace,
-                    },
-                    Self::Count(name) => match change.persona.as_deref() {
-                        Some(of) => of == name,
-                        None => change.kind == Kind::Persona,
-                    },
-                }
-        })
+        // A skill is no part of a workspace's sections or a persona's count (SK-29).
+        changes
+            .iter()
+            .filter(|change| change.kind != Kind::Skills)
+            .any(|change| {
+                change.kind == Kind::Project
+                    || match self {
+                        Self::Sections(name) => match change.workspace.as_deref() {
+                            Some(of) => of == name,
+                            None => change.kind == Kind::Workspace,
+                        },
+                        Self::Count(name) => match change.persona.as_deref() {
+                            Some(of) => of == name,
+                            None => change.kind == Kind::Persona,
+                        },
+                    }
+            })
     }
 }
 
