@@ -25,8 +25,9 @@ export type About =
 
 /** **A chip of the title bar**, as the placement reads it: the workspace it is, and how it is
  *  drawn. `unpinned` is the dashed `name +` chip of the current workspace while it is not
- *  pinned; `dormant`, a pin whose folder is gone. */
-export type Chip = { workspace: string; look: "pinned" | "unpinned" | "dormant" };
+ *  pinned; `dormant`, a pin whose folder is gone; `root`, the plane root's house after the
+ *  project's name (`OUTSIDE`, #3654), always there. */
+export type Chip = { workspace: string; look: "pinned" | "unpinned" | "dormant" | "root" };
 
 /** Where a notice is drawn, besides the Notices centre, which lists every one. */
 export type Place =
@@ -41,7 +42,8 @@ export type Place =
 
 /**
  * **Where a notice about `about` is drawn, given the title bar's `chips`** (spec #3647):
- * - about a workspace that has a chip, pinned, dashed or dormant: that chip's card;
+ * - about a workspace that has a chip, pinned, dashed or dormant: that chip's card; about the
+ *   plane root, its house chip's (the dispatcher's ruling on #3648);
  * - about a workspace with no chip: the Notices centre alone, which offers to open it, so
  *   nothing floats over the wrong chip;
  * - a project's or the app's result: the status bar's card;
@@ -62,9 +64,9 @@ export function aboutOf(said: Said): About {
 }
 
 /**
- * **The title bar's chips** (`TitleBarSwitch.tsx`, R101–R105): a chip per pin, in the pins'
- * order, then the dashed one of the workspace in front while it is not pinned. The plane root in
- * front, or nothing focused yet, adds none.
+ * **The title bar's chips** (`TitleBarSwitch.tsx`, R101–R105, #3654): the plane root's house,
+ * always, then a chip per pin, in the pins' order, then the dashed one of the workspace in front
+ * while it is not pinned. The plane root in front, or nothing focused yet, adds no dashed one.
  */
 export function chipsOf({
   pins,
@@ -73,7 +75,10 @@ export function chipsOf({
   pins: readonly string[];
   focused: string | undefined;
 }): Chip[] {
-  const chips: Chip[] = pins.map((workspace) => ({ workspace, look: "pinned" }));
+  const chips: Chip[] = [
+    { workspace: OUTSIDE, look: "root" },
+    ...pins.map((workspace): Chip => ({ workspace, look: "pinned" })),
+  ];
   if (focused !== undefined && focused !== OUTSIDE && !pins.includes(focused))
     chips.push({ workspace: focused, look: "unpinned" });
   return chips;

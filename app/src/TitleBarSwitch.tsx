@@ -162,6 +162,8 @@ export function TitleBarSwitch({
   const anchor = useMemo(
     () => ({
       get current(): Element | null {
+        // The plane root's house stands outside the strip (#3654).
+        if (cardOn === OUTSIDE) return house.current;
         return (
           [...(strip.current?.querySelectorAll<HTMLElement>('[data-part="workspace"]') ?? [])].find(
             (one) => one.dataset.chipOf === cardOn,
@@ -328,7 +330,7 @@ export function TitleBarSwitch({
       <ChipSlot>
         {shows !== undefined && notices !== undefined && notices.open !== workspace && (
           <NoticeDot
-            workspace={workspace}
+            workspace={workspace === OUTSIDE ? OUTSIDE_TITLE : workspace}
             count={shows.count}
             kind={shows.kind}
             onPress={() => notices.show(workspace)}
@@ -373,7 +375,7 @@ export function TitleBarSwitch({
       {/* The plane root's chip (#3654): always here, outside the strip so it never scrolls
           away, and with no pin to let go. Its menu is the root's, which has none either. */}
       <Fragment key="root">
-        {withMenu(
+        {slotted(
           OUTSIDE,
           <RootChip
             ref={house}
@@ -419,7 +421,13 @@ export function TitleBarSwitch({
         cardOn !== undefined &&
         card !== undefined &&
         notices !== undefined && (
-          <ChipCard workspace={cardOn} notices={card} anchor={anchor} does={notices} />
+          <ChipCard
+            workspace={cardOn}
+            named={cardOn === OUTSIDE ? OUTSIDE_TITLE : cardOn}
+            notices={card}
+            anchor={anchor}
+            does={notices}
+          />
         )}
       {open === "workspaces" && (
         <HeldPopover

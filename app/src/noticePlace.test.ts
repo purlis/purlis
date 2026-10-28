@@ -10,6 +10,7 @@ const PINNED: Chip = { workspace: "gamma", look: "pinned" };
 const DASHED: Chip = { workspace: "gamma", look: "unpinned" };
 const DORMANT: Chip = { workspace: "gamma", look: "dormant" };
 const ANOTHER: Chip = { workspace: "beta", look: "pinned" };
+const ROOT: Chip = { workspace: OUTSIDE, look: "root" };
 
 const ABOUT_GAMMA: About = { workspace: "gamma" };
 const A_PROJECT_RESULT: About = { project: true };
@@ -54,6 +55,12 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
       { at: "status" },
     ],
     ["a chat's: its pane band, unchanged", A_CHAT, [PINNED], { at: "pane", pane: 3 }],
+    [
+      "about the plane root: its house chip's card, outside the strip (the dispatcher's ruling)",
+      { workspace: OUTSIDE },
+      [ROOT, ANOTHER],
+      { at: "chip", workspace: OUTSIDE },
+    ],
   ];
   it.each(table)("%s", (_, about, chips, place) => {
     expect(placeOf(about, chips)).toEqual(place);
@@ -79,16 +86,16 @@ describe("what a result is about", () => {
 });
 
 describe("the title bar's chips", () => {
-  it("are the pins, then the current workspace dashed while it is not pinned", () => {
-    expect(chipsOf({ pins: ["beta"], focused: "gamma" })).toEqual([ANOTHER, DASHED]);
+  it("are the root's house, the pins, then the current workspace dashed while it is not pinned", () => {
+    expect(chipsOf({ pins: ["beta"], focused: "gamma" })).toEqual([ROOT, ANOTHER, DASHED]);
   });
 
   it("draw a pinned current workspace once, as a pin", () => {
-    expect(chipsOf({ pins: ["beta", "gamma"], focused: "gamma" })).toEqual([ANOTHER, PINNED]);
+    expect(chipsOf({ pins: ["beta", "gamma"], focused: "gamma" })).toEqual([ROOT, ANOTHER, PINNED]);
   });
 
-  it("are only the pins while the plane root is in front, or nothing is", () => {
-    expect(chipsOf({ pins: ["beta"], focused: OUTSIDE })).toEqual([ANOTHER]);
-    expect(chipsOf({ pins: ["beta"], focused: undefined })).toEqual([ANOTHER]);
+  it("are the root's house and the pins while the root is in front, or nothing is", () => {
+    expect(chipsOf({ pins: ["beta"], focused: OUTSIDE })).toEqual([ROOT, ANOTHER]);
+    expect(chipsOf({ pins: ["beta"], focused: undefined })).toEqual([ROOT, ANOTHER]);
   });
 });

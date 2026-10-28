@@ -118,11 +118,14 @@ export const mostUrgent = (notices: readonly ChipNotice[]): NoticeKind =>
  */
 export function ChipCard({
   workspace,
+  named,
   notices,
   anchor,
   does,
 }: {
   workspace: string;
+  /** What the workspace is called: its name, or the plane root's (`OUTSIDE_TITLE`). */
+  named: string;
   notices: readonly ChipNotice[];
   /** The chip it hangs from. */
   anchor: RefObject<Element | null>;
@@ -138,7 +141,7 @@ export function ChipCard({
     <HungPopover triggerRef={anchor} isOpen onHide={does.hide} className="chip-card">
       <div
         role="region"
-        aria-label={`Notices for ${workspace}`}
+        aria-label={`Notices for ${named}`}
         tabIndex={-1}
         data-chip={workspace}
         {...{ [CARD_STOP]: "" }}

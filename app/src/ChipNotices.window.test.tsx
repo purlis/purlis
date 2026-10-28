@@ -1,12 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { StrictMode } from "react";
+import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+import { OUTSIDE, type Said } from "./actions";
+import { TitleBarSwitch } from "./TitleBarSwitch";
 import { forgetRailMode } from "./railMode";
 
 /**
@@ -102,9 +104,14 @@ function core() {
 }
 
 const bar = () => screen.getByTestId("title-bar");
-/** The chips' names, `*` on the current one, `+` on the dashed one. */
+/** The strip's chips' names, `*` on the current one, `+` on the dashed one: not the plane
+ *  root's house, which stands outside the strip (#3654). */
 const chips = () =>
-  [...bar().querySelectorAll<HTMLElement>('[data-scope="titlebar"][data-part="workspace"]')].map(
+  [
+    ...bar().querySelectorAll<HTMLElement>(
+      '[role="toolbar"] [data-scope="titlebar"][data-part="workspace"]',
+    ),
+  ].map(
     (one) =>
       `${one.querySelector('[data-part="name"]')?.textContent}${
         one.getAttribute("aria-current") === "true" ? "*" : ""
@@ -279,5 +286,64 @@ describe("the ready notice hangs from its chip (#3648)", () => {
     await userEvent.click(within(kept).getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(queryCard("gamma")).toBeNull());
     expect(queryDot("gamma")).toBeNull();
+  });
+});
+
+describe("a notice about the plane root (the dispatcher's ruling on #3648)", () => {
+  /** The title bar alone, with a notice about the plane root, its card up or hidden. */
+  function Bar({ startOpen }: { startOpen: boolean }) {
+    const [open, setOpen] = useState<string | undefined>(startOpen ? OUTSIDE : undefined);
+    const said: Said = {
+      from: "x",
+      refused: false,
+      title: "The root moved",
+      words: "",
+      workspace: OUTSIDE,
+    };
+    return (
+      <TitleBarSwitch
+        projects={[
+          {
+            plane: PLANE,
+            name: "one",
+            waiting: 0,
+            workspaces: { names: ["alpha"], pins: ["alpha"], focused: "alpha", waiting: {} },
+          },
+        ]}
+        inFront={PLANE}
+        railShown
+        does={{
+          go: () => undefined,
+          choose: () => undefined,
+          pin: () => undefined,
+          create: () => undefined,
+        }}
+        notices={{
+          on: new Map([[OUTSIDE, [{ id: 1, kind: "info", said }]]]),
+          open,
+          show: setOpen,
+          hide: () => setOpen(undefined),
+          dismiss: () => undefined,
+          onSettings: () => undefined,
+        }}
+      />
+    );
+  }
+
+  it("hangs from the root's house chip, outside the strip", async () => {
+    render(<Bar startOpen />);
+    const card = await screen.findByRole("region", { name: "Notices for Plane root" });
+    expect(card).toHaveTextContent("The root moved");
+    expect(card).toHaveAttribute("data-chip", OUTSIDE);
+  });
+
+  it("leaves its dot on the house chip, which brings the card back", async () => {
+    render(<Bar startOpen={false} />);
+    const dot = screen.getByRole("button", { name: "Show the notice on Plane root" });
+    expect(screen.getByRole("toolbar", { name: "Pinned workspaces" }).contains(dot)).toBe(false);
+    await userEvent.click(dot);
+    expect(
+      await screen.findByRole("region", { name: "Notices for Plane root" }),
+    ).toBeInTheDocument();
   });
 });
