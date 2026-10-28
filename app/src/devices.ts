@@ -99,6 +99,7 @@ const UNANSWERED: RunnerAsked = {
   version: null,
   contacted: null,
   holds: { open: [], browsers_open: [], chats: 0, browsers: 0 },
+  ran_this_week: null,
 };
 
 /** Asks runner `one` how it is, or waits on the ask of it in flight; at most {@link answerWithinMs}. */
