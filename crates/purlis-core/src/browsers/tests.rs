@@ -137,6 +137,7 @@ fn the_drivers_answer_is_said_back_whole() {
         note: Some("the page did not load".into()),
         repeated: true,
         asked: vec!["news.example.org:443".into()],
+        downloads: Vec::new(),
     };
 
     let said = PageSaid {

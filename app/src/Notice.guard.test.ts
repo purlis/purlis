@@ -103,6 +103,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "ChatBrowsersShown.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". A download's Open or Show in folder refused (#2020), under the download it was " +
+      "pressed on: pressing again is the retry, and Show in folder is the way on",
+  },
   "AnswerQuestion.tsx": {
     count: 2,
     why:

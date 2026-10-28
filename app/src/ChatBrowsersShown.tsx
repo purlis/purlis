@@ -369,7 +369,7 @@ function BrowserDownloads({
               </Button>
             </ButtonRow>
           )}
-          {said?.download === download.download && (
+          {said !== null && said.download === download.download && (
             <span className="chat-browser-download-refused ui-text-meta" role="alert">
               {said.why}
             </span>

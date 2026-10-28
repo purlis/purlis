@@ -653,8 +653,11 @@ pub struct RowDownload {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum RowDownloadState {
+    /// It is downloading.
     Going,
+    /// It is done: the person may open it or show it in its folder.
     Done,
+    /// The page or the engine cancelled it.
     Cancelled,
     /// purlis cancelled it, for its size or for one too many.
     Refused,
