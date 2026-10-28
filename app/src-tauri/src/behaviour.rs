@@ -3347,7 +3347,11 @@ on_every_target!(
 /// refused; reading its project is not.
 ///
 /// The paths and process ids it tries are found first, as the runner's own user, outside the
-/// sandbox, and each must be found, so no try passes by naming nothing.
+/// sandbox, and each must be found, so no try passes by naming nothing: the engine is one whose
+/// environment that user reads there, and the pipe one that user opens there, so each refusal
+/// inside is the sandbox's. (The engine's memory is refused outside too where Yama holds
+/// `ptrace` to a process's own descendants, so its environment, which Yama does not hold, is
+/// tried beside it.)
 fn a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host(target: &Target) {
     use crate::chatbrowsers::Driver as _;
     let Some(runner) = &target.runner else {
@@ -3372,13 +3376,15 @@ for status in /proc/[0-9]*/status; do
   pid=${{status#/proc/}}; pid=${{pid%/status}}
   name=$(sed -n 's/^Name:[[:space:]]*//p' "$status" 2>/dev/null || true)
   case "$name" in
-    chrome) [ -n "$engine" ] || ! tr '\0' '\n' < /proc/$pid/cmdline 2>/dev/null | grep -q '^--user-data-dir=' || engine=$pid ;;
+    chrome) [ -n "$engine" ] || ! cat /proc/$pid/environ >/dev/null 2>&1 || engine=$pid ;;
     purlis) tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null | grep -q ' serve' && host=$pid || true ;;
   esac
 done
-folder=$(tr '\0' '\n' < /proc/$engine/cmdline 2>/dev/null | sed -n 's/^--user-data-dir=//p' | head -n 1)
-[ -n "$folder" ] || folder=$(ls -d "$HOME"/.local/share/*/{browsers}/*/ 2>/dev/null | head -n 1)
-pipe=$(ls -l /proc/$host/fd | sed -n 's/.* \([0-9][0-9]*\) -> pipe:.*/\1/p' | awk '$1 >= 3' | head -n 1)
+folder=$(ls -d "$HOME"/.local/share/*/{browsers}/*/ 2>/dev/null | head -n 1)
+pipe=
+for fd in $(ls -l /proc/$host/fd | sed -n 's/.* \([0-9][0-9]*\) -> pipe:.*/\1/p'); do
+  [ "$fd" -ge 3 ] && [ -z "$pipe" ] && (exec 3<> /proc/$host/fd/$fd) 2>/dev/null && pipe=$fd || true
+done
 socket=$(ls -d /tmp/purlis-$(id -u) | head -n 1)
 key=$(ls -d "$HOME"/.config/*/{daemon}/{key} "$HOME"/.config/*/{daemon_before}/{key} 2>/dev/null | head -n 1)
 printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "$engine" "$host" "$pipe" "$socket" "$key"
@@ -3426,7 +3432,8 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
              try PROJECT 'ls .'\n\
              try ENGINE-FOLDER 'ls {folder}'\n\
              try ENGINE-MEMORY 'exec 3< /proc/{engine}/mem'\n\
-             try HOST-PIPE 'exec 3< /proc/{host}/fd/{pipe}'\n\
+             try ENGINE-ENVIRONMENT 'cat /proc/{engine}/environ'\n\
+             try HOST-PIPE 'exec 3<> /proc/{host}/fd/{pipe}'\n\
              try HOST-KEY 'cat {key}'\n\
              try HOST-SOCKET 'ls {socket}'\n\
              printf 'TRIED.\\n'\n\
@@ -3450,6 +3457,7 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
         "PROJECT yes.",
         "ENGINE-FOLDER no.",
         "ENGINE-MEMORY no.",
+        "ENGINE-ENVIRONMENT no.",
         "HOST-PIPE no.",
         "HOST-KEY no.",
         "HOST-SOCKET no.",
