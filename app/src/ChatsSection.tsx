@@ -1673,19 +1673,26 @@ const Row = memo(function Row({
       {needs !== null && needs !== session && (
         /* **A chat below this one needs you**: the hand, and a press goes to that chat. Its
            own button beside the row, since the row goes to this row's chat. Out of the arrows'
-           way; the keyboard's way to that chat is the title bar's list. */
-        // The family's quiet ghost (#3523), as the tab chip's hand is: its tooltip is its name.
-        <IconButton
-          variant="quiet"
-          size="sm"
-          icon={<Hand aria-hidden="true" style={HAND} />}
-          className="rolled-up"
-          data-mark="needs-you"
-          data-leads-to={needs}
-          tabIndex={-1}
-          aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
-          onPress={() => onOpen(needs)}
-        />
+           way; the keyboard's way to that chat is the title bar's list. **The pointer's alone,
+           as the row's twist is** (#3658): out of the accessibility tree, where the tree may
+           own only its rows (axe's `aria-required-children`), and where the row's own
+           description already says which chat below needs you. Hidden by the element around
+           it, since the family's button does not pass `aria-hidden` on. */
+        <span className="rolled-up-at" aria-hidden="true">
+          {/* The family's quiet ghost (#3523), as the tab chip's hand is: its tooltip is its
+              name. */}
+          <IconButton
+            variant="quiet"
+            size="sm"
+            icon={<Hand aria-hidden="true" style={HAND} />}
+            className="rolled-up"
+            data-mark="needs-you"
+            data-leads-to={needs}
+            tabIndex={-1}
+            aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
+            onPress={() => onOpen(needs)}
+          />
+        </span>
       )}
     </li>
   );
