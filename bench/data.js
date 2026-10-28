@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793154178553,
+  "lastUpdate": 1793157262823,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27594,6 +27594,48 @@ window.BENCHMARK_DATA = {
             "value": 101.943895,
             "unit": "ms",
             "extra": "median of 5 runs: 100.535, 100.677, 101.944, 102.274, 102.312 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "619b664556478531409258e79b1dec3c2548d3a1",
+          "message": "A graded chat ends with its window (#3274) (#3575)\n\n* A graded chat ends with its window (#3274)\n\nSession protocol 1.42: a start may say its program ends with its\nwindow (StartProgram::ends_with_its_window). The host notes the link\nthe start came on, and when that link ends without a quit it ends the\nprogram at once, as a quit would, rather than keeping it for the grace\nperiod. The window sets it for a grade's chat alone. A host before 1.42\nignores the word; the window ends such a chat as it comes back, as\nbefore (#2006), and the grade is recorded as interrupted (#3353).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A graded chat ends with its last window, not its link (#3274 review)\n\nThe host ends a program that ends with its window once its last\nwindow link goes, before that window's holds are let go of, and waits\nfor it to stop. A start made while the last window was going ends its\nprogram once it is listed, decided under the same hold. The word is\ntaken from a local-ui link alone, and never for a browser. One helper\ntakes programs out as a quit for this and the grace path. A 1.42 frame\nis recorded in the protocol fixture.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Drop the chats test a graded chat cannot start in (#3274)\n\nA grade's chat starts only in an arm a grade laid out, on Claude Code\nwith purlis's binary, so the opencode stand-in could never start one.\nThe flag's path from the window to the host is held by the\nhostedsessions test and the host's own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T02:49:03Z",
+          "tree_id": "fff7609e805d5260e57dd88b1e24d0974a1d3f19",
+          "url": "https://github.com/purlis/purlis/commit/619b664556478531409258e79b1dec3c2548d3a1"
+        },
+        "date": 1793157258571,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.45056799999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.418, 0.442, 0.451, 0.460, 0.473 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.490552,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.398, 16.443, 16.491, 16.492, 16.595 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1181885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.689, 101.890, 102.118, 102.232, 102.577 ms"
           }
         ]
       }
