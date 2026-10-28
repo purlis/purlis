@@ -738,7 +738,12 @@ export function SkillStudioTab({
                   </ControlCell>
                   <ControlCell>{skill.description}</ControlCell>
                   <ControlCell>
-                    <SkillCompatBadges name={skill.name} compat={skill.compat} lint={skill.lint} />
+                    <SkillCompatBadges
+                      name={skill.name}
+                      compat={skill.compat}
+                      lint={skill.lint}
+                      notSupported={studio.not_supported}
+                    />
                   </ControlCell>
                   <ControlCell>
                     <SkillRowActions
@@ -817,6 +822,7 @@ export function SkillStudioTab({
         plane={plane}
         workspace={workspace}
         harnesses={studio.harnesses}
+        notSupported={studio.not_supported}
         onSwitched={() => setSwitched((n) => n + 1)}
       />
       {sourcesSection}

@@ -492,6 +492,30 @@ pub struct Studio {
     /// Why a chat reads none of the pins of the workspace or the persona it is filtered to,
     /// where it reads none (SK-15d): its rows' Pin switches then say so.
     pub pins_refused: Option<crate::skillchange::SkillPinsRefused>,
+    /// The declared harnesses skills are not supported on (SK-30): each skill's badge names them,
+    /// and the harnesses' list says why in one line.
+    pub not_supported: Vec<StudioNotSupported>,
+}
+
+/// **A declared harness skills are not supported on** (SK-30, #2985): the core's
+/// `skills::NotSupported`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioNotSupported {
+    /// The word a profile's `kind` names it by.
+    pub name: String,
+    pub title: String,
+    /// Why its chats get no skills, in one line.
+    pub said: String,
+}
+
+impl From<purlis_core::skills::NotSupported> for StudioNotSupported {
+    fn from(one: purlis_core::skills::NotSupported) -> Self {
+        Self {
+            name: one.name,
+            title: one.title,
+            said: one.said,
+        }
+    }
 }
 
 /// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
@@ -551,6 +575,7 @@ pub(crate) fn studio(
             clashes: Vec::new(),
             first: StudioFirst::default(),
             pins_refused: None,
+            not_supported: Vec::new(),
         };
     }
     let off = workspace
@@ -566,6 +591,7 @@ pub(crate) fn studio(
     let purlis_core::skills::StudioList {
         rows,
         harnesses: all,
+        not_supported,
     } = purlis_core::skills::studio_list(
         built_in,
         root,
@@ -596,6 +622,7 @@ pub(crate) fn studio(
         clashes,
         first,
         pins_refused,
+        not_supported: not_supported.into_iter().map(Into::into).collect(),
     }
 }
 

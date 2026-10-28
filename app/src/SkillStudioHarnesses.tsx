@@ -7,6 +7,7 @@ import {
   type HarnessKind,
   type Owner,
   type StudioHarness,
+  type StudioNotSupported,
   type StudioSkill,
 } from "./bindings";
 import { counted } from "./dispatches";
@@ -36,16 +37,19 @@ export function fromWhom(skill: StudioSkill): string {
  * is on is the program's own to say (#3467). A switch writes this machine's own file at the project's root
  * and the workspace's settings in a workspace, and reaches chats started after it. Under each, the
  * project's skills a repo leaves out of its chats there, with why (SK-53): never a silent drop.
+ * After them, each declared program skills are not supported on, with why in one line (SK-30).
  */
 export function SkillStudioHarnesses({
   plane,
   workspace,
   harnesses,
+  notSupported = [],
   onSwitched,
 }: {
   plane: string;
   workspace: string | null;
   harnesses: readonly StudioHarness[];
+  notSupported?: readonly StudioNotSupported[];
   onSwitched: () => void;
 }) {
   const [refused, setRefused] = useState<string>();
@@ -165,6 +169,12 @@ export function SkillStudioHarnesses({
               </Table>
             </>
           )}
+        </div>
+      ))}
+      {notSupported.map((one) => (
+        <div key={`not-${one.name}`} data-testid={`skill-studio-not-supported-${one.name}`}>
+          <h3>{one.title}</h3>
+          <p className="honest">{one.said}</p>
         </div>
       ))}
     </section>

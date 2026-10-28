@@ -2374,3 +2374,57 @@ fn a_chat_works_in_the_clone_its_folder_is_in_and_in_none_at_its_workspaces_fold
     assert_eq!(names(&plane.join("workspaces/alpha/web")), ["web"]);
     assert!(names(&plane.join("workspaces/alpha")).is_empty());
 }
+
+/// The harnesses purlis ships and `goose`, a harness a project declares, taking MCP servers or
+/// not.
+fn with_goose(mcp: bool) -> crate::harness_declaration::Declarations {
+    let goose = format!(
+        "name = \"goose\"\ntitle = \"Goose\"\nprogram = \"goose\"\n\n[session]\n\n\
+         [terminal]\nready_to_type = \"raw-and-quiet\"\n\n[levels]\n\n[capabilities]\n\
+         mcp_servers = \"{}\"\n",
+        if mcp { "yes" } else { "no: it takes none" }
+    );
+    let mut declared = crate::harness_declaration::builtins().to_vec();
+    declared.push(
+        crate::harness_declaration::parse(
+            &goose,
+            crate::harness_declaration::Origin::Project,
+            "harnesses/goose.toml",
+        )
+        .expect("a declaration"),
+    );
+    crate::harness_declaration::Declarations {
+        declared,
+        refused: Vec::new(),
+    }
+}
+
+#[test]
+fn a_harness_with_neither_a_skill_format_nor_mcp_is_told_skills_are_not_supported() {
+    let declarations = with_goose(false);
+    assert_eq!(
+        route_of(Some("goose"), &declarations),
+        None,
+        "it gets no skills"
+    );
+    let said = not_supported(&declarations);
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert_eq!(
+        (said[0].name.as_str(), said[0].title.as_str()),
+        ("goose", "Goose")
+    );
+    assert_eq!(
+        said[0].said,
+        "Skills are not supported on Goose: it has no skill format purlis can hand skills by, \
+         and takes no MCP servers, so its chats get no skills."
+    );
+    assert!(!said[0].said.contains('\n'), "one line");
+}
+
+#[test]
+fn a_harness_purlis_ships_or_one_that_takes_mcp_is_never_said_unsupported() {
+    assert!(not_supported(&with_goose(true)).is_empty());
+    for shipped in crate::harness_declaration::builtins() {
+        assert_eq!(not_supported_on(shipped), None, "{}", shipped.name);
+    }
+}

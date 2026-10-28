@@ -193,6 +193,9 @@ pub struct ChatForSkills {
     pub cwd: Option<PathBuf>,
     /// Whether the plane's skills reached it at its start ([`Running::plane_skills`], #3445).
     pub plane_skills: bool,
+    /// Why its chats get no skills, where its harness is a declared one skills are not
+    /// supported on (SK-30): [`purlis_core::skills::not_supported_on`].
+    pub not_supported: Option<String>,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -4939,6 +4942,13 @@ impl Chats {
                 .as_deref()
                 .and_then(purlis_core::skillspan::PromptSalt::of_chat),
             cwd: running.chat.cwd.clone(),
+            not_supported: running
+                .harness
+                .is_none()
+                .then_some(running.declared.as_ref())
+                .flatten()
+                .and_then(purlis_core::skills::not_supported_on)
+                .map(|one| one.said),
         })
     }
 

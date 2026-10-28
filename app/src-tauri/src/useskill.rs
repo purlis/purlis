@@ -131,6 +131,9 @@ pub struct ChatSkills {
     /// The clones of its workspace it works in, by name, whose repo skills its harness reads
     /// (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
     pub repos: Vec<String>,
+    /// Why the chat gets no skills, where its harness is a declared one skills are not supported
+    /// on (SK-30): said in place of the words for a tool purlis does not know.
+    pub not_supported: Option<String>,
 }
 
 impl ChatSkills {
@@ -142,6 +145,7 @@ impl ChatSkills {
             skills: Vec::new(),
             budget: None,
             repos: Vec::new(),
+            not_supported: None,
         }
     }
 }
@@ -256,6 +260,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             pins_together: skills.pins_together.as_ref().map(Into::into),
         }),
         repos: Vec::new(),
+        not_supported: None,
     }
 }
 
@@ -283,6 +288,8 @@ pub(crate) async fn chat_skills(
         );
         if shown.known {
             shown.repos = repos_of_the_chat(&held, &chat);
+        } else {
+            shown.not_supported = chat.not_supported.clone();
         }
         Ok(shown)
     })
@@ -312,7 +319,12 @@ pub(crate) fn use_skill(
     if !purlis_core::skills::studio_on_here() {
         return Err("The Skill studio is not turned on on this machine.".to_owned());
     }
-    let (skills, salt) = of_the_chat(&held, session).ok_or_else(|| NO_TOOL.to_owned())?;
+    let (skills, salt) = of_the_chat(&held, session).ok_or_else(|| {
+        held.chats()
+            .skills_of(session)
+            .and_then(|chat| chat.not_supported)
+            .unwrap_or_else(|| NO_TOOL.to_owned())
+    })?;
     let typing = typing_of(&skills, salt.as_ref(), &skill, &values)?;
     typed_and_held(&held, session, typing, &|text| clipboard.put_text(text))
 }

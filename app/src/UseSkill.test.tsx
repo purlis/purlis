@@ -71,7 +71,7 @@ const TOGETHER: SkillBudget = {
 };
 
 function skills(listed: ChatSkill[], budget: SkillBudget | null = BUDGET): ChatSkills {
-  return { on: true, known: true, skills: listed, budget, repos: [] };
+  return { on: true, known: true, skills: listed, budget, repos: [], not_supported: null };
 }
 
 function opened(listed: ChatSkills | undefined, onUse = vi.fn(), onOpenStudio = vi.fn()) {
@@ -248,8 +248,14 @@ describe("Use skill…", () => {
     opened(undefined);
     expect(screen.getByText("Reading this chat's skills…")).toBeTruthy();
     cleanup();
-    opened({ on: true, known: false, skills: [], budget: null, repos: [] });
+    opened({ on: true, known: false, skills: [], budget: null, repos: [], not_supported: null });
     expect(screen.getByTestId("use-skill-none").textContent).toMatch(/runs no tool purlis knows/);
+    cleanup();
+    // A declared harness skills are not supported on says so, in the core's one line (SK-30).
+    const goose =
+      "Skills are not supported on Goose: it has no skill format purlis can hand skills by, and takes no MCP servers, so its chats get no skills.";
+    opened({ on: true, known: false, skills: [], budget: null, repos: [], not_supported: goose });
+    expect(screen.getByTestId("use-skill-none").textContent).toBe(goose);
     cleanup();
     opened(skills([]));
     expect(screen.getByTestId("use-skill-none").textContent).toMatch(/Open Skill studio/);

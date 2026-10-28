@@ -474,6 +474,12 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                                 .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
                         })).collect::<Vec<_>>(),
+                        // A declared harness skills are not supported on, with why (SK-30).
+                        "not_supported": list.not_supported.iter().map(|one| json!({
+                            "harness": one.name,
+                            "title": one.title,
+                            "said": one.said,
+                        })).collect::<Vec<_>>(),
                     })
                 );
             } else {
@@ -494,6 +500,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             table(&one.repo_left_out, &|_| Vec::new())
                         );
                     }
+                }
+                // Never a silent drop (SK-30): a declared harness's chats get no skills, and why.
+                for one in &list.not_supported {
+                    println!("\n{}", not_supported_line(&one.said));
                 }
             }
             Ok(0)
@@ -1080,6 +1090,12 @@ fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
         .own(" was already ")
         .own(lifecycle.word())
         .own(".")
+}
+
+/// A declared harness's line that skills are not supported on it (SK-30): its title is the
+/// project's words, so the line is escaped.
+fn not_supported_line(said: &str) -> Markup {
+    Markup::new().text(said)
 }
 
 fn restorable(name: &str, level: &Level) -> Markup {

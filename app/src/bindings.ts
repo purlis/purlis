@@ -5348,6 +5348,11 @@ export type ChatSkills = {
 	 *  (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
 	 */
 	repos: string[],
+	/**
+	 *  Why the chat gets no skills, where its harness is a declared one skills are not supported
+	 *  on (SK-30): said in place of the words for a tool purlis does not know.
+	 */
+	not_supported: string | null,
 };
 
 /**  One step of one chat's stop, as the window is told it. */
@@ -12317,6 +12322,11 @@ export type Studio = {
 	 *  where it reads none (SK-15d): its rows' Pin switches then say so.
 	 */
 	pins_refused: SkillPinsRefused | null,
+	/**
+	 *  The declared harnesses skills are not supported on (SK-30): each skill's badge names them,
+	 *  and the harnesses' list says why in one line.
+	 */
+	not_supported: StudioNotSupported[],
 };
 
 /**
@@ -12380,6 +12390,18 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
+};
+
+/**
+ *  **A declared harness skills are not supported on** (SK-30, #2985): the core's
+ *  `skills::NotSupported`.
+ */
+export type StudioNotSupported = {
+	/**  The word a profile's `kind` names it by. */
+	name: string,
+	title: string,
+	/**  Why its chats get no skills, in one line. */
+	said: string,
 };
 
 /**

@@ -2206,6 +2206,55 @@ fn badge_named(rows: &mut [StudioRow], found: &[(Harness, &[OutsideSkill])], kno
 pub struct StudioList {
     pub rows: Vec<StudioRow>,
     pub harnesses: Vec<HarnessInTheStudio>,
+    /// The harnesses the project or this machine declares that take no skills at all (SK-30),
+    /// each with its one line ([`not_supported`]).
+    pub not_supported: Vec<NotSupported>,
+}
+
+/// **A declared harness skills are not supported on** (SK-30, #2985; decision 18: nothing is
+/// silently half-applied): one purlis ships no adapter for, so it has no skill format purlis can
+/// hand skills by, and whose declaration says it takes no MCP servers, so the fallback route
+/// ([`Route::Mcp`]) cannot reach it either. Its chats get no skills, and the studio, its badge
+/// and the chat say so in [`Self::said`]'s words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotSupported {
+    /// The word a profile's `kind` names it by.
+    pub name: String,
+    /// What the person calls it.
+    pub title: String,
+    /// The one line: why its chats get no skills.
+    pub said: String,
+}
+
+/// [`NotSupported`] of `declared`, or `None` where its chats can get skills: a harness purlis
+/// ships, or one that takes MCP servers, which the fallback route reaches, as [`route_of`] says.
+pub fn not_supported_on(
+    declared: &crate::harness_declaration::Declaration,
+) -> Option<NotSupported> {
+    if Harness::of_kind(&declared.name).is_some() || declared.replaces().is_some() {
+        return None;
+    }
+    if declared
+        .capability(crate::harness_declaration::MCP_SERVERS)
+        .holds()
+    {
+        return None;
+    }
+    Some(NotSupported {
+        name: declared.name.clone(),
+        title: declared.title.clone(),
+        said: format!(
+            "Skills are not supported on {}: it has no skill format purlis can hand skills \
+             by, and takes no MCP servers, so its chats get no skills.",
+            declared.title
+        ),
+    })
+}
+
+/// **Every declared harness skills are not supported on** ([`not_supported_on`]), in the order
+/// they are declared.
+pub fn not_supported(declarations: &crate::harness_declaration::Declarations) -> Vec<NotSupported> {
+    declarations.added().filter_map(not_supported_on).collect()
 }
 
 impl StudioList {
@@ -2283,7 +2332,11 @@ pub fn studio_list(
     let mut rows = studio_rows(&set, plane, &names);
     with_harness_badges(&mut rows, &harnesses, &known);
     with_routing(&mut rows, &harnesses);
-    StudioList { rows, harnesses }
+    StudioList {
+        rows,
+        harnesses,
+        not_supported: not_supported(&crate::harness_declaration::read(plane)),
+    }
 }
 
 /// **One persona's own skills, as the Skills view lists them** (#3266, #3462): the rows of its
