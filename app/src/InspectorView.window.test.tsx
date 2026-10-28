@@ -207,4 +207,33 @@ describe("Inspect", () => {
     await waitFor(() => expect(document.activeElement).not.toBe(surface));
     expect(host.asked("inspector_input")).toEqual([]);
   });
+
+  it("tells the person on DevTools' own bar how to move out of them, and sends no key held alone", async () => {
+    const host = await aBrowser();
+    await userEvent.click(await screen.findByRole("button", { name: "Inspect" }));
+    const surface = await screen.findByTestId("devtools-surface");
+    await waitFor(() => expect(host.asked("watch_inspector").length).toBeGreaterThan(0));
+
+    expect(within(screen.getByTestId("devtools-view")).getByRole("status")).toHaveTextContent(
+      "Press Ctrl+Tab to move out of DevTools.",
+    );
+    fireEvent.keyDown(surface, { key: "Control", code: "ControlLeft", keyCode: 17, ctrlKey: true });
+    fireEvent.keyUp(surface, { key: "Control", code: "ControlLeft", keyCode: 17 });
+    await new Promise((settled) => setTimeout(settled, 50));
+    expect(host.asked("inspector_input")).toEqual([]);
+  });
+
+  it("says the browser stopped when it was stopped", async () => {
+    const host = await aBrowser();
+    await userEvent.click(await screen.findByRole("button", { name: "Inspect" }));
+    await screen.findByTestId("devtools-view");
+    await waitFor(() => expect(host.asked("watch_inspector").length).toBeGreaterThan(0));
+
+    host.devtoolsClosed("stopped");
+    host.devtoolsSend("");
+
+    expect(
+      await screen.findByText("The browser stopped. Open a new browser to inspect a page."),
+    ).toBeInTheDocument();
+  });
 });

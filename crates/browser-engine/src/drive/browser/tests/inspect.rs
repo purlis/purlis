@@ -721,3 +721,200 @@ fn an_inspect_under_way_never_finishes_opening_once_the_browser_is_handed_back()
     assert_eq!(opened.join().unwrap(), Err(Refusal::NotDriving));
     assert!(!browser.inspecting());
 }
+
+#[test]
+fn an_inspect_begun_while_the_browser_is_being_handed_back_never_opens() {
+    let (browser, engine) = browser();
+    answers_devtools(&engine);
+    browser.take_over();
+    // As a hand-back is between its first step and the lease changing hands.
+    super::super::lock(&browser.lease).handing_back = true;
+    assert_eq!(
+        browser.inspect(1000, 600, Box::new(|_| {})),
+        Err(Refusal::NotDriving)
+    );
+    assert!(!browser.inspecting());
+}
+
+/// The front end says how it runs, as the engine answers purlis's question once it has loaded.
+fn the_front_end_runs(engine: &Arc<super::Engine>, found: &'static str) {
+    answers_devtools(engine);
+    let mut earlier = super::super::lock(&engine.hook).take();
+    engine.on(move |sent, engine| {
+        if sent.method == "Runtime.evaluate"
+            && sent.params["expression"] == super::super::inspect::HOSTED
+        {
+            return Some(Ok(
+                json!({ "result": { "type": "string", "value": found } }),
+            ));
+        }
+        earlier.as_mut().and_then(|hook| hook(sent, engine))
+    });
+}
+
+#[test]
+fn devtools_close_where_the_engines_embedder_interface_reaches_the_front_end() {
+    for found in [
+        r#"{"host":"object","guarded":true,"sockets":1,"hosted":true}"#,
+        r#"{"host":"undefined","guarded":true,"sockets":1,"hosted":false}"#,
+        r#"{"host":"undefined","guarded":false,"sockets":1,"hosted":null}"#,
+    ] {
+        let (browser, engine) = browser();
+        the_front_end_runs(&engine, found);
+        browser.take_over();
+        let ends: Ends = Arc::default();
+        let told = Arc::clone(&ends);
+        browser
+            .inspect(
+                1000,
+                600,
+                Box::new(move |why| told.lock().unwrap().push(why)),
+            )
+            .unwrap();
+        engine.emit(
+            "Page.loadEventFired",
+            json!({ "timestamp": 1.0 }),
+            Some("S-FRONT-1"),
+        );
+        wait_for("DevTools close", || !browser.inspecting());
+        assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Ended], "{found}");
+    }
+}
+
+#[test]
+fn devtools_stay_open_while_the_front_end_runs_hosted_or_has_no_host_yet() {
+    for found in [
+        r#"{"host":"undefined","guarded":true,"sockets":1,"hosted":true}"#,
+        r#"{"host":"undefined","guarded":true,"sockets":0,"hosted":null}"#,
+    ] {
+        let (browser, engine) = browser();
+        the_front_end_runs(&engine, found);
+        browser.take_over();
+        browser.inspect(1000, 600, Box::new(|_| {})).unwrap();
+        engine.emit(
+            "Page.loadEventFired",
+            json!({ "timestamp": 1.0 }),
+            Some("S-FRONT-1"),
+        );
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(browser.inspecting(), "{found}");
+    }
+}
+
+#[test]
+fn a_page_that_cannot_be_read_at_the_hand_back_answers_nothing_until_it_can() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.value = "console-set-Secret8".into();
+        let nodes = model.ax.get_mut("PAGE-1").unwrap().as_array_mut().unwrap();
+        let field = nodes.iter_mut().find(|n| n["nodeId"] == "8").unwrap();
+        field["value"]["value"] = json!("console-set-Secret8");
+    }
+    // The page's tree cannot be read as the browser is handed back.
+    let unreadable = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let failing = Arc::clone(&unreadable);
+    let mut earlier = super::super::lock(&engine.hook).take();
+    engine.on(move |sent, engine| {
+        if sent.method == "Accessibility.getFullAXTree"
+            && failing.load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Some(Err(crate::cdp::CallError::TimedOut));
+        }
+        earlier.as_mut().and_then(|hook| hook(sent, engine))
+    });
+    browser.hand_back();
+    let refused = browser.call(&id(2), Call::Pages);
+    assert_eq!(
+        refused,
+        Err(Refusal::NotKeptOutYet),
+        "nothing is answered yet"
+    );
+    // Once it can be read, what DevTools put into its field is kept out.
+    unreadable.store(false, std::sync::atomic::Ordering::SeqCst);
+    let read = snapshot(&browser, 3);
+    assert!(!read.contains("console-set-Secret8"), "{read}");
+}
+
+#[test]
+fn devtools_that_show_their_page_with_another_query_close() {
+    let (browser, engine) = browser();
+    let ends = inspected(&browser, &engine);
+    let other = format!(
+        "{}&remoteBase=https://example.com/",
+        super::super::inspect::FRONT_END
+    );
+    engine.emit(
+        "Target.targetInfoChanged",
+        json!({"targetInfo":{"targetId":"FRONT-1","type":"page","title":"","url":other,"attached":true,"browserContextId":"CONTEXT-DEVTOOLS"}}),
+        None,
+    );
+    wait_for("DevTools close", || !browser.inspecting());
+    assert_eq!(*ends.lock().unwrap(), vec![InspectEnded::Moved]);
+}
+
+#[test]
+fn a_call_too_large_for_devtools_to_send_is_answered_with_an_error() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    let huge = "x".repeat(super::super::inspect::MOST_RELAYED_BYTES + 1);
+    front_end_sends(
+        &engine,
+        &json!({"id": 9, "method": "Runtime.evaluate", "params": {"expression": huge}}),
+    );
+    wait_for("the call is answered", || {
+        handed_to_the_front_end(&engine)
+            .iter()
+            .any(|m| m["id"] == 9)
+    });
+    let answer = handed_to_the_front_end(&engine)
+        .into_iter()
+        .find(|m| m["id"] == 9)
+        .unwrap();
+    assert!(answer.get("error").is_some(), "{answer}");
+}
+
+#[test]
+fn a_session_made_for_devtools_that_answered_too_late_is_let_go_and_never_the_drivers() {
+    let (browser, engine) = browser();
+    engine.on(|sent, engine| match sent.method.as_str() {
+        "Target.createBrowserContext" => Some(Ok(json!({ "browserContextId": "CONTEXT-DEVTOOLS" }))),
+        "Target.createTarget" => {
+            engine.emit(
+                "Target.targetCreated",
+                json!({"targetInfo":{"targetId":"FRONT-1","type":"page","title":"","url":"about:blank","attached":false,"browserContextId":"CONTEXT-DEVTOOLS"}}),
+                None,
+            );
+            Some(Ok(json!({ "targetId": "FRONT-1" })))
+        }
+        // The page's session for DevTools is not answered in time.
+        "Target.attachToTarget" if sent.params["targetId"] == "PAGE-1" => {
+            Some(Err(crate::cdp::CallError::TimedOut))
+        }
+        _ => None,
+    });
+    browser.take_over();
+    assert!(browser.inspect(1000, 600, Box::new(|_| {})).is_err());
+    // The engine's word of that session comes after all.
+    engine.emit(
+        "Target.attachedToTarget",
+        json!({"sessionId":"S-LATE","targetInfo":{"targetId":"PAGE-1","type":"page","title":"","url":"http://fixture.test/frames.html","attached":true,"browserContextId":"CONTEXT-1"},"waitingForDebugger":false}),
+        None,
+    );
+    wait_for("the late session is let go", || {
+        engine
+            .sent("Target.detachFromTarget")
+            .iter()
+            .any(|s| s.params["sessionId"] == "S-LATE")
+    });
+    browser.hand_back();
+    // The driver still speaks to the page on its own session.
+    snapshot(&browser, 2);
+    assert!(
+        !engine
+            .sent("Accessibility.getFullAXTree")
+            .iter()
+            .any(|s| s.session.as_deref() == Some("S-LATE"))
+    );
+}

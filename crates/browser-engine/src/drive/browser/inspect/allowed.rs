@@ -4,10 +4,10 @@
 //! **What DevTools' front end may ask of the inspected page: an allow-list** (#2028).
 //!
 //! Every message the front end sends is checked here before it reaches the page, and anything
-//! not listed is refused: a method of a domain not named below, a method of a listed domain
-//! that is not one of its own, and a call whose origin is not the inspected page's. A method a
-//! later engine adds is refused until it is listed here. A refusal is DevTools' own error to
-//! show, never a crash.
+//! not listed is refused: every method is listed by name, so any other method, of any domain,
+//! a method a later engine adds included, is refused until it is listed here; and so is a call
+//! whose origin is not the inspected page's. A refusal is DevTools' own error to show, never a
+//! crash.
 
 use std::collections::HashSet;
 
@@ -23,33 +23,263 @@ pub(crate) struct Reach<'a> {
     pub ours_unique: &'a HashSet<String>,
 }
 
-/// Domains whose every method only reads or changes the inspected page itself, or this
-/// session's own view of it (undone as DevTools close).
-const WHOLE: &[&str] = &[
-    "Accessibility",
-    "Animation",
-    "Audits",
-    "CSS",
-    "DOMDebugger",
-    "DOMSnapshot",
-    "DeviceOrientation",
-    "Emulation",
-    "EventBreakpoints",
-    "HeapProfiler",
-    "Inspector",
-    "LayerTree",
-    "Log",
-    "Media",
-    "Overlay",
-    "Performance",
-    "PerformanceTimeline",
-    "Profiler",
-    "Schema",
-    "WebAudio",
-];
-
 /// The methods allowed of the domains listed by method.
 const METHODS: &[(&str, &[&str])] = &[
+    (
+        "Accessibility",
+        &[
+            "enable",
+            "disable",
+            "getPartialAXTree",
+            "getFullAXTree",
+            "getRootAXNode",
+            "getAXNodeAndAncestors",
+            "getChildAXNodes",
+            "queryAXTree",
+        ],
+    ),
+    (
+        "Animation",
+        &[
+            "enable",
+            "disable",
+            "getCurrentTime",
+            "getPlaybackRate",
+            "releaseAnimations",
+            "resolveAnimation",
+            "seekAnimations",
+            "setPaused",
+            "setPlaybackRate",
+            "setTiming",
+        ],
+    ),
+    (
+        "Audits",
+        &[
+            "enable",
+            "disable",
+            "getEncodedResponse",
+            "checkContrast",
+            "checkFormsIssues",
+        ],
+    ),
+    (
+        "CSS",
+        &[
+            "enable",
+            "disable",
+            "addRule",
+            "collectClassNames",
+            "createStyleSheet",
+            "forcePseudoState",
+            "forceStartingStyle",
+            "getBackgroundColors",
+            "getComputedStyleForNode",
+            "resolveValues",
+            "getLonghandProperties",
+            "getInlineStylesForNode",
+            "getAnimatedStylesForNode",
+            "getMatchedStylesForNode",
+            "getEnvironmentVariables",
+            "getMediaQueries",
+            "getPlatformFontsForNode",
+            "getStyleSheetText",
+            "getLayersForNode",
+            "getLocationForSelector",
+            "trackComputedStyleUpdatesForNode",
+            "trackComputedStyleUpdates",
+            "takeComputedStyleUpdates",
+            "setEffectivePropertyValueForNode",
+            "setPropertyRulePropertyName",
+            "setKeyframeKey",
+            "setMediaText",
+            "setContainerQueryText",
+            "setSupportsText",
+            "setScopeText",
+            "setRuleSelector",
+            "setStyleSheetText",
+            "setStyleTexts",
+            "startRuleUsageTracking",
+            "stopRuleUsageTracking",
+            "takeCoverageDelta",
+            "setLocalFontsEnabled",
+        ],
+    ),
+    (
+        "DOMDebugger",
+        &[
+            "getEventListeners",
+            "removeDOMBreakpoint",
+            "removeEventListenerBreakpoint",
+            "removeInstrumentationBreakpoint",
+            "removeXHRBreakpoint",
+            "setBreakOnCSPViolation",
+            "setDOMBreakpoint",
+            "setEventListenerBreakpoint",
+            "setInstrumentationBreakpoint",
+            "setXHRBreakpoint",
+        ],
+    ),
+    (
+        "DOMSnapshot",
+        &["enable", "disable", "getSnapshot", "captureSnapshot"],
+    ),
+    (
+        "DeviceOrientation",
+        &[
+            "clearDeviceOrientationOverride",
+            "setDeviceOrientationOverride",
+        ],
+    ),
+    (
+        "Emulation",
+        &[
+            "canEmulate",
+            "clearDeviceMetricsOverride",
+            "clearGeolocationOverride",
+            "resetPageScaleFactor",
+            "setFocusEmulationEnabled",
+            "setAutoDarkModeOverride",
+            "setCPUThrottlingRate",
+            "setDefaultBackgroundColorOverride",
+            "setSafeAreaInsetsOverride",
+            "setDeviceMetricsOverride",
+            "setDevicePostureOverride",
+            "clearDevicePostureOverride",
+            "setDisplayFeaturesOverride",
+            "clearDisplayFeaturesOverride",
+            "setScrollbarsHidden",
+            "setDocumentCookieDisabled",
+            "setEmitTouchEventsForMouse",
+            "setEmulatedMedia",
+            "setEmulatedVisionDeficiency",
+            "setGeolocationOverride",
+            "getOverriddenSensorInformation",
+            "setSensorOverrideEnabled",
+            "setSensorOverrideReadings",
+            "setPressureSourceOverrideEnabled",
+            "setPressureStateOverride",
+            "setPressureDataOverride",
+            "setIdleOverride",
+            "clearIdleOverride",
+            "setPageScaleFactor",
+            "setScriptExecutionDisabled",
+            "setTouchEmulationEnabled",
+            "setLocaleOverride",
+            "setTimezoneOverride",
+            "setDisabledImageTypes",
+            "setHardwareConcurrencyOverride",
+            "setUserAgentOverride",
+            "setAutomationOverride",
+            "setSmallViewportHeightDifferenceOverride",
+        ],
+    ),
+    (
+        "EventBreakpoints",
+        &[
+            "setInstrumentationBreakpoint",
+            "removeInstrumentationBreakpoint",
+            "disable",
+        ],
+    ),
+    (
+        "HeapProfiler",
+        &[
+            "enable",
+            "disable",
+            "addInspectedHeapObject",
+            "collectGarbage",
+            "getHeapObjectId",
+            "getObjectByHeapObjectId",
+            "getSamplingProfile",
+            "startSampling",
+            "startTrackingHeapObjects",
+            "stopSampling",
+            "stopTrackingHeapObjects",
+            "takeHeapSnapshot",
+        ],
+    ),
+    ("Inspector", &["enable", "disable"]),
+    (
+        "LayerTree",
+        &[
+            "enable",
+            "disable",
+            "compositingReasons",
+            "loadSnapshot",
+            "makeSnapshot",
+            "profileSnapshot",
+            "releaseSnapshot",
+            "replaySnapshot",
+            "snapshotCommandLog",
+        ],
+    ),
+    (
+        "Log",
+        &[
+            "enable",
+            "disable",
+            "clear",
+            "startViolationsReport",
+            "stopViolationsReport",
+        ],
+    ),
+    ("Media", &["enable", "disable"]),
+    (
+        "Overlay",
+        &[
+            "enable",
+            "disable",
+            "getGridHighlightObjectsForTest",
+            "getHighlightObjectForTest",
+            "getSourceOrderHighlightObjectForTest",
+            "hideHighlight",
+            "highlightFrame",
+            "highlightNode",
+            "highlightQuad",
+            "highlightRect",
+            "highlightSourceOrder",
+            "setInspectMode",
+            "setShowAdHighlights",
+            "setPausedInDebuggerMessage",
+            "setShowDebugBorders",
+            "setShowFPSCounter",
+            "setShowGridOverlays",
+            "setShowFlexOverlays",
+            "setShowScrollSnapOverlays",
+            "setShowContainerQueryOverlays",
+            "setShowPaintRects",
+            "setShowLayoutShiftRegions",
+            "setShowScrollBottleneckRects",
+            "setShowHitTestBorders",
+            "setShowWebVitals",
+            "setShowViewportSizeOnResize",
+            "setShowHinge",
+            "setShowIsolatedElements",
+            "setShowWindowControlsOverlay",
+        ],
+    ),
+    (
+        "Performance",
+        &["enable", "disable", "getMetrics", "setTimeDomain"],
+    ),
+    ("PerformanceTimeline", &["enable"]),
+    (
+        "Profiler",
+        &[
+            "enable",
+            "disable",
+            "getBestEffortCoverage",
+            "setSamplingInterval",
+            "start",
+            "startPreciseCoverage",
+            "stop",
+            "stopPreciseCoverage",
+            "takePreciseCoverage",
+        ],
+    ),
+    ("Schema", &["getDomains"]),
+    ("WebAudio", &["enable", "disable", "getRealtimeData"]),
     (
         "Runtime",
         &[
@@ -197,7 +427,6 @@ const METHODS: &[(&str, &[&str])] = &[
             "setDocumentContent",
             "setLifecycleEventsEnabled",
             "setPrerenderingAllowed",
-            "setWebLifecycleState",
             "startScreencast",
             "stopScreencast",
             "screencastFrameAck",
@@ -281,16 +510,8 @@ const METHODS: &[(&str, &[&str])] = &[
             "requestDatabaseNames",
         ],
     ),
-    (
-        "CacheStorage",
-        &[
-            "deleteCache",
-            "deleteEntry",
-            "requestCacheNames",
-            "requestCachedResponse",
-            "requestEntries",
-        ],
-    ),
+    // A cache's contents are named by an id that does not say whose it is: the names alone.
+    ("CacheStorage", &["requestCacheNames"]),
     (
         "Target",
         &["setAutoAttach", "detachFromTarget", "getTargetInfo"],
@@ -333,10 +554,9 @@ pub(crate) fn refused(method: &str, params: &Value, reach: &Reach<'_>) -> Option
     let Some((domain, name)) = method.split_once('.') else {
         return Some(format!("{method} is not a DevTools method"));
     };
-    let listed = WHOLE.contains(&domain)
-        || METHODS
-            .iter()
-            .any(|(of, names)| *of == domain && names.contains(&name));
+    let listed = METHODS
+        .iter()
+        .any(|(of, names)| *of == domain && names.contains(&name));
     if !listed {
         return Some(format!("{method} is not offered in purlis's DevTools"));
     }
@@ -361,6 +581,8 @@ fn past_the_page(method: &str, params: &Value, reach: &Reach<'_>) -> Option<&'st
                 return Some("only http and https addresses open");
             }
         }
+        // A resource of the inspected page's own origins alone, a source map's say: never
+        // another site's, with its sign-in or without.
         "Network.loadNetworkResource" => {
             let address = params
                 .get("url")
@@ -368,6 +590,9 @@ fn past_the_page(method: &str, params: &Value, reach: &Reach<'_>) -> Option<&'st
                 .unwrap_or_default();
             if WebAddress::parse(address).is_err() {
                 return Some("only http and https addresses load");
+            }
+            if !origin_root(address).is_some_and(|origin| reach.origins.contains(&origin)) {
+                return Some("only the inspected page's own origins are loaded from");
             }
         }
         // The cookies of the inspected page's own origins alone.
@@ -583,6 +808,50 @@ mod tests {
         );
         assert!(check("Target.getTargetInfo", json!({ "targetId": "OTHER" })).is_some());
         assert!(check("Input.dispatchDragEvent", json!({ "type": "drop", "x": 1, "y": 1, "data": { "items": [], "files": ["/etc/hosts"], "dragOperationsMask": 1 } })).is_some());
+    }
+
+    #[test]
+    fn a_resource_is_loaded_from_the_inspected_pages_own_origins_alone() {
+        // Another origin's, with its credentials or without: refused.
+        assert!(check("Network.loadNetworkResource", json!({ "url": "https://bank.test/statement", "options": { "includeCredentials": true, "disableCache": true } })).is_some());
+        assert!(check("Network.loadNetworkResource", json!({ "url": "https://bank.test/app.js.map", "options": { "includeCredentials": false, "disableCache": true } })).is_some());
+        // The page's own: goes.
+        assert_eq!(
+            check(
+                "Network.loadNetworkResource",
+                json!({ "url": "http://fixture.test/app.js.map", "options": { "includeCredentials": false, "disableCache": true } })
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn a_method_a_later_engine_adds_to_a_domain_devtools_use_is_refused() {
+        for method in [
+            "CSS.someMethodALaterEngineAdds",
+            "Emulation.someMethodALaterEngineAdds",
+            "Overlay.someMethodALaterEngineAdds",
+            "Accessibility.someMethodALaterEngineAdds",
+        ] {
+            assert!(check(method, json!({})).is_some(), "{method} is refused");
+        }
+    }
+
+    #[test]
+    fn what_a_cache_id_or_a_lifecycle_state_would_reach_is_refused() {
+        for method in [
+            "CacheStorage.requestEntries",
+            "CacheStorage.requestCachedResponse",
+            "CacheStorage.deleteCache",
+            "CacheStorage.deleteEntry",
+            "Page.setWebLifecycleState",
+            "Emulation.setVirtualTimePolicy",
+        ] {
+            assert!(
+                check(method, json!({ "cacheId": "x", "state": "frozen" })).is_some(),
+                "{method}"
+            );
+        }
     }
 
     #[test]

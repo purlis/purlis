@@ -58,9 +58,6 @@ use crate::drive::{Aim, Driver, MouseKind, PageId, Painted, PersonInput, Refusal
 pub const FRONT_END: &str =
     "devtools://devtools/bundled/devtools_app.html?ws=inspect.purlis.invalid/page";
 
-/// The page of [`FRONT_END`], without what follows it: the one page the front end may show.
-const FRONT_END_PAGE: &str = "devtools://devtools/bundled/devtools_app.html";
-
 /// The binding the stand-in sends the front end's messages through.
 pub(crate) const BINDING: &str = "__purlisInspect";
 
@@ -89,9 +86,10 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
   // The engine's embedder interface never reaches the front end, however and whenever the
   // engine installs it, and the front end runs as a hosted one: of what is offered as its host,
   // only a hosted one is taken (DevTools' own stand-in host), so the engine's never is.
+  let guarded = true;
   try {
     Object.defineProperty(globalThis, 'DevToolsHost', { get() { return undefined; }, set() {}, configurable: false });
-  } catch (e) {}
+  } catch (e) { guarded = false; }
   let frontEndHost;
   try {
     Object.defineProperty(globalThis, 'InspectorFrontendHost', {
@@ -103,7 +101,7 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
       },
       configurable: false,
     });
-  } catch (e) {}
+  } catch (e) { guarded = false; }
   const send = globalThis.__purlisInspect;
   const open = [];
   class Socket extends EventTarget {
@@ -136,7 +134,7 @@ pub(crate) const STAND_IN_SOURCE: &str = r"(() => {
       }
     }
   };
-  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver, sockets: () => open.length }), writable: false, configurable: false });
+  Object.defineProperty(globalThis, '__purlisInspector', { value: Object.freeze({ deliver, sockets: () => open.length, guarded: () => guarded }), writable: false, configurable: false });
 })()";
 
 /// What runs in the front end before its own scripts: [`STAND_IN_SOURCE`].
@@ -150,16 +148,19 @@ pub(crate) const DELIVER: &str =
 
 /// The script that says whether the front end runs as a hosted one: a constant, whose answer
 /// names what it found and nothing the front end showed.
-const HOSTED: &str = r"JSON.stringify({
+pub(crate) const HOSTED: &str = r"JSON.stringify({
   host: typeof globalThis.DevToolsHost,
+  guarded: (globalThis.__purlisInspector && globalThis.__purlisInspector.guarded) ? globalThis.__purlisInspector.guarded() : false,
   sockets: (globalThis.__purlisInspector && globalThis.__purlisInspector.sockets) ? globalThis.__purlisInspector.sockets() : null,
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
 })";
 
 /// The script that empties the clipboard of the page it runs in, the engine's: a constant.
 pub(crate) const EMPTY_CLIPBOARD: &str = r"(() => {
-  document.addEventListener('copy', (e) => { e.clipboardData.setData('text/plain', ''); e.preventDefault(); }, { once: true, capture: true });
-  return document.execCommand('copy');
+  let emptied = false;
+  document.addEventListener('copy', (e) => { e.clipboardData.setData('text/plain', ''); e.preventDefault(); emptied = true; }, { once: true, capture: true });
+  const copied = document.execCommand('copy');
+  return copied && emptied;
 })()";
 
 /// Why an Inspect ended.
@@ -296,8 +297,7 @@ impl Inspection {
 
 /// Whether the front end may show `address`: its own page, or the blank page it opens on.
 pub(crate) fn front_end_may_show(address: &str) -> bool {
-    let page = address.split(['?', '#']).next().unwrap_or_default();
-    address == "about:blank" || page == FRONT_END_PAGE
+    address == "about:blank" || address == FRONT_END
 }
 
 /// A tap's sink, handing each message to the Inspect's thread as `wrap` makes it.
@@ -441,7 +441,10 @@ impl Browser {
         // nothing to close, so this is refused instead.
         {
             let lease = lock(&self.lease);
-            if lease.driver != Driver::Person || self.inspect_cut.load(Ordering::SeqCst) != cut {
+            if lease.driver != Driver::Person
+                || lease.handing_back
+                || self.inspect_cut.load(Ordering::SeqCst) != cut
+            {
                 drop(lease);
                 self.inner.tear_down(&inspection);
                 return Err(Refusal::NotDriving);
@@ -514,10 +517,12 @@ impl Browser {
         let root = match root {
             Ok(root) => root["sessionId"].as_str().map(str::to_owned),
             Err(why) => {
-                lock(&self.inner.state)
-                    .inspecting
-                    .bridging
-                    .remove(&open.inspected);
+                // The engine's word of a session it made all the same may still come: that
+                // session is let go as it is heard, and is never the driver's.
+                let mut state = lock(&self.inner.state);
+                if state.inspecting.bridging.remove(&open.inspected) {
+                    state.inspecting.orphans.insert(open.inspected.clone());
+                }
                 return Err(refusal(why));
             }
         }
@@ -542,6 +547,12 @@ impl Browser {
             .as_ref()
             .map(|open| lock(&open.heard).clone())
             .unwrap_or_default()
+    }
+
+    /// Whether the engine's clipboard was emptied at the last hand-back after DevTools (#2028):
+    /// for the host's log and the tests.
+    pub fn devtools_clipboard_emptied(&self) -> Option<bool> {
+        *lock(&self.inner.clipboard_emptied)
     }
 
     /// What the engine told of the open DevTools' own page, by method, and which of purlis's
@@ -672,15 +683,46 @@ impl Browser {
             .map(|page| page.target.clone())
             .collect();
         for target in targets {
-            self.every_field_touched(&target);
+            if !self.every_field_touched(&target) {
+                tracing::warn!(
+                    "a page DevTools were open on could not be read at the hand-back: the agent's \
+                     calls wait until it can be"
+                );
+                lock(&self.inner.devtools_unread).insert(target);
+            }
         }
+    }
+
+    /// **Reads again each page that could not be read at the hand-back** (#2028), keeping out
+    /// what its fields hold: refused [`Refusal::NotKeptOutYet`] while one still cannot be read,
+    /// so nothing DevTools wrote into it is answered before it is kept out. A page gone since
+    /// is let go.
+    pub(super) fn devtools_read_again(&self) -> Result<(), Refusal> {
+        let unread: Vec<String> = lock(&self.inner.devtools_unread).iter().cloned().collect();
+        if unread.is_empty() {
+            return Ok(());
+        }
+        let mut still = false;
+        for target in unread {
+            let gone = lock(&self.inner.state).page(&target).is_none();
+            if gone || self.every_field_touched(&target) {
+                lock(&self.inner.devtools_unread).remove(&target);
+            } else {
+                still = true;
+            }
+        }
+        self.keep_typing_out();
+        if still {
+            return Err(Refusal::NotKeptOutYet);
+        }
+        Ok(())
     }
 
     /// Every field of `target`'s page counts as one the person typed into: read again and kept
     /// out at the hand-back. A page whose trees cannot be read keeps what was typed and written.
-    fn every_field_touched(&self, target: &str) {
+    fn every_field_touched(&self, target: &str) -> bool {
         let Ok(trees) = self.trees_of(target) else {
-            return;
+            return false;
         };
         let mut typing = lock(&self.typing);
         typing.dirty.insert(target.to_owned());
@@ -710,6 +752,7 @@ impl Browser {
                 }
             }
         }
+        true
     }
 }
 
@@ -784,15 +827,25 @@ impl Inner {
     /// Empties the engine's clipboard (#2028): what the person copied in DevTools is not the
     /// agent's to paste. Done in a blank page of a context of DevTools' own, thrown away after.
     pub(crate) fn empty_clipboard(&self) {
+        let emptied = self.empty_clipboard_once();
+        *lock(&self.clipboard_emptied) = Some(emptied);
+        if !emptied {
+            tracing::warn!("the engine's clipboard could not be emptied after DevTools");
+        }
+    }
+
+    /// [`Inner::empty_clipboard`] once: whether it was emptied.
+    fn empty_clipboard_once(&self) -> bool {
+        let mut emptied = false;
         if self.ended() {
-            return;
+            return emptied;
         }
         let devtools = &self.devtools;
         let Ok(context) = devtools.call("Target.createBrowserContext", json!({}), None) else {
-            return;
+            return emptied;
         };
         let Some(context) = context["browserContextId"].as_str().map(str::to_owned) else {
-            return;
+            return emptied;
         };
         lock(&self.state)
             .inspecting
@@ -820,11 +873,15 @@ impl Inner {
                 .ok()
                 .and_then(|attached| attached["sessionId"].as_str().map(str::to_owned));
             if let Some(session) = session {
-                let _ = devtools.call(
+                let answered = devtools.call(
                     "Runtime.evaluate",
                     json!({ "expression": EMPTY_CLIPBOARD, "userGesture": true, "returnByValue": true }),
                     Some(&session),
                 );
+                emptied = answered
+                    .ok()
+                    .and_then(|answer| answer.pointer("/result/value").and_then(Value::as_bool))
+                    == Some(true);
             }
             let _ = devtools.call("Target.closeTarget", json!({ "targetId": page }), None);
         }
@@ -833,6 +890,7 @@ impl Inner {
             json!({ "browserContextId": context }),
             None,
         );
+        emptied
     }
 
     /// The origins of `target`'s page's frames: what DevTools of it may reach.
@@ -962,17 +1020,25 @@ fn run(weak: &Weak<Inner>, open: &Arc<Inspection>, todo: &Receiver<Work>) {
 
 /// Notes how the front end runs, for the host's log and the tests: whether the engine's
 /// embedder interface reaches it, wrapped, and which of its asks were answered with nothing.
-fn probe(inner: &Inner, open: &Inspection) {
+/// Answers that DevTools end where the engine's embedder interface reaches the front end, the
+/// guard that keeps it out did not hold, or the front end was given a host that is not hosted.
+fn probe(inner: &Inner, open: &Inspection) -> Option<InspectEnded> {
     let found = inner.devtools.call(
         "Runtime.evaluate",
         json!({ "expression": HOSTED, "returnByValue": true }),
         Some(&open.front_session),
     );
-    if let Ok(found) = found
-        && let Some(found) = found.pointer("/result/value").and_then(Value::as_str)
-    {
-        open.noted(&format!("front end: {found}"));
+    let found = found.ok()?;
+    let found = found.pointer("/result/value").and_then(Value::as_str)?;
+    open.noted(&format!("front end: {found}"));
+    let read: Value = serde_json::from_str(found).ok()?;
+    let reached = read["host"] != "undefined" || read["guarded"] != true || read["hosted"] == false;
+    if reached {
+        tracing::warn!(
+            "DevTools were closed: the engine's embedder interface reached the front end"
+        );
     }
+    reached.then_some(InspectEnded::Ended)
 }
 
 /// Whether `event` tells of one of purlis's own worlds in the page: kept, and never told to
@@ -1068,8 +1134,10 @@ fn front_end_event(
                 json!({ "sessionId": ack }),
                 Some(&open.front_session),
             );
-            if ack < 30 {
-                probe(inner, open);
+            if ack < 30
+                && let Some(why) = probe(inner, open)
+            {
+                return Some(why);
             }
         }
         "Page.frameNavigated" if params.pointer("/frame/parentId").is_none() => {
@@ -1083,7 +1151,9 @@ fn front_end_event(
                     Some(&open.front_session),
                 );
             }
-            probe(inner, open);
+            if let Some(why) = probe(inner, open) {
+                return Some(why);
+            }
         }
         "Target.detachedFromTarget"
             if params["sessionId"].as_str() == Some(open.front_session.as_str()) =>
@@ -1124,6 +1194,13 @@ fn for_the_front_end(tapped: Tapped, root: Option<&str>) -> Option<String> {
     Some(message.to_string())
 }
 
+/// The id a message names at its start (`{"id":12,`), as DevTools write one.
+fn id_at_start(payload: &str) -> Option<u64> {
+    let rest = payload.strip_prefix(r#"{"id":"#)?;
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
+}
+
 /// Sends a message of the front end's on to the page: answers the refusal to hand back where it
 /// is not one the page is sent.
 fn to_the_page(inner: &Inner, open: &Inspection, payload: &str) -> Option<String> {
@@ -1131,7 +1208,8 @@ fn to_the_page(inner: &Inner, open: &Inspection, payload: &str) -> Option<String
         Some(json!({ "id": id, "error": { "code": -32601, "message": why } }).to_string())
     };
     if payload.len() > MOST_RELAYED_BYTES {
-        return None;
+        let id = id_at_start(payload)?;
+        return refused(id, "the call was too large for purlis's DevTools to send");
     }
     let message: Value = serde_json::from_str(payload).ok()?;
     let id = message.get("id").and_then(Value::as_u64)?;

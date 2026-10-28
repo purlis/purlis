@@ -923,6 +923,13 @@ impl Running for Browser {
     }
 
     fn stop(&self) {
+        // Its DevTools' view says the browser was stopped, whatever its engine says as it ends.
+        if let Some((hub, _)) = self.inspector().as_ref() {
+            hub.closed_why
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get_or_insert("stopped");
+        }
         self.screen.stop();
         self.hub.ended();
         self.devtools_closed();

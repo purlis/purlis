@@ -29,6 +29,9 @@ pub(crate) fn written(method: &str, params: &Value) -> Vec<String> {
             texts
         }
         "Debugger.setScriptSource" => in_code(text("scriptSource")),
+        "Page.addScriptToEvaluateOnNewDocument" => in_code(text("source")),
+        "Page.handleJavaScriptDialog" => vec![text("promptText").to_owned()],
+        "Input.dispatchKeyEvent" => vec![text("text").to_owned()],
         "Runtime.setVariableValue" | "Debugger.setVariableValue" | "Debugger.setReturnValue" => {
             let mut texts = Vec::new();
             for key in ["newValue", "value"] {
@@ -270,5 +273,26 @@ mod tests {
             vec!["eyJhbGciOi"]
         );
         assert!(written("DOM.getDocument", &json!({ "depth": 1 })).is_empty());
+        assert_eq!(
+            written(
+                "Page.addScriptToEvaluateOnNewDocument",
+                &json!({ "source": "document.title = 'added-script-1'" })
+            ),
+            vec!["added-script-1"]
+        );
+        assert_eq!(
+            written(
+                "Page.handleJavaScriptDialog",
+                &json!({ "accept": true, "promptText": "prompt-answer" })
+            ),
+            vec!["prompt-answer"]
+        );
+        assert_eq!(
+            written(
+                "Input.dispatchKeyEvent",
+                &json!({ "type": "char", "text": "inserted-text" })
+            ),
+            vec!["inserted-text"]
+        );
     }
 }

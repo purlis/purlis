@@ -590,6 +590,14 @@ pub enum Refusal {
     HandedBack(Ref),
     #[error("the person is not driving this browser: take it over first")]
     NotDriving,
+    /// A page DevTools were open on could not be read as the browser was handed back, so what
+    /// they wrote into it is not yet known to be kept out (#2028): nothing is answered until it
+    /// is.
+    #[error(
+        "purlis could not yet read a page to keep what the person did in DevTools out of your \
+         answers, so this call was not carried out: try it again in a moment"
+    )]
+    NotKeptOutYet,
     #[error(
         "purlis is logging this browser in, so it takes no call from you until the login answers: wait for it, then take a new snapshot"
     )]

@@ -479,6 +479,9 @@ struct Inspecting {
     front_ends: HashMap<String, String>,
     /// The pages a session is being made on for DevTools to speak to them.
     bridging: HashSet<String>,
+    /// The pages a session for DevTools was asked of and not answered in time: one the engine
+    /// tells of later is let go.
+    orphans: HashSet<String>,
 }
 
 impl Inspecting {
@@ -898,6 +901,11 @@ pub(crate) struct Inner {
     devtools_opened: AtomicBool,
     /// What DevTools wrote into pages since then, kept out at the hand-back.
     devtools_writes: Mutex<Vec<String>>,
+    /// The pages that could not be read at the hand-back after DevTools: the agent's calls
+    /// wait until each can be.
+    devtools_unread: Mutex<HashSet<String>>,
+    /// Whether the engine's clipboard was emptied at the last hand-back after DevTools.
+    clipboard_emptied: Mutex<Option<bool>>,
     state: Mutex<State>,
     changed: Condvar,
     limits: Limits,
@@ -1035,6 +1043,8 @@ impl Browser {
             inspection: Mutex::new(None),
             devtools_opened: AtomicBool::new(false),
             devtools_writes: Mutex::new(Vec::new()),
+            devtools_unread: Mutex::new(HashSet::new()),
+            clipboard_emptied: Mutex::new(None),
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
             limits: limits.clone(),
@@ -3739,6 +3749,14 @@ impl Inner {
                 "Target.attachedToTarget"
                     if text("/targetInfo/targetId")
                         .is_some_and(|target| state.inspecting.bridging.remove(&target)) => {}
+                "Target.attachedToTarget"
+                    if text("/targetInfo/targetId")
+                        .is_some_and(|target| state.inspecting.orphans.remove(&target)) =>
+                {
+                    if let Some(session) = text("/sessionId") {
+                        follow.push(FollowUp::Release(session));
+                    }
+                }
                 "Target.targetCreated" | "Target.targetInfoChanged" => {
                     let info = &params["targetInfo"];
                     if info.get("type").and_then(Value::as_str) == Some("page")

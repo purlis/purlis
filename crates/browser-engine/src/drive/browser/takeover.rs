@@ -63,6 +63,9 @@ use crate::drive::{
 pub(crate) struct Lease {
     pub(super) epoch: u64,
     pub(super) driver: Driver,
+    /// Whether a hand-back is under way (#2028): from its first step until the lease changes
+    /// hands, no Inspect opens.
+    pub(super) handing_back: bool,
 }
 
 impl Default for Lease {
@@ -70,6 +73,7 @@ impl Default for Lease {
         Self {
             epoch: 0,
             driver: Driver::Agent,
+            handing_back: false,
         }
     }
 }
@@ -238,9 +242,11 @@ impl Browser {
         if self.driver() != Driver::Person {
             return self.epoch();
         }
-        // An Inspect under way never finishes opening from here on (#2028).
+        // An Inspect under way never finishes opening from here on, nor does one begun before
+        // the lease changes hands (#2028).
         {
-            let _lease = lock(&self.lease);
+            let mut lease = lock(&self.lease);
+            lease.handing_back = true;
             self.inspect_cut.fetch_add(1, Ordering::SeqCst);
         }
         // DevTools are the person's while they drive (#2028): nothing set in them outlives the
@@ -259,13 +265,20 @@ impl Browser {
         // What a login the person cut had filled is emptied before the agent has the page.
         self.clear_cut_logins();
         let mut lease = lock(&self.lease);
+        self.inspect_cut.fetch_add(1, Ordering::SeqCst);
+        lease.handing_back = false;
         if lease.driver == Driver::Person {
             lease.epoch += 1;
             lease.driver = Driver::Agent;
             self.inner.person_drives.store(false, Ordering::SeqCst);
             lock(&self.inner.state).refs.void();
         }
-        lease.epoch
+        let epoch = lease.epoch;
+        drop(lease);
+        // One that opened all the same is closed before the agent has the page.
+        self.inner
+            .stop_inspecting(super::inspect::InspectEnded::Closed);
+        epoch
     }
 
     /// Whether the agent holds the lease of `epoch` now.
@@ -284,6 +297,8 @@ impl Browser {
     pub(super) fn run_at(&self, epoch: u64, call: Call) -> Result<super::Answer, Refusal> {
         self.acting_epoch.store(epoch, Ordering::SeqCst);
         let _carrying = Carrying::under(Driver::Agent, epoch);
+        // What DevTools wrote into a page not read at the hand-back is kept out first (#2028).
+        self.devtools_read_again()?;
         let answer = self.run(call);
         if self.cut() {
             return Err(Refusal::Interrupted);
@@ -642,7 +657,7 @@ impl Browser {
     /// (#3277): where a field's read does not come it keeps what it was last read to hold, and
     /// where a page's does not, the groups of boxes on it are found in the read the last field
     /// the person typed into on it was blanked from, and the log says so.
-    fn keep_typing_out(&self) {
+    pub(super) fn keep_typing_out(&self) {
         let by = Instant::now() + self.inner.limits.key_reads_within;
         let (dirty, runs, touched) = {
             let mut typing = lock(&self.typing);

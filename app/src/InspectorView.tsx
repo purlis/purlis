@@ -16,7 +16,11 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 
 /** What the bar says while DevTools are open. */
 export const DEVTOOLS_SAID =
-  "DevTools of this browser's page. You drive the browser while they are open, and they close when you press Done on it.";
+  "DevTools of this browser's page. You drive the browser while they are open, and they close when you press Done on it. Press Ctrl+Tab to move out of DevTools.";
+
+/** The keys that are only held with another: they reach DevTools with the key they are held
+ *  for, never alone, so none is left held when the keyboard leaves. */
+const ONLY_HELD = new Set(["Shift", "Control", "Alt", "Meta"]);
 
 /** Why DevTools closed, as their view says it (#2028): what happened, and what to do. */
 export const CLOSED_SAID: Record<string, string> = {
@@ -31,6 +35,7 @@ export const CLOSED_SAID: Record<string, string> = {
   moved:
     "They left their own page, so purlis closed them. Press Inspect on the browser to open them again.",
   ended: "They ended. Press Inspect on the browser to open them again.",
+  stopped: "The browser stopped. Open a new browser to inspect a page.",
 };
 
 /** How long the pane's size settles before DevTools are sized to it, in milliseconds. */
@@ -136,11 +141,13 @@ export function InspectorView({ program }: { program: string }) {
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     e.preventDefault();
+    if (ONLY_HELD.has(e.key)) return;
     send(keyInput(aim.current, true, e));
   };
 
   const onKeyUp = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     e.preventDefault();
+    if (ONLY_HELD.has(e.key)) return;
     send(keyInput(aim.current, false, e));
   };
 

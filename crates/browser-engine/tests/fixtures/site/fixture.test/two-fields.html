@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Two fields</title></head>
+<body>
+  <h1>Two fields</h1>
+  <label>Copy from <input id="from" type="text"></label>
+  <label>Paste into <input id="into" type="text"></label>
+  <p id="said">The paste field holds: <span id="holds"></span></p>
+  <script>
+    const into = document.getElementById('into');
+    into.addEventListener('input', () => {
+      document.getElementById('holds').textContent = into.value;
+    });
+  </script>
+</body></html>

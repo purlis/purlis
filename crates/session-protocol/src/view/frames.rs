@@ -44,8 +44,8 @@ pub const ORIGIN: u8 = 0x03;
 pub const CLOSED: u8 = 0x04;
 
 /// The words a [`CLOSED`] frame says: the person handed the browser back, the page went,
-/// DevTools fell behind, the page sent more than they show at once, they left their page, or
-/// they ended.
+/// DevTools fell behind, the page sent more than they show at once, they left their page, they
+/// ended, or the browser was stopped.
 pub const CLOSED_WHY: &[&str] = &[
     "handed_back",
     "page_gone",
@@ -53,6 +53,7 @@ pub const CLOSED_WHY: &[&str] = &[
     "too_large",
     "moved",
     "ended",
+    "stopped",
 ];
 
 /// The longest frame a reader takes, format byte included: far more than a screen's JPEG.

@@ -226,3 +226,23 @@ async fn devtools_that_close_by_themselves_end_their_view_and_open_again_afresh(
         .await
         .expect("DevTools opened again are watched again");
 }
+
+#[tokio::test]
+async fn devtools_of_a_browser_that_is_stopped_say_it_was_stopped() {
+    let hosted = hosted();
+    let (client, mut views) = window(&hosted.hosting, hosted.project.path()).await;
+    let (program, _screen) = a_browser(&client, &hosted.browsers).await;
+    client.take_over(&program).await.unwrap();
+    client.inspect(&program, 1000, 600).await.unwrap();
+    client.attach_inspector_view(&program).await.unwrap();
+    let stream = timeout(PATIENCE, views.accept()).await.unwrap().unwrap();
+    let mut reader = Viewer::default().accept(stream).await.unwrap();
+
+    client.stop(&program).await.unwrap();
+
+    let mut frames = Frames::default();
+    let last = next_frame(&mut reader, &mut frames)
+        .await
+        .expect("why they closed is the view's last frame");
+    assert_eq!(last.closed(), Some("stopped"));
+}
