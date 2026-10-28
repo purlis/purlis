@@ -234,7 +234,7 @@ fn deciding(
             *reads.lock().unwrap() += 1;
             Ok(vec![(
                 tool.values[0].key.clone(),
-                "v-kubeconfig".to_owned(),
+                Zeroizing::new("v-kubeconfig".to_owned()),
             )])
         };
         let checked = checked(&gate).expect("passes the gate");

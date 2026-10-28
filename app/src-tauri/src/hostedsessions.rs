@@ -1512,8 +1512,12 @@ impl HookLines {
 /// `replied`, as JSON no larger than the link carries: an answer too large is refused in a
 /// sentence instead.
 fn within_a_frame(replied: Replied) -> serde_json::Value {
+    // What is measured may carry a run's values (`Replied::Handed`, #2047): wiped once it is
+    // (#3420).
     let too_large = |replied: &Replied| {
-        serde_json::to_vec(replied).map_or(true, |said| said.len() > A_REPLY_IS_AT_MOST)
+        serde_json::to_vec(replied).map_or(true, |said| {
+            purlis_core::secrets::Zeroizing::new(said).len() > A_REPLY_IS_AT_MOST
+        })
     };
     let replied = if too_large(&replied) {
         let why = format!(

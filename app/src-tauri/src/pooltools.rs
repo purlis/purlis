@@ -44,7 +44,7 @@ use purlis_core::hookwire::relay::{A_HANDED_LINE_WAITS_AT_MOST, waits_at_most_sa
 use purlis_core::poollogins::Bound;
 use purlis_core::sandbox::tools::{self, Tool};
 use purlis_core::secrets::brokered::{self, Frame, Handed};
-use purlis_core::secrets::{Ctx, Env};
+use purlis_core::secrets::{Ctx, Env, Zeroizing};
 
 /// How often a command that waits on the person looks at its asker.
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(200);
@@ -85,8 +85,8 @@ type Asks = HashMap<(u32, u32), (PoolToolWaits, mpsc::Sender<Answered>)>;
 /// The persona's tools as the project declares them, and as this machine allowed them.
 pub type ToolsOf<'a> = &'a dyn Fn(&Path, &str) -> (Vec<Tool>, Vec<Tool>);
 
-/// The value of each of a tool's keys, from its vault here.
-pub type Reads<'a> = &'a dyn Fn(&Tool) -> Result<Vec<(String, String)>, String>;
+/// The value of each of a tool's keys, from its vault here, each wiped as it is dropped (#3420).
+pub type Reads<'a> = &'a dyn Fn(&Tool) -> Result<Vec<(String, Zeroizing<String>)>, String>;
 
 #[derive(Default)]
 pub struct PoolTools {
@@ -493,16 +493,18 @@ fn watch_the_asker(mut reader: Box<dyn std::io::BufRead + Send>, gone: Arc<Atomi
     }
 }
 
-/// The value of each of `tool`'s keys, read from its vault here.
-fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, String)>, String> {
+/// The value of each of `tool`'s keys, read from its vault here: each the one copy, wiped as
+/// it is dropped, a refusal part way through too (#3420).
+fn read(ctx: &Ctx, tool: &Tool) -> Result<Vec<(String, Zeroizing<String>)>, String> {
     let vault =
         purlis_core::secrets::cmd::provider(ctx, &tool.vault).map_err(|e| e.message.to_string())?;
-    let mut values: Vec<(String, String)> = Vec::new();
+    let mut values: Vec<(String, Zeroizing<String>)> = Vec::new();
     for value in &tool.values {
         if values.iter().any(|(key, _)| *key == value.key) {
             continue;
         }
         let read = purlis_core::secrets::cmd::get_value(ctx, &vault, &value.key)
+            .map(Zeroizing::new)
             .map_err(|e| e.message.to_string())?;
         values.push((value.key.clone(), read));
     }
