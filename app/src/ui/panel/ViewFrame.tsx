@@ -216,9 +216,7 @@ export function ViewListHead({
 }) {
   return (
     <div data-scope="view-frame" data-part="head">
-      <h2 className="ui-text-body ui-text-strong">
-        {title}
-      </h2>
+      <h2 className="ui-text-body ui-text-strong">{title}</h2>
       {lead !== undefined && (
         <p data-scope="view-frame" data-part="lead">
           {lead}
@@ -378,34 +376,34 @@ export function ViewFrame({
   );
 
   const body = narrow ? (
-      <div data-scope="view-frame" data-part="body" data-narrow="">
-        <div data-scope="view-frame" data-part="picker">
-          <Select
-            aria-label={label}
-            size="sm"
-            value={page}
-            options={pages.map((one) => ({ value: one.id, label: pickerLabel(one) }))}
-            onValueChange={onPage}
-          />
-        </div>
-        {listDrawn}
-        {alone && (
-          <section data-scope="view-frame" data-part="item">
-            <div data-scope="view-frame" data-part="back">
-              <Button
-                ref={back}
-                variant="ghost"
-                size="sm"
-                icon={<ChevronLeft aria-hidden="true" />}
-                onPress={goBack}
-              >
-                {`Back to ${current?.label ?? "the list"}`}
-              </Button>
-            </div>
-            {item}
-          </section>
-        )}
+    <div data-scope="view-frame" data-part="body" data-narrow="">
+      <div data-scope="view-frame" data-part="picker">
+        <Select
+          aria-label={label}
+          size="sm"
+          value={page}
+          options={pages.map((one) => ({ value: one.id, label: pickerLabel(one) }))}
+          onValueChange={onPage}
+        />
       </div>
+      {listDrawn}
+      {alone && (
+        <section data-scope="view-frame" data-part="item">
+          <div data-scope="view-frame" data-part="back">
+            <Button
+              ref={back}
+              variant="ghost"
+              size="sm"
+              icon={<ChevronLeft aria-hidden="true" />}
+              onPress={goBack}
+            >
+              {`Back to ${current?.label ?? "the list"}`}
+            </Button>
+          </div>
+          {item}
+        </section>
+      )}
+    </div>
   ) : (
     <div data-scope="view-frame" data-part="body">
       <ViewNav label={label} pages={pages} page={page} onPage={onPage} />

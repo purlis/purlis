@@ -35,7 +35,9 @@ function Skill({ width }: { width: number }) {
         onSelect={setTab}
       >
         {(id) => (
-          <p style={{ margin: 0, padding: "var(--space-6)" }}>{`deploy's ${id}, as the page draws it.`}</p>
+          <p
+            style={{ margin: 0, padding: "var(--space-6)" }}
+          >{`deploy's ${id}, as the page draws it.`}</p>
         )}
       </PageTabs>
     </div>

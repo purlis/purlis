@@ -106,7 +106,9 @@ function SkillItem({ skill }: { skill: Skill }) {
       />
       {skill.mark?.[0] === "Needs review" && (
         <NoticeBox tone="trouble" placement="alone" opened={false} asks={false}>
-          <NoticeMessage>A chat changed it. Look at what changed before chats use it.</NoticeMessage>
+          <NoticeMessage>
+            A chat changed it. Look at what changed before chats use it.
+          </NoticeMessage>
         </NoticeBox>
       )}
       <dl style={{ margin: 0, padding: "var(--space-6)" }}>
@@ -143,56 +145,56 @@ function Studio({ width, narrow }: { width: number; narrow?: boolean }) {
         }}
       >
         <Panel variant="content">
-        <ViewFrame
-          label="Skill studio pages"
-          pages={pagesOf(needs)}
-          page={page}
-          onPage={(id) => {
-            setPage(id);
-            setOpened(false);
-          }}
-          narrow={narrow}
-          opened={opened}
-          onBack={() => setOpened(false)}
-          list={
-            library ? (
-              <>
+          <ViewFrame
+            label="Skill studio pages"
+            pages={pagesOf(needs)}
+            page={page}
+            onPage={(id) => {
+              setPage(id);
+              setOpened(false);
+            }}
+            narrow={narrow}
+            opened={opened}
+            onBack={() => setOpened(false)}
+            list={
+              library ? (
+                <>
+                  <ViewListHead
+                    title="Library"
+                    lead="Every skill the chats in smart-ide · steward can use."
+                  />
+                  <List
+                    aria-label="Skills"
+                    selectionMode="single"
+                    disallowEmptySelection
+                    selectedKeys={new Set([chosen])}
+                    onSelectionChange={(keys: Selection) => {
+                      const [first] = keys === "all" ? [] : [...keys];
+                      if (first === undefined) return;
+                      setChosen(String(first));
+                      setOpened(true);
+                    }}
+                  >
+                    {SKILLS.map((one) => (
+                      <ListRow key={one.name} id={one.name} textValue={one.name}>
+                        <RowLabel>{one.name}</RowLabel>
+                        <RowDescription>{one.does}</RowDescription>
+                        <RowTrail>
+                          <Badge>{one.level.split(" ")[0]}</Badge>
+                        </RowTrail>
+                      </ListRow>
+                    ))}
+                  </List>
+                </>
+              ) : (
                 <ViewListHead
-                  title="Library"
-                  lead="Every skill the chats in smart-ide · steward can use."
+                  title={pagesOf(needs).find((one) => one.id === page)?.label}
+                  lead="This page is drawn in its own prototype."
                 />
-                <List
-                  aria-label="Skills"
-                  selectionMode="single"
-                  disallowEmptySelection
-                  selectedKeys={new Set([chosen])}
-                  onSelectionChange={(keys: Selection) => {
-                    const [first] = keys === "all" ? [] : [...keys];
-                    if (first === undefined) return;
-                    setChosen(String(first));
-                    setOpened(true);
-                  }}
-                >
-                  {SKILLS.map((one) => (
-                    <ListRow key={one.name} id={one.name} textValue={one.name}>
-                      <RowLabel>{one.name}</RowLabel>
-                      <RowDescription>{one.does}</RowDescription>
-                      <RowTrail>
-                        <Badge>{one.level.split(" ")[0]}</Badge>
-                      </RowTrail>
-                    </ListRow>
-                  ))}
-                </List>
-              </>
-            ) : (
-              <ViewListHead
-                title={pagesOf(needs).find((one) => one.id === page)?.label}
-                lead="This page is drawn in its own prototype."
-              />
-            )
-          }
-          item={library && skill !== undefined ? <SkillItem skill={skill} /> : undefined}
-        />
+              )
+            }
+            item={library && skill !== undefined ? <SkillItem skill={skill} /> : undefined}
+          />
         </Panel>
       </div>
     </>

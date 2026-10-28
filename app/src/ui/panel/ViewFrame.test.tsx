@@ -154,9 +154,7 @@ describe("narrow: page-and-back", () => {
   it("draws the navigation as a picker and the list first", () => {
     render(<Studio narrow />);
     expect(screen.queryByRole("navigation")).toBeNull();
-    expect(screen.getByRole("button", { name: /Skill studio pages/ })).toHaveTextContent(
-      "Library",
-    );
+    expect(screen.getByRole("button", { name: /Skill studio pages/ })).toHaveTextContent("Library");
     expect(screen.getByRole("region", { name: "Library" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "deploy" })).toBeNull();
   });

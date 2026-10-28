@@ -120,7 +120,10 @@ export interface ViewHistory<P> {
 
 /** **What back and forward need of a history**, whatever its places are: the bar's buttons, the
  *  frame's keys and the mouse's buttons. */
-export type HistorySteps = Pick<ViewHistory<unknown>, "canGoBack" | "canGoForward" | "back" | "forward">;
+export type HistorySteps = Pick<
+  ViewHistory<unknown>,
+  "canGoBack" | "canGoForward" | "back" | "forward"
+>;
 
 /**
  * **The history of the tab `tab`**, which starts at `start` the first time the tab draws it and

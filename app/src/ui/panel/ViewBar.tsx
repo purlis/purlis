@@ -39,9 +39,7 @@ export const NO_FORWARD = "Nothing to go forward to: go back first";
 
 /** A key's chords on this keyboard, as `aria-keyshortcuts` names them. */
 function ariaKeys(id: string, mac: boolean): string {
-  return shortcut(id)
-    .chords[mac ? "mac" : "other"].map(ariaChord)
-    .join(" ");
+  return shortcut(id).chords[mac ? "mac" : "other"].map(ariaChord).join(" ");
 }
 
 /** The view frame's root, which takes the keyboard when the crumb it was on goes. */

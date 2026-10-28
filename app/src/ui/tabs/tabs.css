@@ -371,7 +371,6 @@
   color: var(--text-muted);
   font-size: var(--font-size-md);
   white-space: nowrap;
-  cursor: pointer;
   outline: none;
 }
 

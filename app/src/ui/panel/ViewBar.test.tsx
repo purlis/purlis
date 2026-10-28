@@ -149,9 +149,11 @@ describe("the path", () => {
     expect(path().querySelectorAll("li")).toHaveLength(4);
     expect(here()).toBe("New grade");
     // The last is a name, never a button.
-    expect(
-      [...path().querySelectorAll("button")].map((one) => one.textContent),
-    ).toEqual(["Library", "deploy", "Grades"]);
+    expect([...path().querySelectorAll("button")].map((one) => one.textContent)).toEqual([
+      "Library",
+      "deploy",
+      "Grades",
+    ]);
     act(() => fireEvent.click(screen.getByRole("button", { name: "deploy" })));
     expect(here()).toBe("deploy");
     // A crumb is a step of its own: back returns to where the person was.
