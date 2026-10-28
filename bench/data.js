@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793166006193,
+  "lastUpdate": 1793168788612,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27762,6 +27762,48 @@ window.BENCHMARK_DATA = {
             "value": 104.907758,
             "unit": "ms",
             "extra": "median of 5 runs: 102.870, 103.573, 104.908, 105.363, 106.937 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b6214da8f851633e3a90e5e3482981bd0a42af7b",
+          "message": "Browser test: the hand-back's 20 s holds where its read ran out (main red) (#3571) (#3588)\n\nThe second-field test of a large page held the hand-back to its reads'\n20 s plus 2 s of wall time. On CI it answered after 22.4 s and 24.5 s.\nThe read's calls keep their deadline: each is made with what is left of\nthe 20 s, as #3529 made them. On CI this page's tree takes about 20 s to\nread, so the read sometimes comes just in time, and then the answer is\nbuilt into the page and its groups of boxes after the last call. On a\nbusy runner that build takes seconds, so the test passed on some reruns\nand failed on others.\n\nThe test now reads the hand-back's log. Where the log says the page was\nnot read within its limit, the hand-back is still held to 20 s plus 2 s,\nsince what follows a read that ran out is cheap. It is always held to\nthe window's 30 s wait for the hand-back's answer (ANSWER_WITHIN). The\nnotice on CI says which case it met. The stand-in tests in\ndrive/browser/tests/takeover.rs still hold the reads alone to their\nlimit. The product is unchanged.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T05:59:23Z",
+          "tree_id": "0eafc1ae55cdb835e0eaed52f0cb457b24b1c6ea",
+          "url": "https://github.com/purlis/purlis/commit/b6214da8f851633e3a90e5e3482981bd0a42af7b"
+        },
+        "date": 1793168785796,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.42987800000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.418, 0.426, 0.430, 0.447, 0.454 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.405136,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.262, 16.323, 16.405, 16.803, 16.853 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.45863399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.148, 102.438, 102.459, 102.572, 102.660 ms"
           }
         ]
       }
