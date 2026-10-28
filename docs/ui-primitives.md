@@ -658,6 +658,8 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel; `PanelTitle`, the title of the view it shows (`ui/panel/Panel.tsx`) | `root`, `title` | `side`, `content`, `bottom` |
 | Panel section | `PanelSection` (with `view` and `top`), `PanelSectionHead`, `PanelSectionTitle`, `InPanelTop` (`ui/panel/Panel.tsx`) | `root`, `head`, `title`, `top` | `default` |
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
+| View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead` | none |
+| View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 
@@ -689,6 +691,20 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   drawn on it, in a half of the Panel or in either sidebar, and so are Personas, Vaults and every
   extension's panel (#3341), and the Chats view (#3342), whose rows lead with the
   persona's mark and the chat's state as a dot on its corner.
+- **A view tab laid out as pages is a view frame** (#3666, the Skill studio frame's variant A,
+  `purlis/view-frame-family`): the page navigation, the page's list (its heading and lead line,
+  `ViewListHead`, then a list or table) and the item chosen in it beside it (its page header,
+  `ViewPageHeader`: the name, a tag and one mark, the one-line description, up to three actions
+  and a "…" menu; then its banner, a Notice `alone`, and its body). The navigation is one Tab
+  stop, the current page `aria-current="page"` and marked at its start edge as well as by its
+  colour; ↑ ↓ Home End walk it and Enter, Space or a press chooses. A page's count is the count
+  family's, `waiting` for what waits for the person, and a page with nothing in it is left out.
+  Each pane scrolls on its own and the page header stays in view; the panes' sizes are the
+  frame's, so a new item or a changed count moves nothing, and the list and the item are resized
+  through the panel separator. Under 720px wide (a narrow tab, a split pane) it is page-and-back:
+  the navigation is a `Select`, the list comes first, an opened item is drawn alone with a way
+  back, and the keyboard follows: onto the way back as the item opens, onto the list as the
+  person comes back.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right

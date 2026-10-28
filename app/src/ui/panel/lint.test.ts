@@ -55,3 +55,14 @@ tester.run("purlis/panel-separator-family", rules["panel-separator-family"], {
     },
   ],
 });
+
+tester.run("purlis/view-frame-family", rules["view-frame-family"], {
+  valid: [
+    { code: `<ViewFrame label="Studio pages" pages={pages} page="library" onPage={go} list={x} />` },
+    { code: `<ViewPageHeader name="deploy" description="Deploys a service." />` },
+  ],
+  invalid: [
+    { code: `<div data-scope="view-frame" data-part="nav">x</div>`, errors: [{ messageId: "scope" }] },
+    { code: `<button data-scope="view-nav" data-part="item">Library</button>`, errors: [{ messageId: "scope" }] },
+  ],
+});
