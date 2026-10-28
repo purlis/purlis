@@ -839,11 +839,13 @@ const TRANSPARENT: &str = "transparent";
 
 /// **The button's colours in the states that hold at once**, as `button.css` resolves them:
 /// a toggle that is on keeps its fill and edge under the pointer's, and under the pointer it
-/// draws its own selected-and-hovered fill. Pressed, focused and open change no colour.
+/// draws its own selected-and-hovered fill. **A trigger whose menu or popover is open is drawn as
+/// under the pointer** (#3524): each hover rule names the open state too. Pressed and focused
+/// change no colour.
 fn button_look_in(variant: &str, states: &[State]) -> Look {
     let selected = button_look(variant, Some(State::Selected));
     match (
-        states.contains(&State::Hover),
+        states.contains(&State::Hover) || states.contains(&State::Open),
         states.contains(&State::Selected),
     ) {
         (true, true) => Look {
@@ -1119,6 +1121,8 @@ pub(super) fn defaults_json(variant: &str) -> Value {
     let hover = button_look(variant, Some(State::Hover));
     let selected = button_look(variant, Some(State::Selected));
     let both = button_look_in(variant, &[State::Hover, State::Selected]);
+    let open = button_look_in(variant, &[State::Open]);
+    let open_selected = button_look_in(variant, &[State::Open, State::Selected]);
     json!({
         "fill": rest.fill,
         "text": rest.text,
@@ -1127,6 +1131,8 @@ pub(super) fn defaults_json(variant: &str) -> Value {
         "hover_text": hover.text,
         "selected": { "fill": selected.fill, "border": selected.border },
         "selected_hover": { "fill": both.fill, "border": both.border },
+        "open": { "fill": open.fill, "text": open.text },
+        "open_selected": { "fill": open_selected.fill, "border": open_selected.border },
     })
 }
 

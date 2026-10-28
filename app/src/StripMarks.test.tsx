@@ -267,6 +267,25 @@ describe("the show-more button", () => {
     expect(more).toHaveClass("show-more");
     expect(more.textContent).toContain("1 more");
   });
+
+  // #3524: its menu open, the family draws it as under the pointer, and shut it is at rest.
+  it("shows that its menu is open, from the button family", async () => {
+    render(
+      <ShowMore
+        noun="tab"
+        hidden={[{ key: "a", offer: offer("tab.select:a", "a"), needs: 0, children: "a" }]}
+        onPress={() => {}}
+      />,
+    );
+    const more = screen.getByRole("button", { name: /^Show 1 tab/ });
+    expect(more).not.toHaveAttribute("data-open");
+    await userEvent.click(more);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(more).toHaveAttribute("data-open", "");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(more).not.toHaveAttribute("data-open");
+  });
 });
 
 /**

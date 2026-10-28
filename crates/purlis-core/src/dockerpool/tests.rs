@@ -93,6 +93,43 @@ fn a_runner_container_runs_the_pinned_image_by_digest_as_its_session_host() {
 }
 
 #[test]
+fn a_runner_of_a_pool_with_its_own_time_suspends_after_it() {
+    let at_the_end = |runner: Runner| {
+        let args = runner.create_args(std::path::Path::new(SECCOMP_AT));
+        args[args.len() - 2..].to_vec()
+    };
+    assert_eq!(
+        at_the_end(runner().suspending_after(std::time::Duration::from_secs(90 * 60))),
+        ["serve", "--suspends-unlinked=90m"]
+    );
+    assert_eq!(
+        at_the_end(runner().suspending_after(std::time::Duration::from_secs(48 * 60 * 60))),
+        ["serve", "--suspends-unlinked=48h"]
+    );
+    // The default is said as it was before a pool could set its own.
+    assert_eq!(
+        at_the_end(runner().suspending_after(std::time::Duration::from_secs(24 * 60 * 60))),
+        ["serve", "--suspends-unlinked"]
+    );
+}
+
+#[test]
+fn a_pools_time_before_its_runner_suspends_is_a_minute_to_30_days() {
+    let secs = std::time::Duration::from_secs;
+    assert!(suspend_after(secs(59)).is_err());
+    assert!(suspend_after(secs(60)).is_ok());
+    assert!(suspend_after(secs(30 * 24 * 60 * 60)).is_ok());
+    assert!(suspend_after(secs(30 * 24 * 60 * 60 + 1)).is_err());
+}
+
+// The host is linked on macOS and Linux alone.
+#[cfg(unix)]
+#[test]
+fn a_pools_runner_suspends_after_the_hosts_own_day_by_default() {
+    assert_eq!(SUSPEND_AFTER, purlis_host::UNLINKED_FOR);
+}
+
+#[test]
 fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_this_machine() {
     let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     let mounts: Vec<&String> = args
@@ -2028,7 +2065,44 @@ fn a_suspended_runner_not_as_it_was_made_is_never_started() {
 #[test]
 fn a_running_runner_is_only_checked() {
     let fake = FakeDocker::new(&inspected());
-    assert_eq!(fake.docker().resumed(&made()), Ok(()));
+    assert_eq!(
+        fake.docker()
+            .resumed(&made())
+            .map(|resumed| resumed.started),
+        Ok(false)
+    );
     assert!(fake.docker().running(&made()).unwrap());
     assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
+}
+
+/// What Docker says of a container's latest run is read in seconds (#3492): a time Docker never
+/// set (`0001-01-01T00:00:00Z`, a container never started) is no time, and so is one it did not
+/// write as RFC 3339.
+#[test]
+fn a_containers_latest_run_is_read_in_seconds_and_an_unset_time_is_none() {
+    let mut running = inspected();
+    running[0]["State"]["StartedAt"] = "2026-10-26T09:00:00.123456789Z".into();
+    running[0]["State"]["FinishedAt"] = "0001-01-01T00:00:00Z".into();
+    assert_eq!(
+        ran(&running),
+        Ran {
+            running: true,
+            started: Some(1_793_005_200),
+            finished: None,
+        }
+    );
+    let mut stopped = inspected();
+    stopped[0]["State"] = serde_json::json!({
+        "Running": false,
+        "StartedAt": "2026-10-26T11:00:00+02:00",
+        "FinishedAt": "yesterday",
+    });
+    assert_eq!(
+        ran(&stopped),
+        Ran {
+            running: false,
+            started: Some(1_793_005_200),
+            finished: None,
+        }
+    );
 }

@@ -533,3 +533,199 @@ fn a_skill_pinned_since_the_chat_s_start_is_listed_and_the_rest_of_the_answer_st
     );
     assert_eq!(fake.asked().len(), 1, "the router is not asked again");
 }
+
+/// The skills of the chat `started` read again at its reattach, routed as `kept` says.
+fn reattached(root: &Path, persona: Option<&str>, kept: Kept) -> ChatSkills {
+    ChatSkills::read(
+        true,
+        root,
+        Some(Harness::ClaudeCode),
+        Some(&root.join("workspaces/smart-ide")),
+        persona,
+    )
+    .routed_as(kept, Some(Harness::ClaudeCode))
+}
+
+#[test]
+fn a_reattached_chat_routes_as_its_start_did_and_its_router_is_not_asked_again_3578() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let first = Fake::hiding(&["skill-02"]);
+    let skills = started(root, &bundle, None, &as_asker(&first));
+
+    // Kept in the reopen record, as text, and read back at the reattach.
+    let kept = Kept::of(skills.routed.as_ref());
+    let text = serde_json::to_string(&kept).unwrap();
+    let kept: Kept = serde_json::from_str(&text).unwrap();
+    let again = reattached(root, None, kept);
+
+    assert_eq!(again.routed, skills.routed, "the start's record and answer");
+    assert_eq!(
+        hidden_in_use_skill(&running(root, &bundle, None, &again)),
+        [(
+            "skill-02".to_owned(),
+            "hidden by the router relevance: not relevant here".to_owned()
+        )]
+    );
+    let stamp = |start: &ChatSkills| crate::skills::stamp_now(&running(root, &bundle, None, start));
+    assert_eq!(stamp(&again), stamp(&skills), "the restart stamp agrees");
+    assert_eq!(
+        first.asked().len(),
+        1,
+        "the router is asked at the start alone"
+    );
+}
+
+#[test]
+fn a_chat_that_started_on_the_built_in_router_reattaches_on_it_whatever_was_chosen_since_3578() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    let fake = Fake::hiding(&["skill-02"]);
+    let skills = started(root, &bundle, None, &as_asker(&fake));
+    assert_eq!(skills.routed, None);
+    let kept = Kept::of(skills.routed.as_ref());
+
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let again = reattached(root, None, kept);
+
+    assert_eq!(again.routed, None);
+    assert!(hidden_in_use_skill(&running(root, &bundle, None, &again)).is_empty());
+    assert!(fake.asked().is_empty());
+}
+
+#[test]
+fn a_kept_answer_hides_only_what_a_router_may_hide_3578() {
+    // A kept answer is read back as data: one that names a pin, a built-in skill or a skill
+    // outside the set hides none of them, and the rest of it holds.
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(
+        root,
+        serde_json::json!({ "router": "relevance", "pinned": ["skill-00"] }),
+    );
+    let line = || purlis_skills::Line::new("not relevant here").unwrap();
+    let kept = Kept::Asked(Routed {
+        record: Record {
+            routing: ulid::Ulid::generate().to_string(),
+            router: "relevance".to_owned(),
+            ms: 3,
+            fell_back: None,
+            error: None,
+            hidden: Vec::new(),
+        },
+        answer: Some(
+            ["skill-00", "handoff", "elsewhere", "skill-01"]
+                .into_iter()
+                .map(|name| (name.to_owned(), line()))
+                .collect(),
+        ),
+    });
+
+    let again = reattached(root, None, kept);
+
+    let hidden: Vec<String> = hidden_in_use_skill(&running(root, &bundle, None, &again))
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(hidden, ["skill-01"]);
+}
+
+#[test]
+fn nothing_kept_is_applied_where_the_plane_s_skills_do_not_reach_the_reattached_chat_3578() {
+    let (tmp, _bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let kept = Kept::Asked(Routed {
+        record: Record {
+            routing: ulid::Ulid::generate().to_string(),
+            router: "relevance".to_owned(),
+            ms: 3,
+            fell_back: None,
+            error: None,
+            hidden: Vec::new(),
+        },
+        answer: Some(Vec::new()),
+    });
+    let off = ChatSkills::read(
+        false,
+        root,
+        Some(Harness::ClaudeCode),
+        Some(&root.join("workspaces/smart-ide")),
+        None,
+    )
+    .routed_as(kept.clone(), Some(Harness::ClaudeCode));
+    assert_eq!(off.routed, None);
+    // Nor on a program purlis knows as no harness.
+    let unknown = ChatSkills::read(
+        true,
+        root,
+        None,
+        Some(&root.join("workspaces/smart-ide")),
+        None,
+    )
+    .routed_as(kept, None);
+    assert_eq!(unknown.routed, None);
+}
+
+/// The arm of a router's grade (SK-15e) holding `skills` of the plane at `root`, routed by
+/// `router` or by the built-in router, and the skills of its chat as its start reads them.
+fn arm(root: &Path, bundle: &Path, router: Option<&str>, asker: &Arc<dyn AskRouter>) -> ChatSkills {
+    let level = crate::skills::verbs::Level::project();
+    let skills: Vec<_> = ["skill-00", "skill-01", "skill-02"]
+        .into_iter()
+        .map(|name| crate::skills::verbs::drafts::snapshot(root, &level, name).unwrap())
+        .collect();
+    let laid =
+        crate::skills::verbs::drafts::lay_out_library_arm(root, &skills, router, &[]).unwrap();
+    ChatSkills::read(
+        true,
+        root,
+        Some(Harness::ClaudeCode),
+        Some(&laid.piece),
+        None,
+    )
+    .routed_by(Some(bundle), Some(Harness::ClaudeCode), Some(asker))
+}
+
+#[test]
+fn a_router_s_grade_s_arm_is_routed_by_the_router_it_grades_3233() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    // Whatever the plane chooses, the arm is routed by the router under grade.
+    workspace_skills(root, serde_json::json!({ "router": "another" }));
+    let fake = Fake::hiding(&["skill-02"]);
+
+    let graded = arm(root, &bundle, Some("relevance"), &as_asker(&fake));
+
+    assert!(graded.tried);
+    assert_eq!(graded.arm_router.as_deref(), Some("relevance"));
+    let routed = graded.routed.as_ref().expect("asked");
+    assert_eq!(routed.record.router, "relevance");
+    assert_eq!(routed.record.hidden.len(), 1);
+    assert_eq!(fake.asked().len(), 1);
+    assert_eq!(fake.asked()[0].0, "relevance");
+    // The router is asked about the library the arm holds, and nothing of the chat.
+    let asked = &fake.asked()[0].1;
+    let names: Vec<&str> = asked["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|one| one["name"].as_str())
+        .collect();
+    assert_eq!(names, ["skill-00", "skill-01", "skill-02"]);
+}
+
+#[test]
+fn the_built_in_router_s_arm_asks_nothing_3233() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    let fake = Fake::hiding(&["skill-02"]);
+
+    let baseline = arm(root, &bundle, None, &as_asker(&fake));
+
+    assert!(baseline.tried);
+    assert_eq!(baseline.arm_router, None);
+    assert_eq!(baseline.routed, None);
+    assert!(fake.asked().is_empty());
+}

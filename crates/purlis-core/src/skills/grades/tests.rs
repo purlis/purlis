@@ -377,6 +377,17 @@ fn a_row_that_says_more_than_purlis_writes_is_skipped() {
         row[key] = value;
         text.push_str(&format!("{row}\n"));
     }
+    // A skill's row scored in a router's grade's arms (SK-15e) is a router's, never a skill's.
+    let mut row = serde_json::to_value(graded(
+        root,
+        "router-arms",
+        "2026-10-26T10:00:00+00:00",
+        Spent::default(),
+    ))
+    .unwrap();
+    row["report"]["arms"][0]["arm"] = serde_json::json!("router");
+    row["report"]["triggers"][0]["arm"] = serde_json::json!("router");
+    text.push_str(&format!("{row}\n"));
     std::fs::write(&file, text).unwrap();
     let ids: Vec<String> = grades_of(root, "deploy", None)
         .into_iter()

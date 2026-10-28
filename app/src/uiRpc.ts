@@ -587,6 +587,8 @@ export const commands = {
 	handBackBrowser: __WINDOW_ONLY_RESULT,
 	browserInput: __WINDOW_ONLY_RESULT,
 	sizeBrowser: __WINDOW_ONLY_RESULT,
+	inspectBrowser: __WINDOW_ONLY_RESULT,
+	inspectorInput: __WINDOW_ONLY_RESULT,
 	goBrowser: __WINDOW_ONLY_RESULT,
 	/**  The sessions that are running, in the order they were opened. */
 	runningSessions: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("running_sessions", { plane })),
@@ -1039,6 +1041,12 @@ export const commands = {
 	 */
 	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
 	skillGradeSetCap: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **What grading the router the studio's workspace or persona chose would run**, before
+	 *  anything runs.
+	 */
+	routerGradePlan: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_plan", { plane, workspace, persona })),
+	routerGradeStart: __WINDOW_ONLY_RESULT,
 	/**  **The opt-in of the copy of `skill` at `level`**, where it is on. */
 	skillGradeAfterEdit: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<{
 	profile: string,
@@ -2098,6 +2106,8 @@ export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
 export const PERSONA_SCOPE_KEY = "persona/" as const;
 
+export const ROUTER_GRADE = "router-grade" as const;
+
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
 export const SKILL_GRADE = "skill-grade" as const;
@@ -2978,6 +2988,12 @@ export type BrowserFrame = {
 	 *  and before the first frame of each snapshot; `null` on every frame.
 	 */
 	page: PageAt | null,
+	/**
+	 *  Why a browser's DevTools closed (#2028), said on its own with no image, as their view's
+	 *  last frame: one of `handed_back`, `page_gone`, `fell_behind`, `too_large`, `moved` and
+	 *  `ended`; `null` on every other frame.
+	 */
+	closed: string | null,
 };
 
 /**
@@ -7672,6 +7688,11 @@ export type PoolAdding = {
 	memory_mib: number | null,
 	processes: number | null,
 	tmp_mib: number | null,
+	/**
+	 *  How long its runner is left without a link before it suspends itself, spelled as
+	 *  `runners.json` spells it (`12h`); empty is a day (#3471).
+	 */
+	suspend_after: string | null,
 };
 
 /**
@@ -7724,6 +7745,16 @@ export type PoolRequests = {
 	limits: PoolLimitsShown,
 	/**  Its CPUs in thousandths, to be added up. */
 	millicpus: number,
+	/**
+	 *  The seconds its runners no longer kept ran this week (#3492): a runner's own are in
+	 *  what it answers ([`RunnerAsked::ran_this_week`]).
+	 */
+	removed_ran_this_week: number,
+	/**
+	 *  What one hour of one of its runners costs, where it declares a price (#3491): only then
+	 *  is money shown for it.
+	 */
+	price: PricePerHour | null,
 };
 
 /**  One pool, as its row draws it. */
@@ -7732,6 +7763,11 @@ export type PoolRow = {
 	image: string,
 	/**  What its runner is held to: what the person set, and the defaults for the rest. */
 	limits: PoolLimitsShown,
+	/**
+	 *  How long its runner is left without a link from this machine before it suspends
+	 *  itself, as `runners.json` spells it (`24h`, `90m`; #3471).
+	 */
+	suspend_after: string,
 };
 
 /**
@@ -7770,6 +7806,11 @@ export type PoolsShown = {
 	pools: PoolRow[],
 	defaults: PoolLimitsShown,
 	/**
+	 *  How long a new pool's runner is left without a link before it suspends itself, by
+	 *  default: a day (`24h`, #3471).
+	 */
+	suspend_after: string,
+	/**
 	 *  Whether this machine's pools' runners are shown to be the person's own (D-2050-4): their
 	 *  engine is a local socket on this machine. A chat moves only to such a pool (#2048).
 	 */
@@ -7787,6 +7828,15 @@ export type PresetsChanged = {
 	widens: string[],
 	/**  The whole set now, by the committed file's words: what the Notice sends back once read. */
 	now: string[],
+};
+
+/**
+ *  **A pool's price per hour, as it declares it** (#3491): its amount the decimal it was
+ *  written as, and its currency's ISO 4217 code. Money is shown in it, never converted.
+ */
+export type PricePerHour = {
+	amount: string,
+	currency: string,
 };
 
 /**
@@ -8788,6 +8838,58 @@ export type RiskMark = {
 	said: string,
 };
 
+/**  **What grading a router would run, before anything runs** (decision 22). */
+export type RouterGradePlan = {
+	router: string,
+	/**  The skills each chat is handed: the library a chat of this workspace or persona gets. */
+	library: number,
+	skills: RouterGradeSkill[],
+	/**  The chats it runs in all, each one turn, and how many times each test runs in each arm. */
+	chats: number,
+	runs: number,
+	chat_minutes: number,
+	/**  The commit the library is, where every copy is committed: what the grade is recorded on. */
+	commit: string | null,
+	token_cap: number | null,
+	cap_set_here: boolean,
+	cost_cap_usd: number | null,
+	priced: GradePrice,
+	/**
+	 *  The profile its chats run on (the project's default), the sandbox they run in there, or
+	 *  why no grade can run on it.
+	 */
+	profile: string | null,
+	sandbox: string | null,
+	refused: string | null,
+	/**  A grade running in this project now, where one is: a skill's or a router's. */
+	running: string | null,
+	consent: string | null,
+};
+
+/**  **One skill of the library a router's grade grades**, as its plan shows it. */
+export type RouterGradeSkill = {
+	skill: string,
+	/**  Its trigger tests that run. */
+	tests: number,
+	left_out: GradeLeftOut[],
+	/**  Why its trigger tests could not be read, where they were not. */
+	refused: string | null,
+};
+
+/**  **One step of a router's grade**, as the window is told it. */
+export type RouterGradeStep = {
+	plane: PlaneId,
+	router: string,
+	grade: string,
+	ran: number,
+	of: number,
+	tokens: number | null,
+	cap: number | null,
+	ended: GradeEnded | null,
+	/**  What the window says of its end, where it says more than how it ended. */
+	said: string | null,
+};
+
 /**  One action an extension's row offers, as the window draws its button (charter-app#341). */
 export type RowAction = {
 	id: string,
@@ -8889,6 +8991,11 @@ export type RunnerAsked = {
 	contacted: number | null,
 	/**  What it holds, set against what the window has open. */
 	holds: NotOpenHere,
+	/**
+	 *  The seconds it ran this week (the ISO week in local time), as this machine recorded it
+	 *  (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
+	 */
+	ran_this_week: number | null,
 };
 
 /**  One runner of a project, as the away summary reads it. */
@@ -9323,7 +9430,11 @@ export type Scope =
 "menu";
 
 /**  **A grade's arm, as its scorecard says it.** */
-export type ScoredArm = "with" | "without" | "previous";
+export type ScoredArm = "with" | "without" | "previous" | 
+/**  The library, routed by the router under grade (SK-15e). */
+"router" | 
+/**  The library, routed by the built-in router: a router's grade's baseline. */
+"built-in-router";
 
 /**
  *  **One chat of a grade's trigger test**, as its scorecard offers it (SK-59, #3239): its id, and
@@ -10777,6 +10888,12 @@ export type StudioRouter = {
 	 *  that went: its timing, and whether it fell back on the built-in router.
 	 */
 	chats: StudioRouted[],
+	/**
+	 *  **The router's newest grade** (SK-15e, #3233), in a sentence: how many of the library's
+	 *  trigger tests pass with it and with the built-in router, and the library's commit it was
+	 *  graded on. Null where it has none, and for the built-in router.
+	 */
+	grade: string | null,
 };
 
 /**

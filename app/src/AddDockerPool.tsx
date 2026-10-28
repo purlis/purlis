@@ -10,7 +10,8 @@ import { Dialog } from "./ui/dialog/Dialog";
 
 /**
  * **Add a Docker pool…** (#2679, spec #2041: a Docker pool in one step): its name, the runner
- * image by digest, and its limits, each left empty for purlis's default, which its box shows.
+ * image by digest, its limits, and how long its runner is left without a link before it
+ * suspends itself (#3471), each left empty for purlis's default, which its box shows.
  * Add pool makes the pool's runner from the image on this machine's Docker, confined and held
  * to those limits, and pairs it with this machine, which takes a moment; a refusal stays in the
  * dialog, in the core's words, with what was typed.
@@ -29,7 +30,8 @@ export function AddDockerPoolHost({ plane }: { plane?: string }) {
   }
   if (!pools.adding) return null;
   const defaults = pools.read.state === "read" ? pools.read.shown.defaults : undefined;
-  return <AddDockerPool defaults={defaults} />;
+  const suspendAfter = pools.read.state === "read" ? pools.read.shown.suspend_after : undefined;
+  return <AddDockerPool defaults={defaults} suspendAfter={suspendAfter} />;
 }
 
 /** What adding pool `pool` ends with: this machine's profiles, to sign in there (#2049). */
@@ -53,13 +55,21 @@ function count(typed: string): number | null | undefined {
   return /^\d+$/.test(trimmed) ? Number(trimmed) : undefined;
 }
 
-function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) {
+function AddDockerPool({
+  defaults,
+  suspendAfter,
+}: {
+  defaults: PoolLimitsShown | undefined;
+  /** How long a new pool's runner is left without a link before it suspends, by default. */
+  suspendAfter: string | undefined;
+}) {
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
   const [cpus, setCpus] = useState("");
   const [memory, setMemory] = useState("");
   const [processes, setProcesses] = useState("");
   const [tmp, setTmp] = useState("");
+  const [after, setAfter] = useState("");
   const [trouble, setTrouble] = useState<string | undefined>();
   const [adding, setAdding] = useState(false);
 
@@ -77,6 +87,7 @@ function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) 
       memory_mib: memoryMib,
       processes: processesCount,
       tmp_mib: tmpMib,
+      suspend_after: after.trim() === "" ? null : after.trim(),
     };
     setTrouble(undefined);
     setAdding(true);
@@ -185,6 +196,21 @@ function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) 
         setTmp,
         defaults === undefined ? undefined : String(defaults.tmp_mib),
       )}
+      <SettingRow
+        label="Suspends after"
+        help="How long its runner is left without a link from this machine before it suspends itself, keeping its home: a whole number of h, m or s, such as 12h. Empty is the default."
+        control={(ids) => (
+          <Field
+            kind="text"
+            ids={ids}
+            size={8}
+            value={after}
+            placeholder={suspendAfter}
+            disabled={adding}
+            onChange={setAfter}
+          />
+        )}
+      />
 
       {trouble !== undefined && (
         <p className="trouble" role="alert">

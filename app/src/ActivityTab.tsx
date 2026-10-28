@@ -409,22 +409,20 @@ export function ActivityTab({
               <span className="activity-absent"> (chat closed)</span>
             </>
           ) : (
-            <Tooltip tip="Show its chat">
-              <button
-                type="button"
-                className="vault-secret"
-                // #190: WebKit leaves a control out of the tab sequence without `tabIndex`.
-                tabIndex={0}
-                ref={(node) => {
-                  if (node === null) chatControls.current.delete(key);
-                  else chatControls.current.set(key, node);
-                }}
-                aria-label={`Show chat ${line.from}`}
-                onClick={() => void show(line)}
-              >
-                {line.from}
-              </button>
-            </Tooltip>
+            // The line's name, as words in the line (#3523): the family's inline ghost.
+            <Button
+              inline
+              variant="ghost"
+              tooltip="Show its chat"
+              ref={(node) => {
+                if (node === null) chatControls.current.delete(key);
+                else chatControls.current.set(key, node);
+              }}
+              aria-label={`Show chat ${line.from}`}
+              onPress={() => void show(line)}
+            >
+              {line.from}
+            </Button>
           );
           return (
             <li

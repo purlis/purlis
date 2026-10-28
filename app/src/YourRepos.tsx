@@ -121,7 +121,7 @@ export function YourRepos({
                   <button
                     type="button"
                     tabIndex={0}
-                    className="welcome-link repo-card"
+                    className="ui-card-control welcome-link repo-card"
                     disabled={busy}
                     aria-label={`Get ${repo.path}${repo.project ? ", a purlis project," : ""} from ${repo.host} as ${repo.login}`}
                     onClick={() => onPick(repo.url)}

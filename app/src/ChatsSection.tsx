@@ -10,14 +10,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FocusEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { AnchoredPopover } from "./ui/popover/Popover";
-import { ChevronRight, Ellipsis, Hand, Plus, Search } from "lucide-react";
+import { ChevronRight, Ellipsis, Hand, LayoutGrid, Plus, Search } from "lucide-react";
 import {
+  BROWSERS_SHOW,
   besideId,
   ONLY_A_TASK_OPENS_BESIDE,
   taskStopId,
@@ -78,6 +80,7 @@ import type { TaskFacts } from "./shownState";
 import { standingOfRows } from "./sessionTasks";
 import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
 import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
+import { HeadingOffer } from "./PanelSection";
 import { tasksIn } from "./taskBuckets";
 import { Menued } from "./Menus";
 import { useRevealedTask, type Reveal } from "./revealTask";
@@ -92,6 +95,7 @@ import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { byKeyboard } from "./heldStill";
+import { property } from "./theme/theme";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -105,6 +109,13 @@ type ShownFacts = {
 
 /** A row's id in the section's roving focus. */
 const rowId = (session: number) => `chats:${session}`;
+
+/** The hand of a chat below that needs you, in the needs-you colour at the words' size. */
+const HAND: CSSProperties = {
+  width: "1em",
+  height: "1em",
+  color: `var(${property("needs-you.base")})`,
+};
 
 /** No rows of the catalogue: what a section drawn on its own, in a test, offers. */
 const NO_OFFERS: Catalogued = new Map();
@@ -279,6 +290,7 @@ export function ChatsSection({
   browsers,
   kept,
   onBrowser,
+  anyBrowser = false,
   heading,
 }: {
   rows: readonly ChatRow[];
@@ -337,6 +349,8 @@ export function ChatsSection({
   browsers?: ReadonlyMap<number, readonly BrowserShown[]>;
   /** The pinned browsers whose chat closed (#2022): rows of their own, after the chats. */
   kept?: readonly BrowserShown[];
+  /** The project has a browser the Browsers grid draws (#2027): its button is on the heading. */
+  anyBrowser?: boolean;
   /** A browser's row was pressed: open its view. No rows are drawn without it. */
   onBrowser?: (shown: BrowserShown) => void;
   /** **What its title says** (R123, #2917): the workspace and, after it, the project. Absent,
@@ -899,6 +913,10 @@ export function ChatsSection({
             <PanelTitle id="chats-title" className="side-title">
               {heading ?? "Chats"}
             </PanelTitle>
+            {/* **Every browser, live** (#2027): the Browsers grid, while it has a tile. */}
+            {anyBrowser && (
+              <HeadingOffer offer={offers.get(BROWSERS_SHOW)} onPress={press} mark={LayoutGrid} />
+            )}
             {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
               DS-11): both status lines are always in the accessibility tree, so what they come
               to say is announced, and they stand beside the title, so saying it moves no row
@@ -1656,19 +1674,18 @@ const Row = memo(function Row({
         /* **A chat below this one needs you**: the hand, and a press goes to that chat. Its
            own button beside the row, since the row goes to this row's chat. Out of the arrows'
            way; the keyboard's way to that chat is the title bar's list. */
-        <Tooltip tip={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}>
-          <button
-            type="button"
-            className="needs-you-mark rolled-up"
-            data-mark="needs-you"
-            data-leads-to={needs}
-            tabIndex={-1}
-            aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
-            onClick={() => onOpen(needs)}
-          >
-            <Hand aria-hidden="true" />
-          </button>
-        </Tooltip>
+        // The family's quiet ghost (#3523), as the tab chip's hand is: its tooltip is its name.
+        <IconButton
+          variant="quiet"
+          size="sm"
+          icon={<Hand aria-hidden="true" style={HAND} />}
+          className="rolled-up"
+          data-mark="needs-you"
+          data-leads-to={needs}
+          tabIndex={-1}
+          aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
+          onPress={() => onOpen(needs)}
+        />
       )}
     </li>
   );

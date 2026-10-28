@@ -114,6 +114,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "InspectorView.tsx": {
+    count: 1,
+    why:
+      "a DevTools view's bar (#2028): that the person drives the browser while DevTools are " +
+      "open, drawn by purlis outside the frame, with a refusal of their input said in it, " +
+      "replaced by the next; Done on the browser closes them",
+  },
   "BrowserView.tsx": {
     count: 1,
     why:

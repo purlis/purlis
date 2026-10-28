@@ -29,6 +29,38 @@ pub struct PoolSpec {
     /// image that keeps purlis's runner image contract (docs/runner-image.md).
     #[schemars(regex(pattern = r"^[^\s@]+@sha256:[0-9a-f]{64}$"))]
     pub image: String,
+    /// The volume each kept Claim's runner gets of its own (#2057): its home, holding its
+    /// checkout, conversation, profile sign-in, kept browser logins and its pairing, kept when
+    /// its pod is lost. A fresh Claim's runner keeps nothing.
+    #[serde(default)]
+    pub kept_volume: KeptVolume,
+}
+
+/// The volume of a kept Claim's runner: one PersistentVolumeClaim per kept Claim, named
+/// `purlis-kept-<claim>`, made by upstream for the claim and removed with it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct KeptVolume {
+    /// How much it holds, in Mi, Gi or Ti. 10Gi unless the pool says otherwise.
+    #[serde(default = "ten_gibibytes")]
+    #[schemars(regex(pattern = r"^[1-9][0-9]*(Mi|Gi|Ti)$"))]
+    pub size: String,
+    /// The storage class it is made in: the cluster's default class unless the pool names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage_class_name: Option<String>,
+}
+
+fn ten_gibibytes() -> String {
+    "10Gi".to_owned()
+}
+
+impl Default for KeptVolume {
+    fn default() -> Self {
+        KeptVolume {
+            size: ten_gibibytes(),
+            storage_class_name: None,
+        }
+    }
 }
 
 /// What the operator says about a Pool.
@@ -69,6 +101,13 @@ pub struct ClaimSpec {
     #[schemars(length(min = 1))]
     #[x_kube(validation = Rule::new("self == oldSelf").message("A claim's requester cannot change."))]
     pub requester: String,
+    /// Whether the runner is kept (#2057): started cold with a volume of its own, its home,
+    /// which holds its work and its pairing through the loss of its pod. A fresh runner, the
+    /// default, comes warm from the pool where one is waiting and keeps nothing. It never
+    /// changes: the other kind is another claim.
+    #[serde(default)]
+    #[x_kube(validation = Rule::new("self == oldSelf").message("Whether a claim is kept cannot change. Make a new claim for the other kind."))]
+    pub kept: bool,
 }
 
 /// What the operator says about a Claim.

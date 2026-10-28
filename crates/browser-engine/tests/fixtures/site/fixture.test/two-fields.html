@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Two fields</title></head>
+<body>
+  <h1>Two fields</h1>
+  <label>Copy from <input id="from" type="text"></label>
+  <button id="copy">Copy</button>
+  <label>Paste into <input id="into" type="text"></label>
+  <label>Paste after <input id="after" type="text"></label>
+  <p id="said">The paste field holds: <span id="holds"></span></p>
+  <p id="copied">Copied: <span id="was">not yet</span></p>
+  <script>
+    const into = document.getElementById('into');
+    into.addEventListener('input', () => {
+      document.getElementById('holds').textContent = into.value;
+    });
+    // The button copies what the first field holds, as a page's own Copy button does.
+    document.getElementById('copy').addEventListener('click', () => {
+      const text = document.getElementById('from').value;
+      const put = (e) => { e.clipboardData.setData('text/plain', text); e.preventDefault(); };
+      document.addEventListener('copy', put, { once: true });
+      document.getElementById('was').textContent = document.execCommand('copy') ? 'yes' : 'no';
+    });
+  </script>
+</body></html>

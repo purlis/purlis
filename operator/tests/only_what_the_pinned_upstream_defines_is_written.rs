@@ -73,7 +73,16 @@ fn undeclared(value: &Value, schema: &Value, path: &str, out: &mut Vec<String>) 
 
 fn written() -> Vec<Value> {
     let image = format!("registry.example/runner@sha256:{}", "2".repeat(64));
-    let mut pool = Pool::new("team", PoolSpec { image });
+    let mut pool = Pool::new(
+        "team",
+        PoolSpec {
+            image,
+            kept_volume: purlis_cluster_operator::KeptVolume {
+                size: "10Gi".into(),
+                storage_class_name: Some("standard".into()),
+            },
+        },
+    );
     pool.metadata.uid = Some("u".into());
     let claim = Claim {
         metadata: ObjectMeta {
@@ -85,6 +94,8 @@ fn written() -> Vec<Value> {
         spec: ClaimSpec {
             pool: "team".into(),
             requester: "ada@example.com".into(),
+            // Kept, so its volume's fields are checked too (#2057).
+            kept: true,
         },
         status: None,
     };
@@ -99,7 +110,7 @@ fn written() -> Vec<Value> {
             "ada",
             upstream::owners_with(None, &claim, &[&claim]),
         )),
-        serde_json::to_value(upstream::sandbox_claim_for(&claim)),
+        serde_json::to_value(upstream::sandbox_claim_for(&claim, &Default::default())),
     ]
     .into_iter()
     .map(|v| v.expect("serialises"))

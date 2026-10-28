@@ -27,7 +27,9 @@ import {
   pagePoint,
   wheelInput,
 } from "./browserDriving";
+import { leavesTheSurface } from "./leaveKeys";
 import { addressChip, deviceOf, originOfAddress, takeGoWhenShown } from "./browsers";
+import { INSPECTOR_OPENS_AT, askToInspect } from "./inspector";
 import { useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { poolOf, programsOf, useChatBrowsers } from "./chatBrowsers";
 import { EmptyState } from "./ui/empty-state/EmptyState";
@@ -47,7 +49,7 @@ const ONLY_HELD = new Set(["Shift", "Control", "Alt", "Meta"]);
 /** What the bar says when the person's key or click was dropped because the page moved on
  *  (#2304): the page, or a frame inside it, loaded another document after the frame they acted
  *  on was drawn, so the input never reached something they did not see. */
-const DROPPED =
+export const DROPPED =
   "The page changed before your key or click reached it, so purlis dropped it. Type or click again.";
 
 /** Whether `input` is one the person would miss if it were dropped: a key pressed, or a mouse
@@ -70,10 +72,11 @@ type Queued = { input: BrowserInput } | { handBack: () => Promise<void> };
  * told to `dropped`, and the next one that reaches the page clears it (#2304). An answer that
  * comes back after `clear` belongs to the watch before, so it says nothing.
  */
-function useSender(
+export function useSender(
   program: string,
   said: (why: string | undefined) => void,
   dropped: (now: boolean) => void,
+  deliver: typeof commands.browserInput = commands.browserInput,
 ) {
   const waiting = useRef<Queued[]>([]);
   const sending = useRef(false);
@@ -89,7 +92,7 @@ function useSender(
           continue;
         }
         const asked = watch.current;
-        const sent = await commands.browserInput(program, one.input);
+        const sent = await deliver(program, one.input);
         if (asked !== watch.current) continue;
         if (sent.status === "error") said(sent.error);
         else if (sent.data.outcome === "refused") said(sent.data.why);
@@ -100,7 +103,7 @@ function useSender(
     } finally {
       sending.current = false;
     }
-  }, [program, said, dropped]);
+  }, [program, said, dropped, deliver]);
   const send = useCallback(
     (input: BrowserInput) => {
       const queue = waiting.current;
@@ -149,6 +152,10 @@ function useSender(
  * **A browser on a runner whose link is down says "Reconnecting…" over its last frame**
  * (#2542), quietly, as a runner's chat does (#2496), until the core says it is reconnected: the
  * link is back, or the view drew again from a new snapshot.
+ *
+ * **Inspect opens the page's real DevTools beside it** (#2028): the engine's own, drawn in a
+ * view of their own from frames as the page is. Opening them takes the browser over, and they
+ * close as the person hands it back. A browser on a pool's runner has none here.
  *
  * **A browser the person opened goes where they send it** (#2176): its view has an address
  * field, drawn by purlis outside the frame. The address goes as an address the agent writes
@@ -353,7 +360,23 @@ export function BrowserView({ plane, program }: { plane: string; program: string
     });
   };
 
-  /** Sends the browser to `to`, the address as the person typed it. */
+  /** Opens the page's DevTools beside it (#2028), taking the browser over first. */
+  const inspect = () => {
+    void takeOver().then(async (took) => {
+      if (!took) return;
+      const opened = await commands.inspectBrowser(
+        program,
+        INSPECTOR_OPENS_AT.width,
+        INSPECTOR_OPENS_AT.height,
+      );
+      if (opened.status === "error") {
+        setSaid(opened.error);
+        return;
+      }
+      askToInspect(plane, program);
+    });
+  };
+
   /** Sends the browser to `to`, the address as the person typed it, after every key and click
    *  already queued. The browser takes an address on its own lane, so one the person drives is
    *  handed back first; their next click or key takes it over again. */
@@ -515,6 +538,15 @@ export function BrowserView({ plane, program }: { plane: string; program: string
           }))}
           onValueChange={pickSize}
         />
+        {onPool === null && (
+          <Button
+            size="sm"
+            tooltip="Open this page's DevTools beside it. You drive the browser while they are open."
+            onPress={inspect}
+          >
+            Inspect
+          </Button>
+        )}
         {driving && (
           <Button
             size="sm"
@@ -536,6 +568,7 @@ export function BrowserView({ plane, program }: { plane: string; program: string
         onPointerUp={onPointerUp}
         onPointerMove={onPointerMove}
         onWheel={onWheel}
+        onKeyDownCapture={leavesTheSurface}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onContextMenu={(e) => e.preventDefault()}

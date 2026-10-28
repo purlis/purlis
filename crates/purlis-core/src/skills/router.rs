@@ -38,6 +38,9 @@ pub const BUILT_IN: &str = "built-in";
 /// The persona definition's key that chooses its chats' router.
 pub(crate) const PERSONA_KEY: &str = "skill-router";
 
+/// The word a record says a skill the built-in router hid over the budget with.
+const OVER_BUDGET: &str = "over-budget";
+
 /// The most characters of an error a record keeps.
 const MOST_ERROR_CHARS: usize = 300;
 
@@ -271,6 +274,142 @@ impl Routed {
     }
 }
 
+/// **How a chat's start routed its set, kept for its reattach** (SK-15f, #3578): the reopen
+/// record's `chats[].routing`. A chat reattached from the session host still holds the listing
+/// its harness was handed at its real start, so its reattach routes its set as that start did,
+/// from this, and never asks its router again.
+///
+/// Read back as data, never trusted: the answer kept is applied by [`Routed::apply`], which hides
+/// only what the set still has for a router to hide, so a kept answer can never hide a pin, a
+/// built-in skill or anything outside the chat's set. A value that does not read whole reads as
+/// absent, and that chat's router is asked again, as before this was kept.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "KeptOnDisk", into = "KeptOnDisk")]
+pub enum Kept {
+    /// The built-in router, which was asked nothing; and a chat the plane's skills did not reach.
+    BuiltIn,
+    /// An extension router was asked, and this came of it: its answer, or the built-in router's
+    /// fallback.
+    Asked(Routed),
+}
+
+impl Kept {
+    /// What a start that routed its set as `routed` keeps
+    /// ([`crate::hoststart::ChatSkills::routed`]).
+    pub fn of(routed: Option<&Routed>) -> Self {
+        routed.map_or(Self::BuiltIn, |routed| Self::Asked(routed.clone()))
+    }
+
+    /// What a reattach routes its set by: `None` for the built-in router.
+    pub fn routed(self) -> Option<Routed> {
+        match self {
+            Self::BuiltIn => None,
+            Self::Asked(routed) => Some(routed),
+        }
+    }
+}
+
+/// [`Kept`] as the reopen record spells it.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(tag = "by", rename_all = "kebab-case")]
+enum KeptOnDisk {
+    BuiltIn,
+    Extension {
+        record: Record,
+        /// The router's answer, where it was taken: absent where the chat fell back.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        answer: Option<Vec<RecordHidden>>,
+    },
+}
+
+impl From<Kept> for KeptOnDisk {
+    fn from(kept: Kept) -> Self {
+        match kept {
+            Kept::BuiltIn => Self::BuiltIn,
+            Kept::Asked(Routed { record, answer }) => Self::Extension {
+                record,
+                answer: answer.map(|hidden| {
+                    hidden
+                        .into_iter()
+                        .map(|(skill, why)| RecordHidden {
+                            skill,
+                            why: why.to_string(),
+                        })
+                        .collect()
+                }),
+            },
+        }
+    }
+}
+
+impl TryFrom<KeptOnDisk> for Kept {
+    type Error = String;
+
+    /// Held to what a start writes: a routing's ULID, a router that is an extension's id or none,
+    /// an error a reader sees whole, and each line of the answer a [`Line`].
+    fn try_from(disk: KeptOnDisk) -> Result<Self, Self::Error> {
+        let (record, answer) = match disk {
+            KeptOnDisk::BuiltIn => return Ok(Self::BuiltIn),
+            KeptOnDisk::Extension { record, answer } => (record, answer),
+        };
+        if ulid::Ulid::from_string(&record.routing).is_err() {
+            return Err("a routing that is not a ULID".to_owned());
+        }
+        // A choice that names no router is the one routing with no router's id.
+        let unchosen = record.fell_back == Some(FellBack::Unchosen);
+        if record.router.is_empty() != unchosen
+            || !(record.router.is_empty() || crate::extension::an_id(&record.router))
+        {
+            return Err("a router that is not an extension's id".to_owned());
+        }
+        // An answer is kept exactly where it was taken: where the chat did not fall back.
+        if record.fell_back.is_some() != answer.is_none() {
+            return Err("an answer beside a fallback, or a routing with neither".to_owned());
+        }
+        let named = record
+            .hidden
+            .iter()
+            .map(|one| one.skill.as_str())
+            .chain(answer.iter().flatten().map(|one| one.skill.as_str()));
+        if let Some(bad) = named.into_iter().find(|name| !a_skill_name(name)) {
+            return Err(format!("a skill named {bad:?}"));
+        }
+        if let Some(bad) = record
+            .hidden
+            .iter()
+            .find(|one| one.why != OVER_BUDGET && Line::new(&one.why).is_err())
+        {
+            return Err(format!("a reason for {:?} that is not one line", bad.skill));
+        }
+        let answer = answer
+            .map(|hidden| {
+                hidden
+                    .into_iter()
+                    .map(|one| Line::new(&one.why).map(|why| (one.skill, why)))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        let record = Record {
+            error: record.error.as_deref().map(clipped),
+            ..record
+        };
+        Ok(Self::Asked(Routed { record, answer }))
+    }
+}
+
+/// Whether `name` could name a skill a routing hid: a word a reader sees whole, of at most
+/// [`MOST_NAME_CHARS`] characters.
+fn a_skill_name(name: &str) -> bool {
+    !name.trim().is_empty()
+        && name.chars().count() <= MOST_NAME_CHARS
+        && !name.chars().any(char::is_control)
+        && !purlis_unicode::hides(name, purlis_unicode::Breaks::Marked)
+}
+
+/// The most characters a kept skill name has: well above the open format's 64, for a plugin's
+/// prefix.
+const MOST_NAME_CHARS: usize = 200;
+
 /// `why` on one line a reader sees whole, cut at [`MOST_ERROR_CHARS`] characters with `…`.
 fn clipped(why: &str) -> String {
     let line = purlis_unicode::marked(why.trim(), purlis_unicode::Breaks::Marked);
@@ -470,7 +609,7 @@ fn record(
         .map(|one| RecordHidden {
             skill: one.name.clone(),
             why: match &one.why {
-                purlis_skills::HiddenWhy::OverBudget => "over-budget".to_owned(),
+                purlis_skills::HiddenWhy::OverBudget => OVER_BUDGET.to_owned(),
                 purlis_skills::HiddenWhy::ByRouter(line) => line.to_string(),
             },
         })
