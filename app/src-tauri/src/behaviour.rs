@@ -3372,12 +3372,13 @@ for status in /proc/[0-9]*/status; do
   pid=${{status#/proc/}}; pid=${{pid%/status}}
   name=$(sed -n 's/^Name:[[:space:]]*//p' "$status" 2>/dev/null || true)
   case "$name" in
-    chrome) [ -n "$engine" ] || engine=$pid ;;
+    chrome) [ -n "$engine" ] || ! tr '\0' '\n' < /proc/$pid/cmdline 2>/dev/null | grep -q '^--user-data-dir=' || engine=$pid ;;
     purlis) tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null | grep -q ' serve' && host=$pid || true ;;
   esac
 done
-folder=$(tr '\0' '\n' < /proc/$engine/cmdline | sed -n 's/^--user-data-dir=//p' | head -n 1)
-pipe=$(ls -l /proc/$host/fd | sed -n 's/.* \([0-9][0-9]*\) -> pipe:.*/\1/p' | head -n 1)
+folder=$(tr '\0' '\n' < /proc/$engine/cmdline 2>/dev/null | sed -n 's/^--user-data-dir=//p' | head -n 1)
+[ -n "$folder" ] || folder=$(ls -d "$HOME"/.local/share/*/{browsers}/*/ 2>/dev/null | head -n 1)
+pipe=$(ls -l /proc/$host/fd | sed -n 's/.* \([0-9][0-9]*\) -> pipe:.*/\1/p' | awk '$1 >= 3' | head -n 1)
 socket=$(ls -d /tmp/purlis-$(id -u) | head -n 1)
 key=$(ls -d "$HOME"/.config/*/{daemon}/{key} "$HOME"/.config/*/{daemon_before}/{key} 2>/dev/null | head -n 1)
 printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "$engine" "$host" "$pipe" "$socket" "$key"
@@ -3391,6 +3392,7 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
             .last()
             .expect("its name"),
         key = purlis_core::runnerlink::KEY_FILE,
+        browsers = purlis_core::datahome::BROWSERS,
     ));
     let value = |name: &str| {
         let value = found
