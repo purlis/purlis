@@ -82,9 +82,7 @@ function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) 
       framesCount === undefined ||
       widthPixels === undefined
     ) {
-      setTrouble(
-        "Nothing was added: memory, processes, /tmp, frames and width are whole numbers.",
-      );
+      setTrouble("Nothing was added: memory, processes, /tmp, frames and width are whole numbers.");
       return;
     }
     const asked: PoolAdding = {
