@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793185718806,
+  "lastUpdate": 1793191005168,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28182,6 +28182,48 @@ window.BENCHMARK_DATA = {
             "value": 101.67878149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.649, 100.619, 101.679, 101.736, 101.989 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a84ca3c92845b1903290befcf856386b0e5c83fd",
+          "message": "Grades: a grade's consent covers the profile, model and limits its plan shows (#3622) (#3638)\n\n* Grades: a grade's consent covers the profile, model and limits its plan shows (#3622)\n\nThe plan's consent is one digest of what it grades and of the terms it\nshows: the profile and model its chats run on, the token cap and the dollar\nlimit (grades::consent_on). A Grade press made on a plan whose digest no\nlonger matches the one a grade would start on now is refused with a\nsentence, and the window reads the plan again to show the new one.\n\nCloses #3622\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: consent review fixes\n\n- the consent names the model the chats' line runs on, where it names one,\n  so a change of the profile's own model changes it too;\n- one hex helper for both digests;\n- plan_holds documents who else will use its refusal.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T11:58:16Z",
+          "tree_id": "b1fc3e56d9517b3becfbb64665e9a80b051384c0",
+          "url": "https://github.com/purlis/purlis/commit/a84ca3c92845b1903290befcf856386b0e5c83fd"
+        },
+        "date": 1793191001364,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.329798,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.324, 0.326, 0.330, 0.333, 0.346 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6845475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.239, 16.619, 16.685, 16.688, 16.750 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.112356,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.746, 100.480, 101.112, 101.449, 103.000 ms"
           }
         ]
       }
