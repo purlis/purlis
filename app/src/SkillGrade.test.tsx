@@ -40,6 +40,8 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     sandbox: "full sandbox",
     refused: null,
     consent: "c0ffee",
+    previous: null,
+    previous_refused: null,
     ...over,
   };
 }
@@ -113,6 +115,45 @@ describe("Grade, cost first", () => {
     });
     await screen.findByText("Stopped after 4 chats. What ran is scored in Grades below.");
     expect(graded).toBe(1);
+  });
+
+  it("says the previous version it compares with, and why one is not (SK-57)", async () => {
+    mockIPC(
+      (cmd) => {
+        if (cmd === "skill_grade_plan")
+          return plan({
+            chats: 18,
+            previous: { commit: "fedcba987654", subject: "step two" },
+          });
+        if (cmd === "start_options") return { profiles: [] };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    const cost = await screen.findByTestId("skill-grade-cost");
+    expect(cost.textContent).toContain(
+      "3 times without it, and 3 times with its previous version, fedcba987654 (step two), which it is compared with, up to 18 chats",
+    );
+    cleanup();
+    clearMocks();
+    mockIPC(
+      (cmd) => {
+        if (cmd === "skill_grade_plan")
+          return plan({
+            previous_refused: "version fedcba987654 of deploy is not a whole skill of this name",
+          });
+        if (cmd === "start_options") return { profiles: [] };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    expect((await screen.findByTestId("skill-grade-previous-refused")).textContent).toContain(
+      "not a whole skill of this name",
+    );
   });
 
   it("offers the models the profile's program can run, and grades on the one picked (SK-60)", async () => {

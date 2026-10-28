@@ -371,15 +371,23 @@ function GradePlan({
             Grading runs {counted(plan.chats, "chat", "chats")}, one turn each: each of the{" "}
             {counted(plan.tests.length, "trigger test", "trigger tests")}{" "}
             {counted(plan.runs, "time", "times")} with the skill and{" "}
-            {counted(plan.runs, "time", "times")} without it, up to{" "}
-            {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min. {costSaid(plan)} It
-            stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
+            {counted(plan.runs, "time", "times")} without it
+            {plan.previous === null
+              ? ""
+              : `, and ${counted(plan.runs, "time", "times")} with its previous version, ${plan.previous.commit} (${plan.previous.subject}), which it is compared with`}
+            , up to {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min.{" "}
+            {costSaid(plan)} It stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
             {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or cost{" "}
             {limitSaid(plan)}. The chats run on the profile and model you pick
             {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of your
             own Allows and no tools but purlis's that only read, and its account pays for them as
             for any chat.
           </p>
+          {plan.previous_refused !== null && (
+            <p className="honest" data-testid="skill-grade-previous-refused">
+              Its previous version is not compared: {plan.previous_refused}.
+            </p>
+          )}
           {plan.record_said !== null && (
             <p className="honest" role="note" data-testid="skill-grade-record">
               {plan.record_said}

@@ -4,7 +4,7 @@
 use super::*;
 use purlis_core::skills::grade::{Fixtures, GradeRequest, Read, TriggerTest};
 
-fn planned(query: &str) -> Planned {
+pub(super) fn planned(query: &str) -> Planned {
     let tests = vec![TriggerTest {
         query: query.to_owned(),
         should_trigger: true,
@@ -45,6 +45,8 @@ fn planned(query: &str) -> Planned {
             from: grades::cap::From::Yours,
         },
         consent: Some("abc".into()),
+        previous: None,
+        previous_refused: None,
         copy: None,
     }
 }
@@ -164,6 +166,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
                 plane: plane.clone(),
                 skill: "deploy".into(),
                 stop: Arc::new(AtomicBool::new(false)),
+                after_edit: false,
             },
         );
         let failed = std::cell::Cell::new(false);
@@ -255,8 +258,11 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
         spent: Spent::default(),
         plugins_off: None,
         model: Some("claude-sonnet-4-5".into()),
+        previous: None,
+        after_edit: false,
     };
     let card = GradeScorecard::of(&graded, |chat| chat != "01B");
+    assert_eq!(card.against, None, "no previous version was compared");
     assert_eq!(card.ran_on, "Claude Code · claude-sonnet-4-5");
     assert_eq!(card.version, "Changes not saved");
     assert_eq!(card.ended, "Finished");
@@ -312,5 +318,83 @@ fn a_screen_sent_in_pieces_is_kept_whole() {
         gathered(&nothing, Instant::now()),
         None,
         "nothing was shown"
+    );
+}
+
+/// SK-57 (#3237): a grade against the skill's previous version shows all three arms, and its
+/// difference against that version, with the difference against no skill beside it.
+#[test]
+fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_differences() {
+    use purlis_core::skills::grade::{ArmScore, GradeEnd, GradeReport, Stat, TriggerScore};
+    let score = |arm: Arm| TriggerScore {
+        query: "ship it".into(),
+        should_trigger: true,
+        arm,
+        runs: 3,
+        triggered: 3,
+        rate: Some(1.0),
+        pass: Some(true),
+        chats: vec![None; 3],
+        asked: 0,
+    };
+    let arm = |arm: Arm, mean: f64| ArmScore {
+        arm,
+        pass_rate: Some(Stat {
+            mean,
+            stddev: 0.0,
+            min: mean,
+            max: mean,
+        }),
+        tokens: None,
+        seconds: None,
+        chats: 3,
+        not_run: 0,
+    };
+    let graded = Graded {
+        v: grades::VERSION,
+        grade: "01GRADE".into(),
+        skill: "deploy".into(),
+        level: Some("skills".into()),
+        tree: "uncommitted".into(),
+        commit: None,
+        harness: Some("claude".into()),
+        profile: Some("work".into()),
+        ts: "2026-10-28T10:00:00+00:00".into(),
+        runs: 3,
+        report: GradeReport {
+            grader: grading::BUILT_IN.into(),
+            triggers: vec![score(Arm::With), score(Arm::Without), score(Arm::Previous)],
+            arms: vec![
+                arm(Arm::With, 1.0),
+                arm(Arm::Without, 0.25),
+                arm(Arm::Previous, 0.75),
+            ],
+            delta: Some(0.25),
+            ended: GradeEnd::Whole,
+            not_started: None,
+            cap: None,
+            spent_tokens: None,
+            cost_cap_usd: None,
+            spent_usd: None,
+            counted_usd: None,
+            priced: None,
+        },
+        spent: Spent::default(),
+        plugins_off: None,
+        model: None,
+        previous: Some("fedcba9876543210fedcba9876543210fedcba98".into()),
+        after_edit: true,
+    };
+    let card = GradeScorecard::of(&graded, |_| false);
+    assert_eq!(card.against.as_deref(), Some("fedcba987654"));
+    assert_eq!(card.delta, Some(25.0), "against the previous version");
+    assert_eq!(card.delta_without, Some(75.0), "against no skill");
+    assert!(card.after_edit);
+    let [test] = card.tests.as_slice() else {
+        panic!("{:?}", card.tests);
+    };
+    assert_eq!(
+        test.arms.iter().map(|arm| arm.arm).collect::<Vec<_>>(),
+        [ScoredArm::With, ScoredArm::Without, ScoredArm::Previous]
     );
 }

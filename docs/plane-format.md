@@ -3801,7 +3801,10 @@ An end row, never a pass or a fail:
   written before, one whose grade started no chat, and one recorded as interrupted; and `model`,
   the model its chats ran on as their harness reported it (the first that said one, by the
   harness's own id; SK-60, #3240, ADR 0087 §6), absent in a row written before and where no chat
-  said.
+  said; `previous`, the commit of the version its `previous` arm was laid out from, which is then
+  the baseline its `report.delta` is against (the newest version of the skill whose folder held
+  another tree, read from git's tree of that commit; SK-57, #3237, ADR 0105 as amended
+  2026-10-28), absent in a row written before and for a skill with no other version.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
   16 MiB, each line at most 1 MiB; a line that
@@ -3815,7 +3818,8 @@ An end row, never a pass or a fail:
   reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
   1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469;
   a `plugins_off` that is no list of at most 256 ids a plugin could have, #3468; a `model` that is
-  no plain id, #3240; and since #3273
+  no plain id, #3240; a `previous` that is no whole hex id, or a `previous` arm in a row that
+  names no `previous`, #3237; and since #3273
   a level no level spells, `runs` outside 1 to 16, tokens past ten times the largest cap or
   dollars past ten times its dearest limit, a stamp more than an hour ahead of this machine's
   clock, a `spent` that is not what the report adds up to (its chats the arms' runs, its tokens

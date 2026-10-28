@@ -37,6 +37,8 @@ fn starting(id: &str, level: &Level) -> Graded {
         spent: Spent::default(),
         plugins_off: None,
         model: None,
+        previous: None,
+        after_edit: false,
     }
 }
 

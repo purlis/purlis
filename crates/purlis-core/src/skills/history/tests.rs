@@ -371,3 +371,106 @@ fn a_runs_start_records_the_folder_it_ran_or_that_it_held_changes_not_committed(
     assert_eq!(history.versions[0].runs.runs, 1);
     assert_eq!(history.uncommitted.runs, 1);
 }
+
+/// The commits of `deploy`'s history, newest first.
+fn commits(root: &Path) -> Vec<String> {
+    history(root, &Level::project(), "deploy")
+        .unwrap()
+        .versions
+        .into_iter()
+        .map(|version| version.commit)
+        .collect()
+}
+
+#[test]
+fn a_versions_files_are_read_from_its_commit_and_never_from_the_folder() {
+    // SK-57 (#3237): the previous version's arm is laid out from git's tree of that commit.
+    let tmp = plane();
+    let root = tmp.path();
+    let [_, first] = <[String; 2]>::try_from(commits(root)).unwrap();
+    // What the folder holds now is none of the first version's.
+    std::fs::write(root.join("skills/deploy/SKILL.md"), "written since\n").unwrap();
+
+    let then = files_of_version(root, "skills/deploy", "deploy", &first).unwrap();
+
+    assert_eq!(then.name, "deploy");
+    assert_eq!(
+        then.files.into_iter().collect::<Vec<_>>(),
+        vec![("SKILL.md".to_owned(), V1.to_owned())],
+        "the first version had no notes.md, and holds what it held then"
+    );
+}
+
+#[test]
+fn a_versions_link_fixtures_dot_names_and_files_that_are_not_text_are_left_out() {
+    let tmp = plane();
+    let root = tmp.path();
+    let folder = root.join("skills/deploy");
+    std::os::unix::fs::symlink("/etc/passwd", folder.join("linked.md")).unwrap();
+    std::fs::create_dir_all(folder.join("evals")).unwrap();
+    std::fs::write(folder.join("evals/triggers.json"), "[]").unwrap();
+    std::fs::write(folder.join(".hidden"), "dot\n").unwrap();
+    std::fs::write(folder.join("blob.bin"), [0xff_u8, 0xfe, 0x00, 0x01]).unwrap();
+    std::fs::create_dir_all(folder.join("refs")).unwrap();
+    std::fs::write(folder.join("refs/more.md"), "more\n").unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "odd files"]);
+    let newest = commits(root).remove(0);
+
+    let then = files_of_version(root, "skills/deploy", "deploy", &newest).unwrap();
+
+    assert_eq!(
+        then.files.keys().map(String::as_str).collect::<Vec<_>>(),
+        vec!["SKILL.md", "notes.md", "refs/more.md"],
+        "no link followed, no fixtures, no dot-name, nothing that is not text"
+    );
+}
+
+#[test]
+fn a_version_that_is_no_whole_skill_of_this_name_is_refused() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        "---\nname: ship\ndescription: Another name.\n---\n\nBody.\n",
+    )
+    .unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "renamed inside"]);
+    let renamed = run(root, &["rev-parse", "HEAD"]).line().to_owned();
+    std::fs::write(root.join("skills/deploy/SKILL.md"), V2).unwrap();
+    run(root, &["add", "-A"]);
+    run(root, &["commit", "-q", "-m", "named back"]);
+    assert!(commits(root).contains(&renamed));
+
+    let refused = files_of_version(root, "skills/deploy", "deploy", &renamed).unwrap_err();
+
+    assert!(
+        refused.contains("not a whole skill of this name"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn the_previous_version_is_the_newest_whose_folder_held_something_else() {
+    let tmp = plane();
+    let root = tmp.path();
+    let read = history(root, &Level::project(), "deploy").unwrap();
+    let [newest, first] = [&read.versions[0], &read.versions[1]];
+
+    assert_eq!(
+        previous_of(&read, Some(&newest.tree)).map(|one| &one.commit),
+        Some(&first.commit),
+        "a committed copy compares with the version before it"
+    );
+    assert_eq!(
+        previous_of(&read, None).map(|one| &one.commit),
+        Some(&newest.commit),
+        "a copy holding changes not committed compares with its newest version"
+    );
+    let only_one = History {
+        versions: vec![newest.clone()],
+        uncommitted: Totals::default(),
+    };
+    assert_eq!(previous_of(&only_one, Some(&newest.tree)), None);
+}

@@ -424,7 +424,9 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
         out.push(Block::Note {
             text: format!(
                 "Each grade ran the skill's trigger tests in chats with the skill and without \
-                 it, {} each, and counts the tests each chat got right.",
+                 it, and with its previous version where it had one, {} each, and counts the \
+                 tests each chat got right. Its difference is against the previous version where \
+                 it compared one, else against no skill.",
                 crate::counts::counted(purlis_skills::grade::RUNS, "time", "times")
             ),
             tone: Tone::Plain,
@@ -434,19 +436,38 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
         .iter()
         .map(|graded| {
             let (passed, of) = graded.report.passed_with();
+            // The version it compared with, where it compared one (SK-57).
+            let previous = graded
+                .previous
+                .as_deref()
+                .filter(|_| graded.report.arm(Arm::Previous).is_some())
+                .map(super::history::short);
             TableRow {
                 key: graded.grade.clone(),
                 cells: vec![
-                    said_at(&graded.ts),
+                    // A grade a saved edit started says so (SK-58).
+                    if graded.after_edit {
+                        format!("{} · after an edit", said_at(&graded.ts))
+                    } else {
+                        said_at(&graded.ts)
+                    },
                     version_said(graded),
                     ran_on_said(graded),
                     format!("{passed} of {of}"),
                     arm_said(graded, Arm::With),
                     arm_said(graded, Arm::Without),
+                    previous
+                        .map(|commit| format!("{} · {commit}", arm_said(graded, Arm::Previous)))
+                        .unwrap_or_default(),
                     graded
                         .report
                         .delta
-                        .map(|delta| format!("{:+.0} points", delta * 100.0))
+                        .map(|delta| match previous {
+                            Some(commit) => {
+                                format!("{:+.0} points against {commit}", delta * 100.0)
+                            }
+                            None => format!("{:+.0} points", delta * 100.0),
+                        })
                         .unwrap_or_default(),
                     crate::counts::counted(u64::from(graded.spent.chats), "chat", "chats"),
                     super::grades::ended_said(graded.report.ended).to_owned(),
@@ -463,6 +484,7 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
             "Tests passed",
             "With the skill",
             "Without it",
+            "Previous version",
             "Difference",
             "Chats",
             "Ended",

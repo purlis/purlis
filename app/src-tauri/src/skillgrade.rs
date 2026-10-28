@@ -155,6 +155,17 @@ pub struct SkillGradePlan {
     /// What pressing Grade consents to: handed back with the press, and a grade on another plan
     /// is refused.
     pub consent: Option<String>,
+    /// **The version it compares with too** (SK-57, #3237), where the skill has one: its commit
+    /// shortened and its subject; and why one is not compared, where it did not read.
+    pub previous: Option<GradePrevious>,
+    pub previous_refused: Option<String>,
+}
+
+/// **The version a grade compares with, as its plan says it** (SK-57).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct GradePrevious {
+    pub commit: String,
+    pub subject: String,
 }
 
 /// **Where a grade's chats run**, as [`chats_on`] reads it.
@@ -316,6 +327,11 @@ impl SkillGradePlan {
             refused: sandbox.as_ref().err().cloned(),
             sandbox: sandbox.ok(),
             consent: planned.consent.clone(),
+            previous: planned.previous.as_ref().map(|previous| GradePrevious {
+                commit: purlis_core::skills::history::short(&previous.commit).to_owned(),
+                subject: previous.subject.clone(),
+            }),
+            previous_refused: planned.previous_refused.clone(),
         }
     }
 }
@@ -379,6 +395,8 @@ struct Running {
     plane: PlaneId,
     skill: String,
     stop: Arc<AtomicBool>,
+    /// Whether a saved edit started it (SK-58): the next edit stops it.
+    after_edit: bool,
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -484,9 +502,8 @@ pub(crate) async fn skill_grade_start(
     crate::off_the_window("starting a grade", move || {
         flag_on()?;
         let level: Level = (&level).into();
-        let root = held.root().to_path_buf();
         // The estimate is the plan's to show: a start needs none of it.
-        let planned = grades::planned(&root, &level, &skill, None)?;
+        let planned = grades::planned(held.root(), &level, &skill, None)?;
         // What runs is what the plan showed (the review of #3229): the tests, the skill's files
         // and what its folder holds, read once here and laid out from this one copy.
         if planned.consent.as_deref() != Some(consent.as_str()) {
@@ -495,6 +512,53 @@ pub(crate) async fn skill_grade_start(
                  started: read the plan again."
             ));
         }
+        begin(
+            app,
+            held,
+            Begin {
+                plane,
+                level,
+                skill,
+                profile,
+                model,
+                after_edit: false,
+            },
+            planned,
+        )
+    })
+    .await
+}
+
+/// **What a grade is started on**: where, of which copy, on which profile and model, and
+/// whether a saved edit started it (SK-58) rather than a press of Grade.
+pub(crate) struct Begin {
+    pub plane: PlaneId,
+    pub level: Level,
+    pub skill: String,
+    pub profile: Option<String>,
+    pub model: Option<String>,
+    pub after_edit: bool,
+}
+
+/// **Starts a grade of `planned`**, the plan whose consent was checked or whose bounds the
+/// person accepted (SK-58): its chats run one at a time behind the window, which is told each
+/// step ([`EVENT`]). The answer is the grade's id. Refused while a grade runs in the project.
+pub(crate) fn begin(
+    app: tauri::AppHandle,
+    held: Arc<Held>,
+    begin: Begin,
+    planned: Planned,
+) -> Result<String, String> {
+    let Begin {
+        plane,
+        level,
+        skill,
+        profile,
+        model,
+        after_edit,
+    } = begin;
+    {
+        let root = held.root().to_path_buf();
         // The one read of the copy the consent was taken from: laid out and recorded as is.
         let (Some(copy), Some(request)) = (planned.copy, planned.request) else {
             return Err(format!(
@@ -527,6 +591,7 @@ pub(crate) async fn skill_grade_start(
                     plane: plane.clone(),
                     skill: skill.clone(),
                     stop: Arc::clone(&stop),
+                    after_edit,
                 },
             );
         }
@@ -561,6 +626,11 @@ pub(crate) async fn skill_grade_start(
             ),
             plugins_off: None,
             model: None,
+            previous: copy
+                .previous
+                .as_ref()
+                .map(|previous| previous.commit.clone()),
+            after_edit,
         };
         // Its lock is held while the grade runs (#3466): what tells a start it runs.
         let marker = match grades::underway::began(&root, &level, &under_way) {
@@ -604,6 +674,7 @@ pub(crate) async fn skill_grade_start(
                     let mut chats = InChats {
                         held: &held,
                         snapshot: &copy.snapshot,
+                        previous: copy.previous.as_ref().map(|previous| &previous.snapshot),
                         cost_left: limits.cost_usd,
                         unpriced_at: limits.unpriced_usd_per_million,
                         skill: &skill,
@@ -683,8 +754,7 @@ pub(crate) async fn skill_grade_start(
                 format!("The grade could not start ({why}).")
             })?;
         Ok(id)
-    })
-    .await
+    }
 }
 
 /// **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
@@ -798,8 +868,15 @@ pub struct GradeScorecard {
     pub version: String,
     pub ran_on: String,
     pub ended: String,
-    /// The difference the skill made, in points, where both arms ran.
+    /// The difference the skill made, in points, where both arms ran: against its previous
+    /// version where the grade compared one (SK-57), else against no skill.
     pub delta: Option<f64>,
+    /// **The version it compared with** (SK-57, #3237), its commit shortened, where it compared
+    /// one; and the difference against no skill then, in points, where both arms ran.
+    pub against: Option<String>,
+    pub delta_without: Option<f64>,
+    /// Whether a saved edit started it (SK-58, #3238), rather than a press of Grade.
+    pub after_edit: bool,
     /// How many of its chats asked the person something and were ended there.
     pub asked: u32,
     pub tests: Vec<ScoredTest>,
@@ -850,6 +927,26 @@ impl GradeScorecard {
             ran_on: studio::ran_on_said(graded),
             ended: grades::ended_said(graded.report.ended).to_owned(),
             delta: graded.report.delta.map(|delta| (delta * 100.0).round()),
+            against: graded
+                .previous
+                .as_deref()
+                .filter(|_| graded.report.arm(Arm::Previous).is_some())
+                .map(|commit| purlis_core::skills::history::short(commit).to_owned()),
+            delta_without: graded
+                .previous
+                .as_ref()
+                .and_then(|_| {
+                    let mean = |arm: Arm| {
+                        graded
+                            .report
+                            .arm(arm)
+                            .and_then(|score| score.pass_rate)
+                            .map(|stat| stat.mean)
+                    };
+                    mean(Arm::With).zip(mean(Arm::Without))
+                })
+                .map(|(with, without)| ((with - without) * 100.0).round()),
+            after_edit: graded.after_edit,
             asked: graded.report.asked(),
             tests,
         }
@@ -919,6 +1016,8 @@ struct InChats<'a> {
     held: &'a Arc<Held>,
     /// The skill's copy, read once for the grade.
     snapshot: &'a purlis_core::skills::verbs::drafts::Snapshot,
+    /// Its previous version's, as git's tree of that commit holds it (SK-57), where it has one.
+    previous: Option<&'a purlis_core::skills::verbs::drafts::Snapshot>,
     /// What the grade may still cost, where its chats say: a chat that passes it is ended.
     cost_left: Option<f64>,
     /// What a chat that says its tokens and no cost is counted at against [`Self::cost_left`],
@@ -1001,11 +1100,16 @@ impl InChats<'_> {
             end: ChatEnd::NotStarted { why },
         };
         let root = self.held.root().to_path_buf();
-        let skill = chat.arm.has_the_skill().then_some(self.snapshot);
-        // The previous version as an arm is #3237: the built-in runner asks for none now.
-        if chat.arm == Arm::Previous {
-            return not_started("this purlis grades no previous version".to_owned());
-        }
+        // The arm's copy: the skill as read for the grade, as its previous version's commit
+        // holds it (SK-57, read from git, never from the folder), or none.
+        let skill = match chat.arm {
+            Arm::With => Some(self.snapshot),
+            Arm::Previous => match self.previous {
+                Some(previous) => Some(previous),
+                None => return not_started("this skill has no previous version".to_owned()),
+            },
+            Arm::Without => None,
+        };
         let laid = match purlis_core::skills::verbs::drafts::lay_out_arm(&root, skill) {
             Ok(laid) => laid,
             Err(why) => return not_started(why),
