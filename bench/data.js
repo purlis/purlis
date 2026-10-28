@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793200236006,
+  "lastUpdate": 1793204294393,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28392,6 +28392,48 @@ window.BENCHMARK_DATA = {
             "value": 100.9421875,
             "unit": "ms",
             "extra": "median of 5 runs: 99.605, 100.257, 100.942, 102.101, 103.150 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "376a0875d8d84dee7906e1e822ec847566aefdca",
+          "message": "ui/button: unavailable by hand, family classes, open triggers (#3522, #3523, #3524) (#3636)\n\n* ui/button: a button made unavailable by hand runs no press (#3522)\n\nA family Button given aria-disabled by hand, with no isDisabled, was drawn\nas disabled but still ran its onPress, submitted its form and opened the\nmenu or popover it triggers. The element now keeps only the focus's and the\npointer's handlers whenever it is said unavailable, the same rule #3116 gave\nan isDisabled button with a hint: no press from the pointer, the keyboard or\na screen reader, and a submit button is a plain button while unavailable.\n\nThe screens that use the form (RunnerWriteTab, ProposedChangeTab, Notice,\nBrowserProof, BrowserView, BrowserTimeline, Inbox, FinishedTasks,\nPanelList, pools) each already ignored the press while busy; their tests\npass unchanged.\n\nCloses #3522\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* ui: other families' raw buttons by family class, not class word (#3523)\n\nThe button-family lint let a raw <button> through by words views picked\n(vault-secret, needs-you-mark, welcome-door, repo-card, plane-root), so a\nnew bare button wearing one passed anywhere. Now each family exempts only\nits own class:\n\n- list: only its row, ui-row. The Activity line's name that shows its chat\n  (which borrowed vault-secret) is the family's inline ghost Button, and a\n  Chats row's rolled-up hand is a quiet IconButton, as the tab chip's is,\n  its hand coloured on the icon; their hand-drawn rules leave App.css.\n- card: ui-card-control, worn by the welcome's doors and a repo card.\n- titlebar: none; plane-root named no raw button any more.\n\nhandDrawn.lint.test.ts refuses a raw button in each old word and holds\nevery family's rawButtons to its own ui-<family>- classes. The guard's\nallowance loses the two moved lines and renames the card ones.\n\nCloses #3523\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* ui/button: a menu or popover trigger shows that it is open (#3524)\n\nReact Aria says an open trigger only as aria-expanded, which the family\ndrew nothing from, so \"N more\" looked the same with its menu open and the\ntab chip's counts kept their open look only through the pill behind them.\n\nThe element now carries data-open while the menu or popover it triggers is\nopen: when a trigger hands it aria-expanded, or when the call writes\naria-expanded beside its aria-haspopup. A disclosure's own aria-expanded\n(nothing opens over the window) is not drawn open, and neither is an\nunavailable trigger. button.css names the open state first in every hover\nrule, so an open trigger is drawn as under the pointer in every variant,\ninline and toggled-on included; the engine's button look and its test hold\nthe two together. The theme key, button.root.open, is in the manifest since\nversion 1 and needs no addition.\n\nThe pill's own open rule leaves App.css: the counts draw it from the\nfamily. A story (OpenTrigger) and tests for the menu, the popover, ShowMore\nand the chip cover it.\n\nCloses #3524\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* ui/button: answer the review of #3636 (#3522, #3523, #3524)\n\n#3522:\n- An unavailable button keeps its type. A submit button stays its form's\n  primary action, so the Form finds it unavailable and Cmd+Enter sends\n  nothing (N26). Turning it into type=button had let Cmd+Enter in an empty\n  address bar send it. refuseClick already cancels the click that would\n  submit it: a pointer's, a screen reader's, or the one Enter in a lone\n  field fires. Field.test.tsx holds Cmd+Enter for both unavailable forms,\n  and the UnavailableSubmit story holds Enter in the field.\n- An unavailable button that is not a trigger hands every key but Enter\n  and Space to its own handler, so the arrows still move through a roving\n  group (an Inbox answer while busy). A trigger still refuses every key.\n\n#3523:\n- Stories for the moved controls: GhostInline (the Activity line's name)\n  and the Chats section's RolledUpHand.\n- The card lint names #3655, the pressable card member that ui-card-control\n  waits for.\n\n#3524:\n- A data-open that a wrapper hands the element is kept.\n- Drawing the open state is opt-in per family (drawsOpen). The status item\n  has no open state, so it is never marked open.\n- Tests for a toggle that is on and open (tab.active, accent edge) and for\n  aria-haspopup=\"false\" as a disclosure. Button.tsx says that a theme's\n  hover does not carry to open.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: the rolled-up hand story waits on #3658 for one axe rule\n\nThe hand stands in the row's li, so the Chats tree owns a button that\nis not a treeitem. That structure predates #3523, and the new story is the\nfirst to draw it. The story turns aria-required-children off until #3658\nfixes the structure.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-28T15:48:26Z",
+          "tree_id": "1b2b99ac4b5832e5a8ce2efb7e2d320eaaa97e02",
+          "url": "https://github.com/purlis/purlis/commit/376a0875d8d84dee7906e1e822ec847566aefdca"
+        },
+        "date": 1793204286692,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.691281,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.685, 0.689, 0.691, 0.704, 0.707 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5620215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.525, 16.530, 16.562, 16.595, 16.824 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8404675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.795, 101.835, 101.840, 102.648, 103.180 ms"
           }
         ]
       }
