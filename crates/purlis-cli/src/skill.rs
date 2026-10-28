@@ -922,21 +922,21 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             // The terminal knows no profile: the estimate is the newest grade's whose chats ran.
             match purlis_core::skills::grades::planned(root, &level, &name, None) {
                 Ok(planned) => {
-                    let read = purlis_core::skills::grades::read(root, &name, Some(&level));
+                    // The record as the plan read it, once: its rows, and what it left out
+                    // (`plan.record_said`).
                     if json {
                         println!(
                             "{}",
-                            json!({
-                                "plan": planned,
-                                "grades": read.grades,
-                                "left_out": read.said(),
-                            })
+                            json!({ "plan": planned, "grades": planned.record.grades })
                         );
                     } else {
                         let local_file = purlis_core::settings::Which::Local.file_at(root);
-                        print!("{}", grade_said(&planned, &read.grades, local_file));
-                        if let Some(said) = read.said() {
-                            voice::warn(said);
+                        print!(
+                            "{}",
+                            grade_said(&planned, &planned.record.grades, local_file)
+                        );
+                        if let Some(said) = &planned.record_said {
+                            voice::warn(said.clone());
                         }
                     }
                     Ok(0)
@@ -1203,6 +1203,7 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
         return "It has not been graded here before, so what a grade spends is not known yet.\n"
             .to_owned();
     };
+    let when = estimate.ts.get(..10).unwrap_or(&estimate.ts);
     let on = match (&estimate.profile, &estimate.harness) {
         (Some(profile), Some(harness)) => format!(
             " on {profile} ({})",
@@ -1212,7 +1213,11 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
         (None, Some(harness)) => format!(" on {}", purlis_core::skilluse::harness_title(harness)),
         (None, None) => String::new(),
     };
-    let when = estimate.ts.get(..10).unwrap_or(&estimate.ts);
+    if estimate.chats_then == 0 {
+        return format!(
+            "Its last grade{on}, {when}, ran no chat, so what a grade spends is not known yet.\n"
+        );
+    }
     let mut parts = Vec::new();
     if let Some(tokens) = estimate.tokens {
         parts.push(format!("about {tokens} tokens"));

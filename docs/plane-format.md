@@ -3807,11 +3807,12 @@ An end row, never a pass or a fail:
   `spent_tokens`, its cost `spent_usd` where the report has one), or an arm whose chats are not
   what its tests ran and asked for) is skipped. **What was left out is said** (#3273): the
   Grades panel, the plan and `purlis skill grade` say how many rows of the skill were skipped
-  and name each file not read (a link, one past 16 MiB, one that is not text), never dropping
-  them unseen. At most 200 grades of a skill are answered, newest first
+  (a row of it no purlis parses among them) and name each file not read (a link, or one past
+  16 MiB), never dropping them unseen; a byte that is not text spoils only its own row. At most 200 grades of a skill are answered, newest first
   (`purlis_core::skills::grades::read`). The plan's estimate is worked out from the newest grade
-  on the profile the grade runs on whose chats ran, else the newest whose chats ran, and says
-  which grade it is, or that its cost is not known where that grade's chats said nothing of it.
+  on the profile the grade runs on that asked for a chat, else the newest that asked for one, its
+  spend shared over every chat it asked for, and says which grade it is, that it ran no chat, or
+  that its cost is not known where its chats said nothing of it.
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
   skill log's is; keys sorted, `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`).

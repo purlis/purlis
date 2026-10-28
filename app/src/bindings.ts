@@ -7191,14 +7191,14 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 export type GradeEstimate = {
 	tokens: number | null,
 	cost_usd: number | null,
-	/**  The chats of the grade it is worked out from that ran. */
+	/**  The chats the grade it is worked out from asked for: none where none ran. */
 	chats_then: number,
 	/**  That grade: when it ran, and the profile and the harness its chats ran on. */
 	ts: string,
 	profile: string | null,
 	harness: string | null,
-	/**  Whether it ran on the profile this grade runs on. */
-	same_profile: boolean,
+	/**  Whether it ran on the profile this grade runs on, or `None` where that is not known. */
+	same_profile: boolean | null,
 };
 
 /**

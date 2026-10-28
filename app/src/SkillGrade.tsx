@@ -61,10 +61,12 @@ export function costSaid(plan: SkillGradePlan): string {
   const on =
     estimate.profile === null
       ? ""
-      : estimate.same_profile
-        ? ` on ${estimate.profile}`
-        : ` on another profile, ${estimate.profile}`;
+      : estimate.same_profile === false
+        ? ` on another profile, ${estimate.profile}`
+        : ` on ${estimate.profile}`;
   const ran = `${on}${estimate.harness === null ? "" : ` (${estimate.harness})`}, ${estimate.ts.slice(0, 10)}`;
+  if (estimate.chats_then === 0)
+    return `Its last grade${ran}, ran no chat, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill starts.`;
   if (estimate.tokens === null && estimate.cost_usd === null)
     return `Its last grade${ran}, did not say what its chats spent, so purlis cannot say what this one spends. Each chat is one turn, and ends once the skill starts.`;
   const parts: string[] = [];

@@ -128,7 +128,7 @@ describe("Grade, cost first", () => {
       ts: "2026-10-25T10:00:00+00:00",
       profile: "work",
       harness: "Claude Code",
-      same_profile: true,
+      same_profile: true as boolean | null,
     };
     expect(
       costSaid(plan({ estimate: { tokens: 120000, cost_usd: 1.2, chats_then: 6, ...from } })),
@@ -149,6 +149,17 @@ describe("Grade, cost first", () => {
     expect(unknown).toContain("did not say what its chats spent");
     expect(unknown).not.toContain("not been graded");
     expect(costSaid(plan())).toContain("has not been graded here before");
+    expect(
+      costSaid(
+        plan({
+          estimate: { tokens: null, cost_usd: null, chats_then: 6, ...from, same_profile: null },
+        }),
+      ),
+    ).toContain("Its last grade on work (Claude Code)");
+    // A grade purlis stopped under before any chat ran: graded, and no chat to go by.
+    expect(
+      costSaid(plan({ estimate: { tokens: null, cost_usd: null, chats_then: 0, ...from } })),
+    ).toContain("ran no chat");
     expect(
       endedSaid({
         plane: "p",

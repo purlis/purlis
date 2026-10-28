@@ -94,12 +94,18 @@ fn report(passed_with: bool) -> GradeReport {
     }
 }
 
-/// A grade of `deploy` with [`report`]'s three chats, which spent what `spent` says.
+/// A grade of `deploy` with [`report`]'s three chats, which spent the tokens and cost `spent`
+/// says: its chats are always the report's three, so `spent` names none or those.
 fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
     let level = Level::project();
     let SkillCopy {
         content, commit, ..
     } = copy_of(root, &level, "deploy").unwrap();
+    assert!(
+        matches!(spent.chats, 0 | 3),
+        "the fixture's report ran 3 chats, not {}",
+        spent.chats
+    );
     let spent = Spent { chats: 3, ..spent };
     let report = GradeReport {
         spent_tokens: spent.tokens,
@@ -670,7 +676,7 @@ fn a_grade_whose_chats_said_no_spend_gives_an_estimate_whose_cost_is_not_known()
     assert_eq!((estimate.tokens, estimate.cost_usd), (None, None));
     assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00");
     assert_eq!(estimate.profile.as_deref(), Some("work"));
-    assert!(estimate.same_profile);
+    assert_eq!(estimate.same_profile, Some(true));
     assert_eq!(estimate_of(&[], 12, Some("work")), None, "never graded");
 }
 
@@ -705,12 +711,17 @@ fn the_estimate_is_the_closest_grades_and_names_it() {
     let on_work = estimate_of(&rows, 12, Some("work")).unwrap();
     assert_eq!(on_work.tokens, Some(12_000));
     assert_eq!(on_work.profile.as_deref(), Some("work"));
-    assert!(on_work.same_profile);
+    assert_eq!(on_work.same_profile, Some(true));
 
     let on_new = estimate_of(&rows, 12, Some("new")).unwrap();
     assert_eq!(on_new.tokens, Some(36_000), "the newest whose chats ran");
     assert_eq!(on_new.profile.as_deref(), Some("home"));
-    assert!(!on_new.same_profile);
+    assert_eq!(on_new.same_profile, Some(false));
+    assert_eq!(
+        estimate_of(&rows, 12, None).unwrap().same_profile,
+        None,
+        "this grade's profile is not known"
+    );
 
     let only_interrupted = estimate_of(&rows[..1], 12, None).unwrap();
     assert_eq!(only_interrupted.chats_then, 0);
@@ -800,17 +811,33 @@ fn a_row_skipped_and_a_file_not_read_are_said() {
         ),
     )
     .unwrap();
+    // A row of it no purlis could parse is counted too; a byte that is not text spoils only
+    // its own row; a row of another skill is no row of this one.
+    let mut tail: Vec<u8> = b"{\"skill\": \"deploy\", \"v\": 1, \"runs\": 300}\n".to_vec();
+    tail.extend_from_slice(b"{\"skill\": \"deploy\xff\"}\n{\"skill\": \"release\", \"v\": 1}\n");
+    let mut kept_too = uncommitted_row();
+    kept_too.grade = "g2".into();
+    kept_too.ts = "2026-10-26T10:00:00+00:00".into();
+    tail.extend_from_slice(format!("{}\n", serde_json::to_string(&kept_too).unwrap()).as_bytes());
+    let file = dir.join("2026-10.desk.jsonl");
+    let mut bytes = std::fs::read(&file).unwrap();
+    bytes.extend_from_slice(&tail);
+    std::fs::write(&file, bytes).unwrap();
     let large = std::fs::File::create(dir.join("2026-09.laptop.jsonl")).unwrap();
     large.set_len(MOST_FILE_BYTES + 1).unwrap();
 
     let read = read(root, "deploy", None);
 
     let ids: Vec<&str> = read.grades.iter().map(|one| one.grade.as_str()).collect();
-    assert_eq!(ids, ["g1"], "only the row that holds together is shown");
-    assert_eq!(read.skipped, 2);
+    assert_eq!(
+        ids,
+        ["g2", "g1"],
+        "only the rows that hold together are shown"
+    );
+    assert_eq!(read.skipped, 3);
     let said = read.said().expect("it is said");
     assert!(
-        said.starts_with("2 rows of the grade record were skipped"),
+        said.starts_with("3 rows of the grade record were skipped"),
         "{said}"
     );
     assert!(

@@ -185,7 +185,10 @@ const MOST_AHEAD: chrono::TimeDelta = chrono::TimeDelta::hours(1);
 
 /// Whether `ts` is a time's stamp, no later than [`MOST_AHEAD`] past `now`.
 fn stamped_by(ts: &str, now: chrono::DateTime<chrono::Utc>) -> bool {
-    chrono::DateTime::parse_from_rfc3339(ts).is_ok_and(|at| at <= now + MOST_AHEAD)
+    chrono::DateTime::parse_from_rfc3339(ts).is_ok_and(|at| {
+        now.checked_add_signed(MOST_AHEAD)
+            .is_none_or(|latest| at <= latest)
+    })
 }
 
 /// A level as purlis records it: a folder of a level, spelled as that level spells its own.
@@ -377,17 +380,16 @@ fn append_local(path: &Path, row: &serde_json::Value) -> std::io::Result<PathBuf
     Ok(path.to_path_buf())
 }
 
-/// Why the record file `path` was not read: it is not a file of its own, it is larger than
-/// [`MOST_FILE_BYTES`], or it could not be read as text.
+/// Why the record file `path` was not read: it is not a file of its own, or it is larger than
+/// [`MOST_FILE_BYTES`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Unread {
     NotAFile,
     TooLarge,
-    NotText,
 }
 
 /// The text of the record file `path`, read through no link and at most [`MOST_FILE_BYTES`], or
-/// why not.
+/// why not. A byte that is not text spoils only the row it is in, never the file.
 fn file_text(path: &Path) -> Result<String, Unread> {
     let meta = std::fs::symlink_metadata(path).map_err(|_| Unread::NotAFile)?;
     if !meta.is_file() {
@@ -401,11 +403,11 @@ fn file_text(path: &Path) -> Result<String, Unread> {
     let file = crate::contain::nofollow(&mut options)
         .open(path)
         .map_err(|_| Unread::NotAFile)?;
-    let mut text = String::new();
+    let mut bytes = Vec::new();
     file.take(MOST_FILE_BYTES)
-        .read_to_string(&mut text)
-        .map_err(|_| Unread::NotText)?;
-    Ok(text)
+        .read_to_end(&mut bytes)
+        .map_err(|_| Unread::NotAFile)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// The record files of folder `dir`, newest month first: only where `dir` is a folder of its
@@ -467,6 +469,23 @@ impl Read {
     }
 }
 
+/// Whether `line`, which is not a row this purlis reads, names the skill `name` as a row would:
+/// an object whose `skill` is it, of a version this purlis reads.
+fn names_the_skill(line: &str, name: &str) -> bool {
+    if line.len() > MOST_LINE_BYTES {
+        // Too long to read whole: the key looked for as purlis writes it, or as JSON may.
+        return line.contains(&format!("\"skill\": {}", serde_json::Value::from(name)))
+            || line.contains(&format!("\"skill\":{}", serde_json::Value::from(name)));
+    }
+    serde_json::from_str::<serde_json::Value>(line).is_ok_and(|value| {
+        value.get("skill").and_then(serde_json::Value::as_str) == Some(name)
+            && value
+                .get("v")
+                .and_then(serde_json::Value::as_u64)
+                .is_none_or(|v| v <= u64::from(VERSION))
+    })
+}
+
 /// What the window and the terminal say of the record file `path` that was not read, `why`.
 fn unread_said(path: &Path, why: Unread) -> String {
     let name = path
@@ -479,7 +498,6 @@ fn unread_said(path: &Path, why: Unread) -> String {
             "{name} is larger than {} MiB, so its grades were not read",
             MOST_FILE_BYTES / (1024 * 1024)
         ),
-        Unread::NotText => format!("{name} is not text, so its grades were not read"),
     }
 }
 
@@ -523,16 +541,27 @@ fn read_at(
             }
         };
         let mut rows: Vec<Graded> = Vec::new();
-        for row in crate::mdsection::split_lines(&text)
-            .into_iter()
-            .filter(|line| line.len() <= MOST_LINE_BYTES)
-            .filter_map(|line| serde_json::from_str::<Graded>(line).ok())
-            .filter(|row| row.v <= VERSION && row.skill == name)
-            .filter(|row| match &wanted {
-                None => true,
-                Some(word) => row.level.is_none() || row.level == *word,
-            })
-        {
+        for line in crate::mdsection::split_lines(&text) {
+            // A line too long or not a row is skipped; it is counted where it names this
+            // skill, so a row of it is never dropped unseen.
+            let row = (line.len() <= MOST_LINE_BYTES)
+                .then(|| serde_json::from_str::<Graded>(line).ok())
+                .flatten();
+            let Some(row) = row else {
+                if names_the_skill(line, name) {
+                    out.skipped += 1;
+                }
+                continue;
+            };
+            let its = row.v <= VERSION
+                && row.skill == name
+                && match &wanted {
+                    None => true,
+                    Some(word) => row.level.is_none() || row.level == *word,
+                };
+            if !its {
+                continue;
+            }
             if row.sound(now) {
                 rows.push(row);
             } else {
@@ -554,30 +583,40 @@ fn read_at(
 pub struct Estimate {
     pub tokens: Option<u64>,
     pub cost_usd: Option<f64>,
-    /// The chats of the grade it is worked out from that ran.
+    /// The chats the grade it is worked out from asked for: none where none ran, as in one
+    /// purlis stopped under.
     pub chats_then: u32,
     /// That grade: when it ran, and the profile and the harness its chats ran on.
     pub ts: String,
     pub profile: Option<String>,
     pub harness: Option<String>,
-    /// Whether it ran on the profile this grade runs on: a grade on another one may have spent
-    /// otherwise.
-    pub same_profile: bool,
+    /// Whether it ran on the profile this grade runs on (a grade on another one may have spent
+    /// otherwise), or `None` where this grade's profile is not known.
+    pub same_profile: Option<bool>,
 }
 
 /// **What a grade of `chats` chats on `profile` would cost, from `grades`** (newest first), and
-/// which grade it is worked out from (#3273): the newest one on that profile whose chats ran,
-/// else the newest whose chats ran on any; where none ran, the newest, which says no cost.
-/// `None` where there is none.
+/// which grade it is worked out from (#3273): the newest one on that profile that asked for a
+/// chat, else the newest that asked for one on any; where none did, the newest, which says no
+/// cost and no chat. `None` where there is none. What it spent is shared over every chat it
+/// asked for, a chat stopped, ended at a limit or never started among them, as what a chat
+/// stopped spent is counted too.
 fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<Estimate> {
-    let ran = |row: &&Graded| row.spent.chats > 0;
+    let asked = |row: &Graded| -> u64 {
+        row.report
+            .arms
+            .iter()
+            .map(|arm| u64::from(arm.chats) + u64::from(arm.not_run))
+            .sum()
+    };
+    let any = |row: &&Graded| asked(row) > 0;
     let last = grades
         .iter()
-        .filter(ran)
+        .filter(any)
         .find(|row| profile.is_some() && row.profile.as_deref() == profile)
-        .or_else(|| grades.iter().find(ran))
+        .or_else(|| grades.iter().find(any))
         .or_else(|| grades.first())?;
-    let then = u64::from(last.spent.chats);
+    let then = asked(last);
     let per = |of: u64| (then > 0).then(|| of.div_ceil(then).saturating_mul(u64::from(chats)));
     Some(Estimate {
         tokens: last.spent.tokens.and_then(per),
@@ -586,11 +625,11 @@ fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<E
             .cost_usd
             .filter(|_| then > 0)
             .map(|cost| cost / then as f64 * f64::from(chats)),
-        chats_then: last.spent.chats,
+        chats_then: u32::try_from(then).unwrap_or(u32::MAX),
         ts: last.ts.clone(),
         profile: last.profile.clone(),
         harness: last.harness.clone(),
-        same_profile: profile.is_some() && last.profile.as_deref() == profile,
+        same_profile: profile.map(|profile| last.profile.as_deref() == Some(profile)),
     })
 }
 
@@ -608,6 +647,10 @@ pub struct Planned {
     pub estimate: Option<Estimate>,
     /// What the record left out as it was read ([`Read::said`]).
     pub record_said: Option<String>,
+    /// The record of the copy's grades, read once for the plan: what the estimate is worked
+    /// out from, and what `purlis skill grade` lists.
+    #[serde(skip)]
+    pub record: Read,
     pub unseen: Vec<usize>,
     /// The trigger tests left out, each with why: a query a chat cannot be started on
     /// ([`left_out_why`]).
@@ -700,11 +743,9 @@ pub fn planned(
         runs: RUNS,
     });
     let plan = request.as_ref().map(grade::plan);
-    let record = plan.map(|_| read(root, name, Some(level)));
-    let estimate = plan
-        .zip(record.as_ref())
-        .and_then(|(plan, record)| estimate_of(&record.grades, plan.chats, profile));
-    let record_said = record.as_ref().and_then(Read::said);
+    let record = read(root, name, Some(level));
+    let estimate = plan.and_then(|plan| estimate_of(&record.grades, plan.chats, profile));
+    let record_said = record.said();
     let unseen = request
         .as_ref()
         .map(|request| {
@@ -734,6 +775,7 @@ pub fn planned(
         plan,
         estimate,
         record_said,
+        record,
         unseen,
         left_out,
         cap: cap::token_cap(root),

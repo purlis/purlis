@@ -81,14 +81,14 @@ pub struct GradeLeftOut {
 pub struct GradeEstimate {
     pub tokens: Option<f64>,
     pub cost_usd: Option<f64>,
-    /// The chats of the grade it is worked out from that ran.
+    /// The chats the grade it is worked out from asked for: none where none ran.
     pub chats_then: u32,
     /// That grade: when it ran, and the profile and the harness its chats ran on.
     pub ts: String,
     pub profile: Option<String>,
     pub harness: Option<String>,
-    /// Whether it ran on the profile this grade runs on.
-    pub same_profile: bool,
+    /// Whether it ran on the profile this grade runs on, or `None` where that is not known.
+    pub same_profile: Option<bool>,
 }
 
 /// **The price a grade's dollar limit is worked out at** (`grades::price`), as the plan says it.
@@ -425,8 +425,8 @@ pub(crate) async fn skill_grade_start(
         flag_on()?;
         let level: Level = (&level).into();
         let root = held.root().to_path_buf();
-        let (profile, on, priced) = chats_on(&root, profile);
-        let planned = grades::planned(&root, &level, &skill, profile.as_deref())?;
+        // The estimate is the plan's to show: a start needs none of it.
+        let planned = grades::planned(&root, &level, &skill, None)?;
         // What runs is what the plan showed (the review of #3229): the tests, the skill's files
         // and what its folder holds, read once here and laid out from this one copy.
         if planned.consent.as_deref() != Some(consent.as_str()) {
@@ -441,6 +441,7 @@ pub(crate) async fn skill_grade_start(
                 "{skill} has no trigger tests to grade, so nothing was started."
             ));
         };
+        let (profile, on, priced) = chats_on(&root, profile);
         on?;
         let profile = profile.ok_or("The grade did not start: no profile was found.")?;
         let id = purlis_core::reopen::mint();
