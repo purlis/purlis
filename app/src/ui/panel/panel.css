@@ -227,8 +227,10 @@
 }
 
 /* **A group's name is held under the top** while its group is in sight, on the panel's fill, so
-   the rows scroll under it: the prototype's 26px `.ghead`. */
-[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] {
+   the rows scroll under it: the prototype's 26px `.ghead`. A list's group and a tree's alike: the
+   Chats view's workspace names are its tree's (#3484). */
+[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"],
+[data-scope="panel-section"][data-frame] [data-scope="tree"][data-part="header"] {
   position: sticky;
   inset-block-start: var(--panel-section-top-size);
   z-index: 1;
@@ -249,6 +251,7 @@
 }
 
 [data-scope="panel-section"][data-frame] [data-part="header"] > [data-count] {
+  flex: none;
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
 }

@@ -677,6 +677,8 @@ export type Option = {
   says?: ReactNode;
   disabled?: boolean;
   title?: string;
+  /** How many things a chip stands for, after its words and never in its name (#3484). */
+  count?: number;
 };
 
 /**
@@ -763,6 +765,7 @@ function Chips({ ids, options, checked, onCheckedChange }: Tied & Ticks) {
           tooltip={one.title}
           isSelected={checked.has(one.value)}
           isDisabled={one.disabled}
+          count={one.count}
           onChange={(on) => onCheckedChange(one.value, on)}
         >
           {one.label}

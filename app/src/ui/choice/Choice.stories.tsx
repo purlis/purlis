@@ -122,6 +122,8 @@ function Chips() {
           key={value}
           at={at}
           variant="chip"
+          // A count after the words (#3484), and none on a chip with nothing to count.
+          count={[2, 3, undefined][at]}
           isSelected={on.has(value)}
           onChange={(to) => tick(value, to)}
         >
@@ -132,12 +134,14 @@ function Chips() {
   );
 }
 
-/** One Tab stop for the row; the arrows move along it; Space ticks the chip the keyboard is on. */
+/** One Tab stop for the row; the arrows move along it; Space ticks the chip the keyboard is on.
+ *  A chip's count follows its words and describes it, never part of its name (#3484). */
 export const ChipsOverAList: Story = {
   render: () => <Chips />,
   play: async ({ canvas, userEvent }) => {
     const needs = canvas.getByRole("checkbox", { name: "needs you" });
     const working = canvas.getByRole("checkbox", { name: "working" });
+    await expect(needs).toHaveAccessibleDescription("2");
     await userEvent.tab();
     await expect(needs).toHaveFocus();
     await userEvent.keyboard("{ArrowRight}");

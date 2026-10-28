@@ -277,3 +277,18 @@ export function sinceSaid(seconds: number): string {
   if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`;
   return `${Math.floor(seconds / 86_400)}d`;
 }
+
+/**
+ * **A chat row's time at its end** (#3484, the prototype's `.rm`): `now` in its first minute,
+ * minutes in its first hour, and then the clock time it came into its state, `10:42`, or its
+ * day, `10-26`, where that was before today (`PanelList.shortDate`'s style).
+ */
+export function rowTimeSaid(seconds: number, now: Date): string {
+  if (seconds < 60) return "now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  const at = new Date(now.getTime() - seconds * 1000);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return at.toDateString() === now.toDateString()
+    ? `${two(at.getHours())}:${two(at.getMinutes())}`
+    : `${two(at.getMonth() + 1)}-${two(at.getDate())}`;
+}
