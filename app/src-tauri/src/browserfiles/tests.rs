@@ -212,3 +212,27 @@ fn a_save_or_an_upload_spelled_as_a_folding_disk_reads_a_kept_or_planted_name_is
         false,
     ));
 }
+
+#[test]
+fn a_chat_the_app_has_no_folder_for_gets_no_files_never_the_projects_root() {
+    // P2 of the review: no record of where the chat runs is a refusal, not the whole project.
+    let project = tempfile::tempdir().expect("a directory");
+    assert_eq!(
+        super::folder_of(None, project.path()).unwrap_err(),
+        super::NO_FOLDER
+    );
+    let files = Files::default();
+    assert_eq!(
+        refused(files.prepared(
+            1,
+            "B",
+            upload(&["a.txt"]),
+            || super::folder_of(None, project.path()),
+            false
+        )),
+        super::NO_FOLDER
+    );
+    // A folder outside the project is refused too.
+    let elsewhere = tempfile::tempdir().expect("a directory");
+    assert!(super::folder_of(Some(elsewhere.path().to_path_buf()), project.path()).is_err());
+}

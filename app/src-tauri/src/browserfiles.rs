@@ -11,10 +11,11 @@
 //!   ([`Files::prepared`]). Until the window's prompt for it is built (designed first, by the
 //!   person's ruling of 2026-10-28), nothing answers yes: every save is refused, in words that
 //!   say the download stays in the browser, so a download never lands in a chat's folder
-//!   unasked. Where a yes is given, a save goes only to a path of the chat's folder that its
-//!   rules let it write ([`purlis_core::brokered::guard`]: never what a program run later
-//!   loads, never a manifest) and that purlis keeps from no chat; the host then writes it as a
-//!   new file, following no link ([`purlis_core::browserfiles::bring`]).
+//!   unasked. Where a yes is given, a save goes only to a path of the chat's folder that the
+//!   brokered-write guard allows ([`purlis_core::brokered::guard`]: no later-code name, no
+//!   `.gitignore`, no manifest) and that purlis keeps from no chat; the host then writes it as
+//!   a new file, following no link ([`purlis_core::browserfiles::bring`]). The chat's other
+//!   write denials are not judged here yet: the save prompt (#3746) brings that check with it.
 //! - **An upload comes from the chat's folder alone, under its read rules**: each file a path
 //!   relative to it, none that purlis keeps from every chat
 //!   ([`purlis_core::sandbox::kept_from_reading`]). The window names the folder, its own record
@@ -40,6 +41,9 @@ pub fn save_not_allowed_said(origin: &str) -> String {
          browser. Go on without it, and tell the person its name if the task needs it"
     )
 }
+
+/// What a chat is told of an upload or a save where the app has no record of its folder.
+pub const NO_FOLDER: &str = "purlis could not find this chat's folder, so no file crosses";
 
 /// What a runner chat is told of an upload or a save (#2020).
 pub const NOT_ON_A_RUNNER: &str = "this chat's browser runs on a pool's runner, where purlis does \
@@ -213,7 +217,8 @@ fn readable(at: &ChatFolder, written: &str) -> Result<(), String> {
 }
 
 /// Whether `written` is a path of the chat's folder a download may be saved to: in the folder,
-/// nothing purlis keeps from every chat, and a place the chat's rules let it write.
+/// nothing purlis keeps from every chat, and a place the brokered-write guard allows, however it
+/// is spelled. Not yet the chat's other write denials (#3746).
 fn writable(at: &ChatFolder, written: &str) -> Result<(), String> {
     let names = purlis_core::browserfiles::relative(written)?;
     let path = joined(&at.folder, &names);
@@ -252,15 +257,15 @@ fn kept(path: &Path, kept: &[PathBuf]) -> bool {
 /// start, and its project's root, each as the kernel names them; and what purlis keeps from
 /// every chat to read. Refused, in words, where any of it cannot be told.
 pub fn chat_folder(held: &crate::planes::Held, session: u32) -> Result<ChatFolder, String> {
-    let root = held.root().to_path_buf();
-    let folder = held
-        .chats()
-        .folder_of(session)
-        .ok_or_else(|| "purlis could not find this chat's folder, so no file crosses".to_owned())?;
-    let real = |path: &Path| {
-        path.canonicalize()
-            .map_err(|_| "purlis could not find this chat's folder, so no file crosses".to_owned())
-    };
+    folder_of(held.chats().folder_of(session), held.root())
+}
+
+/// [`chat_folder`], for a chat the app recorded at `folder` (none: it has no record of where it
+/// runs) in the project at `root`. No record is a refusal, never the project's root.
+fn folder_of(folder: Option<PathBuf>, root: &Path) -> Result<ChatFolder, String> {
+    let root = root.to_path_buf();
+    let folder = folder.ok_or_else(|| NO_FOLDER.to_owned())?;
+    let real = |path: &Path| path.canonicalize().map_err(|_| NO_FOLDER.to_owned());
     let (folder, root) = (real(&folder)?, real(&root)?);
     if !folder.starts_with(&root) {
         return Err("this chat runs outside its project, so no file crosses".to_owned());
@@ -268,9 +273,8 @@ pub fn chat_folder(held: &crate::planes::Held, session: u32) -> Result<ChatFolde
     let kept =
         purlis_core::sandbox::kept_from_reading(&root, &purlis_core::sandbox::Machine::this())
             .map_err(|why| {
-                format!(
-                    "purlis could not tell what it keeps from chats ({why}), so no file crosses"
-                )
+                tracing::warn!("purlis: no file crosses a chat's browser's edge: {why}");
+                purlis_core::browserfiles::UNTOLD.to_owned()
             })?;
     Ok(ChatFolder { folder, root, kept })
 }

@@ -23,8 +23,10 @@
 //!   file by many spellings; its identity is one.
 //! - **A download is brought in as a new file** ([`bring`]): written under the chat's folder at
 //!   a relative path, its folders walked the same way, never over a file or a link that is
-//!   there, and never anywhere the caller's own rules refuse (the window checks the chat's read
-//!   and write rules before it asks).
+//!   there, and never into a folder purlis keeps from chats. What else is checked of where it
+//!   goes is the caller's: the brokered-write guard ([`crate::brokered::guard`]: no later-code
+//!   name, no `.gitignore`, no manifest). The chat's other write denials are not judged yet,
+//!   and every save is refused until they are (#3746).
 
 use std::fs::File;
 use std::io::{Read, Write};
@@ -49,12 +51,12 @@ pub struct Kept {
 impl Kept {
     /// What purlis keeps from the chats of the project at `project`, on this machine. Refused
     /// where that list cannot be told whole: nothing crosses then.
+    /// Why is written to the host's log; the refusal names no path.
     pub fn of(project: &Path) -> Result<Kept, String> {
         let paths = crate::sandbox::kept_from_reading(project, &crate::sandbox::Machine::this())
             .map_err(|why| {
-                format!(
-                    "purlis could not tell what it keeps from chats ({why}), so no file crosses"
-                )
+                tracing::warn!("purlis: no file crosses a browser's edge: {why}");
+                UNTOLD.to_owned()
             })?;
         Ok(Kept::of_paths(&paths))
     }
@@ -85,6 +87,11 @@ impl Kept {
         Ok(())
     }
 }
+
+/// What an upload or a save is refused with where the list of what purlis keeps from chats
+/// cannot be told whole (#2020): words alone, no path of this machine's.
+pub const UNTOLD: &str = "purlis could not read its list of what it keeps from chats, so no file \
+                          crosses: tell the person, whose project's vault settings may need a look";
 
 /// What a file or folder purlis keeps from chats is refused with (#2020).
 const KEPT: &str = "it is a file or folder purlis keeps from every chat, so it does not cross";

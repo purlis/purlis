@@ -1322,15 +1322,12 @@ impl EngineScreen {
         let from = from.ok_or_else(|| {
             NotActed::Refused("an upload names the chat's folder it reads from".into())
         })?;
-        // What purlis keeps from the project's chats, by what each file is (#2020): the host's
-        // own reading, whatever the window judged by spelling.
-        let kept = crate::browserfiles::Kept::of(project).map_err(NotActed::Refused)?;
         let n = self
             .uploads
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let into = self.data.join(UPLOADS).join(n.to_string());
-        let copies = crate::browserfiles::stage(Path::new(from), files, &into, &kept)
-            .map_err(NotActed::Refused)?;
+        let copies =
+            staged_files(project, Path::new(from), files, &into).map_err(NotActed::Refused)?;
         Ok(drive::Call::Upload {
             target: Ref::new(target),
             files: copies,
@@ -1351,13 +1348,6 @@ impl EngineScreen {
         let into = into.ok_or_else(|| {
             NotActed::Refused("bringing a download in names the chat's folder".into())
         })?;
-        // Never where a chat may not write, however it is spelled (#2020): judged here too,
-        // on the spelling a folding disk reads, and by what each folder on the way is.
-        let names = crate::browserfiles::relative(to).map_err(NotActed::Refused)?;
-        let mut target = PathBuf::from(into);
-        target.extend(names.iter().map(|name| crate::browserfiles::folded(name)));
-        crate::brokered::guard(project, &target, None).map_err(NotActed::Refused)?;
-        let kept = crate::browserfiles::Kept::of(project).map_err(NotActed::Refused)?;
         let browser = self.with(Arc::clone).ok_or(NotActed::Ended)?;
         let one = browser
             .downloads()
@@ -1375,8 +1365,7 @@ impl EngineScreen {
             )));
         }
         let from = self.data.join(DOWNLOADS).join(&one.file);
-        let bytes = crate::browserfiles::bring(&from, Path::new(into), to, &kept)
-            .map_err(NotActed::Refused)?;
+        let bytes = saved_file(project, &from, Path::new(into), to).map_err(NotActed::Refused)?;
         let id = CallId::new(format!("kept:{download}"))
             .map_err(|why| NotActed::Refused(why.to_string()))?;
         let listed = browser
@@ -1390,6 +1379,41 @@ impl EngineScreen {
         ));
         Ok(out)
     }
+}
+
+/// **The copies of `files` of the chat's folder `from` an upload hands the engine** (#2020),
+/// made in `into`: each judged against what purlis keeps from the chats of the project at
+/// `project`, as this host reads it, by what each file is, whatever the window judged by
+/// spelling.
+pub(crate) fn staged_files(
+    project: &Path,
+    from: &Path,
+    files: &[String],
+    into: &Path,
+) -> Result<Vec<PathBuf>, String> {
+    let kept = crate::browserfiles::Kept::of(project)?;
+    crate::browserfiles::stage(from, files, into, &kept)
+}
+
+/// **Writes the download at `download` into the chat's folder `into` as `to`** (#2020): never
+/// where the brokered-write guard refuses, on the spelling as written and as a folding disk
+/// reads it, nor into a folder purlis keeps from the chats of the project at `project`, by what
+/// it is. Answers the bytes written.
+pub(crate) fn saved_file(
+    project: &Path,
+    download: &Path,
+    into: &Path,
+    to: &str,
+) -> Result<u64, String> {
+    let names = crate::browserfiles::relative(to)?;
+    let mut written = into.to_path_buf();
+    written.extend(names.iter());
+    let mut folded = into.to_path_buf();
+    folded.extend(names.iter().map(|name| crate::browserfiles::folded(name)));
+    crate::brokered::guard(project, &written, None)?;
+    crate::brokered::guard(project, &folded, None)?;
+    let kept = crate::browserfiles::Kept::of(project)?;
+    crate::browserfiles::bring(download, into, to, &kept)
 }
 
 /// How far a download came, in words.
