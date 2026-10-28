@@ -647,6 +647,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's own press in their window, after the plan showed what it costs.
     "skill_grade_start",
     "skill_grade_stop",
+    // A grade of a router started (SK-15e, #3233): as a skill's grade, it runs chats on the
+    // person's profile and records the grade in the project. Stopped by `skill_grade_stop`.
+    "router_grade_start",
     // A grade's token cap (#2779): what this machine's grades may spend, in its own settings
     // file. The person's own press in their window.
     "skill_grade_set_cap",
@@ -1076,6 +1079,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "show_window_holding",
     "skill_details",
     "skill_diff",
+    // What a router's grade runs (SK-15e, #3233): read only.
+    "router_grade_plan",
     // A grade's kept chat and its scorecard (SK-59, #3239): read only.
     "skill_grade_chat",
     "skill_grade_plan",

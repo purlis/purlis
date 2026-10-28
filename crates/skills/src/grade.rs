@@ -23,6 +23,7 @@
 //! it, and below it for one that should not.
 
 mod fixtures;
+pub mod routers;
 
 pub use fixtures::{
     EVALS_DIR, FixtureFile, Fixtures, MOST_PROMPT_BYTES, MOST_TRIGGER_TESTS, OutcomeEval, Read,
@@ -55,6 +56,10 @@ pub enum Arm {
     Without,
     /// The skill as its previous version had it.
     Previous,
+    /// The library, routed by the router under grade (SK-15e, ADR 0102 §8): a router's grade.
+    Router,
+    /// The library, routed by the built-in router: a router's grade's baseline.
+    BuiltInRouter,
 }
 
 impl Arm {
@@ -79,7 +84,15 @@ impl GradeRequest {
     /// The arm the others are compared with: the previous version where the grade has one,
     /// else no skill.
     pub fn baseline(&self) -> Option<Arm> {
-        [Arm::Previous, Arm::Without]
+        [Arm::Previous, Arm::Without, Arm::BuiltInRouter]
+            .into_iter()
+            .find(|arm| self.arms.contains(arm))
+    }
+
+    /// The arm the baseline is compared with: the skill as it is, or, in a router's grade, the
+    /// router under grade.
+    pub fn graded(&self) -> Option<Arm> {
+        [Arm::With, Arm::Router]
             .into_iter()
             .find(|arm| self.arms.contains(arm))
     }
@@ -368,10 +381,15 @@ impl GradeReport {
     /// How many trigger tests passed with the skill, of those that ran: the grade a skill's
     /// history shows for its version.
     pub fn passed_with(&self) -> (u32, u32) {
+        self.passed_in(Arm::With)
+    }
+
+    /// How many trigger tests passed in `arm`, of those that ran in it.
+    pub fn passed_in(&self, arm: Arm) -> (u32, u32) {
         let with: Vec<&TriggerScore> = self
             .triggers
             .iter()
-            .filter(|score| score.arm == Arm::With && score.pass.is_some())
+            .filter(|score| score.arm == arm && score.pass.is_some())
             .collect();
         let passed = with.iter().filter(|score| score.pass == Some(true)).count();
         (
@@ -571,7 +589,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
             .and_then(|one| one.pass_rate)
             .map(|stat| stat.mean)
     };
-    let delta = mean_of(Some(Arm::With))
+    let delta = mean_of(request.graded())
         .zip(mean_of(request.baseline()))
         .map(|(with, base)| with - base);
 

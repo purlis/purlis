@@ -518,6 +518,10 @@ pub struct StudioRouter {
     /// Each chat open here that its start routed by an extension, by its number, with how
     /// that went: its timing, and whether it fell back on the built-in router.
     pub chats: Vec<StudioRouted>,
+    /// **The router's newest grade** (SK-15e, #3233), in a sentence: how many of the library's
+    /// trigger tests pass with it and with the built-in router, and the library's commit it was
+    /// graded on. Null where it has none, and for the built-in router.
+    pub grade: Option<String>,
 }
 
 /// One chat a router extension was asked about at its start.
@@ -551,11 +555,17 @@ fn router_of(
         ),
         Err(why) => (format!("{why}."), true, None),
     };
+    let grade = extension.as_deref().and_then(|id| {
+        purlis_core::skills::grades::routers::grades_of(root, id)
+            .first()
+            .map(purlis_core::skills::grades::routers::RouterGraded::said)
+    });
     StudioRouter {
         said,
         problem,
         extension,
         chats: Vec::new(),
+        grade,
     }
 }
 

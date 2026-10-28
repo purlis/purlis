@@ -1097,6 +1097,7 @@ fn commit_of(root: &Path, level: &Level, name: &str, content: &Content) -> Optio
 pub mod cap;
 pub mod kept;
 pub mod price;
+pub mod routers;
 pub mod underway;
 
 #[cfg(test)]

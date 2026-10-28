@@ -158,16 +158,16 @@ pub struct SkillGradePlan {
 }
 
 /// **Where a grade's chats run**, as [`chats_on`] reads it.
-struct On {
+pub(crate) struct On {
     /// The profile, where one was found.
-    profile: Option<String>,
+    pub(crate) profile: Option<String>,
     /// The sandbox's name there, or why no grade can run on it.
-    checked: Result<String, String>,
+    pub(crate) checked: Result<String, String>,
     /// The price its dollar limit is worked out at.
-    priced: grading::Priced,
+    pub(crate) priced: grading::Priced,
     /// The models its harness offers for a grade, and the one picked (SK-60, #3240).
-    models: Vec<String>,
-    model: Option<String>,
+    pub(crate) models: Vec<String>,
+    pub(crate) model: Option<String>,
 }
 
 /// **Whether a grade's chats can run on `profile`** (the project's default where none) and on
@@ -175,7 +175,11 @@ struct On {
 /// sandbox's, or why not (R1 and R2 of the operator's ruling of 2026-10-26); the price its
 /// dollar limit is worked out at there (`grades::priced`), the dearest where no chat could start;
 /// and the models its harness offers (`grades::models_for`).
-fn chats_on(root: &std::path::Path, profile: Option<String>, model: Option<String>) -> On {
+pub(crate) fn chats_on(
+    root: &std::path::Path,
+    profile: Option<String>,
+    model: Option<String>,
+) -> On {
     let profile = match profile {
         Some(profile) => profile,
         None => match crate::curation::default_profile(root, "no grade can run") {
@@ -375,10 +379,17 @@ pub struct SkillGradeStep {
 }
 
 /// One grade running, and its way to be stopped.
-struct Running {
-    plane: PlaneId,
-    skill: String,
-    stop: Arc<AtomicBool>,
+pub(crate) struct Running {
+    pub(crate) plane: PlaneId,
+    pub(crate) subject: Subject,
+    pub(crate) stop: Arc<AtomicBool>,
+}
+
+/// **What a grade grades**: a skill, by its name, or a router, by its extension's id (SK-15e).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Subject {
+    Skill(String),
+    Router(String),
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -386,7 +397,7 @@ static RUNNING: std::sync::LazyLock<Mutex<HashMap<String, Running>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// The grades running now, held.
-fn running() -> std::sync::MutexGuard<'static, HashMap<String, Running>> {
+pub(crate) fn running() -> std::sync::MutexGuard<'static, HashMap<String, Running>> {
     RUNNING.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -396,7 +407,7 @@ fn running() -> std::sync::MutexGuard<'static, HashMap<String, Running>> {
 /// builds alone: every shipped build aborts on a panic (`panic = "abort"` in the release
 /// profile), so there the app ends with it, and the project's next start recording the grade as
 /// interrupted (`grades::underway`) is the floor, by decision (#3443).
-fn held_to_its_end(grade: &str, body: impl FnOnce(), failed: impl FnOnce()) {
+pub(crate) fn held_to_its_end(grade: &str, body: impl FnOnce(), failed: impl FnOnce()) {
     let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
     running().remove(grade);
     if ran.is_err() {
@@ -436,7 +447,7 @@ pub(crate) fn record_interrupted(root: &std::path::Path) -> Vec<String> {
 fn running_of(plane: &PlaneId, skill: &str) -> Option<String> {
     running()
         .iter()
-        .find(|(_, one)| one.plane == *plane && one.skill == skill)
+        .find(|(_, one)| one.plane == *plane && one.subject == Subject::Skill(skill.to_owned()))
         .map(|(id, _)| id.clone())
 }
 
@@ -525,7 +536,7 @@ pub(crate) async fn skill_grade_start(
                 id.clone(),
                 Running {
                     plane: plane.clone(),
-                    skill: skill.clone(),
+                    subject: Subject::Skill(skill.clone()),
                     stop: Arc::clone(&stop),
                 },
             );
@@ -601,12 +612,25 @@ pub(crate) async fn skill_grade_start(
                 };
                 tell(0, None, 0, None, None);
                 let run = || {
+                    let lay_out = |arm: Arm| {
+                        // The previous version as an arm is #3237: the built-in runner asks for
+                        // none now.
+                        if arm == Arm::Previous {
+                            return Err("this purlis grades no previous version".to_owned());
+                        }
+                        purlis_core::skills::verbs::drafts::lay_out_arm(
+                            &root,
+                            arm.has_the_skill().then_some(&copy.snapshot),
+                        )
+                    };
                     let mut chats = InChats {
                         held: &held,
-                        snapshot: &copy.snapshot,
+                        lay_out: &lay_out,
                         cost_left: limits.cost_usd,
                         unpriced_at: limits.unpriced_usd_per_million,
-                        skill: &skill,
+                        skill: skill.clone(),
+                        label: format!("Grade {skill}"),
+                        keeps_screens: true,
                         profile: &profile,
                         stop: &stop,
                         spent: Spent::default(),
@@ -749,6 +773,10 @@ pub enum ScoredArm {
     With,
     Without,
     Previous,
+    /// The library, routed by the router under grade (SK-15e).
+    Router,
+    /// The library, routed by the built-in router: a router's grade's baseline.
+    BuiltInRouter,
 }
 
 impl From<Arm> for ScoredArm {
@@ -757,6 +785,8 @@ impl From<Arm> for ScoredArm {
             Arm::With => ScoredArm::With,
             Arm::Without => ScoredArm::Without,
             Arm::Previous => ScoredArm::Previous,
+            Arm::Router => ScoredArm::Router,
+            Arm::BuiltInRouter => ScoredArm::BuiltInRouter,
         }
     }
 }
@@ -915,36 +945,41 @@ pub(crate) async fn skill_grade_chat(
 
 /// **This app's host for the built-in runner**: each chat a grade asks for runs in the project,
 /// as a grade's chat (`curation::start_graded`), one at a time.
-struct InChats<'a> {
-    held: &'a Arc<Held>,
-    /// The skill's copy, read once for the grade.
-    snapshot: &'a purlis_core::skills::verbs::drafts::Snapshot,
+pub(crate) struct InChats<'a> {
+    pub(crate) held: &'a Arc<Held>,
+    /// Lays out the throwaway piece of an arm's chat, from what the grade read once.
+    pub(crate) lay_out: &'a dyn Fn(Arm) -> Result<purlis_core::skills::verbs::drafts::Try, String>,
     /// What the grade may still cost, where its chats say: a chat that passes it is ended.
-    cost_left: Option<f64>,
+    pub(crate) cost_left: Option<f64>,
     /// What a chat that says its tokens and no cost is counted at against [`Self::cost_left`],
     /// in dollars a million: the grade's own `Limits::unpriced_usd_per_million`, as the runner
     /// counts it.
-    unpriced_at: Option<f64>,
-    skill: &'a str,
-    profile: &'a str,
-    stop: &'a AtomicBool,
+    pub(crate) unpriced_at: Option<f64>,
+    /// The skill whose tests run now: what a chat ends at, once it starts.
+    pub(crate) skill: String,
+    /// What each chat is labelled, in the session host's list.
+    pub(crate) label: String,
+    /// Whether what each chat showed is kept for the skill's scorecard (SK-59).
+    pub(crate) keeps_screens: bool,
+    pub(crate) profile: &'a str,
+    pub(crate) stop: &'a AtomicBool,
     /// What the chats that ran so far spent, and who is told each, with how many asked.
-    spent: Spent,
-    tell: &'a dyn Fn(u32, Option<u64>, u32),
+    pub(crate) spent: Spent,
+    pub(crate) tell: &'a dyn Fn(u32, Option<u64>, u32),
     /// The grade's id: what each chat's screen is kept under (SK-59).
-    grade: &'a str,
+    pub(crate) grade: &'a str,
     /// The chats that asked the person something and were ended there (SK-59).
-    asked: u32,
+    pub(crate) asked: u32,
     /// The harness the chats ran on, as the first that started said.
-    harness: Option<String>,
+    pub(crate) harness: Option<String>,
     /// The plugins its chats were handed off (#3468): every one any chat that started was handed
     /// off, as each start reads the record again. `None` until one starts.
-    plugins_off: Option<Vec<String>>,
+    pub(crate) plugins_off: Option<Vec<String>>,
     /// The model the person picked for its chats, or `None` for the profile's own (SK-60).
-    model: Option<&'a str>,
+    pub(crate) model: Option<&'a str>,
     /// The model each chat's harness said it ran on, in the order they ran (SK-60): what the
     /// record keeps (`grades::reported_model`).
-    reported: Vec<String>,
+    pub(crate) reported: Vec<String>,
 }
 
 impl Chats for InChats<'_> {
@@ -1001,12 +1036,7 @@ impl InChats<'_> {
             end: ChatEnd::NotStarted { why },
         };
         let root = self.held.root().to_path_buf();
-        let skill = chat.arm.has_the_skill().then_some(self.snapshot);
-        // The previous version as an arm is #3237: the built-in runner asks for none now.
-        if chat.arm == Arm::Previous {
-            return not_started("this purlis grades no previous version".to_owned());
-        }
-        let laid = match purlis_core::skills::verbs::drafts::lay_out_arm(&root, skill) {
+        let laid = match (self.lay_out)(chat.arm) {
             Ok(laid) => laid,
             Err(why) => return not_started(why),
         };
@@ -1018,7 +1048,7 @@ impl InChats<'_> {
                 profile: self.profile.to_owned(),
                 persona: None,
                 cwd: laid.piece.clone(),
-                label: format!("Grade {}", self.skill),
+                label: self.label.clone(),
                 prompt: chat.prompt.clone(),
                 then_a_space: false,
                 starts_runs: Some(StartedBy::Grade),
@@ -1053,6 +1083,20 @@ impl InChats<'_> {
         }
         off.sort();
         let session = started.session;
+        // A router's arm is a run of the router only where its start took the router's answer
+        // (SK-15e): a chat that fell back on the built-in router measures that one instead, so
+        // it is no run, and the grade says why.
+        if chat.arm == Arm::Router
+            && let Some(why) = router_did_not_route(self.held.chats(), session)
+        {
+            if let Some((number, _)) = told {
+                watching.unwatch(number);
+            }
+            if let Err(close) = self.held.chats().close(session) {
+                tracing::warn!("purlis: a grade's chat {session} did not close ({close})");
+            }
+            return not_started(why);
+        }
         let id = self.held.chats().chat_at(session).and_then(|at| at.id);
         // What the chat has spent so far, as its harness last said: read each look, so a chat
         // that passes the grade's cap is ended in it.
@@ -1119,11 +1163,11 @@ impl InChats<'_> {
             self.reported.push(model);
         }
         // What its terminal showed as it ended, kept to open from the scorecard (SK-59).
-        if let Some(chat) = id.as_deref() {
+        if let Some(chat) = id.as_deref().filter(|_| self.keeps_screens) {
             match screen_of(self.held.chats().sessions(), session) {
                 Some(screen) => {
                     if let Err(why) =
-                        grades::kept::keep(&root, self.skill, self.grade, chat, &screen)
+                        grades::kept::keep(&root, &self.skill, self.grade, chat, &screen)
                     {
                         tracing::warn!("purlis: a grade's chat {session} was not kept ({why})");
                     }
@@ -1148,6 +1192,21 @@ impl InChats<'_> {
             ms: u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX),
             end,
         }
+    }
+}
+
+/// **Why chat `session` of a router's arm is no run of its router** (SK-15e): its start fell back
+/// on the built-in router, in the words its routing says it, or asked no router at all. `None`
+/// where the router's answer was taken.
+fn router_did_not_route(chats: &crate::chats::Chats, session: u32) -> Option<String> {
+    match chats
+        .routings()
+        .into_iter()
+        .find(|one| one.session == session)
+    {
+        Some(one) if one.routed.record.fell_back.is_none() => None,
+        Some(one) => Some(one.routed.said()),
+        None => Some("its start asked no router, so it measured the built-in router".to_owned()),
     }
 }
 

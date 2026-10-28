@@ -65,6 +65,8 @@ const ARM_SAID: Record<ScoredRuns["arm"], string> = {
   with: "With the skill",
   without: "Without it",
   previous: "Its previous version",
+  router: "With the router",
+  "built-in-router": "With the built-in router",
 };
 
 /** One arm of one test, in a sentence: what ran, what started the skill, and the asks. */

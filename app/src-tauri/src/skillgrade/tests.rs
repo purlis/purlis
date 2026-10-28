@@ -162,7 +162,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
             grade.to_owned(),
             Running {
                 plane: plane.clone(),
-                skill: "deploy".into(),
+                subject: Subject::Skill("deploy".into()),
                 stop: Arc::new(AtomicBool::new(false)),
             },
         );
