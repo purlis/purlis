@@ -325,7 +325,10 @@ fn read(path: &Path) -> Held {
         Held::Unsound
     } else if held.graded.v > super::VERSION {
         Held::Newer
-    } else if held.graded.sound() {
+    } else if
+    // This machine's own row, stamped by its own clock as the grade began: a clock set back
+    // since never makes it unsound, so no stamp is too late here (#3273).
+    held.graded.sound(chrono::DateTime::<chrono::Utc>::MAX_UTC) {
         Held::Sound(Box::new(held))
     } else {
         Held::Unsound

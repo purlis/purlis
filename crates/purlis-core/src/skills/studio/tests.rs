@@ -173,14 +173,14 @@ fn a_grade() -> super::super::grades::Graded {
         triggered: if pass { 3 } else { 0 },
         rate: Some(if pass { 1.0 } else { 0.0 }),
         pass: Some(pass),
-        chats: Vec::new(),
+        chats: vec![None; 3],
     };
     let arm = |arm: Arm, mean: f64, stddev: f64| ArmScore {
         arm,
         pass_rate: Some(stat(mean, stddev)),
         tokens: None,
         seconds: None,
-        chats: 6,
+        chats: 3,
         not_run: 0,
     };
     super::super::grades::Graded {
@@ -209,7 +209,7 @@ fn a_grade() -> super::super::grades::Graded {
             priced: None,
         },
         spent: super::super::grades::Spent {
-            chats: 12,
+            chats: 6,
             tokens: None,
             cost_usd: None,
         },
@@ -235,7 +235,7 @@ fn the_grades_panel_is_a_scorecard_of_each_grade_against_no_skill() {
             "100%",
             "50% ± 12",
             "+50 points",
-            "12 chats",
+            "6 chats",
             "Finished",
         ]
     );
@@ -320,5 +320,35 @@ fn the_grades_panel_shows_one_copys_grades_alone() {
         keys(None),
         keys(Some(&first)),
         "the copy the tab shows first"
+    );
+}
+
+/// #3273: the Grades panel says what the record left out, as trouble, under its table.
+#[test]
+fn the_grades_panel_says_what_the_record_left_out() {
+    let plane = tempfile::tempdir().expect("a project");
+    let dir = plane.path().join("personas/_grades");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut forged = a_grade();
+    forged.spent.chats = 1;
+    std::fs::write(
+        dir.join("2026-10.desk.jsonl"),
+        format!("{}\n", serde_json::to_string(&forged).unwrap()),
+    )
+    .unwrap();
+    let level = Level::project();
+    let blocks = GradesPanel {
+        plane: plane.path(),
+        level: Some(&level),
+    }
+    .blocks("deploy")
+    .unwrap();
+    let Some(Block::Note { text, tone }) = blocks.last() else {
+        panic!("{blocks:?}");
+    };
+    assert_eq!(*tone, Tone::Trouble);
+    assert!(
+        text.starts_with("A row of the grade record was skipped"),
+        "{text}"
     );
 }

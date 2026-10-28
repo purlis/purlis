@@ -3800,9 +3800,19 @@ An end row, never a pass or a fail:
   arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
   reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
   1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469;
-  a `plugins_off` that is no list of at most 256 ids a plugin could have, #3468) is
-  skipped. At most 200 grades of a skill are answered, newest first
-  (`purlis_core::skills::grades::grades_of`).
+  a `plugins_off` that is no list of at most 256 ids a plugin could have, #3468; and since #3273
+  a level no level spells, `runs` outside 1 to 16, tokens past ten times the largest cap or
+  dollars past ten times its dearest limit, a stamp more than an hour ahead of this machine's
+  clock, a `spent` that is not what the report adds up to (its chats the arms' runs, its tokens
+  `spent_tokens`, its cost `spent_usd` where the report has one), or an arm whose chats are not
+  what its tests ran and asked for) is skipped. **What was left out is said** (#3273): the
+  Grades panel, the plan and `purlis skill grade` say how many rows of the skill were skipped
+  (a row of it no purlis parses among them) and name each file not read (a link, or one past
+  16 MiB), never dropping them unseen; a byte that is not text spoils only its own row. At most 200 grades of a skill are answered, newest first
+  (`purlis_core::skills::grades::read`). The plan's estimate is worked out from the newest grade
+  on the profile the grade runs on that asked for a chat, else the newest that asked for one, its
+  spend shared over every chat it asked for, and says which grade it is, that it ran no chat, or
+  that its cost is not known where its chats said nothing of it.
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
   skill log's is; keys sorted, `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`).
