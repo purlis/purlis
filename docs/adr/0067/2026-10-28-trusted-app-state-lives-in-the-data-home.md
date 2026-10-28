@@ -15,15 +15,15 @@
    their callers refuse or say so; none falls back to the plane. A fenced build whose data home is
    outside its fence keeps the folder under the temporary directory, keyed the same way.
 3. **The integrity class holds it.** A chat's sandbox denies writing `<data>/app-state` and
-   everything below it, and reads it: a Try it's chat reads its laid-out skill there. Purlis's own
+   everything below it, and reads it: a Try it's chat reads its laid-out skill there. Purlis's own Seatbelt
    wrap also holds `<data>/app-state` and `<data>` itself as entries, so neither is renamed, moved
    or replaced. Each is held under every spelling a case-folding disk takes. The class is
    `integrity`, not `human-powers`: these are purlis's own records, as they were in the plane's
    state folder, and the refusal a chat gets names purlis's own ways. Like every class, no grant
    reaches it, and a grant of a folder above it leaves it denied.
 4. **Moved once.** At a project's first open after the upgrade, before any chat of it is put back,
-   each store an older purlis kept in the plane's state folder (under either spelling, or where
-   `$PURLIS_HOME` put it) is moved or removed, and `moved-from-the-plane` in the project's app
+   each store an older purlis kept in the plane's own state folder (under either spelling) is moved
+   or removed, each only once all of it is carried, and `moved-from-the-plane` in the project's app
    state says so; nothing reads the plane's copies after that. Where a choice was open, the old
    copy is discarded rather than carried:
    - drafts and local grades are the person's own work, and are carried (a month's rows are added
@@ -34,6 +34,13 @@
      after each edit on again from a plan that shows the cost;
    - the records of the levels are vouching records, and are removed: every workspace and persona
      folder of the project then waits for the person's Accept in the Skill studio again.
-5. **No cost at a chat's open.** The move runs once per project open, and after its mark is written
+5. **It follows the project, and fails closed.** A folder of the app state records the root it is
+   for. A project its record of open chats says moved (V43) carries its drafts, local grades and kept
+   grade chats from the old key's folder where that folder records the old root, never its opt-ins
+   or levels records, and its workspace and persona folders wait for Accept again. A copy carries
+   nothing. Where no app state can be kept, or a sandboxed start could not be noted, every workspace
+   and persona folder is held. A state folder `$PURLIS_HOME` names may be shared by clones: its
+   copies are left in place and read no more.
+6. **No cost at a chat's open.** The move runs once per project open, and after its mark is written
    it looks at that one name alone. A chat's start reads the same stores it read before, in their
    new place.
