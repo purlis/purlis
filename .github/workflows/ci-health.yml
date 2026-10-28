@@ -20,10 +20,6 @@ on:
   schedule:
     # Monday 05:17 UTC: after the week's last day has ended everywhere the team works.
     - cron: "17 5 * * 1"
-  # TEMPORARY, removed before review: workflow_dispatch needs the file on main, so this proves
-  # the job on its own branch. A push run writes no issue.
-  push:
-    branches: [ci/health-report]
   workflow_dispatch:
     inputs:
       sample:
