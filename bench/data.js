@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793219826810,
+  "lastUpdate": 1793221382859,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28854,6 +28854,48 @@ window.BENCHMARK_DATA = {
             "value": 102.15799799999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.239, 101.303, 102.158, 102.176, 103.210 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "390591c04da4b9b100321867a471a793c672c9f8",
+          "message": "Browsers: downloads and uploads (#2020) (#3699)\n\n* Browsers: downloads and uploads (#2020)\n\nA chat's browser holds each download in its own holding folder, which no chat\nreaches, under the engine's own name; tells the agent its plain name, size and\norigin; lists it on the browser's row with Open and Show in folder; and saves it\ninto the chat's folder only once the person allowed its origin for that chat. An\nupload takes files of the chat's folder alone, read by the session host following\nno link and handed to the engine as purlis's copy. Session protocol 1.46.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: name the save Ask in notifications, list the download refusal, fix test answers (#2020)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: the bindings for downloads and saves, and the rows' window tests (#2020)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: leave the window's surface for downloads to its design; saves wait on the person's yes (#2020)\n\nThe person ruled on 2026-10-28 that every window surface is designed before it is\nbuilt. The download list on a browser's row, its Open and Show in folder, and the\nprompt that asks to save a download are taken out, to come back once designed.\nUntil that prompt exists nothing says yes, so every save is refused in words and\na download never lands in a chat's folder.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: an upload may say what changed on its page (#2020)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: the MCP server lists the file tools, and the docs say them (#2020)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: an upload or a save asks at each call with the harness's own prompt (#2020)\n\nThe browser Ask is the consent for the tools that drive a page (#2245). Moving a\nfile across the chat's folder is more than that, so those two tools are left out\nof what a harness runs without asking.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: the harness test counts the tools that ask each time (#2020)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: harden path-boundary checks; bound and clean downloads (#2020)\n\nReview round 1 of #3699.\n\n- The session host decides what purlis keeps from the project's chats for itself, and judges\n  each folder and file of an upload or a save by what it is, on the descriptor it reads. The\n  window's check stays as an early, worded refusal.\n- The window refuses files for a chat it has no folder for, rather than widening to the\n  project.\n- Downloads past the count cap are cancelled and counted, never listed. An over-size\n  download's file is removed as it is marked. A download's name drops every character a reader\n  does not see.\n- A yes for one origin covers no download from another.\n- The unused version constant is gone, and the docs say upload and save ask at every call.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Browsers: test the host's own kept list, refuse in words alone, say exactly what a save checks (#2020)\n\nReview round 2 of #3699.\n\n- The host's upload and save go through two functions that read what purlis keeps from the\n  project's chats themselves; tests drive them with a project holding a vault.\n- A chat the app has no folder for gets no files, tested directly.\n- A refusal for a list that cannot be read gives words alone; why goes to the log.\n- The docs say exactly what is checked of where a save goes, and what waits for #3746.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T20:20:57Z",
+          "tree_id": "0d0f8d4ff91e5a6e928d2e0e1c416c075005b56e",
+          "url": "https://github.com/purlis/purlis/commit/390591c04da4b9b100321867a471a793c672c9f8"
+        },
+        "date": 1793221374036,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6907485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.672, 0.689, 0.691, 0.692, 0.697 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.489286999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.461, 16.488, 16.489, 16.538, 16.589 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1452055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.773, 101.667, 102.145, 102.199, 102.268 ms"
           }
         ]
       }
