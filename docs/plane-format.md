@@ -7805,7 +7805,9 @@ refuses a `<data>` under a project or inside any git work tree.
   kernel names it, and `owner` the project it belongs to, by the 32 hex characters of its state
   folder's [`app/app-state-id`](#appapp-state-id), each written when the folder is
   made. A folder whose `owner` is not the project's own (a new project made at an older one's path)
-  is renamed `<clone key>.foreign-<n>`, read no more, and a new one made. `moved-from-the-plane`, an
+  is renamed `<clone key>.foreign-<n>`, read no more, and a new one made, whose workspace and
+  persona folders wait for the person's Accept where the one set aside held levels records; until
+  then no reader sees it (`appstate::dir`). `moved-from-the-plane`, an
   empty file, says an older purlis's copies of these stores were moved out of the plane's state
   folder, once, at the project's open (`appstate::move_out_of_the_plane`): only the folder purlis
   was reading (the spelling `names::state` picks) is looked at, and the other is left unread; a
@@ -7820,7 +7822,9 @@ refuses a `<data>` under a project or inside any git work tree.
   the old key's `root` names the root the record names and its `owner` is the project's own, and
   only once that root is no longer a project holding the same id (`appstate::follow_arrival`, at
   the project's open); `moving-from-<old key>` marks a carry under way, taken up again at the
-  next open, and becomes `moved-from-<old key>` once it is whole. Its opt-ins and levels records
+  next open, and becomes `moved-from-<old key>` once it is whole; the old key's folder is removed
+  first, and only where its root is known gone (its folder above is there and it is not), so one on
+  a volume that is not mounted is never removed. Its opt-ins and levels records
   are not carried, and every workspace and persona folder then waits for the person's Accept
   again. A copy starts with none of it, and an id of its own. Where the machine has no data home, or one in a project or a git work tree, the
   stores are unavailable and say so, none falls back to the plane, and a sandboxed chat is not
