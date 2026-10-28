@@ -1188,10 +1188,10 @@ jobs:
   # runner the job took 15 minutes, 7 of them building on macOS's slow runner and 6 running the
   # specs one at a time, longer than any other job but `rust` (2026-10-10). Each part builds for
   # itself, as `rust`'s do. The seven runs that each need an app of their own (`extras`) are a
-  # third leg that runs no spec (`specs: false`): beside a part's specs they made those specs 4 to
-  # 5 minutes slower on the same runner as well as adding their own 7 (2026-10-28: part 1's specs
-  # took 955 s with them and 717 s without, part 2's 927 s with them and 622 s without), and the
-  # part that carried them took 31 to 32 minutes. The app as it ships is `app`'s macOS leg
+  # third leg that runs no spec (`specs: false`): in a spec part they added about 7 minutes after
+  # its specs, and that part was the run's longest job (31 to 32 minutes on 2026-10-28; 25.9 with
+  # the extras apart). macOS runners vary a lot: the same half of the specs took 622 to 984 s and
+  # the build 179 to 485 s across those runs. The app as it ships is `app`'s macOS leg
   # (`app builds (macos-latest)`).
   # `scenario-checks` carries the required check's name. Linux has the same steps, in
   # `scenario-linux`.
@@ -1311,7 +1311,7 @@ jobs:
         # and #1829's run showed no notice at all.
         run: |
           said=$(sccache --show-stats 2>&1 | head -30 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::notice title=sccache (macOS part ${{ matrix.shard }})::${said:-sccache said nothing}"
+          echo "::notice title=sccache (macOS, ${{ matrix.specs && format('part {0}', matrix.shard) || 'the single-app runs' }})::${said:-sccache said nothing}"
       - run: npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
         if: runner.os == 'macOS' && matrix.specs
         working-directory: app
@@ -1447,7 +1447,7 @@ jobs:
           name: scenario-logs-${{ matrix.os }}-${{ matrix.shard }}
           path: app/logs
 
-  # The required check `scenario tests (macos-latest)`: green only when both parts are, and
+  # The required check `scenario tests (macos-latest)`: green only when every leg is, and
   # `!cancelled()` for the reason `rust-checks` gives.
   scenario-checks:
     name: scenario tests (macos-latest)
@@ -1455,14 +1455,15 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: Every leg passed
         env:
           RESULT: ${{ needs.scenario.result }}
         run: test "$RESULT" = success
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
   # alone. Two parts too, since its specs alone took 7.8 minutes of 12.7 (2026-10-12); Linux
-  # runners are not the ones in short supply. Part 2 runs the seven single-app runs, as on macOS.
+  # runners are not the ones in short supply. Part 2 runs the seven single-app runs (on macOS
+  # they are a leg of their own).
   scenario-linux:
     name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
     strategy:
@@ -1488,7 +1489,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: Every leg passed
         env:
           RESULT: ${{ needs.scenario-linux.result }}
         run: test "$RESULT" = success
