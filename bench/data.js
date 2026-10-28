@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793150066026,
+  "lastUpdate": 1793154178553,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27552,6 +27552,48 @@ window.BENCHMARK_DATA = {
             "value": 105.379355,
             "unit": "ms",
             "extra": "median of 5 runs: 102.469, 104.151, 105.379, 106.643, 107.481 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "60212579b1acba085b3fcac5a5c65cc1c91d2c38",
+          "message": "ci: the macOS scenario extras get a leg of their own (#3574)\n\n* ci: the macOS scenario extras get a leg of their own\n\nMeasured on #3574's first version: the seven single-app extras made the\nspecs beside them 4 to 5 minutes slower on the same runner, on top of\ntheir own ~7. Part 1's specs took 955 s with them and 717 s without;\npart 2's 927 s with them and 622 s without. Whichever part carried them\ntook 31 to 32 minutes, the run's longest job.\n\nA third macOS leg (specs: false, extras: true, named 'the single-app\nruns') builds and runs the extras alone; both spec parts run specs only.\nThe spec runs and their annotations are gated on matrix.specs, which\nthe Linux legs now set too (they share the steps). WebdriverIO's shards\nare unchanged, so no spec moves.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* ci: say what the extras leg measured, and name every leg\n\nThe first version's reason was wrong: run 40613162434 had no extras\nbeside the specs and the halves still took 850 and 984 s, so macOS\nrunners vary (622 to 984 s for a half, 179 to 485 s to build) rather\nthan the extras slowing the specs. What the leg does is take ~7 minutes\nof serial work off a spec part: the longest macOS job went from 31-32\nto 25.9 minutes.\n\nReview nits: the sccache notice names the leg, scenario-checks says\nevery leg, the Linux comment says macOS runs the extras apart.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T01:58:24Z",
+          "tree_id": "40f5af48aedbf25e2c22e102135c9edc87a556fe",
+          "url": "https://github.com/purlis/purlis/commit/60212579b1acba085b3fcac5a5c65cc1c91d2c38"
+        },
+        "date": 1793154176286,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5974200000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.584, 0.588, 0.597, 0.618, 0.646 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1356505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.031, 16.069, 16.136, 16.170, 16.187 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.943895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.535, 100.677, 101.944, 102.274, 102.312 ms"
           }
         ]
       }
