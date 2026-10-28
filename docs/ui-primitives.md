@@ -248,7 +248,7 @@ project's default is every teammate's and never follows, so while it names the p
 rename stays refused, and so does a persona whose definition names it with `profile:` or a
 `[dispatch.profiles]` list holding it (#1380). A user changed at another level than the entry's
 says which (`Referrer::elsewhere`, on the wire `level` and `target`, #1241), and its link goes
-there: a persona's to its tab (*Show <persona>*), another level's group through the window's
+there: a persona's to its tab (_Show <persona>_), another level's group through the window's
 `landing()`. A user with neither draws its group's link at this level, as before. A picker's
 New… for the collection opens its Add form and picks what was added.
 
@@ -365,13 +365,18 @@ under a tree's row (`.ui-row.ui-tree-row`), which the tree family takes next.
 ### Tree row
 
 **A tree is the tree family's** since #2911: [The tree family](#the-tree-family) below draws the
-Changes view, every file tree (a file tab's, the Explorer's *Files* and a branch's cockpit) and
-the Explorer's *Repos and branches*. The Chats list, still drawn by hand, keeps the shared tree
+Changes view, every file tree (a file tab's, the Explorer's _Files_ and a branch's cockpit) and
+the Explorer's _Repos and branches_. The Chats list, still drawn by hand, keeps the shared tree
 row below until it moves (#3198); `purlis/tree-family` is off for its files alone.
 
 ```html
 <ul class="ui-tree" role="tree">
-  <li class="ui-row ui-tree-row" role="treeitem" aria-level="1" aria-expanded="true">
+  <li
+    class="ui-row ui-tree-row"
+    role="treeitem"
+    aria-level="1"
+    aria-expanded="true"
+  >
     <span class="ui-tree-twist" aria-hidden="true"><ChevronRight /></span>
     <span class="ui-row-label">A parent</span>
   </li>
@@ -440,15 +445,15 @@ own `min-width: max-content` beside the class.
 `<button>` left is another family's control, said by its role or its family's class (the rule's
 `otherFamilies`).
 
-| Prop | Says |
-| --- | --- |
-| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264) |
-| `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
-| `inline` | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only |
-| `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
-| `onPress`, `isDisabled`, `isSelected` | React Aria's own words; `onClick` still reaches a Radix trigger the button is the `asChild` of |
-| `tooltip` | its hint, the shared tooltip ([the tooltip family](#the-tooltip-family)), never a `title`; on an `IconButton`, a second line under its name |
-| `className` | the button's place in its view (margin, width, flex, order), never a look |
+| Prop                                  | Says                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `variant`                             | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264) |
+| `size`                                | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `inline`                              | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `icon`                                | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `onPress`, `isDisabled`, `isSelected` | React Aria's own words; `onClick` still reaches a Radix trigger the button is the `asChild` of                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tooltip`                             | its hint, the shared tooltip ([the tooltip family](#the-tooltip-family)), never a `title`; on an `IconButton`, a second line under its name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `className`                           | the button's place in its view (margin, width, flex, order), never a look                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 - **A row of buttons takes one size** (`ButtonRow`): every button in it is the row's size,
   whatever it asks for, so a mixed row cannot be built. A row wraps by default (#1855): the
@@ -491,17 +496,17 @@ raw `<input>` left is another family's: a checkbox, a radio, a slider or a colou
 [choice families'](#the-choice-families) (`purlis/choice-family`, an error), and a combobox's is
 the select family's (`purlis/select-family`, an error: [The select and combobox families](#the-select-and-combobox-families)).
 
-| Prop | Says |
-| --- | --- |
-| `label`, `help` | its name over the box and one line of help under it; with no visible label, `aria-label` or `aria-labelledby` names it (a filter, a box in a table's cell, a settings row's box, whose row draws the label) |
-| `validate` | what is wrong with a value, or nothing: said under the box when it is left with words the person changed (a box only tabbed through says nothing), then following the typing until it is right (N26) |
-| `error` | a refusal from elsewhere, in its own words (the core's), said at once; `isInvalid` marks a box refused whose words are drawn elsewhere (a tab's rename card) |
-| `size` | a `TextField`'s `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only for a list's main filter field; one size for a row of controls |
-| `icon` | the mark at a `TextField`'s start: a filter's or a search's glass, hidden from a screen reader, taking no press |
-| `keepsFocus` | a name unique to the box in the window: the box drawn in its place keeps the keyboard and the caret (R168) |
-| `value`, `onChange` | the words, as React Aria's words: `onChange` is handed the string. A secret's box (`type="password"`) is never given its words, a type error if it is: it holds them itself, out of React's state and the page's markup, and its `onChange` says only whether it is filled (`secretBoxes.guard.test.ts` names each one) |
-| `onKeyDown`, `onBlur`, … | the element's own native handlers, unstopped: a dialog's Escape and a list's arrows still hear a key the box does not take |
-| `className` | the field's place in its view (margin, width, flex, order), never a look |
+| Prop                     | Says                                                                                                                                                                                                                                                                                                                    |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`, `help`          | its name over the box and one line of help under it; with no visible label, `aria-label` or `aria-labelledby` names it (a filter, a box in a table's cell, a settings row's box, whose row draws the label)                                                                                                             |
+| `validate`               | what is wrong with a value, or nothing: said under the box when it is left with words the person changed (a box only tabbed through says nothing), then following the typing until it is right (N26)                                                                                                                    |
+| `error`                  | a refusal from elsewhere, in its own words (the core's), said at once; `isInvalid` marks a box refused whose words are drawn elsewhere (a tab's rename card)                                                                                                                                                            |
+| `size`                   | a `TextField`'s `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only for a list's main filter field; one size for a row of controls                                                                                                                                                 |
+| `icon`                   | the mark at a `TextField`'s start: a filter's or a search's glass, hidden from a screen reader, taking no press                                                                                                                                                                                                         |
+| `keepsFocus`             | a name unique to the box in the window: the box drawn in its place keeps the keyboard and the caret (R168)                                                                                                                                                                                                              |
+| `value`, `onChange`      | the words, as React Aria's words: `onChange` is handed the string. A secret's box (`type="password"`) is never given its words, a type error if it is: it holds them itself, out of React's state and the page's markup, and its `onChange` says only whether it is filled (`secretBoxes.guard.test.ts` names each one) |
+| `onKeyDown`, `onBlur`, … | the element's own native handlers, unstopped: a dialog's Escape and a list's arrows still hear a key the box does not take                                                                                                                                                                                              |
+| `className`              | the field's place in its view (margin, width, flex, order), never a look                                                                                                                                                                                                                                                |
 
 - **A field is its label, its control, its help and its error, as one.** React Aria ties the
   label to the box and the help and the error to its description. The error is an alert, as every
@@ -547,11 +552,11 @@ Aria's `Select`, `Button`, `SelectValue`, `ComboBox`, `Input`, `ListBox`, `ListB
 `aria-haspopup="listbox"` itself, or wears the old `.ui-select` classes: `eslint.config.js`
 refuses all four (`purlis/select-family`, an error).
 
-| Member | Is |
-| --- | --- |
-| `Select` | a button that shows what is picked and opens the list to pick from; `value`, `options` (`value`, `label`, `isDisabled`, `tooltip`), `onValueChange`, `placeholder`, `isDisabled`, `error`, `isInvalid`, `tooltip`, `size` |
-| `ComboBox` | a box to type in with the suggestions that match in a list under it; what is typed is the value, and a suggestion picked writes its words (Add a skill) |
-| `ListComboBox` | the box over a list drawn in place under it, always shown, whose rows and aim are its owner's (the command palette): the field family's box with the combobox's ARIA, which only this family writes |
+| Member         | Is                                                                                                                                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Select`       | a button that shows what is picked and opens the list to pick from; `value`, `options` (`value`, `label`, `isDisabled`, `tooltip`), `onValueChange`, `placeholder`, `isDisabled`, `error`, `isInvalid`, `tooltip`, `size` |
+| `ComboBox`     | a box to type in with the suggestions that match in a list under it; what is typed is the value, and a suggestion picked writes its words (Add a skill)                                                                   |
+| `ListComboBox` | the box over a list drawn in place under it, always shown, whose rows and aim are its owner's (the command palette): the field family's box with the combobox's ARIA, which only this family writes                       |
 
 - **Drawn by its parts** (ADR 0103): a select's button is `data-scope="select" data-part="root"`
   (with `data-size`, and `data-open` while its list is up), drawn as the text input's box; in it
@@ -606,16 +611,16 @@ imports Radix's checkbox, radio group, switch, slider or toggles, or wears the o
 `.ui-radio`, `.ui-switch`, `.ui-segmented-*`, `.ui-levels` or `.ui-choice-*` classes:
 `eslint.config.js` refuses each (`purlis/choice-family`, an error).
 
-| Member | Is |
-| --- | --- |
-| `Checkbox` | a native box in its own label: a press of its words ticks it as a press of its box does, Space from the keyboard; `isIndeterminate` draws a bar. `variant="chip"` is one of a few small chips over the list they narrow, its tick in a slot it always keeps; a chip's `count` is after its words and describes it, never part of its name (#3484) |
-| `CheckboxGroup` | a named group of boxes, each holding its own value (two may stand for one); `roving` makes the row one Tab stop with the arrows between its `RovingCheckbox`es (the Chats list's state chips, #1687) |
-| `RadioGroup`, `Radio` | one of a few, a column of options, each its mark, its words (and a `lead` before them: a persona's mark) and a `description` under them |
-| `SegmentedControl`, `Segment` | a few views of one thing side by side (a level of Settings, a side view's scope), `sm` (the chrome's height, never under 24) or `md` (the control's, as a button's); a segment's `count` is beside its words and in its name. The chosen segment stands on the window's ground with a 1 px edge under it, held to 3:1; its weight never changes |
-| `OptionCards`, `OptionCard` | one of a few compared before picking (Start a chat's harnesses, R24): cards of one height, each its `icon` and `title`, its `detail` under them, and **no radio circle**; the chosen card takes the accent's wash, its edge and its check. `variant="tile"` is a square tile that is only its icon, named by `aria-label` (a persona's mark and colour) |
-| `Switch` | a setting in force as it is turned (R63): a 34 × 20 pill at the person's text size whatever a theme's control height, its 14 px thumb 3 px in and sliding on the knob's token (`quick`, 150 ms in Purlis), on in the accent's fill with the thumb in the window's colour; never sliding under reduced motion |
-| `Slider` | a number along a range: the arrows, Page Up and Down, Home and End move it; its value is drawn beside it as `shown` says and heard as `spoken` says, once, as it moves; it is named by its row's words (`label`, React Aria's `Label`); its id is on its root and hands the focus to the thumb, so its row's name and Reset find it |
-| `ColorWell` | the platform's colour well and picker, handing back the colour it settles on once |
+| Member                        | Is                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Checkbox`                    | a native box in its own label: a press of its words ticks it as a press of its box does, Space from the keyboard; `isIndeterminate` draws a bar. `variant="chip"` is one of a few small chips over the list they narrow, its tick in a slot it always keeps; a chip's `count` is after its words and describes it, never part of its name (#3484)       |
+| `CheckboxGroup`               | a named group of boxes, each holding its own value (two may stand for one); `roving` makes the row one Tab stop with the arrows between its `RovingCheckbox`es (the Chats list's state chips, #1687)                                                                                                                                                    |
+| `RadioGroup`, `Radio`         | one of a few, a column of options, each its mark, its words (and a `lead` before them: a persona's mark) and a `description` under them                                                                                                                                                                                                                 |
+| `SegmentedControl`, `Segment` | a few views of one thing side by side (a level of Settings, a side view's scope), `sm` (the chrome's height, never under 24) or `md` (the control's, as a button's); a segment's `count` is beside its words and in its name. The chosen segment stands on the window's ground with a 1 px edge under it, held to 3:1; its weight never changes         |
+| `OptionCards`, `OptionCard`   | one of a few compared before picking (Start a chat's harnesses, R24): cards of one height, each its `icon` and `title`, its `detail` under them, and **no radio circle**; the chosen card takes the accent's wash, its edge and its check. `variant="tile"` is a square tile that is only its icon, named by `aria-label` (a persona's mark and colour) |
+| `Switch`                      | a setting in force as it is turned (R63): a 34 × 20 pill at the person's text size whatever a theme's control height, its 14 px thumb 3 px in and sliding on the knob's token (`quick`, 150 ms in Purlis), on in the accent's fill with the thumb in the window's colour; never sliding under reduced motion                                            |
+| `Slider`                      | a number along a range: the arrows, Page Up and Down, Home and End move it; its value is drawn beside it as `shown` says and heard as `spoken` says, once, as it moves; it is named by its row's words (`label`, React Aria's `Label`); its id is on its root and hands the focus to the thumb, so its row's name and Reset find it                     |
+| `ColorWell`                   | the platform's colour well and picker, handing back the colour it settles on once                                                                                                                                                                                                                                                                       |
 
 - **All of one group is one Tab stop**, the arrow keys moving the pick along (the WAI-ARIA radio
   pattern, React Aria's own): a radio group, a segmented control and option cards alike. Each
@@ -653,15 +658,16 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 `purlis/status-item-family`): a screen wears none of their old classes and never writes their
 `data-scope` itself.
 
-| Family | Wrapper | Parts | Variants |
-| --- | --- | --- | --- |
-| Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel; `PanelTitle`, the title of the view it shows (`ui/panel/Panel.tsx`) | `root`, `title` | `side`, `content`, `bottom` |
-| Panel section | `PanelSection` (with `view` and `top`), `PanelSectionHead`, `PanelSectionTitle`, `InPanelTop` (`ui/panel/Panel.tsx`) | `root`, `head`, `title`, `top` | `default` |
-| Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
-| View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
-| View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
-| Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
-| Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
+| Family          | Wrapper                                                                                                                                                                                                | Parts                                                                                                                 | Variants                           |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Panel           | `Panel`, or `panelRoot(variant)` on a library's resizable panel; `PanelTitle`, the title of the view it shows (`ui/panel/Panel.tsx`)                                                                   | `root`, `title`                                                                                                       | `side`, `content`, `bottom`        |
+| Panel section   | `PanelSection` (with `view` and `top`), `PanelSectionHead`, `PanelSectionTitle`, `InPanelTop` (`ui/panel/Panel.tsx`)                                                                                   | `root`, `head`, `title`, `top`                                                                                        | `default`                          |
+| Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels                                                                                                                         | `root`, `grip`                                                                                                        | none                               |
+| View frame      | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none                               |
+| View nav        | a page in the view frame's navigation, drawn by `ViewNav`                                                                                                                                              | `item`, `label`, `indicator`                                                                                          | none                               |
+| Review page     | `ReviewPage` (`ui/review-page/ReviewPage.tsx`), a review too long for a dialog: its body over a fixed action bar                                                                                       | `root`, `body`, `bar`, `summary`, `answers`                                                                           | none                               |
+| Empty state     | `EmptyState` (`ui/empty-state/EmptyState.tsx`)                                                                                                                                                         | `root`, `icon`, `headline`, `body`, `action`                                                                          | `page`, `panel`                    |
+| Status item     | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`)                                                                                | `root`, `icon`, `label`, `count`                                                                                      | `bar`, `pill`, `waiting`, `accent` |
 
 - **The window's geometry is the theme's** (#2805): the gap between the regions is
   `window.gutter`, a panel's corners `panel.corner-radius`, and the hairline between two flush
@@ -717,6 +723,21 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   an editor's indent, so Ctrl does not take ⌘'s place), and the mouse's own back and forward
   buttons walk it anywhere in a `ViewFrame` handed the `history`; an editor, a menu or a dialog
   keeps the keys.
+- **A review too long for a dialog is a review page** (#3672, the skill sources and skill
+  grading prototypes, `purlis/review-page-family`): the install review and the update review,
+  file by file, and the grade plan, test by test. Its body is the only part that scrolls, and it
+  ends where the bar starts, so the page scrolls under the bar's edge and a focused control is
+  never under it (WCAG 2.4.11); a body that scrolls with nothing in it the keyboard can reach is
+  a Tab stop of its own. The bar, on the panel's fill under the window's hairline, says at its
+  start what pressing the main action does and what it spends (`summary`, which describes the
+  main action), then holds at most three answers in a dialog's places, drawn by the dialog's own
+  answer row: Cancel leads, the main action trails, one other may stand between. The main action
+  may be unavailable with its reason and stays a Tab stop; Return in a field is the main action
+  unless it grants or cannot be taken back. Its words keep their room (`reserve` on the answer,
+  `summaryReserve` on the summary), so "Start grading · 12 chats" turning to "· 9 chats" moves
+  nothing. Under 30rem the summary takes its own line over the answers. In a view frame's item
+  pane it takes the room under the page header. The bar's edge is never a theme's: it is a
+  consent surface where it holds a grant.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right
@@ -747,13 +768,13 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 `notice-*`, `pane-notices`, `ui-setting-badge`, `count-pill`), writes none of their
 `data-scope`, and draws no `<hr>` of its own.
 
-| Family | Wrapper | Parts | Variants |
-| --- | --- | --- | --- |
-| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value` | `raised`, `ask` |
-| Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble` |
-| Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
-| Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
-| Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's) | `root` | none |
+| Family    | Wrapper                                                                                                                                                  | Parts                                                               | Variants                              |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------- |
+| Card      | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value` | `raised`, `ask`                       |
+| Notice    | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx`                                                         | `root`, `message`, `whose`, and `under` (what a way out opened)     | `news`, `trouble`                     |
+| Badge     | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`)                                                                                                             | `root`                                                              | `neutral`, `accent`, `waiting`, `ok`  |
+| Count     | `Count`, `CountGroup` (`ui/badge/Badge.tsx`)                                                                                                             | `root`, `group`                                                     | `neutral`, `accent`, `waiting`, `hot` |
+| Separator | `Separator` (`ui/separator/Separator.tsx`, on React Aria's)                                                                                              | `root`                                                              | none                                  |
 
 - **A card is a box one step off its surface**: an ask in the Inbox, a task's question in a chat,
   a block's report under its Notice, a code to copy. Purlis draws it the Figma way, on the window's
@@ -803,6 +824,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
   Inbox's list, a Notice alone, every badge and count, the hosts' statuses, a badge's hint, and a
   line across a card and down a strip, each walked by the keyboard and checked by axe.
+
 ## The meter family
 
 **A value drawn as a bar is the meter family** (`app/src/ui/meter/`, #3674, on React Aria's
@@ -810,11 +832,11 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 screen writes a `<meter>` or a `<progress>`, or either role by hand: `purlis/meter-family` is an
 error (Get project's clone progress is still off, until it moves).
 
-| Wrapper | What it is |
-| --- | --- |
+| Wrapper               | What it is                                                                                                                                                                                                                                                                                                                                            |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Meter` (`Meter.tsx`) | **A labelled value on a known range**: a grade's score from 0 to 100. Its label at the start, its track, its value in figures of one width at the end (`valueLabel`, "86%"). Its `variant` says what it is in a comparison: `subject` (the accent), `baseline` (without it, the waiting colour) and `previous` (its previous version, the muted tier) |
-| `MeterGroup` | **Meters that compare**: one scale (0 to 100 unless said) and one label column, so their tracks are one length and a longer bar is a larger value; named for a reader ("Latest grade") |
-| `ProgressBar` | **How far something is**: done of N (`value`, `maxValue`, `valueLabel`), or going with no end known (`isIndeterminate`), its stripes moving, and standing still under reduced motion |
+| `MeterGroup`          | **Meters that compare**: one scale (0 to 100 unless said) and one label column, so their tracks are one length and a longer bar is a larger value; named for a reader ("Latest grade")                                                                                                                                                                |
+| `ProgressBar`         | **How far something is**: done of N (`value`, `maxValue`, `valueLabel`), or going with no end known (`isIndeterminate`), its stripes moving, and standing still under reduced motion                                                                                                                                                                  |
 
 - **A reader hears a meter by its label, with its value** (`aria-valuetext`). A progress bar's
   value is said politely as it changes, at most once a second, in a status line beside it: its
@@ -832,6 +854,41 @@ error (Get project's clone progress is still off, until it moves).
 - **Stories hold it** (`Meter.stories.tsx`): the latest grade's three bars, a running grade's
   progress that moves, and one going with no end known.
 
+## The disclosure family
+
+**A button that shows and hides the region under it is the disclosure family**
+(`app/src/ui/disclosure/`, #3675, on React Aria's `Disclosure`, `DisclosureGroup` and
+`DisclosurePanel`, added to spec #2897's closed list by the operator on 2026-10-28): Add
+source's More, a file to read under its risk mark, a deleted skill's last text.
+
+| Wrapper                         | What it is                                                                                                                                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Disclosure` (`Disclosure.tsx`) | **One fold**: its trigger (`label`, a quiet ghost of the button family, leading with the twist) and any mark after it (`trail`), then its panel. A heading of a `level` where it heads a section |
+| `DisclosureGroup`               | **Folds that open one at a time** (an accordion), or together (`allowsMultipleExpanded`); the owner may hold which are open by each fold's `id`                                                  |
+| `Twist`                         | **The chevron alone**, for a fold that is not a disclosure: a tree's group of rows, a table's row, a menu's item. `open` turns it                                                                |
+
+- **The trigger says `aria-expanded`** and controls its panel; the panel follows it in the
+  reading order, named by it (`role="group"`, or `region` for a large panel a reader jumps to).
+  Return and Space on the trigger open and fold it, and the keyboard stays there.
+- **Opening moves only what is under it**: the trigger's row keeps its size, and the twist turns,
+  which is a transform, and never swaps for another chevron. Folded, the panel takes no room.
+- **It starts folded unless told** (`defaultExpanded`), and the owner may hold its state
+  (`isExpanded`, `onExpandedChange`).
+- **A refused field inside a fold opens it** (`ui/reveal.ts`): the field family's form sends
+  `purlis:reveal` at the first field it refused before the keyboard goes there, and every fold
+  around it opens at once, in a dialog's body and on a page alike. The refusal is heard once, by
+  the field's own error line (#3291); the fold says nothing of itself.
+- **Drawn by its parts** (ADR 0103): the `root`, the `trigger` row, the `twist` and the `panel`,
+  in `disclosure.css`; a theme's parts reach the same attributes (`disclosure.*`, the next
+  release's manifest), and the trigger's look is the button family's.
+- `purlis/disclosure-family` (an error) refuses a fold's chevron swapped by hand
+  (`open ? <ChevronDown /> : <ChevronRight />`) and `data-scope="disclosure"` by hand. The folds
+  #1916 named take the twist: the finished tasks under a chat, a dispatch's brief and report,
+  and the tasks menu's Finished.
+- **Stories hold it** (`Disclosure.stories.tsx`): Add source's More in its dialog, folded and
+  open, a refused folder in it opening it, and a review's files under their risk marks, each
+  walked by the keyboard and checked by axe in Chromium and WebKit.
+
 ## The tooltip family
 
 **Every hint in the window is the shared tooltip** (`app/src/ui/tooltip/Tooltip.tsx`, #2908,
@@ -839,12 +896,12 @@ ADR 0104), on React Aria's `TooltipTrigger` and `Tooltip`. No element carries a 
 for one: `eslint.config.js` refuses it on every element and every member of the button and status
 item families (`purlis/tooltip-family`, an error). A frame's `title` is its name and stays.
 
-| Where the hint is | How it is written |
-| --- | --- |
-| On words, a mark, a row, a tab, a field | `<Tooltip tip={…}>` around the one element, which hands its props and its ref to the DOM; `shortcut` draws the key that does the same after the words (the `shortcut` part, #2921) |
-| On a `Button`, a `ToggleButton`, a `StatusItem`, a `StatusCell` or a menu's `MenuItem` | its `tooltip` |
-| On an `IconButton` | its `aria-label`, which its tooltip always shows; its `tooltip` is a second line under it (the `detail` part) |
-| Beside a menu's row, opened by the row's rest | `AnchoredTooltip` (`ui/menu/MenuTip.tsx`) |
+| Where the hint is                                                                      | How it is written                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| On words, a mark, a row, a tab, a field                                                | `<Tooltip tip={…}>` around the one element, which hands its props and its ref to the DOM; `shortcut` draws the key that does the same after the words (the `shortcut` part, #2921) |
+| On a `Button`, a `ToggleButton`, a `StatusItem`, a `StatusCell` or a menu's `MenuItem` | its `tooltip`                                                                                                                                                                      |
+| On an `IconButton`                                                                     | its `aria-label`, which its tooltip always shows; its `tooltip` is a second line under it (the `detail` part)                                                                      |
+| Beside a menu's row, opened by the row's rest                                          | `AnchoredTooltip` (`ui/menu/MenuTip.tsx`)                                                                                                                                          |
 
 - **One placement and one delay, which no call site changes**: beside its target at the target's
   end, 10 px from it, flipped to its start where the window has no room (R166); open after the
@@ -909,17 +966,17 @@ the old `.ui-menu*` and `.ui-popover` classes, and nothing imports Radix's menus
 the same surface, its options the menu's rows ([The select and combobox
 families](#the-select-and-combobox-families)).
 
-| Member | What it is |
-| --- | --- |
-| `MenuTrigger` | A menu opened by a press on its trigger: a button of the family, or any element (a row, a strip's mark) made pressable. Enter, Space or Down opens it on its first row, Up on its last |
-| `AnchoredMenu` | A menu its owner holds open under an element that keeps its own keys and presses (a roving row, a strip's mark a click toggles); the owner says `aria-haspopup` and `aria-expanded` |
-| `ContextMenu` | A menu opened on a thing by a right-click, at the pointer, or by Shift+F10 or the menu key on the thing itself. The innermost thing's opens; the ones around it stand back |
-| `Menu`, `Submenu`, `InlineMenu` | The menu itself, a row that opens one, and a short list of rows drawn in place (a chat picker in a dialog) |
-| `MenuItem`, `MenuWords`, `MenuSection`, `MenuSeparator`, `MenuTip` | A row; its words and the one line under them; a group, named by `title` (`named` for a name from data); the rule between groups; a row's tooltip |
-| `PopoverTrigger` with `PopoverDialog` | A popover that asks, opened by a press on its trigger: the keyboard in it, handed back as it closes |
-| `HeldPopover` | The same, held open by its owner beside a roving row |
-| `AnchoredPopover` | A popover that says something beside an element (a card beside a row, a refusal under a field): it takes no keyboard, and its owner says when it is up |
-| `PopoverFilter`, `PopoverRule`, `PopoverList`, `PopoverFooter` | A popover laid out as a list (R165, `layout="list"`): the filter row with its rule under it, the list that scrolls while they stay in view, and the footer that says its keys, "↑↓ move · ⏎ go · esc close", each key in a mono cap |
+| Member                                                             | What it is                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MenuTrigger`                                                      | A menu opened by a press on its trigger: a button of the family, or any element (a row, a strip's mark) made pressable. Enter, Space or Down opens it on its first row, Up on its last                                              |
+| `AnchoredMenu`                                                     | A menu its owner holds open under an element that keeps its own keys and presses (a roving row, a strip's mark a click toggles); the owner says `aria-haspopup` and `aria-expanded`                                                 |
+| `ContextMenu`                                                      | A menu opened on a thing by a right-click, at the pointer, or by Shift+F10 or the menu key on the thing itself. The innermost thing's opens; the ones around it stand back                                                          |
+| `Menu`, `Submenu`, `InlineMenu`                                    | The menu itself, a row that opens one, and a short list of rows drawn in place (a chat picker in a dialog)                                                                                                                          |
+| `MenuItem`, `MenuWords`, `MenuSection`, `MenuSeparator`, `MenuTip` | A row; its words and the one line under them; a group, named by `title` (`named` for a name from data); the rule between groups; a row's tooltip                                                                                    |
+| `PopoverTrigger` with `PopoverDialog`                              | A popover that asks, opened by a press on its trigger: the keyboard in it, handed back as it closes                                                                                                                                 |
+| `HeldPopover`                                                      | The same, held open by its owner beside a roving row                                                                                                                                                                                |
+| `AnchoredPopover`                                                  | A popover that says something beside an element (a card beside a row, a refusal under a field): it takes no keyboard, and its owner says when it is up                                                                              |
+| `PopoverFilter`, `PopoverRule`, `PopoverList`, `PopoverFooter`     | A popover laid out as a list (R165, `layout="list"`): the filter row with its rule under it, the list that scrolls while they stay in view, and the footer that says its keys, "↑↓ move · ⏎ go · esc close", each key in a mono cap |
 
 - **Placed under its trigger, lined up with its start or its end** (`align`), and never nearer
   the window's edge than 8 px; it turns to the other side where there is no room. A row's ⋯
@@ -953,14 +1010,14 @@ families](#the-select-and-combobox-families)).
 Aria's `ListBox` and `GridList`. No screen says a list's role (`listbox`, `option`) or wears the
 old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an error).
 
-| Member | What it is |
-| --- | --- |
-| `ListBox`, `ListOption`, `ListSection` | **A list to choose from** (the WAI-ARIA listbox): a persona to start a chat with, a theme, a search hit, a skill. A choice of one follows the arrows; `onAction` runs the one picked; `layout="grid"` lays its options out as cards the arrows walk in two directions; an option `unavailable` says so (`aria-disabled`) and keeps the keyboard, so why is read |
-| `List`, `ListRow`, `ListRowSection` | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach |
+| Member                                                                      | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ListBox`, `ListOption`, `ListSection`                                      | **A list to choose from** (the WAI-ARIA listbox): a persona to start a chat with, a theme, a search hit, a skill. A choice of one follows the arrows; `onAction` runs the one picked; `layout="grid"` lays its options out as cards the arrows walk in two directions; an option `unavailable` says so (`aria-disabled`) and keeps the keyboard, so why is read                                                                                                                                                    |
+| `List`, `ListRow`, `ListRowSection`                                         | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach                                                                                                                                                                                                                                                                                                                           |
 | `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together |
-| `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row |
-| `ListFilter`, `useListFilter`, `noMatchSaid` (`ListFilter.tsx`) | **A list over about seven items gets a filter** (R164): from eight, a field at the large size over the list, the total in its placeholder ("Filter 28 personas"), a case-insensitive part of each name, and "No persona is called “x”." where nothing matches. What is typed is the caller's, so drawing the list again keeps the field, its focus and its caret (R168) |
-| `useRowDrag` (`drag.ts`) | What a dragged row carries, by type, to a drop target outside the window's collections (a file's reference onto a chat) |
+| `AimedList`, `AimedOption` (`AimedList.tsx`)                                | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row                                                                                                                                                                                                                      |
+| `ListFilter`, `useListFilter`, `noMatchSaid` (`ListFilter.tsx`)             | **A list over about seven items gets a filter** (R164): from eight, a field at the large size over the list, the total in its placeholder ("Filter 28 personas"), a case-insensitive part of each name, and "No persona is called “x”." where nothing matches. What is typed is the caller's, so drawing the list again keeps the field, its focus and its caret (R168)                                                                                                                                            |
+| `useRowDrag` (`drag.ts`)                                                    | What a dragged row carries, by type, to a drop target outside the window's collections (a file's reference onto a chat)                                                                                                                                                                                                                                                                                                                                                                                            |
 
 - **Sizes**: `sm` (24 px, a side view's dense list), `md` (28, the default) and `lg` (32, a
   dialog's list beside its details). A list takes one size. Its rows keep `space.1` apart, so one
@@ -1036,6 +1093,7 @@ Two members, by what a cell holds:
   chooses nothing draws exactly as before. A table of data where its frame is narrow keeps its
   one-line columns and scrolls sideways; it stacks only where the view asks (`stacks` on `Table`,
   with `heading` on each `TableCell`), as a table of controls does.
+
 - **A row's menu** (`menu` on `TableRow`, `rowMenus` on the table): the row's actions under one ⋯
   in a column of its own at the row's end, named "More for" the row, aligned on every row (a row
   with none keeps its cell); a right-click on the row, Shift+F10 or the menu key open the same
@@ -1098,12 +1156,12 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
 `.ui-tree-row`, `.ui-tree-twist`) or its `data-scope`: `eslint.config.js` refuses them
 (`purlis/tree-family`, an error), off by file only for the trees still drawn by hand.
 
-| Member | What it is |
-| --- | --- |
-| `Tree` | **A tree**: rows that may hold rows under them. `expandedKeys` and `onExpandedChange` say which are open (a folder is read when it opens); `selectionMode` lets rows be chosen where a press chooses (a file tab's file, `toggle`, so the arrows never open a file); `onAction` runs one; `twist` puts the twist before a row's words (`"lead"`, the default, R129) or at its end (`"trail"`, #2799 rule 1); `fixed` is a tree that never folds (the Changes view): every row open, no twist, nothing to press; `draggable` drags a row out with what it `carries`, by the pointer and by its drag button; `choosesMany` says its owner chooses several rows at once (#1151's picks); `onRowKey` takes a key before the tree does (Shift and the arrows picking); `stopAt` is the row the tree's one Tab stop is on until the keyboard has been in (the place the next chat starts, the file a tab shows) |
-| `TreeRow` | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says (a file's name, then its marks' words); `hasChildItems` for a folder not read yet (it holds a row that is never drawn until the owner's arrive); `menu` and `tip` as a list's row; `unavailable` for a row that keeps the keyboard to say why it cannot run (a file purlis will not open); `chosen` for a row its owner chooses while a press still runs it; `carries` what a drag of it carries; `onPressStart` to hear a press's modifier keys before its action runs; `current` for the current one of its kind (`aria-current`, drawn as chosen: where the next chat starts); `alwaysOpen` for a row whose rows never fold (a workspace's own) |
-| `TreeLine` | **A line that is not a row to act on**, in its place among the rows: "Reading…", why a folder could not be read, "12 more not shown", a path the branch names and does not read. In the quiet tier; the arrows read it, and it holds nothing to press, drag or pick |
-| `TreeSection` | A group of rows under its name (`header`) |
+| Member        | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Tree`        | **A tree**: rows that may hold rows under them. `expandedKeys` and `onExpandedChange` say which are open (a folder is read when it opens); `selectionMode` lets rows be chosen where a press chooses (a file tab's file, `toggle`, so the arrows never open a file); `onAction` runs one; `twist` puts the twist before a row's words (`"lead"`, the default, R129) or at its end (`"trail"`, #2799 rule 1); `fixed` is a tree that never folds (the Changes view): every row open, no twist, nothing to press; `draggable` drags a row out with what it `carries`, by the pointer and by its drag button; `choosesMany` says its owner chooses several rows at once (#1151's picks); `onRowKey` takes a key before the tree does (Shift and the arrows picking); `stopAt` is the row the tree's one Tab stop is on until the keyboard has been in (the place the next chat starts, the file a tab shows)            |
+| `TreeRow`     | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says (a file's name, then its marks' words); `hasChildItems` for a folder not read yet (it holds a row that is never drawn until the owner's arrive); `menu` and `tip` as a list's row; `unavailable` for a row that keeps the keyboard to say why it cannot run (a file purlis will not open); `chosen` for a row its owner chooses while a press still runs it; `carries` what a drag of it carries; `onPressStart` to hear a press's modifier keys before its action runs; `current` for the current one of its kind (`aria-current`, drawn as chosen: where the next chat starts); `alwaysOpen` for a row whose rows never fold (a workspace's own) |
+| `TreeLine`    | **A line that is not a row to act on**, in its place among the rows: "Reading…", why a folder could not be read, "12 more not shown", a path the branch names and does not read. In the quiet tier; the arrows read it, and it holds nothing to press, drag or pick                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `TreeSection` | A group of rows under its name (`header`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 - **The keys are the WAI-ARIA tree's**: one Tab stop, the row last focused (the tree itself until
   a row has had the keyboard, which hands it to its first row or its chosen one); ↑ ↓, Home and
@@ -1145,27 +1203,27 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
 
 **The dialog rules** (#2798, #2789, the operator's ruling in #2910), each held by the family:
 
-| Rule | How |
-| --- | --- |
-| **Header, body, footer** | Three rows: the title and the line under it, the body, which is the only part that scrolls, and the footer with the answers, always in view. A control the keyboard is on is never under the footer (WCAG 2.4.11): the two never overlap. |
-| **Width by size, never by content** | `size="standard"`, 600 px, or `size="wide"`, 800 px, only for a list beside its details; each at most the window's width less 16 px a side. |
-| **Height** | At most the window less its top less 24 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
-| **A fixed top** | `max(24px, 6vh)` under the window's top edge (R2, as the prototype places it), so a change in its content moves only its bottom edge. |
-| **Text that changes with a choice keeps its room** | `Reserved` (`ui/dialog/Reserved.tsx`) lays every text a place can show in one cell, and an answer's `reserve` lists every word it can say (`Create`, `Creating…`), so nothing moves or resizes when a choice or a state changes. |
-| **A list over about seven items gets a filter** | `useListFilter` and `ListFilter` (the list family's, `ui/list/ListFilter.tsx`): from eight items, a filter field at the large size over the list, its total in its placeholder ("Filter 28 personas"), a case-insensitive substring of each item's name, and "No persona is called “x”." where nothing matches. |
-| **At most three answers, each in its place** | `cancel` leads, `main` trails, and one `alternative` may stand between them. They are props, not children, so a fourth, or a main action anywhere but last, cannot be written. The main action is in the same place in every dialog. |
-| **⏎ and Esc** | The body and the footer are one form, so Return in a field is the main action and a button with the keyboard is pressed by its own Return. An answer that grants (`grants`) is pressed, never found by Return, from a field or a checkbox, and `byReturn` cannot say otherwise. An act that cannot be taken back (`danger`), or one that says so (`byReturn: false`, Start a chat), is pressed, never found by Return from a field. Esc closes, as `onClose`. A click outside answers nothing. |
-| **No dialog opens another** | One opened while another is up says so (`console.error`). A question about a dialog's row is asked in its place (Extensions' Review), and the dialog comes back once it is answered. |
-| **It starts on the right thing** | A dialog on its first field, else on the first thing it holds the keyboard can reach; an alert dialog on its safe answer, Cancel (#2980), or on the dialog itself while Cancel cannot be pressed, never on its main action. A grant never takes the keyboard as a dialog opens, even named by `initialFocus` (`grantFocus.guard.test.ts` holds every grant call site to it). `initialFocus` names another: an answer, a field, or the dialog itself while what it holds is read. Two alert dialogs start on another answer by ruling: Close a chat (ADR 0064) and Stop a task (V100-18). Closed, the keyboard goes back to what had it as it opened; `afterClose` may send it on. |
+| Rule                                               | How                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Header, body, footer**                           | Three rows: the title and the line under it, the body, which is the only part that scrolls, and the footer with the answers, always in view. A control the keyboard is on is never under the footer (WCAG 2.4.11): the two never overlap.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **Width by size, never by content**                | `size="standard"`, 600 px, or `size="wide"`, 800 px, only for a list beside its details; each at most the window's width less 16 px a side.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **Height**                                         | At most the window less its top less 24 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **A fixed top**                                    | `max(24px, 6vh)` under the window's top edge (R2, as the prototype places it), so a change in its content moves only its bottom edge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **Text that changes with a choice keeps its room** | `Reserved` (`ui/dialog/Reserved.tsx`) lays every text a place can show in one cell, and an answer's `reserve` lists every word it can say (`Create`, `Creating…`), so nothing moves or resizes when a choice or a state changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **A list over about seven items gets a filter**    | `useListFilter` and `ListFilter` (the list family's, `ui/list/ListFilter.tsx`): from eight items, a filter field at the large size over the list, its total in its placeholder ("Filter 28 personas"), a case-insensitive substring of each item's name, and "No persona is called “x”." where nothing matches.                                                                                                                                                                                                                                                                                                                                                                   |
+| **At most three answers, each in its place**       | `cancel` leads, `main` trails, and one `alternative` may stand between them. They are props, not children, so a fourth, or a main action anywhere but last, cannot be written. The main action is in the same place in every dialog.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **⏎ and Esc**                                      | The body and the footer are one form, so Return in a field is the main action and a button with the keyboard is pressed by its own Return. An answer that grants (`grants`) is pressed, never found by Return, from a field or a checkbox, and `byReturn` cannot say otherwise. An act that cannot be taken back (`danger`), or one that says so (`byReturn: false`, Start a chat), is pressed, never found by Return from a field. Esc closes, as `onClose`. A click outside answers nothing.                                                                                                                                                                                    |
+| **No dialog opens another**                        | One opened while another is up says so (`console.error`). A question about a dialog's row is asked in its place (Extensions' Review), and the dialog comes back once it is answered.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| **It starts on the right thing**                   | A dialog on its first field, else on the first thing it holds the keyboard can reach; an alert dialog on its safe answer, Cancel (#2980), or on the dialog itself while Cancel cannot be pressed, never on its main action. A grant never takes the keyboard as a dialog opens, even named by `initialFocus` (`grantFocus.guard.test.ts` holds every grant call site to it). `initialFocus` names another: an answer, a field, or the dialog itself while what it holds is read. Two alert dialogs start on another answer by ruling: Close a chat (ADR 0064) and Stop a task (V100-18). Closed, the keyboard goes back to what had it as it opened; `afterClose` may send it on. |
 
-| Prop | Says |
-| --- | --- |
-| `title`, `subtitle` | the header: the title names the dialog, the line under it (where it is, what it is about) describes it |
-| `description` | what the question is, said first in the body; it describes the dialog too |
+| Prop                            | Says                                                                                                                                                                                                                                                                                          |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`, `subtitle`             | the header: the title names the dialog, the line under it (where it is, what it is about) describes it                                                                                                                                                                                        |
+| `description`                   | what the question is, said first in the body; it describes the dialog too                                                                                                                                                                                                                     |
 | `cancel`, `main`, `alternative` | the answers: a button of the family each, its words as `children`, `variant` (`main` is `primary` unless it says `danger` or `grants`), `isDisabled`, `onPress`, `reserve`, and `reserveGrant` for an answer that is a grant for some choices only, which holds the lock's room in every look |
-| `summary` | what the footer says before its answers, in the quiet tier |
-| `size`, `height` | the width's size, and a height of its own |
-| `className` | a hook for what is inside it and for the tests, never its size or place |
+| `summary`                       | what the footer says before its answers, in the quiet tier                                                                                                                                                                                                                                    |
+| `size`, `height`                | the width's size, and a height of its own                                                                                                                                                                                                                                                     |
+| `className`                     | a hook for what is inside it and for the tests, never its size or place                                                                                                                                                                                                                       |
 
 - **Answers a part of the body owns** (a guided sign-in's Test and Create, `VaultSignIn`) are
   drawn by it with `DialogAnswers`, in the footer, in their places, instead of the dialog's own.
@@ -1183,6 +1241,7 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
 - **Stories hold it** (`Dialog.stories.tsx`): a form, Esc, a question, a dialog longer than the
   window with every field walked and never under the footer, and a list beside its details
   whose choice moves nothing, in Chromium and WebKit, with axe.
+
 ## The session tabs are drawn by the tabs family's parts (#2914)
 
 The chat strip's tabs are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cell (its
@@ -1230,7 +1289,6 @@ a page's or a strip's alike, the old hand-made tablist (`StripTablist`) and `dat
 or `"page-tabs"` outside `src/ui`. The tablists
 still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
 file in `eslint.config.js` until their own tickets move them.
-
 
 ## The activity family: the four corners
 
@@ -1291,7 +1349,7 @@ What every control holds to:
   **outside** it at `--focus-ring-offset`.
 - **A toggle button is `ToggleButton`** (DS-12): pressed, it says `aria-pressed` and stands on
   `accent.surface` behind an `accent.base` edge, as a chosen segment does, and stays so under the
-  pointer (*Changed only*, *Show ignored files*, Search's switches, a file's *Source*).
+  pointer (_Changed only_, _Show ignored files_, Search's switches, a file's _Source_).
 - **Every colour is one token per declaration**, so `contrast.test.ts` reads each pair a family
   draws. No colour hides behind an alias of the family's own.
 - **The families are in the `components` layer, above `App.css`** (`styles.css`). A view rule
@@ -1317,45 +1375,45 @@ words are written once, in `app/src/menuWords.ts`; and every menu is drawn by th
 ([The menu and popover families](#the-menu-and-popover-families)), a dropdown too.
 
 1. **A row is a short verb, and does not say the name of the thing the menu is about.** A menu
-   is opened ON a thing, which is in front of the person: *Rename…*, *Pinned*, *End*, never
-   *Rename chat console-developer 16…*. The thing is said once, as the menu's own accessible
+   is opened ON a thing, which is in front of the person: _Rename…_, _Pinned_, _End_, never
+   _Rename chat console-developer 16…_. The thing is said once, as the menu's own accessible
    name (`aria-label` on the content: "Tab console-developer 16"). **A row keeps a name only
-   when it is another thing's**: *Go to steward 4*, *Open beside steward 4*, *Merge into svc*.
+   when it is another thing's**: _Go to steward 4_, _Open beside steward 4_, _Merge into svc_.
    The catalogue's title still names the thing, for the palette, where a row stands among every
    other row of the window (`docs/ui-copy.md`, "Buttons and menu items").
 2. **A row's note is its tooltip and its description, not a line under it.** The tooltip is the
    window's shared one (`AnchoredTooltip`, #2908), shown beside the menu once the keyboard or the
    pointer has rested on the row for `TIP_AFTER_MS`; the description is the row's
    `aria-describedby`. **Two things stay under a row's words**: what a row that cannot be
-   undone costs (*Ends the program it runs. There is no undo.*), and why a row cannot run. Each
+   undone costs (_Ends the program it runs. There is no undo._), and why a row cannot run. Each
    changes a decision the person is about to make. **Neither is ever cut**: it wraps inside the
    menu's width. A warning that lost "There is no undo." to an ellipsis would say less than
    nothing, and a row that cannot run takes no keyboard, so nothing would open the rest of its
    reason. The warning is a short sentence written for the menu (`menuWords.ts`, `WARNS`) that
    says no more than the catalogue's note for its row; the whole note is the tooltip.
-3. **Rows of one kind are one row that opens a submenu.** *Open ▸* holds the views that open in
-   a tab of their own (Activity, Network); *Ask ▸* a row per persona, named by the persona
-   alone; *Stop ▸* the ways to stop a chat; *Curate ▸* and *Move to ▸* the rows the catalogue
+3. **Rows of one kind are one row that opens a submenu.** _Open ▸_ holds the views that open in
+   a tab of their own (Activity, Network); _Ask ▸_ a row per persona, named by the persona
+   alone; _Stop ▸_ the ways to stop a chat; _Curate ▸_ and _Move to ▸_ the rows the catalogue
    decides the length of. What every row of a submenu does is said once, as the tooltip of the
    row that opens it. A menu's top level is **at most ten rows in at most four groups**: the
    thing itself, what it opens or starts, how it runs, and last what ends or deletes it. A
-   submenu whose rows end something (*Stop ▸*) is in that last group too, above the row that
+   submenu whose rows end something (_Stop ▸_) is in that last group too, above the row that
    ends the thing itself, so no row that cannot be undone is anywhere but last. **A group's
    name in purlis's own words wears the label role; a group named by data** (a persona's group
-   under *Curate ▸*) **is written as the name is**, in the secondary role and with no capitals.
+   under _Curate ▸_) **is written as the name is**, in the secondary role and with no capitals.
 4. **The danger colour is for what cannot be undone**: a program ended (End, the ways to stop,
    Close a project) or a thing deleted (a workspace, a persona, a vault, a forgotten todo). A
    row that loses nothing wears none, wherever it stands: Restart keeps the conversation,
    Remove folder keeps the branch, a memory's Delete is an archive with an Undo.
 5. **An ellipsis means "asks something first", and nothing else** (`docs/ui-copy.md`). A row
    has one exactly when the catalogue's title has. **A row that could only say what a press
-   would do is left out**: there is no greyed *Switch to* on the tab in front; on any other tab
+   would do is left out**: there is no greyed _Switch to_ on the tab in front; on any other tab
    it is the first row.
 6. **A shortcut is said at the row's end**, in the meta role, where the same act has a key on
-   the thing itself: *Rename… F2*, *End ⌫*, *New shell ⌘⇧T*. A row says the key the window's key
+   the thing itself: _Rename… F2_, _End ⌫_, _New shell ⌘⇧T_. A row says the key the window's key
    registry holds for its act (`MenuShortcuts`, #2921) or, until the registry has one, the key
    its caller knows (`keys`). **A toggle is one row with a tick**, not two rows that take turns:
-   *Pinned*, a `menuitemcheckbox` of a group that chooses many.
+   _Pinned_, a `menuitemcheckbox` of a group that chooses many.
 7. **Type and geometry are the tokens'.** A row's words are the body role, the line under them
    and a tooltip the secondary, a shortcut the meta, a group's name the label
    ([Text roles](#text-roles)); a row is `--size-control` tall; a menu's width is the one menu
@@ -1384,7 +1442,7 @@ a file's, with its `said`, `danger`, `warns`, `checked` and `keys`. It draws the
 `Menus.tsx`'s exported `Groups`, inside its own `Menu` named by `aria-label`, so its rows,
 tooltips, submenus and keyboard are every other menu's. A dropdown, which is not a context
 menu, puts `MenuWords` and `MenuTip` inside its own `MenuItem`s, as a secret's menu and a
-setting's *Move to…* do. **The show-more and the away menus are the exception to the width**:
+setting's _Move to…_ do. **The show-more and the away menus are the exception to the width**:
 their rows are tabs and sentences with no part that gives way, so `.more-menu` hands
 `--menu-max: none`.
 
@@ -1397,10 +1455,10 @@ tooltip share one ground (`surface.overlay`), one border, one corner (`--radius-
 the same `components` layer, and the popover and menu families' surface is this one, a select's
 list's included.
 
-| Overlay | Class                                         | On                                                         |
-| ------- | --------------------------------------------- | ---------------------------------------------------------- |
-| Scrim   | `.ui-scrim`                                   | Radix Dialog's or AlertDialog's `Overlay`                  |
-| Dialog  | `.ui-dialog`                                  | Radix Dialog's or AlertDialog's `Content`                  |
+| Overlay | Class                                                                  | On                                                |
+| ------- | ---------------------------------------------------------------------- | ------------------------------------------------- |
+| Scrim   | `.ui-scrim`                                                            | Radix Dialog's or AlertDialog's `Overlay`         |
+| Dialog  | `.ui-dialog`                                                           | Radix Dialog's or AlertDialog's `Content`         |
 | Popover | the popover family's surface ([above](#the-menu-and-popover-families)) | `AnchoredPopover`, `HeldPopover`, `PopoverDialog` |
 
 (`--elevation-overlay`), so they read as related. A dialog is [the dialog
@@ -1408,12 +1466,12 @@ family's](#the-dialog-family), drawn on that surface by `app/src/ui/dialog/dialo
 classes are in `app/src/primitives/overlays.css`, after the control families in the same
 `components` layer, and the menu's surface is this one.
 
-| Overlay | Class                                         | On                                                         |
-| ------- | --------------------------------------------- | ---------------------------------------------------------- |
-| Dialog  | the dialog family's parts (`data-scope="dialog"`) | `Dialog`, `AlertDialog`, `DialogSurface`               |
-| Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`  | Radix Popover's `Content` and `Arrow`                      |
+| Overlay | Class                                                                        | On                                                      |
+| ------- | ---------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Dialog  | the dialog family's parts (`data-scope="dialog"`)                            | `Dialog`, `AlertDialog`, `DialogSurface`                |
+| Popover | `.ui-popover`; its arrow `.ui-overlay-arrow`                                 | Radix Popover's `Content` and `Arrow`                   |
 | Tooltip | the tooltip family's `root` part ([the tooltip family](#the-tooltip-family)) | React Aria's `Tooltip`, wrapped in `app/src/ui/tooltip` |
-| Menu    | the popover family's surface, its `menu` variant | `Menu`, a context menu's too                      |
+| Menu    | the popover family's surface, its `menu` variant                             | `Menu`, a context menu's too                            |
 
 - **The look is the class's, the place is the view's.** A view places and sizes a popover or a
   menu with a class of its own: `.row-card` caps a popover, `.more-menu` sets a menu's width. None
@@ -1542,7 +1600,14 @@ are no longer in the window (#2906). What follows records why each was drawn as 
 rules it states hold, kept by the families._
 
 `StartChat`, `QuitWarning`, `ApprovePlane` and `Palette` — every modal surface the window has.
-The terminal panes are xterm.js and are not a candidate.
+The terminal panes are xterm.js and are not a candidate. **A screen that is over is the terminal's read-only mode**
+(`ReadOnlyTerminal.tsx`, #3676): xterm drawn from the theme's terminal tokens and font with no
+cursor and no input, its grid hidden from a screen reader and its text beside it as a list of
+its lines (a wrapped row joined to the row it continues), so a reader walks it line by line. It
+is one Tab stop, a region named for what it is and described by the words that say it is
+read-only, drawn outside the grid; ⌘F (Ctrl+F elsewhere) opens the find bar on it, ⌘A selects
+the whole screen and ⌘C copies the selection. A saved grade chat and the theme specimen's
+terminals are drawn by it, and no `role="img"` stands for a terminal's text.
 
 And the chat strip's **show-more menu** (`@radix-ui/react-dropdown-menu`, ADR 0039),
 which is the first surface built under this rule rather than converted to it. Two decisions it
@@ -1610,7 +1675,7 @@ details:
   from `menuOf` after them, so each is a short label, with why it cannot run under it and the
   key that does the same at its end (`MenuKeys`) where the window has one — a Mac's `⌘C`, `⌘V`
   and `⌘A`; off a Mac the window claims no key for them and draws none. The menu is named
-  *Terminal* (`aria-label`).
+  _Terminal_ (`aria-label`).
   - **Copy** is off with nothing selected. It puts on the clipboard what the keyboard's copy
     does, xterm's own selection text, and keeps the selection. The selection is read at the
     press: if output cleared it while the menu was up, nothing is written and the pane says so. On a Mac a right-click on a word
@@ -2452,7 +2517,7 @@ test says whether it is free.
 
 The palette's rows, every menu's rows (`MenuShortcuts`, provided in `main.tsx`) and the activity
 items' tooltips show their key from the registry, through the list, menu and tooltip families'
-`shortcut` parts. The cheat sheet (`keys/ShortcutsView.tsx`, ⌘/ or the *Keyboard shortcuts* row)
+`shortcut` parts. The cheat sheet (`keys/ShortcutsView.tsx`, ⌘/ or the _Keyboard shortcuts_ row)
 is generated from it. Focus mode (⌘⇧↩, `keys/focusMode.ts`) is one of its keys.
 
 Every pane in this window is a terminal running somebody's shell, and a shell's line editor has
@@ -2592,25 +2657,25 @@ shows the left side's Search view (#1676; it opened a Search tab before), search
 the focus. It is one of the left side's keys, below.
 
 **In the Search view's hits, `Shift+Enter` hands the hit stepped to to a chat** (#1151): it opens
-the preview's chat picker for that hit and its line, as *Add to a chat's context* does, and
+the preview's chat picker for that hit and its line, as _Add to a chat's context_ does, and
 Escape closes it. It is a key on the listbox, which is never a terminal, so it takes nothing from
 a chat; and it is not a button inside an option, which a listbox cannot hold. Enter alone still
 opens the hit. `Shift+Enter` is the one plain modifier on Enter the listbox had free: the arrows
 step through the hits, so it walks nothing the way it does in a chat's find bar.
 
-**A file or folder row's menu has *Add to a chat's context* too** (#1151), so the keyboard reaches
+**A file or folder row's menu has _Add to a chat's context_ too** (#1151), so the keyboard reaches
 it with Shift+F10 or the menu key. The row's menu has closed by the time it runs, so the same
 chat picker (`ChatsToPick`) is drawn in a dialog (`AddToAChat.tsx`), the keyboard on its first
 chat, and Escape or Cancel closes it with nothing typed.
 
-**Several file or folder rows go to a chat as one paste** (#1151). In *Files*, `⌘`-click (`Ctrl`
+**Several file or folder rows go to a chat as one paste** (#1151). In _Files_, `⌘`-click (`Ctrl`
 off a Mac) picks a row or lets it go, Shift-click picks every row from the last one clicked, and
 Shift with Up or Down picks from the keyboard; picked rows are `aria-selected` in a tree that is
 `aria-multiselectable`. A line under the tree says how many are picked (a screen reader hears the
-count as it changes), with *Add to a chat's context*, the same dialog with how many in its title, and *Clear*; Esc in the tree lets them go
+count as it changes), with _Add to a chat's context_, the same dialog with how many in its title, and _Clear_; Esc in the tree lets them go
 too. One paste is one branch's: a row of another branch starts the picks again, and a row purlis
 will not hand over is never picked. A plain click still opens a file and folds a folder. On a
-picked row, the row menu's *Add to a chat's context* is *Add N picked to a chat's context* and
+picked row, the row menu's _Add to a chat's context_ is _Add N picked to a chat's context_ and
 hands every picked row, in the tree's order; on a row outside the picks it hands that row alone,
 as a file manager's menu acts on the row it was opened on.
 
@@ -2704,7 +2769,7 @@ scope leaves out widens it to the project's before it lands. Notices and updates
 project's and are listed whatever the scope.
 
 **The Browsers grid** (#2027, `BrowsersGridTab.tsx`, `browsersGrid.ts`) is a view tab, one per
-project, opened by *Open browsers* in the palette and on the Chats view's heading while the
+project, opened by _Open browsers_ in the palette and on the Chats view's heading while the
 project has a browser. It wears the Inbox's switch over the same three scopes, kept as
 `projects[path].browsers.scope`; This workspace is the strip the tab is on, and All projects is
 every project this window holds. Its tiles are one `ListBox` with `layout="grid"`: one Tab stop,
@@ -2717,11 +2782,11 @@ widening in one press.
 
 **An Inbox row reads in three ranks** (`InboxRow.tsx`), from the existing tokens only:
 
-| Rank      | Says                                 | Class             | Size               | Weight | Colour             |
-| --------- | ------------------------------------ | ----------------- | ------------------ | ------ | ------------------ |
-| primary   | what needs you: the ask's words      | `inbox-primary`   | `--font-size-md`   | 600    | `--text-primary`   |
-| secondary | where: project · workspace · persona | `inbox-secondary` | `--font-size-sm`   | 400    | `--text-secondary` |
-| meta      | its kind, then its age, trailing     | `inbox-meta`      | `--font-size-xs`   | 400    | `--text-quiet`     |
+| Rank      | Says                                 | Class             | Size             | Weight | Colour             |
+| --------- | ------------------------------------ | ----------------- | ---------------- | ------ | ------------------ |
+| primary   | what needs you: the ask's words      | `inbox-primary`   | `--font-size-md` | 600    | `--text-primary`   |
+| secondary | where: project · workspace · persona | `inbox-secondary` | `--font-size-sm` | 400    | `--text-secondary` |
+| meta      | its kind, then its age, trailing     | `inbox-meta`      | `--font-size-xs` | 400    | `--text-quiet`     |
 
 The kind is a mark and its words together (`KindMark`, `data-kind`): a decision in
 `--state-waiting`, an update that went wrong in `--state-failed`, anything else in the secondary
