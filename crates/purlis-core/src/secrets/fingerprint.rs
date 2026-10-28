@@ -44,6 +44,28 @@ fn key(trust: &Path, p: &Path) -> Option<Vec<u8>> {
     super::key_file(trust, p, KEY_BYTES).ok()
 }
 
+/// **A seal of `parts` for `purpose`**: the 64 hex characters of `HMAC-SHA256` under the plane's
+/// key of the purpose, then each part, each ended by a NUL, or `None` with no key. What purlis
+/// writes into a file it alone writes, so that it can tell its own file from one written
+/// otherwise: computing one needs the key, which no sandboxed chat reads.
+pub fn seal(ctx: &Ctx, purpose: &str, parts: &[&str]) -> Option<String> {
+    let k = key(ctx.trust(), &key_path(ctx))?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(&k).ok()?;
+    mac.update(purpose.as_bytes());
+    mac.update(b"\0");
+    for part in parts {
+        mac.update(part.as_bytes());
+        mac.update(b"\0");
+    }
+    Some(
+        mac.finalize()
+            .into_bytes()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    )
+}
+
 /// `fingerprint`: 12 hex characters of `HMAC-SHA256(key, value)`, or `None` with no key.
 pub fn fingerprint(ctx: &Ctx, value: &str) -> Option<String> {
     let k = key(ctx.trust(), &key_path(ctx))?;

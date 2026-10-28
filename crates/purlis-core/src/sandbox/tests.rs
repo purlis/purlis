@@ -328,6 +328,8 @@ fn a_chat_never_writes_charters_integrity_state() {
             // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
             plane.path().join(".purlis/skills-deleted"),
             plane.path().join(".purlis/skills-deleting"),
+            // Every report a chat is handed: the app's alone to write.
+            plane.path().join(".purlis/handbacks"),
             plane.path().join(".purlis/harness-profiles-launched.json"),
             plane
                 .path()
@@ -338,6 +340,7 @@ fn a_chat_never_writes_charters_integrity_state() {
             // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
             plane.path().join(".charter/skills-deleted"),
             plane.path().join(".charter/skills-deleting"),
+            plane.path().join(".charter/handbacks"),
             plane.path().join(".charter/harness-profiles-launched.json"),
             plane
                 .path()
@@ -1002,10 +1005,22 @@ fn what_waits_for_a_chat_s_next_turn_is_denied_only_where_the_hooks_run_outside_
         .iter()
         .map(|state| plane.path().join(state).join("handbacks"))
         .collect();
-    // No harness is given the denial by the classes alone: it is added per harness.
+    // Every harness is denied writing it: the app alone writes what a chat is handed. Reading
+    // it is denied per harness.
     let classes = Denied::of(plane.path(), &machine(Os::MacOs));
     for store in &stores {
-        assert!(!classes.paths.iter().any(|it| it.path == *store));
+        assert!(
+            classes
+                .paths
+                .iter()
+                .any(|it| it.path == *store && it.access == Access::Write)
+        );
+        assert!(
+            !classes
+                .paths
+                .iter()
+                .any(|it| it.path == *store && it.access == Access::ReadWrite)
+        );
     }
     let mut kinds = (0, 0);
     for harness in Harness::ALL {
@@ -1031,7 +1046,16 @@ fn what_waits_for_a_chat_s_next_turn_is_denied_only_where_the_hooks_run_outside_
             for store in &stores {
                 assert!(
                     !denies(store),
-                    "{harness:?} runs its hooks inside its sandbox, and they take from {}",
+                    "{harness:?} runs its hooks inside its sandbox, and they read from {}",
+                    store.display()
+                );
+                // Read, never written: the app takes what they read.
+                assert!(
+                    applied
+                        .denied
+                        .iter()
+                        .any(|it| it.path == *store && it.access == Access::Write),
+                    "{harness:?}: {} is not denied to writes",
                     store.display()
                 );
             }
