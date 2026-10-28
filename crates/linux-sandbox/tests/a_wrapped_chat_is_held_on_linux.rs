@@ -440,6 +440,14 @@ fn a_thread_with_its_own_descriptors_is_judged_by_its_own_socket() {
     );
 }
 
+/// A chat makes no namespace, whatever its machine lets a program make: on a runner the
+/// browser engine may make one, and a sandboxed chat beside it may not (#3298).
+#[test]
+fn a_chat_makes_no_user_namespace() {
+    let mut p = project();
+    assert_eq!(p.run(&["user-namespace"]), "EPERM");
+}
+
 /// A port free on this machine now.
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")

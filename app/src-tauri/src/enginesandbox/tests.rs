@@ -193,6 +193,12 @@ fn a_runners_notice_names_it_and_offers_the_shipped_profiles_command_to_run_ther
         shown.says
     );
     assert!(shown.says.contains("not on this machine"), "{}", shown.says);
+    // A Docker pool's runner made before its engine could make its sandbox there (#3298).
+    assert!(
+        shown.says.contains("remove the pool and add it again"),
+        "{}",
+        shown.says
+    );
     assert_eq!(
         shown.command.as_deref(),
         Some(purlis_core::browsers::sandboxing::install_shipped_command().as_str())

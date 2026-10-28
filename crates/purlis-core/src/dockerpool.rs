@@ -7,9 +7,10 @@
 //!
 //! **Every runner container is confined the same way, and nothing loosens it** ([`Runner`]):
 //!
-//! - Docker's default seccomp profile with one call added, `pidfd_getfd`, which the Linux
-//!   sandbox's supervisor takes a chat's socket with to make its `listen` ([`SECCOMP_PROFILE`],
-//!   #3410); the runtime's default AppArmor profile; and never `--privileged`;
+//! - Docker's default seccomp profile with what purlis needs added ([`SECCOMP_PROFILE`]):
+//!   `pidfd_getfd`, which the Linux sandbox's supervisor takes a chat's socket with to make its
+//!   `listen` (#3410), and what the browser engine's own sandbox needs to start (#3298); the
+//!   runtime's default AppArmor profile; and never `--privileged`;
 //! - every capability dropped (`--cap-drop ALL`), none added, and no new privileges
 //!   (`no-new-privileges`), so nothing in it gains a power its user does not have;
 //! - a user who is not root, by number ([`User`]);
@@ -18,7 +19,8 @@
 //! - its own network namespace on Docker's default bridge, never the machine's;
 //! - a read-only root file system, so its home volume is the only place it can write that may
 //!   hold a program it runs: `/tmp` is a `tmpfs` (`nosuid`, `nodev`, `noexec`), and Docker's
-//!   own `/dev/shm` is memory-backed and `noexec` too;
+//!   own `/dev/shm` is memory-backed and `noexec` too, a quarter of the runner's memory, which
+//!   the browser engine shares its pages' memory through (#3298);
 //! - the pool's limits ([`Limits`]): CPUs, memory with no swap beyond it, processes, and the
 //!   size of `/tmp`.
 //!
@@ -286,6 +288,14 @@ impl Limits {
     fn tmp_options(&self) -> String {
         format!("rw,nosuid,nodev,noexec,size={}m", self.tmp_mib)
     }
+
+    /// **The size of a runner's `/dev/shm`, in MiB** (#3298): a quarter of its memory. The
+    /// browser engine shares its pages' memory through it, and Docker's own 64 MiB is too
+    /// little for a busy page, which then ends. It is memory-backed and counted against the
+    /// runner's memory, so it gives the runner nothing past its limit.
+    pub fn shm_mib(&self) -> u64 {
+        self.memory_mib / 4
+    }
 }
 
 /// One runner of the pool, as it is made: its name, its image, its user, its home and its
@@ -403,6 +413,7 @@ impl Runner {
         pair("--security-opt", format!("seccomp={}", seccomp.display()));
         pair("--network", "bridge".into());
         pair("--ipc", "private".into());
+        pair("--shm-size", format!("{}m", self.limits.shm_mib()));
         pair("--cgroupns", "private".into());
         pair(
             "--mount",
@@ -521,8 +532,13 @@ pub struct Engine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Seccomp {
     /// The runner's own, [`SECCOMP_PROFILE`]: a server a chat starts there listens where it
-    /// was bound.
+    /// was bound, and the browser engine makes its sandbox there.
     Runners,
+    /// The runner's profile as a purlis made it from #3410 until #3298
+    /// ([`EARLIER_SECCOMP_PROFILE`]): a server a chat starts there listens, and the browser
+    /// engine cannot make its sandbox, so no browser starts there until the runner is removed
+    /// and added again. It is stricter than the runner's own, so the runner is still linked.
+    RunnersEarlier,
     /// The runtime's own default, which a runner made before #3410 runs. It is stricter than
     /// the runner's (it refuses `pidfd_getfd`), so the runner is still linked, and no server a
     /// chat starts there listens until the runner is removed and added again.
@@ -631,22 +647,21 @@ fn checked_on(
     if !options.iter().any(|option| is_no_new_privileges(option)) {
         return Err(not("may gain new privileges"));
     }
-    // The runner's seccomp profile, or, on a runner made before it, the runtime's own default
-    // (no seccomp option at all), which is stricter.
-    let seccomp = if options
+    // The runner's seccomp profile, or, on a runner made before it, its earlier one or the
+    // runtime's own default (no seccomp option at all), each stricter.
+    let seccomp = if let Some(seccomp) = options
         .iter()
-        .any(|option| is_the_runners_seccomp(option, podman))
+        .find_map(|option| the_runners_seccomp(option, podman))
     {
-        Seccomp::Runners
+        seccomp
     } else if options.iter().any(|option| option.starts_with("seccomp")) {
         return Err(not("does not have the runner's seccomp profile"));
     } else {
         Seccomp::RuntimeDefault
     };
-    if let Some(option) = options
-        .iter()
-        .find(|option| !is_no_new_privileges(option) && !is_the_runners_seccomp(option, podman))
-    {
+    if let Some(option) = options.iter().find(|option| {
+        !is_no_new_privileges(option) && the_runners_seccomp(option, podman).is_none()
+    }) {
         let named = option.split(['=', ':']).next().unwrap_or_default();
         return Err(not(&format!(
             "has a security option of its own ({named}), where purlis keeps the runtime's defaults"
@@ -1003,7 +1018,10 @@ pub fn check_oci(
     // own default ([`check_podman`]).
     let compiled = oci.pointer("/linux/seccomp");
     let held = match seccomp {
-        Seccomp::Runners => compiled.is_some_and(is_the_runners_compiled),
+        Seccomp::Runners => compiled.is_some_and(|it| is_compiled_from(SECCOMP_PROFILE, it)),
+        Seccomp::RunnersEarlier => {
+            compiled.is_some_and(|it| is_compiled_from(EARLIER_SECCOMP_PROFILE, it))
+        }
         Seccomp::RuntimeDefault => {
             compiled.is_some_and(|it| it.is_object() && it["defaultAction"] == "SCMP_ACT_ERRNO")
         }
@@ -1098,54 +1116,75 @@ fn is_containers_default(profile: &str) -> bool {
     a_version && a_suffix
 }
 
-/// **The runner container's seccomp profile** (#3410): Docker's default, the Moby project's
-/// `seccomp/v0.2.4` (Apache-2.0), kept beside it as published (`seccomp-moby-v0.2.4.json`), with
-/// one rule added after its first: `pidfd_getfd` allowed, which that profile allows only with
-/// `CAP_SYS_PTRACE`. The Linux sandbox's supervisor takes a chat's own socket with it to make the
-/// chat's `listen` (`purlis_linux_sandbox`), and every capability is dropped from a runner, so
-/// without it no server a chat starts there listens. Nothing else differs from Docker's default.
+/// **The runner container's seccomp profile** (#3410, #3298): Docker's default, the Moby
+/// project's `seccomp/v0.2.4` (Apache-2.0), kept beside it as published
+/// (`seccomp-moby-v0.2.4.json`), with four rules added after its first. Every capability is
+/// dropped from a runner, and Docker's default allows each of these calls only with one:
+///
+/// - `pidfd_getfd`: the Linux sandbox's supervisor takes a chat's own socket with it to make the
+///   chat's `listen` (`purlis_linux_sandbox`), so without it no server a chat starts listens;
+/// - `clone` and `unshare` making no namespace but a user, a process and a network one
+///   (`CLONE_NEWNS`, `CLONE_NEWCGROUP`, `CLONE_NEWUTS` and `CLONE_NEWIPC` refused), and `chroot`:
+///   the browser engine's own sandbox makes them as it starts, and ends without them (measured
+///   2026-10-28; ruled that day, ADR 0089). `chroot` reaches nothing outside a user namespace a
+///   process made itself, since the kernel still asks for `CAP_SYS_CHROOT`. A sandboxed chat is
+///   refused all three by its own filter (`purlis_linux_sandbox`), so only the engine, a child
+///   of the runner's host, makes a namespace.
+///
+/// Nothing else differs from Docker's default.
 pub const SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp.json");
+
+/// **The runner's profile as a purlis made it from #3410 until #3298**: Docker's default and
+/// `pidfd_getfd` alone, kept as it was so a runner made then is still known and linked
+/// ([`Seccomp::RunnersEarlier`]).
+pub const EARLIER_SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp-runner-2026-10-27.json");
 
 /// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read.
 pub const SECCOMP_FILE: &str = "runner-seccomp.json";
 
-/// [`SECCOMP_PROFILE`], read.
-fn the_runners_profile() -> serde_json::Value {
-    serde_json::from_str(SECCOMP_PROFILE).unwrap_or(serde_json::Value::Null)
+/// A profile kept here, read.
+fn profile_of(text: &str) -> serde_json::Value {
+    serde_json::from_str(text).unwrap_or(serde_json::Value::Null)
 }
 
-/// Whether `option`, one of a container's security options as `inspect` writes it, is the
-/// runner's seccomp profile. Docker's client reads the file and sends its contents, and the
-/// engine keeps them as they came: held to the runner's profile rule for rule. Podman reads the
-/// file as it makes the container and keeps only its path: held to an absolute path naming the
-/// runner's profile's file, and, where its runtime's config can be read (rootless), to what it
-/// compiled from it ([`check_oci`]). Rootful Podman's runtime config is root's: there the path is
-/// all that is read (ADR 0078, amended 2026-10-27).
-fn is_the_runners_seccomp(option: &str, podman: bool) -> bool {
-    let Some(profile) = option.strip_prefix("seccomp=") else {
-        return false;
-    };
+/// Which of the runner's seccomp profiles `option`, one of a container's security options as
+/// `inspect` writes it, is, if either. Docker's client reads the file and sends its contents,
+/// and the engine keeps them as they came: held to the runner's profile, or its earlier one, rule
+/// for rule. Podman reads the file as it makes the container and keeps only its path: held to an
+/// absolute path naming the runner's profile's file, and, where its runtime's config can be read
+/// (rootless), to what it compiled from it ([`check_oci`]), which tells the earlier profile
+/// apart. Rootful Podman's runtime config is root's: there the path is all that is read, and the
+/// runner is taken as running the runner's own (ADR 0078, amended 2026-10-27 and 2026-10-28).
+fn the_runners_seccomp(option: &str, podman: bool) -> Option<Seccomp> {
+    let profile = option.strip_prefix("seccomp=")?;
     if podman {
         let path = std::path::Path::new(profile);
-        path.is_absolute() && path.file_name() == Some(std::ffi::OsStr::new(SECCOMP_FILE))
+        (path.is_absolute() && path.file_name() == Some(std::ffi::OsStr::new(SECCOMP_FILE)))
+            .then_some(Seccomp::Runners)
     } else {
-        serde_json::from_str::<serde_json::Value>(profile)
-            .is_ok_and(|given| given == the_runners_profile())
+        let given = serde_json::from_str::<serde_json::Value>(profile).ok()?;
+        if given == profile_of(SECCOMP_PROFILE) {
+            Some(Seccomp::Runners)
+        } else if given == profile_of(EARLIER_SECCOMP_PROFILE) {
+            Some(Seccomp::RunnersEarlier)
+        } else {
+            None
+        }
     }
 }
 
 /// Whether `compiled`, the profile Podman's runtime config holds for a container, is exactly what
-/// Podman makes of [`SECCOMP_PROFILE`] for a runner, which holds no capability, on the
-/// architecture the profile names first ([`compiled_for`]).
-fn is_the_runners_compiled(compiled: &serde_json::Value) -> bool {
+/// Podman makes of `profile` for a runner, which holds no capability, on the architecture the
+/// profile names first ([`compiled_for`]).
+fn is_compiled_from(profile: &str, compiled: &serde_json::Value) -> bool {
     compiled
         .pointer("/architectures/0")
         .and_then(serde_json::Value::as_str)
-        .and_then(compiled_for)
+        .and_then(|native| compiled_for(profile, native))
         .is_some_and(|ours| &ours == compiled)
 }
 
-/// **What Podman (`containers/common`'s seccomp) makes of [`SECCOMP_PROFILE`]** for a container
+/// **What Podman (`containers/common`'s seccomp) makes of `text`**, a runner's profile, for a container
 /// with no capability on the architecture `native` (`SCMP_ARCH_X86_64` or `SCMP_ARCH_AARCH64`),
 /// as its runtime config holds it: the default action and errno; `native` and the
 /// architectures its map puts beside it; and each rule its conditions keep, by its names,
@@ -1153,14 +1192,14 @@ fn is_the_runners_compiled(compiled: &serde_json::Value) -> bool {
 /// is kept unless it is for other architectures, excluded on this one, or for a capability. Each
 /// rule's lowest kernel is below the 6.12 the Linux sandbox needs, so none is dropped for it.
 /// None for any other architecture, or a condition this does not know.
-fn compiled_for(native: &str) -> Option<serde_json::Value> {
+fn compiled_for(text: &str, native: &str) -> Option<serde_json::Value> {
     use serde_json::{Map, Value, json};
     let arch = match native {
         "SCMP_ARCH_X86_64" => "amd64",
         "SCMP_ARCH_AARCH64" => "arm64",
         _ => return None,
     };
-    let profile = the_runners_profile();
+    let profile = profile_of(text);
     let mut architectures = vec![Value::from(native)];
     for map in profile["archMap"].as_array()? {
         if map["architecture"] == native {
@@ -1679,7 +1718,7 @@ impl Docker {
         // for one made before it (#3410).
         match self.checked(&made) {
             Ok(Seccomp::Runners) => Ok(made),
-            Ok(Seccomp::RuntimeDefault) => {
+            Ok(Seccomp::RuntimeDefault | Seccomp::RunnersEarlier) => {
                 let why = refused(format!(
                     "runner {}'s container was made without the runner's seccomp profile, so \
                      purlis does not link to it",
@@ -1780,7 +1819,7 @@ impl Docker {
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        let seccomp = check_on(&inspected, made, engine)?;
+        let mut seccomp = check_on(&inspected, made, engine)?;
         // Rootless Podman writes some of what it was asked for only in what it asked its
         // runtime for (#2895), which this user can read.
         if engine.rootless {
@@ -1790,13 +1829,16 @@ impl Docker {
                 .ok_or_else(|| refused("podman did not say where its runtime's config is"))?;
             let store = self.json(&["info", "--format", "{{json .Store}}"], "podman info")?;
             let config = std::path::Path::new(path);
-            check_oci(
-                &read_oci(config)?,
-                made,
-                config,
-                &podman_store(&store)?,
-                seccomp,
-            )?;
+            let (oci, store) = (read_oci(config)?, podman_store(&store)?);
+            // Podman keeps the path alone, so the runner's profile and its earlier one are told
+            // apart by what Podman compiled from it.
+            let earlier = seccomp == Seccomp::Runners
+                && check_oci(&oci, made, config, &store, Seccomp::Runners).is_err()
+                && check_oci(&oci, made, config, &store, Seccomp::RunnersEarlier).is_ok();
+            if earlier {
+                seccomp = Seccomp::RunnersEarlier;
+            }
+            check_oci(&oci, made, config, &store, seccomp)?;
         }
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;

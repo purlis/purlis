@@ -5,3 +5,4 @@
 //! too (#2243, #2294).
 
 mod end_to_end;
+mod on_a_runner;

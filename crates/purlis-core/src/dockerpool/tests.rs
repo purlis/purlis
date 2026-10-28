@@ -57,8 +57,8 @@ fn a_runner_container_has_the_runners_seccomp_profile_and_is_never_privileged() 
     assert!(!args.iter().any(|a| a == "--cap-add"), "{args:?}");
 }
 
-/// #3410: the runner's profile is Docker's default with `pidfd_getfd` allowed besides, and
-/// nothing else: every rule of Docker's own is there as it was.
+/// #3410: the runner's profile is Docker's default with `pidfd_getfd` allowed besides (and the
+/// browser engine's sandbox's calls, #3298): every rule of Docker's own is there as it was.
 #[test]
 fn the_runners_seccomp_profile_is_dockers_default_and_one_call() {
     let profile: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
@@ -79,7 +79,7 @@ fn the_runners_seccomp_profile_is_dockers_default_and_one_call() {
             .is_some_and(|names| names.contains(&"pidfd_getfd".into()))
             && rule["includes"]["caps"] == serde_json::json!(["CAP_SYS_PTRACE"])
     }));
-    assert_eq!(rules.len(), 38);
+    assert_eq!(rules.len(), 41);
 }
 
 #[test]
@@ -125,6 +125,8 @@ fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
         ("--memory", "4096m"),
         ("--memory-swap", "4096m"),
         ("--pids-limit", "1024"),
+        // A quarter of its memory, for the browser engine's shared memory (#3298).
+        ("--shm-size", "1024m"),
     ] {
         assert!(has_pair(&args, flag, value), "{flag} {value}: {args:?}");
     }
@@ -137,6 +139,7 @@ fn a_runner_container_is_held_to_its_pools_limits_or_the_defaults() {
         ("--memory-swap", "8192m"),
         ("--pids-limit", "256"),
         ("--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=512m"),
+        ("--shm-size", "2048m"),
     ] {
         assert!(has_pair(&args, flag, value), "{flag} {value}: {args:?}");
     }
@@ -1155,6 +1158,19 @@ fn docker_is_found_where_its_installers_put_it_before_the_path() {
 // loosened each way, on Docker on an AppArmor host, rootful Podman and rootless Podman.
 // ---------------------------------------------------------------------------------------------
 
+/// What rootless Podman wrote for `case`, its runtime's seccomp profile what it compiles from
+/// the runner's profile now: the recording was measured on 2026-10-27, with the runner's
+/// earlier profile (#3298).
+fn rootless_now(case: &str) -> serde_json::Value {
+    let mut oci = recorded("podman-rootless", case);
+    let native = oci["linux"]["seccomp"]["architectures"][0]
+        .as_str()
+        .expect("its architecture")
+        .to_owned();
+    oci["linux"]["seccomp"] = compiled_for(SECCOMP_PROFILE, &native).expect("compiled");
+    oci
+}
+
 /// What `host` wrote for `case`, as it was recorded.
 fn recorded(host: &str, case: &str) -> serde_json::Value {
     let text = match format!("{host}-{case}").as_str() {
@@ -1709,7 +1725,7 @@ fn rootless_store(made: &Made) -> (PodmanStore, std::path::PathBuf) {
 /// volumes, by exactly those paths.
 #[test]
 fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
-    let own = recorded("podman-rootless", "made-oci");
+    let own = rootless_now("made-oci");
     let made = rootless_runner("measured-8364", &own);
     let (store, config) = rootless_store(&made);
     assert_eq!(
@@ -1720,7 +1736,7 @@ fn rootless_podmans_runtime_config_is_held_to_the_pools_own() {
         ("device-oci", "device-8364"),
         ("host-folder-oci", "host-folder-8364"),
     ] {
-        let oci = recorded("podman-rootless", case);
+        let oci = rootless_now(case);
         let made = rootless_runner(name, &oci);
         let (store, config) = rootless_store(&made);
         assert!(
@@ -1872,6 +1888,11 @@ fn dockers_runner_is_held_to_the_runners_rules_however_they_are_spaced() {
         check_on(&one, &made(), Engine::default())
     };
     assert_eq!(with(SECCOMP_PROFILE.to_owned()), Ok(Seccomp::Runners));
+    // A runner made with the earlier profile (#3410 to #3298) is still known, and linked.
+    assert_eq!(
+        with(EARLIER_SECCOMP_PROFILE.to_owned()),
+        Ok(Seccomp::RunnersEarlier)
+    );
     let mut more: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).unwrap();
     more["syscalls"]
         .as_array_mut()
@@ -1906,7 +1927,7 @@ fn podmans_runner_profile_is_named_by_an_absolute_path_to_its_file() {
 /// it for a runner with no capability: one rule more, less or changed is refused.
 #[test]
 fn rootless_podmans_compiled_profile_is_exactly_the_runners() {
-    let own = recorded("podman-rootless", "made-oci");
+    let own = rootless_now("made-oci");
     let made = rootless_runner("measured-8364", &own);
     let (store, config) = rootless_store(&made);
     let changed = |change: &dyn Fn(&mut serde_json::Value)| {
@@ -1977,17 +1998,59 @@ fn rootless_podmans_compiled_profile_is_exactly_the_runners() {
 }
 
 /// The runner's profile is the Moby project's default, as pinned beside it byte for byte
-/// (`seccomp-moby-v0.2.4.json`), with one rule added after its first: `pidfd_getfd` allowed.
+/// (`seccomp-moby-v0.2.4.json`), with four rules added after its first: `pidfd_getfd` (#3410),
+/// and `clone` and `unshare` making no namespace but a user, a process and a network one, and
+/// `chroot`, for the browser engine's sandbox (#3298). The earlier profile is the first alone.
 #[test]
-fn the_runners_profile_is_the_pinned_upstream_default_and_one_rule() {
-    let mut upstream: serde_json::Value =
+fn the_runners_profile_is_the_pinned_upstream_default_and_four_rules() {
+    let upstream: serde_json::Value =
         serde_json::from_str(include_str!("seccomp-moby-v0.2.4.json")).expect("JSON");
-    upstream["syscalls"].as_array_mut().unwrap().insert(
-        1,
+    // CLONE_NEWNS, CLONE_NEWCGROUP, CLONE_NEWUTS and CLONE_NEWIPC: refused.
+    let no_other_namespace =
+        serde_json::json!([{"index": 0, "value": 0x0E02_0000u32, "op": "SCMP_CMP_MASKED_EQ"}]);
+    let added = [
         serde_json::json!({"names": ["pidfd_getfd"], "action": "SCMP_ACT_ALLOW"}),
-    );
+        serde_json::json!({
+            "names": ["clone"],
+            "action": "SCMP_ACT_ALLOW",
+            "args": no_other_namespace,
+            "excludes": {"arches": ["s390", "s390x"]},
+        }),
+        serde_json::json!({
+            "names": ["unshare"],
+            "action": "SCMP_ACT_ALLOW",
+            "args": no_other_namespace,
+        }),
+        serde_json::json!({"names": ["chroot"], "action": "SCMP_ACT_ALLOW"}),
+    ];
+    let with = |rules: &[serde_json::Value]| {
+        let mut it = upstream.clone();
+        let syscalls = it["syscalls"].as_array_mut().unwrap();
+        for (at, rule) in rules.iter().enumerate() {
+            syscalls.insert(1 + at, rule.clone());
+        }
+        it
+    };
     let ours: serde_json::Value = serde_json::from_str(SECCOMP_PROFILE).expect("JSON");
-    assert_eq!(ours, upstream);
+    assert_eq!(ours, with(&added));
+    let earlier: serde_json::Value = serde_json::from_str(EARLIER_SECCOMP_PROFILE).expect("JSON");
+    assert_eq!(earlier, with(&added[..1]));
+}
+
+/// Rootless Podman's runtime config of a runner made with the earlier profile is held to what
+/// Podman makes of that profile, and is not taken as the runner's own (#3298).
+#[test]
+fn rootless_podmans_runner_of_the_earlier_profile_is_told_apart() {
+    let earlier = recorded("podman-rootless", "made-oci");
+    let made = rootless_runner("measured-8364", &earlier);
+    let (store, config) = rootless_store(&made);
+    assert_eq!(
+        check_oci(&earlier, &made, &config, &store, Seccomp::RunnersEarlier),
+        Ok(())
+    );
+    assert!(check_oci(&earlier, &made, &config, &store, Seccomp::Runners).is_err());
+    let now = rootless_now("made-oci");
+    assert!(check_oci(&now, &made, &config, &store, Seccomp::RunnersEarlier).is_err());
 }
 
 #[test]

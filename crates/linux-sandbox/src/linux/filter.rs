@@ -10,9 +10,12 @@
 //! - **Refused** ([`refused`]), each with the error a program can take in its stride: every
 //!   call of the x32 ABI; a change of a file's owner or extended attributes; datagram, raw and packet sockets, and a stream socket of any family but unix, IPv4, IPv6
 //!   and the kernel's own routing table; TCP Fast Open, which connects without `connect`;
-//!   io_uring and `openat2`, whose arguments a filter cannot read; the kernel's key store;
-//!   opening a file by handle; and a seccomp listener of the chat's own, which would take the
-//!   supervisor's calls.
+//!   io_uring, `openat2` and `clone3`, whose arguments a filter cannot read; the kernel's key
+//!   store; opening a file by handle; a seccomp listener of the chat's own, which would take the
+//!   supervisor's calls; and making a namespace of any kind (`clone` or `unshare` with a
+//!   `CLONE_NEW…` flag), so a sandboxed chat reaches no more of the kernel than a process with
+//!   no capability may, even where its machine lets a program make a user namespace: a runner
+//!   allows it for the browser engine alone (#3298, ADR 0089 as amended 2026-10-28).
 //! - **Answered as done** without being done: making the process undumpable, which would stop
 //!   the supervisor reading its calls.
 
@@ -138,6 +141,18 @@ pub(super) fn supervised() -> Result<Vec<libc::sock_filter>, String> {
         })
         .collect())
 }
+
+/// Every flag of `clone` and `unshare` that makes a namespace, each the first argument's on the
+/// architectures purlis runs on.
+pub(super) const NAMESPACES: [i32; 7] = [
+    libc::CLONE_NEWNS,
+    libc::CLONE_NEWCGROUP,
+    libc::CLONE_NEWUTS,
+    libc::CLONE_NEWIPC,
+    libc::CLONE_NEWUSER,
+    libc::CLONE_NEWPID,
+    libc::CLONE_NEWNET,
+];
 
 /// `BPF_RET | BPF_K`: the instruction that returns a constant action.
 const RET_K: u16 = 0x06;
@@ -284,7 +299,10 @@ pub(super) fn refused() -> Result<Vec<BpfProgram>, String> {
     for call in [libc::SYS_utime, libc::SYS_utimes, libc::SYS_futimesat] {
         nosys.insert(call, Vec::new());
     }
+    // `clone3` too, whose flags are in memory: a program falls back to `clone` on `ENOSYS`, as
+    // it does under Docker's default profile.
     for call in [
+        libc::SYS_clone3,
         libc::SYS_openat2,
         libc::SYS_io_uring_setup,
         libc::SYS_io_uring_enter,
@@ -311,6 +329,18 @@ pub(super) fn refused() -> Result<Vec<BpfProgram>, String> {
     ] {
         perm.insert(call, Vec::new());
     }
+    // A namespace of any kind: refused as a kernel that allows none refuses it.
+    let namespaces = || {
+        NAMESPACES
+            .iter()
+            .map(|flag| {
+                let flag = u64::try_from(*flag).unwrap_or(u64::MAX);
+                when(vec![(0, Cmp::MaskedEq(flag), flag)])
+            })
+            .collect::<Result<Vec<_>, String>>()
+    };
+    perm.insert(libc::SYS_clone, namespaces()?);
+    perm.insert(libc::SYS_unshare, namespaces()?);
     let listener: u64 = libc::SECCOMP_FILTER_FLAG_NEW_LISTENER;
     perm.insert(
         libc::SYS_seccomp,

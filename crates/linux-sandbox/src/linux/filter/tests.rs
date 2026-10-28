@@ -145,3 +145,53 @@ fn every_call_of_the_x32_abi_is_refused() {
     }
     assert_eq!(verdict(libc::SYS_read, [0; 6]), libc::SECCOMP_RET_ALLOW);
 }
+
+/// A sandboxed chat makes no namespace of any kind, by `clone` or `unshare`, and `clone3`, whose
+/// flags a filter cannot read, is answered as a kernel without it: programs fall back to `clone`
+/// (#3298). A thread, a process and a descriptor table of its own are made as before.
+#[test]
+fn a_chat_makes_no_namespace() {
+    for flag in NAMESPACES {
+        let flag = u64::try_from(flag).expect("a flag");
+        for nr in [libc::SYS_clone, libc::SYS_unshare] {
+            assert_eq!(
+                verdict(nr, [flag, 0, 0, 0, 0, 0]),
+                errno(libc::EPERM),
+                "call {nr} with {flag:#x}"
+            );
+        }
+    }
+    let user_and_net = u64::try_from(libc::CLONE_NEWUSER | libc::CLONE_NEWNET).expect("flags");
+    assert_eq!(
+        verdict(libc::SYS_unshare, [user_and_net, 0, 0, 0, 0, 0]),
+        errno(libc::EPERM)
+    );
+    assert_eq!(verdict(libc::SYS_clone3, [0; 6]), errno(libc::ENOSYS));
+
+    let thread = u64::try_from(
+        libc::CLONE_VM
+            | libc::CLONE_FS
+            | libc::CLONE_FILES
+            | libc::CLONE_SIGHAND
+            | libc::CLONE_THREAD
+            | libc::CLONE_SYSVSEM
+            | libc::CLONE_SETTLS
+            | libc::CLONE_PARENT_SETTID
+            | libc::CLONE_CHILD_CLEARTID,
+    )
+    .expect("flags");
+    let fork = u64::try_from(libc::SIGCHLD | libc::CLONE_CHILD_SETTID | libc::CLONE_CHILD_CLEARTID)
+        .expect("flags");
+    for flags in [thread, fork] {
+        assert_eq!(
+            verdict(libc::SYS_clone, [flags, 0, 0, 0, 0, 0]),
+            libc::SECCOMP_RET_ALLOW,
+            "{flags:#x}"
+        );
+    }
+    let files = u64::try_from(libc::CLONE_FILES).expect("a flag");
+    assert_eq!(
+        verdict(libc::SYS_unshare, [files, 0, 0, 0, 0, 0]),
+        libc::SECCOMP_RET_ALLOW
+    );
+}

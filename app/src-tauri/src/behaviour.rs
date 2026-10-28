@@ -405,6 +405,7 @@ pub(crate) fn in_a_docker_pool() -> Option<Target> {
     target.runner = Some(OnTheRunner {
         docker: docker.clone(),
         container: made.container.as_str().to_owned(),
+        pool: name.clone(),
     });
     a_repository(&target.root);
     // Ended in this order once the window's sessions are: the runtime and its links, the
@@ -547,9 +548,27 @@ impl Drop for RemovesThePool {
 pub(crate) struct OnTheRunner {
     docker: purlis_core::dockerpool::Docker,
     container: String,
+    /// The pool it is the runner of.
+    pub pool: String,
 }
 
 impl OnTheRunner {
+    /// What `script` prints in the runner's container, run as its own user.
+    pub(crate) fn said(&self, script: &str) -> String {
+        let out = purlis_core::forklock::output(
+            std::process::Command::new(self.docker.program()).args([
+                "exec",
+                self.container.as_str(),
+                "sh",
+                "-c",
+                script,
+            ]),
+        )
+        .expect("docker runs");
+        assert!(out.status.success(), "{script}: {out:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
     /// Runs `script` in the runner's container, as its own user or as root, `given` on its
     /// standard input.
     fn runs(&self, as_root: bool, script: &str, given: &[u8]) {
