@@ -247,6 +247,70 @@ describe("a dialog", () => {
     expect(closed).toHaveBeenCalledTimes(1);
   });
 
+  // #3603: React Aria's dialog puts the keyboard on itself 500 ms after it opens when the keyboard
+  // is on nothing then (a screen reader's workaround), and a menu's own hand-back waits a frame.
+  // A frame drawn late, as in a busy run, let that take the keyboard the menu had just given up.
+  it("gives the keyboard back to a menu's trigger as the menu goes, however late the next frame", async () => {
+    // The timers a half-second wait asks for are held, to be run when the test says.
+    const held: (() => void)[] = [];
+    const later = globalThis.setTimeout;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      run: () => void,
+      ms?: number,
+      ...rest: unknown[]
+    ) => {
+      if (ms === 500) {
+        held.push(run);
+        return 0;
+      }
+      return later(run, ms, ...rest);
+    }) as typeof setTimeout);
+    const frames = new Map<number, FrameRequestCallback>();
+    let ids = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((frame) => {
+      frames.set(++ids, frame);
+      return ids;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
+    const drawFrame = () =>
+      act(() => {
+        const due = [...frames.values()];
+        frames.clear();
+        for (const frame of due) frame(performance.now());
+      });
+    try {
+      render(
+        <Dialog onClose={() => {}} title="Workspace">
+          <MenuTrigger>
+            <Button>More</Button>
+            <Menu aria-label="More">
+              <MenuItem id="rename" textValue="Rename">
+                <MenuWords said="Rename" />
+              </MenuItem>
+            </Menu>
+          </MenuTrigger>
+        </Dialog>,
+      );
+      const more = screen.getByRole("button", { name: "More" });
+      await drawFrame();
+      expect(more).toHaveFocus();
+      await userEvent.keyboard("{Enter}");
+      await drawFrame();
+      expect(screen.getByRole("menuitem", { name: "Rename" })).toHaveFocus();
+      await userEvent.keyboard("{Escape}");
+      expect(screen.queryByRole("menu")).toBeNull();
+      // Half a second after the dialog opened, and still no frame drawn.
+      expect(held.length).toBeGreaterThan(0);
+      act(() => {
+        for (const run of held.splice(0)) run();
+      });
+      await drawFrame();
+      expect(more).toHaveFocus();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("closes one layer with Escape: a select's list open in it first, then the dialog", async () => {
     const closed = vi.fn();
     render(
