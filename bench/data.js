@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793174269567,
+  "lastUpdate": 1793175757051,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27930,6 +27930,48 @@ window.BENCHMARK_DATA = {
             "value": 102.063019,
             "unit": "ms",
             "extra": "median of 5 runs: 101.496, 101.783, 102.063, 102.618, 102.862 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d145d49cee202b76ba48b520de78f328441867c6",
+          "message": "ci: a weekly CI health report in one area:ci issue (#3598) (#3605)\n\n* ci: a weekly CI health report in one area:ci issue (#3598)\n\ntools/ci-health.mjs reads the last seven whole days of `ci` runs through the API and reports\nruns a day, the green rate, runs green only on a rerun, the merge queue's wait p50/p90 and its\nejections by reason, each job's p50/p90, every `Flaky (passed on retry N)` warning by test, and\nthe slowest tests from the rust jobs' notices. The numbers are pure functions tested with\n`node --test` on API answers recorded 2026-10-27. .github/workflows/ci-health.yml runs it every\nMonday and by hand, writes the job summary, and keeps the report in one issue (made the first\ntime) with a headline comment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* ci-health: run on this branch's push to prove it (temporary)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* ci-health: read pull requests for the queue's wait; name one flaky test in the singular\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* ci-health: drop the branch's proving trigger\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* ci-health: review fixes (issue lookup pages on, busy days in slices, week-bounded ejections, more red conclusions, validated sample)\n\n- locateIssue pages the area:ci issues until the report's is found or they run out (64 today;\n  past 100 it would have opened a duplicate every week).\n- A day of more than 1,000 runs is read in slices (runWindows); any run still unread is warned\n  and named in the report.\n- Queue ejections count only those within the week, and the report says that ones put out and\n  never merged are not counted.\n- timed_out and startup_failure count as red in the green rate (RED).\n- --days and --sample must be positive whole numbers (parseArgs); the dispatch input is typed number.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T07:49:23Z",
+          "tree_id": "1ca32cb59ff01c78f38345b138b8c16403c5e234",
+          "url": "https://github.com/purlis/purlis/commit/d145d49cee202b76ba48b520de78f328441867c6"
+        },
+        "date": 1793175752818,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.32728500000000005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.319, 0.323, 0.327, 0.345, 0.360 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.592327500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.213, 16.444, 16.592, 16.704, 16.758 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.7873425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.173, 100.635, 100.787, 101.644, 102.457 ms"
           }
         ]
       }
