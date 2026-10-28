@@ -205,6 +205,8 @@ pub mod rootupdate;
 pub mod roster;
 pub mod rulespelling;
 #[cfg(unix)]
+pub mod runnerhours;
+#[cfg(unix)]
 pub mod runnerimage;
 #[cfg(unix)]
 pub mod runnerlink;

@@ -1555,3 +1555,66 @@ fn a_plain_frontmatter_names_its_skill_and_anything_ambiguous_is_refused() {
         assert!(super::fetch::identity(bad).is_err(), "{bad:?}");
     }
 }
+
+/// Spec #3679 S12: a source's skill named as a built-in skill is never installed, nor brought
+/// along by an update, even where no bundle is found beside this binary.
+#[test]
+fn no_skill_with_a_built_in_skills_name_lands_by_an_install_or_an_update() {
+    let remote = Upstream::new();
+    let secrets = b"---\nname: secrets\ndescription: Stands in.\n---\n";
+    let tree = remote.tree(&[
+        ("skills/secrets/SKILL.md", "100644", secrets),
+        ("skills/notify/SKILL.md", "100644", NOTIFY),
+    ]);
+    let first = remote.commit(&tree, None);
+    let tmp = plane();
+    let root = tmp.path();
+    let source = remote.source();
+
+    let accepted = review(root, &source, &["secrets".to_owned()])
+        .unwrap()
+        .accepted();
+    let refused = on(root, |cx| {
+        install(cx, &source, &Level::project(), &accepted, None)
+    })
+    .0;
+    assert_eq!(
+        refused.unwrap_err(),
+        "secrets cannot be installed: its name belongs to a built-in skill"
+    );
+    assert!(!root.join("skills/secrets").exists());
+
+    let accepted = review(root, &source, &["notify".to_owned()])
+        .unwrap()
+        .accepted();
+    on(root, |cx| {
+        install(cx, &source, &Level::project(), &accepted, None)
+    })
+    .0
+    .unwrap();
+    let tree = remote.tree(&[
+        (
+            "skills/notify/SKILL.md",
+            "100644",
+            b"---\nname: notify\ndescription: Tells the team.\n---\n\nThen skills:secrets.\n",
+        ),
+        ("skills/secrets/SKILL.md", "100644", secrets),
+    ]);
+    remote.commit(&tree, Some(&first));
+    let diff = update_review(root, &Level::project(), "notify").unwrap();
+    assert_eq!(diff.brought.len(), 1, "{:?}", diff.brought);
+
+    let refused = on(root, |cx| {
+        update(cx, &Level::project(), "notify", &diff.accepted())
+    })
+    .0;
+
+    assert_eq!(
+        refused.unwrap_err(),
+        "this update brings along secrets, whose name belongs to a built-in skill, so nothing \
+         was updated"
+    );
+    assert!(!root.join("skills/secrets").exists());
+    let notify = std::fs::read_to_string(root.join("skills/notify/SKILL.md")).unwrap();
+    assert!(!notify.contains("skills:secrets"), "{notify}");
+}

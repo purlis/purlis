@@ -7745,6 +7745,16 @@ export type PoolRequests = {
 	limits: PoolLimitsShown,
 	/**  Its CPUs in thousandths, to be added up. */
 	millicpus: number,
+	/**
+	 *  The seconds its runners no longer kept ran this week (#3492): a runner's own are in
+	 *  what it answers ([`RunnerAsked::ran_this_week`]).
+	 */
+	removed_ran_this_week: number,
+	/**
+	 *  What one hour of one of its runners costs, where it declares a price (#3491): only then
+	 *  is money shown for it.
+	 */
+	price: PricePerHour | null,
 };
 
 /**  One pool, as its row draws it. */
@@ -7818,6 +7828,15 @@ export type PresetsChanged = {
 	widens: string[],
 	/**  The whole set now, by the committed file's words: what the Notice sends back once read. */
 	now: string[],
+};
+
+/**
+ *  **A pool's price per hour, as it declares it** (#3491): its amount the decimal it was
+ *  written as, and its currency's ISO 4217 code. Money is shown in it, never converted.
+ */
+export type PricePerHour = {
+	amount: string,
+	currency: string,
 };
 
 /**
@@ -8972,6 +8991,11 @@ export type RunnerAsked = {
 	contacted: number | null,
 	/**  What it holds, set against what the window has open. */
 	holds: NotOpenHere,
+	/**
+	 *  The seconds it ran this week (the ISO week in local time), as this machine recorded it
+	 *  (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
+	 */
+	ran_this_week: number | null,
 };
 
 /**  One runner of a project, as the away summary reads it. */

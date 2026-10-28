@@ -1761,3 +1761,172 @@ fn a_kept_delete_holding_a_name_that_is_not_text_is_left_whole() {
     assert!(kept.join("deploy/SKILL.md").is_file());
     assert!(odd.exists());
 }
+
+/// Every level of [`plane`]: the project's, the workspace `ops`'s and the persona `steward`'s,
+/// shared and local.
+fn every_level() -> Vec<Level> {
+    [
+        Level::project(),
+        Level::workspace("ops"),
+        Level::persona("steward"),
+    ]
+    .into_iter()
+    .flat_map(|level| [level.clone(), level.local(true)])
+    .collect()
+}
+
+/// Where [`skill`] writes a skill `folder` at `level` of [`plane`].
+fn at(level: &Level, folder: &str) -> String {
+    format!("{}/{folder}", level.rel().unwrap())
+}
+
+/// The names that belong to a built-in skill (spec #3679 S12): one purlis ships, found with no
+/// bundle beside the binary; one only `bundle` holds; the index skill's; and the name of its own
+/// a route gives a built-in skill.
+const RESERVED: [&str; 4] = ["secrets", "bundled", "skill-index", "purlis-browser"];
+
+/// A bundle's `skills/` holding the built-in skill `bundled`.
+fn bundle() -> tempfile::TempDir {
+    let built_in = tempfile::tempdir().unwrap();
+    skill(built_in.path(), "bundled", "bundled", "Comes with purlis.");
+    built_in
+}
+
+#[test]
+fn a_new_skill_with_a_built_in_skills_name_is_refused_at_every_level_in_the_agreed_words() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        for name in RESERVED {
+            let (refused, _) = on(root, Some(built_in.path()), |cx| {
+                create(
+                    cx,
+                    &level,
+                    name,
+                    "Stands in.",
+                    &BuiltInTemplates,
+                    &TemplateId::BuiltIn(Template::Blank),
+                )
+            });
+            assert_eq!(
+                refused.unwrap_err(),
+                crate::skills::NAME_RESERVED,
+                "{level} {name}"
+            );
+            assert!(!root.join(at(&level, name)).exists(), "{level} {name}");
+        }
+    }
+    assert_eq!(
+        crate::skills::NAME_RESERVED,
+        "That name belongs to a built-in skill; pick another, or make a copy."
+    );
+}
+
+#[test]
+fn a_rename_to_a_built_in_skills_name_is_refused_at_every_level_and_changes_nothing() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        let folder = at(&level, "mine");
+        skill(root, &folder, "mine", "Mine.");
+        let was = std::fs::read_to_string(root.join(&folder).join("SKILL.md")).unwrap();
+        for name in RESERVED {
+            let (refused, _) = on(root, Some(built_in.path()), |cx| {
+                rename(cx, &level, "mine", name)
+            });
+            assert_eq!(
+                refused.unwrap_err(),
+                crate::skills::NAME_RESERVED,
+                "{level} {name}"
+            );
+            assert!(!root.join(at(&level, name)).exists(), "{level} {name}");
+        }
+        let now = std::fs::read_to_string(root.join(&folder).join("SKILL.md")).unwrap();
+        assert_eq!(now, was, "{level}");
+    }
+}
+
+#[test]
+fn a_skill_named_as_a_built_in_one_is_not_moved_or_shared_to_any_level() {
+    let tmp = plane();
+    let root = tmp.path();
+    // Written by hand, or by a purlis older than the built-in skill.
+    let from = Level::workspace("ops");
+    skill(root, &at(&from, "secrets"), "secrets", "Mine.");
+
+    for to in every_level().into_iter().filter(|to| *to != from) {
+        let refused = did(root, |cx| {
+            move_to(cx, &from, "secrets", &to, Some(&Grant::All))
+        });
+        assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED, "{to}");
+        assert!(!root.join(at(&to, "secrets")).exists(), "{to}");
+    }
+    assert!(root.join(at(&from, "secrets")).join("SKILL.md").is_file());
+
+    let local = from.clone().local(true);
+    skill(root, &at(&local, "theme"), "theme", "Mine.");
+    let refused = did(root, |cx| share(cx, &local.at, "theme"));
+    assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED);
+    assert!(root.join(at(&local, "theme")).join("SKILL.md").is_file());
+    assert!(!root.join(at(&from, "theme")).exists());
+}
+
+#[test]
+fn a_deleted_skill_named_as_a_built_in_one_is_not_restored() {
+    let tmp = plane();
+    let root = tmp.path();
+    skill(root, "skills/secrets", "secrets", "Mine.");
+    did(root, |cx| delete(cx, &Level::project(), "secrets")).unwrap();
+    let listed = deleted(root);
+    assert_eq!(listed.len(), 1, "{listed:?}");
+
+    let refused = did(root, |cx| restore(cx, &listed[0]));
+
+    assert_eq!(
+        refused.unwrap_err(),
+        "secrets cannot be restored under its name: it belongs to a built-in skill now"
+    );
+    assert!(!root.join("skills/secrets").exists());
+}
+
+#[test]
+fn a_skill_on_disk_named_as_a_built_in_one_is_a_clash_to_rename_at_every_level() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+    for level in every_level() {
+        skill(root, &at(&level, "bundled"), "bundled", "Mine.");
+    }
+    // Its folder's name is not its name: the name is what clashes.
+    skill(root, "skills/vault", "secrets", "Mine.");
+
+    let clashes = crate::skills::named_as_a_built_in(root, Some(built_in.path()));
+
+    let mut wanted: Vec<(String, Level, String)> = every_level()
+        .into_iter()
+        .map(|level| ("bundled".to_owned(), level.clone(), at(&level, "bundled")))
+        .collect();
+    wanted.insert(
+        1,
+        (
+            "secrets".to_owned(),
+            Level::project(),
+            "skills/vault".to_owned(),
+        ),
+    );
+    let found: Vec<(String, Level, String)> = clashes
+        .into_iter()
+        .map(|one| (one.name, one.level, one.folder))
+        .collect();
+    assert_eq!(found, wanted);
+    // Without the bundle, the name only it holds is anyone's again; the one purlis ships is not.
+    let bare: Vec<String> = crate::skills::named_as_a_built_in(root, None)
+        .into_iter()
+        .map(|one| one.name)
+        .collect();
+    assert_eq!(bare, ["secrets"]);
+}

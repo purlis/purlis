@@ -1720,6 +1720,15 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             crate::hookwire::spool::dir_for(&app.join("hooks.sock")),
             Access::ReadWrite,
         );
+        // Every report a chat is handed (#1436): written by the app alone, and read by the
+        // hook of the chat it waits for, which may run inside the sandbox (Codex, opencode), so
+        // read, never written. Claude Code's hooks run outside it, and its chats are kept from
+        // reading it too (`Denied::and_what_waits_for_a_chat`).
+        deny(
+            Class::Integrity,
+            root.join(state).join(crate::handback::DIR_NAME),
+            Access::Write,
+        );
         // Every dispatch's record, neither read nor written (#1452, D-1452-11): a brief or a
         // report written for one persona is not for a chat running as another. A chat gets
         // its own dispatch's report on the delivery path and its own list from the app's
@@ -1831,6 +1840,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             deny(
                 Class::HumanPowers,
                 home.join(crate::machine::RUNNERS_FILE),
+                Access::ReadWrite,
+            );
+            // When each of those runners ran (#3492): denied as they are.
+            deny(
+                Class::HumanPowers,
+                home.join(crate::machine::RUNNER_HOURS_FILE),
                 Access::ReadWrite,
             );
             // What the human's forge sign-in fetched: the native transport's ETag store

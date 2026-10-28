@@ -949,6 +949,10 @@ fn a_general_purpose_program_is_known_by_its_file_name_whatever_its_folder_or_ca
         "/usr/bin/xxd",
         "Tee",
         "/usr/bin/openssl",
+        // Forge command lines, which make whatever request their arguments name.
+        "gh",
+        "/opt/homebrew/bin/gh",
+        "/usr/local/bin/GLAB",
         // So is a name no tool may take.
         "/usr/bin/python3.12",
         "/bin/bash",
@@ -959,7 +963,7 @@ fn a_general_purpose_program_is_known_by_its_file_name_whatever_its_folder_or_ca
         "kubectl",
         "/usr/local/bin/aws",
         "psql",
-        "/opt/homebrew/bin/gh",
+        "ghq",
         "curlish",
         "/usr/bin/curl/kubectl",
         "",
@@ -985,6 +989,16 @@ fn a_general_purpose_tool_says_so_in_one_sentence_and_an_unlisted_one_says_nothi
     assert_eq!(caution(&token_tool("aws"), &[]), None);
     assert!(caution(&token_tool("base64"), &[]).is_some());
     assert_eq!(caution(&kubectl(), &[]), None);
+    for forge in ["gh", "glab"] {
+        assert_eq!(
+            caution(&token_tool(forge), &[]),
+            Some(format!(
+                "{forge} can show the values it is handed in the chat's output; allow it only \
+                 for a persona you trust with them."
+            )),
+            "{forge}"
+        );
+    }
 }
 
 #[test]
