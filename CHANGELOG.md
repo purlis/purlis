@@ -319,6 +319,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **gh and glab are general-purpose tools.** A persona tool whose program is gh or glab now
+  shows the general-purpose caution beside its Allow, as curl does, and a declared gh or glab
+  run reads none of the chat's own gh or glab settings: its home and settings folders are the
+  run's own, and the variables that name another settings folder, host, pager or browser stay
+  behind (#3421).
+
 - **A project's per-chat files no longer pile up.** When the app opens a project, it removes
   the per-chat markers in `.charter/sessions/`, the chat traces in
   `.charter/persona-state/trace/` and the old report drafts in `.charter/reports/` that nothing
