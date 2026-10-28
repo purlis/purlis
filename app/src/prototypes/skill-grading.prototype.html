@@ -1,0 +1,197 @@
+<title>Skill grading</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the studio frame (A) on deploy's page; the subject is grading: plan, running, scorecard, a saved chat, the Grades tab.
+   PROTOTYPE for "Prototype: grading pages" (purlis#3644): throwaway, fake data, nothing spends. */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b4232c; --bad-soft:#fbe5e6;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --term:#0f1117; --termfg:#cfd5e1; --shadow:0 10px 30px rgba(20,24,40,.16);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --term:#0b0c10; --termfg:#cfd5e1; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --term:#0b0c10; --termfg:#cfd5e1; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 72px;box-sizing:border-box}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+input,select{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+.note{max-width:1400px;margin:0 auto 8px;color:var(--muted);font-size:12px}.note b{color:var(--fg)}
+.try{max-width:1400px;margin:0 auto 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}.try span{color:var(--muted);font-size:12px}
+.win{max-width:1400px;margin:0 auto;height:calc(100% - 66px);min-height:600px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tabs span{padding:6px 12px;border-radius:7px 7px 0 0;color:var(--muted)}.tabs span.on{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.nav2{display:flex;gap:2px}.nav2 button{width:26px;height:24px;border-radius:5px;border:1px solid var(--line)}.nav2 button:disabled{opacity:.35}
+.crumb{color:var(--muted)}.crumb button{color:var(--muted);text-decoration:underline}.crumb b{color:var(--fg);font-weight:500}
+.studio{flex:1;display:grid;grid-template-columns:150px minmax(0,1fr);min-height:0}
+.snav{border-right:1px solid var(--line);padding:8px 6px;display:flex;flex-direction:column;gap:1px}
+.snav span{padding:5px 9px;border-radius:6px;color:var(--muted)}.snav span.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.content{overflow:auto;min-width:0;display:flex;flex-direction:column}
+.pg{padding:18px 22px;display:grid;gap:18px;max-width:980px;width:100%}
+.pg h1{margin:0;font-size:18px;font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pg h1 code{font-family:var(--mono);font-weight:500}
+.pg h2{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.lead{margin:0;color:var(--muted);max-width:74ch}
+.btn{border:1px solid var(--line);border-radius:6px;padding:5px 10px;background:var(--panel);white-space:nowrap}
+.btn:hover{background:var(--panel2)}.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}.btn.danger{color:var(--bad);border-color:var(--bad)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mark{font-size:10.5px;padding:0 6px;border-radius:9px;white-space:nowrap}.mark.ok{background:var(--ok-soft);color:var(--ok)}.mark.warn{background:var(--warn-soft);color:var(--warn)}.mark.bad{background:var(--bad-soft);color:var(--bad)}.mark.acc{background:var(--accent-soft);color:var(--accent)}.mark.mut{background:var(--tag);color:var(--muted)}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted)}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.sum{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:2px}
+.sum small{color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+.sum b{font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+.sum span{color:var(--muted);font-size:12px}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:8px}.banner span{flex:1 1 300px}
+.banner.warn{background:var(--warn-soft)}.banner.bad{background:var(--bad-soft)}.banner.acc{background:var(--accent-soft)}.banner.ok{background:var(--ok-soft)}
+.kv{display:grid;grid-template-columns:170px minmax(0,1fr);gap:8px 16px;align-items:center}
+.kv dt{color:var(--muted)}.kv dd{margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+table{border-collapse:collapse;width:100%}
+td,th{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);font-weight:400;vertical-align:top}
+th{color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+td.num{font-variant-numeric:tabular-nums}
+.tablewrap{overflow-x:auto}
+.bars{display:grid;gap:6px}
+.bl{display:grid;grid-template-columns:150px minmax(0,1fr) 48px;gap:10px;align-items:center}
+.bl span:first-child{color:var(--muted)}
+.track{height:9px;border-radius:5px;background:var(--tag);position:relative}.track i{position:absolute;inset:0 auto 0 0;border-radius:5px;background:var(--accent)}
+.track.prev i{background:var(--muted)}.track.none i{background:var(--warn)}
+.progress{height:8px;border-radius:4px;background:var(--tag);position:relative;overflow:hidden}.progress i{position:absolute;inset:0 auto 0 0;background:var(--accent)}
+.steps{display:flex;gap:6px;flex-wrap:wrap}
+.step{padding:4px 10px;border-radius:14px;border:1px solid var(--line);color:var(--muted)}.step.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}.step.done{color:var(--ok);border-color:var(--ok)}
+.test{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:6px}
+.test q{font-style:normal;color:var(--fg)}.test q::before,.test q::after{content:'"'}
+.arm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px}.arm b{font-weight:500;min-width:120px}
+.matrix{display:grid;gap:2px}
+.cell{padding:8px;border-radius:6px;text-align:center;font-variant-numeric:tabular-nums;font-size:12px}
+.cell.p{background:var(--ok-soft);color:var(--ok)}.cell.f{background:var(--bad-soft);color:var(--bad)}.cell.n{background:var(--tag);color:var(--muted)}
+.term{background:var(--term);color:var(--termfg);font-family:var(--mono);font-size:12px;border-radius:8px;padding:12px;white-space:pre-wrap;min-height:300px;overflow:auto}
+.sticky{position:sticky;bottom:0;margin-top:auto;background:var(--panel);border-top:1px solid var(--line);padding:12px 22px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;align-items:center}
+.sticky span{color:var(--muted);margin-right:auto;flex:1 1 260px}
+.side{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:100%}
+.side>aside{border-left:1px solid var(--line);padding:16px;display:grid;gap:14px;align-content:start;background:var(--panel)}
+.dtabs{display:flex;padding:0 22px;border-bottom:1px solid var(--line);gap:12px}.dtabs span{padding:8px 2px;color:var(--muted);border-bottom:2px solid transparent}.dtabs span.on{color:var(--fg);border-bottom-color:var(--accent)}
+.dh{padding:14px 22px 10px;border-bottom:1px solid var(--line);display:grid;gap:6px}
+.dh h1{margin:0;font-family:var(--mono);font-size:18px;font-weight:500}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--panel);padding:8px 14px;border-radius:8px;z-index:25}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));background:#11131a;color:#f2f3f7;border-radius:24px;padding:6px 8px;display:flex;align-items:center;gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:30;font-size:12.5px;max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+.switcher button{color:#f2f3f7;border-radius:16px;padding:4px 10px}.switcher button:hover{background:#2a2e3a}
+.switcher .lbl{padding:0 6px;font-weight:600}.switcher .st{color:#aab0c0;padding:0 6px;font-size:11.5px}
+@media (max-width:1000px){.studio{grid-template-columns:minmax(0,1fr)}.snav{display:none}.side{grid-template-columns:minmax(0,1fr)}.side>aside{border-left:0;border-top:1px solid var(--line)}.kv{grid-template-columns:minmax(0,1fr)}.bl{grid-template-columns:110px minmax(0,1fr) 44px}}
+</style>
+
+<div class="note"><b>Prototype, fake data, nothing spends.</b> Grading inside the studio: a skill's Grades tab, the grade plan, a running grade, the scorecard and a saved chat. Three variants of the plan and the scorecard. Flip with the bar or ← →.</div>
+<div class="try"><span>Try:</span><button class="btn" data-a="grades">Grades tab</button><button class="btn" data-a="plan">Grade deploy</button><button class="btn" data-a="stale">A plan that changed under you</button><button class="btn" data-a="limit">A grade that hit its limit</button><button class="btn" data-a="interrupted">An interrupted grade</button><button class="btn" data-a="notests">A skill with no tests</button></div>
+<div id="app"></div>
+
+<script>
+const V={a:"A · A review page, totals first",b:"B · Three steps, then cards",c:"C · Beside the skill, a results grid"};
+const TESTS=[{q:"deploy the api to staging",should:"start",w:[3,3],o:[1,3],p:[3,3]},{q:"what changed since the last release?",should:"leave",w:[3,3],o:[3,3],p:[2,3]},{q:"ship svc to production with a tag",should:"start",w:[2,3],o:[0,3],p:[2,3]},{q:"roll back yesterday's deploy",should:"start",w:[3,3],o:[1,3],p:[1,3]}];
+const S={v:(location.hash||"#a").slice(1),page:"grades",step:1,profile:"Claude Code",model:"sonnet",cap:"400k",limit:"3.00",prev:true,stale:false,run:0,ended:null,back:[],fwd:[],chat:1,toast:null,notests:false,optin:false};
+if(!V[S.v])S.v="a";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const chats=()=>TESTS.length*3*(S.prev?3:2);
+const est=()=>(chats()*0.09*(S.model==="opus"?3.2:S.model==="haiku"?0.3:1)).toFixed(2);
+function go(p){S.back.push([S.page,S.step]);S.fwd=[];S.page=p;render()}
+function back(){if(!S.back.length)return;S.fwd.push([S.page,S.step]);[S.page,S.step]=S.back.pop();render()}
+function fwd(){if(!S.fwd.length)return;S.back.push([S.page,S.step]);[S.page,S.step]=S.fwd.pop();render()}
+function crumb(){const c=[["grades","Library"],["grades","deploy"],["grades","Grades"]];
+  if(S.page==="plan")c.push([null,"New grade"]);if(S.page==="running")c.push([null,"Grading…"]);if(S.page==="score")c.push([null,"28 Oct"]);if(S.page==="chat"){c.push(["score","28 Oct"]);c.push([null,"Chat "+S.chat])}
+  return c.map(([p,l],i)=>i===c.length-1?`<b>${esc(l)}</b>`:`<button data-go="${p}">${esc(l)}</button>`).join(" › ")}
+function header(){return `<div class="dh"><h1>deploy <span class="tag">project</span></h1><div class="row"><button class="btn primary">Use in this chat</button><button class="btn">Edit</button><button class="btn" data-a="plan">Grade</button><button class="btn">…</button></div></div><div class="dtabs"><span>Overview</span><span>Text</span><span>History</span><span class="on">Grades</span><span>Runs</span></div>`}
+function gradesTab(){
+  if(S.notests)return header()+`<div class="pg"><div class="banner warn"><span>deploy has no trigger tests yet, so a grade has nothing to run. Trigger tests are prompts with whether the skill should start for them.</span><button class="btn primary">Write trigger tests</button><button class="btn">Ask a chat to write them</button></div></div>`;
+  return header()+`<div class="pg">
+  <div><h2>Latest · 28 Oct · sonnet · $1.92</h2><div class="bars">${[["With it",86,""],["Without it",68,"none"],["Previous version",80,"prev"]].map(([l,w,c])=>`<div class="bl"><span>${l}</span><div class="track ${c}"><i style="width:${w}%"></i></div><span class="num">${w}%</span></div>`).join("")}</div></div>
+  <div class="tablewrap"><table><tr><th>Graded</th><th>Version</th><th>Model</th><th>With</th><th>Without</th><th>Previous</th><th>Spent</th><th>Ended</th><th></th></tr>
+  <tr><td>28 Oct</td><td>Tighter steps for rollbacks</td><td>sonnet</td><td class="num">86%</td><td class="num">68%</td><td class="num">80%</td><td class="num">$1.92</td><td><span class="mark ok">Graded</span></td><td><button class="btn" data-go="score">Scorecard</button></td></tr>
+  <tr><td>22 Oct</td><td>First version</td><td>sonnet</td><td class="num">80%</td><td class="num">69%</td><td class="num">—</td><td class="num">$1.71</td><td><span class="mark warn">Stopped at its limit</span></td><td><button class="btn" data-go="score">Scorecard</button></td></tr>
+  <tr><td>20 Oct</td><td>First version</td><td>haiku</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">$0.21</td><td><span class="mark mut">Interrupted: the app quit</span></td><td><button class="btn" data-go="score">What ran</button></td></tr></table></div>
+  <div class="banner ${S.optin?"ok":""}" style="border:1px solid var(--line)"><span><b style="font-weight:500">Grade after each edit</b> · ${S.optin?`On: each saved edit runs ${chats()} chats on ${S.profile}, ${S.model}, at most $${S.limit}, and pauses if any of that changes.`:"Off. When it's on, each saved edit is graded once, 10 seconds after you stop saving, within a limit you accept first."}</span><button class="btn" data-a="${S.optin?"optoff":"optin"}">${S.optin?"Turn off":"Turn on…"}</button></div></div>`}
+function planBody(full){
+  const stale=S.stale?`<div class="banner warn"><span>The plan changed since you opened it: the model is now ${esc(S.model)}, so it may spend up to $${est()}. Read it again before you start.</span><button class="btn primary" data-a="reread">Show the new plan</button></div>`:"";
+  const what=`<div><h2>What it runs</h2><p class="lead" style="margin-bottom:8px">${TESTS.length} trigger tests, each 3 times, in chats with deploy, without it${S.prev?", and with its previous version":""}.</p>
+    <div class="tablewrap"><table><tr><th>Trigger test</th><th>It should</th></tr>${TESTS.map(t=>`<tr><td>${esc(t.q)}</td><td>${t.should==="start"?"start deploy":"leave deploy alone"}</td></tr>`).join("")}</table></div>
+    <label style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="checkbox" data-a="prev" ${S.prev?"checked":""}> Also compare with the previous version (Tighter steps for rollbacks ← First version)</label></div>`;
+  const where=`<div><h2>Where it runs</h2><dl class="kv"><dt>Program</dt><dd><select data-f="profile"><option ${S.profile==="Claude Code"?"selected":""}>Claude Code</option><option>Claude Code (work account)</option></select></dd>
+    <dt>Model</dt><dd><select data-f="model">${["haiku","sonnet","opus"].map(m=>`<option ${S.model===m?"selected":""}>${m}</option>`).join("")}</select></dd>
+    <dt>Its chats</dt><dd>run with only purlis's plugin; a chat that asks you something is ended and not counted.</dd></dl></div>`;
+  const spend=`<div><h2>What it may spend</h2><dl class="kv"><dt>Estimate</dt><dd><b class="num">$${est()}</b><span class="lead">from the grade of 28 Oct on Claude Code, sonnet: $0.08 a chat</span></dd>
+    <dt>Token cap</dt><dd><input data-f="cap" value="${esc(S.cap)}" style="width:100px"> tokens across all chats, on this machine</dd>
+    <dt>Dollar limit</dt><dd>$<input data-f="limit" value="${esc(S.limit)}" style="width:80px"> · the grade stops when it reaches it</dd></dl></div>`;
+  if(S.v==="b"){const st=[[1,"What it runs"],[2,"Where it runs"],[3,"What it may spend"]];
+    return `${stale}<div class="steps">${st.map(([n,l])=>`<button class="step ${S.step===n?"on":S.step>n?"done":""}" data-step="${n}">${n}. ${l}</button>`).join("")}</div>${S.step===1?what:S.step===2?where:spend}`}
+  return `${stale}${full?`<div class="summary"><div class="sum"><small>Chats</small><b>${chats()}</b><span>${TESTS.length} tests × 3 × ${S.prev?3:2} arms</span></div><div class="sum"><small>At most</small><b>$${esc(S.limit)}</b><span>stops there</span></div><div class="sum"><small>Estimate</small><b>$${est()}</b><span>from the last grade</span></div><div class="sum"><small>Runs on</small><b style="font-size:15px">${esc(S.model)}</b><span>${esc(S.profile)}</span></div></div>`:""}${what}${where}${spend}`}
+function planPage(){
+  const bar=`<div class="sticky"><span>Nothing runs until you press Start. It spends at most $${esc(S.limit)} of your account.</span><button class="btn" data-a="cancel">Cancel</button>${S.v==="b"&&S.step<3?`<button class="btn primary" data-a="nextstep">Next</button>`:`<button class="btn primary" data-a="start" ${S.stale?"disabled":""}>Start grading · ${chats()} chats</button>`}</div>`;
+  if(S.v==="c")return `<div class="side"><div>${gradesTab()}</div><aside><h2 style="margin:0;font-size:14px">Grade deploy</h2>${planBody(false).replace(/<div class="tablewrap">[^]*?<\/table><\/div>/,`<p class="lead">${TESTS.map(t=>esc(t.q)).join(" · ")}</p>`)}<div class="row"><button class="btn" data-a="cancel">Cancel</button><button class="btn primary" data-a="start" ${S.stale?"disabled":""}>Start · ${chats()} chats, at most $${esc(S.limit)}</button></div></aside></div>`;
+  return `<div class="pg"><h1>Grade <code>deploy</code></h1><p class="lead">A grade runs deploy's trigger tests in chats with it and without it, and shows what it may spend before anything runs.</p>${planBody(true)}</div>${bar}`}
+function runningPage(){const done=Math.min(S.run,chats()),usd=(done*0.08).toFixed(2);
+  const body=`<div class="pg"><h1>Grading <code>deploy</code></h1><div class="summary"><div class="sum"><small>Chats</small><b>${done} of ${chats()}</b><span>3 at a time</span></div><div class="sum"><small>Spent</small><b>$${usd}</b><span>of at most $${esc(S.limit)}</span></div><div class="sum"><small>Tokens</small><b>${done*9}k</b><span>of ${esc(S.cap)}</span></div></div>
+   <div class="progress" aria-label="Progress"><i style="width:${done/chats()*100}%"></i></div><p class="lead">You can leave this page; the grade keeps going, and its chats never show up as needing you. Closing the app ends them.</p></div>
+   <div class="sticky"><span>Stopping keeps what ran so far.</span><button class="btn danger" data-a="stop">Stop</button><button class="btn" data-a="finish">(prototype: finish it)</button></div>`;
+  return S.v==="c"?`<div class="side"><div>${gradesTab()}</div><aside>${body.replace('class="pg"','style="display:grid;gap:14px"')}</aside></div>`:body}
+function scorePage(){
+  const endBanner=S.ended==="limit"?`<div class="banner warn"><span>Stopped at its dollar limit ($${esc(S.limit)}) after 22 of ${chats()} chats. The tests that didn't finish show as not run.</span><button class="btn" data-a="plan">Grade again</button></div>`:S.ended==="interrupted"?`<div class="banner bad"><span>Interrupted: purlis quit during this grade. It records what its chats spent ($0.21) and what ran; nothing was compared.</span><button class="btn" data-a="plan">Grade again</button></div>`:`<div class="banner ok"><span>Graded 28 Oct on Claude Code, sonnet, for $1.92. deploy made a difference of +18 points, and +6 over its previous version. 1 chat asked something and was ended; it isn't counted.</span></div>`;
+  const cell=(x,should)=>{if(!x)return `<span class="cell n">not run</span>`;const pass=should==="start"?x[0]===x[1]:x[0]===x[1];return `<span class="cell ${pass?"p":"f"}">${x[0]} of ${x[1]}</span>`};
+  const arms=[["With it","w"],["Without it","o"],["Previous version","p"]];
+  let detail;
+  if(S.v==="c")detail=`<div class="matrix" style="grid-template-columns:minmax(160px,2fr) repeat(3,minmax(70px,1fr))"><span class="lead">Trigger test</span>${arms.map(a=>`<span class="lead" style="text-align:center">${a[0]}</span>`).join("")}${TESTS.map((t,i)=>`<span>${esc(t.q)}<br><small class="lead">should ${t.should==="start"?"start it":"leave it alone"}</small></span>${arms.map(([,k])=>`<button class="cell ${(S.ended==="interrupted")?"n":(S.ended==="limit"&&i===3)?"n":(t[k][0]===t[k][1]?"p":"f")}" data-chat="${i+1}" title="Open a chat of this arm">${S.ended==="interrupted"||(S.ended==="limit"&&i===3)?"not run":t[k][0]+" of "+t[k][1]}</button>`).join("")}`).join("")}</div>`;
+  else if(S.v==="b")detail=TESTS.map((t,i)=>`<div class="test"><div><q>${esc(t.q)}</q> <span class="lead">· should ${t.should==="start"?"start it":"leave it alone"}</span></div>${arms.map(([l,k])=>`<div class="arm"><b>${l}</b>${S.ended==="interrupted"?`<span class="mark mut">not run</span>`:`${t[k][0]} of ${t[k][1]} chats started it <span class="mark ${t[k][0]===t[k][1]?"ok":"bad"}">${t[k][0]===t[k][1]?"passed":"failed"}</span>`}<button class="btn" data-chat="${i+1}">Open chat</button></div>`).join("")}</div>`).join("");
+  else detail=`<div class="tablewrap"><table><tr><th>Trigger test</th><th>Should</th>${arms.map(a=>`<th>${a[0]}</th>`).join("")}<th></th></tr>${TESTS.map((t,i)=>`<tr><td>${esc(t.q)}</td><td>${t.should==="start"?"start it":"leave it alone"}</td>${arms.map(([,k])=>`<td>${S.ended==="interrupted"||(S.ended==="limit"&&i===3)?`<span class="mark mut">not run</span>`:`${t[k][0]} of ${t[k][1]} <span class="mark ${t[k][0]===t[k][1]?"ok":"bad"}">${t[k][0]===t[k][1]?"pass":"fail"}</span>`}</td>`).join("")}<td><button class="btn" data-chat="${i+1}">Chats</button></td></tr>`).join("")}</table></div>`;
+  const top=S.v==="a"?`<div class="summary"><div class="sum"><small>With it</small><b>86%</b><span>of tests passed</span></div><div class="sum"><small>Without it</small><b>68%</b><span>+18 points</span></div><div class="sum"><small>Previous version</small><b>80%</b><span>+6 points</span></div><div class="sum"><small>Spent</small><b>$1.92</b><span>of $3.00 · 33 chats</span></div></div>`:
+   `<div class="bars">${[["With it",86,""],["Without it",68,"none"],["Previous version",80,"prev"]].map(([l,w,c])=>`<div class="bl"><span>${l}</span><div class="track ${c}"><i style="width:${w}%"></i></div><span class="num">${w}%</span></div>`).join("")}</div>`;
+  return `<div class="pg"><h1>Grade of <code>deploy</code> · 28 Oct</h1>${endBanner}${S.ended==="interrupted"?"":top}<div><h2>Each trigger test</h2>${detail}</div></div>`}
+function chatPage(){return `<div class="pg"><h1>Chat ${S.chat} of the 28 Oct grade</h1><p class="lead">With deploy · trigger test "${esc(TESTS[S.chat-1].q)}". What this chat showed when the grade ended it. It takes no input and can't be resumed.</p>
+  <div class="term">&gt; ${esc(TESTS[S.chat-1].q)}\n\n● Skill(deploy)\n  ⎿ Loaded deploy\n\nI'll check the tests are green first.\n● Bash(cargo test --quiet)\n  ⎿ test result: ok. 312 passed\n\nTests pass. Next I'd write the changelog entry…\n\n[ended by the grade: the skill started, which is what this test checks]</div>
+  <div class="row"><button class="btn" data-chat="${Math.max(1,S.chat-1)}">‹ Previous chat</button><button class="btn" data-chat="${Math.min(4,S.chat+1)}">Next chat ›</button><button class="btn" data-go="score">Back to the scorecard</button></div></div>`}
+function render(){
+  let body=S.page==="grades"?gradesTab():S.page==="plan"?planPage():S.page==="running"?runningPage():S.page==="score"?scorePage():chatPage();
+  document.getElementById("app").innerHTML=`<div class="win"><div class="tabs"><span>steward 5</span><span class="on">Skill studio</span></div>
+   <div class="bar"><div class="nav2"><button aria-label="Back" data-a="back" ${S.back.length?"":"disabled"}>‹</button><button aria-label="Forward" data-a="fwd" ${S.fwd.length?"":"disabled"}>›</button></div><span class="crumb">${crumb()}</span></div>
+   <div class="studio"><div class="snav"><span class="on">Library</span><span>Needs you</span><span>Drafts</span><span>Sources</span><span>Deleted</span><span>Harness skills</span><span>Routing</span></div><div class="content">${body}</div></div></div>
+   ${S.toast?`<div class="toast" role="status">${S.toast}</div>`:""}
+   <div class="switcher" role="toolbar" aria-label="Prototype switcher"><button data-a="prev" aria-label="Previous variant">←</button><span class="lbl">${V[S.v]}</span><button data-a="next" aria-label="Next variant">→</button><span class="st">${S.page}${S.page==="plan"&&S.v==="b"?" · step "+S.step:""}</span></div>`;
+  document.querySelectorAll("[data-f]").forEach(el=>{el.onchange=e=>{S[el.dataset.f]=e.target.value;render()}});
+}
+function toast(t){S.toast=t;render();clearTimeout(S.tt);S.tt=setTimeout(()=>{S.toast=null;render()},3500)}
+let timer=null;
+document.addEventListener("click",e=>{const t=e.target.closest("[data-a],[data-go],[data-chat],[data-step]");if(!t)return;const d=t.dataset;
+  if(d.step){S.step=+d.step;render();return}
+  if(d.chat){S.chat=+d.chat;if(S.page!=="chat")go("chat");else render();return}
+  if(d.go){go(d.go);return}
+  const a=d.a;
+  if(a==="back")back();else if(a==="fwd")fwd();
+  else if(a==="grades"){S.notests=false;S.ended=null;go("grades")}
+  else if(a==="plan"){S.notests=false;S.stale=false;S.step=1;go("plan")}
+  else if(a==="stale"){S.notests=false;S.step=3;S.page!=="plan"&&go("plan");S.model="opus";S.stale=true;render()}
+  else if(a==="reread"){S.stale=false;render()}
+  else if(a==="limit"){S.ended="limit";go("score")}
+  else if(a==="interrupted"){S.ended="interrupted";go("score")}
+  else if(a==="notests"){S.notests=true;go("grades")}
+  else if(a==="prev"&&t.type==="checkbox"){S.prev=t.checked;render()}
+  else if(a==="nextstep"){S.step=Math.min(3,S.step+1);render()}
+  else if(a==="cancel")back();
+  else if(a==="start"){S.run=0;S.ended=null;go("running");clearInterval(timer);timer=setInterval(()=>{S.run+=3;if(S.page!=="running"||S.run>=chats()){clearInterval(timer);if(S.page==="running"){S.page="score";render()}}else render()},700)}
+  else if(a==="stop"){clearInterval(timer);S.ended="limit";S.page="score";toast("Stopped. What ran is kept.")}
+  else if(a==="finish"){clearInterval(timer);S.page="score";render()}
+  else if(a==="optin"){S.optin=true;toast(`Turned on, from a plan you accepted: ${chats()} chats an edit, at most $${S.limit}.`)}
+  else if(a==="optoff"){S.optin=false;render()}
+  else if(a==="prev"||a==="next"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(a==="next"?1:2))%3];S.step=1;try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}
+});
+document.addEventListener("keydown",e=>{if((e.metaKey||e.ctrlKey)&&e.key==="["){e.preventDefault();back();return}if((e.metaKey||e.ctrlKey)&&e.key==="]"){e.preventDefault();fwd();return}
+  if(e.target.closest&&e.target.closest("input,textarea,select,[contenteditable]"))return;
+  if(e.key==="ArrowLeft"||e.key==="ArrowRight"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(e.key==="ArrowRight"?1:2))%3];S.step=1;try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}});
+render();
+</script>
