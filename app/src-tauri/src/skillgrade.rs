@@ -1083,9 +1083,11 @@ impl InChats<'_> {
         }
         off.sort();
         let session = started.session;
+        let id = self.held.chats().chat_at(session).and_then(|at| at.id);
         // A router's arm is a run of the router only where its start took the router's answer
         // (SK-15e): a chat that fell back on the built-in router measures that one instead, so
-        // it is no run, and the grade says why.
+        // it is no run, and the grade says why. Its prompt was handed it at its start, so what
+        // it spent before it was ended counts toward the grade's cap all the same.
         if chat.arm == Arm::Router
             && let Some(why) = router_did_not_route(self.held.chats(), session)
         {
@@ -1095,9 +1097,22 @@ impl InChats<'_> {
             if let Err(close) = self.held.chats().close(session) {
                 tracing::warn!("purlis: a grade's chat {session} did not close ({close})");
             }
-            return not_started(why);
+            let spent = id
+                .as_deref()
+                .and_then(|id| purlis_core::usage::spent(&root, id));
+            return ChatRan {
+                chat: id,
+                tokens: spent.and_then(|spent| {
+                    spent
+                        .input_tokens
+                        .zip(spent.output_tokens)
+                        .map(|(input, output)| input + output)
+                }),
+                cost_usd: spent.and_then(|spent| spent.cost_usd),
+                ms: u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX),
+                ..not_started(why)
+            };
         }
-        let id = self.held.chats().chat_at(session).and_then(|at| at.id);
         // What the chat has spent so far, as its harness last said: read each look, so a chat
         // that passes the grade's cap is ended in it.
         let spent_now = || {

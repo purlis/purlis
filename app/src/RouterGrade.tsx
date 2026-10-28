@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { commands, ROUTER_GRADE, type RouterGradePlan, type RouterGradeStep } from "./bindings";
 import { counted } from "./dispatches";
@@ -62,6 +62,12 @@ export function RouterGrade({
   const [step, setStep] = useState<RouterGradeStep>();
   const [said, setSaid] = useState<{ tone: "news" | "trouble"; text: string }>();
   const running = step !== undefined && step.ended === null;
+  // The latest to tell, read as an event lands: the listener is not drawn again with it, so no
+  // step is lost while it would be.
+  const told = useRef(onGraded);
+  useEffect(() => {
+    told.current = onGraded;
+  }, [onGraded]);
 
   useEffect(() => {
     const listening = listen<RouterGradeStep>(ROUTER_GRADE, (event) => {
@@ -70,14 +76,14 @@ export function RouterGrade({
       setStep(now);
       if (now.ended !== null) {
         setSaid({
-          tone: now.ended === "chats-did-not-start" ? "trouble" : "news",
+          tone: now.ended === "chats-did-not-start" || now.ended === "failed" ? "trouble" : "news",
           text: routerEndedSaid(now),
         });
-        onGraded();
+        told.current();
       }
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
-  }, [plane, router, onGraded]);
+  }, [plane, router]);
 
   const open = () => {
     setAsking(true);

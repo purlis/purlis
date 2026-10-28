@@ -542,7 +542,8 @@ fn arm(root: &Path, bundle: &Path, router: Option<&str>, asker: &Arc<dyn AskRout
         .into_iter()
         .map(|name| crate::skills::verbs::drafts::snapshot(root, &level, name).unwrap())
         .collect();
-    let laid = crate::skills::verbs::drafts::lay_out_library_arm(root, &skills, router).unwrap();
+    let laid =
+        crate::skills::verbs::drafts::lay_out_library_arm(root, &skills, router, &[]).unwrap();
     ChatSkills::read(
         true,
         root,

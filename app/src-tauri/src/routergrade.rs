@@ -26,7 +26,7 @@ use specta::Type;
 use tauri::Emitter as _;
 
 use purlis_core::skills::grade::routers::{self as engine, LibraryChats};
-use purlis_core::skills::grade::{self as grading, Arm, ChatRan, Chats, RunChat};
+use purlis_core::skills::grade::{self as grading, Arm};
 use purlis_core::skills::grades::routers::{self, RecordedCopy, RouterGraded, RouterPlanned};
 use purlis_core::skills::grades::{self, Spent};
 
@@ -207,21 +207,9 @@ pub(crate) async fn router_grade_plan(
 
 /// **This app's host for a router's grade**: a skill's grade's host, told which skill's tests
 /// run next.
-struct InLibrary<'a, 'b>(&'b mut InChats<'a>);
-
-impl Chats for InLibrary<'_, '_> {
-    fn run(&mut self, chat: &RunChat, tokens_left: Option<u64>) -> ChatRan {
-        self.0.run(chat, tokens_left)
-    }
-
-    fn cancelled(&self) -> bool {
-        self.0.cancelled()
-    }
-}
-
-impl LibraryChats for InLibrary<'_, '_> {
+impl LibraryChats for InChats<'_> {
     fn grading(&mut self, skill: &str) {
-        skill.clone_into(&mut self.0.skill);
+        skill.clone_into(&mut self.skill);
     }
 }
 
@@ -338,7 +326,10 @@ pub(crate) async fn router_grade_start(
                             _ => return Err("a router's grade has no such arm".to_owned()),
                         };
                         purlis_core::skills::verbs::drafts::lay_out_library_arm(
-                            &root, &snapshots, routed_by,
+                            &root,
+                            &snapshots,
+                            routed_by,
+                            &planned.pins,
                         )
                     };
                     let mut chats = InChats {
@@ -361,11 +352,7 @@ pub(crate) async fn router_grade_start(
                         model: None,
                         reported: Vec::new(),
                     };
-                    let report = engine::grade(
-                        &request,
-                        &mut InLibrary(&mut chats),
-                        Some(limits.clone()),
-                    );
+                    let report = engine::grade(&request, &mut chats, Some(limits.clone()));
                     let graded = RouterGraded {
                         v: routers::VERSION,
                         grade: grade.clone(),

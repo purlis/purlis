@@ -157,3 +157,45 @@ fn a_router_s_grade_is_compared_with_the_built_in_router() {
         serde_json::json!(["router", "built-in-router"])
     );
 }
+
+/// A library host whose router never answers: every chat of the router's arm is no run.
+struct Unanswered(Library);
+
+impl Chats for Unanswered {
+    fn run(&mut self, chat: &RunChat, tokens_left: Option<u64>) -> ChatRan {
+        let ran = self.0.run(chat, tokens_left);
+        if chat.arm != Arm::Router {
+            return ran;
+        }
+        ChatRan {
+            started: Vec::new(),
+            end: ChatEnd::NotStarted {
+                why: "the router relevance did not answer within 100 ms".into(),
+            },
+            ..ran
+        }
+    }
+
+    fn cancelled(&self) -> bool {
+        self.0.cancelled()
+    }
+}
+
+impl LibraryChats for Unanswered {
+    fn grading(&mut self, skill: &str) {
+        self.0.grading(skill);
+    }
+}
+
+#[test]
+fn a_router_that_never_answers_ends_the_grade_though_the_built_in_router_s_chats_run() {
+    let mut library = Unanswered(Library::hiding(""));
+    let report = grade(&request(), &mut library, None);
+    assert_eq!(report.ended, GradeEnd::ChatsDidNotStart);
+    assert_eq!(
+        report.not_started.as_deref(),
+        Some("the router relevance did not answer within 100 ms")
+    );
+    // Its first two router chats, and the built-in router's chat between them.
+    assert_eq!(library.0.asked.len(), 3);
+}

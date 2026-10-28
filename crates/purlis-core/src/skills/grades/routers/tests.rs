@@ -224,12 +224,19 @@ fn a_router_s_grades_are_read_newest_first_and_a_row_it_cannot_take_is_skipped()
         ],
     );
 
-    let read = grades_of(root, "relevance");
+    let read = grades_of(root, "relevance", Some("ops"), None);
     assert_eq!(read, [newer.clone(), older]);
-    assert_eq!(grades_of(root, "another").len(), 1);
-    assert_eq!(
-        planned(root, Some("ops"), None, "relevance").unwrap().last,
-        Some(newer)
+    assert_eq!(grades_of(root, "another", Some("ops"), None).len(), 1);
+    // The same router chosen elsewhere is graded on another library: none of these is its.
+    assert!(grades_of(root, "relevance", None, None).is_empty());
+    assert!(grades_of(root, "relevance", None, Some("ops")).is_empty());
+    let mut skill_arms = serde_json::to_value(&newer).unwrap();
+    skill_arms["report"]["skills"][0]["report"]["arms"][0]["arm"] = serde_json::json!("with");
+    skill_arms["report"]["skills"][0]["report"]["triggers"][0]["arm"] = serde_json::json!("with");
+    written(root, &[skill_arms]);
+    assert!(
+        grades_of(root, "relevance", Some("ops"), None).is_empty(),
+        "a router's row scored in a skill's arms is skipped"
     );
 }
 
@@ -266,7 +273,7 @@ fn a_grade_is_recorded_in_the_committed_record_and_read_back() {
         path.starts_with(root.join("personas/_grades/routers")),
         "{path:?}"
     );
-    assert_eq!(grades_of(root, "relevance"), [row]);
+    assert_eq!(grades_of(root, "relevance", Some("ops"), None), [row]);
     // A skill's own grades never read a router's.
     assert!(super::super::grades_of(root, "deploy", None).is_empty());
 }
@@ -281,5 +288,36 @@ fn a_grade_of_a_library_with_a_copy_of_this_machine_s_own_stays_here() {
     let path = record(root, &planned.copies, &row, "device").expect("recorded");
     assert!(path.starts_with(crate::plane::state_dir(root)), "{path:?}");
     assert!(!root.join("personas/_grades/routers").exists());
-    assert_eq!(grades_of(root, "relevance"), [row]);
+    assert_eq!(grades_of(root, "relevance", Some("ops"), None), [row]);
+}
+
+#[test]
+fn every_chat_of_a_router_s_grade_reads_the_pins_of_the_scope_that_chose_it() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::write(
+        root.join("workspaces/ops/workspace.json"),
+        r#"{"settings": {"skills": {"pinned": ["deploy"]}}}"#,
+    )
+    .unwrap();
+    let pinned = planned(root, Some("ops"), None, "relevance").unwrap();
+    assert_eq!(pinned.pins, ["deploy"]);
+    // A pin is consented to: the plan without it is another plan.
+    std::fs::write(root.join("workspaces/ops/workspace.json"), "{}").unwrap();
+    assert_ne!(
+        planned(root, Some("ops"), None, "relevance")
+            .unwrap()
+            .consent,
+        pinned.consent
+    );
+    // And the arm laid out with it is read with it.
+    let laid = crate::skills::verbs::drafts::lay_out_library_arm(
+        root,
+        &[],
+        Some("relevance"),
+        &pinned.pins,
+    )
+    .unwrap();
+    let tried = crate::skills::verbs::drafts::tried(root, &laid.piece).unwrap();
+    assert_eq!(crate::skills::pins_or_none(&tried, None, None), ["deploy"]);
 }

@@ -37,8 +37,9 @@ pub const RUNS: u8 = 3;
 /// The share of a trigger test's runs that has to start the skill for it to count as triggered.
 pub const TRIGGER_THRESHOLD: f64 = 0.5;
 
-/// How many chats in a row that did not start end a grade: the harness or its profile is not
-/// working, and every chat after them would not start either.
+/// How many chats in a row that did not start end a grade, in all or in one arm: the harness,
+/// its profile or the arm's router is not working, and every chat after them would not start
+/// either.
 pub const NOT_STARTED_IN_A_ROW: u32 = 2;
 
 /// The framework a grade's report says graded it, when it is purlis's own runner.
@@ -417,7 +418,10 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
     let mut ran: Vec<Vec<Vec<ChatRan>>> =
         vec![vec![Vec::new(); request.arms.len()]; request.triggers.len()];
     let mut ended = GradeEnd::Whole;
+    // Counted in all, and per arm: arms take turns, so a chat of one arm that starts says
+    // nothing of another arm whose chats do not (a router that never answers, SK-15e).
     let mut not_started_in_a_row = 0u32;
+    let mut not_started_in_its_arm = vec![0u32; request.arms.len()];
     let mut not_started: Option<String> = None;
     let mut spent: Option<u64> = None;
     let mut spent_usd: Option<f64> = None;
@@ -475,6 +479,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                 let stop = match &result.end {
                     ChatEnd::NotStarted { why } => {
                         not_started_in_a_row += 1;
+                        not_started_in_its_arm[a] += 1;
                         not_started = Some(why.clone());
                         None
                     }
@@ -483,6 +488,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                     ChatEnd::OverLimit => Some(GradeEnd::OverLimit),
                     ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked => {
                         not_started_in_a_row = 0;
+                        not_started_in_its_arm[a] = 0;
                         None
                     }
                 };
@@ -503,7 +509,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                     ended = GradeEnd::OverLimit;
                     break 'runs;
                 }
-                if not_started_in_a_row >= NOT_STARTED_IN_A_ROW {
+                if not_started_in_a_row.max(not_started_in_its_arm[a]) >= NOT_STARTED_IN_A_ROW {
                     ended = GradeEnd::ChatsDidNotStart;
                     break 'runs;
                 }

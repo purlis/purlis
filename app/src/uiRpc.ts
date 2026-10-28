@@ -1035,13 +1035,7 @@ export const commands = {
 	 *  anything runs.
 	 */
 	routerGradePlan: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_plan", { plane, workspace, persona })),
-	/**
-	 *  **Grades the router the studio's workspace or persona chose**, on the project's default
-	 *  profile: its chats run one at a time behind the window, which is told each step ([`EVENT`]).
-	 *  The answer is the grade's id. Refused while a grade runs in the project, and where the plan
-	 *  the person pressed Grade on no longer holds.
-	 */
-	routerGradeStart: (plane: PlaneId, workspace: string | null, persona: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("router_grade_start", { plane, workspace, persona, consent })),
+	routerGradeStart: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
 	skillSourcesOffered: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,

@@ -556,7 +556,7 @@ fn router_of(
         Err(why) => (format!("{why}."), true, None),
     };
     let grade = extension.as_deref().and_then(|id| {
-        purlis_core::skills::grades::routers::grades_of(root, id)
+        purlis_core::skills::grades::routers::grades_of(root, id, workspace, persona)
             .first()
             .map(purlis_core::skills::grades::routers::RouterGraded::said)
     });

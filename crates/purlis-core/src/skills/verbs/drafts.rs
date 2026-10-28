@@ -573,6 +573,7 @@ pub fn lay_out_arm(root: &Path, skill: Option<&Snapshot>) -> Result<Try, String>
         root,
         skill.map(std::slice::from_ref).unwrap_or_default(),
         None,
+        None,
     )
 }
 
@@ -584,22 +585,35 @@ pub fn lay_out_library_arm(
     root: &Path,
     skills: &[Snapshot],
     router: Option<&str>,
+    pins: &[String],
 ) -> Result<Try, String> {
     if router.is_some_and(|id| !crate::extension::an_id(id)) {
         return Err("a router's grade names no router".to_owned());
     }
-    lay_out_graded(root, skills, router)
+    let pins = pins.join("\n");
+    lay_out_graded(
+        root,
+        skills,
+        router,
+        Some(pins.as_str()).filter(|pins| !pins.is_empty()),
+    )
 }
 
-/// A grade's piece of `skills`, marked as a grade's, and as routed by `router` where it is one.
-fn lay_out_graded(root: &Path, skills: &[Snapshot], router: Option<&str>) -> Result<Try, String> {
+/// A grade's piece of `skills`, marked as a grade's, as routed by `router` where it is one, and
+/// with `pins`, one name a line, where there are any.
+fn lay_out_graded(
+    root: &Path,
+    skills: &[Snapshot],
+    router: Option<&str>,
+    pins: Option<&str>,
+) -> Result<Try, String> {
     let named: Vec<(&str, &BTreeMap<String, String>)> = skills
         .iter()
         .map(|skill| (skill.name.as_str(), &skill.files))
         .collect();
     let laid = lay_out(root, &named)?;
     let state = crate::plane::state_dir(root);
-    let marks = [(GRADED, Some("")), (ROUTER, router)];
+    let marks = [(GRADED, Some("")), (ROUTER, router), (PINS, pins)];
     for (file, text) in marks {
         let Some(text) = text else { continue };
         if let Err(why) = write_at(
@@ -621,6 +635,31 @@ const GRADED: &str = "graded";
 
 /// A grade's arm's file that names the router its chat is routed by (SK-15e).
 const ROUTER: &str = "router";
+
+/// A router's grade's arm's file of the pins its chat reads: the scope's that chose the router.
+const PINS: &str = "pins";
+
+/// **The pins of the chat of a router's grade's arm whose project is `tried`**, the try's own
+/// folder (SK-15e, #3233): the pins of the workspace or persona that chose the router, so the
+/// router is asked about the skills a real chat there may hide, and both routers keep them listed.
+/// `None` for any folder that is not a try's.
+pub(crate) fn pins_of_arm(tried: &Path) -> Option<Vec<String>> {
+    let id = tried.file_name()?.to_str()?;
+    let tries = tried.parent()?;
+    if tries.file_name()? != TRIES_DIR {
+        return None;
+    }
+    let text = read_at(tries.parent()?, &format!("{TRIES_DIR}/{id}/{PINS}"))
+        .ok()
+        .flatten()?;
+    Some(
+        text.lines()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    )
+}
 
 /// **The router the chat of a router's grade's arm in `cwd` is routed by** (SK-15e, #3233), by
 /// its extension's id, in the project at `root`: `None` for every other folder, and for the arm

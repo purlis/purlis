@@ -3841,7 +3841,7 @@ An end row, never a pass or a fail:
   with the built-in router.
 - **Status:** **experimental**, behind the `skill-studio` flag; written by the app when a
   router's grade ends, whole or stopped (`grades::routers::record`), and read by the Skill
-  studio's router line, which says the newest grade of the router chosen there
+  studio's router line, which says the newest grade of the router chosen there, in that scope
   (`grades::routers::grades_of`).
 - **Tier:** Plane — committed, beside the skills' eval record, so a teammate sees how the router
   their workspace chose did on the library they pulled.
@@ -7388,7 +7388,9 @@ rewritten.
   skill of the library as the grade read it once, each without its `evals/` folder, `graded`, and,
   for the router's arm, a file `router` holding the router's extension id, which the chat's start
   routes its set by in place of a workspace's or persona's choice (`drafts::arm_router`). The arm
-  of the built-in router has no `router`.
+  of the built-in router has no `router`. Both arms hold `pins`, the pins of the workspace or persona that chose
+  the router, one name a line (absent for none), which the chat's set is routed with
+  (`drafts::pins_of_arm`).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** gitignored, under the state directory; the piece is ignored and never staged.

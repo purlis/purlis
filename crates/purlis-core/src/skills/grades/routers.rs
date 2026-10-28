@@ -78,8 +78,9 @@ pub struct RouterPlanned {
     pub cap: cap::Cap,
     /// What the person consents to by pressing Grade on this plan ([`consent_of`]).
     pub consent: Option<String>,
-    /// This router's newest grade, where it has one.
-    pub last: Option<RouterGraded>,
+    /// The pins of the workspace or persona that chose the router: every chat of the grade
+    /// reads them, so the router is asked about what it may hide at a real start there.
+    pub pins: Vec<String>,
     /// The library as it was read once: what every chat of a grade started on this plan is
     /// handed, and what its record says it graded. Never shown, so never sent.
     #[serde(skip)]
@@ -148,12 +149,26 @@ pub fn planned(
         return Err("a router's grade names no router".to_owned());
     }
     let head_before = head(root);
+    let pins = crate::skills::pins_or_none(root, workspace, persona);
     let mut copies = Vec::new();
     let mut skills = Vec::new();
     let mut requests = Vec::new();
     for (level, name) in library_of(root, workspace, persona)? {
-        let copy = copy_of(root, &level, &name)?;
-        let folder = crate::skills::verbs::find(root, &level, &name)?;
+        // A copy that cannot be read is left out of every chat, and the plan names it.
+        let read = copy_of(root, &level, &name)
+            .and_then(|copy| Ok((copy, crate::skills::verbs::find(root, &level, &name)?)));
+        let (copy, folder) = match read {
+            Ok(read) => read,
+            Err(why) => {
+                skills.push(PlannedSkill {
+                    skill: name.clone(),
+                    tests: 0,
+                    left_out: Vec::new(),
+                    refused: Some(format!("{why}, so it is left out of every chat")),
+                });
+                continue;
+            }
+        };
         let fixtures = grade::fixtures_of(
             root,
             Path::new(&crate::skills::verbs::rel(root, &folder)),
@@ -214,7 +229,7 @@ pub fn planned(
         .filter(|before| head(root).as_ref() == Some(before));
     let consent = request
         .as_ref()
-        .map(|request| consent_of(request, workspace, persona, &copies));
+        .map(|request| consent_of(request, workspace, persona, &pins, &copies));
     Ok(RouterPlanned {
         router: router.to_owned(),
         workspace: workspace.map(str::to_owned),
@@ -226,7 +241,7 @@ pub fn planned(
         commit,
         cap: cap::token_cap(root),
         consent,
-        last: grades_of(root, router).into_iter().next(),
+        pins,
         copies,
     })
 }
@@ -259,6 +274,7 @@ pub fn consent_of(
     request: &RouterGradeRequest,
     workspace: Option<&str>,
     persona: Option<&str>,
+    pins: &[String],
     copies: &[LibraryCopy],
 ) -> String {
     use sha2::Digest as _;
@@ -270,6 +286,7 @@ pub fn consent_of(
     part(request.router.as_bytes());
     part(workspace.unwrap_or_default().as_bytes());
     part(persona.unwrap_or_default().as_bytes());
+    part(pins.join("\n").as_bytes());
     part(&serde_json::to_vec(&request.skills).unwrap_or_default());
     for one in copies {
         part(one.level.rel().unwrap_or_default().as_bytes());
@@ -363,11 +380,16 @@ impl RouterGraded {
                     && copy.commit.as_deref().is_none_or(hex)
                     && copy.level.as_deref().is_none_or(super::level_word)
             });
-        let parts =
-            self.report.skills.len() <= MOST_SKILLS
-                && self.report.skills.iter().all(|part| {
-                    plain(&part.skill) && report_holds_together(&part.report, self.runs)
-                });
+        let parts = self.report.skills.len() <= MOST_SKILLS
+            && self.report.skills.iter().all(|part| {
+                plain(&part.skill)
+                    && report_holds_together(&part.report, self.runs)
+                    && part
+                        .report
+                        .arms
+                        .iter()
+                        .all(|arm| engine::ARMS.contains(&arm.arm))
+            });
         self.v <= VERSION
             && crate::extension::an_id(&self.router)
             && self.report.router == self.router
@@ -432,14 +454,26 @@ pub fn record(
     crate::dispatch::append(&path_for(root, now, device), root, &row)
 }
 
-/// **The grades of the router `router`** in the project at `root`, newest first, at most
-/// [`MOST_GRADES`]: the committed record's and this machine's. A row that says more than purlis
-/// writes is skipped.
-pub fn grades_of(root: &Path, router: &str) -> Vec<RouterGraded> {
-    grades_at(root, router, chrono::Utc::now())
+/// **The grades of the router `router` chosen by `workspace` or `persona`** in the project at
+/// `root`, newest first, at most [`MOST_GRADES`]: the committed record's and this machine's. A
+/// grade of the same router in another scope is of another library, and is not one of these. A
+/// row that says more than purlis writes is skipped.
+pub fn grades_of(
+    root: &Path,
+    router: &str,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> Vec<RouterGraded> {
+    grades_at(root, router, workspace, persona, chrono::Utc::now())
 }
 
-fn grades_at(root: &Path, router: &str, now: chrono::DateTime<chrono::Utc>) -> Vec<RouterGraded> {
+fn grades_at(
+    root: &Path,
+    router: &str,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Vec<RouterGraded> {
     let mut files = record_files(&dir(root));
     files.extend(record_files(&local_dir(root)));
     files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
@@ -456,7 +490,11 @@ fn grades_at(root: &Path, router: &str, now: chrono::DateTime<chrono::Utc>) -> V
             else {
                 continue;
             };
-            if row.router == router && row.sound(now) {
+            if row.router == router
+                && row.workspace.as_deref() == workspace
+                && row.persona.as_deref() == persona
+                && row.sound(now)
+            {
                 out.push(row);
             }
         }

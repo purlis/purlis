@@ -6,13 +6,13 @@
 
 The router graded is the one the Skill studio's workspace or persona chose (§5). Only an extension's router is graded: the built-in router is the baseline.
 
-The library is the set a chat of that workspace, as that persona, is handed. That is every project, workspace and persona skill of it, at most 200, each read once for the grade. Built-in skills are in every chat anyway. Every chat of the grade is handed the whole library, so the router is asked about the same candidates a real chat's start asks it about. Only the skills with trigger tests are graded.
+The library is the set a chat of that workspace, as that persona, is handed. That is every project, workspace and persona skill of it, at most 200, each read once for the grade. Built-in skills are in every chat anyway. Every chat of the grade is handed the whole library, with the pins of the workspace or persona that chose the router. So the router is asked about the same candidates a real chat's start asks it about, and both routers keep the pins listed. Only the skills with trigger tests are graded. A copy that cannot be read is left out of every chat, and the plan names it.
 
 ## How each chat starts
 
 Each chat starts in a throwaway piece of its own, laid out from that one read: every skill without its `evals/` folder, marked as a grade's arm. The arms are:
 
-- **`router`**: the piece also names the router. The chat's start asks it, as any chat's start does (SK-15b), instead of the workspace's or persona's choice. A chat whose start fell back on the built-in router (slow, failed or wrong) measured that router instead. So it is no run: it is ended, and the grade says why. Two in a row end the grade, as chats that do not start do.
+- **`router`**: the piece also names the router. The chat's start asks it, as any chat's start does (SK-15b), instead of the workspace's or persona's choice. A chat whose start fell back on the built-in router (slow, failed or wrong) measured that router instead. So it is no run: it is ended, and the grade says why, though what it spent counts toward the cap. Two in a row of the router's arm end the grade. Chats that do not start are counted in each arm as well as in all, since the arms take turns.
 - **`built-in-router`**: the baseline. It is routed by the built-in router, and nothing is asked.
 
 A test passes in an arm by the share of its runs that started the skill, as a skill's trigger test does. A run of the skill counts whichever route started it: the harness's own pick, or a load from the index through `skill_load`. Both open a skill run, which is all a trigger test is scored by.
@@ -43,15 +43,15 @@ A router's grade goes to `personas/_grades/routers/`, beside the skills' eval re
 
 A library with a copy that is this machine's alone is graded into this machine's state instead.
 
-The studio's router line, where an extension's router is chosen, says the router's newest grade: how many trigger tests pass with it and with the built-in router, and the library's commit it was graded on. It also offers Grade the router….
+The studio's router line, where an extension's router is chosen, says the router's newest grade in that scope (the same router chosen elsewhere is graded on another library): how many trigger tests pass with it and with the built-in router, and the library's commit it was graded on. It also offers Grade the router….
 
 ## What this does not do yet
 
 Each of these follows as its own ticket in M65:
 
-- A router's grade under way is not held for a crash: one purlis stopped under is not recorded as interrupted, as a skill's is (#3353).
-- What its chats showed is not kept for a scorecard (SK-59).
-- The plan runs on the project's default profile and its model alone, with no pickers (SK-60).
-- A router that reads prompts (SK-15c) is graded on its start's answer alone.
+- #3616: a router's grade under way is not held for a crash. One purlis stopped under is not recorded as interrupted, as a skill's is (#3353).
+- #3617: what its chats showed is not kept for a scorecard (SK-59).
+- #3618: the plan runs on the project's default profile and its model alone, with no pickers (SK-60), no Set the cap and no estimate.
+- #3619: a router that reads prompts (SK-15c) is graded on its start's answer alone.
 
 **Built by #3233.**
