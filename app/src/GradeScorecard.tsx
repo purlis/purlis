@@ -65,6 +65,8 @@ const ARM_SAID: Record<ScoredRuns["arm"], string> = {
   with: "With the skill",
   without: "Without it",
   previous: "Its previous version",
+  router: "With the router",
+  "built-in-router": "With the built-in router",
 };
 
 /** A number of points with its sign: `+25`, `-5`, `0`. */
