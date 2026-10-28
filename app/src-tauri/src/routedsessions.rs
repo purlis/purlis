@@ -521,13 +521,18 @@ impl SessionHost for RoutedSessions {
         self.here.already_dealt(dealt);
     }
 
-    /// A confinement the window planned is this machine's: a runner composes its own.
+    /// A confinement the window planned is this machine's: a runner composes its own. Where every
+    /// start runs on a pool ([`Self::every_start_on`]), the window's shells run there too, and so
+    /// does the confinement it planned for one.
     fn confine(
         &self,
         plan: &purlis_core::sandbox::plan::Plan,
         hearing: purlis_core::sandbox::plan::Hearing,
     ) -> Result<purlis_core::sandbox::Confinement, String> {
-        self.here.confine(plan, hearing)
+        match &self.every_start_on {
+            Some(pool) => self.pool(pool)?.confine(plan, hearing),
+            None => self.here.confine(plan, hearing),
+        }
     }
 
     fn reports_to(&self) -> Option<PathBuf> {
