@@ -717,7 +717,8 @@ impl OnTheRunner {
                 imported: None,
                 sign_in: None,
                 pinned: None,
-                sandbox_only: false,
+                // A sandboxed Codex chat runs only on a profile kept for sandboxed chats alone (#2037).
+                sandbox_only: harness == "codex",
                 kept_for: None,
                 rest: Default::default(),
             });
