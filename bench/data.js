@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793170917815,
+  "lastUpdate": 1793172737588,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27846,6 +27846,48 @@ window.BENCHMARK_DATA = {
             "value": 101.22113999999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.995, 101.055, 101.221, 101.270, 101.661 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6e1803513a3277241d71097dc056095a1a8b23ea",
+          "message": "Test reliability: stories wait for focus with untilFocused; tab-chip e2e fences the runner's cursor (#3535, #3521) (#3591)\n\n* Stories: every focus wait uses untilFocused, and a lint keeps the 1 s waitFor out (#3535)\n\nThe 30 `waitFor(() => expect(x).toHaveFocus())` left in 11 story files\nwaited storybook's default 1 s, the flake class #3476 and #3463 fixed by\nhand. Each now waits with `untilFocused` (3 s, and a failure names where\nthe keyboard is), with a step saying where in the story it is.\n\n`purlis-stories/focus-wait` (`app/eslint.story-rules.js`), an error in\nevery `*.stories.tsx`, refuses a `.toHaveFocus()` check under `waitFor`,\nso the pattern does not come back. A wait for the focus to leave\n(`.not.toHaveFocus()`) has no helper and is let through.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* tab-chip e2e: only the dispatched pointer is on the strip (#3521)\n\nThe case \"opens no menu for a chip that appears under a pointer that is\nnot moving\" failed once with a menu open. The chip arms a rest only on a\nmove to a new point; the spec's own pointer events all land on the\ncounts' centre, so a second pointer at another point is the one cause in\nreach.\n\nThat pointer cannot be WebDriver's: `tauri-plugin-wdio-webdriver`'s\ndesktop executor performs pointer actions as page `MouseEvent`s at\n`elementFromPoint`, so they raise no pointer events and move no cursor.\nIt can be the runner's own cursor, which the engine reports with trusted\npointer events wherever the window sits under it. No WebDriver call moves\nthat cursor, so moving it off the strip (the ticket's proposal) does\nnothing here.\n\nThe spec now fences the engine's own pointer events off the window for\nthe file (`fenceRealPointer`, a capture listener that stops trusted\npointer events and keeps the first 20), and the parked case, if a menu\nstill opens, fails saying every pointer event the counts heard and what\nthe fence stopped, which confirms or refutes the cause on its next red.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T06:59:34Z",
+          "tree_id": "4f77b32475e69c1f48fcc88a88bf46908d5244e0",
+          "url": "https://github.com/purlis/purlis/commit/6e1803513a3277241d71097dc056095a1a8b23ea"
+        },
+        "date": 1793172733210,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4564045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.442, 0.447, 0.456, 0.458, 0.462 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.494597999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.446, 16.483, 16.495, 16.504, 16.579 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0966785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.751, 101.897, 102.097, 102.306, 102.409 ms"
           }
         ]
       }
