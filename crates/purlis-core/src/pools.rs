@@ -57,7 +57,10 @@ pub fn add(
         .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))));
     let made = match made {
         Ok(made) => made,
-        Err(why) => return Err(forgotten(config_root, pool, Refused::Other(why.0), &locked)),
+        Err(why) => {
+            let why = Refused::Other(own_time_said(pool, why.0));
+            return Err(forgotten(config_root, pool, why, &locked));
+        }
     };
     let kept = docker
         .pair(&made, desktop)
@@ -80,6 +83,20 @@ pub fn add(
             Err(forgotten(config_root, pool, why, &locked))
         }
     }
+}
+
+/// `why` its runner could not be made, with the likely cause where the pool has a time of its
+/// own before its runner suspends (#3471): a runner image of a purlis before that refuses
+/// `--suspends-unlinked=<duration>` and exits as it starts.
+fn own_time_said(pool: &Pool, why: String) -> String {
+    if pool.set().suspend_after.is_none() {
+        return why;
+    }
+    format!(
+        "{why}. This pool has its own Suspends after, which its runner is started with; a runner \
+         image whose purlis is older than that setting refuses it and stops as it starts, so \
+         build the image from a current purlis or leave Suspends after empty"
+    )
 }
 
 /// `why`, once `pool`'s record is forgotten; a record that could not be is said with it.

@@ -141,8 +141,8 @@ impl Pool {
     }
 
     /// **What defines this pool, as a digest** (#2050): SHA-256, in hex, of its row as this file
-    /// keeps it (its name, kind, image and the limits the person set), so any change to how it is
-    /// defined changes it.
+    /// keeps it (its name, kind, image, the limits the person set and its `suspendAfter`), so any
+    /// change to how it is defined changes it.
     pub fn definition_digest(&self) -> String {
         use sha2::Digest as _;
         let row = pool_to_row(self).to_string();

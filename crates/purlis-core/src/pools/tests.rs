@@ -428,6 +428,39 @@ fn a_pools_runners_are_made_to_suspend_after_the_pools_own_time() {
     assert_eq!(said(&fake.file("log")), 2, "{}", fake.file("log"));
 }
 
+/// **A runner that cannot be made for a pool with its own time says the likely cause**
+/// (#3471): an image of an older purlis refuses the time and stops as it starts.
+#[test]
+fn a_runner_not_made_for_a_pool_with_its_own_time_names_an_older_image_as_the_likely_cause() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    fake.set("run-fails", "");
+    let own = Set {
+        suspend_after: Some(std::time::Duration::from_secs(12 * 60 * 60)),
+        ..Set::default()
+    };
+    let refused = add(
+        config.path(),
+        &fake.docker(),
+        &pool("first", own),
+        &desktop(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(refused.contains("older than that setting"), "{refused}");
+    assert!(runners::pools(config.path()).unwrap().is_empty());
+    // A pool on the default says Docker's words alone.
+    let refused = add(
+        config.path(),
+        &fake.docker(),
+        &pool("first", Set::default()),
+        &desktop(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(!refused.contains("older than that setting"), "{refused}");
+}
+
 #[test]
 fn only_a_draining_runner_is_drained_and_removing_the_pool_removes_every_runner_of_it() {
     let config = tempfile::tempdir().unwrap();

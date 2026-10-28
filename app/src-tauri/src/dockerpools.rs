@@ -140,8 +140,8 @@ fn row(pool: &Pool) -> PoolRow {
     }
 }
 
-#[cfg(unix)]
 /// How long a runner is left without a link before it suspends, as `runners.json` spells it.
+#[cfg(unix)]
 fn after_shown(after: std::time::Duration) -> String {
     purlis_core::spelledtime::spelled(after, purlis_core::spelledtime::UP_TO_HOURS)
         .unwrap_or_else(|| format!("{}s", after.as_secs()))
