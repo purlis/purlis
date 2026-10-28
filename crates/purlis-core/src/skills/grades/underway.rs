@@ -4,7 +4,8 @@
 //! **A grade under way, held on this machine while it runs** (#3353): a grade is recorded when it
 //! ends, so a crash, a fault or a quit while it ran would lose it, and leave nothing to say it
 //! ever ran. While it runs, its row is held in `<state>/grades-under-way/<grade>.json`, its report
-//! saying it was interrupted ([`GradeEnd::Interrupted`]); its end takes the file away
+//! saying it was interrupted ([`GradeEnd::Interrupted`]), and, as each chat ends, what its chats
+//! spent so far ([`Marker::spent`], #3582); its end takes the file away
 //! ([`ended`]). At the project's next start, a row still held there that no running purlis holds
 //! is recorded as it is, interrupted ([`interrupted`]), so a grade never stays running and is
 //! never lost. The chat it ran then is the session host's to end with every other chat nothing
@@ -32,6 +33,8 @@ use super::{Graded, Level, MOST_FILES, Spent, is_local, plain, record_to};
 #[derive(Debug)]
 pub struct Marker {
     path: PathBuf,
+    /// What the file holds: what [`Marker::spent`] writes again, with the spend so far.
+    held: UnderWay,
     /// `None` where the file could not be locked: a start then reads its process number.
     _lock: Option<crate::filelock::Held>,
 }
@@ -40,6 +43,31 @@ impl Marker {
     /// The file's path.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// **Says in the file what the grade's chats spent so far** (#3582): `spent`, its chats,
+    /// tokens and cost as the chats said them, in the row and in its report, so a grade purlis
+    /// stops under is recorded with what it spent. Written whole beside the file and renamed
+    /// over it, as [`began`] writes it, and locked before it is in its place where the first
+    /// was: the lock is the file's, so the new file takes it before the old one lets it go. A
+    /// spend no sound row could hold is refused, and the file stays as it was, so the grade is
+    /// never taken away unrecorded at the next start.
+    pub fn spent(&mut self, spent: Spent) -> std::io::Result<()> {
+        let mut held = self.held.clone();
+        held.graded.spent = spent;
+        held.graded.report.spent_tokens = spent.tokens;
+        held.graded.report.spent_usd = spent.cost_usd;
+        if !held.graded.sound(chrono::DateTime::<chrono::Utc>::MAX_UTC) {
+            return Err(std::io::Error::other("no sound row says that spend"));
+        }
+        let dir = self
+            .path
+            .parent()
+            .ok_or_else(|| std::io::Error::other("the file has no folder"))?;
+        // The old file's lock goes once the new one, locked, is in its place.
+        self._lock = put(dir, &self.path, &mut held, self.held.locked)?;
+        self.held = held;
+        Ok(())
     }
 
     /// The file's path, its lock let go of, as a crash lets go of it.
@@ -142,9 +170,28 @@ pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Mar
         return Err(std::io::Error::other("the folder is not a folder"));
     }
     let path = dir.join(format!("{}.json", graded.grade));
-    // Written whole beside it, then renamed over it: a start that reads the folder meanwhile
-    // finds no file, or the whole one, never half of it.
-    let partial = dir.join(format!(".{}.json.partial", graded.grade));
+    let lock = put(&dir, &path, &mut held, false)?;
+    Ok(Marker {
+        path,
+        held,
+        _lock: lock,
+    })
+}
+
+/// **Puts `held` in its place `path`, in the folder `dir`**: written whole beside it, then renamed
+/// over it, so a start that reads the folder meanwhile finds no file, or the whole one, never half
+/// of it. The new file is locked before it is written and renamed, so no start ever finds it in
+/// its place unlocked, and `held` says whether it is: the lock is the file's, and the rename
+/// keeps the file. Where `must_lock`, a file that cannot be locked is never put in its place, as
+/// the one it would replace says it is locked. The answer is the new file's lock, where it took
+/// one.
+fn put(
+    dir: &Path,
+    path: &Path,
+    held: &mut UnderWay,
+    must_lock: bool,
+) -> std::io::Result<Option<crate::filelock::Held>> {
+    let partial = dir.join(format!(".{}.json.partial", held.graded.grade));
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -154,16 +201,18 @@ pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Mar
     }
     let written = (|| {
         let mut file = crate::contain::nofollow(&mut options).open(&partial)?;
-        // Locked before it is written and renamed, so no start ever finds it in its place
-        // unlocked, and the file says whether it is: the lock is the file's, and the rename
-        // keeps the file.
         held.locked = match file.try_lock() {
             Ok(()) => true,
+            Err(why) if must_lock => {
+                return Err(std::io::Error::other(format!(
+                    "the file could not be locked again ({why})"
+                )));
+            }
             Err(why) => {
                 tracing::warn!(
                     "purlis: grade {} under way is not locked ({why}): its process number says \
                      whether it runs",
-                    graded.grade
+                    held.graded.grade
                 );
                 false
             }
@@ -171,13 +220,13 @@ pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Mar
         let text = serde_json::to_string(&held).map_err(std::io::Error::other)?;
         file.write_all(text.as_bytes())?;
         file.sync_all()?;
-        std::fs::rename(&partial, &path)?;
+        std::fs::rename(&partial, path)?;
         Ok(held.locked.then(|| crate::filelock::Held::locked(file)))
     })();
     if written.is_err() {
         let _ = std::fs::remove_file(&partial);
     }
-    written.map(|lock| Marker { path, _lock: lock })
+    written
 }
 
 /// **The grade `grade` ended**, recorded or not: it is no longer held as under way.
@@ -218,6 +267,14 @@ pub fn interrupted(
     let mut out = Vec::new();
     for entry in reader.take(MOST_FILES).filter_map(Result::ok) {
         let path = entry.path();
+        // A write a crash cut short ([`put`]): taken away once no other holds its lock, as its
+        // writer holds it while it writes.
+        if is_partial(&path) {
+            if locked_by_another(&path) == Some(false) {
+                let _ = std::fs::remove_file(&path);
+            }
+            continue;
+        }
         if path.extension().is_none_or(|ext| ext != "json") {
             continue;
         }
@@ -251,6 +308,13 @@ pub fn interrupted(
         let _ = std::fs::remove_file(&path);
     }
     out
+}
+
+/// Whether `path` is a file [`put`] writes before it is renamed into its place.
+fn is_partial(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with('.') && name.ends_with(".json.partial"))
 }
 
 /// **Whether another holds the lock of the grade's file at `path`** ([`Marker`]), or `None` where
