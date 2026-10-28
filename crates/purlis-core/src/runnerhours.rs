@@ -220,7 +220,7 @@ pub fn this_week_began() -> u64 {
 pub fn pruned(lines: Vec<Line>, now: u64) -> Vec<Line> {
     let mut last: HashMap<(&str, &str), usize> = HashMap::new();
     for (at, line) in lines.iter().enumerate() {
-        last.insert((&line.pool, &line.runner), at);
+        last.insert((line.pool.as_str(), line.runner.as_str()), at);
     }
     let lasts: BTreeSet<usize> = last.into_values().collect();
     let mut kept: Vec<Line> = lines
