@@ -54,7 +54,7 @@ mod a_browser_starts_on_a_docker_pools_runner_with_its_engines_sandbox_on {
         assert!(read.settled, "{read:?}");
 
         // The engine's processes in the runner: at least one in a process namespace of its own.
-        let said = runner.said(ENGINE_NAMESPACES);
+        let said = runner.prints(ENGINE_NAMESPACES);
         assert!(
             said.lines().any(|line| line.split_whitespace().count() > 2),
             "no engine process in a namespace of its own: {said}"

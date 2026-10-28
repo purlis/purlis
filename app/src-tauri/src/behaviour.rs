@@ -554,7 +554,7 @@ pub(crate) struct OnTheRunner {
 
 impl OnTheRunner {
     /// What `script` prints in the runner's container, run as its own user.
-    pub(crate) fn said(&self, script: &str) -> String {
+    pub(crate) fn prints(&self, script: &str) -> String {
         let out = purlis_core::forklock::output(
             std::process::Command::new(self.docker.program()).args([
                 "exec",
