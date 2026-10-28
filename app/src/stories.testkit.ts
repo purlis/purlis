@@ -138,9 +138,10 @@ async function untilTheKeyboard(
       // Not drawn: said below.
     }
     const at = document.activeElement;
+    const on = at === null || at === document.body ? "nothing" : describe(at);
     throw new Error(
-      `${step}: the keyboard is on ${at === null || at === document.body ? "nothing" : describe(at)}` +
-        `, not ${where} ${wanted === null ? "an element that is not drawn" : describe(wanted)}`,
+      `${step}: the keyboard is on ${on}, not ${where} ` +
+        (wanted === null ? "an element that is not drawn" : describe(wanted)),
     );
   }
 }

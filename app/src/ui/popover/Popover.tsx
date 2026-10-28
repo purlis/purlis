@@ -16,9 +16,9 @@
  * - **Placed under its trigger, aligned to it, and never nearer the window's edge than 8 px**
  *   (`EDGE`): React Aria flips it to the other side where there is no room.
  * - **Closed by a click outside and by Escape**, and it hands the keyboard back to where it was,
- *   the moment it goes (`HandsBack`, #3603), ahead of React Aria's `FocusScope`. A popover that only says something (a card under the pointer,
- *   a refusal beside a field) is `isNonModal`: it takes no keyboard and closes when its owner
- *   says so.
+ *   the moment it goes (`HandsBack`, #3603), ahead of React Aria's `FocusScope`. A popover that
+ *   only says something (a card under the pointer, a refusal beside a field) is `isNonModal`: it
+ *   takes no keyboard and closes when its owner says so.
  * - **Drawn only while its project is in front** (`projectShown.tsx`): a project kept behind
  *   another never draws over the window.
  */
@@ -43,6 +43,8 @@ import {
   type DialogTriggerProps,
   type PopoverProps as AriaPopoverProps,
 } from "react-aria-components";
+// React Aria's own careful focus, which its hand-back uses: it is not in the package's index.
+import { focusSafely } from "react-aria/private/interactions/focusSafely";
 import { useProjectShown } from "../../projectShown";
 import { pressableTrigger } from "../trigger";
 
@@ -164,6 +166,12 @@ const RESTORE_EVENT = "react-aria-focus-scope-restore";
  * lost the person's place. React Aria's hand-back, a frame later, finds the keyboard placed and
  * leaves it. An opener the window still holds unreachable (behind a modal surface that has not
  * let go yet) is left to React Aria's. Then says `gone`, for the trigger's `onClosed`.
+ *
+ * It focuses as React Aria's hand-back does (`focusSafely`): at once with a keyboard or a
+ * pointer, and with a screen reader's virtual cursor only once the page's transitions are done,
+ * if nothing took the keyboard meanwhile. An opener that is a row of a React Aria collection
+ * takes the hand-back itself (it stops the restore event) and focuses its row a render later,
+ * so there the keyboard is still on nothing across a task (a follow-up of #3603).
  */
 function HandsBack({
   surface,
@@ -199,7 +207,7 @@ function HandsBack({
         if (now !== null && now !== doc.body) return;
         if (!opener.isConnected || opener.closest("[inert]")) return;
         const restore = new CustomEvent(RESTORE_EVENT, { bubbles: true, cancelable: true });
-        if (opener.dispatchEvent(restore)) opener.focus({ preventScroll: true });
+        if (opener.dispatchEvent(restore)) focusSafely(opener);
       });
     },
     [opener],

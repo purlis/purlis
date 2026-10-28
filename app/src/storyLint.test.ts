@@ -20,6 +20,10 @@ tester.run("purlis-stories/focus-wait", purlisStories.rules["focus-wait"], {
     { code: `await expect(group).not.toContainElement(document.activeElement);` },
     { code: `await untilFocusWithin(() => card, "Popover: the keyboard is in the card");` },
     { code: `await waitFor(() => expect(row).toHaveClass("focused"));` },
+    // A wait for the keyboard to leave, read by hand: there is no helper for it.
+    { code: `await waitFor(() => expect(menu.contains(document.activeElement)).toBe(false));` },
+    { code: `await waitFor(() => expect(group).not.toContainElement(document.activeElement));` },
+    { code: `await waitFor(() => expect(list.querySelector(":focus")).toBeNull());` },
   ],
   invalid: [
     {
@@ -70,6 +74,19 @@ tester.run("purlis-stories/focus-wait says the wait it found", purlisStories.rul
     {
       code: `await waitFor(() => expect(name).toHaveFocus(), { timeout: 3000 });`,
       errors: [{ message: /gives up after its own timeout without saying where the keyboard is:/ }],
+    },
+    // Options it cannot read: by name, or spread.
+    {
+      code: `await waitFor(() => expect(name).toHaveFocus(), long);`,
+      errors: [{ message: /or after the timeout its options set, without saying where/ }],
+    },
+    {
+      code: `await waitFor(() => expect(name).toHaveFocus(), { ...long });`,
+      errors: [{ message: /or after the timeout its options set, without saying where/ }],
+    },
+    {
+      code: `await waitFor(() => expect(name).toHaveFocus(), { interval: 50 });`,
+      errors: [{ message: /gives up after storybook's 1 s:/ }],
     },
   ],
 });

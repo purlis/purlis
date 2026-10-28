@@ -300,7 +300,8 @@ describe("a dialog", () => {
       await userEvent.keyboard("{Escape}");
       expect(screen.queryByRole("menu")).toBeNull();
       // Half a second after the dialog opened, and still no frame drawn.
-      expect(held.length).toBeGreaterThan(0);
+      // Only React Aria's dialog asks for one: if it ever waits otherwise, this test says so.
+      expect(held).toHaveLength(1);
       act(() => {
         for (const run of held.splice(0)) run();
       });
