@@ -113,6 +113,43 @@ fn a_runner_of_a_pool_with_its_own_time_suspends_after_it() {
     );
 }
 
+/// How a runner's container was made to suspend itself is read back from its command (#3717):
+/// one made before purlis suspended runners was made with `serve` alone and never suspends.
+#[test]
+fn how_a_runner_was_made_to_suspend_is_read_from_its_containers_command() {
+    let made_with = |runner: Runner| {
+        let args = runner.create_args(std::path::Path::new(SECCOMP_AT));
+        let mut inspected = inspected();
+        inspected[0]["Config"]["Cmd"] = serde_json::json!(args[args.len() - 2..]);
+        made_suspending(&inspected)
+    };
+    let secs = std::time::Duration::from_secs;
+    assert_eq!(
+        made_with(runner()),
+        Some(MadeSuspending::After(SUSPEND_AFTER))
+    );
+    assert_eq!(
+        made_with(runner().suspending_after(secs(90 * 60))),
+        Some(MadeSuspending::After(secs(90 * 60)))
+    );
+    let with_cmd = |cmd: serde_json::Value| {
+        let mut inspected = inspected();
+        inspected[0]["Config"]["Cmd"] = cmd;
+        made_suspending(&inspected)
+    };
+    assert_eq!(
+        with_cmd(serde_json::json!(["serve"])),
+        Some(MadeSuspending::Never)
+    );
+    // What purlis cannot read as a runner's command says nothing.
+    assert_eq!(with_cmd(serde_json::Value::Null), None);
+    assert_eq!(with_cmd(serde_json::json!(["sh"])), None);
+    assert_eq!(
+        with_cmd(serde_json::json!(["serve", "--suspends-unlinked=soon"])),
+        None
+    );
+}
+
 #[test]
 fn a_pools_time_before_its_runner_suspends_is_a_minute_to_30_days() {
     let secs = std::time::Duration::from_secs;
