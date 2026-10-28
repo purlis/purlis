@@ -1,0 +1,185 @@
+<title>Skills sidebar</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the purlis window with the sidebar Skills view on the left and a chat (or the studio) in front.
+   PROTOTYPE for "Prototype: the sidebar Skills view" (purlis#3633): throwaway, fake data. */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b4232c; --bad-soft:#fbe5e6;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --term:#11131a; --termfg:#cfd5e1; --shadow:0 10px 30px rgba(20,24,40,.16);
+  --l-project:#3f7ad6; --l-workspace:#2a9a7a; --l-persona:#b35fc2; --l-repo:#c07a2c; --l-local:#7a8494; --l-built:#5b4fd6;
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --term:#0b0c10; --termfg:#cfd5e1; --shadow:0 10px 30px rgba(0,0,0,.5);
+  --l-project:#7aa8ff; --l-workspace:#5fd0ad; --l-persona:#dd95ea; --l-repo:#f0aa62; --l-local:#a3acba; --l-built:#a69cff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --term:#0b0c10; --termfg:#cfd5e1; --shadow:0 10px 30px rgba(0,0,0,.5);
+  --l-project:#7aa8ff; --l-workspace:#5fd0ad; --l-persona:#dd95ea; --l-repo:#f0aa62; --l-local:#a3acba; --l-built:#a69cff; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 72px;box-sizing:border-box}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+input{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 8px;width:100%}
+.note{max-width:1300px;margin:0 auto 8px;color:var(--muted);font-size:12px}.note b{color:var(--fg)}
+.try{max-width:1300px;margin:0 auto 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}.try span{color:var(--muted);font-size:12px}
+.win{max-width:1300px;margin:0 auto;height:calc(100% - 66px);min-height:560px;display:grid;grid-template-columns:44px var(--sw,270px) minmax(0,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.rail{background:var(--panel2);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:10px}
+.rail i{width:24px;height:24px;border-radius:6px;display:block;background:var(--tag)}.rail i.on{background:var(--accent)}
+.side{border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0;background:var(--panel);position:relative}
+.sh{padding:10px 12px 8px;display:grid;gap:6px;border-bottom:1px solid var(--line)}
+.sh .t{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.sh .who{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sh .who small{font-weight:400;color:var(--muted)}
+.sbtns{display:flex;gap:6px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);border-radius:6px;padding:3px 9px;background:var(--panel);white-space:nowrap;font-size:12.5px}
+.btn:hover{background:var(--panel2)}.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.tiny{padding:1px 7px;font-size:11.5px}
+.scroll{overflow:auto;flex:1;padding-bottom:12px}
+.grp{display:flex;align-items:center;gap:6px;padding:9px 12px 3px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);width:100%;text-align:left}
+.grp .n{margin-left:auto;font-variant-numeric:tabular-nums}
+.grp.warn{color:var(--warn)}
+.row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 6px;padding:4px 12px 4px 14px;margin:0 4px;border-radius:6px;cursor:pointer;align-items:center}
+.row:hover,.row:focus-visible,.row.on{background:var(--panel2)}
+.row .nm{font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.row .why{grid-column:1/-1;color:var(--muted);font-size:11.5px;line-height:1.35}
+.row .why.bad{color:var(--bad)}.row .why.warn{color:var(--warn)}
+.row .fix{grid-column:1/-1;margin-top:2px}
+.row .hov{visibility:hidden}.row:hover .hov,.row:focus-within .hov,.row.on .hov{visibility:visible}
+.tag{font-size:10px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted);white-space:nowrap;font-family:var(--sans)}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.dot.project{background:var(--l-project)}.dot.workspace{background:var(--l-workspace)}.dot.persona{background:var(--l-persona)}.dot.repo{background:var(--l-repo)}.dot.local{background:var(--l-local)}.dot.built-in{background:var(--l-built)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 10px;padding:4px 12px 8px;color:var(--muted);font-size:11px}.legend span{display:flex;gap:4px;align-items:center}
+.card{margin:4px 8px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;display:grid;gap:3px;cursor:pointer}
+.card:hover,.card.on{border-color:var(--accent)}
+.card .nm{font-family:var(--mono);font-size:12px;display:flex;gap:6px;align-items:center}
+.card .ds{color:var(--muted);font-size:11.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.quiet{padding:6px 14px;color:var(--muted);font-size:12px}.quiet button{color:var(--accent);text-decoration:underline}
+.menu{position:absolute;left:30px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:4px;min-width:220px;z-index:6}
+.menu button{display:block;width:100%;text-align:left;padding:6px 10px;border-radius:5px;font-size:12.5px}.menu button:hover{background:var(--panel2)}
+.menu button[aria-disabled="true"]{color:var(--muted);cursor:default}
+.tip{position:absolute;left:12px;right:12px;background:var(--fg);color:var(--panel);padding:8px 10px;border-radius:8px;font-size:12px;z-index:5;pointer-events:none}
+.main{display:flex;flex-direction:column;min-width:0}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tabs button{padding:6px 12px;border-radius:7px 7px 0 0;color:var(--muted)}
+.tabs button.on{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.pane{flex:1;display:flex;flex-direction:column;min-height:0}
+.chip{display:flex;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);align-items:center;color:var(--muted)}
+.chip b{color:var(--fg);font-weight:500}
+.term{flex:1;background:var(--term);color:var(--termfg);font-family:var(--mono);font-size:12px;padding:14px;white-space:pre-wrap;overflow:auto}
+.studio{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);padding:24px;text-align:center}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--panel);padding:8px 14px;border-radius:8px;z-index:25}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));background:#11131a;color:#f2f3f7;border-radius:24px;padding:6px 8px;display:flex;align-items:center;gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:30;font-size:12.5px;max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+.switcher button{color:#f2f3f7;border-radius:16px;padding:4px 10px}.switcher button:hover{background:#2a2e3a}
+.switcher .lbl{padding:0 6px;font-weight:600}.switcher .st{color:#aab0c0;padding:0 6px;font-size:11.5px}
+@media (max-width:760px){.win{grid-template-columns:40px minmax(0,1fr)}.main{display:none}}
+</style>
+
+<div class="note"><b>Prototype, fake data.</b> The sidebar Skills view as decided: it shows the skills of the chat in front (or of a new chat when none is), grouped as Needs you, In this chat and Left out. Built-in skills are folded into one quiet line at the bottom of In this chat; they still show on their own when they need you or match a search. The three variants differ in how a row shows its skill level and what it carries. Flip with the bar or ← →. Right-click (or the ⋯ on a row) for its menu.</div>
+<div class="try"><span>Try:</span><button class="btn" data-a="front-chat">steward 5 in front</button><button class="btn" data-a="front-other">reviewer 2 in front</button><button class="btn" data-a="front-none">The studio in front (no chat)</button><button class="btn" data-a="noown">A project with no skills of its own</button><button class="btn" data-a="narrow">Narrow sidebar</button></div>
+<div id="app"></div>
+
+<script>
+const V={a:"A · Level as a tag",b:"B · Level as a colour dot, denser",c:"C · Rows as small cards"};
+const SETS={
+ "steward 5":{ws:"smart-ide",ps:"steward",skills:[
+   {n:"grilling",lv:"persona",st:"needs",why:"Changed by a chat on 28 Oct. This chat keeps the version you accepted.",fix:"Review the change",d:"Interviews the person about a plan until every branch is settled."},
+   {n:"pin-unused",lv:"workspace",st:"needs",why:"Pinned in smart-ide, but no chat here reads it: Codex chats can't take it.",fix:"Unpin it",d:"A pinned skill no chat here can use."},
+   {n:"deploy",lv:"project",st:"in",d:"Deploys a service with the checks the team agreed on."},
+   {n:"review-pr",lv:"project",st:"in",d:"Reviews a pull request against REVIEW.md."},
+   {n:"release-notes",lv:"workspace",st:"in",d:"Writes the release notes for a cut."},
+   {n:"browser",lv:"built-in",st:"in",d:"Drives a real browser for a task that needs one."},
+   {n:"handoff",lv:"built-in",st:"in",d:"Moves work into a new chat you'll read yourself."},
+   {n:"secrets",lv:"built-in",st:"in",d:"Uses a vault credential without showing its value."},
+   {n:"compact",lv:"built-in",st:"in",d:"Compacts a workspace's or persona's memory."},
+   {n:"smart-close",lv:"built-in",st:"in",d:"Writes the chat's session record."},
+   {n:"update",lv:"built-in",st:"in",d:"Updates purlis and says what's new."},
+   {n:"lint-rs",lv:"workspace",st:"out",why:"Off in smart-ide",fix:"Turn on in smart-ide",d:"Runs clippy with the workspace's flags."},
+   {n:"figma-handoff",lv:"project",st:"out",why:"Hidden by the router: the list was over budget",fix:"Why the router hid it",d:"Checks a Figma frame against the built page."},
+   {n:"lint-ts",lv:"repo",st:"out",why:"A repo skill of the same name wins",d:"Runs eslint the way CI does."},
+   {n:"gpu-profile",lv:"local",st:"out",why:"Claude Code can't take it",d:"Profiles a frame with local GPU tools."}]},
+ "reviewer 2":{ws:"smart-ide",ps:"reviewer",skills:[
+   {n:"review-pr",lv:"project",st:"in",d:"Reviews a pull request against REVIEW.md."},
+   {n:"deploy",lv:"project",st:"in",d:"Deploys a service with the checks the team agreed on."},
+   {n:"browser",lv:"built-in",st:"in",d:"Drives a real browser."},{n:"handoff",lv:"built-in",st:"in",d:"Moves work into a new chat."},
+   {n:"grilling",lv:"persona",st:"out",why:"Only steward's chats get it",d:"Interviews the person about a plan."}]},
+ "new":{ws:"smart-ide",ps:"steward",skills:null}};
+SETS["new"].skills=SETS["steward 5"].skills.filter(k=>k.n!=="pin-unused");
+const S={v:(location.hash||"#a").slice(1),front:"steward 5",sel:null,menu:null,tip:null,q:"",fold:{out:true},noown:false,narrow:false,toast:null};
+if(!V[S.v])S.v="a";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function setOf(){const key=S.front==="none"?"new":S.front;let sk=SETS[key].skills;if(S.noown)sk=sk.filter(k=>k.lv==="built-in"||k.st==="out"&&k.lv==="local");if(S.q)sk=sk.filter(k=>k.n.includes(S.q));return {key,...SETS[key],skills:sk}}
+function rowA(k){return `<div class="row ${S.sel===k.n?"on":""}" data-row="${k.n}" tabindex="0" role="treeitem"><span class="nm">${esc(k.n)} <span class="tag">${esc(k.lv)}</span></span>
+  <span class="hov">${k.st==="in"?`<button class="btn tiny" data-a="use" data-k="${k.n}" title="Use in this chat">Use</button>`:""}<button class="btn tiny" data-menu="${k.n}" aria-label="More for ${esc(k.n)}">⋯</button></span>
+  ${k.why?`<span class="why ${k.st==="out"?"bad":"warn"}">${esc(k.why)}</span>`:""}${k.fix?`<span class="fix"><button class="btn tiny" data-a="fix" data-k="${k.n}">${esc(k.fix)}</button></span>`:""}</div>`}
+function rowB(k){return `<div class="row ${S.sel===k.n?"on":""}" data-row="${k.n}" tabindex="0" role="treeitem" style="padding-block:2px"><span class="nm"><span class="dot ${k.lv}" title="${esc(k.lv)}"></span>${esc(k.n)}</span>
+  <span class="hov">${k.st==="in"?`<button class="btn tiny" data-a="use" data-k="${k.n}">Use</button>`:k.fix?`<button class="btn tiny" data-a="fix" data-k="${k.n}">${esc(k.fix.split(" ")[0]==="Turn"?"Turn on":k.fix.split(" ").slice(0,2).join(" "))}</button>`:""}<button class="btn tiny" data-menu="${k.n}" aria-label="More">⋯</button></span>
+  ${k.why?`<span class="why ${k.st==="out"?"bad":"warn"}">${esc(k.why)}</span>`:""}</div>`}
+function rowC(k){return `<div class="card ${S.sel===k.n?"on":""}" data-row="${k.n}" tabindex="0" role="treeitem"><span class="nm">${esc(k.n)} <span class="tag">${esc(k.lv)}</span><span style="margin-left:auto">${k.st==="in"?`<button class="btn tiny" data-a="use" data-k="${k.n}">Use</button>`:""}<button class="btn tiny" data-menu="${k.n}" aria-label="More">⋯</button></span></span>
+  <span class="ds">${esc(k.why||k.d)}</span>${k.fix?`<span><button class="btn tiny" data-a="fix" data-k="${k.n}">${esc(k.fix)}</button></span>`:""}</div>`}
+function group(id,label,list,cls){if(!list.length)return "";const folded=!!S.fold[id];const row=S.v==="a"?rowA:S.v==="b"?rowB:rowC;
+  return `<button class="grp ${cls||""}" data-fold="${id}" aria-expanded="${!folded}">${folded?"▸":"▾"} ${label}<span class="n">${list.length}</span></button>${folded?"":list.map(row).join("")}`}
+function sidebar(){const s=setOf();const needs=s.skills.filter(k=>k.st==="needs"),inn=s.skills.filter(k=>k.st==="in"),out=s.skills.filter(k=>k.st==="out");
+  const who=S.front==="none"?`A new chat in ${s.ws}`:S.front;
+  return `<div class="side"><div class="sh"><span class="t">Skills</span><span class="who" title="${esc(who)}">${esc(who)} <small>· ${inn.length+needs.length} skills</small></span>
+   <span class="sbtns"><button class="btn" data-a="studio">Open Skill studio</button><button class="btn" data-a="new">New skill…</button></span>
+   ${s.skills.length>8||S.q?`<input id="q" placeholder="Find a skill" value="${esc(S.q)}" aria-label="Find a skill">`:""}</div>
+   <div class="scroll" role="tree">${S.v==="b"?`<div class="legend">${["project","workspace","persona","repo","local","built-in"].map(l=>`<span><i class="dot ${l}"></i>${l}</span>`).join("")}</div>`:""}
+   ${group("needs","Needs you",needs,"warn")}${group("in","In this chat",S.q?inn:inn.filter(k=>k.lv!=="built-in"))}
+   ${S.noown?`<div class="quiet">This project has no skills of its own yet · <button data-a="new">New skill…</button></div>`:""}
+   ${(()=>{const bi=inn.filter(k=>k.lv==="built-in");if(S.q||!bi.length)return "";const row=S.v==="a"?rowA:S.v==="b"?rowB:rowC;const open=S.fold.bi===false;
+     return `<button class="grp" data-fold="bi" aria-expanded="${open}" style="text-transform:none;letter-spacing:0;font-size:12px"><span aria-hidden="true" style="display:inline-grid;place-items:center;width:16px;height:16px;border-radius:4px;background:var(--accent-soft);color:var(--accent);font-size:10px">◆</span> ${bi.length} built-in skills ${open?"▾":"▸"}</button>${open?bi.map(row).join("")+`<div class="quiet">They ship with purlis: they can't be edited or turned off. <button data-a="copy">Make my own copy…</button></div>`:""}`})()}
+   ${group("out","Left out",out)}${!s.skills.length?`<div class="quiet">No skill matches “${esc(S.q)}”.</div>`:""}</div>
+   ${S.menu?menu(S.menu):""}${S.tip?`<div class="tip" style="top:${S.tipY}px">${esc(S.tip)}</div>`:""}</div>`}
+function menu(n){const k=setOf().skills.find(x=>x.n===n)||{};const bi=k.lv==="built-in";
+  return `<div class="menu" style="top:${S.menuY}px" role="menu">${k.st==="in"?`<button data-a="use" data-k="${n}">Use in this chat</button>`:`<button aria-disabled="true" title="This chat doesn't get it">Use in this chat</button>`}
+   ${bi?`<button aria-disabled="true" title="It ships with purlis and can't be turned off">Turn off in smart-ide</button>`:`<button data-a="turn" data-k="${n}">${k.st==="out"&&k.why&&k.why.startsWith("Off")?"Turn on":"Turn off"} in smart-ide</button>`}
+   ${bi?`<button aria-disabled="true">Pin to smart-ide</button>`:`<button data-a="pin" data-k="${n}">Pin to smart-ide</button>`}
+   <button data-a="explorer">Show in the Explorer view</button><button data-a="file">Open the file</button><button data-a="open" data-k="${n}">Open in Skill studio</button></div>`}
+function main(){
+  if(S.front==="none")return `<div class="main"><div class="tabs"><button data-a="front-chat">steward 5</button><button class="on">Skill studio</button></div><div class="pane"><div class="studio">${S.sel?`The studio is on <b style="color:var(--fg)">Library › ${esc(S.sel)}</b>. (Its pages are in their own prototypes.)`:"The Skill studio tab is in front. The sidebar shows what a new chat in smart-ide would get."}</div></div></div>`;
+  const s=setOf();return `<div class="main"><div class="tabs"><button class="${S.front==="steward 5"?"on":""}" data-a="front-chat">steward 5</button><button class="${S.front==="reviewer 2"?"on":""}" data-a="front-other">reviewer 2</button><button data-a="front-none">Skill studio</button></div>
+  <div class="pane"><div class="chip"><b>${s.skills.filter(k=>k.st!=="out").length} skills</b> · Claude Code · ${esc(s.ps)} in ${esc(s.ws)}</div><div class="term">Claude Code v2.1 · ${esc(S.front)}\n\n&gt; ${S.used?`/${esc(S.used)}  (typed by Use, not sent)`:"_"}</div></div></div>`}
+function render(){
+  document.getElementById("app").innerHTML=`<div class="win" style="--sw:${S.narrow?"200px":"270px"}"><div class="rail"><i></i><i></i><i></i><i class="on"></i></div>${sidebar()}${main()}</div>
+   ${S.toast?`<div class="toast" role="status">${S.toast}</div>`:""}
+   <div class="switcher" role="toolbar" aria-label="Prototype switcher"><button data-a="prev" aria-label="Previous variant">←</button><span class="lbl">${V[S.v]}</span><button data-a="next" aria-label="Next variant">→</button><span class="st">${S.front==="none"?"no chat in front":S.front+" in front"}${S.narrow?" · narrow":""}</span></div>`;
+  const q=document.getElementById("q");if(q)q.oninput=e=>{S.q=e.target.value;const p=e.target.selectionStart;render();const n=document.getElementById("q");n.focus();n.setSelectionRange(p,p)};
+}
+function toast(t){S.toast=t;S.menu=null;render();clearTimeout(S.tt);S.tt=setTimeout(()=>{S.toast=null;render()},3500)}
+document.addEventListener("contextmenu",e=>{const r=e.target.closest("[data-row]");if(!r)return;e.preventDefault();S.menu=r.dataset.row;S.menuY=r.offsetTop+r.offsetHeight;render()});
+document.addEventListener("mouseover",e=>{const r=e.target.closest("[data-row]");const n=r&&r.dataset.row;if(n===S.tipFor)return;S.tipFor=n;if(!r||S.v==="c"){if(S.tip){S.tip=null;render()}return}const k=setOf().skills.find(x=>x.n===n);S.tip=k?k.d:null;S.tipY=r.offsetTop+r.offsetHeight+4;render()});
+document.addEventListener("click",e=>{const t=e.target.closest("[data-a],[data-row],[data-menu],[data-fold]");if(!t){if(S.menu){S.menu=null;render()}return}const d=t.dataset;
+  if(d.menu){e.stopPropagation();S.menu=S.menu===d.menu?null:d.menu;const r=t.closest("[data-row]");S.menuY=r.offsetTop+r.offsetHeight;render();return}
+  if(d.fold){S.fold[d.fold]=!S.fold[d.fold];render();return}
+  const a=d.a;
+  if(!a&&d.row){S.sel=d.row;S.menu=null;toast(`Opens the Skill studio at Library › ${esc(d.row)}, for ${S.front==="none"?"smart-ide":S.front+"'s scope"}. The chat keeps its pane.`);return}
+  if(a==="use"){e.stopPropagation();S.used=d.k;S.menu=null;if(S.front==="none"){toast("No chat is in front to use it in.");return}toast(`Typed /${esc(d.k)} into ${esc(S.front)}, not sent.`);return}
+  if(a==="fix"){e.stopPropagation();toast(t.textContent.trim()+": done, or its page opens where a review is needed.");return}
+  if(a==="turn"||a==="pin"){toast(`${a==="turn"?"Turned":"Pinned"} ${esc(d.k)} for smart-ide. Chats started from now see it.`);return}
+  if(a==="explorer")return toast("The Explorer view opens on the skill's folder.");
+  if(a==="file")return toast("SKILL.md opens in an editor tab.");
+  if(a==="open"){S.front="none";S.sel=d.k;S.menu=null;render();return}
+  if(a==="studio"){S.front="none";S.sel=null;render();return}
+  if(a==="copy")return toast("Make my own copy: pick a built-in, a new name (not a built-in's) and a level; your copy is yours to edit, and the built-in keeps loading.");
+  if(a==="new")return toast("New skill… opens its dialog (prototyped in 'creating, editing, moving and deleting a skill').");
+  if(a==="front-chat"){S.front="steward 5";S.noown=false;render();return}
+  if(a==="front-other"){S.front="reviewer 2";S.noown=false;render();return}
+  if(a==="front-none"){S.front="none";render();return}
+  if(a==="noown"){S.noown=!S.noown;S.front=S.front==="none"?"steward 5":S.front;render();return}
+  if(a==="narrow"){S.narrow=!S.narrow;render();return}
+  if(a==="prev"||a==="next"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(a==="next"?1:2))%3];try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){S.menu=null;render();return}
+  if(e.target.closest&&e.target.closest("input,textarea,select,[contenteditable]"))return;
+  if((e.key==="F10"&&e.shiftKey)||e.key==="ContextMenu"){const r=e.target.closest&&e.target.closest("[data-row]");if(r){e.preventDefault();S.menu=r.dataset.row;S.menuY=r.offsetTop+r.offsetHeight;render()}return}
+  if(e.key==="ArrowLeft"||e.key==="ArrowRight"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(e.key==="ArrowRight"?1:2))%3];try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}
+  if(e.key==="Enter"&&e.target.dataset&&e.target.dataset.row)e.target.click()});
+render();
+</script>
