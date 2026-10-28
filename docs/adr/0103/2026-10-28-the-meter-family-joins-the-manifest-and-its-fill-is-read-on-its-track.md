@@ -7,10 +7,10 @@
   variant's fill on its track, as the track stands on each of the family's grounds, at 3:1
   (WCAG 1.4.11, raised where more contrast is asked for). A theme whose fill or track would lose
   the bar draws that variant's default fill and track back, and says so in its check. A
-  theme's palette alone can lose a bar too, which no part key names, so the theme check holds
-  the subject's fill (the accent) on the track's colour over a page and a raised panel
-  (`check.rs`, `PAIRS`); the baseline's and the previous version's wait on a pair the consent
-  floors and an import's tiers do not act on (#3735). The
+  theme's palette alone can lose a bar too, which no part key names; a pair of the theme check
+  would hold it, but `PAIRS` also drives the consent floors, an import's tier walks and the
+  person's own colours, which a meter's track must not move, so that waits on a pair that is
+  only reported (#3735). The
   defaults are the accent, the waiting colour and the muted tier on the subtle hairline's
   colour, at 3:1 or more in every built-in appearance.
 - **The card family's facts and tiles** (`facts-label`, `facts-value`, `tile`, `tile-value`) are

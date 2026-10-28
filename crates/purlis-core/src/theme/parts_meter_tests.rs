@@ -243,37 +243,3 @@ fn a_fill_that_keeps_its_contrast_is_drawn_as_the_theme_says() {
         );
     }
 }
-
-#[test]
-fn the_theme_check_measures_each_default_fill_on_its_track() {
-    // The accent made the subtle hairline's grey: the subject's bar is lost on its track, and the
-    // theme check says so, though the theme names no meter part.
-    let loaded = load(&json!({
-        "name": "Shaped",
-        "extends": "purlis-classic",
-        "appearances": [{ "id": "dark", "tokens": { "accent.base": "#2f2f2b" } }],
-    }));
-    assert!(!loaded.refused, "{:?}", loaded.complaints);
-    let found = loaded.theme.appearances.iter().any(|theme| {
-        super::check::check(theme).findings.iter().any(|finding| {
-            matches!(finding, super::check::Finding::Contrast { pair, .. }
-                if pair.front == "accent.base" && pair.back == "border.subtle")
-        })
-    });
-    assert!(found, "the subject's fill on its track is measured");
-    // Every built-in appearance clears them.
-    for base in BUILT_IN {
-        let loaded = load(&json!({ "name": "Plain", "extends": base }));
-        for theme in &loaded.theme.appearances {
-            let lost: Vec<_> = super::check::check(theme)
-                .findings
-                .into_iter()
-                .filter(|finding| {
-                    matches!(finding, super::check::Finding::Contrast { pair, .. }
-                        if pair.back == "border.subtle")
-                })
-                .collect();
-            assert!(lost.is_empty(), "{base}: {lost:?}");
-        }
-    }
-}
