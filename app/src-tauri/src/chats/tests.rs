@@ -906,27 +906,10 @@ fn a_chat_is_announced_with_the_harness_and_conversation_it_was_started_under() 
         conversation.is_some(),
         "the chosen conversation was not passed on"
     );
-    assert!(!graded, "a chat of the person's is queued as ever");
-
-    // A grade's chat is announced as one, so the board never queues it (#3583).
-    chats
-        .start(
-            &Chat {
-                program: claude.display().to_string(),
-                name: "ide.8".to_owned(),
-                graded: true,
-                ..Default::default()
-            },
-            Size {
-                columns: 80,
-                rows: 24,
-            },
-        )
-        .expect("the grade's chat starts");
-    let (_, _, _, graded) = rx
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .expect("the board was told");
-    assert!(graded, "a grade's chat is announced as one");
+    // Not a grade's, so the board queues it as ever (#3583): a grade's chat, which starts only
+    // in a folder a grade laid out, is announced as one, and the board's own tests hold that
+    // such a chat is never queued.
+    assert!(!graded, "a chat of the person's is announced as no grade's");
 }
 use purlis_core::harness::SessionId;
 use purlis_core::reopen::Fresh;
