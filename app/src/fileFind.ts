@@ -194,3 +194,4 @@ export function useFileFind(
     looking: query.trim() !== "" && !current,
   };
 }
+// CI scope probe for #3607: a change to the window alone (not for merge).
