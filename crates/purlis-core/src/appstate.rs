@@ -77,10 +77,40 @@ fn usable(data: &Path) -> bool {
     ok
 }
 
-/// **The folder of the app's state of the project at `root`**: `<data>/app-state/<clone key>`.
-/// `None` where this machine has no usable data home. Nothing is read or made.
+/// **The folder of the app's state of the project at `root`**: `<data>/app-state/<clone key>`,
+/// where it is this project's own: its [`OWNER`] is the project's [`PLANE_ID`]. `None` where this
+/// machine has no usable data home, and where the folder is not there or is another project's
+/// (one at the same path before), whose state no reader sees; [`made`] sets such a folder aside.
+/// Nothing is made, and once a folder is found this project's, it is not read again in the process.
 pub fn dir(root: &Path) -> Option<PathBuf> {
-    Some(in_data(&data_home(root)?, root))
+    let mine = in_data(&data_home(root)?, root);
+    bound(&mine, root).then_some(mine)
+}
+
+/// Whether this machine has a data home it may keep the app's state of the project at `root` in.
+pub fn kept_here(root: &Path) -> bool {
+    data_home(root).is_some()
+}
+
+/// The folders found to be their project's own in this process ([`bound`]).
+fn found_bound() -> &'static std::sync::Mutex<std::collections::HashSet<PathBuf>> {
+    static FOUND: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> =
+        std::sync::OnceLock::new();
+    FOUND.get_or_init(Default::default)
+}
+
+/// Whether the folder `mine` is the project at `root`'s own: its [`OWNER`] is the project's
+/// [`PLANE_ID`]. Remembered for the process once it is.
+fn bound(mine: &Path, root: &Path) -> bool {
+    if found_bound().lock().is_ok_and(|found| found.contains(mine)) {
+        return true;
+    }
+    let owner = record_text(&mine.join(OWNER));
+    let ok = owner.is_some() && owner == record_text(&plane_id_file(root));
+    if ok && let Ok(mut found) = found_bound().lock() {
+        found.insert(mine.to_path_buf());
+    }
+    ok
 }
 
 /// The folder of the app's state of the project at `root`, in the data home `data`.
@@ -124,10 +154,17 @@ fn record_text(path: &Path) -> Option<String> {
 /// `<key>.foreign-<n>`, read no more, and a new one made. Refused where there is no usable data
 /// home.
 pub fn made(root: &Path) -> Result<PathBuf, String> {
-    made_in(
-        &data_home(root).ok_or_else(|| NO_DATA_HOME.to_owned())?,
-        root,
-    )
+    let data = data_home(root).ok_or_else(|| NO_DATA_HOME.to_owned())?;
+    // A folder found this project's in this process, and still a folder: made already.
+    let mine = in_data(&data, root);
+    if found_bound()
+        .lock()
+        .is_ok_and(|found| found.contains(&mine))
+        && std::fs::symlink_metadata(&mine).is_ok_and(|meta| meta.is_dir())
+    {
+        return Ok(mine);
+    }
+    made_in(&data, root)
 }
 
 /// [`made`], in the data home `data`: one call at a time for a project, across processes, under
@@ -189,10 +226,12 @@ fn written_once(path: &Path, text: &str) -> Result<String, String> {
 /// [`made_in`], with the project's lock held.
 fn made_locked(mine: &Path, root: &Path) -> Result<PathBuf, String> {
     let plane_id = record_text(&plane_id_file(root));
+    let mut held_levels = false;
     if std::fs::symlink_metadata(mine).is_ok() {
         let owner = record_text(&mine.join(OWNER));
         if owner.is_none() || owner != plane_id {
-            set_aside(mine)?;
+            let aside = set_aside(mine)?;
+            held_levels = std::fs::symlink_metadata(aside.join(crate::skills::levels::DIR)).is_ok();
         }
     }
     held_private(mine).map_err(|why| format!("{}: {why}", mine.display()))?;
@@ -217,6 +256,14 @@ fn made_locked(mine: &Path, root: &Path) -> Result<PathBuf, String> {
             .ok_or_else(|| "the project's root is not text".to_owned())?;
         written_once(&mine.join(ROOT_FILE), text)?;
     }
+    // The folder set aside held levels records, which no reader sees now: every workspace and
+    // persona folder waits for the person's Accept again.
+    if held_levels {
+        crate::skills::levels::ask_again_in(mine, root)?;
+    }
+    if let Ok(mut found) = found_bound().lock() {
+        found.insert(mine.to_path_buf());
+    }
     Ok(mine.to_path_buf())
 }
 
@@ -232,8 +279,12 @@ fn reminted(data: &Path, root: &Path) -> Result<(), String> {
         .map_err(|why| why.to_string())
 }
 
-/// The folder `mine`, another project's, renamed beside itself as `<key>.foreign-<n>`.
-fn set_aside(mine: &Path) -> Result<(), String> {
+/// The folder `mine`, another project's, renamed beside itself as `<key>.foreign-<n>`, and where it
+/// went.
+fn set_aside(mine: &Path) -> Result<PathBuf, String> {
+    if let Ok(mut found) = found_bound().lock() {
+        found.remove(mine);
+    }
     let name = mine
         .file_name()
         .ok_or("no name")?
@@ -243,7 +294,9 @@ fn set_aside(mine: &Path) -> Result<(), String> {
         let aside = mine.with_file_name(format!("{name}.foreign-{n}"));
         if std::fs::symlink_metadata(&aside).is_err() {
             tracing::info!(target: "purlis::appstate", "purlis: the app state at {} is another project's, so it was set aside", mine.display());
-            return std::fs::rename(mine, &aside).map_err(|why| why.to_string());
+            return std::fs::rename(mine, &aside)
+                .map(|()| aside)
+                .map_err(|why| why.to_string());
         }
     }
     Err("another project's app state could not be set aside".to_owned())
@@ -499,9 +552,23 @@ fn follow_arrival_in(
         && id.is_some()
         && record_text(&plane_id_file(&was.root)) == id;
     if arrived == Arrived::Copied || original_there {
-        if let Err(why) = reminted(data, root) {
+        // A copy gets an id of its own, and its folders wait for the person's Accept, as a
+        // moved project's do: what the original vouched for is not the copy's.
+        let held = reminted(data, root)
+            .and_then(|()| made_in(data, root))
+            .and_then(|mine| crate::skills::levels::ask_again_in(&mine, root));
+        if let Err(why) = held {
             out.left
                 .push(format!("the copy was not given an id of its own ({why})"));
+            // Never left sharing the original's id: its app state is set aside, unread.
+            let mine = in_data(data, root);
+            if let Err(also) = locked(&mine).and_then(|_held| set_aside(&mine).map(|_| ())) {
+                out.left
+                    .push(format!("the copy's app state was not set aside ({also})"));
+            }
+        }
+        for line in &out.left {
+            tracing::warn!(target: "purlis::appstate", "purlis: {line}");
         }
         return out;
     }

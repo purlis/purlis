@@ -242,6 +242,7 @@ fn records_in_the_plane_s_state_folder_are_never_read() {
     // #3718: the records are read from this machine's app state alone.
     let tmp = plane(&[CHAT]);
     let root = tmp.path();
+    crate::appstate::made(root).unwrap();
     let old = crate::plane::state_dir(root).join(DIR);
     std::fs::create_dir_all(&old).unwrap();
     std::fs::write(
@@ -259,9 +260,9 @@ fn with_no_app_state_a_sandboxed_start_is_refused_and_nothing_is_left_out() {
     // made a folder, and every chat keeps the workspace and persona skills it had.
     let tmp = plane(&[]);
     let root = tmp.path();
-    let refused = refusal_with(None).expect("refused");
+    let refused = refusal_with(false).expect("refused");
     assert!(refused.contains("PURLIS_DATA_HOME"), "{refused}");
-    assert_eq!(refusal_with(Some(root)), None);
+    assert_eq!(refusal_with(true), None);
     let held = made_since_in(root, None);
     for owner in ["workspaces/ops", "personas/steward"] {
         assert_eq!(held(&root.join(owner)), None, "{owner}");
@@ -317,4 +318,17 @@ fn folders_not_accepted_that_cannot_be_read_hold_every_folder() {
     accept(root, "workspaces/ops").unwrap();
     assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
     assert!(made_since(root)(&root.join("personas/steward")).is_some());
+}
+
+#[test]
+fn with_no_app_state_the_folders_an_older_purlis_held_stay_held() {
+    // #3718: the plane's old list is read only to hold more.
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    let old = root.join(".charter").join(DIR);
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(old.join(UNACCEPTED), r#"{"levels":["workspaces/ops"]}"#).unwrap();
+    let held = made_since_in(root, None);
+    assert!(held(&root.join("workspaces/ops")).is_some());
+    assert_eq!(held(&root.join("personas/steward")), None);
 }

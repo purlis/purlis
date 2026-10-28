@@ -185,12 +185,12 @@ pub fn note_or_hold(root: &Path, id: &str, name: &str) -> Result<Option<String>,
 /// state of it (`crate::appstate::dir`): no record of the folders there at its start could be kept,
 /// so a folder it made could not be told apart. `None` where there is app state.
 pub fn refusal_for_a_sandboxed_start(root: &Path) -> Option<String> {
-    refusal_with(crate::appstate::dir(root).as_deref())
+    refusal_with(crate::appstate::kept_here(root))
 }
 
-/// [`refusal_for_a_sandboxed_start`], with `state` the project's app state.
-fn refusal_with(state: Option<&Path>) -> Option<String> {
-    state.is_none().then(|| {
+/// [`refusal_for_a_sandboxed_start`], with `kept` whether the machine can keep its app state.
+fn refusal_with(kept: bool) -> Option<String> {
+    (!kept).then(|| {
         format!(
             "this sandboxed chat was not started: {}",
             crate::appstate::NO_DATA_HOME
@@ -298,6 +298,19 @@ fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
     let mut records = Vec::new();
     let mut held = Unaccepted::default();
     let mut unread = false;
+    if state.is_none() {
+        // No app state to read: the folders an older purlis kept as not accepted in the plane's
+        // state folder stay held. Read only to hold more, never to let a folder through.
+        for folder in crate::names::STATE_DIR.spellings() {
+            if let Ok(Some(bytes)) = crate::proposed::read_pinned(
+                &root.join(folder),
+                Path::new(&format!("{DIR}/{UNACCEPTED}")),
+            ) && let Ok(old) = serde_json::from_slice::<Unaccepted>(&bytes)
+            {
+                held.levels.extend(old.levels);
+            }
+        }
+    }
     if let Some(state) = &state {
         match records_in(state) {
             Ok(found) => records.extend(found),

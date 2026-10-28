@@ -23,7 +23,10 @@ fn write(path: &Path, text: &str) {
 fn a_projects_app_state_is_its_clone_key_under_the_data_homes_app_state() {
     let tmp = project();
     let root = tmp.path();
+    assert_eq!(dir(root), None, "none until it is made");
+    let made = made(root).unwrap();
     let dir = dir(root).expect("a fenced build always has one");
+    assert_eq!(made, dir);
     let key = crate::plane::CloneKey::of(root);
     // A fenced build's, in the test's own project, beside the stores and never one of them.
     assert_eq!(
@@ -33,7 +36,6 @@ fn a_projects_app_state_is_its_clone_key_under_the_data_homes_app_state() {
             .join(DIR)
             .join(key.as_str())
     );
-    assert_eq!(made(root).unwrap(), dir);
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -65,13 +67,15 @@ fn a_new_project_at_the_same_path_starts_with_none_of_the_old_ones_state() {
     std::fs::remove_dir_all(&root).unwrap();
     std::fs::create_dir_all(root.join(".purlis")).unwrap();
     std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/ops")).unwrap();
     let now = made_in(data.path(), &root).unwrap();
+    // The folder set aside held levels records: every folder waits for Accept again.
+    assert!(
+        crate::skills::levels::made_since_in_for(&root, &now)(&root.join("workspaces/ops"))
+            .is_some()
+    );
     assert_eq!(now, was, "the same clone key");
-    for name in [
-        "skill-drafts",
-        "skill-grade-after-edit.json",
-        "skill-levels",
-    ] {
+    for name in ["skill-drafts", "skill-grade-after-edit.json"] {
         assert!(!now.join(name).exists(), "{name} was inherited");
     }
     let aside = now.with_file_name(format!(
@@ -226,12 +230,12 @@ fn a_folder_already_there_is_made_private_and_a_link_is_refused() {
     use std::os::unix::fs::PermissionsExt as _;
     let tmp = project();
     let root = tmp.path();
-    let dir = dir(root).unwrap();
-    std::fs::create_dir_all(&dir).unwrap();
+    let data = data_home(root).unwrap();
+    let dir = made_in(&data, root).unwrap();
     for folder in [&dir, &dir.parent().unwrap().to_path_buf()] {
         std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    made(root).unwrap();
+    made_in(&data, root).unwrap();
     for folder in [&dir, &dir.parent().unwrap().to_path_buf()] {
         let mode = std::fs::metadata(folder).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o700, "{}", folder.display());
@@ -450,6 +454,11 @@ fn a_copy_read_as_a_move_takes_nothing_from_the_original_and_gets_an_id_of_its_o
         its,
         "the original is still its own"
     );
+    // Its folders wait for the person's Accept, as a moved project's do.
+    let held = crate::skills::levels::made_since_in_for(root, &here);
+    for owner in ["workspaces/ops", "personas/steward"] {
+        assert!(held(&root.join(owner)).is_some(), "{owner} is not held");
+    }
     // A copy V43 reads as one is given an id of its own too.
     let again = moved_to(original.path());
     made_in(data.path(), again.path()).unwrap();
@@ -542,4 +551,20 @@ fn levels_records_in_the_spelling_not_moved_are_asked_about_again_before_the_mar
         other.join("skill-levels/unaccepted.json").is_file(),
         "left as it is, unread"
     );
+}
+
+#[test]
+fn a_reader_before_the_project_s_first_open_sees_nothing_of_another_project_s_state() {
+    // The command line reads before the app has opened the project: a folder at its path that
+    // another project left is never read, and the first write sets it aside.
+    let tmp = project();
+    let root = tmp.path();
+    let theirs = in_data(&data_home(root).unwrap(), root);
+    write(&theirs.join(OWNER), "0123456789abcdef0123456789abcdef");
+    write(&theirs.join("skill-drafts/abc/draft.json"), "{}");
+    assert_eq!(dir(root), None);
+    assert!(crate::skills::verbs::drafts::list(root).is_empty());
+    let mine = made(root).unwrap();
+    assert_eq!(dir(root), Some(mine.clone()));
+    assert!(!mine.join("skill-drafts").exists());
 }
