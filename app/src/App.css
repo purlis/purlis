@@ -1603,10 +1603,10 @@ body {
 /* The name gives way a thousand times sooner than the chip, and stops at its floor: the tabs
    family's (`ui/tabs/tabs.css`), which draws the tab's button. */
 
-/* **The chip's pill** (#3264): the ground the counts stand on, sunken at rest and the hover
-   fill while their menu is open. The counts are the button family's quiet ghost, which draws no
-   ground of its own at rest, so the pill shows through it; under the pointer its hover fill is
-   clipped to the pill's ends. The ring of a keyboard's focus is drawn on the pill, inside it,
+/* **The chip's pill** (#3264): the sunken ground the counts stand on. The counts are the button
+   family's quiet ghost, which draws no ground of its own at rest, so the pill shows through it;
+   under the pointer, and while their menu is open (the family's open state, #3524), its hover
+   fill is clipped to the pill's ends. The ring of a keyboard's focus is drawn on the pill, inside it,
    as a strip's are (`theme/geometry.css`): the strip clips, and the pill clips the button's
    own. The hand stands in a box of its own (`.tab-tasks-mark`) for the same ring. */
 .tabs .tab-tasks-pill {
@@ -1623,10 +1623,6 @@ body {
   flex: none;
   overflow: hidden;
   border-radius: var(--radius-control);
-}
-
-.tabs .tab-tasks[data-open] .tab-tasks-pill {
-  background: var(--surface-hover);
 }
 
 .tabs :is(.tab-tasks-pill, .tab-tasks-mark):has(> [data-focus-visible]) {

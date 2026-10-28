@@ -16,7 +16,14 @@ import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import { PopoverDialog, PopoverTrigger } from "../popover/Popover";
 import { StatusItem } from "../status/StatusItem";
 import { tipOf } from "../tooltip/tooltip.testkit";
-import { Button, ButtonRow, IconButton, ToggleButton, type ButtonVariant } from "./Button";
+import {
+  BUTTON_VARIANTS,
+  Button,
+  ButtonRow,
+  IconButton,
+  ToggleButton,
+  type ButtonVariant,
+} from "./Button";
 
 afterEach(cleanup);
 
@@ -565,6 +572,110 @@ describe("an unavailable button that opens a popover or a menu (#3116, #3522)", 
     expect(screen.queryByRole("menu")).toBeNull();
     expect(item).toHaveAttribute("aria-haspopup", "true");
     expect(item).toHaveAccessibleDescription("No branch to switch to here.");
+  });
+});
+
+describe("a trigger whose menu or popover is open (#3524)", () => {
+  const ALL = [...BUTTON_VARIANTS];
+
+  it("is marked open while its menu is, and not after it closes", async () => {
+    render(
+      <MenuTrigger>
+        <Button variant="quiet">3 more</Button>
+        <Menu aria-label="More">
+          <MenuItem id="one" textValue="One">
+            <MenuWords said="One" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>,
+    );
+    const more = screen.getByRole("button", { name: "3 more" });
+    expect(more).not.toHaveAttribute("data-open");
+    await userEvent.click(more);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(more).toHaveAttribute("data-open", "");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(more).not.toHaveAttribute("data-open");
+  });
+
+  it("is marked open while its popover is", async () => {
+    render(
+      <PopoverTrigger>
+        <Button>Share</Button>
+        <PopoverDialog aria-label="Share">shared</PopoverDialog>
+      </PopoverTrigger>,
+    );
+    const share = screen.getByRole("button", { name: "Share" });
+    await userEvent.click(share);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(share).toHaveAttribute("data-open", "");
+  });
+
+  it("is marked open when it says itself that it opens a menu that is open", () => {
+    render(
+      <>
+        <Button aria-haspopup="menu" aria-expanded>
+          Counts
+        </Button>
+        <Button aria-haspopup="menu" aria-expanded={false}>
+          Closed
+        </Button>
+      </>,
+    );
+    expect(screen.getByRole("button", { name: "Counts" })).toHaveAttribute("data-open", "");
+    expect(screen.getByRole("button", { name: "Closed" })).not.toHaveAttribute("data-open");
+  });
+
+  it("is not marked open as a disclosure whose region is out: it opens nothing over the window", () => {
+    render(<Button aria-expanded>Details</Button>);
+    const details = screen.getByRole("button", { name: "Details" });
+    expect(details).toHaveAttribute("aria-expanded", "true");
+    expect(details).not.toHaveAttribute("data-open");
+  });
+
+  it("is drawn open as it is under the pointer, in every variant that has a hover fill", () => {
+    render(
+      <>
+        {ALL.map((variant) => (
+          <Button key={variant} variant={variant} aria-haspopup="menu" aria-expanded>
+            {`Open ${variant}`}
+          </Button>
+        ))}
+        {ALL.map((variant) => (
+          <Button key={variant} variant={variant}>{`Rest ${variant}`}</Button>
+        ))}
+      </>,
+    );
+    for (const variant of ALL) {
+      const open = screen.getByRole("button", { name: `Open ${variant}` });
+      const rest = screen.getByRole("button", { name: `Rest ${variant}` });
+      for (const property of ["background", "color", "border-color"])
+        expect(drawnWith(open, property), `${variant}'s ${property}`).toBe(
+          drawnWith(rest, property, { hover: true }),
+        );
+    }
+  });
+
+  it("is drawn open inline as it is under the pointer: underlined, with no fill", () => {
+    render(
+      <Button inline variant="quiet" aria-haspopup="menu" aria-expanded>
+        crumb
+      </Button>,
+    );
+    const crumb = screen.getByRole("button", { name: "crumb" });
+    expect(drawnWith(crumb, "background")).toBe("transparent");
+    expect(drawnWith(crumb, "text-decoration")).toBe("underline");
+    expect(drawnWith(crumb, "color")).toBe("var(--text-primary)");
+  });
+
+  it("is never drawn open while unavailable", () => {
+    render(
+      <Button aria-disabled aria-haspopup="menu" aria-expanded>
+        Off
+      </Button>,
+    );
+    expect(screen.getByRole("button", { name: "Off" })).not.toHaveAttribute("data-open");
   });
 });
 

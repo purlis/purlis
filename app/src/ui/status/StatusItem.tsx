@@ -26,7 +26,7 @@
  */
 import { Children, type ComponentPropsWithRef, type ReactNode, type Ref } from "react";
 import { Button as AriaButton, type ButtonProps as AriaButtonProps } from "react-aria-components";
-import { pressable, renderPressed, usePressTip, type Native } from "../pressable";
+import { discloses, pressable, renderPressed, usePressTip, type Native } from "../pressable";
 import { Tipped, Tooltip, type Tip } from "../tooltip/Tooltip";
 
 /** The family's variants, in the order the manifest names them. */
@@ -161,7 +161,7 @@ export function StatusItem(props: StatusItemProps) {
         ref={ref}
         className={className}
         {...root({ variant, tone, strong, shrinks })}
-        render={renderPressed(native, tip, own)}
+        render={renderPressed(native, tip, own, discloses(rest))}
       >
         {parts({ icon, count, children }, false)}
       </AriaButton>

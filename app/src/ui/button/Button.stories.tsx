@@ -269,6 +269,60 @@ export const UnavailableMenuTrigger: Story = {
   },
 };
 
+/** The variants with a fill under the pointer, each drawn as a trigger whose menu is open. */
+const OPENED: readonly ButtonVariant[] = [
+  "secondary",
+  "primary",
+  "ghost",
+  "quiet",
+  "danger",
+  "grants",
+  "soft-accent",
+  "warning-soft",
+];
+
+/**
+ * **A trigger whose menu is open** (#3524): drawn as it is under the pointer, in every variant
+ * with a hover fill, so the press that opened it still shows while the pointer is in the menu.
+ * The row is each variant held open; the `3 more` beside it opens a real menu, and is drawn at
+ * rest again once it closes.
+ */
+export const OpenTrigger: Story = {
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <ButtonRow aria-label="Open triggers" role="group">
+        {OPENED.map((variant) => (
+          <Button key={variant} variant={variant} aria-haspopup="menu" aria-expanded>
+            {variant}
+          </Button>
+        ))}
+      </ButtonRow>
+      <MenuTrigger>
+        <Button variant="quiet" size="sm">
+          3 more
+        </Button>
+        <Menu aria-label="More">
+          <MenuItem id="one" textValue="One">
+            <MenuWords said="One" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    for (const variant of OPENED)
+      await expect(canvas.getByRole("button", { name: variant })).toHaveAttribute("data-open");
+    const more = canvas.getByRole("button", { name: "3 more" });
+    await expect(more).not.toHaveAttribute("data-open");
+    await userEvent.click(more);
+    await waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull());
+    await expect(more).toHaveAttribute("data-open");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
+    await expect(more).not.toHaveAttribute("data-open");
+  },
+};
+
 /**
  * **An answer that grants beside Keep blocked** (ADR 0097 §6): Allow is as plain as Keep
  * blocked, told apart by its accent edge and the lock it leads with, never by the primary look.

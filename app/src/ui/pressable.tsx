@@ -151,10 +151,36 @@ export function pressable(props: Record<string, unknown>, tip?: PressTip) {
   return { native, aria, own: aria["aria-describedby"] as string | undefined };
 }
 
-/** React Aria's `render` for a pressable: its `<button>`, with `native` handed on. */
-export function renderPressed(native: Record<string, unknown>, tip?: PressTip, own?: string) {
+/**
+ * **Whether a call's own `aria-expanded` is a disclosure's** (#3524): it says its region is out
+ * and opens no menu or popover (`aria-haspopup`), so it is not drawn open. A trigger's, whether
+ * a menu's or a popover's hands it to the element (`PressResponder`) or the call writes it with
+ * its `aria-haspopup`, is.
+ */
+export function discloses(props: Record<string, unknown>): boolean {
+  const popup = props["aria-haspopup"];
+  return (
+    props["aria-expanded"] !== undefined &&
+    (popup === undefined || popup === false || popup === "false")
+  );
+}
+
+/**
+ * React Aria's `render` for a pressable: its `<button>`, with `native` handed on. `disclosure`:
+ * the call's own `aria-expanded` is a disclosure's ({@link discloses}), never drawn open.
+ */
+export function renderPressed(
+  native: Record<string, unknown>,
+  tip?: PressTip,
+  own?: string,
+  disclosure = false,
+) {
   return (domProps: ComponentPropsWithRef<"button">) => {
     const off = String(domProps["aria-disabled"]) === "true";
+    // **Open** (#3524): the menu or the popover it is the trigger of is open, which React Aria
+    // says only as `aria-expanded`; the family draws it from `data-open`, as a theme's
+    // `<family>.root.open` reaches it. Never while it is unavailable.
+    const open = !off && !disclosure && String(domProps["aria-expanded"]) === "true";
     const {
       "data-hovered": hovered,
       "data-pressed": pressed,
@@ -187,6 +213,7 @@ export function renderPressed(native: Record<string, unknown>, tip?: PressTip, o
         data-hovered={off ? undefined : (hovered as string | undefined)}
         data-pressed={off ? undefined : (pressed as string | undefined)}
         data-disabled={off ? "true" : (rest["data-disabled"] as string | undefined)}
+        data-open={open ? "" : undefined}
         tabIndex={domProps.tabIndex ?? 0}
         {...native}
       />

@@ -35,6 +35,10 @@
  *   the pointer alike, and nothing presses it: nor opens the menu or popover it is the trigger
  *   of (#3116). **One made unavailable by hand** (`aria-disabled`, a screen's busy answer) is
  *   the same: it keeps the focus and runs no press (#3522).
+ * - **Open** (#3524): a trigger whose menu or popover is open is drawn as it is under the
+ *   pointer (`data-open`, a theme's `button.root.open`), whether the trigger hands it its
+ *   `aria-expanded` or the call writes it beside its `aria-haspopup`. A disclosure's own
+ *   `aria-expanded` (its region is out, nothing opens over the window) is not drawn open.
  * - **The key that presses it** (R33, #3377): `shortcut` draws the key after its words, in the
  *   `shortcut` part, a `kbd` small and mono. It is drawn by the stylesheet from its `data-key`
  *   and hidden from a screen reader, so the button's name and words stay its words alone; the
@@ -58,7 +62,7 @@ import {
   type ToggleButtonProps as AriaToggleButtonProps,
 } from "react-aria-components";
 import { LockOpen } from "lucide-react";
-import { pressable, renderPressed, usePressTip, type Native } from "../pressable";
+import { discloses, pressable, renderPressed, usePressTip, type Native } from "../pressable";
 import { Tipped, type Tip } from "../tooltip/Tooltip";
 
 /** The family's variants, in the order the manifest names them. */
@@ -285,7 +289,7 @@ function useDrawn(
     "data-icon-only": iconOnly ? "" : undefined,
     "data-inline": inline ? "" : undefined,
     // #190, #1700, #2908: `ui/pressable.tsx`.
-    render: renderPressed(native, tip, own),
+    render: renderPressed(native, tip, own, discloses(rest)),
     children: content,
   };
   return { drawn, surface: tip.surface, reason: tip.reason };
