@@ -343,6 +343,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`<state>/skill-grades/<YYYY-MM>.jsonl`](#stateskill-gradesyyyy-mmjsonl)
+  - [`<state>/skill-grade-after-edit.json`](#stateskill-grade-after-editjson)
   - [`<state>/grades-under-way/<grade>.json`](#stategrades-under-waygradejson)
   - [`<state>/grades-under-way.lock`](#stategrades-under-waylock)
   - [`skill-tries/<id>/`](#skill-triesid)
@@ -3801,7 +3802,12 @@ An end row, never a pass or a fail:
   written before, one whose grade started no chat, and one recorded as interrupted; and `model`,
   the model its chats ran on as their harness reported it (the first that said one, by the
   harness's own id; SK-60, #3240, ADR 0087 §6), absent in a row written before and where no chat
-  said.
+  said; `previous`, the commit of the version its `previous` arm was laid out from, which is then
+  the baseline its `report.delta` is against (the newest version of the skill whose folder held
+  another tree, read from git's tree of that commit; SK-57, #3237, ADR 0105 as amended
+  2026-10-28), absent in a row written before and for a skill with no other version; and
+  `after_edit`, `true` for a grade a saved edit started under the person's opt-in (SK-58, #3238,
+  [`<state>/skill-grade-after-edit.json`](#stateskill-grade-after-editjson)), absent otherwise.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
   16 MiB, each line at most 1 MiB; a line that
@@ -3815,7 +3821,8 @@ An end row, never a pass or a fail:
   reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
   1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469;
   a `plugins_off` that is no list of at most 256 ids a plugin could have, #3468; a `model` that is
-  no plain id, #3240; and since #3273
+  no plain id, #3240; a `previous` that is no whole hex id, or a `previous` arm in a row that
+  names no `previous`, #3237; and since #3273
   a level no level spells, `runs` outside 1 to 16, tokens past ten times the largest cap or
   dollars past ten times its dearest limit, a stamp more than an hour ahead of this machine's
   clock, a `spent` that is not what the report adds up to (its chats the arms' runs, its tokens
@@ -7297,6 +7304,36 @@ rewritten.
   beside the committed record by `grades::grades_of`, held to the same limits.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state — this machine's own; nothing rebuilds it.
+- **Git:** gitignored, under the state directory.
+
+### `<state>/skill-grade-after-edit.json`
+- **Format:** one JSON object (SK-58, #3238; ADR 0105 as amended 2026-10-28): `v` (1) and
+  `skills`, each copy the person turned **grading after each edit** on for, keyed by its level's
+  folder and its name (`skills/deploy`, `workspaces/ops/skills/deploy`), holding what they
+  accepted on the plan they turned it on from: `profile` and `model` (null for the profile's own)
+  the grades' chats run on; `chats`, the chats a grade ran then; `token_cap` and `limit_usd`, the
+  cap and the dollar limit it was held to (at most the largest cap at 1,000 dollars a million);
+  `tests`, the SHA-256 of the trigger tests it ran; `previous`, the commit it compared with
+  (absent for none); `at`, when it was turned on; `graded`, the consent
+  digest of the copy an edit last graded (absent before the first), so a save that changed nothing
+  since grades nothing; and `paused`, the sentence why it waits for the person (absent while it
+  does not). Written `0600`, whole or not at all, through no link, by the window alone: turning it
+  on (`skill_grade_after_edit_on`, from a plan whose consent it checks), turning it off, and a
+  grade after an edit (`grades::after_edit`). Read at each save of the skill in the Skill studio's
+  editor: a saved edit, once ten seconds pass with no other save of the skill, grades it on that
+  profile and model, held to the cap and dollar limit of a grade pressed by hand, only while a
+  grade of it runs no more chats, may spend no more, and runs the same trigger tests against the
+  same version as was accepted; a grade that would not
+  waits (`paused`), starts nothing, and the opt-in is turned on again from a plan that shows the
+  cost. A second save while such a grade runs stops it, and the next starts after it. Nothing
+  grades on a timer, and a save from the command line or a chat's change grades nothing. A file
+  that is a link, past 256 KiB, of another `v`, or holding more than 512 copies reads as off (each change holds the `flock` of
+  `skill-grade-after-edit.lock` beside it), and
+  so does a copy whose entry does not hold together (a name that is no plain name, no chats, a cap
+  out of its bounds, a limit that is no positive amount).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state — this machine's own: the person who pays turns it on, on this machine;
+  a teammate's push never does. Losing it turns grading after each edit off.
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/grades-under-way/<grade>.json`

@@ -650,6 +650,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A grade's token cap (#2779): what this machine's grades may spend, in its own settings
     // file. The person's own press in their window.
     "skill_grade_set_cap",
+    // Grading after each edit turned on or off (SK-58, #3238): on, it spends the person's
+    // account at each edit they save, within what the plan showed. The person's own press in
+    // their window, never a link's.
+    "skill_grade_after_edit_on",
+    "skill_grade_after_edit_off",
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",
@@ -1076,7 +1081,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "show_window_holding",
     "skill_details",
     "skill_diff",
-    // A grade's kept chat and its scorecard (SK-59, #3239): read only.
+    // A grade's kept chat and its scorecard (SK-59, #3239), and a skill's grading after each
+    // edit (SK-58, #3238): read only.
+    "skill_grade_after_edit",
     "skill_grade_chat",
     "skill_grade_plan",
     "skill_grade_scorecard",
