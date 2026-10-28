@@ -1434,6 +1434,19 @@ jobs:
       # are built by the same cargo run as the app (the packages after `--`). Built apart, their
       # dependencies resolve other features than the app's, so purlis-core compiled twice
       # (2026-10-12); together, once. They take the app's `purlis-core/fenced` with it.
+      #
+      # **What this build spends its time on** (#3742, 2026-10-29; six legs' logs and cargo's
+      # timings). Not linking (6 s for the app's program) and not sccache's round trips (under a
+      # second a hit): the app's own crate, 193 s of a 394 s cargo run, compiled afresh on every
+      # leg. Its library also emitted a `staticlib` and a `cdylib`, Tauri's template's for iOS and
+      # Android, and sccache never caches a crate that links (`crate-type` among its
+      # non-cacheable calls), so "80 to 90% hits" counted only the small crates. The library is now
+      # an `rlib` alone (`app/src-tauri/Cargo.toml`). The frontend was the rest: `tsc` before vite
+      # took 20 to 150 s per leg, a type check the required `web` job already makes, so
+      # `build:e2e` is vite alone. Rejected: a lighter debug profile (`line-tables-only` is already
+      # the dev profile, and #3560's opt-level made the cold build 21 to 32 min), another linker
+      # (6 s to win), a `target/` cache (rust-cache already restores the dependencies, and the
+      # workspace's crates change with every pull request that runs this job).
       - name: Build the app, the harness and the CLI for the scenario tests
         if: ${{ !matrix.sandbox }}
         run: npx tauri build --debug --no-bundle --features e2e --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli --timings
