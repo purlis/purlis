@@ -947,6 +947,25 @@ Two members, by what a cell holds:
   `allowsSorting` sorts by a press on its name (`sortDescriptor`, `onSortChange`, `aria-sort`),
   its arrow keeping its room while another column sorts, so sorting moves no name. `onRowAction`
   (or a row's `onAction`) runs a row on Enter or a press.
+- **A view chooses for a column** (#3671, `CellWords.tsx`), on `TableColumn` and `ControlColumn`
+  alike, so a column of short facts (a date, a level, "Works on", "3 of 3") keeps one line where a
+  long column beside it takes the room, and no row grows tall word by word:
+  - `cut`: its cells keep one line, cut with an ellipsis where the column is narrower, and the
+    whole words are the cell's tooltip, only while they are cut;
+  - `clamp={2}`: its cells wrap to two lines at most and are cut after them, whole in the tooltip
+    (a description column, "What it does");
+  - `size`: `fit`, as narrow as its widest cell on one line, or `fill`, the room the others leave;
+  - `width`, `minWidth`, `maxWidth`: a length in px or CSS, the column's width and its words' least
+    and most (a `cut` column with a `maxWidth` is cut there).
+
+  A cut cell's tooltip opens under the pointer after the window's delay, and at once as the keyboard
+  reaches it: the grid's arrows on a table of data's cell, and in a table of controls the cut words
+  themselves, which are a Tab stop while they are cut, as a column's shortened name is. Esc takes it
+  down. The words stay the cell's, whole, so a screen reader hears them all. React Aria's own
+  `width` is read only by a column-resizing table, so the family's widths are its own. A column that
+  chooses nothing draws exactly as before. A table of data where its frame is narrow keeps its
+  one-line columns and scrolls sideways; it stacks only where the view asks (`stacks` on `Table`,
+  with `heading` on each `TableCell`), as a table of controls does.
 - **A row's menu** (`menu` on `TableRow`, `rowMenus` on the table): the row's actions under one ⋯
   in a column of its own at the row's end, named "More for" the row, aligned on every row (a row
   with none keeps its cell); a right-click on the row, Shift+F10 or the menu key open the same

@@ -15,9 +15,23 @@
  * under its column's whole words (the cell's `heading`), as many side by side as fit; the row's
  * actions take a line of their own. Nothing is cut and nothing scrolls sideways.
  */
-import type { CSSProperties, DragEventHandler, ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEventHandler,
+  type ReactNode,
+} from "react";
 import { Tooltip } from "../tooltip/Tooltip";
 import { Rule, type CellAlign } from "./Table";
+import {
+  CellWords,
+  choicesOfElement,
+  columnAttributes,
+  type Choices,
+  type ColumnChoices,
+} from "./CellWords";
 
 /** What a part of the table takes beside what it holds: a place, never a look. */
 interface Placed {
@@ -88,7 +102,9 @@ export function ControlHead({ children }: { children: ReactNode }) {
 /**
  * **One column's name**, on one line. A name shortened to fit its column (`whole` its whole
  * words) or with more to say (`about`) shows its words behind the shared tooltip (#2908), which
- * makes them a Tab stop, and its whole words name the column for a reader (DS-9, #1841).
+ * makes them a Tab stop, and its whole words name the column for a reader (DS-9, #1841). A view
+ * sizes it and says whether its cells keep one line, as on a table of data's column (`cut`,
+ * `clamp`, `size`, `width`, `minWidth`, `maxWidth`, `CellWords.tsx`, #3671).
  */
 export function ControlColumn({
   children,
@@ -98,7 +114,13 @@ export function ControlColumn({
   actions = false,
   hideName = false,
   className,
-}: {
+  cut,
+  clamp,
+  size,
+  width,
+  minWidth,
+  maxWidth,
+}: ColumnChoices & {
   /** The words it shows. */
   children?: string;
   /** Its whole words, where `children` shortens them. */
@@ -116,8 +138,11 @@ export function ControlColumn({
   const full = whole ?? words;
   const shortened = full !== words;
   const tipped = shortened || about !== undefined;
+  const chosen = columnAttributes({ cut, clamp, size, width, minWidth, maxWidth });
   return (
     <th
+      {...chosen.attributes}
+      style={chosen.style}
       scope="col"
       className={className}
       data-scope="table"
@@ -226,6 +251,38 @@ export function ControlGroupHeading({
   );
 }
 
+/**
+ * **The column `cell` stands in**, by its place along its row: the name over it in the table's
+ * head, counting the cells across more than one column as many.
+ */
+function headOf(cell: HTMLTableCellElement): HTMLTableCellElement | null {
+  const row = cell.parentElement;
+  const heads = cell.closest("table")?.tHead?.rows[0]?.cells;
+  if (!(row instanceof HTMLTableRowElement) || heads === undefined) return null;
+  let at = 0;
+  for (const one of Array.from(row.cells)) {
+    if (one === cell) break;
+    at += one.colSpan;
+  }
+  let from = 0;
+  for (const head of Array.from(heads)) {
+    if (at < from + head.colSpan) return head;
+    from += head.colSpan;
+  }
+  return null;
+}
+
+/** **What a cell's column chose** (#3671), read from the column's name once the cell is drawn. */
+function useColumnChoices() {
+  const cell = useRef<HTMLTableCellElement>(null);
+  const [choices, setChoices] = useState<Choices | null>(null);
+  useLayoutEffect(() => {
+    const own = cell.current;
+    if (own !== null) setChoices(choicesOfElement(headOf(own)));
+  }, []);
+  return { cell, choices };
+}
+
 /** Whether a cell holds nothing (the stacked form draws no such cell). */
 function empty(children: ReactNode): boolean {
   if (Array.isArray(children)) return children.every(empty);
@@ -247,9 +304,11 @@ export function ControlCell({
   style,
   ...data
 }: Placed & { heading?: string; actions?: boolean; align?: CellAlign; colSpan?: number }) {
+  const { cell, choices } = useColumnChoices();
   return (
     <td
       {...data}
+      ref={cell}
       colSpan={colSpan}
       className={className}
       style={style}
@@ -260,7 +319,9 @@ export function ControlCell({
       data-align={align}
       data-empty={empty(children) || undefined}
     >
-      {children}
+      <CellWords choices={choices} ownStop>
+        {children}
+      </CellWords>
       <Rule />
     </td>
   );

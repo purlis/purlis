@@ -4,15 +4,16 @@
 /**
  * **The table family** (#2911): a table of hosts that chooses, sorts and opens a row's menu under
  * its bar (the settings prototype's hosts table, which Settings' record lists take in #2919), a
- * table of data whose cells hold a button, a table with no rows, and a table of controls, wide
- * and stacked into a form. Each is walked by the keyboard, held to axe and compared with its
+ * table of data whose cells hold a button, a table with no rows, a table of controls, wide
+ * and stacked into a form, and the Skill studio's skills, whose short columns keep one line beside
+ * a long one (#3671), wide and in a narrow split. Each is walked by the keyboard, held to axe and compared with its
  * baseline in Chromium and WebKit, in every theme's cell (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { Save } from "lucide-react";
-import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { expectFocusInSight, inAWindow, untilFocused } from "../../stories.testkit";
 import { Button, IconButton } from "../button/Button";
 import { TextField } from "../field/Field";
 import { ListFilter, noMatchSaid, useListFilter } from "../list/ListFilter";
@@ -460,6 +461,194 @@ export const OfControlsStacked: Story = {
       () => canvas.getByRole("textbox", { name: "Tasks for the project" }),
       "Of controls stacked: Tab lands on the first box",
     );
+    expectFocusInSight();
+  },
+};
+
+/** The Skill studio's skills (#3671): the operator's screenshot of 2026-10-28, its columns wrapped. */
+const SKILLS = [
+  {
+    name: "deploy",
+    does: "Ships a branch to the staging cluster, waits for its checks to pass and rolls it back where they fail, says each step it took in the chat as it goes, asks before it touches production or a branch it did not start, and keeps a note of what it shipped in the workspace's memory.",
+    chat: "Every chat in smart-ide",
+    works: "Claude Code · Codex",
+    level: "Workspace",
+  },
+  {
+    name: "release-notes",
+    does: "Writes the release notes from the merged pull requests.",
+    chat: "When asked",
+    works: "Claude Code",
+    level: "Project",
+  },
+  {
+    name: "review",
+    does: "Reviews a pull request against the repo's own standards and the issue it closes, and says what it would change before it says what it likes.",
+    chat: "Every chat of the persona reviewer",
+    works: "Claude Code · Codex · Gemini",
+    level: "Persona",
+  },
+];
+
+/** **The skills as a table of data** whose view sized its columns (#3671). */
+function Skills({ inlineSize }: { inlineSize: string }) {
+  return (
+    <div style={{ inlineSize, maxInlineSize: "100%" }}>
+      <Table aria-label="Skills">
+        <TableHeader>
+          <TableColumn isRowHeader size="fit">
+            Skill
+          </TableColumn>
+          <TableColumn size="fit">Level</TableColumn>
+          <TableColumn size="fill" clamp={2} minWidth="12rem">
+            What it does
+          </TableColumn>
+          <TableColumn cut maxWidth="12rem">
+            In a chat
+          </TableColumn>
+          <TableColumn size="fit">Works on</TableColumn>
+        </TableHeader>
+        <TableBody>
+          {SKILLS.map((skill) => (
+            <TableRow key={skill.name} id={skill.name} textValue={skill.name}>
+              <TableCell>{skill.name}</TableCell>
+              <TableCell>{skill.level}</TableCell>
+              <TableCell>{skill.does}</TableCell>
+              <TableCell>{skill.chat}</TableCell>
+              <TableCell>{skill.works}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+/** How many lines `words` are drawn on. */
+function linesOf(words: Element): number {
+  const tall = words.getBoundingClientRect().height;
+  const line = parseFloat(getComputedStyle(words).lineHeight);
+  return Math.round(tall / line);
+}
+
+/** The words of each cell of the skills' rows, by column. */
+function skillWords(canvas: HTMLElement) {
+  const grid = within(canvas).getByRole("grid", { name: "Skills" });
+  const rows = within(grid).getAllByRole("row").slice(1);
+  const of = (column: number) =>
+    rows.map(
+      (row) =>
+        row
+          .querySelectorAll('[role="rowheader"], [role="gridcell"]')
+          [column].querySelector('[data-part="words"]') as HTMLElement,
+    );
+  return { grid, rows, of };
+}
+
+/**
+ * The skills hold their columns: Skill, Level, In a chat and Works on keep one line each, the
+ * description is two lines at most, and a cut cell's whole words are its tooltip as the
+ * keyboard reaches it, which Esc takes down.
+ */
+async function playSkills(
+  canvas: HTMLElement,
+  userEvent: { tab: () => Promise<void>; keyboard: (keys: string) => Promise<void> },
+) {
+  const { rows, of } = skillWords(canvas);
+  for (const column of [0, 1, 3, 4])
+    for (const words of of(column))
+      await expect(linesOf(words), `column ${column}: one line`).toBe(1);
+  for (const words of of(2)) await expect(linesOf(words)).toBeLessThanOrEqual(2);
+  // The first skill's description is longer than two lines: it is cut, and says so.
+  const deploy = of(2)[0];
+  await expect(deploy.scrollHeight).toBeGreaterThan(deploy.clientHeight);
+  await userEvent.tab();
+  await untilFocused(() => rows[0], "Skills: Tab lands on the first row");
+  await userEvent.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
+  const cell = deploy.closest('[role="gridcell"]');
+  await untilFocused(() => cell, "Skills: Right reaches the first description");
+  await waitFor(() => expect(screen.getByRole("tooltip")).toHaveTextContent(SKILLS[0].does));
+  expectFocusInSight();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+  await untilFocused(() => cell, "Skills: Esc takes the tooltip down and the keyboard stays");
+}
+
+/**
+ * **A table whose short columns keep one line** (#3671): the operator's case, at a 1280 px
+ * window. The picture is the description cut at two lines beside its one-line columns.
+ */
+export const OfSkills: Story = {
+  render: () => <Skills inlineSize="100%" />,
+  play: async ({ canvasElement, userEvent }) => {
+    await inAWindow(1280, 720);
+    await playSkills(canvasElement, userEvent);
+  },
+};
+
+/**
+ * **The same table in a narrow split** (#3671): its short columns still keep one line, the
+ * description keeps its least, and the frame scrolls the table sideways.
+ */
+export const OfSkillsInANarrowSplit: Story = {
+  render: () => <Skills inlineSize="24rem" />,
+  play: async ({ canvasElement, userEvent }) => {
+    const { grid } = skillWords(canvasElement);
+    const frame = grid.closest('[data-part="frame"]') as HTMLElement;
+    await expect(frame.scrollWidth).toBeGreaterThan(frame.clientWidth);
+    await playSkills(canvasElement, userEvent);
+  },
+};
+
+/** **The studio's own skills, a table of controls**, with the same column choices (#3671). */
+function StudioSkills() {
+  return (
+    <div style={{ inlineSize: "40rem", maxInlineSize: "100%" }}>
+      <ControlTable aria-label="Studio skills">
+        <ControlHead>
+          <ControlColumn size="fit">Skill</ControlColumn>
+          <ControlColumn size="fill" clamp={2} minWidth="10rem">
+            What it does
+          </ControlColumn>
+          <ControlColumn cut maxWidth="6rem">
+            In a chat
+          </ControlColumn>
+          <ControlColumn actions hideName whole="Actions" />
+        </ControlHead>
+        <ControlBody>
+          {SKILLS.map((skill) => (
+            <ControlRow key={skill.name}>
+              <ControlRowHeading>{skill.name}</ControlRowHeading>
+              <ControlCell>{skill.does}</ControlCell>
+              <ControlCell>{skill.chat}</ControlCell>
+              <ControlCell actions>
+                <Button size="sm">{`Change ${skill.name}`}</Button>
+              </ControlCell>
+            </ControlRow>
+          ))}
+        </ControlBody>
+      </ControlTable>
+    </div>
+  );
+}
+
+/**
+ * **A table of controls whose columns chose** (#3671): words cut short are a Tab stop of their
+ * own, whose tooltip says them whole; the cells' buttons follow.
+ */
+export const OfControlsCut: Story = {
+  render: () => <StudioSkills />,
+  play: async ({ canvas, userEvent }) => {
+    const table = canvas.getByRole("table", { name: "Studio skills" });
+    const words = (text: string) =>
+      within(table).getByText(text, { selector: '[data-part="words"]' });
+    await userEvent.tab();
+    await untilFocused(() => words(SKILLS[0].does), "Of controls cut: Tab lands on cut words");
+    await waitFor(() => expect(screen.getByRole("tooltip")).toHaveTextContent(SKILLS[0].does));
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+    await userEvent.tab();
+    await untilFocused(() => words(SKILLS[0].chat), "Of controls cut: Tab moves to the next");
     expectFocusInSight();
   },
 };
