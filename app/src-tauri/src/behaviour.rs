@@ -3447,7 +3447,7 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
         .sessions
         .open_named(
             None,
-            &named("try", false),
+            &named("try what reaches past you", false),
             purlis_core::sandbox::plan::Hearing::default(),
             &|_| {},
         )
