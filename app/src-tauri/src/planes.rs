@@ -4004,13 +4004,7 @@ impl Planes {
                 move |session, harness, conversation, graded| {
                     mcp_failures.began(session, std::time::Instant::now());
                     // A grade's chat is drawn nowhere, so it is never in the queue (#3583).
-                    let mut board = hooks::held_board(&board);
-                    if graded {
-                        board.opened_graded(session, harness, conversation);
-                    } else {
-                        board.opened(session, harness, conversation);
-                    }
-                    drop(board);
+                    hooks::held_board(&board).opened_as(session, harness, conversation, graded);
                     // Read before the lock is taken: a stamp is a read of several files.
                     let stamp = Stamp::of(&root);
                     lock_started(&started_on).insert(session, stamp);
@@ -4027,11 +4021,7 @@ impl Planes {
                     {
                         let mut board = hooks::held_board(&board);
                         if !board.chats().any(|chat| chat == session) {
-                            if graded {
-                                board.opened_graded(session, harness, conversation);
-                            } else {
-                                board.opened(session, harness, conversation);
-                            }
+                            board.opened_as(session, harness, conversation, graded);
                         }
                     }
                     lock_started(&started_on).insert(session, stamp);

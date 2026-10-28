@@ -1487,28 +1487,24 @@ impl Board {
         harness: Option<crate::harness::Harness>,
         conversation: Option<String>,
     ) {
-        self.opened_reporting(
-            number,
-            harness.is_some_and(crate::harness::Harness::reports_its_process),
-            conversation,
-            false,
-        );
+        self.opened_as(number, harness, conversation, false);
     }
 
-    /// **[`Board::opened`], for a grade's chat** (SK-16, #3583): one the window draws nowhere, so
-    /// it is never in the queue ([`Board::needs_you`]) and never stands there
-    /// ([`Board::standing`]), whatever it asks before the grade ends it.
-    pub fn opened_graded(
+    /// **[`Board::opened`], for a chat that is a grade's where `graded`** (SK-16, #3583): one the
+    /// window draws nowhere, so it is never in the queue ([`Board::needs_you`]) and never stands
+    /// there ([`Board::standing`]), whatever it asks before the grade ends it.
+    pub fn opened_as(
         &mut self,
         number: u32,
         harness: Option<crate::harness::Harness>,
         conversation: Option<String>,
+        graded: bool,
     ) {
         self.opened_reporting(
             number,
             harness.is_some_and(crate::harness::Harness::reports_its_process),
             conversation,
-            true,
+            graded,
         );
     }
 
@@ -3031,7 +3027,7 @@ mod tests {
             })
         });
         claude_chat(&mut board, 7, Some(A));
-        board.opened_graded(8, Some(Harness::ClaudeCode), Some(B.to_owned()));
+        board.opened_as(8, Some(Harness::ClaudeCode), Some(B.to_owned()), true);
         for (chat, conversation) in [(7, A), (8, B)] {
             board.reported(&report(chat, Event::UserPromptSubmit, Some(conversation)));
             board.reported(&report(chat, Event::Notification, Some(conversation)));

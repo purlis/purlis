@@ -32,7 +32,7 @@ pub enum Move {
         reports_its_process: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         conversation: Option<String>,
-        /// [`Board::opened_graded`]: a grade's chat, never in the queue (#3583).
+        /// [`Board::opened_as`]: a grade's chat, never in the queue (#3583).
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         kept_from_the_window: bool,
     },
