@@ -18,7 +18,9 @@
 //!
 //! [`BrowseAsk`]: crate::hookwire::BrowseAsk
 
-pub use purlis_session_protocol::browsing::{Act, Browsed, DragTo, PageSaid, Typed};
+pub use purlis_session_protocol::browsing::{
+    Act, Browsed, DownloadSaid, DownloadState, DragTo, PageSaid, Typed,
+};
 use serde_json::{Map, Value, json};
 
 use purlis_session_protocol::browsing::BrowserReach;
@@ -47,7 +49,7 @@ pub struct Asked {
 
 /// The tools whose answer may say what changed on the page (#2137): every one that acts on a
 /// page already open.
-const SAY_CHANGES: [&str; 10] = [
+const SAY_CHANGES: [&str; 11] = [
     "browser_navigate",
     "browser_click",
     "browser_double_click",
@@ -58,6 +60,7 @@ const SAY_CHANGES: [&str; 10] = [
     "browser_drag",
     "browser_scroll",
     "browser_back",
+    "browser_upload",
 ];
 
 /// The call id of the changes that follow the act of `call_id`: its own, so a retry of the act
@@ -72,13 +75,22 @@ pub fn fresh_call_id() -> String {
 }
 
 /// **The browser tools a harness runs without its own prompt** (#2245, ruled 2026-10-16,
-/// amending ADR 0064): every one of [`TOOLS`], by name. The consent for them is the person's
+/// amending ADR 0064): every one of [`TOOLS`] but [`ASKED_EACH_TIME`], by name. The consent for them is the person's
 /// answer to the chat's browser Ask, which the app holds in front of every call, as the
 /// dispatch grant is for [`crate::chattools::DISPATCH_TOOLS`]; each harness's adapter turns
 /// these names into its own rule where it has one.
 pub fn run_on_the_browser_ask() -> impl Iterator<Item = &'static str> {
-    TOOLS.iter().map(|tool| tool.name)
+    TOOLS
+        .iter()
+        .map(|tool| tool.name)
+        .filter(|name| !ASKED_EACH_TIME.contains(name))
 }
+
+/// **The browser tools that move a file across the chat's folder** (#2020): an upload, which
+/// sends files of it to a page, and a save, which writes a download into it. The browser Ask
+/// does not cover them, so a harness asks the person at each call with its own prompt (which
+/// purlis lists in the Inbox), naming the files.
+pub const ASKED_EACH_TIME: [&str; 2] = ["browser_upload", "browser_save_download"];
 
 /// Whether `name` is one of the browser tools.
 pub fn is_one(name: &str) -> bool {
@@ -178,6 +190,17 @@ pub fn asked(name: &str, args: &Map<String, Value>) -> Result<Asked, String> {
             page: required(args, "page")?,
         },
         "browser_screenshot" => Act::Screenshot { page: page()? },
+        "browser_downloads" => Act::Downloads,
+        "browser_upload" => Act::Upload {
+            target: required(args, "target")?,
+            files: strings(args, "files")?,
+            from: None,
+        },
+        "browser_save_download" => Act::SaveDownload {
+            download: required(args, "download")?,
+            to: required(args, "to")?,
+            into: None,
+        },
         "browser_new" => {
             return Ok(Asked {
                 browser: None,
@@ -299,6 +322,9 @@ pub fn said(browser: &str, browsed: &Browsed) -> String {
     if let Some(note) = &browsed.note {
         lines.push(format!("Note: {note}"));
     }
+    for download in &browsed.downloads {
+        lines.push(download_line(download));
+    }
     if browsed.repeated {
         lines.push("This answers a retry of the same call id: nothing was done again.".to_owned());
     }
@@ -328,6 +354,34 @@ pub fn browser_reach(reach: &Reach, open_web: bool) -> BrowserReach {
         withdrawn: written.withdrawn,
         open_web,
     }
+}
+
+/// **A download, as the agent reads it** (#2020): its name in the browser, the page's name for
+/// it, its size and where it came from. Never where it is held.
+pub fn download_line(download: &DownloadSaid) -> String {
+    let size = match (download.state, download.total) {
+        (DownloadState::Going, Some(total)) => format!(
+            "{} of {}",
+            crate::browserfiles::bytes_said(download.bytes),
+            crate::browserfiles::bytes_said(total)
+        ),
+        _ => crate::browserfiles::bytes_said(download.bytes),
+    };
+    let state = match download.state {
+        DownloadState::Going => "downloading",
+        DownloadState::Done => "done: browser_save_download brings it into your folder",
+        DownloadState::Cancelled => "cancelled",
+        DownloadState::TooLarge => "cancelled by purlis: larger than a download may be",
+    };
+    let from = download
+        .origin
+        .as_deref()
+        .map(|origin| format!(" from {origin}"))
+        .unwrap_or_default();
+    format!(
+        "Download {}: {:?}, {size}{from}, {state}",
+        download.download, download.name
+    )
 }
 
 fn page_line(page: &PageSaid) -> String {
@@ -598,6 +652,38 @@ fn s_switch() -> Value {
     )
 }
 
+fn s_upload() -> Value {
+    schema(
+        json!({
+            "target": element("The page's file input (e12)."),
+            "files": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string" },
+                "description": "Each file to upload, as a path relative to your working folder \
+                                (reports/summary.pdf). Only files in it that you may read; no \
+                                link out of it is followed.",
+            },
+        }),
+        &["target", "files"],
+    )
+}
+
+fn s_save_download() -> Value {
+    schema(
+        json!({
+            "download": { "type": "string", "description": "The download, as an answer named it (d1)." },
+            "to": {
+                "type": "string",
+                "description": "Where in your working folder to save it, as a path relative to \
+                                it (downloads/report.pdf). Its folder must be there, and nothing \
+                                there already.",
+            },
+        }),
+        &["download", "to"],
+    )
+}
+
 fn s_none() -> Value {
     schema(json!({}), &[])
 }
@@ -654,12 +740,16 @@ fn c_scroll() -> Value {
     saying_changes(s_scroll())
 }
 
+fn c_upload() -> Value {
+    saying_changes(s_upload())
+}
+
 fn c_page_only() -> Value {
     saying_changes(s_page_only())
 }
 
 /// **The browser tools**, in the order the spec names them.
-pub const TOOLS: [Tool; 20] = [
+pub const TOOLS: [Tool; 23] = [
     Tool {
         name: "browser_open",
         description: "Open a new page at an http or https address in this chat's browser; it \
@@ -793,6 +883,30 @@ pub const TOOLS: [Tool; 20] = [
                       submits it: the login never reaches you. Once logged in, the browser \
                       reaches the login's site alone; use browser_new for any other site.",
         schema: s_login,
+        read_only: false,
+    },
+    Tool {
+        name: "browser_downloads",
+        description: "The browser's downloads: each one's name (d1), the page's name for it, \
+                      its size and where it came from. A download is held where no chat \
+                      reaches it until you save it with browser_save_download.",
+        schema: s_none,
+        read_only: true,
+    },
+    Tool {
+        name: "browser_save_download",
+        description: "Save a finished download into your working folder, as a new file. It \
+                      needs the person's yes for the site it came from; until then nothing is \
+                      saved, and the download stays in the browser.",
+        schema: s_save_download,
+        read_only: false,
+    },
+    Tool {
+        name: "browser_upload",
+        description: "Put files from your working folder into the page's file input, as if \
+                      chosen in its file dialog. Only files in your working folder that you may \
+                      read, at most 20 and 100 MB.",
+        schema: c_upload,
         read_only: false,
     },
 ];

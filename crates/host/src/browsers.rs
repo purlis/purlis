@@ -144,10 +144,12 @@ pub trait Screen: Send + Sync + 'static {
     /// Calls `tell` once, as the engine ends, with how it ended (#2745).
     fn when_it_ends(&self, tell: Box<dyn FnOnce(ScreenEnded) + Send>);
     /// Carries out `act` under its own id `call_id` (#2013), as the agent's under the lease of
-    /// `epoch` (#2014), and answers what the browser answered, or why it did not act: refused
+    /// `epoch` (#2014), in the project at `project`, whose files purlis keeps from chats it
+    /// keeps from the browser too (#2020), and answers what the browser answered, or why it did not act: refused
     /// unless the agent holds that lease, and cut if the person takes the browser over before
     /// it answers. It waits on the engine, so the host calls it off its runtime.
-    fn act(&self, call_id: &str, act: Act, epoch: u64) -> Result<Browsed, NotActed>;
+    fn act(&self, call_id: &str, act: Act, epoch: u64, project: &Path)
+    -> Result<Browsed, NotActed>;
     /// What it may reach from now on (#2018): its chat's reach and its browser sites as the
     /// window says they are now. One it cannot read is refused, and it reaches what it reached
     /// before.
@@ -819,14 +821,14 @@ impl Running for Browser {
         self.screen.reach_now(reach)
     }
 
-    fn act(&self, call_id: &str, act: Act) -> Result<Browsed, NotActed> {
+    fn act(&self, call_id: &str, act: Act, project: &Path) -> Result<Browsed, NotActed> {
         let epoch = match *self.lease() {
             (Driver::Person, _) => {
                 return Err(NotActed::Refused(A_BROWSER_THE_PERSON_DRIVES.into()));
             }
             (Driver::Agent, epoch) => epoch,
         };
-        self.screen.act(call_id, act, epoch)
+        self.screen.act(call_id, act, epoch, project)
     }
 
     fn log_in(&self, login: LogIn) -> Result<Browsed, NotActed> {
