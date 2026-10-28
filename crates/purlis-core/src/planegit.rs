@@ -3051,8 +3051,21 @@ fn summary(staged: &[String], program: &str) -> String {
 }
 
 /// What a plane path is part of, as a person would name it: a persona's memory, a
-/// workspace's todos, the dispatch log — or, for anything else, its top directory.
+/// workspace's todos, the dispatch log, a skill by its folder's name (`skill deploy`,
+/// `ops skill deploy`, SK-29) — or, for anything else, its top directory.
 fn group_of(path: &str) -> String {
+    if let Some(skill) = crate::planechange::skill_at(path) {
+        let owner = match &skill.whose {
+            purlis_skills::Whose::Project => String::new(),
+            purlis_skills::Whose::Workspace(name) | purlis_skills::Whose::Persona(name) => {
+                format!("{name} ")
+            }
+        };
+        return match skill.folder {
+            Some(folder) => format!("{owner}skill {folder}"),
+            None => format!("{owner}skills"),
+        };
+    }
     let parts: Vec<&str> = path.split('/').collect();
     match parts.as_slice() {
         ["personas", "_dispatch", ..] => "dispatch".into(),

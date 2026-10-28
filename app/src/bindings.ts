@@ -5024,7 +5024,7 @@ export type CertificateCheck = {
  *  What one changed path is part of, as the window's readers divide the plane
  *  ([`purlis_core::planechange::Kind`], which this mirrors for the bindings).
  */
-export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "git" | "chats";
+export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
 
 /**
  *  Where one change's member list is in a changes view, sent with its blocks

@@ -296,7 +296,13 @@ impl Model {
                     }
                 },
                 Kind::Sessions => held.sessions = sessions_of(root, name),
-                Kind::Project | Kind::Harness | Kind::Persona | Kind::Git | Kind::Chats => {}
+                // A skill is no part of a workspace's sections (SK-29).
+                Kind::Project
+                | Kind::Harness
+                | Kind::Persona
+                | Kind::Skills
+                | Kind::Git
+                | Kind::Chats => {}
             }
         }
     }

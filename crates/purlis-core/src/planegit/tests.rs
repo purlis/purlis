@@ -3812,6 +3812,24 @@ fn a_message_naming_every_group_it_has_counts_none_as_more() {
 }
 
 #[test]
+fn a_save_counts_skill_changes_by_the_skill_they_are_of() {
+    let staged: Vec<String> = [
+        "skills/deploy/SKILL.md",
+        "skills/deploy.toml",
+        "workspaces/ops/skills/review/SKILL.md",
+        "personas/steward/skills/triage/scripts/run.sh",
+        "workspaces/ops/todos/c.md",
+    ]
+    .map(String::from)
+    .to_vec();
+    assert_eq!(
+        summary(&staged, "purlis"),
+        "purlis save: 5 files (skill deploy 2, ops skill review 1, ops todos 1, steward skill \
+         triage 1)"
+    );
+}
+
+#[test]
 fn the_signers_words_are_kept_and_gits_progress_hints_and_bare_prefixes_are_not() {
     let err = "Rebasing (1/1)\rerror: gpg failed to sign the data\n\
                \n\
