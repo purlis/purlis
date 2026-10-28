@@ -33,8 +33,7 @@ use purlis_core::skills::grades::{self, Spent};
 use crate::planes::{PlaneId, Planes};
 use crate::skillchange::flag_on;
 use crate::skillgrade::{
-    GradeEnded, GradeLeftOut, GradePrice, InChats, Running, Subject, chats_on, held_to_its_end,
-    running,
+    GradeEnded, GradeLeftOut, GradePrice, InChats, Running, chats_on, held_to_its_end, running,
 };
 
 /// The event the window is told each step of a router's grade by.
@@ -276,8 +275,10 @@ pub(crate) async fn router_grade_start(
                 id.clone(),
                 Running {
                     plane: plane.clone(),
-                    subject: Subject::Router(router.clone()),
+                    // No skill's: a router's grade is stopped by its id alone.
+                    skill: String::new(),
                     stop: Arc::clone(&stop),
+                    after_edit: None,
                 },
             );
         }
@@ -345,6 +346,8 @@ pub(crate) async fn router_grade_start(
                         stop: &stop,
                         spent: Spent::default(),
                         tell: &|ran, tokens, _asked| tell(ran, tokens, None, None),
+                        // No grade under way is held for a router's (#3616).
+                        on_spent: &|_| {},
                         grade: &grade,
                         asked: 0,
                         harness: None,

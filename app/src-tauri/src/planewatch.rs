@@ -181,6 +181,7 @@ pub enum ChangeKind {
     Memory,
     Sessions,
     Persona,
+    Skills,
     Git,
     Chats,
 }
@@ -208,6 +209,7 @@ impl From<Change> for PlaneChange {
                 Kind::Memory => ChangeKind::Memory,
                 Kind::Sessions => ChangeKind::Sessions,
                 Kind::Persona => ChangeKind::Persona,
+                Kind::Skills => ChangeKind::Skills,
                 Kind::Git => ChangeKind::Git,
                 Kind::Chats => ChangeKind::Chats,
             },

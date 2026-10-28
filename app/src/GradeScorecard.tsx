@@ -69,6 +69,25 @@ const ARM_SAID: Record<ScoredRuns["arm"], string> = {
   "built-in-router": "With the built-in router",
 };
 
+/** A number of points with its sign: `+25`, `-5`, `0`. */
+function points(delta: number): string {
+  return `${delta > 0 ? "+" : ""}${delta}`;
+}
+
+/** The difference a grade measured, after how it ended: against the skill's previous version
+ *  where it compared one (SK-57), with the difference against no skill beside it, else against
+ *  no skill. */
+export function differenceSaid(card: GradeScorecard): string {
+  if (card.delta === null) return ".";
+  if (card.against === null)
+    return `, the skill made a difference of ${points(card.delta)} points.`;
+  const without =
+    card.delta_without === null
+      ? ""
+      : `, and the skill ${points(card.delta_without)} against no skill`;
+  return `, this version made a difference of ${points(card.delta)} points against its previous version ${card.against}${without}.`;
+}
+
 /** One arm of one test, in a sentence: what ran, what started the skill, and the asks. */
 export function runsSaid(runs: ScoredRuns, shouldTrigger: boolean): string {
   const verdict = runs.pass === null ? "not run" : runs.pass ? "passed" : "failed";
@@ -134,10 +153,10 @@ export function GradeScorecardTab({
       aria-label={`Scorecard of ${skill}`}
     >
       <p data-testid="grade-scorecard-about">
-        Graded {card.graded}, version {card.version}, on {card.ran_on}. {card.ended}
-        {card.delta === null
-          ? "."
-          : `, the skill made a difference of ${card.delta > 0 ? "+" : ""}${card.delta} points.`}
+        Graded {card.graded}
+        {card.after_edit ? ", after an edit you saved" : ""}, version {card.version}, on{" "}
+        {card.ran_on}. {card.ended}
+        {differenceSaid(card)}
       </p>
       {card.asked > 0 && (
         <p className="honest" data-testid="grade-scorecard-asked">

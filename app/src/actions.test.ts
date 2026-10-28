@@ -55,6 +55,8 @@ import {
   type Offer,
   type Ran,
   RESTART_NOTE,
+  MOVE_HERE_NOTE,
+  MOVE_TO_RUNNER_NOTE,
   noteOf,
   restartNoteNoState,
   titleOf,
@@ -114,6 +116,7 @@ function doing(): Doing & { calls: string[] } {
     linkWorkItem: note("linkWorkItem"),
     startFresh: note("startFresh"),
     restartChat: note("restartChat"),
+    moveChat: note("moveChat"),
     restartListed: note("restartListed"),
     askPersona: note("askPersona"),
     useSkill: note("useSkill"),
@@ -1808,6 +1811,7 @@ describe("carrying out a row", () => {
         // A chat's Activity, one row per chat tab (#1495).
         "openView:charter/activity/7,Activity · one",
         "openView:charter/activity/8,Activity · two",
+        "openView:charter/browsers/,Browsers",
         "openView:charter/chat-network/7,Network · one",
         "openView:charter/chat-network/8,Network · two",
         "openView:charter/todo/alpha/20260302-091400-review,Review the plan",
@@ -2301,9 +2305,10 @@ describe("the palette at fifty chats", () => {
       // front, before the branch's two in the catalogue. One more under `r` since #1137:
       // `Search in files` (`search` has an `r`). One more under `r` since #2176: `New browser`.
       // One more under `r` since #2679: `Add a Docker pool…` (`Docker` has an `r`). One more
-      // under `r` since #2921: `Keyboard shortcuts` (`keyboard` has an `r`).
+      // under `r` since #2921: `Keyboard shortcuts` (`keyboard` has an `r`). One more under `r`
+      // since #2027: `Open browsers` (`browsers` has an `r`).
       expect(at("re", loaded())).toBe(8);
-      expect(at("r", loaded())).toBe(18);
+      expect(at("r", loaded())).toBe(19);
       expect(at("rem", loaded())).toBe(1);
     });
 
@@ -2445,8 +2450,8 @@ describe("the palette at fifty chats", () => {
     // Your settings: Previews (Open Skill studio is offered only while its flag is on). 920
     // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
     // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
-    // or the Workspace level.
-    expect(offers).toHaveLength(920);
+    // or the Workspace level. 921 since #2027: Open browsers.
+    expect(offers).toHaveLength(921);
   });
 
   /**
@@ -3227,6 +3232,34 @@ describe("a branch's file and folder rows (FM-10)", () => {
     const own = fileRows({ on: "file", at: at(""), kind: "folder" });
 
     expect(verbs(own)).not.toContain("addToChat");
+  });
+});
+
+describe("Move to runner and Move here on a chat's tab (#2048)", () => {
+  const tabs = openTab(noTabs(), 7, "one");
+  const tab = tabs.order[0];
+
+  it("offers a row per pool a chat here can move to, and asks for the move it names", async () => {
+    const offers = catalogue(now({ tabs, movesTo: () => ["builds", "big"] }));
+    expect(catalogued(offers).get(`tab.move:${tab}:builds`)).toMatchObject({
+      title: "Move chat one to pool builds",
+      available: true,
+      note: MOVE_TO_RUNNER_NOTE,
+    });
+    expect(catalogued(offers).get(`tab.move:${tab}:big`)?.title).toBe("Move chat one to pool big");
+    const hands = doing();
+    await run(offers, `tab.move:${tab}:big`, hands);
+    expect(hands.calls).toEqual([`moveChat:${tab},big`]);
+  });
+
+  it("offers a chat on a runner Move here, and a chat that does not move nothing", async () => {
+    const offers = catalogue(now({ tabs, movesTo: () => [null] }));
+    expect(catalogued(offers).get(`tab.move:${tab}:`)).toMatchObject({
+      title: "Move chat one here",
+      note: MOVE_HERE_NOTE,
+    });
+    const none = catalogue(now({ tabs, movesTo: () => [] }));
+    expect([...catalogued(none).keys()].filter((id) => id.startsWith("tab.move:"))).toEqual([]);
   });
 });
 

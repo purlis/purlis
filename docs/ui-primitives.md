@@ -442,8 +442,9 @@ own `min-width: max-content` beside the class.
 
 | Prop | Says |
 | --- | --- |
-| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, #3214) |
+| `variant` | `secondary` (the default, the plain button), `primary` (the answer purlis suggests), `ghost` (no box until the pointer reaches it), `danger` (what cannot be undone from purlis, D-1719-3), `grants` (an answer that grants, an Allow or an Accept), `soft-accent` (a suggestion that is not the answer), `warning-soft` (care, without ending anything), `link` (a button that reads as a link, as tall as its words so it can stand in a sentence), `quiet` (a ghost whose words are in the quiet tier until the pointer reaches it: a strip's end mark, a pane's split and close, a line's own marks, a breadcrumb's crumbs and a tab's task chip, #3214, #3264) |
 | `size` | `sm` 24, `md` 28 (the default), `lg` 32, at the default text size and density; `lg` only beside a list's main filter field |
+| `inline` | words in a line of words, a breadcrumb's crumb (#3264): as tall as the line, no box padding or edge, cut to an ellipsis where the line squeezes it, underlined (no fill) under the pointer and the keyboard; words only |
 | `icon` | the icon before the words, drawn as the `icon` part; `IconButton` takes only an icon and an `aria-label`, and is square |
 | `onPress`, `isDisabled`, `isSelected` | React Aria's own words; `onClick` still reaches a Radix trigger the button is the `asChild` of |
 | `tooltip` | its hint, the shared tooltip ([the tooltip family](#the-tooltip-family)), never a `title`; on an `IconButton`, a second line under its name |
@@ -1602,9 +1603,10 @@ role exists for. Two consequences worth knowing before the next one:
   sentence beside it (`aria-describedby`); Radix's focus scope skips a disabled button, so
   Shift+Tab from Cancel reaches Close. Escape still answers Cancel.
 
-And the **persona card** (`@radix-ui/react-popover`, `app/src/Panels.tsx`): what a row in the
-right-hand region's persona list opens. It is the first popover in the window, and it was picked
-over the other two surfaces Radix has for the same content:
+And the **persona card** (first drawn on Radix's popover, now the popover family's, `ui/popover`;
+`app/src/Panels.tsx`): what a row in the right-hand region's persona list opens. It is the first
+popover in the window, and it was picked over the other two surfaces Radix has for the same
+content:
 
 - **Not a dialog**, because a dialog is modal and modal is wrong here twice. Radix marks
   everything outside an open dialog `aria-hidden`, which then
@@ -1645,7 +1647,8 @@ opens nothing else, such as an extension's declared row.
 An extension's view — persona statistics — opens in a tab of its own the same way, from a button
 on the personas panel's heading, a button on a persona's tab, or its palette row.
 
-And a **Chats row's card** (`@radix-ui/react-popover`, `app/src/ChatsSection.tsx`, #1675):
+And a **Chats row's card** (the popover family's `AnchoredPopover`, `app/src/ChatsSection.tsx`,
+#1675):
 what a chat's one-line row says when it is rested on, its state in words, what it is doing, its
 persona, harness, workspace, time in its state, tasks, own branch, handoffs and a task's tokens.
 It is the popover the window already has, used as a tooltip, and not a package of its own:
@@ -2592,6 +2595,18 @@ file (`inboxScope.ts`, `projects[path].inbox.scope`). A scope with nothing in it
 wait in the nearest wider scope and widens in one press, and a notification about a chat the
 scope leaves out widens it to the project's before it lands. Notices and updates are the
 project's and are listed whatever the scope.
+
+**The Browsers grid** (#2027, `BrowsersGridTab.tsx`, `browsersGrid.ts`) is a view tab, one per
+project, opened by *Open browsers* in the palette and on the Chats view's heading while the
+project has a browser. It wears the Inbox's switch over the same three scopes, kept as
+`projects[path].browsers.scope`; This workspace is the strip the tab is on, and All projects is
+every project this window holds. Its tiles are one `ListBox` with `layout="grid"`: one Tab stop,
+the arrows walk the grid, and a press or Enter opens the browser's view in its own project,
+which comes to the front. A tile is the browser's thumbnail view (about a frame a second, drawn
+only while the tab can be seen) over its name and, in the quiet tier, where it is: its project
+among every project's, its workspace, its page and device as the chip says them, and who drives
+it. An empty scope is the empty state family, saying how many run in the nearest wider scope and
+widening in one press.
 
 **An Inbox row reads in three ranks** (`InboxRow.tsx`), from the existing tokens only:
 

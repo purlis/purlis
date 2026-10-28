@@ -2103,7 +2103,13 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         asks: derive(&waiting)
             .into_iter()
             .filter(|ask| !chats.kept_from_the_window(ask.session))
-            .chain(crate::oldplugins::notice_of(root).map(|old| old_harness_plugins(&old)))
+            .chain(
+                crate::oldplugins::notice_of(
+                    root,
+                    &held.proposals().paths_of(crate::proposals::BY_PURLIS),
+                )
+                .map(|old| old_harness_plugins(&old)),
+            )
             .collect(),
     }
 }

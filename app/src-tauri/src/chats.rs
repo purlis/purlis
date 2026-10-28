@@ -193,6 +193,9 @@ pub struct ChatForSkills {
     pub cwd: Option<PathBuf>,
     /// Whether the plane's skills reached it at its start ([`Running::plane_skills`], #3445).
     pub plane_skills: bool,
+    /// Why its chats get no skills, where its harness is a declared one skills are not
+    /// supported on (SK-30): [`purlis_core::skills::not_supported_on`].
+    pub not_supported: Option<String>,
 }
 
 /// One chat open here that its start routed by a router extension ([`Chats::routings`]).
@@ -226,9 +229,11 @@ const MOST_AT_ONCE: usize = 200;
 /// plane — and so a test can see exactly when a write would happen.
 pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 
-/// Told as each chat starts, BEFORE its program does: its number, the harness it runs and the
-/// conversation charter chose for it. Everything the board needs to judge a report about it.
-pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>) + Send + Sync>;
+/// Told as each chat starts, BEFORE its program does: its number, the harness it runs, the
+/// conversation charter chose for it, and whether it is a grade's chat, which the window draws
+/// nowhere and the board never queues (SK-16, #3583). Everything the board needs to judge a
+/// report about it.
+pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>, bool) + Send + Sync>;
 
 /// Told as each chat starts, BEFORE its program does, of the run the start begins: the chat's
 /// number, its id, the run's id, why it began and what it is (ADR 0066, #868), and whether its
@@ -1378,6 +1383,16 @@ impl Chats {
         on_pools: Arc<dyn crate::poolprofiles::ProfilesOnPools>,
     ) {
         self.profiles_on_pools = Some(on_pools);
+    }
+
+    /// **Keeps `profile` on pool `pool`'s runner, signed in there** (#2049), as a start there
+    /// does first: what a chat moving there asks before its conversation goes (#2048). `Ok`
+    /// where this machine keeps no pool to ready it on.
+    pub fn ready_profile_on(&self, pool: &str, profile: &str) -> Result<(), String> {
+        match &self.profiles_on_pools {
+            Some(on_pools) => on_pools.ready_to_move(&self.project, pool, profile),
+            None => Ok(()),
+        }
     }
 
     /// This machine's config home, where the pools it keeps are, where it keeps any (#2050).
@@ -2723,6 +2738,36 @@ impl Chats {
         }
     }
 
+    /// **Starts chat `session` again on its conversation, where its workspace's chats run
+    /// now** (#2048): what a move ends with, once the chat's work and conversation are there.
+    /// The old run stays until the new one has started, as [`Self::restart`]'s does; ending it
+    /// is the caller's next step. A person's opt-out is never carried: it starts sandboxed.
+    pub fn start_again_where_it_runs(&self, session: u32, size: Size) -> Result<u32, String> {
+        self.claim(session)?;
+        let started = self.again_on_its_conversation(session).and_then(|again| {
+            if again.resume.is_none() {
+                return Err(no_conversation(session));
+            }
+            self.start_recorded_told(&again, size, Why::Relaunch, None, None)
+        });
+        match started {
+            Ok(started) => self.restarted(session, started, true),
+            Err(why) => {
+                self.unclaim(session);
+                Err(why)
+            }
+        }
+    }
+
+    /// **Says `note` on chat `session`'s tab** with what its start found to say (#2048): what a
+    /// move found that the person is to look at.
+    pub fn note_on_its_tab(&self, session: u32, note: String) {
+        lock(&self.late_notes)
+            .entry(session)
+            .or_default()
+            .push(note);
+    }
+
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.
     fn claim(&self, session: u32) -> Result<(), String> {
         if lock(&self.restarting).insert(session) {
@@ -3889,14 +3934,14 @@ impl Chats {
             // host kept them (#2006).
             if reattaching {
                 if let Some(reattached) = lock(&self.reattached).as_ref() {
-                    reattached(session, harness, conversation.clone());
+                    reattached(session, harness, conversation.clone(), chat.graded);
                 }
                 return;
             }
             // A new program knows no model until its harness says (#1021).
             lock(&self.models).remove(&session);
             if let Some(starting) = lock(&self.starting).as_ref() {
-                starting(session, harness, conversation.clone());
+                starting(session, harness, conversation.clone(), chat.graded);
             }
             // A run on a runner is written there, where it runs, never here.
             if let Some(beginning) = lock(&self.beginning).as_ref().filter(|_| !on_the_runner)
@@ -5022,6 +5067,13 @@ impl Chats {
                 .as_deref()
                 .and_then(purlis_core::skillspan::PromptSalt::of_chat),
             cwd: running.chat.cwd.clone(),
+            // As its start read its declaration: what a running chat started with (decision 15).
+            not_supported: running
+                .declared
+                .as_ref()
+                .filter(|_| running.harness.is_none())
+                .and_then(purlis_core::skills::not_supported_on)
+                .map(|one| one.said),
         })
     }
 

@@ -37,6 +37,7 @@ fn a_line_no_window_took_moves_the_hosts_board_and_one_a_window_took_does_not() 
         serde_json::to_value(Move::Opened {
             reports_its_process: false,
             conversation: None,
+            kept_from_the_window: false,
         })
         .unwrap(),
     );
@@ -74,6 +75,7 @@ fn a_program_that_ends_with_no_window_is_told_to_the_hosts_board_with_its_code()
             serde_json::to_value(Move::Opened {
                 reports_its_process: false,
                 conversation: None,
+                kept_from_the_window: false,
             })
             .unwrap(),
         );
@@ -148,6 +150,7 @@ fn one_of_every_move() -> Vec<(u32, crate::state::Move)> {
             Move::Opened {
                 reports_its_process: false,
                 conversation: Some("0199a2f4-1c2b-7f00-8000-000000000001".into()),
+                kept_from_the_window: false,
             },
         ),
         (
@@ -155,6 +158,7 @@ fn one_of_every_move() -> Vec<(u32, crate::state::Move)> {
             Move::Opened {
                 reports_its_process: true,
                 conversation: None,
+                kept_from_the_window: false,
             },
         ),
         (

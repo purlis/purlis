@@ -258,6 +258,32 @@
   line-height: inherit;
 }
 
+/* **Words in a line of words** (`inline`, #3264): a breadcrumb's crumb. As tall as the line and
+   in its words' size, with no box padding and no edge, so it measures as the words alone; where
+   the line squeezes it, its words cut to an ellipsis. It is a box of words, not a flex box, so
+   the ellipsis and the cut are its own, as a native button's are. A target inline in text is
+   exempt from the target size (WCAG 2.5.8). */
+[data-scope="button"][data-part="root"][data-inline][data-size] {
+  display: inline-block;
+  overflow: hidden;
+  block-size: auto;
+  padding: 0;
+  border-width: 0;
+  font-size: inherit;
+  line-height: inherit;
+  text-overflow: ellipsis;
+}
+
+/* Under the pointer and the keyboard it is underlined in the primary words, as a link is, and
+   draws no fill: a fill with no padding would sit tight against the letters. */
+[data-scope="button"][data-part="root"][data-inline]:is([data-hovered], [data-focus-visible]):not(
+    [data-disabled]
+  ) {
+  color: var(--text-primary);
+  background-color: transparent;
+  text-decoration: underline;
+}
+
 /* An icon button is square at its size. */
 [data-scope="button"][data-part="root"][data-icon-only] {
   padding-inline: 0;

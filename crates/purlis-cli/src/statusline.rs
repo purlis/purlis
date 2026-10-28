@@ -63,7 +63,7 @@
 //! > being written months earlier.
 //!
 //! [`crate::statusline::run`] therefore records the turn on **both** branches, and
-//! `tests/statusline.rs` fails if either stops. `print()` and not a bare exit, too: Claude
+//! `tests/it/statusline.rs` fails if either stops. `print()` and not a bare exit, too: Claude
 //! Code reads a line from this command, and an empty one is how it is told there is nothing
 //! to show.
 //!

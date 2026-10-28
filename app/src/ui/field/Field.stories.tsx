@@ -12,7 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { ListFilter, Search } from "lucide-react";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
 import { Dialog } from "../dialog/Dialog";
 import { FIELD_SIZES, Form, TextArea, TextField, type PlainTextFieldProps } from "./Field";
@@ -192,7 +192,10 @@ export const LongRefusalLastInADialog: Story = {
       ) as HTMLElement;
     const body = async () =>
       (await dialog()).querySelector('[data-scope="dialog"][data-part="body"]') as HTMLElement;
-    await waitFor(() => expect(page.getByRole("textbox", { name: "Name" })).toHaveFocus());
+    await untilFocused(
+      () => page.getByRole("textbox", { name: "Name" }),
+      "The dialog: the keyboard starts in Name",
+    );
     await expect(page.getByRole("textbox", { name: "Profile" })).toHaveAccessibleDescription(
       LONG_REFUSAL,
     );
@@ -323,7 +326,7 @@ export const SendsOnModEnter: Story = {
     await userEvent.keyboard(SEND);
     // Not sent: the name is wrong, said under it, and the keyboard is back in it.
     await expect(canvas.getByRole("status")).toHaveTextContent("Nothing sent");
-    await waitFor(() => expect(name).toHaveFocus());
+    await untilFocused(() => name, "Not sent: the keyboard is back in Name");
     expectFocusInSight();
     await userEvent.keyboard("{Backspace>5/}-name");
     await userEvent.tab();

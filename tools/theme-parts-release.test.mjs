@@ -5,13 +5,14 @@
 // Run with `node --test tools/`.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  FILES,
   PARTS,
   files,
   literals,
@@ -116,7 +117,7 @@ test("the release step raises the version once and leaves no NEXT behind", () =>
   const root = tree({
     [PARTS]: PARTS_RS,
     "crates/purlis-core/src/theme/parts_chip.rs": FAMILY_RS,
-    "crates/purlis-cli/tests/theme.rs": TEST_RS,
+    "crates/purlis-cli/tests/it/theme.rs": TEST_RS,
     "crates/purlis-core/src/elsewhere.rs": "static NEXT: u32 = 0;\n",
   });
   assert.equal(pending(root).length, 6);
@@ -153,6 +154,12 @@ test("--check refuses while a NEXT is left, and passes once the release step ran
 test("an unknown argument is refused", () => {
   assert.deepEqual(mode(["--bogus"]), { refused: "--bogus" });
   assert.equal(spawnSync(process.execPath, [SCRIPT, "--bogus"]).status, 2);
+});
+
+// A file the tool names that is not there reads as empty, so a NEXT in the file it moved to
+// would ship unpinned with nothing said: the CLI's tests moved into `tests/it/` (#3613).
+test("every file outside the theme engine that this repository names is there", () => {
+  for (const file of FILES) assert.ok(existsSync(join(REPO, file)), `${file} is not there`);
 });
 
 test("this repository's own NEXT definition is never counted as one left", () => {

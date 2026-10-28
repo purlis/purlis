@@ -12,7 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "../../actions";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "../../TitleBarSwitch";
 
 /** The prototype's projects and workspaces, with what waits in each. */
@@ -193,7 +193,8 @@ function apart(one: number[], other: number[]): number {
 
 const chipsOf = (bar: HTMLElement) =>
   [...bar.querySelectorAll<HTMLElement>('[data-part="workspace"]')].filter(
-    (one) => one.dataset.scope === "titlebar",
+    // The plane root's house is not a workspace's chip (#3654).
+    (one) => one.dataset.scope === "titlebar" && one.dataset.variant !== "root",
   );
 
 /**
@@ -316,6 +317,53 @@ export const Unpinned: Story = {
 };
 
 /**
+ * **The plane root's chip** (#3654, spec #3647, the prototype's Root A): a house right after the
+ * project's name and its slash, outside the strip, 28px like a chip. A press brings the plane
+ * root in front: it takes the accent's wash and no workspace's chip is current; a pin's press
+ * takes it back. It is a Tab stop of its own, and its picture is the root in front.
+ */
+export const Root: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const bar = canvas.getByTestId("title-bar");
+    const root = canvas.getByRole("button", { name: "Plane root" });
+    const strip = canvas.getByRole("toolbar", { name: "Pinned workspaces" });
+    await expect(strip.contains(root)).toBe(false);
+    const slash = bar.querySelector('[data-part="slash"]');
+    if (slash === null) throw new Error("no slash");
+    // After the slash, before the strip, in the bar's row.
+    await expect(root.getBoundingClientRect().left).toBeGreaterThan(
+      slash.getBoundingClientRect().right,
+    );
+    await expect(strip.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+      root.getBoundingClientRect().right,
+    );
+    await expect(Math.round(root.getBoundingClientRect().height)).toBe(28);
+    const rest = getComputedStyle(root).backgroundColor;
+    await userEvent.click(root);
+    await waitFor(() => expect(root).toHaveAttribute("aria-current", "true"));
+    await expect(canvas.getByRole("status")).toHaveTextContent(`Went to ${OUTSIDE}`);
+    await expect(chipsOf(bar).some((one) => one.hasAttribute("aria-current"))).toBe(false);
+    await userEvent.hover(canvas.getByText(`Went to ${OUTSIDE}`));
+    await waitFor(() => expect(root).not.toHaveAttribute("data-hovered"));
+    await expect(getComputedStyle(root).backgroundColor).not.toBe(rest);
+    // The keyboard reaches it on its own stop, the one before the strip's.
+    chipsOf(bar)[0].focus();
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    await expect(root).toHaveFocus();
+    await waitFor(() => expect(root).toHaveAttribute("data-focus-visible"));
+    expectFocusInSight();
+    // A pin's press takes the chosen look back.
+    await userEvent.click(chipsOf(bar)[1]);
+    await waitFor(() => expect(root).not.toHaveAttribute("aria-current"));
+    // The picture: the plane root in front.
+    await userEvent.click(root);
+    await waitFor(() => expect(root).toHaveAttribute("aria-current", "true"));
+    root.blur();
+    await userEvent.hover(canvas.getByText(`Went to ${OUTSIDE}`));
+  },
+};
+
+/**
  * **A name with descenders** (#3326): `git-ci-cd`, dashed while it is not pinned, beside the
  * pinned and the current chips. Every chip's name box holds the font's whole height, ascent to
  * descent, so the clip that draws its ellipsis never cuts a g, j, p, q or y. One rule draws the
@@ -355,7 +403,7 @@ export const WorkspacePopover: Story = {
     const filter = await screen.findByRole("combobox", {
       name: "Go to a workspace in charter…",
     });
-    await waitFor(() => expect(filter).toHaveFocus());
+    await untilFocused(() => filter, "All workspaces: the keyboard starts in the filter");
     const popover = filter.closest<HTMLElement>('[data-scope="popover"][data-part="root"]');
     await expect(Math.round(popover?.getBoundingClientRect().width ?? 0)).toBe(320);
     const list = screen.getByRole("listbox", { name: "Workspaces in charter" });
@@ -379,7 +427,7 @@ export const ProjectSwitcher: Story = {
     await expect(Math.round(crumb.getBoundingClientRect().height)).toBe(28);
     await userEvent.click(crumb);
     const filter = await screen.findByRole("combobox", { name: "Go to a project or workspace…" });
-    await waitFor(() => expect(filter).toHaveFocus());
+    await untilFocused(() => filter, "The crumb: the keyboard starts in the filter");
     const popover = filter.closest<HTMLElement>('[data-scope="popover"][data-part="root"]');
     await expect(Math.round(popover?.getBoundingClientRect().width ?? 0)).toBe(560);
     await userEvent.keyboard("{ArrowDown}");

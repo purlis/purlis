@@ -12,6 +12,9 @@ import { userEvent } from "@testing-library/user-event";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { drawnWith } from "../../cascade.testkit";
+import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
+import { PopoverDialog, PopoverTrigger } from "../popover/Popover";
+import { StatusItem } from "../status/StatusItem";
 import { tipOf } from "../tooltip/tooltip.testkit";
 import { Button, ButtonRow, IconButton, ToggleButton, type ButtonVariant } from "./Button";
 
@@ -299,6 +302,26 @@ describe("the family's look, from the tokens (button.css)", () => {
     heldToTheTokens(quiet);
   });
 
+  // #3264: a breadcrumb's crumb, words in a line of words.
+  it("draws an inline quiet button as the line's words, cut to an ellipsis, underlined under the pointer", () => {
+    render(
+      <Button variant="quiet" size="sm" inline>
+        steward 4
+      </Button>,
+    );
+    const crumb = screen.getByRole("button", { name: "steward 4" });
+    expect(crumb).toHaveAttribute("data-inline", "");
+    expect(drawnWith(crumb, "block-size")).toBe("auto");
+    expect(drawnWith(crumb, "padding")).toBe("0");
+    expect(drawnWith(crumb, "border-width")).toBe("0");
+    expect(drawnWith(crumb, "font-size")).toBe("inherit");
+    expect(drawnWith(crumb, "text-overflow")).toBe("ellipsis");
+    expect(drawnWith(crumb, "color")).toBe("var(--text-quiet)");
+    expect(drawnWith(crumb, "background", { hover: true })).toBe("transparent");
+    expect(drawnWith(crumb, "color", { hover: true })).toBe("var(--text-primary)");
+    expect(drawnWith(crumb, "text-decoration", { hover: true })).toBe("underline");
+  });
+
   it("draws a grant as plain as the secondary, edged in the accent (ADR 0097 §6)", () => {
     render(<Button variant="grants">Allow</Button>);
     const grant = screen.getByRole("button", { name: "Allow" });
@@ -381,5 +404,125 @@ describe("a key a button's handler leaves alone", () => {
     await userEvent.keyboard("{Escape}");
     expect(own).toHaveBeenCalledWith("Escape");
     expect(row).toHaveBeenCalledWith("Escape");
+  });
+});
+
+describe("an unavailable button that opens a popover or a menu (#3116)", () => {
+  /** Each way a person presses it: the pointer, Enter, Space, a screen reader's press (a click
+   *  with no pointer before it), and the arrows a menu's trigger opens on. */
+  async function pressedEveryWay(button: HTMLElement) {
+    await userEvent.click(button);
+    button.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(" ");
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{ArrowUp}");
+    fireEvent.click(button, { detail: 0 });
+  }
+
+  const opener = (tooltip?: string) => (
+    <Button isDisabled tooltip={tooltip}>
+      Share
+    </Button>
+  );
+
+  for (const tooltip of ["Only the owner shares this project.", undefined])
+    describe(tooltip ? "with a tooltip saying why" : "with no tooltip", () => {
+      it("opens no popover", async () => {
+        const opened = vi.fn();
+        render(
+          <PopoverTrigger onOpenChange={opened}>
+            {opener(tooltip)}
+            <PopoverDialog aria-label="Share">shared</PopoverDialog>
+          </PopoverTrigger>,
+        );
+        await pressedEveryWay(screen.getByRole("button", { name: "Share" }));
+        expect(opened).not.toHaveBeenCalled();
+        expect(screen.queryByRole("dialog")).toBeNull();
+      });
+
+      it("opens no menu", async () => {
+        const opened = vi.fn();
+        render(
+          <MenuTrigger onOpenChange={opened}>
+            {opener(tooltip)}
+            <Menu aria-label="Share">
+              <MenuItem id="link" textValue="Copy link">
+                <MenuWords said="Copy link" />
+              </MenuItem>
+            </Menu>
+          </MenuTrigger>,
+        );
+        await pressedEveryWay(screen.getByRole("button", { name: "Share" }));
+        expect(opened).not.toHaveBeenCalled();
+        expect(screen.queryByRole("menu")).toBeNull();
+      });
+    });
+
+  it("keeps its tooltip and its reason as a trigger", () => {
+    render(
+      <MenuTrigger>
+        {opener("Only the owner shares this project.")}
+        <Menu aria-label="Share">
+          <MenuItem id="link" textValue="Copy link">
+            <MenuWords said="Copy link" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>,
+    );
+    const share = screen.getByRole("button", { name: "Share" });
+    expect(share).toHaveAttribute("aria-disabled", "true");
+    expect(share).not.toBeDisabled();
+    expect(share).toHaveAttribute("tabindex", "0");
+    expect(tipOf(share)).toBe("Only the owner shares this project.");
+    expect(share).toHaveAccessibleDescription("Only the owner shares this project.");
+    // Still said to be a menu's trigger, and a closed one (D-3116-1): only the press is dropped.
+    expect(share).toHaveAttribute("aria-haspopup", "true");
+    expect(share).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("opens nothing as a status item either, the other pressable on the shared element", async () => {
+    const branches = (isDisabled: boolean, opened: () => void) => (
+      <MenuTrigger onOpenChange={opened}>
+        <StatusItem isDisabled={isDisabled} tooltip="No branch to switch to here.">
+          main
+        </StatusItem>
+        <Menu aria-label="Branches">
+          <MenuItem id="main" textValue="main">
+            <MenuWords said="main" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>
+    );
+    // Available, a press opens the menu: the trigger reaches it.
+    const reached = vi.fn();
+    const { unmount } = render(branches(false, reached));
+    await userEvent.click(screen.getByRole("button", { name: "main" }));
+    expect(reached).toHaveBeenCalledWith(true);
+    unmount();
+
+    const opened = vi.fn();
+    render(branches(true, opened));
+    const item = screen.getByRole("button", { name: "main" });
+    await pressedEveryWay(item);
+    expect(opened).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(item).toHaveAttribute("aria-haspopup", "true");
+    expect(item).toHaveAccessibleDescription("No branch to switch to here.");
+  });
+});
+
+describe("a button drawn inline", () => {
+  it("is only a ghost: a variant with a ground of its own is a type error (#3264)", () => {
+    // @ts-expect-error -- the plain button has a ground, tight against its letters inline.
+    const plain = <Button inline aria-label="Save" />;
+    // @ts-expect-error -- so has the suggested answer.
+    const primary = <Button inline variant="primary" aria-label="Save" />;
+    const ghost = (
+      <Button inline variant="ghost">
+        Save
+      </Button>
+    );
+    expect([plain, primary, ghost]).toHaveLength(3);
   });
 });

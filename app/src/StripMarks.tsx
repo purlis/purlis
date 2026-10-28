@@ -388,7 +388,9 @@ export function Closer({ offer, onPress }: { offer?: Offer; onPress: (offer: Off
       <button
         // A tab showing only a view closes and ends nothing, so its `×` does not wear the danger
         // hover a chat's does — the look may not say more than the act does, either way.
-        className={clsx("closer", closesOnly(offer.does) && "keeps", minimise && "minimise")}
+        // `ui-tabs-control`: the tabs family's control on its strip, by which the button
+        // family's lint knows it (#3012); `closer` is where it stands.
+        className={clsx("ui-tabs-control closer", { keeps: closesOnly(offer.does), minimise })}
         data-minimise={minimise ? "" : undefined}
         // The tabs family's `×` (`ui/tabs`), which ends a chat unless it only closes a view.
         {...tabPart("closer")}

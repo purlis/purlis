@@ -4,7 +4,7 @@
 use super::*;
 use purlis_core::skills::grade::{Fixtures, GradeRequest, Read, TriggerTest};
 
-fn planned(query: &str) -> Planned {
+pub(super) fn planned(query: &str) -> Planned {
     let tests = vec![TriggerTest {
         query: query.to_owned(),
         should_trigger: true,
@@ -45,6 +45,8 @@ fn planned(query: &str) -> Planned {
             from: grades::cap::From::Yours,
         },
         consent: Some("abc".into()),
+        previous: None,
+        previous_refused: None,
         copy: None,
     }
 }
@@ -102,7 +104,25 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     );
     assert_eq!(plan.chat_minutes, 5);
     assert_eq!(plan.sandbox.as_deref(), Some("full sandbox"));
-    assert_eq!((plan.refused, plan.consent.as_deref()), (None, Some("abc")));
+    let dearest = grades::price::of_model(None);
+    let shown = grades::consent_on(
+        "abc",
+        &grades::Terms {
+            profile: Some("work"),
+            model: None,
+            token_cap: 50_000,
+            limit_usd: grades::cap::Cap {
+                tokens: 50_000,
+                from: grades::cap::From::Yours,
+            }
+            .cost_usd(&dearest),
+        },
+    );
+    assert_eq!(
+        (plan.refused, plan.consent.as_deref()),
+        (None, Some(shown.as_str())),
+        "what it grades, and the profile, model and limits it shows"
+    );
 
     let refused = SkillGradePlan::of(
         &planned("ship it"),
@@ -162,8 +182,9 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
             grade.to_owned(),
             Running {
                 plane: plane.clone(),
-                subject: Subject::Skill("deploy".into()),
+                skill: "deploy".into(),
                 stop: Arc::new(AtomicBool::new(false)),
+                after_edit: None,
             },
         );
         let failed = std::cell::Cell::new(false);
@@ -255,8 +276,11 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
         spent: Spent::default(),
         plugins_off: None,
         model: Some("claude-sonnet-4-5".into()),
+        previous: None,
+        after_edit: false,
     };
     let card = GradeScorecard::of(&graded, |chat| chat != "01B");
+    assert_eq!(card.against, None, "no previous version was compared");
     assert_eq!(card.ran_on, "Claude Code · claude-sonnet-4-5");
     assert_eq!(card.version, "Changes not saved");
     assert_eq!(card.ended, "Finished");
@@ -313,4 +337,165 @@ fn a_screen_sent_in_pieces_is_kept_whole() {
         None,
         "nothing was shown"
     );
+}
+
+/// SK-57 (#3237): a grade against the skill's previous version shows all three arms, and its
+/// difference against that version, with the difference against no skill beside it.
+#[test]
+fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_differences() {
+    use purlis_core::skills::grade::{ArmScore, GradeEnd, GradeReport, Stat, TriggerScore};
+    let score = |arm: Arm| TriggerScore {
+        query: "ship it".into(),
+        should_trigger: true,
+        arm,
+        runs: 3,
+        triggered: 3,
+        rate: Some(1.0),
+        pass: Some(true),
+        chats: vec![None; 3],
+        asked: 0,
+    };
+    let arm = |arm: Arm, mean: f64| ArmScore {
+        arm,
+        pass_rate: Some(Stat {
+            mean,
+            stddev: 0.0,
+            min: mean,
+            max: mean,
+        }),
+        tokens: None,
+        seconds: None,
+        chats: 3,
+        not_run: 0,
+    };
+    let graded = Graded {
+        v: grades::VERSION,
+        grade: "01GRADE".into(),
+        skill: "deploy".into(),
+        level: Some("skills".into()),
+        tree: "uncommitted".into(),
+        commit: None,
+        harness: Some("claude".into()),
+        profile: Some("work".into()),
+        ts: "2026-10-28T10:00:00+00:00".into(),
+        runs: 3,
+        report: GradeReport {
+            grader: grading::BUILT_IN.into(),
+            triggers: vec![score(Arm::With), score(Arm::Without), score(Arm::Previous)],
+            arms: vec![
+                arm(Arm::With, 1.0),
+                arm(Arm::Without, 0.25),
+                arm(Arm::Previous, 0.75),
+            ],
+            delta: Some(0.25),
+            ended: GradeEnd::Whole,
+            not_started: None,
+            cap: None,
+            spent_tokens: None,
+            cost_cap_usd: None,
+            spent_usd: None,
+            counted_usd: None,
+            priced: None,
+        },
+        spent: Spent::default(),
+        plugins_off: None,
+        model: None,
+        previous: Some("fedcba9876543210fedcba9876543210fedcba98".into()),
+        after_edit: true,
+    };
+    let card = GradeScorecard::of(&graded, |_| false);
+    assert_eq!(card.against.as_deref(), Some("fedcba987654"));
+    assert_eq!(card.delta, Some(25.0), "against the previous version");
+    assert_eq!(card.delta_without, Some(75.0), "against no skill");
+    assert!(card.after_edit);
+    let [test] = card.tests.as_slice() else {
+        panic!("{:?}", card.tests);
+    };
+    assert_eq!(
+        test.arms.iter().map(|arm| arm.arm).collect::<Vec<_>>(),
+        [ScoredArm::With, ScoredArm::Without, ScoredArm::Previous]
+    );
+}
+
+/// #3582: what a grade's marker is told its chats spent is what they said, and no more: every
+/// chat that started counts its tokens and its cost, whatever ended it, and only a chat that ran
+/// counts as one.
+#[test]
+fn what_a_grades_chats_spent_is_counted_from_what_each_said_3582() {
+    let chat = |tokens: Option<u64>, cost_usd: Option<f64>, end: ChatEnd| ChatRan {
+        chat: None,
+        started: Vec::new(),
+        tokens,
+        cost_usd,
+        ms: 0,
+        end,
+    };
+    let mut spent = Spent::default();
+    spent = counted(spent, &chat(Some(4_000), Some(0.04), ChatEnd::Turn));
+    spent = counted(spent, &chat(Some(1_000), Some(0.01), ChatEnd::Asked));
+    spent = counted(spent, &chat(Some(500), None, ChatEnd::TimedOut));
+    spent = counted(spent, &chat(None, Some(f64::NAN), ChatEnd::Cancelled));
+    spent = counted(
+        spent,
+        &chat(None, None, ChatEnd::NotStarted { why: "no".into() }),
+    );
+    assert_eq!(spent.chats, 2, "the turn and the time out ran");
+    assert_eq!(spent.tokens, Some(5_500), "every chat that said its tokens");
+    assert!((spent.cost_usd.unwrap() - 0.05).abs() < 1e-9, "{spent:?}");
+    let past = counted(spent, &chat(Some(u64::MAX), Some(-1.0), ChatEnd::OverCap));
+    assert_eq!(past.tokens, Some(u64::MAX), "held at the most a count says");
+    assert_eq!(
+        past.cost_usd, spent.cost_usd,
+        "a cost no reader could hold is none"
+    );
+    assert_eq!(
+        counted(Spent::default(), &chat(None, None, ChatEnd::Asked)),
+        Spent::default(),
+        "a chat that said nothing adds nothing"
+    );
+}
+
+/// A press is held to the plan the person read: what it grades, and the profile, model, cap and
+/// limit it shows.
+#[test]
+fn a_press_on_a_plan_that_changed_is_refused() {
+    let dearest = grades::price::of_model(None);
+    let planned = planned("ship it");
+    let shown = consent_shown(&planned, &on(Ok("full sandbox".into()), dearest.clone())).unwrap();
+    assert!(
+        plan_holds(
+            &planned,
+            &on(Ok("full sandbox".into()), dearest.clone()),
+            &shown,
+            "deploy",
+            "nothing was started"
+        )
+        .is_ok()
+    );
+
+    let another_profile = On {
+        profile: Some("home".into()),
+        ..on(Ok("full sandbox".into()), dearest.clone())
+    };
+    let another_model = On {
+        model: Some("opus".into()),
+        ..on(Ok("full sandbox".into()), dearest.clone())
+    };
+    let another_price = on(
+        Ok("full sandbox".into()),
+        grades::price::of_model(Some("claude-haiku-4-5")),
+    );
+    let mut another_cap = planned.clone();
+    another_cap.cap.tokens = 400_000;
+    for (planned, on) in [
+        (&planned, another_profile),
+        (&planned, another_model),
+        (&planned, another_price),
+        (&another_cap, on(Ok("full sandbox".into()), dearest.clone())),
+    ] {
+        let refused =
+            plan_holds(planned, &on, &shown, "deploy", "nothing was started").unwrap_err();
+        assert!(refused.contains("changed since it was shown"), "{refused}");
+        assert!(refused.contains("nothing was started"), "{refused}");
+    }
 }

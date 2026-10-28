@@ -628,3 +628,36 @@ fn only_a_plan_its_harness_serves_is_named_for_a_sign_in() {
     assert!(sign_in::plan_named("claude", Some("openai")).is_err());
     assert_eq!(sign_in::plan_named("claude", None), Ok(()));
 }
+
+/// A move refused for its profile says the chat did not move and to ask for the move again,
+/// never that nothing was started or to start the chat again (#2048).
+#[test]
+fn a_move_refused_for_its_profile_says_to_ask_for_the_move_again() {
+    let dir = tempfile::tempdir().unwrap();
+    a_signed_in_desktop_profile(dir.path());
+    let desktop = homes(dir.path(), "desktop");
+    let project = dir.path().join("project-moving");
+
+    let signed_out = ready_to_move_on(desktop.config_root(), &project, "builds", "work", &|_| {
+        Ok(Some(Standing::SignedOut))
+    })
+    .unwrap_err();
+    let not_kept = ready_to_move_on(desktop.config_root(), &project, "builds", "work", &|_| {
+        Err("the runner did not answer".into())
+    })
+    .unwrap_err();
+    for refused in [&signed_out, &not_kept] {
+        assert!(refused.contains("The chat did not move"), "{refused}");
+        assert!(!refused.contains("Nothing was started"), "{refused}");
+        assert!(!refused.contains("start the chat again"), "{refused}");
+    }
+    assert!(
+        signed_out.contains("ask for the move again"),
+        "{signed_out}"
+    );
+    assert!(
+        signed_out.contains("Profile work on pool builds"),
+        "{signed_out}"
+    );
+    let_go(None, "builds", "work");
+}

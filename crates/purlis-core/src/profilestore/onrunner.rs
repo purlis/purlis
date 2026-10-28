@@ -336,6 +336,40 @@ pub fn ready_on(
     name: &str,
     keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,
 ) -> Result<(), String> {
+    ready_on_for(config_root, root, pool, name, keep, For::Start)
+}
+
+/// [`ready_on`], for a chat that moves to pool `pool`'s runner (#2048): the same keep and the same
+/// wait, said of the move, which the person asks for again once the profile is signed in there.
+pub fn ready_to_move_on(
+    config_root: &Path,
+    root: &Path,
+    pool: &str,
+    name: &str,
+    keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,
+) -> Result<(), String> {
+    ready_on_for(config_root, root, pool, name, keep, For::Move)
+}
+
+/// What a profile is readied on a runner for: a chat's start there, or its move there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum For {
+    Start,
+    Move,
+}
+
+fn ready_on_for(
+    config_root: &Path,
+    root: &Path,
+    pool: &str,
+    name: &str,
+    keep: &dyn Fn(&Kept) -> Result<Option<Standing>, String>,
+    purpose: For,
+) -> Result<(), String> {
+    let (nothing, again) = match purpose {
+        For::Start => ("Nothing was started", "then start the chat again"),
+        For::Move => ("The chat did not move", "then ask for the move again"),
+    };
     let Some(record) = super::list(config_root)?
         .into_iter()
         .find(|p| p.name == name)
@@ -343,18 +377,16 @@ pub fn ready_on(
         return Ok(());
     };
     let shown = crate::shown::short(name);
-    let kept = Kept::of(&record).map_err(|why| format!("{why}. Nothing was started."))?;
+    let kept = Kept::of(&record).map_err(|why| format!("{why}. {nothing}."))?;
     match keep(&kept).map_err(|why| {
-        format!(
-            "pool {pool}'s runner did not keep the profile '{shown}': {why}. Nothing was started."
-        )
+        format!("pool {pool}'s runner did not keep the profile '{shown}': {why}. {nothing}.")
     })? {
         Some(Standing::SignedOut) => {
             waits_on_pool(root, pool, &record);
             Err(format!(
-                "the profile '{shown}' is not signed in on pool {pool}. Nothing was started. It \
-                 waits in the Inbox as Profile {shown} on pool {pool}, whose Sign in on pool \
-                 {pool} runs its harness's own sign-in on the runner; then start the chat again."
+                "the profile '{shown}' is not signed in on pool {pool}. {nothing}. It waits in \
+                 the Inbox as Profile {shown} on pool {pool}, whose Sign in on pool {pool} runs \
+                 its harness's own sign-in on the runner; {again}."
             ))
         }
         Some(Standing::SignedIn | Standing::CannotTell) | None => Ok(()),

@@ -14,7 +14,7 @@
 //! ([`crate::briefing`]).
 //!
 //! This module is the script's one copy, so the CI run (`purlis-cli`'s
-//! `tests/first_task_script.rs`) and the guide a partner follows in the window
+//! `tests/it/first_task_script.rs`) and the guide a partner follows in the window
 //! (`FirstTaskTab.tsx`, through the app's `first_task_run` command) cannot drift apart:
 //!
 //! - [`prompt`]: the task, typed into each run's chat and never sent (ADR 0061's rule for a

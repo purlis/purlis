@@ -16,8 +16,9 @@ import {
 } from "react";
 import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
 import { AnchoredPopover } from "./ui/popover/Popover";
-import { ChevronRight, Ellipsis, Hand, Plus, Search } from "lucide-react";
+import { ChevronRight, Ellipsis, Hand, LayoutGrid, Plus, Search } from "lucide-react";
 import {
+  BROWSERS_SHOW,
   besideId,
   ONLY_A_TASK_OPENS_BESIDE,
   taskStopId,
@@ -78,6 +79,7 @@ import type { TaskFacts } from "./shownState";
 import { standingOfRows } from "./sessionTasks";
 import { useTaskCount, useTaskCountSaid } from "./TasksBelow";
 import { BrowserRows, type BrowserShown } from "./ChatBrowsersShown";
+import { HeadingOffer } from "./PanelSection";
 import { tasksIn } from "./taskBuckets";
 import { Menued } from "./Menus";
 import { useRevealedTask, type Reveal } from "./revealTask";
@@ -91,6 +93,7 @@ import { TextField } from "./ui/field/Field";
 import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { byKeyboard } from "./heldStill";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -180,19 +183,6 @@ function onMemoryWords(waiting: number): string {
 /** The whole sentence, on the line's hover: what they wait for, and where they are named. */
 const ON_MEMORY_SAID =
   "This machine is short on memory: they start by themselves once it frees, and the chat that asked is told when each starts or gives up. The Dispatches tab lists them under Not started.";
-
-/**
- * Whether the element that took the focus took it from the keyboard. A pointer's press focuses
- * a row too, on the WebViews that focus a button on a click, and a list held for that would
- * stay held after the pointer left. Where the engine cannot say, it is taken as the keyboard's.
- */
-function byKeyboard(target: Element): boolean {
-  try {
-    return target.matches(":focus-visible");
-  } catch {
-    return true;
-  }
-}
 
 /**
  * **The running chats of the focused workspace, in one tree** (#1447, #1655), in the left
@@ -291,6 +281,7 @@ export function ChatsSection({
   browsers,
   kept,
   onBrowser,
+  anyBrowser = false,
   heading,
 }: {
   rows: readonly ChatRow[];
@@ -349,6 +340,8 @@ export function ChatsSection({
   browsers?: ReadonlyMap<number, readonly BrowserShown[]>;
   /** The pinned browsers whose chat closed (#2022): rows of their own, after the chats. */
   kept?: readonly BrowserShown[];
+  /** The project has a browser the Browsers grid draws (#2027): its button is on the heading. */
+  anyBrowser?: boolean;
   /** A browser's row was pressed: open its view. No rows are drawn without it. */
   onBrowser?: (shown: BrowserShown) => void;
   /** **What its title says** (R123, #2917): the workspace and, after it, the project. Absent,
@@ -911,6 +904,10 @@ export function ChatsSection({
             <PanelTitle id="chats-title" className="side-title">
               {heading ?? "Chats"}
             </PanelTitle>
+            {/* **Every browser, live** (#2027): the Browsers grid, while it has a tile. */}
+            {anyBrowser && (
+              <HeadingOffer offer={offers.get(BROWSERS_SHOW)} onPress={press} mark={LayoutGrid} />
+            )}
             {/* **What the filter hides, and why a key did nothing, on the title's line** (#1499,
               DS-11): both status lines are always in the accessibility tree, so what they come
               to say is announced, and they stand beside the title, so saying it moves no row

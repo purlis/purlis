@@ -448,6 +448,133 @@ pub fn revert(
     Ok(folder)
 }
 
+/// The most bytes of one file of an earlier version read for a grade (SK-57): a file past it is
+/// left out, as a skill's file that large is no instruction a chat reads whole.
+pub const MOST_VERSION_FILE_BYTES: u64 = 1024 * 1024;
+
+/// **The skill whose folder is `folder_rel` as version `commit` holds it** (SK-57, #3237): what a
+/// grade lays its previous version's arm out from. It is read from git's tree of that commit,
+/// never from the folder, so nothing a chat could write since reaches it: every plain file git
+/// holds there, as text, at most [`super::verbs::drafts::MOST_FILES`] of them and
+/// [`super::verbs::drafts::DEEPEST`] folders deep, as Try it copies the folder. A link or another
+/// repository is never followed, and is left out with the fixtures (`evals/`), every dot-name, a
+/// file past [`MOST_VERSION_FILE_BYTES`], and a file that is not text.
+pub(super) fn files_of_version(
+    plane: &Path,
+    folder_rel: &str,
+    name: &str,
+    commit: &str,
+) -> Result<super::verbs::drafts::Snapshot, String> {
+    use super::verbs::drafts::{DEEPEST, MOST_FILES, Snapshot};
+    let unread = |why: &str| {
+        format!(
+            "version {} of {name} could not be read: {why}",
+            short(commit)
+        )
+    };
+    if !whole_id(commit) {
+        return Err(unread("it is no commit"));
+    }
+    let spec = literally(folder_rel);
+    let listed = git(
+        plane,
+        &[
+            "ls-tree",
+            "-r",
+            "-z",
+            "-l",
+            "--full-tree",
+            "--end-of-options",
+            commit,
+            "--",
+            &spec,
+        ],
+    )
+    .map_err(|why| unread(&why))?;
+    let mut files = std::collections::BTreeMap::new();
+    for entry in listed.split('\0').filter(|one| !one.is_empty()) {
+        if files.len() >= MOST_FILES {
+            break;
+        }
+        // `<mode> <type> <object> <size>\t<path>`, the size padded to the left.
+        let Some((head, path)) = entry.split_once('\t') else {
+            continue;
+        };
+        let mut words = head.split_whitespace();
+        let (Some(mode), Some(kind), Some(object), Some(size)) =
+            (words.next(), words.next(), words.next(), words.next())
+        else {
+            continue;
+        };
+        // A plain file alone: a link (120000) or another repository (160000) is never followed.
+        if kind != "blob" || !matches!(mode, "100644" | "100755") || !whole_id(object) {
+            continue;
+        }
+        let Some(below) = path
+            .strip_prefix(folder_rel)
+            .and_then(|rest| rest.strip_prefix('/'))
+        else {
+            continue;
+        };
+        let parts: Vec<&str> = below.split('/').collect();
+        if parts.first() == Some(&purlis_skills::grade::EVALS_DIR)
+            || parts.len() > DEEPEST
+            || parts
+                .iter()
+                .any(|part| part.is_empty() || part.starts_with('.'))
+        {
+            continue;
+        }
+        if size
+            .parse::<u64>()
+            .map_or(true, |size| size > MOST_VERSION_FILE_BYTES)
+        {
+            continue;
+        }
+        let run = crate::worktree::git::run_raw(
+            plane,
+            &["cat-file", "blob", object],
+            crate::worktree::git::READ,
+        )
+        .map_err(|why| unread(&why.to_string()))?;
+        if run.code != Some(0) {
+            return Err(unread(&crate::shown::short(&String::from_utf8_lossy(
+                &run.err,
+            ))));
+        }
+        // A file that is not text is left out, as Try it leaves it out of the folder.
+        if let Ok(text) = String::from_utf8(run.out) {
+            files.insert(below.to_owned(), text);
+        }
+    }
+    let Some(instructions) = files.get("SKILL.md") else {
+        return Err(unread("it holds no SKILL.md"));
+    };
+    // A version that is no whole skill of this name (one from before a rename) would be started,
+    // if at all, by another name, and every test would read as one it did not trigger.
+    if !purlis_skills::change::check(instructions, name).is_empty() {
+        return Err(format!(
+            "version {} of {name} is not a whole skill of this name",
+            short(commit)
+        ));
+    }
+    Ok(Snapshot {
+        name: name.to_owned(),
+        files,
+    })
+}
+
+/// **The version a grade of the copy whose folder holds `tree` compares with** (SK-57, #3237):
+/// the newest of `history`'s versions whose folder held something else. For a copy with changes
+/// not committed (`tree` is `None`) that is its newest version; for one committed, the version
+/// before it. `None` for a skill with no other version.
+pub fn previous_of<'a>(history: &'a History, tree: Option<&str>) -> Option<&'a Version> {
+    history
+        .versions
+        .iter()
+        .find(|version| tree != Some(version.tree.as_str()))
+}
+
 /// The copy of a skill at `level`, as its runs record it (SK-13).
 pub(super) fn copy_of(level: &Level) -> purlis_skills::runs::Level {
     purlis_skills::runs::Level {

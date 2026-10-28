@@ -128,6 +128,8 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
         spent,
         plugins_off: Some(vec!["figma@claude-plugins-official".to_owned()]),
         model: None,
+        previous: None,
+        after_edit: false,
     }
 }
 
@@ -542,6 +544,8 @@ fn uncommitted_row() -> Graded {
         },
         plugins_off: None,
         model: None,
+        previous: None,
+        after_edit: false,
     }
 }
 
@@ -895,4 +899,253 @@ fn a_row_skipped_and_a_file_not_read_are_said() {
         "{said}"
     );
     assert_eq!(Read::default().said(), None);
+}
+
+/// [`plane`], whose `deploy` has a second version committed over the first: `Step two.`.
+fn plane_of_two_versions() -> (tempfile::TempDir, String) {
+    let plane = plane();
+    let root = plane.path();
+    let first = run(root, &["rev-parse", "HEAD"]).line().to_owned();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        SKILL.replace("Step one.", "Step two."),
+    )
+    .unwrap();
+    run(root, &["add", "-A"]);
+    run(
+        root,
+        &[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "step two",
+        ],
+    );
+    (plane, first)
+}
+
+#[test]
+fn a_skill_with_history_is_graded_against_its_previous_version_too() {
+    // SK-57 (#3237): the previous arm, laid out from git's tree of the version before.
+    let (plane, first) = plane_of_two_versions();
+    let root = plane.path();
+
+    let planned = planned(root, &Level::project(), "deploy", None).unwrap();
+
+    let request = planned.request.as_ref().unwrap();
+    assert_eq!(request.arms, ARMS_WITH_PREVIOUS.to_vec());
+    assert_eq!(request.baseline(), Some(Arm::Previous));
+    assert_eq!(
+        planned.plan.unwrap().chats,
+        18,
+        "two tests, three arms, three runs"
+    );
+    assert_eq!(
+        planned
+            .previous
+            .as_ref()
+            .map(|one| (one.commit.as_str(), one.subject.as_str())),
+        Some((first.as_str(), "make deploy")),
+        "the plan says which version it compares with"
+    );
+    let previous = planned.copy.unwrap().previous.unwrap();
+    assert_eq!(
+        previous.snapshot.files.get("SKILL.md").map(String::as_str),
+        Some(SKILL),
+        "the version as its commit had it, without its fixtures"
+    );
+    assert!(
+        !previous
+            .snapshot
+            .files
+            .keys()
+            .any(|path| path.starts_with("evals"))
+    );
+}
+
+#[test]
+fn a_copy_holding_changes_not_committed_compares_with_its_newest_version() {
+    let (plane, _) = plane_of_two_versions();
+    let root = plane.path();
+    let newest = run(root, &["rev-parse", "HEAD"]).line().to_owned();
+    std::fs::write(
+        root.join("skills/deploy/SKILL.md"),
+        format!("{SKILL}Three.\n"),
+    )
+    .unwrap();
+
+    let planned = planned(root, &Level::project(), "deploy", None).unwrap();
+
+    assert_eq!(
+        planned.previous.map(|one| one.commit),
+        Some(newest),
+        "what is not committed yet is graded against what is"
+    );
+}
+
+#[test]
+fn the_consent_covers_the_previous_version_it_compares_with() {
+    let (plane, _) = plane_of_two_versions();
+    let root = plane.path();
+    let planned = planned(root, &Level::project(), "deploy", None).unwrap();
+    let request = planned.request.clone().unwrap();
+    let mut copy = planned.copy.clone().unwrap();
+    let shown = consent_of(&request, &copy);
+    assert_eq!(planned.consent.as_deref(), Some(shown.as_str()));
+
+    copy.previous
+        .as_mut()
+        .unwrap()
+        .snapshot
+        .files
+        .insert("SKILL.md".into(), "another\n".into());
+    assert_ne!(consent_of(&request, &copy), shown);
+    copy.previous = None;
+    assert_ne!(consent_of(&request, &copy), shown);
+}
+
+#[test]
+fn a_row_with_a_previous_arm_names_the_version_it_compared_with() {
+    let plane = plane();
+    let root = plane.path();
+    let mut row = graded(root, "g1", "2026-10-25T10:00:00+00:00", Spent::default());
+    row.report.arms.push(ArmScore {
+        arm: Arm::Previous,
+        pass_rate: None,
+        tokens: None,
+        seconds: None,
+        chats: 0,
+        not_run: 0,
+    });
+    let now = chrono::Utc::now();
+    assert!(
+        !row.sound(now),
+        "a previous arm with no version named is skipped"
+    );
+    row.previous = Some("a".repeat(40));
+    assert!(row.sound(now));
+    row.previous = Some("HEAD".into());
+    assert!(!row.sound(now), "a version is a whole commit id");
+}
+
+/// #3582: a grade purlis stopped under says what its chats spent, though no chat was scored: its
+/// chats are held to what its tests could have asked for, and its spend to its report's.
+#[test]
+fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582() {
+    let now = chrono::Utc::now();
+    let interrupted = |spent: Spent| Graded {
+        report: GradeReport {
+            spent_tokens: spent.tokens,
+            spent_usd: spent.cost_usd,
+            ..underway::interrupted_report(50_000, Some(1.5), None)
+        },
+        spent,
+        ..uncommitted_row()
+    };
+    let spent = Spent {
+        chats: 4,
+        tokens: Some(9_000),
+        cost_usd: Some(0.09),
+    };
+    assert!(
+        interrupted(spent).sound(now),
+        "what its chats spent is kept"
+    );
+    let most = u32::from(uncommitted_row().runs)
+        * u32::try_from(purlis_skills::grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE).unwrap();
+    let past = Spent {
+        chats: most + 1,
+        ..spent
+    };
+    assert!(
+        !interrupted(past).sound(now),
+        "more chats than it could ask for"
+    );
+    let mut unlike = interrupted(spent);
+    unlike.spent.tokens = Some(9_001);
+    assert!(!unlike.sound(now), "a spend its report does not say");
+}
+
+/// #3584: the estimate shares what a grade spent over every chat that spent it: a chat ended at
+/// its ask spends as one that ran, so it is counted among the chats the plan names, and the
+/// figure per chat is not raised by it.
+#[test]
+fn the_estimate_shares_the_spend_over_the_chats_that_asked_too_3584() {
+    let mut row = uncommitted_row();
+    // One chat ran its turn and two were ended at their asks: all three spent.
+    row.report.triggers[0].runs = 1;
+    row.report.triggers[0].triggered = 1;
+    row.report.triggers[0].rate = Some(1.0);
+    row.report.triggers[0].asked = 2;
+    row.report.arms[0].chats = 1;
+    row.report.arms[0].not_run = 2;
+    row.report.spent_tokens = Some(3_000);
+    row.report.spent_usd = Some(0.03);
+    row.spent = Spent {
+        chats: 1,
+        tokens: Some(3_000),
+        cost_usd: Some(0.03),
+    };
+    assert!(row.sound(chrono::Utc::now()), "{row:?}");
+    let estimate = estimate_of(&[row], 12, Some("work")).unwrap();
+    assert_eq!(
+        estimate.chats_then, 3,
+        "every chat it asked for, the asked ones too"
+    );
+    assert_eq!(
+        estimate.tokens,
+        Some(12_000),
+        "a thousand a chat, not three"
+    );
+    assert!(
+        (estimate.cost_usd.unwrap() - 0.12).abs() < 1e-9,
+        "{estimate:?}"
+    );
+}
+
+#[test]
+fn a_plans_consent_covers_the_profile_model_and_limits_it_shows() {
+    let terms = Terms {
+        profile: Some("work"),
+        model: Some("sonnet"),
+        token_cap: 200_000,
+        limit_usd: 3.0,
+    };
+    let shown = consent_on("abc", &terms);
+    assert_eq!(
+        consent_on("abc", &terms),
+        shown,
+        "the same plan, the same consent"
+    );
+    for other in [
+        Terms {
+            profile: Some("home"),
+            ..terms
+        },
+        Terms {
+            profile: None,
+            ..terms
+        },
+        Terms {
+            model: Some("opus"),
+            ..terms
+        },
+        Terms {
+            model: None,
+            ..terms
+        },
+        Terms {
+            token_cap: 400_000,
+            ..terms
+        },
+        Terms {
+            limit_usd: 3.01,
+            ..terms
+        },
+    ] {
+        assert_ne!(consent_on("abc", &other), shown, "{other:?}");
+    }
+    assert_ne!(consent_on("abd", &terms), shown, "and what it grades");
 }

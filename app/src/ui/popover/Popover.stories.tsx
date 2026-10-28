@@ -11,7 +11,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useRef, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
-import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { expectFocusInSight, untilFocusWithin, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
 import { InlineMenu, MenuItem } from "../menu/Menu";
 import {
@@ -52,7 +52,7 @@ export const ACard: Story = {
     await expect(trigger).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     const card = await screen.findByRole("dialog", { name: "steward 4" });
-    await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
+    await untilFocusWithin(() => card, "Popover: Enter opens the card with the keyboard in it");
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // The keyboard comes back to the trigger after the popover has gone, a frame or more later.
@@ -133,7 +133,7 @@ export const AListWithItsFilter: Story = {
     await userEvent.keyboard("{Enter}");
     const popover = await screen.findByRole("dialog", { name: "Workspaces" });
     const filter = within(popover).getByRole("textbox", { name: "Go to a workspace in purlis" });
-    await waitFor(() => expect(filter).toHaveFocus());
+    await untilFocused(() => filter, "Workspaces: the keyboard starts in the filter");
     expectFocusInSight();
     // The anatomy: the filter row, its rule, the list and the footer, in that order.
     const parts = [...popover.querySelectorAll("[data-part]")]
@@ -149,8 +149,9 @@ export const AListWithItsFilter: Story = {
         .map((one) => one.textContent),
     ).toEqual(["docs", "ops"]);
     await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() =>
-      expect(within(popover).getByRole("menuitem", { name: "docs" })).toHaveFocus(),
+    await untilFocused(
+      () => within(popover).getByRole("menuitem", { name: "docs" }),
+      "Workspaces: Down reaches docs",
     );
     await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     // The arrows stop at the list's end.
@@ -160,8 +161,9 @@ export const AListWithItsFilter: Story = {
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Went to ops"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // The keyboard is back on the trigger; open again for the picture.
-    await waitFor(() =>
-      expect(canvas.getByRole("button", { name: "All workspaces" })).toHaveFocus(),
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "All workspaces" }),
+      "Workspaces: the keyboard is back on the trigger",
     );
     await userEvent.keyboard("{Enter}");
     await screen.findByRole("dialog", { name: "Workspaces" });

@@ -1118,7 +1118,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Root => ReadOnly::Runs,
         // Each one is here because a test runs it on a lived-in read-only project, sees it
         // print what it read, and finds every file unchanged
-        // (`tests/a_project_charter_cannot_write_is_read_only.rs`, #833).
+        // (`tests/it/a_project_charter_cannot_write_is_read_only.rs`, #833).
         Command::Status { .. }
         | Command::Recall(_)
         | Command::Statusline { .. }
@@ -1138,7 +1138,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             verb: None | Some(GuardCommand::List),
         }
         // Its read tools answer and every tool that writes is refused at the call (#1051):
-        // `tests/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
+        // `tests/it/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
         | Command::Mcp { .. } => ReadOnly::RunsAndSays,
         _ => ReadOnly::Refused,
     }

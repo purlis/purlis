@@ -135,6 +135,8 @@ export function personaIn(name: string): About {
   return (change) =>
     (change.kind === "memory" && change.persona === name) ||
     change.kind === "persona" ||
+    // Its skills, and any persona's it may inherit, or the project's (SK-29).
+    (change.kind === "skills" && change.workspace === null) ||
     change.kind === "project";
 }
 
@@ -149,6 +151,9 @@ export function skillsIn(workspace: string | undefined): About {
     change.kind === "project" ||
     change.kind === "harness" ||
     change.kind === "persona" ||
+    // A skill of the project's or a persona's, or of this workspace (SK-29).
+    (change.kind === "skills" &&
+      (change.workspace === null || (workspace !== undefined && change.workspace === workspace))) ||
     (change.kind === "workspace" &&
       workspace !== undefined &&
       (change.workspace === null || change.workspace === workspace));

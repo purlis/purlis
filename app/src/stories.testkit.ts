@@ -103,11 +103,30 @@ const LANDS_WITHIN_MS = 3_000;
  * and what has the focus instead, so a failure says where the keyboard went.
  */
 export async function untilFocused(target: () => Element | null, step: string): Promise<void> {
+  await untilTheKeyboard(target, step, "on", (wanted, at) => at === wanted);
+}
+
+/**
+ * **The keyboard lands in `target`**, on it or on anything inside it (`step` names where in the
+ * story): a surface that puts the keyboard on one of its own (a popover's card, a submenu) as it
+ * opens. Waits and fails as `untilFocused` does (#3610).
+ */
+export async function untilFocusWithin(target: () => Element | null, step: string): Promise<void> {
+  await untilTheKeyboard(target, step, "in", (wanted, at) => at !== null && wanted.contains(at));
+}
+
+/** Waits until `holds` says the keyboard is where `target` wants it, `on` it or `in` it. */
+async function untilTheKeyboard(
+  target: () => Element | null,
+  step: string,
+  where: "on" | "in",
+  holds: (wanted: Element, at: Element | null) => boolean,
+): Promise<void> {
   try {
     await waitFor(
       () => {
         const wanted = target();
-        if (wanted === null || document.activeElement !== wanted) throw new Error("not yet");
+        if (wanted === null || !holds(wanted, document.activeElement)) throw new Error("not yet");
       },
       { timeout: LANDS_WITHIN_MS },
     );
@@ -119,9 +138,10 @@ export async function untilFocused(target: () => Element | null, step: string): 
       // Not drawn: said below.
     }
     const at = document.activeElement;
+    const on = at === null || at === document.body ? "nothing" : describe(at);
     throw new Error(
-      `${step}: the keyboard is on ${at === null || at === document.body ? "nothing" : describe(at)}` +
-        `, not on ${wanted === null ? "an element that is not drawn" : describe(wanted)}`,
+      `${step}: the keyboard is on ${on}, not ${where} ` +
+        (wanted === null ? "an element that is not drawn" : describe(wanted)),
     );
   }
 }

@@ -45,6 +45,10 @@ pub struct PoolRow {
 pub struct PoolsShown {
     pub pools: Vec<PoolRow>,
     pub defaults: PoolLimitsShown,
+    /// Whether this machine's pools' runners are shown to be the person's own (D-2050-4): their
+    /// engine is a local socket on this machine. A chat moves only to such a pool (#2048).
+    #[specta(optional)]
+    pub yours: Option<bool>,
 }
 
 /// A pool as the person typed it: each limit left empty takes the default.
@@ -181,6 +185,7 @@ pub fn pools_on(config: &std::path::Path) -> Result<PoolsShown, String> {
             .map(row)
             .collect(),
         defaults: shown(Limits::default()),
+        yours: Some(crate::poolprofiles::owned().is_ok()),
     })
 }
 
@@ -407,6 +412,29 @@ pub fn set_chats_run_on_at(
     .map_err(|why| format!("Where this workspace's chats run was not kept: {why}"))?;
     set?;
     chats_run_on_at(config, plane, workspace)
+}
+
+/// **Sets where `workspace` of the plane at `plane` runs its chats** to `place` (#2048), as a
+/// chat of it moves there: the setting the person can change in the workspace's settings.
+#[cfg(unix)]
+pub(crate) fn run_chats_on(
+    config: &std::path::Path,
+    plane: &std::path::Path,
+    workspace: &str,
+    place: &Option<String>,
+) -> Result<(), String> {
+    set_chats_run_on_at(config, plane, workspace, place.as_deref()).map(|_| ())
+}
+
+/// No pool runs chats here.
+#[cfg(not(unix))]
+pub(crate) fn run_chats_on(
+    _config: &std::path::Path,
+    _plane: &std::path::Path,
+    _workspace: &str,
+    _place: &Option<String>,
+) -> Result<(), String> {
+    Err("Pools run chats on macOS and Linux only.".to_owned())
 }
 
 /// **Where a workspace's chats run** (#2046), as its settings show it.

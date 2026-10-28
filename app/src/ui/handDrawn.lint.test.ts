@@ -29,6 +29,13 @@ describe("the window's lint on a screen (#3129)", () => {
     `<button type="button" className="plane-updated fresh-mark">x</button>`,
     `<button type="button" className="gear">x</button>`,
     `<button type="button" className="strip-offer">x</button>`,
+    // A bare button, and the strip's controls by the words they wore before the tabs family's
+    // one class (#3012): a crumb, a chip's hand and counts, a closer.
+    `<button type="button" className="bare">x</button>`,
+    `<button type="button" className="crumb own">x</button>`,
+    `<button type="button" className="tab-tasks-hand">x</button>`,
+    `<button type="button" className="tab-tasks-counts">x</button>`,
+    `<button type="button" className="closer">x</button>`,
   ])("refuses a raw button drawn by hand: %s", async (code) => {
     expect(await broken(`export const X = () => ${code};`)).toContain("purlis/button-family");
   });
@@ -39,6 +46,14 @@ describe("the window's lint on a screen (#3129)", () => {
     `<Select className={["ui-field", "wide"].join(" ")} />`,
   ])("refuses the old field wrapper: %s", async (code) => {
     expect(await broken(`export const X = () => ${code};`)).toContain("purlis/field-family");
+  });
+
+  it("lets the strip's own controls through by the tabs family's class (#3012)", async () => {
+    expect(
+      await broken(
+        `export const X = () => <button type="button" className="ui-tabs-control closer">x</button>;`,
+      ),
+    ).toEqual([]);
   });
 
   it("lets the families' members through", async () => {

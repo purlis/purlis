@@ -47,6 +47,7 @@ export function studio(skills: StudioSkill[], over: Partial<Studio> = {}): Studi
     clashes: [],
     first: { starts: false, unmoved: null },
     pins_refused: null,
+    not_supported: [],
     router: null,
     ...over,
   };
