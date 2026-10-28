@@ -598,17 +598,77 @@ fn started_at(pid: u32) -> Option<std::time::SystemTime> {
 /// A fenced test build tidies nothing outside its fence, as it reads no store there
 /// ([`studio_on_here`]).
 pub fn tidy_here_later(wait: std::time::Duration) {
-    let Some(sets) = crate::hoststart::skill_sets_here()
+    if let Some(sets) = sets_here() {
+        tidy_later(sets, wait);
+    }
+}
+
+/// This user's sets' folder ([`crate::hoststart::skill_sets_here`]), or `None` where there is
+/// none, or where a fenced test build would reach outside its fence.
+fn sets_here() -> Option<PathBuf> {
+    crate::hoststart::skill_sets_here()
         .filter(|sets| !crate::fence::FENCED || crate::fence::inside(sets, &crate::fence::fence()))
-    else {
-        return;
-    };
+}
+
+/// **[`tidy`] of `sets`, said in the log**, on a thread of its own after `wait`, so nothing
+/// waits on it.
+pub fn tidy_later(sets: PathBuf, wait: std::time::Duration) {
     let _ = std::thread::Builder::new()
         .name("purlis-skill-sets-tidy".into())
         .spawn(move || {
             std::thread::sleep(wait);
             said_in_the_log(&sets, tidy(&sets));
         });
+}
+
+/// **A host's event log that also tidies the sets' folders after each program ends** (SK-24
+/// follow-up, #2879): what `purlis serve` keeps its programs' ends with. A host with no window
+/// has no chat close to tidy after, so it tidies [`TIDY_AFTER_A_CLOSE`] after each end its host
+/// hears, as the window does after a chat closes. Everything else is `record`'s own.
+#[cfg(unix)]
+pub struct TidiesAfterEachEnd<R> {
+    record: R,
+    sets: Option<PathBuf>,
+    wait: std::time::Duration,
+}
+
+#[cfg(unix)]
+impl<R> TidiesAfterEachEnd<R> {
+    /// `record`, tidying this user's sets' folders, as [`tidy_here_later`] does.
+    pub fn here(record: R) -> Self {
+        Self::of(record, sets_here(), TIDY_AFTER_A_CLOSE)
+    }
+
+    /// `record`, tidying `sets` `wait` after each end; nothing where there are none.
+    pub fn of(record: R, sets: Option<PathBuf>, wait: std::time::Duration) -> Self {
+        Self { record, sets, wait }
+    }
+}
+
+#[cfg(unix)]
+impl<R: purlis_host::Record> purlis_host::Record for TidiesAfterEachEnd<R> {
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        self.record.record(entry)
+    }
+
+    fn ended(&self, ended: &purlis_host::Ended<'_>) {
+        self.record.ended(ended);
+        if let Some(sets) = &self.sets {
+            tidy_later(sets.clone(), self.wait);
+        }
+    }
+
+    fn left_by_its_last_host(&self, left: &purlis_host::Started) {
+        self.record.left_by_its_last_host(left);
+    }
+
+    fn log_end(&self) -> Result<(String, u64), String> {
+        self.record.log_end()
+    }
+
+    fn read_log(&self, after: u64) -> Result<Box<dyn purlis_host::ReadsLog>, String> {
+        self.record.read_log(after)
+    }
 }
 
 /// How long after a chat closes its sets are tidied ([`tidy_here_later`]): time for its program
