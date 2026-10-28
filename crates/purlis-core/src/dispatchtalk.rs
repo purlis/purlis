@@ -1055,10 +1055,10 @@ pub fn leave(root: &Path, to: u32, message: &Message) -> std::io::Result<PathBuf
     Ok(kept)
 }
 
-/// Takes every message waiting for chat `chat`, oldest first. Each is gone from disk once
-/// taken, and one that does not read back as a message purlis would have left is dropped. A
-/// folder that is a link holds nothing, and nothing behind it is touched.
-pub fn take(root: &Path, chat: u32) -> Vec<Message> {
+/// **Every message waiting for chat `chat`, oldest first, read and left where it is**, each
+/// with its file's name: what a hook reads, and the app then takes ([`took`]). A folder that is a
+/// link holds nothing.
+pub fn waiting(root: &Path, chat: u32) -> Vec<(String, Message)> {
     let Ok(dir) = dir_for(root, chat) else {
         return Vec::new();
     };
@@ -1072,19 +1072,59 @@ pub fn take(root: &Path, chat: u32) -> Vec<Message> {
         .filter(|name| !name.starts_with('.') && name.ends_with(".json"))
         .collect();
     names.sort();
-    let mut taken = Vec::new();
-    for name in names {
-        let path = dir.join(&name);
-        let read = std::fs::read_to_string(&path);
-        if std::fs::remove_file(&path).is_err() {
-            continue;
-        }
-        if let Some(message) = read.ok().and_then(|read| sound(&read)) {
-            taken.push(message);
-        }
-    }
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let read = std::fs::read_to_string(dir.join(&name)).ok()?;
+            Some((name, sound(&read)?))
+        })
+        .collect()
+}
+
+/// **Takes the messages named `names` waiting for chat `chat`** off disk: answers the names it
+/// took, so a message another hook of the same chat took first is theirs to hand over. A name
+/// that is not a message's file takes nothing.
+pub fn took(root: &Path, chat: u32, names: &[String]) -> Vec<String> {
+    let Ok(dir) = dir_for(root, chat) else {
+        return Vec::new();
+    };
+    let taken = names
+        .iter()
+        .filter(|name| !name.starts_with('.') && name.ends_with(".json") && !name.contains('/'))
+        .filter(|name| std::fs::remove_file(dir.join(name)).is_ok())
+        .cloned()
+        .collect();
     let _ = std::fs::remove_dir(&dir);
     taken
+}
+
+/// Takes every message waiting for chat `chat`, oldest first. Each is gone from disk once
+/// taken, and one that does not read back as a message purlis would have left is dropped. A
+/// folder that is a link holds nothing, and nothing behind it is touched.
+pub fn take(root: &Path, chat: u32) -> Vec<Message> {
+    let waiting = waiting(root, chat);
+    let names: Vec<String> = waiting.iter().map(|(name, _)| name.clone()).collect();
+    // A file that does not read as a message is taken too: it will not read better later.
+    if let Ok(dir) = dir_for(root, chat)
+        && let Ok(entries) = std::fs::read_dir(&dir)
+    {
+        for entry in entries.filter_map(Result::ok) {
+            if let Ok(name) = entry.file_name().into_string()
+                && !name.starts_with('.')
+                && name.ends_with(".json")
+                && !names.contains(&name)
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
+            {
+                let _ = std::fs::remove_file(dir.join(&name));
+            }
+        }
+    }
+    let taken = took(root, chat, &names);
+    waiting
+        .into_iter()
+        .filter(|(name, _)| taken.contains(name))
+        .map(|(_, message)| message)
+        .collect()
 }
 
 /// Chat `chat` has closed: what waited for it is removed. A message is for one chat's turn,

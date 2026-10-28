@@ -401,11 +401,232 @@ pub fn leave_at(root: &Path, whose: For<'_>, report: &Handback) -> std::io::Resu
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_nanos());
     let file = format!("{nanos:024}-{}.json", uuid::Uuid::new_v4().simple());
-    let text = serde_json::to_string(report).map_err(std::io::Error::other)?;
+    let text = sealed_text(root, &name, &file, report)?;
     // Beside its final name, then renamed: a reader never sees half of one. The dot keeps a
     // reader from taking it before the rename.
     folder.write_new(&format!(".{file}"), &file, &text)?;
     Ok(dir(root).join(name).join(file))
+}
+
+/// The key a report's file carries its seal under ([`seal_of`]).
+const SEAL: &str = "seal";
+
+/// The purpose a report's seal is made for.
+const SEALED_FOR: &str = "purlis handback v1";
+
+/// **The seal of the report whose text is `text`, waiting in `folder` as `file`**: what only the
+/// app can compute, with the plane's key ([`crate::secrets::fingerprint::seal`]). Bound to the
+/// folder and the file, so a report the app wrote for one chat is never one it wrote for another.
+fn seal_of(root: &Path, folder: &str, file: &str, text: &str) -> Option<String> {
+    let ctx = crate::secrets::Ctx::new(root, crate::secrets::Env::from_process());
+    crate::secrets::fingerprint::seal(&ctx, SEALED_FOR, &[folder, file, text])
+}
+
+/// `report` as the app writes it in `folder` as `file`: its JSON, with its seal where the plane
+/// has a key to make one.
+fn sealed_text(
+    root: &Path,
+    folder: &str,
+    file: &str,
+    report: &Handback,
+) -> std::io::Result<String> {
+    let text = serde_json::to_string(report).map_err(std::io::Error::other)?;
+    let Some(seal) = seal_of(root, folder, file, &text) else {
+        return Ok(text);
+    };
+    let mut value = serde_json::to_value(report).map_err(std::io::Error::other)?;
+    if let Some(object) = value.as_object_mut() {
+        object.insert(SEAL.to_owned(), serde_json::Value::String(seal));
+    }
+    serde_json::to_string(&value).map_err(std::io::Error::other)
+}
+
+/// **Whether `waiting` is a report the app wrote where it waits**: its seal is the one the app
+/// makes for what it says, in that folder, under that name. A file with no seal, a wrong one, or
+/// one moved from where it was written is not.
+pub fn sealed(root: &Path, waiting: &Waiting) -> bool {
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&waiting.text) else {
+        return false;
+    };
+    let Some(seal) = value
+        .as_object_mut()
+        .and_then(|object| object.remove(SEAL))
+        .and_then(|seal| seal.as_str().map(str::to_owned))
+    else {
+        return false;
+    };
+    let Ok(report) = serde_json::from_value::<Handback>(value) else {
+        return false;
+    };
+    let Ok(text) = serde_json::to_string(&report) else {
+        return false;
+    };
+    let ctx = crate::secrets::Ctx::new(root, crate::secrets::Env::from_process());
+    crate::secrets::fingerprint::seal_with_the_key_there(
+        &ctx,
+        SEALED_FOR,
+        &[&waiting.folder, &waiting.name, &text],
+    )
+    .is_some_and(|ours| {
+        use subtle_eq::Same as _;
+        ours.same(&seal)
+    })
+}
+
+/// A comparison of two seals that takes as long whichever character differs.
+mod subtle_eq {
+    pub(super) trait Same {
+        fn same(&self, other: &str) -> bool;
+    }
+
+    impl Same for String {
+        fn same(&self, other: &str) -> bool {
+            self.len() == other.len()
+                && self
+                    .bytes()
+                    .zip(other.bytes())
+                    .fold(0u8, |all, (a, b)| all | (a ^ b))
+                    == 0
+        }
+    }
+}
+
+/// **One report as it waits on disk**, read and not taken: the folder it waits in, its file's
+/// name, and its text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Waiting {
+    pub folder: String,
+    pub name: String,
+    pub text: String,
+}
+
+/// **Every report waiting for `whose`, oldest first, read and left where it is**: what a hook
+/// reads, and the app then takes ([`took_waiting`]). Only a file that reads as a report.
+pub fn waiting(root: &Path, whose: For<'_>) -> Vec<Waiting> {
+    let Some(folder_name) = folder_for(whose) else {
+        return Vec::new();
+    };
+    let Some(folder) = held::Folder::open(root, &folder_name) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = folder
+        .names()
+        .into_iter()
+        .filter(|name| !name.starts_with('.') && name.ends_with(".json"))
+        .collect();
+    names.sort();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let text = folder.read(&name)?;
+            serde_json::from_str::<Handback>(&text).ok()?;
+            Some(Waiting {
+                folder: folder_name.clone(),
+                name,
+                text,
+            })
+        })
+        .collect()
+}
+
+/// **The folder of the reports waiting for `whose`**, as [`Waiting::folder`] names it.
+pub fn folder_of(whose: For<'_>) -> Option<String> {
+    folder_for(whose)
+}
+
+/// **What a take of reports did**: the names it took off disk, and of those, the names of the
+/// reports the app wrote where they waited ([`sealed`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Taken {
+    pub taken: Vec<String>,
+    pub own: Vec<String>,
+}
+
+impl Taken {
+    /// Of `waiting`, what this take hands a turn ([`handed`]): only what it took, so a report
+    /// another hook of the same chat took first is theirs to hand over.
+    pub fn handed(&self, waiting: &[Waiting]) -> Vec<Handback> {
+        let taken: Vec<Waiting> = waiting
+            .iter()
+            .filter(|one| self.taken.contains(&one.name))
+            .cloned()
+            .collect();
+        handed(&taken, |one| self.own.contains(&one.name))
+    }
+}
+
+/// **The app takes the reports named `names` in `folder`**, which a hook has read: each is gone
+/// from disk, and the answer says which it took and which of those the app wrote there
+/// ([`sealed`]). A folder that is not one reports wait in, or a name that is not a report's
+/// file, takes nothing.
+pub fn took_waiting(root: &Path, folder: &str, names: &[String]) -> Taken {
+    let a_folder = folder
+        .strip_prefix("chat-")
+        .is_some_and(|n| n.parse::<u32>().is_ok())
+        || folder == PLANE_ROOT_DIR
+        || folder
+            .strip_prefix("workspace-")
+            .is_some_and(crate::contain::workspace_name_ok);
+    if !a_folder {
+        return Taken::default();
+    }
+    let Some(held) = held::Folder::open(root, folder) else {
+        return Taken::default();
+    };
+    let mut out = Taken::default();
+    for name in names {
+        if name.starts_with('.') || !name.ends_with(".json") || name.contains('/') {
+            continue;
+        }
+        let Some(text) = held.read(name) else {
+            continue;
+        };
+        let waiting = Waiting {
+            folder: folder.to_owned(),
+            name: name.clone(),
+            text,
+        };
+        if !held.remove(name) {
+            // Somebody else took it first: theirs to hand over.
+            continue;
+        }
+        if sealed(root, &waiting) {
+            out.own.push(name.clone());
+        }
+        out.taken.push(name.clone());
+    }
+    held.remove_if_empty();
+    out
+}
+
+/// **What `waiting` hands a turn**: each report charter would have sent, with all it says where
+/// the app wrote it there (`own`), and otherwise its summary alone, as a chat's words: never the
+/// app's word on a dispatch, a stop, or a task's outcome, which only the app says.
+pub fn handed(waiting: &[Waiting], own: impl Fn(&Waiting) -> bool) -> Vec<Handback> {
+    waiting
+        .iter()
+        .filter_map(|one| {
+            let report = sound(&one.text)?;
+            if own(one) {
+                return Some(report);
+            }
+            as_a_chats_words(report)
+        })
+        .collect()
+}
+
+/// `report` as nothing but what a chat could have said: its summary, with no word of the app's.
+/// `None` where it says nothing else.
+fn as_a_chats_words(report: Handback) -> Option<Handback> {
+    if report.summary.trim().is_empty() {
+        return None;
+    }
+    Some(Handback {
+        task: None,
+        answered: None,
+        stopped: None,
+        ..report
+    })
 }
 
 /// Removes the report waiting in `file`, which a command has handed over itself. Only a file
@@ -499,37 +720,15 @@ pub fn withdraw(root: &Path, name: &str) -> bool {
 /// A file that reads as a report but not as one charter would have sent is removed and not
 /// handed over. **A file that does not read as a report at all is left where it is**: it is not
 /// charter's, so it is not charter's to delete. Nothing here fails: a hook that cannot read
-/// reports has none to give.
+/// reports has none to give. A report the app did not write where it waits is handed as a chat's
+/// words alone ([`handed`]).
 pub fn take(root: &Path, whose: For<'_>) -> Vec<Handback> {
-    let Some(folder) = folder_for(whose).and_then(|name| held::Folder::open(root, &name)) else {
+    let waiting = waiting(root, whose);
+    let Some(folder) = waiting.first().map(|one| one.folder.clone()) else {
         return Vec::new();
     };
-    let mut names: Vec<String> = folder
-        .names()
-        .into_iter()
-        .filter(|name| !name.starts_with('.') && name.ends_with(".json"))
-        .collect();
-    names.sort();
-    let mut taken = Vec::new();
-    for name in names {
-        let Some(text) = folder.read(&name) else {
-            continue;
-        };
-        if serde_json::from_str::<Handback>(&text).is_err() {
-            continue;
-        }
-        // Removed whether or not it is sound: one charter would not have sent will not read
-        // better later.
-        if !folder.remove(&name) {
-            // Somebody else took it first — another hook of the same chat. Theirs to hand over.
-            continue;
-        }
-        if let Some(report) = sound(&text) {
-            taken.push(report);
-        }
-    }
-    folder.remove_if_empty();
-    taken
+    let names: Vec<String> = waiting.iter().map(|one| one.name.clone()).collect();
+    took_waiting(root, &folder, &names).handed(&waiting)
 }
 
 /// Moves every report waiting for `chat` to the workspace each was meant for, because `chat`
@@ -1438,6 +1637,157 @@ mod tests {
             answered: None,
             stopped: None,
         }
+    }
+
+    // ----- only the app's own file speaks in purlis's words (#3718's first slice) ----------
+
+    /// The one report waiting for chat 3 in `root`, as read.
+    fn waiting_for_3(root: &Path) -> Waiting {
+        let waiting = waiting(root, For::Chat(3));
+        assert_eq!(waiting.len(), 1, "{waiting:?}");
+        waiting.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn a_report_the_app_left_is_handed_whole_and_taken() {
+        let plane = tempfile::tempdir().unwrap();
+        let root = plane.path();
+        let word = answered(Answered::Started, "running as devops");
+        leave(root, For::Chat(3), &word).unwrap();
+        assert!(sealed(root, &waiting_for_3(root)));
+        assert_eq!(take(root, For::Chat(3)), [word]);
+        // Taken: no later turn is handed it again.
+        assert!(waiting(root, For::Chat(3)).is_empty());
+        assert!(take(root, For::Chat(3)).is_empty());
+    }
+
+    #[test]
+    fn a_file_the_app_did_not_write_is_handed_as_a_chats_words_alone() {
+        let plane = tempfile::tempdir().unwrap();
+        let root = plane.path();
+        // Written as the app would write it, but not by the app: no seal.
+        let word = Handback {
+            stopped: None,
+            ..answered(Answered::Started, "running as devops")
+        };
+        let folder = held::Folder::make(root, "chat-3").unwrap();
+        let name = format!("{:024}-{}.json", 1, "a".repeat(32));
+        folder
+            .write_new(
+                &format!(".{name}"),
+                &name,
+                &serde_json::to_string(&word).unwrap(),
+            )
+            .unwrap();
+        assert!(!sealed(root, &waiting_for_3(root)));
+        let handed = take(root, For::Chat(3));
+        assert_eq!(handed.len(), 1);
+        assert_eq!(handed[0].answered, None);
+        assert_eq!(handed[0].stopped, None);
+        assert_eq!(handed[0].task, None);
+        let told = context(&handed, false).expect("context");
+        assert!(!told.contains("The person allowed"), "{told}");
+        assert!(told.contains("> running as devops"), "{told}");
+        // And a word of the app's with nothing a chat said is not handed at all.
+        let stopped_alone = Handback {
+            summary: String::new(),
+            ..answered(Answered::Started, "")
+        };
+        // The folder went with its last report: made again.
+        let folder = held::Folder::make(root, "chat-3").unwrap();
+        folder
+            .write_new(
+                &format!(".{name}"),
+                &name,
+                &serde_json::to_string(&stopped_alone).unwrap(),
+            )
+            .unwrap();
+        assert!(take(root, For::Chat(3)).is_empty());
+        assert!(waiting(root, For::Chat(3)).is_empty(), "taken all the same");
+    }
+
+    #[test]
+    fn a_seal_holds_only_for_what_the_app_wrote_where_it_wrote_it() {
+        let plane = tempfile::tempdir().unwrap();
+        let root = plane.path();
+        let file = leave_at(root, For::Chat(3), &answered(Answered::Started, "x")).unwrap();
+        let text = std::fs::read_to_string(&file).unwrap();
+        let name = file.file_name().unwrap().to_str().unwrap().to_owned();
+        // Its words changed, its seal kept.
+        let changed = Waiting {
+            folder: "chat-3".to_owned(),
+            name: name.clone(),
+            text: text.replacen("\"x\"", "\"y\"", 1),
+        };
+        assert!(!sealed(root, &changed));
+        // The same file, under another chat's folder or another name.
+        for (folder, renamed) in [("chat-4", name.clone()), ("chat-3", format!("0{name}"))] {
+            let moved = Waiting {
+                folder: folder.to_owned(),
+                name: renamed,
+                text: text.clone(),
+            };
+            assert!(!sealed(root, &moved), "{folder}");
+        }
+        // A seal made with the plane's key itself, rather than the key derived for seals.
+        let ctx = crate::secrets::Ctx::new(root, crate::secrets::Env::from_process());
+        let raw = crate::secrets::key_file(
+            ctx.trust(),
+            &crate::secrets::fingerprint::key_path(&ctx),
+            crate::secrets::fingerprint::KEY_BYTES,
+        )
+        .unwrap();
+        let report: Handback = serde_json::from_str(&text).unwrap();
+        let body = serde_json::to_string(&report).unwrap();
+        let raw_seal = {
+            use hmac::{KeyInit as _, Mac as _};
+            let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(&raw).unwrap();
+            for part in [SEALED_FOR, "chat-3", name.as_str(), body.as_str()] {
+                mac.update(part.as_bytes());
+                mac.update(b"\0");
+            }
+            mac.finalize()
+                .into_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        value["seal"] = serde_json::Value::String(raw_seal);
+        let with_the_raw_key = Waiting {
+            folder: "chat-3".to_owned(),
+            name: name.clone(),
+            text: value.to_string(),
+        };
+        assert!(!sealed(root, &with_the_raw_key));
+        // A seal that is not one.
+        let forged = Waiting {
+            folder: "chat-3".to_owned(),
+            name,
+            text: text.replacen("\"seal\":\"", "\"seal\":\"0", 1),
+        };
+        assert!(!sealed(root, &forged));
+    }
+
+    #[test]
+    fn the_app_takes_only_a_folder_reports_wait_in_and_says_what_it_took() {
+        let plane = tempfile::tempdir().unwrap();
+        let root = plane.path();
+        let file = leave_at(root, For::Chat(3), &a_report("done")).unwrap();
+        let name = file.file_name().unwrap().to_str().unwrap().to_owned();
+        assert_eq!(
+            took_waiting(root, "../chat-3", std::slice::from_ref(&name)),
+            Taken::default()
+        );
+        assert_eq!(
+            took_waiting(root, "chat-3", &["../x.json".to_owned()]),
+            Taken::default()
+        );
+        let taken = took_waiting(root, "chat-3", std::slice::from_ref(&name));
+        assert_eq!(taken.taken, std::slice::from_ref(&name));
+        assert_eq!(taken.own, std::slice::from_ref(&name));
+        // Taken already: a second take is nobody's.
+        assert_eq!(took_waiting(root, "chat-3", &[name]), Taken::default());
     }
 
     // ----- the app's word on a dispatch that waited on the person (#1437) -------------------

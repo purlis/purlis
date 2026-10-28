@@ -24,8 +24,14 @@ async function keeps(pools: string[]) {
   mockIPC((cmd) =>
     cmd === "docker_pools"
       ? {
-          pools: pools.map((name) => ({ name, image: IMAGE, limits: { ...DEFAULTS } })),
+          pools: pools.map((name) => ({
+            name,
+            image: IMAGE,
+            limits: { ...DEFAULTS },
+            suspend_after: "24h",
+          })),
           defaults: { ...DEFAULTS },
+          suspend_after: "24h",
         }
       : null,
   );

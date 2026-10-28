@@ -73,7 +73,14 @@ fn the_content_families_are_in_the_manifest_since_next() {
     assert_eq!(
         of("card"),
         (
-            named(&["root", "title"]),
+            named(&[
+                "root",
+                "title",
+                "facts-label",
+                "facts-value",
+                "tile",
+                "tile-value"
+            ]),
             vec![("raised".into(), false), ("ask".into(), true)]
         )
     );
@@ -400,6 +407,54 @@ fn the_content_families_defaults_are_what_their_stylesheets_draw() {
             }
             assert_eq!(held[2], border, "{family} {variant}: border");
         }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// Facts and totals tiles (#3673)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn facts_and_tiles_are_reached_where_they_stand_in_a_card_or_on_a_page() {
+    let sheet = sheet_of(json!({
+        "card.facts-label.text": "text.primary",
+        "card.tile.border-width": 0,
+        "card.tile-value.font-weight": "font-weight.medium",
+    }));
+    for part in ["facts-label", "tile", "tile-value"] {
+        let own = format!(":where([data-scope=\"card\"][data-part=\"{part}\"]) {{");
+        assert!(sheet.contains(&own), "{part} is reached by its own attributes:\n{sheet}");
+    }
+    // Never only inside a card's root: a list of facts and a row of tiles stand on a page too.
+    assert!(!sheet.contains("[data-part=\"root\"] [data-scope=\"card\"][data-part=\"tile\"]"));
+}
+
+#[test]
+fn a_tile_and_a_fact_take_no_variant_and_no_state() {
+    for key in ["card.tile.ask.border-width", "card.facts-label.hover.text"] {
+        let loaded = load(&with_parts(json!({ key: 0 })));
+        assert!(
+            said(&loaded).iter().any(|one| one.contains(key)),
+            "{key}: {:?}",
+            said(&loaded)
+        );
+    }
+}
+
+#[test]
+fn a_fact_s_label_is_drawn_in_the_tier_the_manifest_holds_it_to() {
+    let card = css_of(include_str!("../../../../app/src/ui/card/card.css"));
+    let family = parts::family("card").expect("the card family");
+    for (at, part) in family.parts.iter().enumerate().skip(1) {
+        let selector = format!("[data-scope=\"card\"][data-part=\"{}\"]", part.name);
+        let Some(body) = rule(&card, &selector) else {
+            continue;
+        };
+        let Some(colour) = declared(body, "color") else {
+            continue;
+        };
+        let held = family.own_words_of(at).unwrap_or("text.primary");
+        assert_eq!(token(colour), held, "{}", part.name);
     }
 }
 

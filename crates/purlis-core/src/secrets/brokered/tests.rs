@@ -354,6 +354,89 @@ fn a_tool_runs_with_an_environment_of_its_own() {
     );
 }
 
+/// A declared `gh` or `glab` reads none of the chat's own gh or glab settings: whatever the chat
+/// wrote under its home and `XDG_*` folders (aliases, extensions, hosts) is never where the run
+/// looks, the variables that name another settings folder, host, pager or browser never reach
+/// it, and what one run writes in its home is gone by the next. No real gh is needed: the run's
+/// environment and home are what either program reads its settings from.
+#[test]
+fn a_declared_gh_or_glab_reads_none_of_the_chats_own_settings() {
+    let project = project();
+    // The chat's own home, in its folder, with gh's and glab's settings written as each reads
+    // them: an alias, an extension and a host.
+    let chats_home = project.path().join("work/home");
+    for (below, file, text) in [
+        (".config/gh", "config.yml", "aliases:\n  x: '!echo chats'\n"),
+        (
+            ".config/gh",
+            "hosts.yml",
+            "chats.example.com:\n  user: chat\n",
+        ),
+        (
+            ".local/share/gh/extensions/gh-x",
+            "gh-x",
+            "#!/bin/sh\necho chats\n",
+        ),
+        (
+            ".config/glab-cli",
+            "config.yml",
+            "aliases:\n  x: '!echo chats'\n",
+        ),
+        (".config/glab-cli", "aliases.yml", "x: '!echo chats'\n"),
+    ] {
+        let dir = chats_home.join(below);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(file), text).unwrap();
+    }
+    let at = |below: &str| chats_home.join(below).display().to_string();
+    let homes = [
+        ("HOME", at("")),
+        ("XDG_CONFIG_HOME", at(".config")),
+        ("XDG_DATA_HOME", at(".local/share")),
+        ("XDG_STATE_HOME", at(".local/state")),
+        ("XDG_CACHE_HOME", at(".cache")),
+    ];
+    let chats = [
+        ("GH_CONFIG_DIR", at(".config/gh")),
+        ("GLAB_CONFIG_DIR", at(".config/glab-cli")),
+        ("GH_HOST", "chats.example.com".to_owned()),
+        ("GITLAB_HOST", "chats.example.com".to_owned()),
+        ("GH_REPO", "chat/repo".to_owned()),
+        ("GH_PAGER", at("pager")),
+        ("GLAB_PAGER", at("pager")),
+        ("PAGER", at("pager")),
+        ("GH_BROWSER", at("browser")),
+        ("BROWSER", at("browser")),
+        ("GIT_CONFIG_GLOBAL", at(".gitconfig")),
+    ];
+    let named = chats
+        .iter()
+        .map(|(name, _)| format!("[${{{name}:-}}]"))
+        .collect::<String>();
+    // Every place gh and glab look for their settings, as the run's own variables say.
+    let looked = r#"for f in "$XDG_CONFIG_HOME/gh/config.yml" "$XDG_CONFIG_HOME/gh/hosts.yml" "$XDG_DATA_HOME/gh/extensions/gh-x" "$HOME/.config/gh/config.yml" "$HOME/.local/share/gh/extensions/gh-x" "$XDG_CONFIG_HOME/glab-cli/config.yml" "$XDG_CONFIG_HOME/glab-cli/aliases.yml" "$HOME/.config/glab-cli/config.yml" "$HOME/Library/Application Support/glab-cli/config.yml"; do test -e "$f" && echo "seen $f"; done"#;
+    let own = r#"case "$HOME" in "$TMPDIR") echo home ;; esac; for d in "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"; do case "$d" in "$TMPDIR"/*) echo own ;; esac; done"#;
+    // A run writes an alias and an extension in its own home; the next run sees neither.
+    let writes = r#"mkdir -p "$XDG_CONFIG_HOME/gh" "$XDG_DATA_HOME/gh/extensions/gh-x" "$XDG_CONFIG_HOME/glab-cli" && echo "aliases: {}" > "$XDG_CONFIG_HOME/gh/config.yml" && echo x > "$XDG_DATA_HOME/gh/extensions/gh-x/gh-x" && echo "x: y" > "$XDG_CONFIG_HOME/glab-cli/aliases.yml" && echo wrote"#;
+    let run = |then: &str| {
+        let mut want = wanted(
+            project.path(),
+            "team",
+            sh(&format!(r#"echo "{named}"; {own}; {looked}; {then}"#)),
+        );
+        want.env = vec!["X=TOKEN".into()];
+        for (name, value) in homes.iter().chain(&chats) {
+            want.environment.push(((*name).into(), value.into()));
+        }
+        let frames = served(&asker(project.path(), Some("devops")), want);
+        assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+        stdout(&frames)
+    };
+    let expected = format!("{}\nhome\n{}", "[]".repeat(chats.len()), "own\n".repeat(4));
+    assert_eq!(run(writes), format!("{expected}wrote\n"));
+    assert_eq!(run("true"), expected);
+}
+
 /// #2047: an approved credentialed server's line starts from what every brokered run does and
 /// the variables its approved entry sets. A variable the chat sets that names a package
 /// manager's settings, the interpreter a launcher picks or git's global settings never reaches

@@ -361,17 +361,7 @@ fn table_at<'a>(top: &'a toml::Table, path: &[&str]) -> Option<&'a toml::Table> 
 /// A quiet period as the files write it: a whole number of seconds or minutes above zero,
 /// `"30s"` or `"2m"`.
 fn quiet_period(value: &toml::Value) -> Option<Duration> {
-    let text = value.as_str()?;
-    let (digits, per) = match (text.strip_suffix('s'), text.strip_suffix('m')) {
-        (Some(digits), _) => (digits, 1),
-        (_, Some(digits)) => (digits, 60),
-        _ => return None,
-    };
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let n: u64 = digits.parse().ok().filter(|n| *n > 0)?;
-    Some(Duration::from_secs(n.checked_mul(per)?))
+    crate::spelledtime::read(value.as_str()?, crate::spelledtime::SECONDS_OR_MINUTES)
 }
 
 /// Whether `name` could be a branch: git's `check-ref-format --branch` rules, checked without

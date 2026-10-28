@@ -22,6 +22,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { SkillStudioHarnesses } from "./SkillStudioHarnesses";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { SkillPinSwitch, SkillPinsRefusedLine } from "./SkillPins";
+import { RouterGrade } from "./RouterGrade";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
 import { SkillRowActions } from "./SkillRowActions";
@@ -569,7 +570,12 @@ export function SkillStudioTab({
           />
         </p>
       )}
-      {router !== null && <StudioRouterLine router={router} />}
+      {router !== null && (
+        <StudioRouterLine
+          router={router}
+          grading={{ plane, workspace, persona, onGraded: () => setDone((was) => was + 1) }}
+        />
+      )}
       <div
         className="skill-levels"
         role="group"
@@ -1282,7 +1288,19 @@ function lowerFirst(text: string): string {
  * open now: its timing, or why it fell back on the built-in router. Nothing for the built-in
  * router, which every chat has unless a workspace or persona chooses another.
  */
-export function StudioRouterLine({ router }: { router: StudioRouter }) {
+export function StudioRouterLine({
+  router,
+  grading,
+}: {
+  router: StudioRouter;
+  /** Where the studio is, to grade the router chosen there (SK-15e): none offers no Grade. */
+  grading?: {
+    plane: string;
+    workspace: string | null;
+    persona: string | null;
+    onGraded: () => void;
+  };
+}) {
   if (router.extension === null && !router.problem) return null;
   return (
     <div
@@ -1290,6 +1308,21 @@ export function StudioRouterLine({ router }: { router: StudioRouter }) {
       data-testid="skill-studio-router"
     >
       <p>{router.said}</p>
+      {router.extension !== null && (
+        <p data-testid="skill-studio-router-grade">
+          {router.grade ??
+            "This router has not been graded on this library yet: a grade runs the library's trigger tests with it and with the built-in router."}
+        </p>
+      )}
+      {router.extension !== null && grading !== undefined && (
+        <RouterGrade
+          plane={grading.plane}
+          router={router.extension}
+          workspace={grading.workspace}
+          persona={grading.persona}
+          onGraded={grading.onGraded}
+        />
+      )}
       {router.chats.length > 0 && (
         <ul className="skill-studio-routed">
           {router.chats.map((one) => (

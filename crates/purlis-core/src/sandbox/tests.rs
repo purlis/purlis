@@ -328,21 +328,27 @@ fn a_chat_never_writes_charters_integrity_state() {
             // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
             plane.path().join(".purlis/skills-deleted"),
             plane.path().join(".purlis/skills-deleting"),
+            // Every report a chat is handed: the app's alone to write.
+            plane.path().join(".purlis/handbacks"),
             plane.path().join(".purlis/harness-profiles-launched.json"),
             plane
                 .path()
                 .join(".purlis/harness-declarations-approved.json"),
             plane.path().join(".purlis/mcp-approved.json"),
+            // Every chat's settings file (SK-9).
+            plane.path().join(".purlis/chat-settings"),
             plane.path().join(".charter/app"),
             plane.path().join(".charter/theme-drafts"),
             // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
             plane.path().join(".charter/skills-deleted"),
             plane.path().join(".charter/skills-deleting"),
+            plane.path().join(".charter/handbacks"),
             plane.path().join(".charter/harness-profiles-launched.json"),
             plane
                 .path()
                 .join(".charter/harness-declarations-approved.json"),
             plane.path().join(".charter/mcp-approved.json"),
+            plane.path().join(".charter/chat-settings"),
             // Neither folder is there yet, so neither is the chat's to make (D-RN2a-7).
             plane.path().join(".purlis"),
             plane.path().join(".charter"),
@@ -374,6 +380,13 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
     assert!(
         paths(&denied, Class::Integrity, Access::Write)
             .contains(&std::path::PathBuf::from("/srv/purlis-state/theme-drafts")),
+        "{:?}",
+        denied.paths
+    );
+    // And every chat's settings file a start writes there (SK-9).
+    assert!(
+        paths(&denied, Class::Integrity, Access::Write)
+            .contains(&std::path::PathBuf::from("/srv/purlis-state/chat-settings")),
         "{:?}",
         denied.paths
     );
@@ -885,6 +898,8 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
                 crate::profiletrust::RECORD,
                 crate::harness_declaration::APPROVED,
                 crate::personaverbs::mcp::APPROVED_FILE,
+                // And every chat's settings file, which its harness starts on (SK-9).
+                crate::hoststart::SETTINGS_DIR,
             ]
             .map(|record| plane.path().join(state).join(record))
         })
@@ -1002,10 +1017,22 @@ fn what_waits_for_a_chat_s_next_turn_is_denied_only_where_the_hooks_run_outside_
         .iter()
         .map(|state| plane.path().join(state).join("handbacks"))
         .collect();
-    // No harness is given the denial by the classes alone: it is added per harness.
+    // Every harness is denied writing it: the app alone writes what a chat is handed. Reading
+    // it is denied per harness.
     let classes = Denied::of(plane.path(), &machine(Os::MacOs));
     for store in &stores {
-        assert!(!classes.paths.iter().any(|it| it.path == *store));
+        assert!(
+            classes
+                .paths
+                .iter()
+                .any(|it| it.path == *store && it.access == Access::Write)
+        );
+        assert!(
+            !classes
+                .paths
+                .iter()
+                .any(|it| it.path == *store && it.access == Access::ReadWrite)
+        );
     }
     let mut kinds = (0, 0);
     for harness in Harness::ALL {
@@ -1031,7 +1058,16 @@ fn what_waits_for_a_chat_s_next_turn_is_denied_only_where_the_hooks_run_outside_
             for store in &stores {
                 assert!(
                     !denies(store),
-                    "{harness:?} runs its hooks inside its sandbox, and they take from {}",
+                    "{harness:?} runs its hooks inside its sandbox, and they read from {}",
+                    store.display()
+                );
+                // Read, never written: the app takes what they read.
+                assert!(
+                    applied
+                        .denied
+                        .iter()
+                        .any(|it| it.path == *store && it.access == Access::Write),
+                    "{harness:?}: {} is not denied to writes",
                     store.display()
                 );
             }
@@ -1075,11 +1111,15 @@ fn the_messages_between_chats_wait_inside_the_store_that_denial_names() {
         "{} is under none of {held:?}",
         file.display()
     );
-    // And without that rule, as on a harness whose hooks run inside its sandbox, nothing
-    // denies it: the hook that takes the message there can still read and remove it.
+    // And without that rule, as on a harness whose hooks run inside its sandbox, it is denied
+    // to writes alone: the hook that reads the message there can still read it, and the app
+    // takes it.
     let classes = Denied::of(plane.path(), &machine(Os::MacOs));
     assert!(
-        !classes.paths.iter().any(|it| file.starts_with(&it.path)),
+        !classes
+            .paths
+            .iter()
+            .any(|it| it.access == Access::ReadWrite && file.starts_with(&it.path)),
         "{}",
         file.display()
     );
@@ -1157,11 +1197,14 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             std::path::PathBuf::from("/home/op/.config/purlis/peers.json"),
             // The runners this desktop pinned (#2525).
             std::path::PathBuf::from("/home/op/.config/purlis/runners.json"),
+            // When each of them ran (#3492).
+            std::path::PathBuf::from("/home/op/.config/purlis/runner-hours.jsonl"),
             std::path::PathBuf::from("/home/op/.config/purlis/forge-etags"),
             std::path::PathBuf::from("/home/op/.config/charter/purlisd"),
             std::path::PathBuf::from("/home/op/.config/charter/charterd"),
             std::path::PathBuf::from("/home/op/.config/charter/peers.json"),
             std::path::PathBuf::from("/home/op/.config/charter/runners.json"),
+            std::path::PathBuf::from("/home/op/.config/charter/runner-hours.jsonl"),
             std::path::PathBuf::from("/home/op/.config/charter/forge-etags"),
             // This machine's profiles' folders (#2034).
             Homes::charter_data(&machine(Os::Linux))

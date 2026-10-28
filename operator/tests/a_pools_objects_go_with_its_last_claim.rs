@@ -20,6 +20,7 @@ fn claim(namespace: &str, name: &str, pool: &str) -> Arc<Claim> {
         spec: ClaimSpec {
             pool: pool.into(),
             requester: "ada@example.com".into(),
+            kept: false,
         },
         status: None,
     })

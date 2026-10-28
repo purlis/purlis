@@ -13,6 +13,7 @@ fn adding(name: &str) -> PoolAdding {
         memory_mib: None,
         processes: None,
         tmp_mib: None,
+        suspend_after: None,
         frames: None,
         width: None,
     }
@@ -127,6 +128,27 @@ fn the_pools_are_listed_with_a_new_pools_defaults() {
     assert_eq!(shown.pools[0].image, IMAGE);
     assert_eq!(shown.defaults.cpus, "2");
     assert_eq!(shown.defaults.memory_mib, 4096);
+    assert_eq!(shown.suspend_after, "24h");
+    assert_eq!(shown.pools[0].suspend_after, "24h");
+}
+
+#[test]
+fn a_pool_takes_the_time_typed_before_its_runner_suspends_and_a_day_when_empty() {
+    let typed = |after: Option<&str>| {
+        pool_of(&PoolAdding {
+            suspend_after: after.map(str::to_owned),
+            ..adding("builds")
+        })
+        .map(|pool| row(&pool).suspend_after)
+    };
+    assert_eq!(typed(Some("12h")).as_deref(), Ok("12h"));
+    assert_eq!(typed(Some(" 90m ")).as_deref(), Ok("90m"));
+    assert_eq!(typed(Some("120m")).as_deref(), Ok("2h"));
+    assert_eq!(typed(Some("")).as_deref(), Ok("24h"));
+    assert_eq!(typed(None).as_deref(), Ok("24h"));
+    for refused in ["a day", "1d", "10s", "1000h", "-1h"] {
+        assert!(typed(Some(refused)).is_err(), "{refused:?} was taken");
+    }
 }
 
 #[cfg(unix)]

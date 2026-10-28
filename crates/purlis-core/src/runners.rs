@@ -3,15 +3,16 @@
 
 //! **The pools this desktop added, and the runners it pinned** (ADR 0078 §3 and §8, #2525,
 //! #2679, #2749): `<config>/runners.json`, ruled 2026-10-18 and 2026-10-20, `{"version": 1,
-//! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "frames",
-//! "width"}], "runners":
+//! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter",
+//! "frames", "width"}], "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
 //! "draining"?}]}`.
 //!
 //! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
 //!   image by digest, and the limits the person set, each left out where purlis's default
-//!   holds ([`crate::dockerpool::Limits`]), its browsers' frame limits over the link among them
-//!   (#3297). A workspace names a pool (`machine.json`), and a name
+//!   holds ([`crate::dockerpool::Limits`]), and how long its runner is left without a link
+//!   before it suspends itself (`suspendAfter`, #3471, ruled 2026-10-28), left out at a day. Its browsers' frame limits over the link
+//!   are among them (#3297). A workspace names a pool (`machine.json`), and a name
 //!   that is not kept here, or whose runner is not, starts no chat ([`runner_for`]).
 //! - **A runner's device id and public link key are kept once** ([`keep`]): a later answer for
 //!   a runner already kept, with another device id or key, is refused and what was kept stays
@@ -63,16 +64,19 @@ impl std::fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-/// The limits a person set on a pool, each `None` where purlis's default holds
-/// ([`Limits::default`], [`LinkFrames::DEFAULT`]): its CPUs in thousandths, its memory and its
-/// `/tmp` in MiB, and its processes; and how its runner's browsers are watched over the link
-/// (#3297): the most frames a second, and the widest frame in pixels.
+/// What a person set on a pool, each `None` where purlis's default holds: its limits
+/// ([`Limits::default`]), its CPUs in thousandths, its memory and its `/tmp` in MiB, and its
+/// processes; and how long its runner is left without a link from this desktop before it
+/// suspends itself (`suspendAfter`, #3471, [`crate::dockerpool::SUSPEND_AFTER`]).
+/// And how its runner's browsers are watched over the link (#3297): the most frames a
+/// second, and the widest frame in pixels ([`LinkFrames::DEFAULT`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Set {
     pub millicpus: Option<u32>,
     pub memory_mib: Option<u64>,
     pub processes: Option<u32>,
     pub tmp_mib: Option<u64>,
+    pub suspend_after: Option<std::time::Duration>,
     pub frames: Option<u32>,
     pub width: Option<u16>,
 }
@@ -85,13 +89,63 @@ pub struct Pool {
     image: Image,
     set: Set,
     limits: Limits,
+    price: Option<Price>,
+}
+
+/// **What one hour of a pool's runner costs, as the pool declares it** (#3491, the person's
+/// ruling of 2026-10-28): `pricePerHour {amount, currency}`. The amount is kept as the decimal
+/// it was written as, never as a binary float, and the currency is its ISO 4217 code; money is
+/// shown in it and never converted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Price {
+    amount: String,
+    currency: String,
+}
+
+impl Price {
+    /// A price of `amount` (digits, then at most six after a point, with no leading zero but
+    /// for `0` itself) in `currency` (three upper-case letters).
+    pub fn new(amount: &str, currency: &str) -> Result<Price, Refused> {
+        let digits = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
+        let (whole, part) = match amount.split_once('.') {
+            Some((whole, part)) => (whole, Some(part)),
+            None => (amount, None),
+        };
+        let whole_ok =
+            digits(whole) && whole.len() <= 9 && (whole == "0" || !whole.starts_with('0'));
+        let part_ok = part.is_none_or(|part| digits(part) && part.len() <= 6);
+        if !whole_ok || !part_ok {
+            return Err(Refused::Other(format!(
+                "\"{amount}\" is not a price per hour: write it as a decimal in a string, such as \
+                 \"0.12\", with at most six digits after the point"
+            )));
+        }
+        if currency.len() != 3 || !currency.bytes().all(|b| b.is_ascii_uppercase()) {
+            return Err(Refused::Other(format!(
+                "\"{currency}\" is not a currency: write its ISO 4217 code, such as \"EUR\""
+            )));
+        }
+        Ok(Price {
+            amount: amount.to_owned(),
+            currency: currency.to_owned(),
+        })
+    }
+
+    /// The amount, exactly as it was declared.
+    pub fn amount(&self) -> &str {
+        &self.amount
+    }
+
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
 }
 
 impl Pool {
     /// A pool called `name` (a runner's name: lower-case letters, digits and dashes, at most
     /// 40), of `image`, held to `set` over purlis's defaults, which together are limits a
     /// runner can start a chat within.
-    pub fn new(name: &str, image: Image, set: Set) -> Result<Pool, Refused> {
+    pub fn new(name: &str, image: Image, mut set: Set) -> Result<Pool, Refused> {
         usable_pool_name(name).map_err(Refused::Other)?;
         let default = Limits::default();
         let limits = Limits::new(
@@ -106,11 +160,19 @@ impl Pool {
             set.width.unwrap_or(LinkFrames::DEFAULT.width),
         )
         .map_err(Refused::Other)?;
+        if let Some(after) = set.suspend_after {
+            crate::dockerpool::suspend_after(after).map_err(|why| Refused::Other(why.0))?;
+        }
+        // A day is the default, so it is left out of the file as an unset one is.
+        set.suspend_after = set
+            .suspend_after
+            .filter(|after| *after != crate::dockerpool::SUSPEND_AFTER);
         Ok(Pool {
             name: name.to_owned(),
             image,
             set,
             limits,
+            price: None,
         })
     }
 
@@ -121,6 +183,16 @@ impl Pool {
             frames: self.set.frames.unwrap_or(LinkFrames::DEFAULT.frames),
             width: self.set.width.unwrap_or(LinkFrames::DEFAULT.width),
         }
+    }
+
+    /// This pool, declaring `price` per hour of its runner, or none (#3491).
+    pub fn priced(self, price: Option<Price>) -> Pool {
+        Pool { price, ..self }
+    }
+
+    /// The price per hour it declares, if any (#3491): only then is money shown for it.
+    pub fn price(&self) -> Option<&Price> {
+        self.price.as_ref()
     }
 
     pub fn name(&self) -> &str {
@@ -141,12 +213,25 @@ impl Pool {
         self.limits
     }
 
+    /// How long its runner is left without a link from this desktop before it suspends
+    /// itself: what the person set, or a day.
+    pub fn suspend_after(&self) -> std::time::Duration {
+        self.set
+            .suspend_after
+            .unwrap_or(crate::dockerpool::SUSPEND_AFTER)
+    }
+
     /// **What defines this pool, as a digest** (#2050): SHA-256, in hex, of its row as this file
-    /// keeps it (its name, kind, image and the limits the person set), so any change to how it is
-    /// defined changes it.
+    /// keeps it (its name, kind, image, the limits the person set and its `suspendAfter`), so any
+    /// change to how it is defined changes it. Its price is not how it is defined, and is left
+    /// out (#3491).
     pub fn definition_digest(&self) -> String {
         use sha2::Digest as _;
-        let row = pool_to_row(self).to_string();
+        let mut row = pool_to_row(self);
+        if let Some(fields) = row.as_object_mut() {
+            fields.remove("pricePerHour");
+        }
+        let row = row.to_string();
         crate::runnerlink::hex_of(&sha2::Sha256::digest(row.as_bytes()))
     }
 
@@ -259,7 +344,16 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
         .collect::<Result<Vec<_>, _>>()?;
     let pools = rows("pools")?
         .iter()
-        .map(|row| pool_from_row(row).ok_or_else(unreadable))
+        .map(|row| {
+            pool_from_row(row).map_err(|why| match why {
+                // Said, so the person who typed it knows which value to put right (#3491).
+                Some(why) => Refused::Other(format!(
+                    "{} is not as purlis writes it, so no pool or runner of it is used: {why}",
+                    path.display()
+                )),
+                None => unreadable(),
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let mut names: Vec<&str> = pools.iter().map(Pool::name).collect();
     names.sort_unstable();
@@ -610,8 +704,26 @@ pub fn remove_locked(
     let kept = named(config_root, name)?
         .ok_or_else(|| Refused::Other(format!("no runner named {name} is kept on this machine")))?;
     let peer = unpair.map(|unpair| unpair(&kept));
+    // When it ran, as Docker last says, before its container goes (#3492).
+    if let Ok(ran) = docker.ran(&kept.made) {
+        record_hours(crate::runnerhours::seen(
+            config_root,
+            kept.pool(),
+            name,
+            ran,
+            now(),
+        ));
+    }
     let (container, volume) = docker.remove_each(&kept.made);
     let forgotten = container.is_ok() && volume.is_ok();
+    if container.is_ok() {
+        record_hours(crate::runnerhours::stopped(
+            config_root,
+            kept.pool(),
+            name,
+            now(),
+        ));
+    }
     if forgotten {
         forget_locked(config_root, name, locked)?;
     }
@@ -780,6 +892,18 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
     if let Some(tmp) = set.tmp_mib {
         row["tmp"] = tmp.into();
     }
+    if let Some(after) = set
+        .suspend_after
+        .and_then(|after| crate::spelledtime::spelled(after, crate::spelledtime::UP_TO_HOURS))
+    {
+        row["suspendAfter"] = after.into();
+    }
+    if let Some(price) = pool.price() {
+        row["pricePerHour"] = serde_json::json!({
+            "amount": price.amount(),
+            "currency": price.currency(),
+        });
+    }
     if let Some(frames) = set.frames {
         row["frames"] = frames.into();
     }
@@ -791,9 +915,47 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
 
 /// A pool's row: its name, kind `docker` and image, and each limit the person set, as
 /// [`pool_to_row`] writes them: `cpus` a number of CPUs to the thousandth, `memory` and `tmp`
-/// in MiB, `processes` a count, `frames` a count a second and `width` in pixels (#3297). Any
-/// other key, or a value of another shape, is refused.
-fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
+/// in MiB, `processes` a count, `suspendAfter` a duration in seconds, minutes or hours (`"24h"`,
+/// [`crate::spelledtime`]), `frames` a count a second and `width` in pixels (#3297), and
+/// `pricePerHour` where the pool declares one (#3491). Any other
+/// key, or a value of another shape, is refused: with the reason for a price, which the person
+/// writes by hand (#3491), and with none for anything else.
+fn pool_from_row(row: &serde_json::Value) -> Result<Pool, Option<String>> {
+    let price = match row.get("pricePerHour") {
+        None => None,
+        Some(price) => Some(price_from_row(price).map_err(|why| {
+            let pool = row
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .filter(|name| usable_pool_name(name).is_ok())
+                .map_or_else(|| "a pool".to_owned(), |name| format!("pool {name}"));
+            Some(format!("the pricePerHour of {pool} is not a price: {why}"))
+        })?),
+    };
+    plain_pool_from_row(row)
+        .map(|pool| pool.priced(price))
+        .ok_or(None)
+}
+
+/// A pool's `pricePerHour`, `{"amount": "<decimal>", "currency": "<ISO 4217>"}`, or why not.
+fn price_from_row(price: &serde_json::Value) -> Result<Price, String> {
+    let shape = || {
+        "write it as {\"amount\": \"0.40\", \"currency\": \"EUR\"}, the amount in a string"
+            .to_owned()
+    };
+    let price = price.as_object().ok_or_else(shape)?;
+    if price.len() != 2 {
+        return Err(shape());
+    }
+    let said = |key: &str| price.get(key).and_then(serde_json::Value::as_str);
+    let (Some(amount), Some(currency)) = (said("amount"), said("currency")) else {
+        return Err(shape());
+    };
+    Price::new(amount, currency).map_err(|why| why.to_string())
+}
+
+/// [`pool_from_row`] but its price.
+fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
     let fields = row.as_object()?;
     let known = [
         "name",
@@ -803,6 +965,8 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "memory",
         "processes",
         "tmp",
+        "suspendAfter",
+        "pricePerHour",
         "frames",
         "width",
     ];
@@ -841,10 +1005,24 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         memory_mib: count(fields.get("memory"))?,
         processes: count(fields.get("processes"))?,
         tmp_mib: count(fields.get("tmp"))?,
+        suspend_after: match fields.get("suspendAfter") {
+            None => None,
+            Some(after) => Some(crate::spelledtime::read(
+                after.as_str()?,
+                crate::spelledtime::UP_TO_HOURS,
+            )?),
+        },
         frames: count(fields.get("frames"))?,
         width: count(fields.get("width"))?,
     };
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
+}
+
+/// A runner's hours not written are said, and change nothing else (#3492).
+fn record_hours(written: Result<(), String>) {
+    if let Err(why) = written {
+        tracing::warn!("purlis: {why}");
+    }
 }
 
 fn now() -> u64 {

@@ -312,10 +312,11 @@ _Avoid_: host (that is `purlisd`, the process), machine (in UI text), node
 **Devices**:
 The window's view tab of every device this machine knows: itself and each runner it keeps, each
 with its chats and browsers, its version, how it is and when it last answered, and each pool's
-use per person (runners running and suspended, the CPUs and memory they request). Money shows
-only where a pool declares a price per hour. It replaces the **Runners** view tab ADR 0089 §12
-named, and is offered only once this machine keeps a pool. It belongs to **Project**, with the
-devices it lists (spec #2041, #2052).
+use per person (runners running and suspended, the CPUs and memory they request, the hours they
+ran this week). Money shows only where a pool declares a price per hour (`pricePerHour`): its
+hours this week times that price, in its own currency. It replaces the **Runners** view tab
+ADR 0089 §12 named, and is offered only once this machine keeps a pool. It belongs to
+**Project**, with the devices it lists (spec #2041, #2052).
 _Avoid_: Runners view, fleet, machines (for the view)
 
 **Harness declaration**:
@@ -526,8 +527,9 @@ setting of it), runner provider (that is the code)
 
 **Claim**:
 One person's request for a runner from a pool, and the runner it is given. A **kept** claim has
-storage of its own and survives its runner; a **fresh** one is given a ready runner and keeps
-nothing.
+storage of its own, its runner's home, and survives the loss of its runner's pod, its pairing
+with it: the pairing is the claim's (ADR 0078, amended 2026-10-28). A **fresh** one is given a
+ready runner and keeps nothing. purlis chooses which, and "Keep this runner's work" overrides it.
 _Avoid_: claimed (of a piece: that is the piece log's word), lease, reservation, sandbox
 
 **Cluster operator**:

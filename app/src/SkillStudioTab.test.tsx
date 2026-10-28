@@ -872,7 +872,7 @@ describe("the router a studio's chats are routed by (SK-15b)", () => {
   it("says nothing of the built-in router, and names an extension's with each chat's timing", () => {
     const { container } = render(
       <StudioRouterLine
-        router={{ said: "built-in", problem: false, extension: null, chats: [] }}
+        router={{ said: "built-in", problem: false, extension: null, chats: [], grade: null }}
       />,
     );
     expect(container.textContent).toBe("");
@@ -883,6 +883,7 @@ describe("the router a studio's chats are routed by (SK-15b)", () => {
           said: "Chats here are routed by the router relevance.",
           problem: false,
           extension: "relevance",
+          grade: null,
           chats: [
             {
               session: 3,
@@ -914,6 +915,31 @@ describe("the router a studio's chats are routed by (SK-15b)", () => {
       "Chat 4: The router relevance did not answer within 100 ms, so this chat lists what the built-in router shows.",
     ]);
     expect(chats[1].getAttribute("data-fell-back")).toBe("true");
+    expect(screen.getByTestId("skill-studio-router-grade").textContent).toMatch(
+      /has not been graded on this library yet/,
+    );
+    // No Grade where the line is drawn with nothing to grade from.
+    expect(screen.queryByTestId("router-grade")).toBeNull();
+  });
+
+  it("says the router's newest grade beside the library's commit (SK-15e)", () => {
+    render(
+      <StudioRouterLine
+        router={{
+          said: "Chats here are routed by the router relevance.",
+          problem: false,
+          extension: "relevance",
+          chats: [],
+          grade:
+            "Graded on the library at aaaaaaaaaaaa, 2026-10-02: 1 of 2 trigger tests pass with the router relevance, and 2 of 2 with the built-in router.",
+        }}
+        grading={{ plane: "p", workspace: "ops", persona: null, onGraded: () => undefined }}
+      />,
+    );
+    expect(screen.getByTestId("skill-studio-router-grade").textContent).toBe(
+      "Graded on the library at aaaaaaaaaaaa, 2026-10-02: 1 of 2 trigger tests pass with the router relevance, and 2 of 2 with the built-in router.",
+    );
+    expect(screen.getByRole("button", { name: "Grade the router…" })).toBeInTheDocument();
   });
 
   it("says why a choice that names no router is the built-in one", () => {
@@ -924,6 +950,7 @@ describe("the router a studio's chats are routed by (SK-15b)", () => {
           problem: true,
           extension: null,
           chats: [],
+          grade: null,
         }}
       />,
     );

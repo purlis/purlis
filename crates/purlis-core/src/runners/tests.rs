@@ -379,6 +379,60 @@ fn a_pool_is_written_with_the_ruled_keys_and_only_the_limits_the_person_set() {
 }
 
 #[test]
+fn a_pools_own_time_before_its_runner_suspends_is_kept_and_a_day_is_left_out() {
+    let config = tempfile::tempdir().unwrap();
+    let set = Set {
+        suspend_after: Some(std::time::Duration::from_secs(90 * 60)),
+        ..Set::default()
+    };
+    record_pool(config.path(), &pool("nightly", set)).unwrap();
+    record_pool(config.path(), &pool("plain", Set::default())).unwrap();
+    assert_eq!(
+        the_file(config.path())["pools"],
+        serde_json::json!([
+            { "name": "nightly", "kind": "docker", "image": IMAGE, "suspendAfter": "90m" },
+            { "name": "plain", "kind": "docker", "image": IMAGE },
+        ])
+    );
+    let pools = pools(config.path()).unwrap();
+    assert_eq!(pools[0].set(), set);
+    assert_eq!(
+        pools[0].suspend_after(),
+        std::time::Duration::from_secs(5400)
+    );
+    assert_eq!(
+        pools[1].suspend_after(),
+        std::time::Duration::from_secs(86_400)
+    );
+    // A day said in so many words is the default, and left out as one.
+    let a_day = Set {
+        suspend_after: Some(std::time::Duration::from_secs(86_400)),
+        ..Set::default()
+    };
+    assert_eq!(pool("daily", a_day).set(), Set::default());
+}
+
+#[test]
+fn a_pools_suspend_after_is_read_as_the_person_spelled_it_in_hours() {
+    let config = tempfile::tempdir().unwrap();
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let text = serde_json::json!({
+        "version": 1,
+        "runners": [],
+        "pools": [{ "name": "builds", "kind": "docker", "image": IMAGE, "suspendAfter": "12h" }],
+    })
+    .to_string();
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, text.as_bytes())
+        .unwrap();
+    assert_eq!(
+        pools(config.path()).unwrap()[0].suspend_after(),
+        std::time::Duration::from_secs(12 * 60 * 60)
+    );
+}
+
+#[test]
 fn a_file_with_no_pool_is_written_as_it_was_before_pools() {
     let config = tempfile::tempdir().unwrap();
     keep(
@@ -408,6 +462,7 @@ fn a_pools_row_whole_cpus_and_set_limits_read_back_as_written() {
         memory_mib: Some(8192),
         processes: Some(2048),
         tmp_mib: Some(512),
+        suspend_after: Some(std::time::Duration::from_secs(48 * 60 * 60)),
         frames: Some(30),
         width: Some(1920),
     };
@@ -527,6 +582,29 @@ fn a_file_of_an_unknown_shape_is_refused_whole_and_never_replaced() {
         with(&|row| row["memory"] = 1.5.into()),
         with(&|row| row["processes"] = 8.into()),
         with(&|row| row["tmp"] = 999_999.into()),
+        with(&|row| row["suspendAfter"] = 86_400.into()),
+        with(&|row| row["suspendAfter"] = "1d".into()),
+        with(&|row| row["suspendAfter"] = "1h30m".into()),
+        with(&|row| row["suspendAfter"] = "30s".into()),
+        with(&|row| row["suspendAfter"] = "721h".into()),
+        with(&|row| row["suspendAfter"] = "suspendafter".into()),
+        // A price is a decimal in a string and an ISO 4217 code, and nothing else (#3491).
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": 0.12, "currency": "EUR"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "-1", "currency": "EUR"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1e3", "currency": "EUR"})),
+        with(&|row| {
+            row["pricePerHour"] = serde_json::json!({"amount": "0.1234567", "currency": "EUR"})
+        }),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "012", "currency": "EUR"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1.", "currency": "EUR"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1", "currency": "eur"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1", "currency": "EURO"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1"})),
+        with(&|row| {
+            row["pricePerHour"] =
+                serde_json::json!({"amount": "1", "currency": "EUR", "per": "hour"});
+        }),
+        with(&|row| row["pricePerHour"] = "1 EUR".into()),
         with(&|row| row["frames"] = 0.into()),
         with(&|row| row["frames"] = "15".into()),
         with(&|row| row["width"] = 70_000.into()),
@@ -609,6 +687,15 @@ fn a_pools_limits_are_held_to_what_a_runner_needs() {
         // A /tmp larger than the default memory it counts against.
         Set {
             tmp_mib: Some(8192),
+            ..Set::default()
+        },
+        // Suspended before a link that drops can come back, or never in practice.
+        Set {
+            suspend_after: Some(std::time::Duration::from_secs(59)),
+            ..Set::default()
+        },
+        Set {
+            suspend_after: Some(std::time::Duration::from_secs(31 * 24 * 60 * 60)),
             ..Set::default()
         },
     ] {
@@ -786,4 +873,108 @@ fn write_private(path: &Path, text: &serde_json::Value) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::write(path, text.to_string()).unwrap();
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+/// A pool declares its price per hour in the file, and purlis keeps it as it was written
+/// through every write (#3491): its amount the decimal it was, never a float.
+#[test]
+fn a_pools_price_per_hour_is_read_and_kept_as_it_was_declared() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let mut text = the_file(config.path());
+    text["pools"][0]["pricePerHour"] = serde_json::json!({"amount": "0.10", "currency": "EUR"});
+    purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path()))
+        .unwrap()
+        .replace_file(crate::machine::RUNNERS_FILE, text.to_string().as_bytes())
+        .unwrap();
+    let read = pools(config.path()).unwrap();
+    let price = read[0].price().expect("a price");
+    assert_eq!((price.amount(), price.currency()), ("0.10", "EUR"));
+    // Another write of the file keeps it, as declared.
+    record_pool(config.path(), &pool("tests", Set::default())).unwrap();
+    assert_eq!(
+        the_file(config.path())["pools"][0]["pricePerHour"],
+        serde_json::json!({"amount": "0.10", "currency": "EUR"})
+    );
+    assert!(
+        the_file(config.path())["pools"][1]
+            .get("pricePerHour")
+            .is_none(),
+        "a pool that declares none is written with none"
+    );
+}
+
+/// A price is not how a pool is defined: declaring one leaves its definition's digest, which
+/// its logins are held to, as it was (#3491).
+#[test]
+fn a_pools_price_leaves_its_definition_digest_as_it_was() {
+    let plain = pool("builds", Set::default());
+    let priced = plain.clone().priced(Some(Price::new("3", "USD").unwrap()));
+    assert_eq!(plain.definition_digest(), priced.definition_digest());
+}
+
+#[test]
+fn a_price_is_a_plain_decimal_and_an_iso_4217_code() {
+    for amount in ["0", "0.5", "12", "123456789.123456", "0.000001"] {
+        assert!(Price::new(amount, "JPY").is_ok(), "{amount}");
+    }
+    for amount in [
+        "",
+        ".5",
+        "1.",
+        "01",
+        "+1",
+        "-1",
+        "1e2",
+        "1,5",
+        "1234567890",
+        "0.1234567",
+    ] {
+        assert!(Price::new(amount, "EUR").is_err(), "{amount}");
+    }
+    for currency in ["eur", "EU", "EURO", "E1R", ""] {
+        assert!(Price::new("1", currency).is_err(), "{currency}");
+    }
+}
+
+/// A price typed by hand that is not one refuses the whole file, as any other bad value does,
+/// and says which pool's price it is and how to write it (#3491).
+#[test]
+fn a_bad_price_refuses_the_file_and_says_which_pool_and_how_to_write_it() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    for (price, said) in [
+        (
+            serde_json::json!({"amount": 0.40, "currency": "EUR"}),
+            "the amount in a string",
+        ),
+        (
+            serde_json::json!({"amount": "0,40", "currency": "EUR"}),
+            "\"0,40\" is not a price per hour",
+        ),
+        (
+            serde_json::json!({"amount": "0.40", "currency": "euro"}),
+            "ISO 4217",
+        ),
+    ] {
+        let mut text = the_file(config.path());
+        text["pools"][0]["pricePerHour"] = price;
+        folder
+            .replace_file(crate::machine::RUNNERS_FILE, text.to_string().as_bytes())
+            .unwrap();
+        let why = pools(config.path()).unwrap_err().to_string();
+        assert!(why.contains("the pricePerHour of pool builds"), "{why}");
+        assert!(why.contains(said), "{why}");
+        assert!(read(config.path()).is_err(), "the whole file is refused");
+        // Put back as purlis writes it, for the next case.
+        text["pools"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("pricePerHour");
+        folder
+            .replace_file(crate::machine::RUNNERS_FILE, text.to_string().as_bytes())
+            .unwrap();
+    }
 }

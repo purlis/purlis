@@ -49,9 +49,17 @@ fn the_definitions_are_the_ones_the_types_generate() {
         std::fs::write(&path, &wanted).expect("written");
     }
     let held = std::fs::read_to_string(&path).unwrap_or_default();
+    // The first line that differs, so a run that cannot bless shows where.
+    let differs = held
+        .lines()
+        .zip(wanted.lines())
+        .enumerate()
+        .find(|(_, (held, wanted))| held != wanted)
+        .map(|(at, (held, wanted))| format!("line {}: held {held:?}, generated {wanted:?}", at + 1))
+        .unwrap_or_else(|| "one ends before the other".to_owned());
     assert!(
         held == wanted,
-        "deploy/crds.yaml is not what the types generate; regenerate it with \
+        "deploy/crds.yaml is not what the types generate ({differs}); regenerate it with \
          PURLIS_OPERATOR_BLESS=1 cargo test --test the_install_manifests"
     );
 }

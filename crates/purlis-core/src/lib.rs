@@ -204,6 +204,8 @@ pub mod rootupdate;
 pub mod roster;
 pub mod rulespelling;
 #[cfg(unix)]
+pub mod runnerhours;
+#[cfg(unix)]
 pub mod runnerimage;
 #[cfg(unix)]
 pub mod runnerlink;
@@ -234,6 +236,7 @@ pub mod skills;
 pub mod skillspan;
 pub mod skilltools;
 pub mod skilluse;
+pub mod spelledtime;
 pub mod staleclone;
 pub mod standings;
 pub mod start;

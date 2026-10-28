@@ -463,7 +463,7 @@ export function Welcome({
             <button
               type="button"
               tabIndex={0}
-              className="welcome-door"
+              className="ui-card-control welcome-door"
               aria-label={title}
               aria-describedby={`${ids}-${which}-says`}
               ref={(element) => {

@@ -41,6 +41,11 @@
   appearance: none;
 }
 
+/* **Open** (`data-open`, #3524): a trigger whose menu or popover is open is drawn as it is under
+   the pointer, in every variant, so the press that opened it still shows while the pointer is in
+   the menu. Each hover rule below names it first, at the same weight; a theme reaches it as
+   `button.root.open`. */
+[data-scope="button"][data-part="root"][data-open]:not([data-disabled]),
 [data-scope="button"][data-part="root"][data-hovered]:not([data-disabled]) {
   background-color: var(--control-hover);
 }
@@ -90,6 +95,7 @@
   background-color: var(--accent-fill);
 }
 
+[data-scope="button"][data-part="root"][data-variant="primary"][data-open]:not([data-disabled]),
 [data-scope="button"][data-part="root"][data-variant="primary"][data-hovered]:not([data-disabled]) {
   background-color: var(--accent-fill-hover);
 }
@@ -100,6 +106,7 @@
   background-color: transparent;
 }
 
+[data-scope="button"][data-part="root"][data-variant="ghost"][data-open]:not([data-disabled]),
 [data-scope="button"][data-part="root"][data-variant="ghost"][data-hovered]:not([data-disabled]) {
   background-color: var(--surface-hover);
 }
@@ -113,6 +120,7 @@
   background-color: transparent;
 }
 
+[data-scope="button"][data-part="root"][data-variant="quiet"][data-open]:not([data-disabled]),
 [data-scope="button"][data-part="root"][data-variant="quiet"][data-hovered]:not([data-disabled]) {
   color: var(--text-primary);
   background-color: var(--surface-hover);
@@ -125,6 +133,7 @@
   background-color: var(--control-base);
 }
 
+[data-scope="button"][data-part="root"][data-variant="danger"][data-open]:not([data-disabled]),
 [data-scope="button"][data-part="root"][data-variant="danger"][data-hovered]:not([data-disabled]) {
   background-color: var(--danger-surface);
 }
@@ -145,6 +154,7 @@
   background-color: var(--accent-surface);
 }
 
+[data-scope="button"][data-part="root"][data-variant="soft-accent"][data-open]:not([data-disabled]),
 [data-scope="button"][data-part="root"][data-variant="soft-accent"][data-hovered]:not(
     [data-disabled]
   ) {
@@ -158,6 +168,9 @@
   background-color: var(--control-base);
 }
 
+[data-scope="button"][data-part="root"][data-variant="warning-soft"][data-open]:not(
+    [data-disabled]
+  ),
 [data-scope="button"][data-part="root"][data-variant="warning-soft"][data-hovered]:not(
     [data-disabled]
   ) {
@@ -175,7 +188,8 @@
 
 [data-scope="button"][data-part="root"][data-variant="link"]:is(
     [data-hovered],
-    [data-focus-visible]
+    [data-focus-visible],
+    [data-open]
   ) {
   text-decoration: underline;
 }
@@ -194,6 +208,7 @@
   color: var(--text-primary);
 }
 
+[data-scope="button"][data-part="root"][data-selected][data-open]:not([data-disabled]),
 [data-scope="button"][data-part="root"][data-selected][data-hovered]:not([data-disabled]) {
   background-color: var(--tab-active);
 }
@@ -276,9 +291,11 @@
 
 /* Under the pointer and the keyboard it is underlined in the primary words, as a link is, and
    draws no fill: a fill with no padding would sit tight against the letters. */
-[data-scope="button"][data-part="root"][data-inline]:is([data-hovered], [data-focus-visible]):not(
-    [data-disabled]
-  ) {
+[data-scope="button"][data-part="root"][data-inline]:is(
+    [data-hovered],
+    [data-focus-visible],
+    [data-open]
+  ):not([data-disabled]) {
   color: var(--text-primary);
   background-color: transparent;
   text-decoration: underline;
