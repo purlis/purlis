@@ -609,10 +609,7 @@ fn an_image_home_that_reaches_the_runners_home_through_a_link_or_dots_is_refused
 fn a_claims_mark_that_is_not_a_plain_file_is_refused_without_waiting_on_it() {
     let volume = tempfile::tempdir().unwrap();
     let marker = volume.path().join(CLAIM_MARKER);
-    let made = std::process::Command::new("mkfifo")
-        .arg(&marker)
-        .status()
-        .unwrap();
+    let made = crate::forklock::status(std::process::Command::new("mkfifo").arg(&marker)).unwrap();
     assert!(made.success());
     // Neither making a home nor taking one waits on a fifo put where the mark belongs.
     assert!(seed_home(&volume.path().join("home"), None, CLAIM).is_err());
