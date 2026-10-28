@@ -214,10 +214,16 @@ impl HarnessAdapter for Opencode {
         true
     }
 
-    /// No grade runs here until purlis can hold its chats to the grade's limits and read their
-    /// spend on this harness (#3272).
-    fn can_grade(&self) -> bool {
-        false
+    /// Never, by the operator's ruling P8 of 2026-10-27 (#3468): opencode's plugins are code it
+    /// loads into its own process, and it has no switch that turns one off for a single chat,
+    /// so a grade's chat here would run with the person's plugins and not measure the skill
+    /// alone. (Its limits and spend, #3272, would be a second reason.)
+    fn can_grade(&self) -> Result<(), String> {
+        Err(
+            "opencode's plugins are code that runs inside it, which purlis cannot turn off for \
+             one chat, so a grade there could not measure the skill alone"
+                .into(),
+        )
     }
 
     /// The wrap's program first, with the profile written for where the chat opens, then the

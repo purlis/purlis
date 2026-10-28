@@ -678,7 +678,7 @@ fn the_walk_stops_at_the_nearer_of_the_git_root_and_the_project_root() {
 fn claude_code_alone_says_a_grade_can_run_on_it() {
     for harness in Harness::ALL {
         assert_eq!(
-            harness.adapter().can_grade(),
+            harness.adapter().can_grade().is_ok(),
             harness == Harness::ClaudeCode,
             "{harness:?}"
         );
@@ -819,6 +819,25 @@ fn a_profile_command_that_starts_in_a_mode_that_asks_nobody_keeps_a_grade_from_r
             None,
             "{words:?}"
         );
+    }
+}
+
+/// #3468, P8: a plugin the profile's own command loads (`--plugin-dir`) is not one a grade can
+/// turn off for its chat, so a grade never runs on such a profile.
+#[test]
+fn a_profile_command_that_loads_a_plugin_of_its_own_keeps_a_grade_from_running() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    for words in [&["--plugin-dir", "/mine"][..], &["--plugin-dir=/mine"]] {
+        let why = adapter()
+            .grade_refused(&line(words), &env)
+            .expect("refused");
+        assert!(why.contains("--plugin-dir"), "{why}");
+        assert!(why.contains("pick another profile"), "{why}");
     }
 }
 

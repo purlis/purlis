@@ -475,6 +475,7 @@ pub(crate) async fn skill_grade_start(
                 limits.cost_usd,
                 limits.priced.clone(),
             ),
+            plugins_off: None,
         };
         // Its lock is held while the grade runs (#3466): what tells a start it runs.
         let marker = match grades::underway::began(&root, &level, &under_way) {
@@ -524,12 +525,15 @@ pub(crate) async fn skill_grade_start(
                         spent: Spent::default(),
                         tell: &|ran, tokens| tell(ran, tokens, None, None),
                         harness: None,
+                        plugins_off: None,
                     };
                     let report = grading::grade(&request, &mut chats, Some(limits.clone()));
                     let harness = chats.harness.take();
+                    let plugins_off = chats.plugins_off.take();
                     let spent = chats.spent;
                     let graded = Graded {
                         harness,
+                        plugins_off,
                         ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
                         spent,
                         report,
@@ -650,6 +654,9 @@ struct InChats<'a> {
     tell: &'a dyn Fn(u32, Option<u64>),
     /// The harness the chats ran on, as the first that started said.
     harness: Option<String>,
+    /// The plugins its chats were handed off (#3468): every one any chat that started was handed
+    /// off, as each start reads the record again. `None` until one starts.
+    plugins_off: Option<Vec<String>>,
 }
 
 impl Chats for InChats<'_> {
@@ -743,6 +750,14 @@ impl InChats<'_> {
                 .harness
                 .map(|harness| harness.name().to_owned());
         }
+        // Each chat's start reads the record again, so what any of them had off is named.
+        let off = self.plugins_off.get_or_insert_with(Vec::new);
+        for id in grades::plugins_off(&started.ready) {
+            if !off.contains(&id) {
+                off.push(id);
+            }
+        }
+        off.sort();
         let session = started.session;
         let id = self.held.chats().chat_at(session).and_then(|at| at.id);
         // What the chat has spent so far, as its harness last said: read each look, so a chat

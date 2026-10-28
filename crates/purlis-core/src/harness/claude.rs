@@ -317,9 +317,10 @@ impl HarnessAdapter for ClaudeCode {
 
     /// Yes (SK-16): a grade's chat is armed with purlis's MCP server alone and its read tools
     /// (`--strict-mcp-config`), is denied the tools that start a sub-agent, and says what it
-    /// spent, so purlis holds it to the grade's limits.
-    fn can_grade(&self) -> bool {
-        true
+    /// spent, so purlis holds it to the grade's limits. Its plugins are turned off for that chat
+    /// alone in its `--settings` (`enabledPlugins`), purlis's own pinned on (#3468).
+    fn can_grade(&self) -> Result<(), String> {
+        Ok(())
     }
 
     /// The person's own settings that start every chat with its prompts off, or that purlis
@@ -334,9 +335,21 @@ impl HarnessAdapter for ClaudeCode {
         if let Some(why) = settings_keep_a_grade_from_running(env) {
             return Some(why);
         }
-        crate::dispatchunattended::bypass_in(command)
+        if let Some(flag) = crate::dispatchunattended::bypass_in(command)
             .or_else(|| mode_that_does_not_ask(command))
-            .map(|flag| prompts_off_by(&flag))
+        {
+            return Some(prompts_off_by(&flag));
+        }
+        // A plugin the command loads itself is not in the install record, so a grade could not
+        // turn it off for its chat (P8, #3468).
+        plugin_dir_in(command).map(|flag| {
+            format!(
+                "This profile's command loads a plugin of its own ({}), which a grade cannot turn \
+                 off for its chat, and a grade runs with only purlis's plugin on: pick another \
+                 profile.",
+                crate::shown::one_line(&flag, 60)
+            )
+        })
     }
 
     /// Claude Code's own order: the last `--model` in the command, then `ANTHROPIC_MODEL`; a
@@ -730,6 +743,19 @@ fn prompts_off_by(flag: &str) -> String {
         crate::shown::one_line(flag, 60)
     )
 }
+
+/// **The `--plugin-dir` in `command`**, as it is written, or `None` (#3468): in either spelling,
+/// `--plugin-dir <dir>` or `--plugin-dir=<dir>`.
+fn plugin_dir_in(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command
+        .iter()
+        .find(|word| is_flag(word) && split(word).0 == PLUGIN_DIR_FLAG)
+        .cloned()
+}
+
+/// The flag Claude Code loads a plugin from a folder by, for one session.
+const PLUGIN_DIR_FLAG: &str = "--plugin-dir";
 
 /// **Claude Code's permission modes a grade's chat may start in** (#3352): each asks before a
 /// tool its rules do not allow, so a grade's "end at the first ask" fires. Every other mode

@@ -653,3 +653,69 @@ fn unread() -> Env<'static> {
         process: false,
     }
 }
+
+// -------------------------------------------------------------------------------------
+// A grade's chat: every plugin off but purlis's own (#3468, P8)
+// -------------------------------------------------------------------------------------
+
+#[test]
+fn a_grade_turns_every_installed_plugin_off_and_keeps_purlis_s_own_pins() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join("plugins")).unwrap();
+    std::fs::write(
+        home.path().join("plugins/installed_plugins.json"),
+        r#"{"version": 2, "plugins": {
+            "figma@claude-plugins-official": [{"scope": "user", "installPath": "/x"}],
+            "purlis@inline": [{"scope": "user", "installPath": "/y"}]
+        }}"#,
+    )
+    .unwrap();
+    let env = env_of(&[("CLAUDE_CONFIG_DIR", home.path())]);
+
+    let got = only_purlis_on(&CLAUDE_CODE, &Env::of(&env)).expect("it reads");
+
+    let mut want: BTreeMap<String, bool> = pins_of(&CLAUDE_CODE).into_iter().collect();
+    want.insert("figma@claude-plugins-official".to_owned(), false);
+    assert_eq!(got, want, "purlis@inline stays on, as its pin says");
+    assert_eq!(
+        persons_plugins_off(&CLAUDE_CODE, &got),
+        ["figma@claude-plugins-official"]
+    );
+}
+
+#[test]
+fn a_grade_refuses_a_plugin_record_it_cannot_read() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join("plugins")).unwrap();
+    std::fs::write(home.path().join("plugins/installed_plugins.json"), "{").unwrap();
+    let env = env_of(&[("CLAUDE_CONFIG_DIR", home.path())]);
+    let why = only_purlis_on(&CLAUDE_CODE, &Env::of(&env)).expect_err("refused");
+    assert!(why.contains("installed_plugins.json"), "{why}");
+}
+
+#[test]
+fn a_grade_on_codex_turns_its_installed_plugins_off_too() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(
+        home.path().join("config.toml"),
+        "[plugins.\"gh@openai\"]\nenabled = true\n",
+    )
+    .unwrap();
+    let env = env_of(&[("CODEX_HOME", home.path())]);
+    let got = only_purlis_on(&CODEX, &Env::of(&env)).expect("it reads");
+    assert_eq!(got, BTreeMap::from([("gh@openai".to_owned(), false)]));
+}
+
+#[test]
+fn a_grade_records_purlis_s_installed_copy_as_none_of_the_persons() {
+    let copy = crate::plugin::FORMERLY[2].1;
+    let plugins = BTreeMap::from([(copy.to_owned(), false), ("figma@x".to_owned(), false)]);
+    assert_eq!(persons_plugins_off(&CLAUDE_CODE, &plugins), ["figma@x"]);
+}
+
+#[test]
+fn a_grade_is_refused_on_a_harness_that_cannot_turn_a_plugin_off_for_one_chat() {
+    let env = env_of(&[]);
+    let why = only_purlis_on(&OPENCODE, &Env::of(&env)).expect_err("refused");
+    assert!(why.contains("cannot turn a plugin off"), "{why}");
+}

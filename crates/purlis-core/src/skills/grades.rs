@@ -119,6 +119,12 @@ pub struct Graded {
     pub runs: u8,
     pub report: GradeReport,
     pub spent: Spent,
+    /// The harness's own plugins its chats were handed off, by the harness's id (P8, #3468):
+    /// every one it had installed, purlis's own kept on and left out here. `None` in a row
+    /// written before #3468, in one whose grade no chat of started, and in the row held while a
+    /// grade is under way (so an interrupted grade's record has none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugins_off: Option<Vec<String>>,
 }
 
 impl Graded {
@@ -146,9 +152,16 @@ impl Graded {
             && plain(&self.grade)
             && chrono::DateTime::parse_from_rfc3339(&self.ts).is_ok()
             && self.spent.cost_usd.is_none_or(amount)
+            && self.plugins_off.as_deref().is_none_or(|ids| {
+                ids.len() <= MOST_PLUGINS_OFF
+                    && ids.iter().all(|id| crate::harness_plugin::id_ok(id))
+            })
             && report_holds_together(&self.report, self.runs)
     }
 }
+
+/// The most plugin ids a row read back names as off: far past any machine's installs.
+const MOST_PLUGINS_OFF: usize = 256;
 
 /// A plain name: at most 64 of letters, digits, `-`, `_` and `.`.
 fn plain(word: &str) -> bool {
@@ -567,14 +580,44 @@ use super::verbs::drafts::Snapshot;
 /// Allows ([`crate::sandbox::policy::holding_no_kept_grants`]), and refused unless it runs at the
 /// full sandbox on a profile that keeps its permission prompts ([`chat_refused`]). The one answer
 /// a grade's plan and its chats both take.
+///
+/// **Its chats have only purlis's plugin on** (P8, #3468): every plugin the harness has
+/// installed is handed off for the chat alone, by the harness's own per-chat switch, and
+/// nothing of the person's own settings is written ([`crate::harness_plugin::only_purlis_on`]),
+/// so a grade measures the skill alone. [`plugins_off`] names them for the record.
 pub fn ready_to_grade(
     start: &crate::start::Start,
     root: &Path,
 ) -> Result<crate::start::Ready, String> {
-    let ready =
+    let mut ready =
         crate::sandbox::policy::holding_no_kept_grants(|| crate::start::ready(start, root))?;
     chat_refused(&ready)?;
+    if let Some(harness) = ready.harness {
+        let adapter = harness.adapter().plugins();
+        ready.plugins.plugins = crate::harness_plugin::only_purlis_on(
+            adapter,
+            &crate::harness_plugin::Env::of(&ready.env),
+        )
+        .map_err(|why| {
+            format!(
+                "{why}, and a grade runs with every plugin but purlis's own off, so no grade \
+                 runs on this profile: mend the record with the program's own plugin command, or \
+                 pick another profile."
+            )
+        })?;
+    }
     Ok(ready)
+}
+
+/// **The harness's own plugins a grade's chat that starts as `ready` is handed off** (#3468):
+/// what its record says, purlis's pins left out.
+pub fn plugins_off(ready: &crate::start::Ready) -> Vec<String> {
+    ready.harness.map_or_else(Vec::new, |harness| {
+        crate::harness_plugin::persons_plugins_off(
+            harness.adapter().plugins(),
+            &ready.plugins.plugins,
+        )
+    })
 }
 
 /// **The price a grade's chat started as `ready` has its dollar limit worked out at** (#3469):
@@ -602,13 +645,13 @@ pub fn priced(ready: &crate::start::Ready) -> grade::Priced {
 /// ([`crate::harness::HarnessAdapter::grade_refused`]); and only at the full sandbox, never at
 /// the floor, with the sandbox lifted, or with no backend.
 pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level, String> {
-    let Some(adapter) = ready
-        .harness
-        .map(crate::harness::Harness::adapter)
-        .filter(|adapter| adapter.can_grade())
-    else {
+    let Some(harness) = ready.harness else {
         return Err(not_on_this_harness());
     };
+    let adapter = harness.adapter();
+    if let Err(why) = adapter.can_grade() {
+        return Err(refused_because(&why));
+    }
     let command: Vec<String> = std::iter::once(ready.program.clone())
         .chain(ready.command.iter().cloned())
         .collect();
@@ -649,14 +692,33 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
     }
 }
 
-/// **Why a grade's chat is refused on a profile whose harness cannot grade**: named by the
+/// **Why a grade's chat is refused on a harness that cannot grade**, in one sentence: its
+/// adapter's reason `why` ([`crate::harness::HarnessAdapter::can_grade`]), then the harnesses
+/// that can, so the core names none.
+pub fn refused_because(why: &str) -> String {
+    let can = can_grade_on();
+    if can.is_empty() {
+        return format!("{why}, and no program this purlis runs can grade yet, so no grade runs.");
+    }
+    format!(
+        "{why}, so a grade runs on a {} profile only: pick one.",
+        can.join(" or ")
+    )
+}
+
+/// The titles of the harnesses that can grade.
+fn can_grade_on() -> Vec<&'static str> {
+    crate::harness::Harness::ALL
+        .into_iter()
+        .filter(|harness| harness.adapter().can_grade().is_ok())
+        .map(crate::harness::Harness::title)
+        .collect()
+}
+
+/// **Why a grade's chat is refused on a profile of no harness purlis knows**: named by the
 /// harnesses that can ([`crate::harness::HarnessAdapter::can_grade`]), so the core names none.
 fn not_on_this_harness() -> String {
-    let can: Vec<&str> = crate::harness::Harness::ALL
-        .into_iter()
-        .filter(|harness| harness.adapter().can_grade())
-        .map(crate::harness::Harness::title)
-        .collect();
+    let can = can_grade_on();
     if can.is_empty() {
         return "No program this purlis runs can hold a grade's chats to its limits yet, so no \
                 grade runs."
