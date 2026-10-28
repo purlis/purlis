@@ -1689,7 +1689,8 @@ async fn stopped_on_a_pool_or_a_claim_suspends_its_runners_and_never_destroys_th
         .create(&PostParams::default(), &claim("ada-fresh", "e2e-stop"))
         .await
         .expect("a fresh claim");
-    vouched_pod(&claims, "ada-kept").await;
+    let (_, statement) = vouched_pod(&claims, "ada-kept").await;
+    let kept_key = key_of(&statement);
     let (fresh_pod, _) = vouched_pod(&claims, "ada-fresh").await;
     let volume = volumes
         .get("purlis-kept-ada-kept")
@@ -1749,9 +1750,12 @@ async fn stopped_on_a_pool_or_a_claim_suspends_its_runners_and_never_destroys_th
         )
         .await
         .expect("the pool running again");
-    for name in ["ada-kept", "ada-fresh", "ada-later"] {
+    for name in ["ada-fresh", "ada-later"] {
         vouched_pod(&claims, name).await;
     }
+    // The kept runner is the same runner, paired as it was: the same key vouched for (#2057).
+    let (_, statement) = vouched_pod(&claims, "ada-kept").await;
+    assert_eq!(key_of(&statement), kept_key);
     assert_eq!(
         volumes
             .get("purlis-kept-ada-kept")
@@ -1786,13 +1790,44 @@ async fn stopped_on_a_pool_or_a_claim_suspends_its_runners_and_never_destroys_th
         )
         .await
         .expect("the claim running again");
-    vouched_pod(&claims, "ada-kept").await;
+    let (_, statement) = vouched_pod(&claims, "ada-kept").await;
+    assert_eq!(key_of(&statement), kept_key);
     eventually("its pod is back", Duration::from_secs(180), || async {
         pods.get_opt("ada-kept")
             .await
             .ok()?
             .filter(pod_ready)
             .map(|_| ())
+    })
+    .await;
+
+    // Its pool deleted, a runner it served is still stopped by its claim.
+    let (later_pod, _) = vouched_pod(&claims, "ada-later").await;
+    pools
+        .delete("e2e-stop", &DeleteParams::default())
+        .await
+        .expect("the pool deleted");
+    eventually(
+        "the claim says its pool is deleted",
+        Duration::from_secs(120),
+        || async {
+            let claim = claims.get("ada-later").await.ok()?;
+            (ready_of(&claim)?.1 == "PoolDeleted").then_some(())
+        },
+    )
+    .await;
+    claims
+        .patch(
+            "ada-later",
+            &PatchParams::default(),
+            &Patch::Merge(stop(true)),
+        )
+        .await
+        .expect("the claim stopped");
+    let message = says_stopped(&claims, "ada-later").await;
+    assert!(message.contains("This claim is stopped"), "{message}");
+    eventually("its pod ends", Duration::from_secs(180), || async {
+        pods.get_opt(&later_pod).await.ok()?.is_none().then_some(())
     })
     .await;
 
@@ -1901,5 +1936,116 @@ async fn a_warm_runner_of_an_earlier_template_is_replaced_and_a_fresh_claim_take
         let _ = claims.delete(name, &DeleteParams::foreground()).await;
     }
     let _ = pools.delete("e2e-stale", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
+/// The `key:` line of a statement.
+fn key_of(statement: &str) -> String {
+    statement
+        .lines()
+        .find_map(|line| line.strip_prefix("key: "))
+        .expect("a key line")
+        .to_owned()
+}
+
+/// Whether `result` is the cluster's refusal by an admission policy.
+fn refused_by_policy<T: std::fmt::Debug>(result: &Result<T, kube::Error>) -> bool {
+    matches!(result, Err(kube::Error::Api(status)) if status.code == 403 || status.code == 422)
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn the_cluster_lets_the_operator_change_only_the_mode_of_a_claims_sandbox() {
+    use kube::api::{ApiResource, DynamicObject};
+    use purlis_cluster_operator::upstream::{Sandbox, sandbox_in_mode};
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-sandbox-right").await;
+    let pools = small_pool(&client, "e2e-sandbox-right").await;
+    let claims = claims_in(&client, &scratch.name);
+    claims
+        .create(&PostParams::default(), &claim("ada-1", "e2e-sandbox-right"))
+        .await
+        .expect("the claim");
+    let (pod, _) = vouched_pod(&claims, "ada-1").await;
+    let as_operator = acting_as(SERVICE_ACCOUNT).await;
+    let sandboxes = Api::<Sandbox>::namespaced(as_operator, &scratch.name);
+    // Dry runs: admission is asked, and nothing changes.
+    let dry = PatchParams {
+        dry_run: true,
+        ..PatchParams::default()
+    };
+    // Its claim's sandbox, in its mode: let through.
+    sandboxes
+        .patch(
+            &pod,
+            &dry,
+            &Patch::Merge(serde_json::json!({ "spec": { "operatingMode": "Suspended" } })),
+        )
+        .await
+        .expect("the operator may change a claim's sandbox's mode");
+    // Anything else of it: refused by the cluster.
+    for (what, body) in [
+        (
+            "another spec field",
+            serde_json::json!({ "spec": { "shutdownPolicy": "Delete" } }),
+        ),
+        (
+            "a label",
+            serde_json::json!({ "metadata": { "labels": { "e2e": "x" } } }),
+        ),
+        (
+            "an annotation",
+            serde_json::json!({ "metadata": { "annotations": { "e2e": "x" } } }),
+        ),
+    ] {
+        let refused = sandboxes.patch(&pod, &dry, &Patch::Merge(body)).await;
+        assert!(refused_by_policy(&refused), "{what}: {refused:?}");
+    }
+    // Applied to the sandbox it read, by uid: one of another uid under the name is refused.
+    let mut other = sandboxes.get(&pod).await.expect("the sandbox");
+    other.metadata.uid = Some("00000000-0000-4000-8000-000000000000".into());
+    let mut apply = PatchParams::apply("purlis-cluster-operator").force();
+    apply.dry_run = true;
+    let refused = sandboxes
+        .patch(
+            &pod,
+            &apply,
+            &Patch::Apply(&sandbox_in_mode(&other, "Suspended")),
+        )
+        .await;
+    assert!(
+        matches!(&refused, Err(kube::Error::Api(status)) if status.code == 409),
+        "{refused:?}"
+    );
+
+    // A sandbox no SandboxClaim controls, made by someone else: not even its mode.
+    let resource = ApiResource::erase::<Sandbox>(&());
+    let bare: DynamicObject = serde_json::from_value(serde_json::json!({
+        "apiVersion": "agents.x-k8s.io/v1beta1",
+        "kind": "Sandbox",
+        "metadata": { "name": "someone-elses", "namespace": scratch.name },
+        "spec": {
+            "operatingMode": "Suspended",
+            "podTemplate": { "spec": { "containers": [{ "name": "x", "image": runner_image() }] } },
+        },
+    }))
+    .expect("a sandbox");
+    Api::<DynamicObject>::namespaced_with(client.clone(), &scratch.name, &resource)
+        .create(&PostParams::default(), &bare)
+        .await
+        .expect("a sandbox of someone else's");
+    let refused = sandboxes
+        .patch(
+            "someone-elses",
+            &dry,
+            &Patch::Merge(serde_json::json!({ "spec": { "operatingMode": "Running" } })),
+        )
+        .await;
+    assert!(refused_by_policy(&refused), "{refused:?}");
+
+    let _ = claims.delete("ada-1", &DeleteParams::foreground()).await;
+    let _ = pools
+        .delete("e2e-sandbox-right", &DeleteParams::default())
+        .await;
     scratch.end().await;
 }

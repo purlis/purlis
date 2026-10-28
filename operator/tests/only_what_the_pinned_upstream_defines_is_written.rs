@@ -114,7 +114,19 @@ fn written() -> Vec<Value> {
         )),
         serde_json::to_value(upstream::sandbox_claim_for(&claim, &Default::default())),
         // A runner suspended or run again when its Pool or Claim is stopped (#2058).
-        serde_json::to_value(upstream::sandbox_in_mode("ada-1", "ada", "Suspended")),
+        serde_json::to_value(upstream::sandbox_in_mode(
+            &upstream::Sandbox {
+                metadata: ObjectMeta {
+                    name: Some("ada-1".into()),
+                    namespace: Some("ada".into()),
+                    uid: Some("w".into()),
+                    ..ObjectMeta::default()
+                },
+                spec: Default::default(),
+                status: None,
+            },
+            "Suspended",
+        )),
     ]
     .into_iter()
     .map(|v| v.expect("serialises"))

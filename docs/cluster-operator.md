@@ -176,9 +176,10 @@ cluster admin can review and apply them apart from the controllers.
 #    the release's digest.
 kubectl apply --server-side -k operator/vendor/agent-sandbox/v1.0.6
 
-# 2. The policy that admits a Claim only for someone who may use its Pool, then purlis's
-#    definitions, Pool and Claim. The policy goes first, so no Claim is admitted before it
-#    holds.
+# 2. The policies: one that admits a Claim only for someone who may use its Pool, and one that
+#    narrows what the operator may change of upstream's sandboxes (below). Then purlis's
+#    definitions, Pool and Claim. The policies go first, so no Claim is admitted before they
+#    hold.
 kubectl apply --server-side -f operator/deploy/policy.yaml
 kubectl apply --server-side -f operator/deploy/crds.yaml
 
@@ -273,14 +274,19 @@ spec:
 - **`stopped` suspends, and never destroys** (#2058). Set on a Pool or a Claim from kubectl
   (`kubectl patch pool team --type merge -p '{"spec":{"stopped":true}}'`), it suspends every
   runner of the pool, or the Claim's runner: the operator puts each runner's upstream sandbox in
-  upstream's `Suspended` mode, which ends its pod and keeps its volumes, so a kept Claim's home,
-  its work and its pairing stay. A fresh Claim's runner keeps nothing past its pod, as ever. The
-  Claim's `Ready` is `False` with the reason `Stopped`, saying whether the Claim or its pool is
-  stopped, and no key is vouched for. A Claim made while stopped gets no runner yet. A stopped
-  pool keeps no runner warm. Set back to `false` (the default), each runner the operator
-  suspended runs again: a kept Claim's pod is made again on its volume, paired as it was. A
-  runner someone suspended by hand is left suspended. A stopped pool's warm pool keeps no runner
-  warm after it runs again until a team admin scales it again.
+  upstream's `Suspended` mode, and upstream ends its pod and keeps its volumes, so a kept
+  Claim's home, its work and its pairing stay. A fresh Claim's runner keeps nothing past its
+  pod, as ever. The Claim's `Ready` is `False` with the reason `Stopped`, saying whether the
+  Claim or its pool is stopped and whether its runner is being suspended or is suspended
+  (upstream's own `Suspended` condition), and no key is vouched for. A Claim made while stopped
+  gets no runner yet. A stopped pool keeps no runner warm. A Claim's own `stopped` stops its
+  runner even after its Pool is deleted. Set back to `false` (the default), each runner the
+  operator suspended runs again: a kept Claim's pod is made again on its volume, paired as it
+  was, with the same key. A runner suspended by hand before it was stopped is left suspended,
+  as far as the operator can tell: it goes by who last applied the sandbox's mode, which any
+  client may name itself as, and a runner suspended by hand while it was already stopped runs
+  again with the rest. A stopped pool's warm pool keeps no runner warm after it runs again until
+  a team admin scales it again.
 - **Deleting a Claim** deletes its runner.
 - **Deleting a Pool stops nothing that runs.** A Claim whose runner was asked for keeps it,
   running as the pool last defined it, until the Claim is deleted: its `Ready` is still what
@@ -429,12 +435,24 @@ reads a sandbox and a pod only by name: a Claim's, which upstream made, to follo
 its runner and read the key it vouches for. The pod is the one the sandbox records: upstream's
 `agents.x-k8s.io/pod-name` annotation where it carries one (a runner adopted from a warm pool
 before upstream made warm runners whole sandboxes), the sandbox's own name otherwise, and still
-held to being the pod that sandbox controls. It patches a sandbox only in its operating mode,
-and only one its Claim's upstream claim controls, to suspend a stopped runner and run it again. It never lists, makes, changes or deletes a pod. Its own signing key is the
-Secret you made at install, which the kubelet mounts in its pod. Its Kubernetes client is built
+held to being the pod that sandbox controls. It never lists, makes, changes or deletes a pod
+itself, though suspending a sandbox has upstream end its pod. Its own signing key is the Secret
+you made at install, which the kubelet mounts in its pod. Its Kubernetes client is built
 without the websocket support `exec` would need.
 `operator/tests/the_install_manifests.rs` holds these rules, and the kind tests ask the cluster
-itself. It runs as a user who is not root, with a read-only root file system and every
+itself.
+
+**Its `patch` on sandboxes is narrowed by the cluster** (#2058). RBAC cannot limit a right to
+one field or to some owners: as a role, `patch` on `sandboxes` is every field of every Sandbox
+in the cluster, those other users of agent-sandbox made without any SandboxClaim included. The
+operator needs only one: to suspend a stopped Claim's runner and run it again, it applies
+`spec.operatingMode` and nothing else, to the sandbox its Claim's upstream claim controls, with
+that sandbox's uid as a precondition. A second admission policy in `policy.yaml`,
+`purlis-operator-changes-only-a-sandboxs-mode`, makes that the cluster's rule: an update by the
+operator's service account to a Sandbox is refused unless a SandboxClaim controls it, and
+unless every field of its spec but `operatingMode`, and its labels, annotations, owners and
+finalizers, are as they were. The operator holds no right on admission policies or their
+bindings but reading the binding of the policy on Claims, so it cannot lift it. It runs as a user who is not root, with a read-only root file system and every
 capability dropped.
 
 Upstream's controller holds its own ClusterRoles, in the vendored manifest: it makes and

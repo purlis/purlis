@@ -217,4 +217,6 @@ step "uninstalled, the chart leaves the definitions and the policy"
 helm uninstall purlis-cluster-operator --kube-context "$context" --namespace purlis-system --wait
 kubectl --context "$context" get crd/pools.runners.purlis.dev crd/claims.runners.purlis.dev \
   validatingadmissionpolicy/purlis-claims-use-their-pool \
-  validatingadmissionpolicybinding/purlis-claims-use-their-pool >/dev/null
+  validatingadmissionpolicybinding/purlis-claims-use-their-pool \
+  validatingadmissionpolicy/purlis-operator-changes-only-a-sandboxs-mode \
+  validatingadmissionpolicybinding/purlis-operator-changes-only-a-sandboxs-mode >/dev/null

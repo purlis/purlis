@@ -20,6 +20,10 @@
 # A Claim's pool never changes after it is made (crds.yaml), so creating one is the only time
 # this is asked. operator/tests/the_install_manifests.rs holds it, and the kind tests check that
 # the cluster refuses a Claim from someone who may not use its pool.
+#
+# The second policy narrows the operator's own `patch` on upstream's sandboxes (#2058), which
+# RBAC cannot scope to a field or an owner: the operator may change only a Sandbox's
+# spec.operatingMode, and only on a Sandbox a SandboxClaim controls.
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
 # Copyright 2026 Purlis
@@ -58,6 +62,70 @@ spec:
         'A claim names who makes it: set spec.requester to ' + request.userInfo.username + '.'
       reason: Forbidden
 ---
+# Source: purlis-cluster-operator/templates/sandbox-policy.yaml
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+# The operator's `patch` on upstream's sandboxes, narrowed by the cluster (#2058): RBAC cannot
+# name a field or an owner, so this policy refuses any change the operator's service account
+# makes to a Sandbox but its spec.operatingMode, and any change at all to a Sandbox no
+# SandboxClaim controls. The operator may not change policies or their bindings, so it cannot
+# lift this. Kept when the release is uninstalled, as the policy on Claims is.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-operator-changes-only-a-sandboxs-mode
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [agents.x-k8s.io]
+        apiVersions: ["*"]
+        operations: [UPDATE]
+        resources: [sandboxes]
+  matchConditions:
+    - name: by-the-operator
+      expression: >-
+        request.userInfo.username ==
+        'system:serviceaccount:purlis-system:purlis-cluster-operator'
+  validations:
+    - expression: >-
+        has(oldObject.metadata.ownerReferences) &&
+        oldObject.metadata.ownerReferences.exists(r, has(r.controller) && r.controller &&
+        r.kind == 'SandboxClaim' && r.apiVersion.startsWith('extensions.agents.x-k8s.io/'))
+      message: purlis's cluster operator changes only a Sandbox a SandboxClaim controls.
+      reason: Forbidden
+    # Every field of the pinned upstream's Sandbox spec but operatingMode, each as it was
+    # (operator/tests/the_install_manifests.rs holds the list to the vendored definitions).
+    - expression: >-
+        has(object.spec.podTemplate) == has(oldObject.spec.podTemplate) &&
+        (!has(object.spec.podTemplate) || object.spec.podTemplate == oldObject.spec.podTemplate) &&
+        has(object.spec.service) == has(oldObject.spec.service) &&
+        (!has(object.spec.service) || object.spec.service == oldObject.spec.service) &&
+        has(object.spec.shutdownPolicy) == has(oldObject.spec.shutdownPolicy) &&
+        (!has(object.spec.shutdownPolicy) || object.spec.shutdownPolicy == oldObject.spec.shutdownPolicy) &&
+        has(object.spec.shutdownTime) == has(oldObject.spec.shutdownTime) &&
+        (!has(object.spec.shutdownTime) || object.spec.shutdownTime == oldObject.spec.shutdownTime) &&
+        has(object.spec.volumeClaimTemplates) == has(oldObject.spec.volumeClaimTemplates) &&
+        (!has(object.spec.volumeClaimTemplates) || object.spec.volumeClaimTemplates == oldObject.spec.volumeClaimTemplates)
+      message: purlis's cluster operator changes only a Sandbox's spec.operatingMode.
+      reason: Forbidden
+    - expression: >-
+        has(object.metadata.labels) == has(oldObject.metadata.labels) &&
+        (!has(object.metadata.labels) || object.metadata.labels == oldObject.metadata.labels) &&
+        has(object.metadata.annotations) == has(oldObject.metadata.annotations) &&
+        (!has(object.metadata.annotations) || object.metadata.annotations == oldObject.metadata.annotations) &&
+        has(object.metadata.ownerReferences) == has(oldObject.metadata.ownerReferences) &&
+        (!has(object.metadata.ownerReferences) || object.metadata.ownerReferences == oldObject.metadata.ownerReferences) &&
+        has(object.metadata.finalizers) == has(oldObject.metadata.finalizers) &&
+        (!has(object.metadata.finalizers) || object.metadata.finalizers == oldObject.metadata.finalizers)
+      message: purlis's cluster operator changes no label, annotation, owner or finalizer of a Sandbox.
+      reason: Forbidden
+---
 # Source: purlis-cluster-operator/templates/policy.yaml
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -70,4 +138,18 @@ metadata:
     helm.sh/resource-policy: keep
 spec:
   policyName: purlis-claims-use-their-pool
+  validationActions: [Deny]
+---
+# Source: purlis-cluster-operator/templates/sandbox-policy.yaml
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-operator-changes-only-a-sandboxs-mode
+  labels:
+    app.kubernetes.io/name: purlis-cluster-operator
+    app.kubernetes.io/part-of: purlis
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-operator-changes-only-a-sandboxs-mode
   validationActions: [Deny]

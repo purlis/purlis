@@ -18,4 +18,4 @@ D-2056-3 in its pull request). The key has no rotation and statements no expiry 
    operator's pod, read-only and for its group alone. Without it the operator does not start:
    it vouches for no runner unsigned.
 
-**Item 1 amended 2026-10-28 by #2058:** the operator also patches a sandbox its claim controls, in its operating mode alone ([the amendment](2026-10-28-the-operator-suspends-a-stopped-runner.md)).
+**Item 1 amended 2026-10-28 by #2058:** the operator also holds `patch` on sandboxes, which an admission policy narrows to the operating mode of a sandbox a SandboxClaim controls ([the amendment](2026-10-28-the-operator-suspends-a-stopped-runner.md)).

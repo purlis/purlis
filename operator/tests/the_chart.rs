@@ -168,6 +168,10 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # A Claim's pool never changes after it is made (crds.yaml), so creating one is the only time
 # this is asked. operator/tests/the_install_manifests.rs holds it, and the kind tests check that
 # the cluster refuses a Claim from someone who may not use its pool.
+#
+# The second policy narrows the operator's own `patch` on upstream's sandboxes (#2058), which
+# RBAC cannot scope to a field or an owner: the operator may change only a Sandbox's
+# spec.operatingMode, and only on a Sandbox a SandboxClaim controls.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.

@@ -5,15 +5,30 @@ destroys"*. *Decided in implementation, to be confirmed by the person* (D-2058-1
 request). Item 1 of the amendment of 2026-10-26 (*"reads a runner's sandbox and pod, by name,
 and nothing more of them"*) is amended; everything else it says holds.
 
-1. **The operator patches a runner's sandbox, in its operating mode alone.** Upstream suspends
-   a runner only through its sandbox's `operatingMode` (`Suspended` ends the pod and keeps its
-   volumes); its claim has no such field. So the operator's ClusterRole gains `patch` on
-   upstream's `sandboxes`, and it applies one field, `spec.operatingMode`, and only to a sandbox
-   its Claim's upstream claim controls by uid: `Suspended` while the Claim or its Pool is
-   stopped, `Running` again once neither is, and that only where its own apply suspended it. It
-   still never lists, watches, makes, changes or deletes a pod, and holds no `exec`, `attach`,
-   port-forward or Secret right. It could already make any pod through the templates it writes,
-   so the right adds no reach.
-2. **It reads the pod the sandbox records** (from #2056's note): upstream's
+1. **The operator gains `patch` on upstream's sandboxes.** Upstream v1.0.6 suspends a runner
+   only through its Sandbox's `spec.operatingMode`: `Suspended` has upstream end the pod and
+   keep the volumes. Its SandboxClaim has no such field, and its other lifecycle fields delete
+   the Sandbox, a kept Claim's volume with it. So the operator's ClusterRole gains `patch` on
+   `agents.x-k8s.io/sandboxes`, the smallest verb that does it.
+2. **What RBAC grants is wider than what the operator uses.** A role cannot name a field or an
+   owner: as granted, the right is every field of every Sandbox in the cluster, including
+   Sandboxes other users of agent-sandbox made without any SandboxClaim. The operator could
+   already have upstream start any pod in any namespace, through the templates and claims it
+   writes; what the right adds is the power to change Sandboxes it did not make.
+3. **An admission policy narrows it in the cluster.** `purlis-operator-changes-only-a-sandboxs-mode`,
+   installed with the policy on Claims (`deploy/policy.yaml`, failure policy `Fail`), refuses
+   any update by the operator's service account to a Sandbox no SandboxClaim controls, and any
+   that changes a field of its spec but `operatingMode`, or its labels, annotations, owner
+   references or finalizers. The operator holds no right to change admission policies or their
+   bindings, so it cannot lift it. A test holds the policy's list of spec fields to the pinned
+   upstream's definition.
+4. **What the operator does with it.** It applies `spec.operatingMode` alone, to the Sandbox
+   its Claim's upstream claim controls by uid, with that Sandbox's uid as a precondition:
+   `Suspended` while the Claim or its Pool is stopped, and `Running` again once neither is,
+   where its own apply suspended it (best effort: who last applied a field is the client's to
+   name). It never lists, watches, makes, changes or deletes a pod itself, but a suspend has
+   upstream end the runner's pod; it still holds no `exec`, `attach`, port-forward or Secret
+   right.
+5. **It reads the pod the sandbox records** (from #2056's note): upstream's
    `agents.x-k8s.io/pod-name` annotation where the sandbox carries one, its own name otherwise,
    with the pod still held to being the one that sandbox controls and of the pool's template.

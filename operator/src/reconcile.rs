@@ -15,8 +15,8 @@ use crate::admission::{Admission, POLICY, admission};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::stage;
 use crate::upstream::{
-    self, Found, Sandbox, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_pool,
-    owners_with, sandbox_claim_for, template_for, warm_pool_for,
+    self, Found, Sandbox, SandboxClaim, SandboxTemplate, SandboxWarmPool, Suspension, made_for,
+    made_for_pool, owners_with, sandbox_claim_for, template_for, warm_pool_for,
 };
 use crate::vouch::{self, SigningKey, Vouching};
 use futures::StreamExt;
@@ -150,20 +150,25 @@ pub fn status_of_objects_held_by_refused_claims(
     }
 }
 
-/// A Claim's status while it, or its `pool`, is stopped (#2058): `Ready` is `False` with the
-/// reason `Stopped`, saying which is stopped, and no key is vouched for: its runner is
-/// suspended, or not made yet.
-pub fn status_of_a_stopped_claim(claim: &Claim, pool: &Pool) -> ClaimStatus {
-    let message = if claim.spec.stopped {
-        "This claim is stopped: its runner is suspended, a kept claim's volume kept, or not made \
-         yet, until the claim's stopped is false."
-            .to_owned()
-    } else {
-        format!(
-            "The pool {} is stopped: this claim's runner is suspended, a kept claim's volume \
-             kept, or not made yet, until the pool's stopped is false.",
+/// A Claim's status while it, or its `pool` (where it still exists), is stopped (#2058):
+/// `Ready` is `False` with the reason `Stopped`, saying which is stopped and how far its runner
+/// is suspended ([`Suspension`]), and no key is vouched for.
+pub fn status_of_a_stopped_claim(
+    claim: &Claim,
+    pool: Option<&Pool>,
+    suspension: Suspension,
+) -> ClaimStatus {
+    let runner = match suspension {
+        Suspension::NotMade => "its runner is not made",
+        Suspension::Suspending => "its runner is being suspended, a kept claim's volume kept",
+        Suspension::Suspended => "its runner is suspended, a kept claim's volume kept",
+    };
+    let message = match pool {
+        Some(pool) if !claim.spec.stopped => format!(
+            "The pool {} is stopped: {runner}, until the pool's stopped is false.",
             pool.name_any()
-        )
+        ),
+        _ => format!("This claim is stopped: {runner}, until the claim's stopped is false."),
     };
     ClaimStatus {
         link_key: None,
@@ -171,6 +176,16 @@ pub fn status_of_a_stopped_claim(claim: &Claim, pool: &Pool) -> ClaimStatus {
             condition("False", "Stopped", message),
             Vouching::Refused("its runner is stopped".into()).condition(),
         ],
+    }
+}
+
+/// How soon a stopped claim is looked at again: soon while its runner is being suspended, so
+/// its status says when it is, and now and then once it is, so a sandbox made since is
+/// suspended too.
+fn again_while_stopped(suspension: Suspension) -> Duration {
+    match suspension {
+        Suspension::Suspending => vouch::KEY_WAIT,
+        _ => vouch::RECHECK,
     }
 }
 
@@ -245,6 +260,16 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 Some(held)
                     if matches!(made_for(Some(held.meta()), &*claim), Found::Ours { .. }) =>
                 {
+                    // Still stopped by its own claim (#2058).
+                    let sandbox = sandbox_of(client, &namespace, &held).await?;
+                    set_operating_mode(client, &claim, None, &held, sandbox.as_ref()).await?;
+                    if upstream::is_stopped(&claim, None) {
+                        let suspension = upstream::suspension_of(sandbox.as_ref());
+                        let status = status_of_a_stopped_claim(&claim, None, suspension);
+                        write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said)
+                            .await?;
+                        return Ok(Action::requeue(again_while_stopped(suspension)));
+                    }
                     status_of_a_deleted_pool(&claim, &held)
                 }
                 _ => status_of_a_missing_pool(&claim),
@@ -266,7 +291,7 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             // The volume an upstream claim was made with stays as it is: upstream never changes
             // it, and refuses an apply that does (#2057).
             upstream::keep_volumes_held(&mut wanted, claim_full.as_ref());
-            let claim_held = claim_full.map(meta);
+            let claim_held = claim_full.as_ref().map(|held| meta(held.clone()));
             // Only a Claim it acts on proves an object is the operator's; once it is, every
             // Claim on the pool there that already owns it stays an owner.
             let vouch = claims_that_vouch(context.claims.state(), &claim, binding.as_ref());
@@ -298,7 +323,7 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             // The runners it keeps warm stay as many as it holds (#2057), none while the pool is
             // stopped (#2058).
             warm.spec.replicas = replicas;
-            let stopped = upstream::is_stopped(&claim, &pool);
+            let stopped = upstream::is_stopped(&claim, Some(&pool));
             // Who holds an object in the way: Claims the operator made it for and now refuses,
             // or none it knows of.
             let holders = |held: &Option<ObjectMeta>| {
@@ -329,6 +354,12 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             .into_iter()
             .find(|(found, _, _, _)| **found == Found::InTheWay);
             if let Some((_, kind, object, holders)) = in_the_way {
+                // A runner its claim already has is still suspended or run again, whatever is
+                // in the way of the rest (#2058).
+                if let (Found::Ours { .. }, Some(held)) = (&claim_found, claim_full.as_ref()) {
+                    let sandbox = sandbox_of(client, &namespace, held).await?;
+                    set_operating_mode(client, &claim, Some(&pool), held, sandbox.as_ref()).await?;
+                }
                 let status = if holders.is_empty() {
                     tracing::warn!(
                         claim = %name, %namespace, %kind, %object,
@@ -349,7 +380,7 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             if stopped && claim_found == Found::Nothing {
                 write_ours(&templates, template, template_found).await?;
                 write_ours(&warm_pools, warm, warm_found).await?;
-                let status = status_of_a_stopped_claim(&claim, &pool);
+                let status = status_of_a_stopped_claim(&claim, Some(&pool), Suspension::NotMade);
                 write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
                 return Ok(Action::await_change());
             }
@@ -383,12 +414,12 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 }
             };
             let sandbox = sandbox_of(client, &namespace, &applied).await?;
-            set_operating_mode(client, &claim, &pool, &applied, sandbox.as_ref()).await?;
+            set_operating_mode(client, &claim, Some(&pool), &applied, sandbox.as_ref()).await?;
             if stopped {
-                let status = status_of_a_stopped_claim(&claim, &pool);
+                let suspension = upstream::suspension_of(sandbox.as_ref());
+                let status = status_of_a_stopped_claim(&claim, Some(&pool), suspension);
                 write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
-                // Looked at again now and then, so a sandbox made since is suspended too.
-                return Ok(Action::requeue(vouch::RECHECK));
+                return Ok(Action::requeue(again_while_stopped(suspension)));
             }
             let (vouching, pod) = vouch_for(
                 client,
@@ -442,7 +473,7 @@ async fn sandbox_of(
 async fn set_operating_mode(
     client: &Client,
     claim: &Claim,
-    pool: &Pool,
+    pool: Option<&Pool>,
     upstream: &SandboxClaim,
     sandbox: Option<&Sandbox>,
 ) -> Result<(), Error> {
@@ -466,7 +497,7 @@ async fn set_operating_mode(
         .patch(
             &name,
             &PatchParams::apply(FIELD_MANAGER).force(),
-            &Patch::Apply(&upstream::sandbox_in_mode(&name, &namespace, mode)),
+            &Patch::Apply(&upstream::sandbox_in_mode(sandbox, mode)),
         )
         .await?;
     Ok(())
