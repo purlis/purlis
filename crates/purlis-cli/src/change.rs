@@ -6,7 +6,7 @@
 //! [`purlis_core::change::revert`] (ADR 0060).
 //!
 //! Every member is named by hand. There is no `--all` and no pattern, and
-//! `tests/change.rs` asserts it.
+//! `tests/it/change.rs` asserts it.
 
 use clap::Subcommand;
 use purlis_core::change::{cmd, land};
