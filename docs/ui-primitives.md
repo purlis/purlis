@@ -658,7 +658,7 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel; `PanelTitle`, the title of the view it shows (`ui/panel/Panel.tsx`) | `root`, `title` | `side`, `content`, `bottom` |
 | Panel section | `PanelSection` (with `view` and `top`), `PanelSectionHead`, `PanelSectionTitle`, `InPanelTop` (`ui/panel/Panel.tsx`) | `root`, `head`, `title`, `top` | `default` |
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
-| View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead` | none |
+| View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
 | View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
@@ -705,6 +705,18 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   the navigation is a `Select`, the list comes first, an opened item is drawn alone with a way
   back, and the keyboard follows: onto the way back as the item opens, onto the list as the
   person comes back.
+- **A view tab has its own back and forward** (#3667, `ui/panel/viewHistory.ts`): the tab's
+  history is kept by its id in memory (`useViewHistory`), so another tab never shares it and a
+  relaunch starts afresh, and a place reached from outside the tab (`openViewAt`: the run chip's
+  Runs) is a step on a tab that has a history and its start on one that has none. `ViewBar` draws
+  back and forward at the bar's start, each unavailable with its reason at its end, and the path
+  (`ViewCrumbs`, a list named "Path": each name before the last on the quiet ghost inline, the
+  last `aria-current="page"` and no button, long names cut first, the whole path its tooltip),
+  then the view's own controls. ⌘[ and ⌘] on a Mac, Alt+← and Alt+→ elsewhere (`view.back`,
+  `view.forward` in the key registry, in its new `view` place; Ctrl+[ is a terminal's Escape and
+  an editor's indent, so Ctrl does not take ⌘'s place), and the mouse's own back and forward
+  buttons walk it anywhere in a `ViewFrame` handed the `history`; an editor, a menu or a dialog
+  keeps the keys.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right

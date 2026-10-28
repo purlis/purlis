@@ -300,20 +300,29 @@
    --------------------------------------------------------------------------------------------- */
 
 [data-scope="view-frame"][data-part="root"] {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+[data-scope="view-frame"][data-part="body"] {
+  flex: 1 1 auto;
   /* The navigation's column: the prototype's 170. A box's size, not a step of the scale. */
   --view-frame-nav: 170px;
   display: grid;
   grid-template-columns: var(--view-frame-nav) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   box-sizing: border-box;
-  block-size: 100%;
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
 }
 
 /* Narrow: the picker over one pane, the list or the item. */
-[data-scope="view-frame"][data-part="root"][data-narrow] {
+[data-scope="view-frame"][data-part="body"][data-narrow] {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -367,8 +376,8 @@
   outline-offset: var(--focus-ring-inset);
 }
 
-[data-scope="view-frame"][data-part="root"][data-narrow] > [data-part="list"],
-[data-scope="view-frame"][data-part="root"]:not(:has(> [data-part="panes"])) > [data-part="list"] {
+[data-scope="view-frame"][data-part="body"][data-narrow] > [data-part="list"],
+[data-scope="view-frame"][data-part="body"]:not(:has(> [data-part="panes"])) > [data-part="list"] {
   border-inline-end: 0;
 }
 
@@ -501,4 +510,79 @@ li:has(> [data-scope="view-nav"][data-part="item"][data-starts-group]) {
 
 [data-scope="view-nav"][data-part="item"][data-selected] > [data-part="indicator"] {
   background-color: var(--accent-base);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   **A view tab's top bar** (#3667, the Skill studio frame's `.bar`): back and forward, the path,
+   then the view's own controls at its end, over a hairline. One line, as tall as a control; the
+   path gives way before the controls do.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="view-frame"][data-part="bar"] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  min-inline-size: 0;
+  padding: var(--space-4) var(--space-5);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+[data-scope="view-frame"][data-part="history"] {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+}
+
+[data-scope="view-frame"][data-part="controls"] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  margin-inline-start: auto;
+}
+
+/* **The path**: one line of names. Each before the last gives way in proportion to its length,
+   so a long name is cut first, with an ellipsis; where the person is stays whole while it can. */
+[data-scope="view-frame"][data-part="path"] {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+  list-style: none;
+  white-space: nowrap;
+}
+
+[data-scope="view-frame"][data-part="path"] > li {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-inline-size: 0;
+}
+
+[data-scope="view-frame"][data-part="path"] > li:last-child {
+  flex-shrink: 0;
+  max-inline-size: 100%;
+}
+
+/* Where the person is: its name in the primary tier, cut with an ellipsis only once nothing else
+   gives way. */
+[data-scope="view-frame"][data-part="crumb"] {
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+}
+
+[data-scope="view-frame"][data-part="crumb-separator"] {
+  flex: none;
+  padding-inline: var(--space-2);
+  color: var(--text-muted);
 }

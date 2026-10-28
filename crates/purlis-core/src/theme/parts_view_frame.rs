@@ -88,6 +88,43 @@ pub(super) const VIEW_FRAME: Family = Family {
                           it is.",
             properties: &[Prop::Text, Prop::FontSize],
         },
+        Part {
+            name: "bar",
+            since: super::NEXT,
+            description: "The view's top bar over its panes (#3667): back and forward, the path \
+                          and the view's own controls, over a line.",
+            properties: &[
+                Prop::Fill,
+                Prop::BorderColour,
+                Prop::BorderWidth,
+                Prop::Padding,
+                Prop::Gap,
+            ],
+        },
+        Part {
+            name: "history",
+            since: super::NEXT,
+            description: "The back and forward buttons at the bar's start: the room between them.",
+            properties: &[Prop::Gap],
+        },
+        Part {
+            name: "path",
+            since: super::NEXT,
+            description: "The breadcrumb of the view's pages: its words' colour and size.",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
+        Part {
+            name: "crumb",
+            since: super::NEXT,
+            description: "The last name on the path: where the person is.",
+            properties: &[Prop::Text, Prop::FontWeight],
+        },
+        Part {
+            name: "crumb-separator",
+            since: super::NEXT,
+            description: "The mark between two names on the path.",
+            properties: &[Prop::Text],
+        },
     ],
     variants: &[],
     // The panel it is drawn in: the base surface, and the raised one a theme floats its panels on.
@@ -102,7 +139,13 @@ pub(super) const VIEW_FRAME: Family = Family {
     states: &[],
     focused: "[data-focus-visible]",
     // The lead line in the muted tier; the item's name in the primary one.
-    words: &[("lead", "text.muted"), ("name", "text.primary")],
+    words: &[
+        ("lead", "text.muted"),
+        ("name", "text.primary"),
+        ("path", "text.muted"),
+        ("crumb", "text.primary"),
+        ("crumb-separator", "text.muted"),
+    ],
     corner_most: None,
     around: &[],
     fills: &[],

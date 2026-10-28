@@ -23,6 +23,10 @@
  *   mark that it is the current page its `indicator`. `panel.css` draws the defaults and a
  *   theme's parts reach the same attributes (`purlis theme parts`).
  *
+ * - **Its own back and forward** (#3667): handed the tab's `history`, ⌘[ and ⌘] (Alt+← and Alt+→
+ *   off a Mac) and the mouse's back and forward buttons walk it anywhere in the view, and its
+ *   `bar` (`ViewBar.tsx`) draws the two buttons and the path over the panes.
+ *
  * Which pages there are is the owner's: a page with nothing in it (Needs you, Drafts) is left
  * out of `pages`, never drawn empty.
  */
@@ -41,7 +45,9 @@ import { Group, Panel } from "react-resizable-panels";
 import { Count } from "../badge/Badge";
 import { Button, ButtonRow } from "../button/Button";
 import { Select } from "../select/Select";
+import { pressed } from "../../keys/registry";
 import { Separator } from "./Separator";
+import type { HistorySteps } from "./viewHistory";
 
 /** **Below this width the frame is page-and-back**, in px: the navigation's column, the least a
  *  list keeps and the least an item keeps, side by side (the prototype's 170, 260 and 290). */
@@ -334,6 +340,8 @@ export function ViewFrame({
   opened = false,
   onBack,
   narrow: given,
+  bar,
+  history,
 }: {
   /** What the page navigation is called: "Skill studio pages". */
   label: string;
@@ -352,6 +360,11 @@ export function ViewFrame({
   onBack?: () => void;
   /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
   narrow?: boolean;
+  /** The view's top bar over its panes: its {@link ViewBar}. */
+  bar?: ReactNode;
+  /** The tab's own history (`useViewHistory`): ⌘[ and ⌘] (Alt+← and Alt+→ off a Mac) and the
+   *  mouse's back and forward buttons walk it anywhere in the view. */
+  history?: HistorySteps;
 }) {
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const narrow = useNarrow(root, given);
@@ -382,9 +395,8 @@ export function ViewFrame({
     </section>
   );
 
-  if (narrow) {
-    return (
-      <div ref={setRoot} data-scope="view-frame" data-part="root" data-narrow="">
+  const body = narrow ? (
+      <div data-scope="view-frame" data-part="body" data-narrow="">
         <div data-scope="view-frame" data-part="picker">
           <Select
             aria-label={label}
@@ -413,11 +425,8 @@ export function ViewFrame({
           listDrawn
         )}
       </div>
-    );
-  }
-
-  return (
-    <div ref={setRoot} data-scope="view-frame" data-part="root">
+  ) : (
+    <div data-scope="view-frame" data-part="body">
       <ViewNav label={label} pages={pages} page={page} onPage={onPage} />
       {item === undefined ? (
         listDrawn
@@ -434,6 +443,33 @@ export function ViewFrame({
           </Panel>
         </Group>
       )}
+    </div>
+  );
+
+  return (
+    <div
+      ref={setRoot}
+      data-scope="view-frame"
+      data-part="root"
+      data-narrow={narrow ? "" : undefined}
+      onKeyDown={(event) => {
+        if (history === undefined) return;
+        const act = pressed(event.nativeEvent, ["view.back", "view.forward"]);
+        if (act === undefined) return;
+        event.preventDefault();
+        if (act.id === "view.back") history.back();
+        else history.forward();
+      }}
+      onMouseUp={(event) => {
+        // The mouse's own back and forward buttons, anywhere in the view.
+        if (history === undefined || (event.button !== 3 && event.button !== 4)) return;
+        event.preventDefault();
+        if (event.button === 3) history.back();
+        else history.forward();
+      }}
+    >
+      {bar}
+      {body}
     </div>
   );
 }

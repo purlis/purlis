@@ -89,6 +89,10 @@ describe("the key registry (N24)", () => {
       "finder.copyPath",
       "finder.reveal",
       "app.quit",
+      // Ctrl+[ is Escape to a terminal and Ctrl+[ ] an editor's indent; Alt+← → are Back and
+      // Forward off a Mac (`viewKeys.ts`).
+      "view.back",
+      "view.forward",
     ]);
     for (const one of SHORTCUTS) {
       if (apart.has(one.id)) continue;

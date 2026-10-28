@@ -55,7 +55,21 @@ fn the_view_frame_comes_in_the_next_release_s_manifest() {
     assert_eq!(frame["since"], parts::NEXT);
     assert_eq!(
         names(&frame, "parts"),
-        ["root", "nav", "list", "item", "head", "header", "name", "lead"]
+        [
+            "root",
+            "nav",
+            "list",
+            "item",
+            "head",
+            "header",
+            "name",
+            "lead",
+            "bar",
+            "history",
+            "path",
+            "crumb",
+            "crumb-separator"
+        ]
     );
     for part in frame["parts"].as_array().unwrap() {
         assert_eq!(part["since"], parts::NEXT, "{part}");
@@ -274,4 +288,24 @@ fn both_built_ins_draw_the_family_default_cleanly() {
             assert!(parts::fallen(appearance).is_empty(), "{}", appearance.id);
         }
     }
+}
+
+#[test]
+fn the_path_s_words_are_held_to_their_floor() {
+    // The path's words in the hairline's colour cannot be read: the default is drawn.
+    let loaded = load(&over(
+        PURLIS,
+        json!({ "view-frame.crumb.text": "border.subtle" }),
+    ));
+    assert!(!loaded.refused, "{:?}", said(&loaded));
+    let fell = parts::fallen(loaded.theme.first());
+    assert!(
+        fell.iter().any(|one| one.part.starts_with("view-frame")),
+        "{fell:?}"
+    );
+    let css = css_of(include_str!("../../../../app/src/ui/panel/panel.css"));
+    let crumb = rule(&css, "[data-scope=\"view-frame\"][data-part=\"crumb\"]");
+    assert_eq!(token(crumb, "color"), "text.primary");
+    let path = rule(&css, "[data-scope=\"view-frame\"][data-part=\"path\"]");
+    assert_eq!(token(path, "color"), "text.muted");
 }
