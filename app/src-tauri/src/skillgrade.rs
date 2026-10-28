@@ -246,7 +246,9 @@ fn consent_shown(planned: &Planned, on: &On) -> Option<String> {
             consent,
             &grades::Terms {
                 profile: on.profile.as_deref(),
-                model: on.model.as_deref(),
+                // The model its chats run on, as their line names it where it does (the price's),
+                // so a change of the profile's own model changes the consent too.
+                model: on.priced.model.as_deref().or(on.model.as_deref()),
                 token_cap: planned.cap.tokens,
                 limit_usd: planned.cap.cost_usd(&on.priced),
             },
@@ -256,7 +258,9 @@ fn consent_shown(planned: &Planned, on: &On) -> Option<String> {
 
 /// **Whether a press with `consent` was made on the plan a grade of `planned`, on `on`, would
 /// start on now**, or the sentence that refuses it: what it grades, the profile, the model, the
-/// cap or the limit changed since the plan was shown, and the window shows the new one.
+/// cap or the limit changed since the plan was shown, and the window shows the new one. `so`
+/// says what did not happen: a grade's start, and once #3238 lands, turning grading after each
+/// edit on.
 fn plan_holds(
     planned: &Planned,
     on: &On,

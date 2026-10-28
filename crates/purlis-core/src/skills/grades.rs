@@ -870,6 +870,12 @@ pub fn consent_of(request: &GradeRequest, content: &Content, snapshot: &Snapshot
         digest.update(b"\0");
         digest.update(text.as_bytes());
     }
+    hex_of(digest)
+}
+
+/// A digest's bytes as lowercase hex.
+fn hex_of(digest: sha2::Sha256) -> String {
+    use sha2::Digest as _;
     digest
         .finalize()
         .iter()
@@ -909,11 +915,7 @@ pub fn consent_on(consent: &str, terms: &Terms<'_>) -> String {
     digest.update(terms.token_cap.to_be_bytes());
     digest.update(b"\0");
     digest.update(terms.limit_usd.to_bits().to_be_bytes());
-    digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex_of(digest)
 }
 
 use super::verbs::drafts::Snapshot;

@@ -222,7 +222,8 @@ export function SkillGrade({
           });
         } else {
           setSaid({ tone: "trouble", text: answer.error });
-          // A plan that changed since it was shown is shown again, to be read and pressed anew.
+          // The plan is read again after any refusal: one that changed since it was shown is shown
+          // anew, to be read and pressed again.
           read(picked, pickedModel);
         }
       });
