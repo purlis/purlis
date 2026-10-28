@@ -12,9 +12,10 @@
 //! - **A run counts once it has a start** ([`ran_since`]): a stop with no start before it counts
 //!   nothing, and a start with no stop after it counts up to now only while Docker says the
 //!   container runs.
-//! - **A gap the record cannot see counts nothing** ([`after_seen`], #3720): where a run kept
-//!   open has ended and Docker no longer says when (two runs between two reads, both started
-//!   outside purlis), it is closed at its start, never at the next run's.
+//! - **Where Docker does not say when the kept run ended, the gap counts nothing**
+//!   ([`after_seen`], #3720): a run kept open that has ended, with no last finish Docker gives
+//!   for it (two runs between two reads, both started outside purlis), is closed at its start,
+//!   never at the next run's. A run Docker's last finish ends is trusted to that finish.
 //! - **This week** is the ISO week in this machine's local time, from Monday 00:00
 //!   ([`week_began`]).
 //! - **Bounded** ([`pruned`]): each write drops the runs older than [`KEPT_FOR`], keeping each
@@ -150,7 +151,9 @@ pub fn after_seen(lines: &[Line], pool: &str, runner: &str, ran: Ran, now: u64) 
             // Started again since the start kept: the run that start began has ended, when
             // Docker says it last finished. Where Docker does not say, the record never saw it
             // end, and it is closed at its start: a gap the record cannot see counts nothing
-            // (#3720).
+            // (#3720). Docker keeps only the last finish, so where a further run started and
+            // stopped outside purlis between two reads, the kept run is closed at that run's
+            // finish; no read can tell that apart.
             if let Some(started) = ran.started.filter(|started| *started > floor) {
                 let ended = ran
                     .finished
