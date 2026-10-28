@@ -166,7 +166,7 @@ impl Graded {
             })
             && self.model.as_deref().is_none_or(price::model_id)
             && report_holds_together(&self.report, self.runs)
-            && spent_is_the_reports(&self.spent, &self.report)
+            && spent_is_the_reports(&self.spent, &self.report, self.runs)
     }
 }
 
@@ -225,10 +225,18 @@ fn dollars(value: f64) -> bool {
 
 /// **Whether a row's spend `spent` is what its report `report` says it spent** (#3273): the
 /// chats that ran, as the arms count them, and the tokens, as the report adds them up; and the
-/// cost, where the report adds it up (a row before #3469 does not).
-fn spent_is_the_reports(spent: &Spent, report: &GradeReport) -> bool {
-    let ran: u64 = report.arms.iter().map(|arm| u64::from(arm.chats)).sum();
-    u64::from(spent.chats) == ran
+/// cost, where the report adds it up (a row before #3469 does not). A grade purlis stopped under
+/// before it was scored has no arms, and says what its chats spent all the same (#3582): as many
+/// chats as a grade of `runs` runs could have run, at most.
+fn spent_is_the_reports(spent: &Spent, report: &GradeReport, runs: u8) -> bool {
+    let chats = if report.ended == grade::GradeEnd::Interrupted && report.arms.is_empty() {
+        let most = (grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE) as u64;
+        u64::from(spent.chats) <= u64::from(runs) * most
+    } else {
+        let ran: u64 = report.arms.iter().map(|arm| u64::from(arm.chats)).sum();
+        u64::from(spent.chats) == ran
+    };
+    chats
         && spent.tokens == report.spent_tokens
         && report.spent_usd.is_none_or(|said| {
             spent

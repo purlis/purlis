@@ -885,3 +885,41 @@ fn a_row_skipped_and_a_file_not_read_are_said() {
     );
     assert_eq!(Read::default().said(), None);
 }
+
+/// #3582: a grade purlis stopped under says what its chats spent, though no chat was scored: its
+/// chats are held to what its tests could have asked for, and its spend to its report's.
+#[test]
+fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582() {
+    let now = chrono::Utc::now();
+    let interrupted = |spent: Spent| Graded {
+        report: GradeReport {
+            spent_tokens: spent.tokens,
+            spent_usd: spent.cost_usd,
+            ..underway::interrupted_report(50_000, Some(1.5), None)
+        },
+        spent,
+        ..uncommitted_row()
+    };
+    let spent = Spent {
+        chats: 4,
+        tokens: Some(9_000),
+        cost_usd: Some(0.09),
+    };
+    assert!(
+        interrupted(spent).sound(now),
+        "what its chats spent is kept"
+    );
+    let most = u32::from(uncommitted_row().runs)
+        * u32::try_from(purlis_skills::grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE).unwrap();
+    let past = Spent {
+        chats: most + 1,
+        ..spent
+    };
+    assert!(
+        !interrupted(past).sound(now),
+        "more chats than it could ask for"
+    );
+    let mut unlike = interrupted(spent);
+    unlike.spent.tokens = Some(9_001);
+    assert!(!unlike.sound(now), "a spend its report does not say");
+}

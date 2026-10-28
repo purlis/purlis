@@ -227,3 +227,66 @@ fn a_start_while_another_records_the_folder_waits_its_turn_and_records_once_3443
         "recorded once"
     );
 }
+
+/// #3582: a grade's marker says what its chats spent so far, so a grade purlis stops under is
+/// recorded with that spend, and not with nothing.
+#[test]
+fn a_grade_stopped_after_its_chats_spent_is_recorded_with_what_they_spent_3582() {
+    let (tmp, level) = project();
+    let root = tmp.path();
+    let mut marker = began(root, &level, &starting("g-spent", &level)).expect("held");
+    let spent = Spent {
+        chats: 2,
+        tokens: Some(12_000),
+        cost_usd: Some(0.12),
+    };
+    marker.spent(spent).expect("rewritten");
+    assert!(
+        interrupted(root, laptop, |_| false).is_empty(),
+        "the rewritten marker is locked as the first was"
+    );
+    let folder = marker.parent().unwrap().to_path_buf();
+    let names: Vec<_> = std::fs::read_dir(&folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        names,
+        ["g-spent.json"],
+        "nothing half-written is left beside it"
+    );
+    drop(marker);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-spent"]);
+    let read = super::super::grades_of(root, "deploy", Some(&level));
+    assert_eq!(read.len(), 1, "{read:?}");
+    assert_eq!(read[0].report.ended, GradeEnd::Interrupted);
+    assert_eq!(read[0].spent, spent);
+    assert_eq!(read[0].report.spent_tokens, Some(12_000));
+    assert_eq!(read[0].report.spent_usd, Some(0.12));
+    assert!(read[0].report.arms.is_empty(), "no chat is scored");
+}
+
+/// #3582: a spend no sound row could hold is never written, so the marker keeps the last one it
+/// could and the grade is still recorded, never taken away as unsound.
+#[test]
+fn a_spend_no_row_could_hold_leaves_the_marker_as_it_was_3582() {
+    let (tmp, level) = project();
+    let root = tmp.path();
+    let mut marker = began(root, &level, &starting("g-past", &level)).expect("held");
+    let first = Spent {
+        chats: 1,
+        tokens: Some(5_000),
+        cost_usd: None,
+    };
+    marker.spent(first).expect("rewritten");
+    let past = Spent {
+        chats: 2,
+        tokens: Some(u64::MAX),
+        cost_usd: None,
+    };
+    assert!(marker.spent(past).is_err(), "refused");
+    drop(marker);
+    assert_eq!(interrupted(root, laptop, |_| false), ["g-past"]);
+    let read = super::super::grades_of(root, "deploy", Some(&level));
+    assert_eq!(read[0].spent, first, "the last spend it could hold");
+}
