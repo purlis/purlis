@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793143824211,
+  "lastUpdate": 1793145670899,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27426,6 +27426,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7195775,
             "unit": "ms",
             "extra": "median of 5 runs: 101.575, 101.653, 101.720, 102.201, 102.788 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1b4c8d406b4e3ed9f7296601e9f4ed1d0207de9f",
+          "message": "ci: the Rust suite in four parts, placed by hash (#3572)\n\n* ci: the Rust suite in four parts, placed by hash\n\nIn three count: parts (#3553), main's first run put 19 tests over 30 s\nin part 1: 51.6 minutes of tests summed against 35.2 and 29.7, so part\n1 took 15.2 minutes to run them and the job 29 minutes, no faster than\ntwo parts. count: deals each binary's tests out in turn, and the theme\nengine's import tests (50 to 170 s each) sit side by side. hash: places\neach test by its name; on that run's own per-test times four hash:\nparts put at most about 33 minutes in one (median of 200 simulated\nhashes; 42 with three).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* ci: the doctests and the schema check run in rust's lightest part\n\nReview of #3572: hash: places each test by its name, and on the PR's run\npart 2 held the least (7.3 minutes of tests; part 1 11.5, the slowest job\nat 25.7 minutes). Part 1 also carried the doctests and the schema check,\nabout 3 minutes after its tests; in part 2 they wait on no one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T23:25:39Z",
+          "tree_id": "fd2e0fa18887fa0e4a2b378a64b42682af173d73",
+          "url": "https://github.com/purlis/purlis/commit/1b4c8d406b4e3ed9f7296601e9f4ed1d0207de9f"
+        },
+        "date": 1793145666883,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.48957549999999994,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.460, 0.474, 0.490, 0.491, 0.492 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.071733,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.950, 16.973, 17.072, 17.086, 17.091 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.917417,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.056, 103.176, 103.917, 103.972, 105.044 ms"
           }
         ]
       }
