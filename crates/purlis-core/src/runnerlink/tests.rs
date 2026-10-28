@@ -366,18 +366,34 @@ fn a_cluster_runner_is_paired_once_since_its_pairing_takes_the_key() {
 }
 
 #[test]
-fn a_key_made_at_start_is_made_only_where_none_is() {
+fn a_key_an_earlier_start_left_is_made_again_and_never_through_a_link() {
+    // A first step started again, without a home on the pod's volume: the key it left, which
+    // nobody paired with, is made again in its place.
     let (_pod, handoff, public) = pod_made_a_key();
     let published = handoff.with_file_name("termination-log");
-    let refused = make_at_start(&handoff, &published).unwrap_err();
-    assert!(refused.contains("could not be made"), "{refused}");
-    assert_eq!(std::fs::read_to_string(&published).unwrap(), public);
-    // Nor through a link someone put there.
+    make_at_start(&handoff, &published).expect("the step starts again");
+    let again = std::fs::read_to_string(&published).unwrap();
+    assert!(is_lower_hex(&again, 64));
+    assert_ne!(again, public, "a new key");
+    let home = tempfile::tempdir().unwrap();
+    let runner = pair_with_key_made_at_start(home.path(), &desktop(), &handoff).unwrap();
+    assert_eq!(
+        hex_of(runner.key.as_bytes()),
+        again,
+        "the new key is the one paired with"
+    );
+    // A link someone put there goes as a link: nothing is written where it pointed.
     let pod = tempfile::tempdir().unwrap();
     let elsewhere = pod.path().join("elsewhere");
     std::os::unix::fs::symlink(&elsewhere, pod.path().join("link-key")).unwrap();
-    assert!(make_at_start(&pod.path().join("link-key"), &published).is_err());
+    make_at_start(&pod.path().join("link-key"), &published).unwrap();
     assert!(!elsewhere.exists());
+    assert!(
+        !std::fs::symlink_metadata(pod.path().join("link-key"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
 }
 
 #[test]
