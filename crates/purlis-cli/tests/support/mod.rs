@@ -6,7 +6,9 @@
 //! sets its own after. `every_test_starts_the_binary_unsteered.rs` fails on a test that starts
 //! one any other way.
 //!
-//! Each test file declares `mod support;` and uses what it needs, so the rest is unused there.
+//! `tests/it/main.rs` and `recorded_behaviour/main.rs` each declare it as `mod support;` (each
+//! module of `it` reaches it as `crate::support`), and each uses part of it, so the rest is
+//! unused there.
 #![allow(dead_code)]
 
 use std::ffi::OsStr;

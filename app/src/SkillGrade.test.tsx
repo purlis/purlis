@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { SkillGrade, costSaid, endedSaid, limitSaid } from "./SkillGrade";
+import { SkillGrade, afterEditSaid, costSaid, endedSaid, limitSaid } from "./SkillGrade";
 import type { SkillGradePlan } from "./bindings";
 
 afterEach(() => {
@@ -40,6 +40,8 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     sandbox: "full sandbox",
     refused: null,
     consent: "c0ffee",
+    previous: null,
+    previous_refused: null,
     ...over,
   };
 }
@@ -113,6 +115,45 @@ describe("Grade, cost first", () => {
     });
     await screen.findByText("Stopped after 4 chats. What ran is scored in Grades below.");
     expect(graded).toBe(1);
+  });
+
+  it("says the previous version it compares with, and why one is not (SK-57)", async () => {
+    mockIPC(
+      (cmd) => {
+        if (cmd === "skill_grade_plan")
+          return plan({
+            chats: 18,
+            previous: { commit: "fedcba987654", subject: "step two" },
+          });
+        if (cmd === "start_options") return { profiles: [] };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    const cost = await screen.findByTestId("skill-grade-cost");
+    expect(cost.textContent).toContain(
+      "3 times without it, and 3 times with its previous version, fedcba987654 (step two), which it is compared with, up to 18 chats",
+    );
+    cleanup();
+    clearMocks();
+    mockIPC(
+      (cmd) => {
+        if (cmd === "skill_grade_plan")
+          return plan({
+            previous_refused: "version fedcba987654 of deploy is not a whole skill of this name",
+          });
+        if (cmd === "start_options") return { profiles: [] };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    expect((await screen.findByTestId("skill-grade-previous-refused")).textContent).toContain(
+      "not a whole skill of this name",
+    );
   });
 
   it("says a plan changed since it was shown, and shows the new one to press", async () => {
@@ -473,6 +514,93 @@ describe("a grade that cannot run, or runs already", () => {
       expect(asked.find((one) => one.cmd === "skill_grade_stop")?.args).toMatchObject({
         grade: "01RUNNING",
       }),
+    );
+  });
+});
+
+describe("Grade after each edit (SK-58)", () => {
+  const ON = {
+    profile: "work",
+    model: "sonnet",
+    chats: 12,
+    token_cap: 200000,
+    limit_usd: 15,
+    waits: null,
+  };
+
+  it("is off until turned on from the plan, which says what each edit runs and spends", async () => {
+    const asked: Array<{ cmd: string; args: Record<string, unknown> }> = [];
+    mockIPC(
+      (cmd, args) => {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "skill_grade_after_edit") return null;
+        if (cmd === "skill_grade_plan") return plan();
+        if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+        if (cmd === "skill_grade_after_edit_on") return ON;
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    expect(screen.queryByTestId("skill-grade-after-edit")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    const offer = await screen.findByTestId("skill-grade-after-edit-offer");
+    expect(offer.textContent).toContain("up to 12 chats and at most $15.00");
+    expect(offer.textContent).toContain("It is off until you turn it on");
+    expect(asked.some((one) => one.cmd === "skill_grade_after_edit_on")).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Grade after each edit" }));
+    await screen.findByTestId("skill-grade-after-edit");
+    expect(asked.find((one) => one.cmd === "skill_grade_after_edit_on")?.args).toMatchObject({
+      plane: "p",
+      skill: "deploy",
+      profile: null,
+      model: null,
+      consent: "c0ffee",
+    });
+    expect(screen.getByTestId("skill-grade-after-edit").textContent).toBe(afterEditSaid(ON));
+  });
+
+  it("says what it accepted, and turns off in one press", async () => {
+    const asked: string[] = [];
+    mockIPC(
+      (cmd) => {
+        asked.push(cmd);
+        if (cmd === "skill_grade_after_edit") return ON;
+        if (cmd === "skill_grade_plan") return plan();
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    const line = await screen.findByTestId("skill-grade-after-edit");
+    expect(line.textContent).toBe(
+      "Each edit you save grades this skill on work, sonnet: up to 12 chats, and at most $15.00 or 200,000 tokens, each time, paid by that profile's account.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop grading after each edit" }));
+    await waitFor(() => expect(screen.queryByTestId("skill-grade-after-edit")).toBeNull());
+    expect(asked).toContain("skill_grade_after_edit_off");
+  });
+
+  it("says why an edit was not graded, and that it waits for you", async () => {
+    let waits: string | null = null;
+    mockIPC(
+      (cmd) => {
+        if (cmd === "skill_grade_after_edit") return { ...ON, waits };
+        if (cmd === "skill_grade_plan") return plan();
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    await screen.findByTestId("skill-grade-after-edit");
+    waits = "A grade of it now runs 18 chats, more than the 12 you accepted.";
+    await emit("skill-grade-after-edit", { plane: "p", skill: "deploy", said: waits });
+    await screen.findByText(waits);
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-grade-after-edit").textContent).toContain(
+        "Grading after each edit waits for you",
+      ),
     );
   });
 });

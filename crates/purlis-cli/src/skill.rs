@@ -1287,14 +1287,25 @@ fn grade_said(
     }
     match (&planned.request, planned.plan) {
         (Some(request), Some(plan)) => {
+            let times = counted(u32::from(request.runs), "time", "times");
+            // The version it compares with too, where the skill has one (SK-57).
+            let previous = match &planned.previous {
+                Some(previous) => format!(
+                    ", and {times} with its previous version, {} ({})",
+                    history::short(&previous.commit),
+                    previous.subject
+                ),
+                None => String::new(),
+            };
             text.push_str(&format!(
-                "Grading {name} runs {}, one turn each: each of {} {} with the skill and {} \
-                 without it.\n",
+                "Grading {name} runs {}, one turn each: each of {} {times} with the skill and \
+                 {times} without it{previous}.\n",
                 counted(plan.chats, "chat", "chats"),
                 counted(plan.trigger_tests, "trigger test", "trigger tests"),
-                counted(u32::from(request.runs), "time", "times"),
-                counted(u32::from(request.runs), "time", "times"),
             ));
+            if let Some(why) = &planned.previous_refused {
+                text.push_str(&format!("Its previous version is not compared: {why}.\n"));
+            }
             text.push_str(&estimate_said(planned.estimate.as_ref()));
             for (at, test) in request.triggers.iter().enumerate() {
                 text.push_str(&format!(
@@ -1371,21 +1382,36 @@ fn grade_said(
                 them = if asked == 1 { "it" } else { "them" }
             ),
         };
+        // The version it compared with, where it compared one (SK-57).
+        let previous = one.compared_with().map(history::short);
         text.push_str(&format!(
-            "  {}  {}  {passed} of {} passed  with {}  without {}{}{asked}  ({})\n",
+            "  {}  {}  {passed} of {} passed  with {}  without {}{}{}{asked}  ({}){}\n",
             purlis_core::skills::review::escaped_line(&one.ts),
             one.commit.as_deref().map_or("uncommitted", history::short),
             counted(of, "test", "tests"),
             rate(Arm::With),
             rate(Arm::Without),
+            previous
+                .map(|commit| format!("  previous {commit} {}", rate(Arm::Previous)))
+                .unwrap_or_default(),
             one.report
                 .delta
-                .map(|delta| format!("  difference {:+.0} points", delta * 100.0))
+                .map(|delta| match previous {
+                    Some(commit) =>
+                        format!("  difference {:+.0} points against {commit}", delta * 100.0),
+                    None => format!("  difference {:+.0} points", delta * 100.0),
+                })
                 .unwrap_or_default(),
             match &one.model {
                 // The model its chats reported (SK-60): a model's id, which the record checks.
                 Some(model) => format!("{} on {model}", counted(one.spent.chats, "chat", "chats")),
                 None => counted(one.spent.chats, "chat", "chats"),
+            },
+            // A grade a saved edit started says so (SK-58).
+            if one.after_edit {
+                "  after an edit"
+            } else {
+                ""
             },
         ));
     }

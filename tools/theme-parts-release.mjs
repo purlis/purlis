@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 export const PARTS = "crates/purlis-core/src/theme/parts.rs";
 export const DIRS = ["crates/purlis-core/src/theme"];
 /** The files outside them that hold manifest tests. */
-export const FILES = ["crates/purlis-cli/tests/theme.rs"];
+export const FILES = ["crates/purlis-cli/tests/it/theme.rs"];
 
 const VERSION_LINE = /^pub const VERSION: u32 = (\d+);$/m;
 const DEFINITION = "pub const NEXT: u32 = VERSION + 1;";

@@ -37,17 +37,19 @@ on:
 # conclusion; and none of these names is in branch protection, so a pull request waits on nothing it
 # no longer runs. `bench` measures each pull request against main (V62), so it stays.
 
-# **A pull request's heavy jobs run by what it changes (#3505).** The `changes` job sorts the
-# change into scopes (`tools/ci-scope.mjs`, the one place that says which paths need which jobs):
-# a pull request that changes only docs, agent skills or a tool a person runs by hand needs no
-# Rust, app, scenario or web build. No workflow has a `paths:` filter, and no job that carries a
-# required check's name is skipped by `if:`: such a job always runs, and skips its expensive steps
-# when its scope is untouched, as `parity` does. The jobs behind a `*-checks` job (`rust`, `lint`,
-# `scenario`, `scenario-linux`) are skipped by scope, and their `*-checks` job passes only when
-# the scope says there was nothing to run. The whole-tree guards, Rust tests that read every file
-# of the repository, run on every change (`recorded`). A merge group, a push to main and a nightly
-# run every scope. When `changes` itself fails, every scope's output is empty and every job runs
-# (`!= 'false'`), so a fault there runs more, never less.
+# **A pull request's heavy jobs run by what it changes (#3505).** The `changes` job sorts the change
+# into scopes (`tools/ci-scope.mjs`, the one place that says which paths need which jobs): a pull
+# request that changes only docs, agent skills or a tool a person runs by hand needs no Rust, app,
+# scenario or web build, and one that changes only the window's sources (`app/src/`, but for the
+# files Rust reads by name) needs no Rust suite, fmt, clippy or cargo-deny (#3596). No workflow has
+# a `paths:` filter, and no job that carries a required check's name is skipped by `if:`: such a job
+# always runs, and skips its expensive steps when its scope is untouched, as `parity` does. The jobs
+# behind a `*-checks` job (`rust`, `lint`, `scenario`, `scenario-linux`) are skipped by scope, and
+# their `*-checks` job passes only when the scope says there was nothing to run. The whole-tree
+# guards, Rust tests that read every file of the repository, and the window's guards, which read
+# every file of `app/src/`, run on every change (`recorded`). A merge group, a push to main and a
+# nightly run every scope. When `changes` itself fails, every scope's output is empty and every job
+# runs (`!= 'false'`), so a fault there runs more, never less.
 
 concurrency:
   # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
@@ -1233,7 +1235,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Nothing Rust reads has changed
         if: needs.changes.outputs.rust == 'false'
-        run: echo "::notice::nothing Rust reads has changed; the recorded behaviour is not replayed, and only the whole-tree guards run"
+        run: echo "::notice::nothing Rust reads has changed; the recorded behaviour is not replayed, and only the whole-tree and window guards run"
       # On every change: the whole-tree guards below need the toolchain when nothing else does.
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -1243,12 +1245,18 @@ jobs:
       # read every file of the repository, docs and tools included, so a change that leaves Rust
       # out of scope can still fail them (a new tool with no licence header). The `rust` job runs
       # them with the rest of the suite; when it is skipped, they run here, alone.
+      #
+      # With them, the window's guards (`WINDOW_SOURCE_GUARDS`, #3596): Rust tests that read every
+      # file of `app/src/`, which runs no Rust suite of its own. One `cargo test` links the core
+      # once for all four test binaries (1 m 48 s for the first two on a warm cache, #3514).
       - name: The whole-tree guards, as Rust is out of scope
         if: needs.changes.outputs.rust == 'false'
         run: >-
           cargo test --locked -p purlis-core
           --test every_first_party_source_file_carries_its_licence_header
           --test no_tracked_file_is_one_a_sandboxed_chat_may_not_write
+          --test no_old_name_is_spelled_in_the_window_or_its_assets
+          --test every_deferral_names_its_ticket
       - name: The plane writes, hooks, status line and doctor, as recorded
         if: needs.changes.outputs.rust != 'false'
         run: cargo test --locked -p purlis-cli --test recorded_behaviour

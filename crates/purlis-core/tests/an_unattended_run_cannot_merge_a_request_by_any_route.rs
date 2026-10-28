@@ -9,7 +9,7 @@
 //! endpoint cannot be read off the command line are all refused unattended. Attended, every one
 //! of them is untouched, and the read-only calls an unattended run needs stay allowed.
 //!
-//! `crates/purlis-cli/tests/the_floor_refuses_an_unattended_merge_through_the_hook.rs` puts the
+//! `crates/purlis-cli/tests/it/the_floor_refuses_an_unattended_merge_through_the_hook.rs` puts the
 //! same command lines through the real `charter hook pretooluse`.
 
 use purlis_core::floorguard::{MAX_DEPTH, release_floor_reason};
