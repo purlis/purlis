@@ -7289,8 +7289,9 @@ rewritten.
   link (`grades::kept`). When a grade ends, the chats of every grade of its skill but the three
   newest are removed (`grades::kept::sweep`).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
-- **Tier:** Clone state, device-bound — what this machine's chats showed. A teammate who pulls the
-  eval record sees the grade and not its chats, and its scorecard says they are kept where it ran.
+- **Tier:** Clone state, transient — what this machine's chats showed, kept for the skill's newest
+  grades; losing it loses only the read-only view of those chats. A teammate who pulls the eval
+  record sees the grade and not its chats, and its scorecard says they are kept where it ran.
 - **Git:** gitignored, under the state directory.
 
 ### `skill-tries/<id>/`

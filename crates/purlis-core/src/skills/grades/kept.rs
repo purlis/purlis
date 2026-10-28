@@ -17,7 +17,7 @@
 //!   (never a link), each file at most [`MOST_SCREEN_BYTES`] and opened following no link, so a
 //!   file put there by anything else is never shown.
 //!
-//! **Tier:** device-bound, never committed: what this machine's chats showed.
+//! **Tier:** Clone state, transient, never committed: what this machine's chats showed.
 
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
