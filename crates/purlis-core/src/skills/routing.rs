@@ -123,6 +123,13 @@ pub(crate) fn pins_or_none(
     workspace: Option<&str>,
     persona: Option<&str>,
 ) -> Vec<String> {
+    // A router's grade's arm (SK-15e) is a project of its own, with its scope's pins kept beside.
+    if workspace.is_none()
+        && persona.is_none()
+        && let Some(pins) = super::verbs::drafts::pins_of_arm(plane)
+    {
+        return pins;
+    }
     pins_of(plane, workspace, persona).unwrap_or_else(|why| {
         tracing::warn!("purlis: {why}");
         Vec::new()

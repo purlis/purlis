@@ -113,10 +113,10 @@ impl Hosting {
                         .unwrap_or(false);
                     if paired_now {
                         crate::say(&format!(
-                            "no desktop has linked to this runner for {} hours, so it suspends \
+                            "no desktop has linked to this runner for {}, so it suspends \
                              itself: every chat it runs ends, its home is kept, and its desktop \
                              starts it again as it next links to it",
-                            after.as_secs() / 3600
+                            spelled(after)
                         ));
                         return;
                     }
@@ -138,9 +138,34 @@ impl Hosting {
     }
 }
 
+/// `after` as the log says it: whole hours in hours, and anything else in minutes, or seconds
+/// below a minute or where it is no whole number of minutes (#3471: a pool's own time).
+fn spelled(after: Duration) -> String {
+    let secs = after.as_secs();
+    let (n, one, many) = if secs >= 3600 && secs.is_multiple_of(3600) {
+        (secs / 3600, "hour", "hours")
+    } else if secs >= 60 && secs.is_multiple_of(60) {
+        (secs / 60, "minute", "minutes")
+    } else {
+        (secs, "second", "seconds")
+    };
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_time_a_runner_was_left_is_said_in_hours_or_minutes() {
+        let said = |secs| spelled(Duration::from_secs(secs));
+        assert_eq!(said(24 * 3600), "24 hours");
+        assert_eq!(said(3600), "1 hour");
+        assert_eq!(said(90 * 60), "90 minutes");
+        assert_eq!(said(30 * 60), "30 minutes");
+        assert_eq!(said(60), "1 minute");
+        assert_eq!(said(61), "61 seconds");
+    }
 
     #[test]
     fn a_host_with_no_link_is_due_from_its_start_and_one_with_a_link_is_never_due() {

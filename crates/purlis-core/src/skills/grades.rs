@@ -195,6 +195,12 @@ impl Graded {
             })
             && self.model.as_deref().is_none_or(price::model_id)
             && report_holds_together(&self.report, self.runs)
+            // A skill's arms alone: a row scored in a router's grade's arms is a router's.
+            && self
+                .report
+                .arms
+                .iter()
+                .all(|arm| matches!(arm.arm, Arm::With | Arm::Without | Arm::Previous))
             && spent_is_the_reports(&self.spent, &self.report, self.runs)
     }
 }
@@ -1251,6 +1257,7 @@ pub mod after_edit;
 pub mod cap;
 pub mod kept;
 pub mod price;
+pub mod routers;
 pub mod underway;
 
 #[cfg(test)]

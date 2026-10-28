@@ -253,6 +253,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`personas/_dispatch/<YYYY-MM>.<host>.backfill.jsonl`](#personas_dispatchyyyy-mmhostbackfilljsonl)
   - [`personas/_skills/<YYYY-MM>.<device>.jsonl`](#personas_skillsyyyy-mmdevicejsonl)
   - [`personas/_grades/<YYYY-MM>.<device>.jsonl`](#personas_gradesyyyy-mmdevicejsonl)
+  - [`personas/_grades/routers/<YYYY-MM>.<device>.jsonl`](#personas_gradesroutersyyyy-mmdevicejsonl)
   - [`.claude/agents/<name>.md` (generated sub-agent)](#claudeagentsnamemd-generated-sub-agent)
   - [`.charter/persona-state/ephemeral/<session>/<name|_shared>/<slug>.md`](#charterpersona-stateephemeralsessionname_sharedslugmd)
   - [`.charter/persona-state/trace/<session>.jsonl`](#charterpersona-statetracesessionjsonl)
@@ -343,12 +344,13 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/` (legacy)](#skill-draftsid)
   - [`<state>/skill-grades/<YYYY-MM>.jsonl` (legacy)](#stateskill-gradesyyyy-mmjsonl)
+  - [`<state>/skill-grades/routers/<YYYY-MM>.jsonl` (legacy)](#stateskill-gradesroutersyyyy-mmjsonl)
   - [`<state>/skill-grade-after-edit.json` (legacy)](#stateskill-grade-after-editjson)
   - [`<state>/grades-under-way/<grade>.json` (legacy)](#stategrades-under-waygradejson)
   - [`<state>/grades-under-way.lock` (legacy)](#stategrades-under-waylock)
   - [`skill-tries/<id>/` (legacy)](#skill-triesid)
   - [`skill-levels/<chat id>.json` (legacy)](#skill-levelschat-idjson)
-  - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
+  - [`chat-settings/<chat id>.<digest>.json`](#chat-settingschat-iddigestjson)
   - [`ws-edit-nudge/<sid>-<workspace>`](#ws-edit-nudgesid-workspace)
   - [`ws-autosave/<workspace>`](#ws-autosaveworkspace)
   - [`workspace-tab-order`](#workspace-tab-order)
@@ -371,6 +373,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`<data>/app-state/<clone key>/` — the app's own state of a project](#dataapp-stateclone-key--the-apps-own-state-of-a-project)
   - [`<data>/app-state/<clone key>/skill-drafts/<id>/`](#dataapp-stateclone-keyskill-draftsid)
   - [`<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesyyyy-mmjsonl)
+  - [`<data>/app-state/<clone key>/skill-grades/routers/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesroutersyyyy-mmjsonl)
   - [`<data>/app-state/<clone key>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson)
   - [`<data>/app-state/<clone key>/grades-under-way/<grade>.json`](#dataapp-stateclone-keygrades-under-waygradejson)
   - [`<data>/app-state/<clone key>/grades-under-way.lock`](#dataapp-stateclone-keygrades-under-waylock)
@@ -3848,6 +3851,38 @@ An end row, never a pass or a fail:
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
   skill log's is; keys sorted, `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`).
+
+### `personas/_grades/routers/<YYYY-MM>.<device>.jsonl`
+
+- **Format:** JSON Lines, append-only, one row per **router's grade** (SK-15e, #3233, ADR 0102
+  §8, as amended 2026-10-28): the trigger tests of a library, run with the router in place and
+  with the built-in router.
+- **Status:** **experimental**, behind the `skill-studio` flag; written by the app when a
+  router's grade ends, whole or stopped (`grades::routers::record`), and read by the Skill
+  studio's router line, which says the newest grade of the router chosen there, in that scope
+  (`grades::routers::grades_of`).
+- **Tier:** Plane — committed, beside the skills' eval record, so a teammate sees how the router
+  their workspace chose did on the library they pulled.
+- **What a row holds:** `v` (1); `grade`, the grade's id; `router`, the extension's id;
+  `workspace` and `persona`, the scope that chose it (null for none); `commit`, the library's
+  commit: the plane's `HEAD` where every copy of the library was committed there when the grade
+  was planned, else null; `library`, every copy each chat was handed, `{skill, level, tree,
+  commit}` as a skill's grade records its copy; `harness`, `profile`, `ts`, `runs` and `spent`,
+  as a skill's grade's; `model` where a chat said one; and `report`, `{grader, router, skills,
+  ended, not_started, cap, spent_tokens, cost_cap_usd, spent_usd, priced}`, where `skills` is each
+  graded skill's `{skill, report}`, its report a skill's grade report (ADR 0105 §1) with the arms
+  `router` and `built-in-router`, in the order they ran, and absent for a skill the grade never
+  reached.
+- **Read:** as the skills' eval record is (a folder of its own holding at most 600 names, each
+  file through no link, at most 16 MiB, each line at most 1 MiB), the newest 50 grades of the
+  router; a row is skipped where it says more than purlis writes: a router that is not an
+  extension's id, or not the report's; a name that is not plain; a commit that is no whole hex
+  id; a tree that is neither one nor `uncommitted`; more than 200 copies or skills; or a skill's
+  report that does not hold together as a skill's grade's must.
+- **Git:** committed. Nothing commits it by itself: the next save does.
+- **Encoding details:** path `personas/_grades/routers/{%Y-%m}.{device}.jsonl`; keys sorted,
+  `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`). The skills' eval record never
+  reads this folder.
 ---
 
 ### `.claude/agents/<name>.md` (generated sub-agent)
@@ -7296,6 +7331,12 @@ rewritten.
 - **Tier:** Clone state, legacy — moved to the app state, its rows carried, at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
 - **Git:** gitignored, under the state directory.
 
+### `<state>/skill-grades/routers/<YYYY-MM>.jsonl`
+- **Format:** where an older purlis kept this store, in the plane's state folder, before
+  #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grades/routers/<YYYY-MM>.jsonl`](#dataapp-stateclone-keyskill-gradesroutersyyyy-mmjsonl).
+- **Tier:** Clone state, legacy — moved to the app state with the rest of `skill-grades/`, its rows carried, at the project's first open after the upgrade (`appstate::move_out_of_the_plane`); never read after that.
+- **Git:** gitignored, under the state directory.
+
 ### `<state>/skill-grade-after-edit.json`
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-grade-after-edit.json`](#dataapp-stateclone-keyskill-grade-after-editjson).
@@ -7326,20 +7367,24 @@ rewritten.
 - **Tier:** Clone state, legacy — removed at the project's first open after the upgrade and not carried; the sweep then removes each throwaway piece with no try (`appstate::move_out_of_the_plane`); never read after that.
 - **Git:** gitignored, under the state directory.
 
-### `chat-settings/<chat id>.json`
+### `chat-settings/<chat id>.<digest>.json`
 - **Format:** a Claude Code chat's `--settings` JSON, as purlis armed it (SK-9, #2772), where it is
   longer than one word of a command line carries (`hoststart::SETTINGS_IN_A_WORD`, 96 KiB, under
   Linux's 128 KiB): the chat is started with `--settings <this file>` instead. `0600` in a
-  private folder.
+  private folder. `<digest>` is the first 32 hex digits of the SHA-256 of what purlis wrote.
 - **Status:** **internal**.
 - **Tier:** Clone state, transient — it lasts as long as its chat.
 - **Written by:** the session host as it starts the chat (`hoststart::settings_in_a_file`),
-  through folder handles, no link followed. No chat writes the state folder.
-- **Read by:** Claude Code, at the chat's start.
+  through folder handles, no link followed. The folder is held as an integrity path: no sandboxed
+  chat writes it, under either spelling of the state folder or where `$PURLIS_HOME` puts it.
+- **Read by:** Claude Code, at the chat's start; and purlis, to say how a run it finds is
+  sandboxed (`sandbox::ran`), only while the file holds what its digest names
+  (`hoststart::settings_from_its_file`). A file so named that holds anything else is read as
+  sandboxed, never as off.
 - **Removed by:** the app, each time it writes its record of open chats, for a chat not on it,
-  two minutes after it was written (`hoststart::sweep_settings`).
+  two minutes after it was written (`hoststart::sweep_settings`), and a `<chat id>.json` written
+  before the digest named the file the same way.
 - **Git:** gitignored, under the state directory.
-
 ### `skill-levels/<chat id>.json`
 - **Format:** where an older purlis kept this store, in the plane's state folder, before
   #3718. It now lives in the data home, at [`<data>/app-state/<clone key>/skill-levels/<chat id>.json`](#dataapp-stateclone-keyskill-levelschat-idjson).
@@ -7710,7 +7755,7 @@ refuses a `<data>` under a project or inside any git work tree.
 | `<data>/profiles/<name>/` | Machine, device-bound | A profile purlis made (#2034), its record in `<config>/profiles.json`: 0700, holding `config/` (its harness's `config_env`) and, for a harness that declares `data_env`, `data/`. The harness keeps its settings, its sign-in and its conversations here. Its settings are copied in from this machine's harness settings by a list of settings files per harness (`profilestore::ALLOWED`), each copied as it is; no other file, no link and no file with another name on the disk is copied. Removing the profile deletes this folder, and only a folder directly under `<data>/profiles/`; an adopted profile's folder is the harness's own and is never deleted. Chats are denied `<data>/profiles/`, reading and writing. Not rebuildable | the profile's harness, and `profilestore` |
 | keyring item for a human's audit pseudonym key | Keyring | **decided, not yet written** (ADR 0075). One key per human principal on this device, which turns that person's principal into the pseudonyms the audit stores. Deleting it is erasure. Its item name is AU-18's | AU-18 |
 | keyring item for the device key | Keyring | **decided, not yet written** (ADR 0066, ADR 0075). The key that signs this device's audit chain; on a headless host, an age-encrypted file stands in for it. Its item name is AU-3's | AU-3 |
-| `<config>/runners.json` | Machine, device-bound | Written since #2525 (ADR 0078 §3 and §8, keys ruled 2026-10-18 and 2026-10-20), for the Docker pools added on this machine and their runners: `{"version": 1, "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp"}], "runners": [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of", "draining"}]}`. **`pools`** (#2679, the person's ruling of 2026-10-20), left out while there is none: each pool's name (a runner's name, below), its kind (`docker`), the runner image by digest, and the limits the person set, each left out where purlis's default holds (#2506: two CPUs, 4096 MiB, 1024 processes, 1024 MiB of `/tmp`): `cpus` a number of CPUs to the thousandth, `memory` and `tmp` in MiB, `processes` a count, together within what a runner needs to start a chat. A pool's runner is made of its image as the pool is added, kept under the pool's name; a pool's name is never a pool's or runner's already kept. **After an update** (#2749, the person's ruling of 2026-10-20), a pool of purlis's own runner image (`ghcr.io/purlis/purlis-runner`) gets a runner of the image the update manifest names for the desktop's version beside its old one, called `<pool>-<the first 8 hex digits of its digest>`, the pool's `image` is that image from then on, and every runner of the pool before it is kept draining; a pool of a team's own image is never moved. A pool's new chats start on its one runner of its image that is not draining. **`runners`**: each runner's name (lower-case letters, digits and dashes, at most 49), its pool (`docker`, the kind), its container's full id (64 lower-case hex), the runner image by digest, its user and group by number (`uid:gid`), its home in the image, the device id and public link key (64 lower-case hex) its pairing answered, and when it was paired, in seconds since the epoch; **`of`** (#2749), the pool it is a runner of, left out where that is the pool of its name; and **`draining`** (#2749), `true` alone and left out otherwise: a runner replaced by one of the desktop's version, which keeps its chats, starts no new one, and is removed with its container and home once no chat is left on it. `0600`, written whole under `runners.json.lock` beside it, and read only when it is a regular file this user owns that nobody else may read or write. A runner's device id and key are kept once: a later answer for a kept runner with another of either, or another container under its name, is refused and the kept row stays, and a device id or key another kept runner holds, or this machine's own device id or link key (the one it pairs and links with), is not kept. Device ids are compared without regard to case, as ULIDs are (#2741). A row goes when its runner's container and home volume are both removed. A file of another version or shape (a top-level key but these three, a pool row with another key or a value of another shape, or two pools of one name) is refused whole, never read in part or replaced. A pool is forgotten once every runner of it is gone. Not backed up: a runner is made and paired again. The connector, preset, provider, role label and tags ADR 0078 and ADR 0089 name are not written yet. Denied to chats, reading and writing. A project names a runner and never defines one, and a workspace names a pool in `machine.json` (above) | `purlis_core::runners` and `purlis_core::pools`, as a Docker pool is added and removed and its runner paired and removed (#2525, #2679); `purlis runner add` and `remove`, and the window (RR-1) |
+| `<config>/runners.json` | Machine, device-bound | Written since #2525 (ADR 0078 §3 and §8, keys ruled 2026-10-18 and 2026-10-20), for the Docker pools added on this machine and their runners: `{"version": 1, "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter"}], "runners": [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of", "draining"}]}`. **`pools`** (#2679, the person's ruling of 2026-10-20), left out while there is none: each pool's name (a runner's name, below), its kind (`docker`), the runner image by digest, and the limits the person set, each left out where purlis's default holds (#2506: two CPUs, 4096 MiB, 1024 processes, 1024 MiB of `/tmp`): `cpus` a number of CPUs to the thousandth, `memory` and `tmp` in MiB, `processes` a count, together within what a runner needs to start a chat. **`suspendAfter`** (#3471, the person's ruling of 2026-10-28): how long the pool's runner is left without a link from this desktop before it suspends itself (#2051: it stops serving, every chat ends, and its container stops with its home kept), a duration spelled as `[plane].autosave_after` is, a whole number followed by `s`, `m` or `h` (`"24h"`, `"90m"`), at least a minute and at most 30 days, left out at the default, a day. It is given to the runner as it is made (`purlis serve --suspends-unlinked=<duration>`, the bare flag where it is the default), so a pool's runner made before keeps the time it was made with. A pool's runner is made of its image as the pool is added, kept under the pool's name; a pool's name is never a pool's or runner's already kept. **After an update** (#2749, the person's ruling of 2026-10-20), a pool of purlis's own runner image (`ghcr.io/purlis/purlis-runner`) gets a runner of the image the update manifest names for the desktop's version beside its old one, called `<pool>-<the first 8 hex digits of its digest>`, the pool's `image` is that image from then on, and every runner of the pool before it is kept draining; a pool of a team's own image is never moved. A pool's new chats start on its one runner of its image that is not draining. **`runners`**: each runner's name (lower-case letters, digits and dashes, at most 49), its pool (`docker`, the kind), its container's full id (64 lower-case hex), the runner image by digest, its user and group by number (`uid:gid`), its home in the image, the device id and public link key (64 lower-case hex) its pairing answered, and when it was paired, in seconds since the epoch; **`of`** (#2749), the pool it is a runner of, left out where that is the pool of its name; and **`draining`** (#2749), `true` alone and left out otherwise: a runner replaced by one of the desktop's version, which keeps its chats, starts no new one, and is removed with its container and home once no chat is left on it. `0600`, written whole under `runners.json.lock` beside it, and read only when it is a regular file this user owns that nobody else may read or write. A runner's device id and key are kept once: a later answer for a kept runner with another of either, or another container under its name, is refused and the kept row stays, and a device id or key another kept runner holds, or this machine's own device id or link key (the one it pairs and links with), is not kept. Device ids are compared without regard to case, as ULIDs are (#2741). A row goes when its runner's container and home volume are both removed. A file of another version or shape (a top-level key but these three, a pool row with another key or a value of another shape, or two pools of one name) is refused whole, never read in part or replaced. A pool is forgotten once every runner of it is gone. Not backed up: a runner is made and paired again. The connector, preset, provider, role label and tags ADR 0078 and ADR 0089 name are not written yet. Denied to chats, reading and writing. A project names a runner and never defines one, and a workspace names a pool in `machine.json` (above) | `purlis_core::runners` and `purlis_core::pools`, as a Docker pool is added and removed and its runner paired and removed (#2525, #2679); `purlis runner add` and `remove`, and the window (RR-1) |
 | `<config>/peers.json` | Machine, device-bound | Written since #2044 (ADR 0078 §3 and §8, as ruled 2026-10-15 and 2026-10-17). On a runner: the one desktop paired with it, `{"version": 1, "peers": [{"device", "key", "paired"}]}`, its device id (letters and digits, at most 64), its public link key as 64 lower-case hex, and when it was paired, in seconds since the epoch. `0600`, made only where no file of that name is, at the runner's one pairing, never rewritten, and removed when the desktop it names unpairs the runner as it removes it (`unpair`, session protocol 1.25, #2525), after which the runner links nobody and is not paired again; read only when it is a regular file this user owns that nobody else may read or write. The runner's host reads it as each link arrives and refuses a link from any other key; a file of another version or shape, or with more or fewer than one peer, links nobody, and a home that already holds one is not paired. Chats are denied it, reading and writing | `purlis bridge --pair`, run by the desktop through the connector (#2044, ruled 2026-10-17); `purlis runner peers` (RR-1) |
 | `<config>/purlisd/link-key` | Machine, device-bound | Written since #2044 (ADR 0078 §3, amended for runners only, ruled 2026-10-17), on a runner, as `<config>/charterd/link-key` before rename-local has moved the folder. The runner's own link key: its private half as 64 lower-case hex, `0600` and owned by the runner's user, in the session host's `0700` folder, made from the operating system's generator at the runner's one pairing, only where no file of that name is, and never replaced, so each runner (each container of a Docker pool) has a key of its own. Read only when it is a regular file this user owns that nobody else may read or write; one that is not one key links nobody, and a home that already holds one is not paired. A runner's form of the keyring item for the link key below. Not backed up: a runner made again is paired again. Chats are denied the directory | `purlis bridge --pair` (#2044, ruled 2026-10-17) |
 | `<config>/server/<ver>/` | Machine, device-bound, rebuildable | **decided, not yet written** (ADR 0068, ADR 0078). On a runner: the verified `purlis` binary of each host version, side by side while an old one drains. Denied to chats | the desktop's bootstrap, through the connector (RR-14) |
@@ -7776,6 +7821,15 @@ refuses a `<data>` under a project or inside any git work tree.
   machine's alone, a `skills.local/` copy or one in a workspace that is this machine's alone
   (SK-16, #2779, the review of #3229). Written `0600` through no link (`grades::record`), read
   beside the committed record by `grades::grades_of`, held to the same limits.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Machine, device-bound — this machine's own; nothing rebuilds it.
+- **Git:** outside every project, in the data home.
+
+### `<data>/app-state/<clone key>/skill-grades/routers/<YYYY-MM>.jsonl`
+- **Format:** JSON Lines, append-only: the rows of
+  [`personas/_grades/routers/`](#personas_gradesroutersyyyy-mmdevicejsonl) for a router's grade
+  whose library held a copy that is this machine's alone (SK-15e, #3233). Written `0600` through
+  no link (`grades::routers::record`), read beside the committed record, held to the same limits.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Machine, device-bound — this machine's own; nothing rebuilds it.
 - **Git:** outside every project, in the data home.
@@ -7875,6 +7929,13 @@ refuses a `<data>` under a project or inside any git work tree.
   without its `evals/` folder, or, for the arm without the skill, no `skills/` at all; and an
   empty file `graded` beside `piece`, which arms the chat started there as a grade's chat
   (`--strict-mcp-config`, purlis's server with `--graded`, ADR 0105 §3).
+  And `drafts::lay_out_library_arm`, for each chat of a router's grade (SK-15e, #3233): every
+  skill of the library as the grade read it once, each without its `evals/` folder, `graded`, and,
+  for the router's arm, a file `router` holding the router's extension id, which the chat's start
+  routes its set by in place of a workspace's or persona's choice (`drafts::arm_router`). The arm
+  of the built-in router has no `router`. Both arms hold `pins`, the pins of the workspace or persona that chose
+  the router, one name a line (absent for none), which the chat's set is routed with
+  (`drafts::pins_of_arm`).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** outside every project, in the data home; the piece is ignored and never staged.

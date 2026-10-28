@@ -379,6 +379,60 @@ fn a_pool_is_written_with_the_ruled_keys_and_only_the_limits_the_person_set() {
 }
 
 #[test]
+fn a_pools_own_time_before_its_runner_suspends_is_kept_and_a_day_is_left_out() {
+    let config = tempfile::tempdir().unwrap();
+    let set = Set {
+        suspend_after: Some(std::time::Duration::from_secs(90 * 60)),
+        ..Set::default()
+    };
+    record_pool(config.path(), &pool("nightly", set)).unwrap();
+    record_pool(config.path(), &pool("plain", Set::default())).unwrap();
+    assert_eq!(
+        the_file(config.path())["pools"],
+        serde_json::json!([
+            { "name": "nightly", "kind": "docker", "image": IMAGE, "suspendAfter": "90m" },
+            { "name": "plain", "kind": "docker", "image": IMAGE },
+        ])
+    );
+    let pools = pools(config.path()).unwrap();
+    assert_eq!(pools[0].set(), set);
+    assert_eq!(
+        pools[0].suspend_after(),
+        std::time::Duration::from_secs(5400)
+    );
+    assert_eq!(
+        pools[1].suspend_after(),
+        std::time::Duration::from_secs(86_400)
+    );
+    // A day said in so many words is the default, and left out as one.
+    let a_day = Set {
+        suspend_after: Some(std::time::Duration::from_secs(86_400)),
+        ..Set::default()
+    };
+    assert_eq!(pool("daily", a_day).set(), Set::default());
+}
+
+#[test]
+fn a_pools_suspend_after_is_read_as_the_person_spelled_it_in_hours() {
+    let config = tempfile::tempdir().unwrap();
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    let text = serde_json::json!({
+        "version": 1,
+        "runners": [],
+        "pools": [{ "name": "builds", "kind": "docker", "image": IMAGE, "suspendAfter": "12h" }],
+    })
+    .to_string();
+    folder
+        .replace_file(crate::machine::RUNNERS_FILE, text.as_bytes())
+        .unwrap();
+    assert_eq!(
+        pools(config.path()).unwrap()[0].suspend_after(),
+        std::time::Duration::from_secs(12 * 60 * 60)
+    );
+}
+
+#[test]
 fn a_file_with_no_pool_is_written_as_it_was_before_pools() {
     let config = tempfile::tempdir().unwrap();
     keep(
@@ -408,6 +462,7 @@ fn a_pools_row_whole_cpus_and_set_limits_read_back_as_written() {
         memory_mib: Some(8192),
         processes: Some(2048),
         tmp_mib: Some(512),
+        suspend_after: Some(std::time::Duration::from_secs(48 * 60 * 60)),
     };
     record_pool(config.path(), &pool("big", set)).unwrap();
     assert_eq!(the_file(config.path())["pools"][0]["cpus"], 3);
@@ -441,6 +496,12 @@ fn a_file_of_an_unknown_shape_is_refused_whole_and_never_replaced() {
         with(&|row| row["memory"] = 1.5.into()),
         with(&|row| row["processes"] = 8.into()),
         with(&|row| row["tmp"] = 999_999.into()),
+        with(&|row| row["suspendAfter"] = 86_400.into()),
+        with(&|row| row["suspendAfter"] = "1d".into()),
+        with(&|row| row["suspendAfter"] = "1h30m".into()),
+        with(&|row| row["suspendAfter"] = "30s".into()),
+        with(&|row| row["suspendAfter"] = "721h".into()),
+        with(&|row| row["suspendAfter"] = "suspendafter".into()),
         with(&|row| {
             row.as_object_mut().unwrap().remove("kind");
         }),
@@ -519,6 +580,15 @@ fn a_pools_limits_are_held_to_what_a_runner_needs() {
         // A /tmp larger than the default memory it counts against.
         Set {
             tmp_mib: Some(8192),
+            ..Set::default()
+        },
+        // Suspended before a link that drops can come back, or never in practice.
+        Set {
+            suspend_after: Some(std::time::Duration::from_secs(59)),
+            ..Set::default()
+        },
+        Set {
+            suspend_after: Some(std::time::Duration::from_secs(31 * 24 * 60 * 60)),
             ..Set::default()
         },
     ] {

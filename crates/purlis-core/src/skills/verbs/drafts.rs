@@ -548,7 +548,7 @@ pub fn try_out(root: &Path, id: &str) -> Result<Try, String> {
     for file in &draft.files {
         files.insert(file.path.clone(), file.after.clone());
     }
-    lay_out(root, Some((&draft.name, &files)))
+    lay_out(root, &[(&draft.name, &files)])
 }
 
 /// **A copy of a skill, read once for a grade** (SK-16, #2779): its name and its files, without
@@ -578,23 +578,114 @@ pub fn snapshot(root: &Path, level: &Level, name: &str) -> Result<Snapshot, Stri
 /// ([`graded_piece`]), so its chat is armed as a grade's chat is. Ended as a Try it is, when its
 /// chat closes ([`end_try_at`]).
 pub fn lay_out_arm(root: &Path, skill: Option<&Snapshot>) -> Result<Try, String> {
-    let laid = lay_out(root, skill.map(|skill| (skill.name.as_str(), &skill.files)))?;
-    let state = app_state(root)?;
-    if let Err(why) = write_at(
-        &state,
-        &format!("{TRIES_DIR}/{}/{GRADED}", laid.id),
+    lay_out_graded(
+        root,
+        skill.map(std::slice::from_ref).unwrap_or_default(),
         None,
-        "",
-        usize::MAX,
-    ) {
-        let _ = end_try(root, &laid.id);
-        return Err(super::not_written("the grade's record of its folder", why));
+        None,
+    )
+}
+
+/// **Lays out a router's grade's arm** (SK-15e, #3233): a throwaway piece whose chat gets the
+/// built-in skills and the library `skills`, each as it was read once for the grade, routed by
+/// the router `router`, an extension's id, or by the built-in router where it is `None`
+/// ([`arm_router`]). Marked as a grade's, as [`lay_out_arm`]'s is.
+pub fn lay_out_library_arm(
+    root: &Path,
+    skills: &[Snapshot],
+    router: Option<&str>,
+    pins: &[String],
+) -> Result<Try, String> {
+    if router.is_some_and(|id| !crate::extension::an_id(id)) {
+        return Err("a router's grade names no router".to_owned());
+    }
+    let pins = pins.join("\n");
+    lay_out_graded(
+        root,
+        skills,
+        router,
+        Some(pins.as_str()).filter(|pins| !pins.is_empty()),
+    )
+}
+
+/// A grade's piece of `skills`, marked as a grade's, as routed by `router` where it is one, and
+/// with `pins`, one name a line, where there are any.
+fn lay_out_graded(
+    root: &Path,
+    skills: &[Snapshot],
+    router: Option<&str>,
+    pins: Option<&str>,
+) -> Result<Try, String> {
+    let named: Vec<(&str, &BTreeMap<String, String>)> = skills
+        .iter()
+        .map(|skill| (skill.name.as_str(), &skill.files))
+        .collect();
+    let laid = lay_out(root, &named)?;
+    let state = app_state(root)?;
+    let marks = [(GRADED, Some("")), (ROUTER, router), (PINS, pins)];
+    for (file, text) in marks {
+        let Some(text) = text else { continue };
+        if let Err(why) = write_at(
+            &state,
+            &format!("{TRIES_DIR}/{}/{file}", laid.id),
+            None,
+            text,
+            usize::MAX,
+        ) {
+            let _ = end_try(root, &laid.id);
+            return Err(super::not_written("the grade's record of its folder", why));
+        }
     }
     Ok(laid)
 }
 
 /// A try's file that marks it as a grade's arm.
 const GRADED: &str = "graded";
+
+/// A grade's arm's file that names the router its chat is routed by (SK-15e).
+const ROUTER: &str = "router";
+
+/// A router's grade's arm's file of the pins its chat reads: the scope's that chose the router.
+const PINS: &str = "pins";
+
+/// **The pins of the chat of a router's grade's arm whose project is `tried`**, the try's own
+/// folder (SK-15e, #3233): the pins of the workspace or persona that chose the router, so the
+/// router is asked about the skills a real chat there may hide, and both routers keep them listed.
+/// `None` for any folder that is not a try's.
+pub(crate) fn pins_of_arm(tried: &Path) -> Option<Vec<String>> {
+    let id = tried.file_name()?.to_str()?;
+    let tries = tried.parent()?;
+    if tries.file_name()? != TRIES_DIR {
+        return None;
+    }
+    let text = read_at(tries.parent()?, &format!("{TRIES_DIR}/{id}/{PINS}"))
+        .ok()
+        .flatten()?;
+    Some(
+        text.lines()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
+/// **The router the chat of a router's grade's arm in `cwd` is routed by** (SK-15e, #3233), by
+/// its extension's id, in the project at `root`: `None` for every other folder, and for the arm
+/// routed by the built-in router. Only this machine's state says so, and no chat writes it.
+pub fn arm_router(root: &Path, cwd: &Path) -> Option<String> {
+    if !graded_piece(root, cwd) {
+        return None;
+    }
+    let id = try_of(root, cwd)?;
+    read_at(
+        &crate::appstate::dir(root)?,
+        &format!("{TRIES_DIR}/{id}/{ROUTER}"),
+    )
+    .ok()
+    .flatten()
+    .filter(|router| crate::extension::an_id(router))
+}
 
 /// **Whether `cwd` is the throwaway piece of a grade's arm** in the project at `root`
 /// ([`lay_out_arm`]): only this machine's state says so, and no chat writes it.
@@ -617,12 +708,12 @@ const EVALS: &str = purlis_skills::grade::EVALS_DIR;
 /// machine's [`TRIES_DIR`], as the one skill of a project of its own, or no skill at all, and an
 /// empty throwaway piece in the project's [`PIECES`], made new. A chat started in the piece gets
 /// the built-in skills and that skill alone ([`tried`]).
-fn lay_out(root: &Path, skill: Option<(&str, &BTreeMap<String, String>)>) -> Result<Try, String> {
+fn lay_out(root: &Path, skills: &[(&str, &BTreeMap<String, String>)]) -> Result<Try, String> {
     let state = state_with(root, TRIES_DIR)?;
     let try_id = random_id()?;
     super::store::made(&state, &[TRIES_DIR, &try_id], false).map_err(|why| why.to_string())?;
     let laid = (|| {
-        if let Some((name, files)) = skill {
+        for &(name, files) in skills {
             let skill_rel = format!("{TRIES_DIR}/{try_id}/{}/{name}", purlis_skills::PROJECT_DIR);
             for (path, text) in files {
                 write_at(&state, &format!("{skill_rel}/{path}"), None, text, 3)

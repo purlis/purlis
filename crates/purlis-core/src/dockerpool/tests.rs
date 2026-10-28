@@ -93,6 +93,43 @@ fn a_runner_container_runs_the_pinned_image_by_digest_as_its_session_host() {
 }
 
 #[test]
+fn a_runner_of_a_pool_with_its_own_time_suspends_after_it() {
+    let at_the_end = |runner: Runner| {
+        let args = runner.create_args(std::path::Path::new(SECCOMP_AT));
+        args[args.len() - 2..].to_vec()
+    };
+    assert_eq!(
+        at_the_end(runner().suspending_after(std::time::Duration::from_secs(90 * 60))),
+        ["serve", "--suspends-unlinked=90m"]
+    );
+    assert_eq!(
+        at_the_end(runner().suspending_after(std::time::Duration::from_secs(48 * 60 * 60))),
+        ["serve", "--suspends-unlinked=48h"]
+    );
+    // The default is said as it was before a pool could set its own.
+    assert_eq!(
+        at_the_end(runner().suspending_after(std::time::Duration::from_secs(24 * 60 * 60))),
+        ["serve", "--suspends-unlinked"]
+    );
+}
+
+#[test]
+fn a_pools_time_before_its_runner_suspends_is_a_minute_to_30_days() {
+    let secs = std::time::Duration::from_secs;
+    assert!(suspend_after(secs(59)).is_err());
+    assert!(suspend_after(secs(60)).is_ok());
+    assert!(suspend_after(secs(30 * 24 * 60 * 60)).is_ok());
+    assert!(suspend_after(secs(30 * 24 * 60 * 60 + 1)).is_err());
+}
+
+// The host is linked on macOS and Linux alone.
+#[cfg(unix)]
+#[test]
+fn a_pools_runner_suspends_after_the_hosts_own_day_by_default() {
+    assert_eq!(SUSPEND_AFTER, purlis_host::UNLINKED_FOR);
+}
+
+#[test]
 fn a_runner_container_holds_its_home_on_a_volume_of_its_own_and_no_folder_of_this_machine() {
     let args = runner().create_args(std::path::Path::new(SECCOMP_AT));
     let mounts: Vec<&String> = args

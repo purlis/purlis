@@ -14,20 +14,14 @@
  */
 // prettier-ignore
 export const CONTROLS_ALLOWANCE: Readonly<Record<string, readonly string[]>> = {
-  "ActivityTab.tsx": [
-    "<button className=\"vault-secret\">",
-  ],
-  "ChatsSection.tsx": [
-    "<button className=\"needs-you-mark rolled-up\">",
-  ],
   "StripMarks.tsx": [
     "<button className={clsx(\"ui-tabs-control closer\", { keeps: closesOnly(offer.does), minimise })}>",
   ],
   "Welcome.tsx": [
-    "<button className=\"welcome-door\">",
+    "<button className=\"ui-card-control welcome-door\">",
   ],
   "YourRepos.tsx": [
-    "<button className=\"welcome-link repo-card\">",
+    "<button className=\"ui-card-control welcome-link repo-card\">",
   ],
   "settings/RawToml.tsx": [
     "<button className=\"ui-settings-raw-file\">",
