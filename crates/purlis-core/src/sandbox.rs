@@ -1042,6 +1042,31 @@ pub fn skills_held(root: &Path) -> Vec<Denial> {
         .collect()
 }
 
+/// **The app's state a chat is denied writing** (#3718, ADR 0067 as amended 2026-10-28):
+/// `<data>/app-state` and everything below it ([`crate::appstate`]), and that folder and the data
+/// home `data` itself as entries, so neither is renamed, moved or replaced. Each under every
+/// spelling a case-folding disk takes for it. Read, never written: a Try it's chat reads its
+/// laid-out skill there. [`Class::Integrity`]: purlis's own records, which only purlis writes, as
+/// they were in the plane's state folder, and which no grant reaches (`grant`).
+pub fn app_state_held(data: &Path) -> Vec<Denial> {
+    let app_state = data.join(crate::appstate::DIR);
+    [
+        (app_state.clone(), Reach::AndBelow),
+        (app_state, Reach::Itself),
+        (data.to_path_buf(), Reach::Itself),
+    ]
+    .into_iter()
+    .map(|(path, reach)| Denial {
+        class: Class::Integrity,
+        path,
+        access: Access::Write,
+        named: None,
+        reach,
+        any_case: true,
+    })
+    .collect()
+}
+
 /// **A part of a denied path that stands for any one name** (SK-9): `workspaces/*/skills` holds
 /// the skills of every workspace, made now or later. Only [`skills_held`] writes one.
 pub const ANY_NAME: &str = "*";
@@ -1874,6 +1899,11 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             door::root_in(runtime.as_deref()),
             Access::Write,
         );
+    }
+    // The app's own state of every project (#3718): what purlis reads back to decide, kept in
+    // the data home where only purlis writes it.
+    if let Some(data) = Homes::charter_data(machine) {
+        paths.extend(app_state_held(&data));
     }
     // A vault's file is kept under the other names purlis finds for it in the project.
     let mut vaults: Vec<PathBuf> = Vec::new();

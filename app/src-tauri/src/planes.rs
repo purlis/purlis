@@ -2801,6 +2801,9 @@ impl Planes {
         if let Err(why) = purlis_core::wscmd::rename::kept_reports_follow(&root) {
             tracing::warn!("purlis: reports kept for a renamed workspace were not moved ({why})");
         }
+        // The app's own state an older purlis kept in the plane's state folder moves to the
+        // data home, once (#3718): before any chat is put back, so what arms them reads it there.
+        let _ = purlis_core::appstate::move_out_of_the_plane(&root);
         // And a dispatch whose persona chat that record does not bring back has ended (#1452).
         // It first makes an older build's handoff that still owes a report the task it now is
         // (#1519): before any chat is put back, so what puts them back reads the newer shape.

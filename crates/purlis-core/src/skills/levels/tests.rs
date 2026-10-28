@@ -66,7 +66,8 @@ fn set_in(root: &Path, workspace: &str) -> (Vec<String>, Vec<(String, String)>) 
 
 /// Makes the record of `id` look as if it was written long ago, past the sweep's grace.
 fn noted_long_ago(root: &Path, id: &str) {
-    let record = crate::plane::state_dir(root)
+    let record = crate::appstate::dir(root)
+        .unwrap()
         .join(DIR)
         .join(format!("{id}.json"));
     let old = std::time::SystemTime::now() - crate::skills::verbs::drafts::SWEEP_GRACE * 2;
@@ -195,7 +196,8 @@ fn a_record_whose_chat_is_off_the_record_is_swept_only_once_it_is_old() {
     let tmp = plane(&[]);
     let root = tmp.path();
     note(root, CHAT, "7").unwrap();
-    let record = crate::plane::state_dir(root)
+    let record = crate::appstate::dir(root)
+        .unwrap()
         .join(DIR)
         .join(format!("{CHAT}.json"));
     // Just noted: the chat may not be on the app's record yet.
@@ -233,4 +235,20 @@ fn a_create_vouches_only_for_a_folder_it_made() {
     assert!(set_in(root, "fresh").0.contains(&"mine".to_owned()));
     // A workspace that was there when the chat started: nothing waits, and nothing is said.
     assert_eq!(vouch_if_made(root, "workspaces/ops", true), None);
+}
+
+#[test]
+fn records_in_the_plane_s_state_folder_are_never_read() {
+    // #3718: the records are read from this machine's app state alone.
+    let tmp = plane(&[CHAT]);
+    let root = tmp.path();
+    let old = crate::plane::state_dir(root).join(DIR);
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::write(
+        old.join(format!("{CHAT}.json")),
+        r#"{"name":"7","levels":[]}"#,
+    )
+    .unwrap();
+    std::fs::write(old.join(UNACCEPTED), r#"{"levels":["workspaces/ops"]}"#).unwrap();
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
 }

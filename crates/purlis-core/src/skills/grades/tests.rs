@@ -424,7 +424,7 @@ fn a_local_copys_grade_stays_on_this_machine_and_is_read_back() {
     row.level = local.rel();
     let written = record(root, &local, &row, "laptop").unwrap();
     assert!(
-        written.starts_with(crate::plane::state_dir(root)),
+        written.starts_with(crate::appstate::dir(root).unwrap()),
         "{}",
         written.display()
     );
@@ -432,6 +432,21 @@ fn a_local_copys_grade_stays_on_this_machine_and_is_read_back() {
     let read = grades_of(root, "deploy", Some(&local));
     assert_eq!(read.len(), 1);
     assert_eq!(read[0].grade, "mine");
+}
+
+#[test]
+fn a_local_grade_in_the_plane_s_state_folder_is_never_read() {
+    // #3718: this machine's grades are read from its app state alone.
+    let plane = plane();
+    let root = plane.path();
+    let local = Level::project().local(true);
+    std::fs::create_dir_all(root.join("skills.local/deploy")).unwrap();
+    std::fs::write(root.join("skills.local/deploy/SKILL.md"), SKILL).unwrap();
+    let mut row = graded(root, "mine", "2026-10-25T10:00:00+00:00", Spent::default());
+    row.level = local.rel();
+    record(root, &local, &row, "laptop").unwrap();
+    crate::appstate::put_in_the_plane(root, LOCAL_DIR);
+    assert!(grades_of(root, "deploy", Some(&local)).is_empty());
 }
 
 #[test]

@@ -489,7 +489,7 @@ fn a_try_left_behind_is_swept_once_old_and_one_a_chat_stands_in_is_kept() {
     );
     let kept = try_out(root, &id).unwrap();
     let left = try_out(root, &id).unwrap();
-    let state = crate::plane::state_dir(root);
+    let state = crate::appstate::dir(root).unwrap();
     // Just laid out: its chat may not be on the app's record yet.
     sweep_tries(root, &[]);
     assert!(left.piece.is_dir());
@@ -694,4 +694,25 @@ fn use_skill_offers_a_try_its_draft_alone_as_its_arming_hands_it() {
         crate::skills::stamp_of(&chat(&in_the_try)),
         crate::skills::stamp_of(&chat(&at_the_root)),
     );
+}
+
+#[test]
+fn drafts_and_tries_in_the_plane_s_state_folder_are_never_read() {
+    // #3718: the drafts and the tries are read from this machine's app state alone.
+    let tmp = plane();
+    let root = tmp.path();
+    let id = drafted(
+        root,
+        "skills/triage/SKILL.md",
+        &whole(&skill_text("triage", "Sorts issues.")),
+    );
+    let laid = try_out(root, &id).unwrap();
+    assert!(tried(root, &laid.piece).is_some());
+    crate::appstate::put_in_the_plane(root, TRIES_DIR);
+    crate::appstate::put_in_the_plane(root, DRAFTS_DIR);
+    assert!(list(root).is_empty());
+    assert!(one(root, &id).is_err());
+    assert_eq!(tried(root, &laid.piece), None);
+    assert!(tries(root).is_empty());
+    assert!(!graded_piece(root, &laid.piece));
 }

@@ -360,7 +360,9 @@ fn the_grades_panel_shows_one_copys_grades_alone() {
         format!("{}\n", row("shared-one", &shared)),
     )
     .unwrap();
-    let mine = crate::plane::state_dir(root).join(super::super::grades::LOCAL_DIR);
+    let mine = crate::appstate::dir(root)
+        .unwrap()
+        .join(super::super::grades::LOCAL_DIR);
     std::fs::create_dir_all(&mine).unwrap();
     std::fs::write(
         mine.join("2026-10.jsonl"),

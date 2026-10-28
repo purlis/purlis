@@ -9,8 +9,8 @@
 //! have made it. That skill is left out with a reason that says so.
 //!
 //! - **The host notes each sandboxed chat's start** ([`note`]): `skill-levels/<chat id>.json`
-//!   in this machine's state, holding the workspace and persona folders there at that moment.
-//!   A chat cannot write the state folder.
+//!   in this machine's app state of the project (`crate::appstate`), holding the workspace and
+//!   persona folders there at that moment. A chat cannot write the app state.
 //! - **A record counts until the app sweeps it**, each time it writes its record of open chats
 //!   (`reopen`), for a chat no longer on it ([`sweep`]). The sweep moves every folder that chat
 //!   could have made to the folders not accepted yet, which stay left out until the person
@@ -21,7 +21,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// The folder of this machine's state the records are kept in.
+/// The folder of this machine's app state of the project the records are kept in.
 pub const DIR: &str = "skill-levels";
 
 /// The file in [`DIR`] that keeps the folders a chat that has closed could have made, until the
@@ -130,9 +130,7 @@ pub fn note(root: &Path, id: &str, name: &str) -> Result<(), String> {
     if !an_id(id) {
         return Err("a chat with no id of its own is not noted".to_owned());
     }
-    let state = crate::plane::state_dir(root);
-    std::fs::create_dir_all(&state).map_err(|why| why.to_string())?;
-    crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
+    let state = crate::appstate::made(root)?;
     if read(&state, id).is_some() {
         return Ok(());
     }
@@ -152,7 +150,9 @@ fn open_records(root: &Path) -> Vec<(String, Record)> {
     // Every record there is, whether or not its chat is still on the app's record: one whose chat
     // closed holds until the app's sweep moves what it could have made to the folders not
     // accepted yet ([`sweep`]), so no moment between the two lets such a folder through.
-    let state = crate::plane::state_dir(root);
+    let Some(state) = crate::appstate::dir(root) else {
+        return Vec::new();
+    };
     let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
         return Vec::new();
     };
@@ -183,7 +183,9 @@ pub type MadeSince = Box<dyn Fn(&Path) -> Option<String> + Sync>;
 /// the chat has closed.
 pub fn made_since(root: &Path) -> MadeSince {
     let records = open_records(root);
-    let held = unaccepted(&crate::plane::state_dir(root));
+    let held = crate::appstate::dir(root)
+        .map(|state| unaccepted(&state))
+        .unwrap_or_default();
     let root = root.to_path_buf();
     Box::new(move |owner: &Path| {
         let rel = rel_in(&root, owner)?;
@@ -254,7 +256,9 @@ pub fn accept(root: &Path, owner: &str) -> Result<(), String> {
         return Err("that folder is no workspace or persona of this project".to_owned());
     }
     vouch(root, owner);
-    let state = crate::plane::state_dir(root);
+    let Some(state) = crate::appstate::dir(root) else {
+        return Ok(());
+    };
     let was = unaccepted(&state);
     if !was.levels.contains(owner) {
         return Ok(());
@@ -275,7 +279,9 @@ pub fn to_accept(plane: &Path, folder: &Path) -> Option<String> {
 /// made it. A chat cannot write the records, so its own `purlis workspace create` vouches for
 /// nothing.
 pub fn vouch(root: &Path, owner: &str) {
-    let state = crate::plane::state_dir(root);
+    let Some(state) = crate::appstate::dir(root) else {
+        return;
+    };
     for (id, was) in open_records(root) {
         let mut now = was.clone();
         if now.levels.insert(owner.to_owned())
@@ -291,7 +297,9 @@ pub fn vouch(root: &Path, owner: &str) {
 /// noting a start and the chat being on that record): the app's, each time it writes that record,
 /// so a closed chat's goes, and at a launch every one a quit or a crash left.
 pub fn sweep(root: &Path, open: &[String]) {
-    let state = crate::plane::state_dir(root);
+    let Some(state) = crate::appstate::dir(root) else {
+        return;
+    };
     let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
         return;
     };
@@ -325,6 +333,21 @@ pub fn sweep(root: &Path, open: &[String]) {
             remove(&state, &id);
         }
     }
+}
+
+/// **Every workspace and persona folder of the project at `root` is held until the person
+/// accepts it again** in the Skill studio ([`accept`]): what the move of an older purlis's records
+/// out of the plane's state does (`crate::appstate`). Those records are not carried forward, so
+/// no folder is taken as vouched for on their word.
+pub(crate) fn ask_again(root: &Path) -> Result<(), String> {
+    let state = crate::appstate::made(root)?;
+    let was = unaccepted(&state);
+    let mut now = was.clone();
+    now.levels.extend(owners(root));
+    if now == was {
+        return Ok(());
+    }
+    write_unaccepted(&state, &now)
 }
 
 /// Removes the record of `id` from `state`, through its folder's handle: a name this module made.

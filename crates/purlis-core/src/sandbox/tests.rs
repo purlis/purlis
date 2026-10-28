@@ -319,6 +319,7 @@ fn a_chat_never_writes_charters_integrity_state() {
     // Under both names of the state folder (RN-2a): the purlis one is read when it is there, so
     // a chat that could make `.purlis/app` would be writing the records charter reads next.
     let (plane, denied) = denied_with(None, Os::Linux);
+    let data = Homes::charter_data(&machine(Os::Linux)).expect("a data home");
     assert_eq!(
         paths(&denied, Class::Integrity, Access::Write),
         [
@@ -348,6 +349,10 @@ fn a_chat_never_writes_charters_integrity_state() {
             plane.path().join(".charter"),
             // The folder chats' servers listen in (#2019).
             door::root_in(None),
+            // The app's own state of every project (#3718), and the folders that hold it.
+            data.join(crate::appstate::DIR),
+            data.join(crate::appstate::DIR),
+            data,
         ]
     );
 }
@@ -6781,4 +6786,122 @@ fn a_port_something_listens_on_is_neither_served_nor_reached_for_a_listen_grant(
     assert!(widened.listens.is_empty());
     assert!(!widened.ports.contains(&port));
     assert!(widened.listen_only.is_empty());
+}
+
+/// #3718: the app's state of every project, in the data home, is purlis's own and read back to
+/// decide. No chat writes it, nor renames or replaces it or the data home that holds it, in what
+/// every harness is compiled; every chat reads it (a Try it's chat reads its laid-out skill there).
+#[test]
+fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let on = machine(Os::MacOs);
+    let data = Homes::charter_data(&on).expect("a data home");
+    let app_state = data.join(crate::appstate::DIR);
+    let denied = Denied::of(plane.path(), &on);
+    let held = |path: &std::path::Path, reach: Reach| {
+        denied.paths.iter().any(|it| {
+            it.path == path
+                && it.reach == reach
+                && it.access == Access::Write
+                && it.class == Class::Integrity
+                && it.any_case
+        })
+    };
+    assert!(held(&app_state, Reach::AndBelow), "{:?}", denied.paths);
+    assert!(held(&app_state, Reach::Itself), "{:?}", denied.paths);
+    assert!(held(&data, Reach::Itself), "{:?}", denied.paths);
+    assert!(
+        !denied
+            .paths
+            .iter()
+            .any(|it| it.access == Access::ReadWrite && app_state.starts_with(&it.path)),
+        "the app state is denied to reads: {:?}",
+        denied.paths
+    );
+
+    let named = super::real(&app_state).display().to_string();
+    let mut compiled_harnesses = 0;
+    for harness in Harness::ALL {
+        if compiler(harness).is_none() {
+            continue;
+        }
+        compiled_harnesses += 1;
+        let applied = applied_for(
+            harness,
+            &policy_of(&[], false),
+            &Plane::of(None),
+            plane.path(),
+            &on,
+        )
+        .expect("compiles");
+        match applied.form() {
+            // Claude Code: its own sandbox's write denials, and its file tools', and no read
+            // denial of it.
+            Form::ClaudeCode(settings) => {
+                let listed = |key: &str| -> Vec<String> {
+                    settings.sandbox["filesystem"][key]
+                        .as_array()
+                        .map(|all| {
+                            all.iter()
+                                .filter_map(serde_json::Value::as_str)
+                                .map(str::to_owned)
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                let deny_write = listed("denyWrite");
+                assert!(deny_write.contains(&named), "{named}: {deny_write:?}");
+                assert!(
+                    deny_write.contains(&claude::either_case(&named)),
+                    "{named} in either case: {deny_write:?}"
+                );
+                assert!(
+                    settings.deny.contains(&format!("Edit(/{named})")),
+                    "{named}: {:?}",
+                    settings.deny
+                );
+                assert!(
+                    !listed("denyRead")
+                        .iter()
+                        .any(|denied| named.starts_with(denied.as_str())),
+                    "{named} is denied to reads"
+                );
+                assert!(
+                    !settings
+                        .deny
+                        .iter()
+                        .any(|rule| rule.starts_with("Read(") && rule.contains("app-state")),
+                    "{:?}",
+                    settings.deny
+                );
+            }
+            // Codex and opencode: purlis's own wrap, which holds the folder and the data home as
+            // entries too.
+            Form::Codex(_) | Form::Opencode(_) => {
+                let wrapped = applied.form().denied().expect("a wrap");
+                let profile = seatbelt::profile(
+                    wrapped,
+                    &seatbelt::Own::default(),
+                    plane.path(),
+                    std::path::Path::new("/private/tmp/chat"),
+                    &[4040],
+                    None,
+                )
+                .expect("a profile");
+                for denial in app_state_held(&data) {
+                    assert!(wrapped.contains(&denial), "{harness:?}: {denial:?}");
+                    for rule in seatbelt::denial_rules(&denial).expect("rules") {
+                        assert!(profile.contains(&rule), "{harness:?}: {rule} missing");
+                    }
+                }
+                assert!(
+                    !profile
+                        .lines()
+                        .any(|line| line.contains("file-read*") && line.contains("[aA][pP][pP]-")),
+                    "{harness:?}: the app state is denied to reads"
+                );
+            }
+        }
+    }
+    assert_eq!(compiled_harnesses, 3, "Claude Code, Codex and opencode");
 }

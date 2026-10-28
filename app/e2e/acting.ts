@@ -1,10 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser } from "@wdio/globals";
 import type { ChainablePromiseElement } from "webdriverio";
+import { THE_RUNS_TREE } from "./harness.js";
 import { ask } from "./switching.js";
 import { goToWorkspaceAt, workspacesListed } from "./titleBarWorkspaces.js";
 
@@ -49,6 +51,21 @@ export function stateOf(project: string): string {
   return existsSync(join(project, ".purlis"))
     ? join(project, ".purlis")
     : join(project, ".charter");
+}
+
+/**
+ * The project's app state, `<data>/app-state/<clone key>` (`purlis_core::appstate`, #3718): in the
+ * data home of the app this run started, which made the folder as it opened the project. The clone
+ * key is the first 16 hex characters of the SHA-256 of the project's real path.
+ */
+export function appStateOf(project: string): string {
+  const key = createHash("sha256").update(realpathSync(project)).digest("hex").slice(0, 16);
+  const found = readdirSync(THE_RUNS_TREE)
+    .filter((name) => name.startsWith("data-"))
+    .map((name) => join(THE_RUNS_TREE, name, "app-state", key))
+    .find((dir) => existsSync(dir));
+  if (found === undefined) throw new Error(`no app state of ${project} in ${THE_RUNS_TREE}`);
+  return found;
 }
 
 /** What each tab on the strip says, whole and trimmed, left to right, read in one pass. Not

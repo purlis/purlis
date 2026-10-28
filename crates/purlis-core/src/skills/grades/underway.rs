@@ -3,7 +3,8 @@
 
 //! **A grade under way, held on this machine while it runs** (#3353): a grade is recorded when it
 //! ends, so a crash, a fault or a quit while it ran would lose it, and leave nothing to say it
-//! ever ran. While it runs, its row is held in `<state>/grades-under-way/<grade>.json`, its report
+//! ever ran. While it runs, its row is held in this machine's app state of the project
+//! (`crate::appstate`), `<data>/app-state/<clone key>/grades-under-way/<grade>.json`, its report
 //! saying it was interrupted ([`GradeEnd::Interrupted`]), and, as each chat ends, what its chats
 //! spent so far ([`Marker::spent`], #3582); its end takes the file away
 //! ([`ended`]). At the project's next start, a row still held there that no running purlis holds
@@ -87,15 +88,15 @@ impl std::ops::Deref for Marker {
     }
 }
 
-/// The folder of this machine's state the grades under way are held in.
-const DIR: &str = "grades-under-way";
+/// The folder of this machine's app state of the project the grades under way are held in.
+pub const DIR: &str = "grades-under-way";
 
 /// The most bytes of one grade under way read back.
 const MOST_FILE_BYTES: u64 = 64 * 1024;
 
 /// The file beside that folder a start holds the lock of while it records what it finds there:
 /// two purlis processes starting one project at once never both record one grade (#3443).
-const CLAIM: &str = "grades-under-way.lock";
+pub const CLAIM: &str = "grades-under-way.lock";
 
 /// One grade under way, as its file holds it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -114,9 +115,10 @@ struct UnderWay {
     graded: Graded,
 }
 
-/// The folder grades under way are held in, in the project at `root`.
-fn dir(root: &Path) -> PathBuf {
-    crate::plane::state_dir(root).join(DIR)
+/// The folder grades under way are held in, in this machine's app state of the project at `root`
+/// (`crate::appstate`). `None` where this machine has no data home.
+fn dir(root: &Path) -> Option<PathBuf> {
+    Some(crate::appstate::dir(root)?.join(DIR))
 }
 
 /// **The report of a grade purlis stopped under before it was scored**: no chat scored, the caps
@@ -164,7 +166,9 @@ pub fn began(root: &Path, level: &Level, graded: &Graded) -> std::io::Result<Mar
             ..graded.clone()
         },
     };
-    let dir = dir(root);
+    let dir = crate::appstate::made(root)
+        .map_err(std::io::Error::other)?
+        .join(DIR);
     std::fs::create_dir_all(&dir)?;
     if !std::fs::symlink_metadata(&dir)?.is_dir() {
         return Err(std::io::Error::other("the folder is not a folder"));
@@ -232,7 +236,9 @@ fn put(
 /// **The grade `grade` ended**, recorded or not: it is no longer held as under way.
 pub fn ended(root: &Path, grade: &str) {
     if plain(grade) {
-        let _ = std::fs::remove_file(dir(root).join(format!("{grade}.json")));
+        if let Some(dir) = dir(root) {
+            let _ = std::fs::remove_file(dir.join(format!("{grade}.json")));
+        }
     }
 }
 
@@ -254,7 +260,9 @@ pub fn interrupted(
     device: impl Fn() -> String,
     runs_here: impl Fn(&str) -> bool,
 ) -> Vec<String> {
-    let dir = dir(root);
+    let Some(dir) = dir(root) else {
+        return Vec::new();
+    };
     if !std::fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir()) {
         return Vec::new();
     }
@@ -346,7 +354,7 @@ fn claimed(root: &Path) -> Option<crate::filelock::Held> {
         options.mode(0o600);
     }
     let file = crate::contain::nofollow(&mut options)
-        .open(crate::plane::state_dir(root).join(CLAIM))
+        .open(crate::appstate::dir(root)?.join(CLAIM))
         .ok()?;
     match file.lock() {
         Ok(()) => Some(crate::filelock::Held::locked(file)),

@@ -14,8 +14,9 @@
 //! person sees the cost again and turns it on again. Nothing grades on a timer, and an edit
 //! whose copy was graded already is not graded twice.
 //!
-//! **Tier:** Clone state, this machine's own. It lives in this machine's state, `<state>/skill-grade-after-edit.json`
-//! ([`FILE`]), which no chat writes and no commit carries: the person who pays turns it on, and a
+//! **Tier:** Machine, device-bound. It lives in this machine's app state of the project,
+//! `<data>/app-state/<clone key>/skill-grade-after-edit.json` ([`FILE`], `crate::appstate`),
+//! which no chat writes and no commit carries: the person who pays turns it on, and a
 //! teammate's push never does. Read through no link, at most [`MOST_FILE_BYTES`], and a record
 //! that does not hold together is read as off.
 
@@ -25,7 +26,7 @@ use std::path::{Path, PathBuf};
 
 use super::{Level, cap, plain};
 
-/// The file in this machine's state that holds each skill's opt-in.
+/// The file in this machine's app state of the project that holds each skill's opt-in.
 pub const FILE: &str = "skill-grade-after-edit.json";
 
 /// The version of the file this purlis writes and reads.
@@ -126,9 +127,9 @@ struct Kept {
     skills: BTreeMap<String, Accepted>,
 }
 
-/// Where the file of the project at `root` is.
-fn path_of(root: &Path) -> PathBuf {
-    crate::plane::state_dir(root).join(FILE)
+/// Where the file of the project at `root` is: `None` where this machine has no data home.
+fn path_of(root: &Path) -> Option<PathBuf> {
+    Some(crate::appstate::dir(root)?.join(FILE))
 }
 
 /// **The copy a skill's opt-in is kept by**: its level's folder relative to the project, and its
@@ -140,7 +141,9 @@ pub fn key(level: &Level, name: &str) -> Option<String> {
 /// The file as it reads: nothing where it is absent, not a file of its own, too large, or not
 /// what purlis writes.
 fn read(root: &Path) -> Kept {
-    let path = path_of(root);
+    let Some(path) = path_of(root) else {
+        return Kept::default();
+    };
     let Ok(meta) = std::fs::symlink_metadata(&path) else {
         return Kept::default();
     };
@@ -175,27 +178,24 @@ fn read(root: &Path) -> Kept {
 
 /// Writes `kept` as the file, whole or not at all, private, through no link.
 fn write(root: &Path, kept: &Kept) -> Result<(), String> {
-    let path = path_of(root);
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|why| not_kept(&why.to_string()))?;
-    }
+    let dir = crate::appstate::made(root).map_err(|why| not_kept(&why))?;
+    let path = dir.join(FILE);
     let text = serde_json::to_string_pretty(kept).map_err(|why| not_kept(&why.to_string()))?;
-    crate::plane::write_private(root, &path, text.as_bytes())
+    crate::plane::write_private(&dir, &path, text.as_bytes())
         .map_err(|why| not_kept(&why.to_string()))
 }
 
 /// The lock file beside [`FILE`] whose `flock` each change holds while it reads, changes and
 /// writes the file: two changes at once (a grade after an edit keeping what it graded while the
 /// person turns the opt-in off) take turns, so neither writes back what the other took away.
-const LOCK: &str = "skill-grade-after-edit.lock";
+pub const LOCK: &str = "skill-grade-after-edit.lock";
 
 /// How long a change waits for another to let go of [`LOCK`].
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Takes [`LOCK`] for one change of the file of the project at `root`.
 fn held(root: &Path) -> Result<crate::filelock::Held, String> {
-    let dir = crate::plane::state_dir(root);
-    std::fs::create_dir_all(&dir).map_err(|why| not_kept(&why.to_string()))?;
+    let dir = crate::appstate::made(root).map_err(|why| not_kept(&why))?;
     let mut options = std::fs::OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
     #[cfg(unix)]

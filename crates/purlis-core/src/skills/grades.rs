@@ -52,9 +52,10 @@ pub const ARMS_WITH_PREVIOUS: [Arm; 3] = [Arm::With, Arm::Without, Arm::Previous
 /// The longest one grade's chat runs before purlis ends it: what the plan's "up to" says.
 pub const CHAT_TIME: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
-/// The folder of this machine's state the grades of a local copy are kept in, never committed
-/// (a copy in `skills.local/`, or in a workspace that is this machine's alone).
-pub(crate) const LOCAL_DIR: &str = "skill-grades";
+/// The folder of this machine's app state of the project ([`crate::appstate`]) the grades of a
+/// local copy are kept in, never committed (a copy in `skills.local/`, or in a workspace that is
+/// this machine's alone).
+pub const LOCAL_DIR: &str = "skill-grades";
 
 /// The most files of one record folder looked at: a folder with more is read no further.
 const MOST_FILES: usize = 600;
@@ -71,11 +72,14 @@ fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> P
         .join(format!("{}.{device}.jsonl", when.format("%Y-%m")))
 }
 
-/// `<state>/skill-grades/<YYYY-MM>.jsonl`: where a local copy's grades are kept.
-pub fn local_path_for(root: &Path, when: chrono::DateTime<chrono::Utc>) -> PathBuf {
-    crate::plane::state_dir(root)
-        .join(LOCAL_DIR)
-        .join(format!("{}.jsonl", when.format("%Y-%m")))
+/// `<data>/app-state/<clone key>/skill-grades/<YYYY-MM>.jsonl`: where a local copy's grades are
+/// kept. `None` where this machine has no data home.
+pub fn local_path_for(root: &Path, when: chrono::DateTime<chrono::Utc>) -> Option<PathBuf> {
+    Some(
+        crate::appstate::dir(root)?
+            .join(LOCAL_DIR)
+            .join(format!("{}.jsonl", when.format("%Y-%m"))),
+    )
 }
 
 /// The level a grade of the copy at `level` is recorded by: its folder relative to the plane.
@@ -398,7 +402,8 @@ fn record_to(
 ) -> Option<PathBuf> {
     let row = serde_json::to_value(graded).ok()?;
     if local {
-        return append_local(&local_path_for(root, chrono::Utc::now()), &row).ok();
+        crate::appstate::made(root).ok()?;
+        return append_local(&local_path_for(root, chrono::Utc::now())?, &row).ok();
     }
     if crate::compat::read_only(root).is_some() {
         return None;
@@ -575,7 +580,9 @@ fn read_at(
 ) -> Read {
     let wanted = level.map(|level| level.rel());
     let mut files = record_files(&root.join("personas").join(DIR_NAME));
-    files.extend(record_files(&crate::plane::state_dir(root).join(LOCAL_DIR)));
+    if let Some(state) = crate::appstate::dir(root) {
+        files.extend(record_files(&state.join(LOCAL_DIR)));
+    }
     // Newest month first, across both folders: a file's name starts with its month.
     files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
     let mut out = Read::default();
