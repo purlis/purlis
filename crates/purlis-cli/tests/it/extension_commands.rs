@@ -22,7 +22,7 @@ const CHARTER: &str = support::PURLIS;
 /// The debug build's seam for how long an extension's program is given (#422), set long: no
 /// test here is about the deadline, and the probe copied in fresh for each is a program macOS
 /// assesses before its first run, which on a loaded machine can outlast the real five seconds.
-/// `tests/extensions.rs` holds the deadline to account, against a short one.
+/// `tests/it/extensions.rs` holds the deadline to account, against a short one.
 const DEADLINE_ENV: &str = "CHARTER_TEST_EXTENSION_DEADLINE_MS";
 
 /// What a program is given here: long, and never spent by a passing test.
