@@ -4,11 +4,13 @@
 /**
  * **The title bar's workspace family** (#2916, spec #2897 R92, R101–R106, R167 and N17, ADR
  * 0104): the project in front's pinned workspaces as chips after its name, the dashed chip that
- * pins the current workspace while it is not pinned, and the strip that holds them. A screen
- * draws them from these and never its own (`purlis/titlebar-family` in `eslint.config.js`).
+ * pins the current workspace while it is not pinned, the strip that holds them, and the plane
+ * root's house before the strip (`RootChip`, #3654). A screen draws them from these and never
+ * its own (`purlis/titlebar-family` in `eslint.config.js`).
  *
  * - **Drawn by its parts.** A chip carries `data-scope="titlebar"`, `data-part="workspace"` and
- *   its `data-variant`: `pinned` or `unpinned`. Its waiting count is the `count` part.
+ *   its `data-variant`: `pinned`, `unpinned`, or `root` for the plane root's house, which
+ *   stands outside the strip. Its waiting count is the `count` part.
  *   `titlebar.css` draws the defaults (the Purlis look: 28px, corners of 8, quiet words) and a
  *   theme's parts reach the same attributes (`titlebar.workspace.corner-radius`, ADR 0103).
  * - **States a theme can key** are the ones this wrapper marks: `data-hovered` under the pointer,
@@ -28,11 +30,11 @@ import type {
   Ref,
 } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, House } from "lucide-react";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
 /** The family's variants, in the order the manifest names them. */
-export const TITLEBAR_VARIANTS = ["pinned", "unpinned"] as const;
+export const TITLEBAR_VARIANTS = ["pinned", "unpinned", "root"] as const;
 export type TitleBarVariant = (typeof TITLEBAR_VARIANTS)[number];
 
 type Native = Omit<
@@ -43,8 +45,9 @@ type Native = Omit<
 export interface WorkspaceChipProps extends Native {
   /** The workspace's name: what the chip says, and its name. */
   name: string;
-  /** A pin, or the current workspace while it is not pinned, whose press pins it (R105). */
-  variant?: TitleBarVariant;
+  /** A pin, or the current workspace while it is not pinned, whose press pins it (R105). The
+   *  `root` variant is `RootChip`'s alone (#3654). */
+  variant?: Exclude<TitleBarVariant, "root">;
   /** It is the workspace in front (R101). */
   current?: boolean;
   /** How many things wait on the person in it (R101); none draws no count. */
@@ -133,6 +136,51 @@ export function WorkspaceChip({
       {tooltip === undefined ? chip : <Tooltip tip={tooltip}>{chip}</Tooltip>}
       {description}
     </>
+  );
+}
+
+/**
+ * **The plane root's chip** (#3654, spec #3647): a house right after the project's name and
+ * outside the strip, so it never scrolls away, the `root` variant of the workspace's chip. It is
+ * always drawn and has no pin to let go. It takes the chosen look while the plane root is in
+ * front, as a chip does while its workspace is; its name is the root's (`name`), as the
+ * workspace popover's row and the palette say it.
+ */
+export function RootChip({
+  name,
+  current,
+  onPress,
+  ref,
+  ...handed
+}: Omit<Native, "onClick" | "aria-label"> & {
+  /** What the root is called: its name and its tooltip, the words the palette gives it. */
+  name: string;
+  /** The plane root is in front. */
+  current: boolean;
+  onPress: () => void;
+  ref?: Ref<HTMLButtonElement>;
+  /** `data-*` attributes reach the element as they are. */
+  [attribute: `data-${string}`]: string | number | boolean | undefined;
+}) {
+  // What a context menu around it hands it (`asChild`) reaches the button with the press.
+  const marked = useMarked({ ...handed, onClick: onPress }, current);
+  return (
+    <Tooltip tip={name}>
+      <button
+        type="button"
+        {...marked}
+        ref={ref}
+        // A Tab stop of its own, before the strip's one (it is not in the strip).
+        tabIndex={0}
+        aria-label={name}
+        aria-current={current ? "true" : undefined}
+        data-scope="titlebar"
+        data-part="workspace"
+        data-variant="root"
+      >
+        <House aria-hidden="true" />
+      </button>
+    </Tooltip>
   );
 }
 

@@ -2103,7 +2103,8 @@ function App() {
         chip
       ) : (
         <Menued
-          on={{ on: "workspace", workspace }}
+          // The plane root's chip takes the root's menu (#3654), which has no pin to let go.
+          on={workspace === OUTSIDE ? { on: "root" } : { on: "workspace", workspace }}
           offers={inFrontFound}
           onPress={(offer) => void reports[inFront]?.run(offer)}
         >
