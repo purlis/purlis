@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793216929410,
+  "lastUpdate": 1793218335195,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28770,6 +28770,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8223035,
             "unit": "ms",
             "extra": "median of 5 runs: 101.361, 101.775, 101.822, 103.122, 103.314 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cace74eebc11d04b7522b42c6bb13b391ca0bccd",
+          "message": "M66: view frame, a view tab's back/forward and path, page tabs (#3666, #3667, #3668) (#3700)\n\n* View frame: page navigation with counts, the list and the item beside it, page-and-back when narrow (#3666)\n\nA panel family member that lays a view tab out as pages: ViewFrame, ViewNav,\nViewListHead and ViewPageHeader in ui/panel. The navigation is one Tab stop\nwalked by the arrows, the current page aria-current and marked at its start\nedge; each pane scrolls on its own with the page header held in view; the\nlist and the item are resized through the panel separator; under 720px it is\npage-and-back with the navigation as a Select. Its parts are the view-frame\nand view-nav families in the manifest, since NEXT.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A view tab's own back and forward, and a breadcrumb for its pages (#3667)\n\nviewHistory.ts keeps each view tab's history by its id, in memory: another\ntab never shares it, a relaunch starts afresh, and openViewAt makes a place\nreached from outside the tab a step, or the start on a tab with none.\nViewBar draws back and forward (unavailable with a reason at their ends), the\npath as a list named \"Path\" on the quiet ghost, then the view's controls.\nview.back and view.forward join the key registry in a new \"view\" place:\nCmd+[ and Cmd+] on a Mac, Alt+Left and Alt+Right elsewhere, since Ctrl+[ is a\nterminal's Escape and an editor's indent; the mouse's back and forward\nbuttons walk it too. Nothing in the registry held Cmd+[ or Cmd+] before;\nan editor, a menu or a dialog keeps the keys.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Tabs family: page tabs with counts, inside a view (#3668)\n\nPageTabs on React Aria's Tabs, TabList, Tab and TabPanel, automatic\nactivation, each panel named by its tab. A count is the tab's description,\nnot its name, in room kept for three figures; the chosen tab has an\nindicator under it as well as its colour, and no state changes a size. The\nrow scrolls when narrow and never wraps; the chosen tab is the owner's. The\npage-tabs family joins the manifest since NEXT, and the tabs lint names\nPageTabs for a hand-written in-page tablist and refuses data-scope\n\"page-tabs\" by hand.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* View frame, view history, page tabs: fixes from the first CI run\n\nThe frame is wide until it has a width; the page header stands on the\npanel's fill, read by hand as the other held tops are; a crumb pressed\nleaves the keyboard on the frame, not on nothing; the stories walk the\nseparator Tab stop; the page tabs' indicator takes no height (a control's\nbound); the schema and the docs family table carry the new families.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* View frame, view history: fixes from the code review\n\nThe list keeps its place in the tree when the first item opens or the last\ngoes, and stays drawn (hidden) while a narrow item is alone; the keyboard\nfollows page-and-back only when it was in the frame; a page in the nav is on\nReact Aria's press, hover and focus ring; keys something inside already\nanswered, and the mouse's buttons over a dialog or a menu, leave the history\nalone; the bracket fallback never takes the size or shortcuts key on Dvorak;\nplaces compare by value whatever their key order; a crumb press rescues the\nkeyboard only when it fell to nothing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* View history test: type the place it compares\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* View frame, page tabs: prettier, and the page tab's cursor left to the strip's\n\nThe tabs guard holds that tabs.css sets no property of a tab's cell App.css\nalso sets; a page tab's pointer cursor was one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Page tabs and cheat sheet baselines; the frame's story rows on two lines\n\nThe page tabs' pictures, and the cheat sheet's with its two new rows. The\nview frame's story draws a skill's description under its name, as the\nprototype does, and the bar's story is wide enough for its controls; their\npictures come from the next run.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* View bar story: press the path's Library, not the navigation's\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* View bar baselines; the frame's story rows by their names\n\nA list row's line under its words is clipped at a list's row height, so the\nstory's rows show the skill's name and level, and its description is the\nitem's lead line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* View frame baselines\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T19:31:14Z",
+          "tree_id": "518a09c7433f0a0fcd5a6a15ee7d8ea387a26abc",
+          "url": "https://github.com/purlis/purlis/commit/cace74eebc11d04b7522b42c6bb13b391ca0bccd"
+        },
+        "date": 1793218327776,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6706274999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.667, 0.670, 0.671, 0.672, 0.685 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.756677,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.362, 16.636, 16.757, 16.778, 16.819 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.229926,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.004, 102.132, 102.230, 103.171, 103.528 ms"
           }
         ]
       }
