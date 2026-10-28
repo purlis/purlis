@@ -59,9 +59,23 @@ pub fn pair(config_root: &Path, desktop: &Pinned) -> Result<Pinned, String> {
 /// file made here and nowhere else (`0600`, never through a link), for the runner's pairing
 /// to take ([`pair_with_key_made_at_start`]); its public half, as 64 lower-case hex, to
 /// `published`, which the cluster shows in the pod's status for its operator to vouch for.
+///
+/// A key an earlier start of the pod handed over there, which nobody paired with, is removed
+/// first (a link put there is removed as a link, never followed): the folder in memory can
+/// outlive a sandbox the runtime makes again, it is this pod's own, and a pairing takes only the
+/// key the operator vouches for now (#2057).
 pub fn make_at_start(handoff: &Path, published: &Path) -> Result<(), String> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
+    match std::fs::remove_file(handoff) {
+        Ok(()) => {}
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+        Err(why) => {
+            return Err(format!(
+                "the link key an earlier start of this pod left could not be removed: {why}"
+            ));
+        }
+    }
     let key = LinkKey::generate().map_err(|why| why.to_string())?;
     let hex = Zeroizing::new(hex_of(made_private(&key)?.as_ref()));
     let mut file = std::fs::OpenOptions::new()
@@ -104,21 +118,7 @@ pub fn make_at_start_in(
             .map_err(|why| {
                 format!("the runner's kept public link key could not be published: {why}")
             }),
-        None => {
-            // A key an earlier sandbox of this pod handed over and nobody paired with: the
-            // folder in memory can outlive a sandbox the runtime makes again. It is this pod's
-            // own, and a new key is made in its place (#2057).
-            match std::fs::remove_file(handoff) {
-                Ok(()) => {}
-                Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
-                Err(why) => {
-                    return Err(format!(
-                        "the link key an earlier start of this pod left could not be removed: {why}"
-                    ));
-                }
-            }
-            make_at_start(handoff, published)
-        }
+        None => make_at_start(handoff, published),
     }
 }
 
