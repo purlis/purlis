@@ -120,6 +120,7 @@ export const READ_BY_RUST = [
   "app/src/ui/field/field.css",
   "app/src/ui/list/list.css",
   "app/src/ui/menu/menu.css",
+  "app/src/ui/meter/meter.css",
   "app/src/ui/notice/notice.css",
   "app/src/ui/panel/panel.css",
   "app/src/ui/popover/popover.css",
