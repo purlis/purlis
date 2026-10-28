@@ -51,7 +51,20 @@ fn key(trust: &Path, p: &Path) -> Option<Vec<u8>> {
 /// reads, and a seal for one purpose is never one for another, nor anything the plane's key
 /// signs itself.
 pub fn seal(ctx: &Ctx, purpose: &str, parts: &[&str]) -> Option<String> {
-    let k = purpose_key(&key(ctx.trust(), &key_path(ctx))?, purpose)?;
+    sealed_with(&key(ctx.trust(), &key_path(ctx))?, purpose, parts)
+}
+
+/// [`seal`], with the plane's key where it is already there, and never making one: what a seal
+/// is checked against, so a check leaves nothing behind. `None` where the plane has no key.
+pub fn seal_with_the_key_there(ctx: &Ctx, purpose: &str, parts: &[&str]) -> Option<String> {
+    let k = crate::contain::read_no_link(ctx.trust(), &key_path(ctx)).ok()?;
+    (k.len() == KEY_BYTES).then_some(())?;
+    sealed_with(&k, purpose, parts)
+}
+
+/// The seal of `parts` for `purpose` under the plane's key `plane_key`.
+fn sealed_with(plane_key: &[u8], purpose: &str, parts: &[&str]) -> Option<String> {
+    let k = purpose_key(plane_key, purpose)?;
     let mut mac = Hmac::<Sha256>::new_from_slice(&k).ok()?;
     for part in parts {
         mac.update(part.as_bytes());

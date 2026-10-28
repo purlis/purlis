@@ -1099,11 +1099,15 @@ fn the_messages_between_chats_wait_inside_the_store_that_denial_names() {
         "{} is under none of {held:?}",
         file.display()
     );
-    // And without that rule, as on a harness whose hooks run inside its sandbox, nothing
-    // denies it: the hook that takes the message there can still read and remove it.
+    // And without that rule, as on a harness whose hooks run inside its sandbox, it is denied
+    // to writes alone: the hook that reads the message there can still read it, and the app
+    // takes it.
     let classes = Denied::of(plane.path(), &machine(Os::MacOs));
     assert!(
-        !classes.paths.iter().any(|it| file.starts_with(&it.path)),
+        !classes
+            .paths
+            .iter()
+            .any(|it| it.access == Access::ReadWrite && file.starts_with(&it.path)),
         "{}",
         file.display()
     );

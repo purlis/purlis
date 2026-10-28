@@ -461,7 +461,13 @@ pub fn sealed(root: &Path, waiting: &Waiting) -> bool {
     let Ok(text) = serde_json::to_string(&report) else {
         return false;
     };
-    seal_of(root, &waiting.folder, &waiting.name, &text).is_some_and(|ours| {
+    let ctx = crate::secrets::Ctx::new(root, crate::secrets::Env::from_process());
+    crate::secrets::fingerprint::seal_with_the_key_there(
+        &ctx,
+        SEALED_FOR,
+        &[&waiting.folder, &waiting.name, &text],
+    )
+    .is_some_and(|ours| {
         use subtle_eq::Same as _;
         ours.same(&seal)
     })
@@ -1687,6 +1693,8 @@ mod tests {
             summary: String::new(),
             ..answered(Answered::Started, "")
         };
+        // The folder went with its last report: made again.
+        let folder = held::Folder::make(root, "chat-3").unwrap();
         folder
             .write_new(
                 &format!(".{name}"),
@@ -1776,8 +1784,8 @@ mod tests {
             Taken::default()
         );
         let taken = took_waiting(root, "chat-3", std::slice::from_ref(&name));
-        assert_eq!(taken.taken, [name.clone()]);
-        assert_eq!(taken.own, [name.clone()]);
+        assert_eq!(taken.taken, std::slice::from_ref(&name));
+        assert_eq!(taken.own, std::slice::from_ref(&name));
         // Taken already: a second take is nobody's.
         assert_eq!(took_waiting(root, "chat-3", &[name]), Taken::default());
     }
