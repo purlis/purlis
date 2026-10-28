@@ -9,7 +9,7 @@ use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
 /// The longest a service or a listener stays, so one its test never ended ends by itself.
-const AT_MOST: Duration = Duration::from_secs(60);
+const AT_MOST: Duration = Duration::from_secs(300);
 
 /// `--serve`: a service on a port of this machine's loopback, which answers nothing. Says its
 /// port, then holds every connection it takes until it is ended.

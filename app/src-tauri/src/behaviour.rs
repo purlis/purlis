@@ -1222,8 +1222,9 @@ impl Pane {
         let after = |seen: &str| -> Option<u16> {
             let after = drawn(seen).split(text).nth(1)?.to_owned();
             let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
-            // A number still being written has nothing after it yet.
-            let ended = after[digits.len()..].chars().next().is_some();
+            // A number is read only once its line has ended: one still being written, or
+            // written in two pieces, has no line's end after it yet.
+            let ended = after[digits.len()..].starts_with(['\r', '\n']);
             if digits.is_empty() || !ended {
                 return None;
             }
