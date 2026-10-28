@@ -598,3 +598,23 @@ fn a_user_named_without_a_scheme_is_hidden_and_an_image_digest_is_kept() {
     );
     assert_eq!(shown_safely("as 'someone@host'"), "as '…@host'");
 }
+
+#[test]
+fn a_user_and_password_without_a_scheme_are_hidden_whatever_the_password_holds() {
+    assert_eq!(
+        shown_safely("cannot log in as someone:pass/word@build.example"),
+        "cannot log in as …@build.example"
+    );
+    // A path or a registry before an `@` is no one's name.
+    assert_eq!(shown_safely("see docs/guide@main"), "see docs/guide@main");
+}
+
+#[test]
+fn a_long_text_cut_part_way_through_an_address_shows_none_of_that_address() {
+    let said = shown_safely(&format!(
+        "{}tcp://someone:hidden@engine.example",
+        " ".repeat(1585)
+    ));
+    assert!(!said.contains("someone"), "{said}");
+    assert!(!said.contains("tcp:"), "{said}");
+}

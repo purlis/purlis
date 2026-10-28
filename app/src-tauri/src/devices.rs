@@ -249,6 +249,7 @@ pub const MOST_SHOWN: usize = 200;
 pub fn shown_safely(text: &str) -> String {
     // Read no further than a cap can use: a megabyte of text costs no more than its start.
     let start: String = text.chars().take(MOST_SHOWN * 8).collect();
+    let cut = text.chars().nth(MOST_SHOWN * 8).is_some();
     let one_line: String = start
         .chars()
         .map(|ch| {
@@ -260,11 +261,15 @@ pub fn shown_safely(text: &str) -> String {
         })
         .collect();
     let seen = purlis_unicode::unhidden(&one_line, purlis_unicode::Breaks::Marked);
+    let hidden = without_userinfo(&seen);
+    let mut words: Vec<&str> = hidden.split(' ').filter(|word| !word.is_empty()).collect();
+    // A word the cut ends part way through is not shown where it may be an address: what of it
+    // would be hidden may lie past the cut.
+    if cut && words.last().is_some_and(|word| word.contains(':')) {
+        words.pop();
+    }
     let mut out = String::new();
-    for word in without_userinfo(&seen)
-        .split(' ')
-        .filter(|word| !word.is_empty())
-    {
+    for word in words {
         if !out.is_empty() {
             out.push(' ');
         }
@@ -281,7 +286,8 @@ pub fn shown_safely(text: &str) -> String {
 /// `text` with the user and password before a host written `…`, word by word: in
 /// `scheme://user[:password]@host`, the whole of what stands between `://` and the word's last
 /// `@` (a password may hold a `/`), and in `user@host` without a scheme (as ssh writes it), what
-/// stands before the `@`. An image named by its digest (`name@sha256:…`) keeps its name.
+/// stands before the `@`, a password holding any character. An image named by its digest
+/// (`name@sha256:…`) keeps its name.
 fn without_userinfo(text: &str) -> String {
     text.split(' ')
         .map(|word| {
@@ -295,8 +301,12 @@ fn without_userinfo(text: &str) -> String {
             let digest = ["@sha256:", "@sha384:", "@sha512:"]
                 .iter()
                 .any(|algorithm| after.starts_with(algorithm));
-            // A word that names a path or a registry before its `@` is not a user's name.
-            if digest || before.is_empty() || before.contains('/') {
+            // A word that names a path or a registry before its `@` is not a user's name; a name
+            // and a password (`name:…@`) is, whatever the password holds.
+            let named = before
+                .split_once(':')
+                .is_some_and(|(name, _)| !name.is_empty() && !name.contains('/'));
+            if digest || before.is_empty() || (before.contains('/') && !named) {
                 return word.to_owned();
             }
             // Keep what opens the word (a quote, a bracket): only the name itself goes.
