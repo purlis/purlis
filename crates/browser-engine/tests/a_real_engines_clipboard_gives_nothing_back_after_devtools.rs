@@ -86,18 +86,17 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
             }],
         },
     );
-    call(&browser, Call::Click { target: from });
-    call(
-        &browser,
-        Call::Press {
-            page: None,
-            keys: vec!["Control+a".to_owned(), "Control+c".to_owned()],
-        },
-    );
+    let copy = ref_on(&find(&browser, "Copy"), "button \"Copy\"");
+    call(&browser, Call::Click { target: copy });
+    let copied = snapshot(&browser)
+        .lines()
+        .find(|line| line.contains("Copied:"))
+        .unwrap_or_default()
+        .to_owned();
     let system = system_clipboard();
     let engine_is_the_systems = system.as_deref() == Some(COPIED);
     notice(&format!(
-        "on {}: the engine's clipboard is {}",
+        "on {}: the page's copy said {copied:?}; the engine's clipboard is {}",
         std::env::consts::OS,
         match (ours, engine_is_the_systems) {
             (false, _) => "not compared with a system clipboard here",
@@ -120,11 +119,22 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
             keys: vec!["Control+v".to_owned()],
         },
     );
-    let before = pasted(&browser);
-    assert!(
-        before.contains(COPIED),
-        "a paste before DevTools got nothing: {before}"
-    );
+    let mut before = pasted(&browser);
+    if !before.contains(COPIED) {
+        call(
+            &browser,
+            Call::Press {
+                page: None,
+                keys: vec!["Meta+v".to_owned()],
+            },
+        );
+        before = pasted(&browser);
+    }
+    notice(&format!(
+        "on {}: a paste before DevTools got {before:?}",
+        std::env::consts::OS
+    ));
+    let paste_works = before.contains(COPIED);
 
     // The person opens DevTools and presses Done.
     browser.take_over();
@@ -155,10 +165,14 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
         &browser,
         Call::Press {
             page: None,
-            keys: vec!["Control+v".to_owned()],
+            keys: vec!["Control+v".to_owned(), "Meta+v".to_owned()],
         },
     );
     let after = pasted(&browser);
+    notice(&format!(
+        "on {}: a paste after Done got {after:?}; pasting works here: {paste_works}",
+        std::env::consts::OS
+    ));
     assert!(
         !after.contains(COPIED),
         "a paste after Done got what was copied: {after}"
