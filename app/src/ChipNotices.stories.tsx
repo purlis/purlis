@@ -179,8 +179,10 @@ export const DismissedByEsc: Story = {
   play: async ({ canvas, userEvent }) => {
     const card = await waitFor(() => cardOf() as HTMLElement);
     card.focus();
+    // Past its × (whose tooltip an Esc would close first) to its first way on.
     await userEvent.tab();
-    await expect(card.contains(document.activeElement)).toBe(true);
+    await userEvent.tab();
+    await expect(within(card).getByRole("button", { name: "Add a vision" })).toHaveFocus();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(cardOf()).toBeNull());
     await expect(canvas.queryByRole("button", { name: /^Show the notice/ })).toBeNull();
