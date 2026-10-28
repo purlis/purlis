@@ -5,7 +5,7 @@
 //! (ADR 0078 §2). The desktop it is paired with is linked and served the session protocol as
 //! `remote-link`; another key, a runner that is not paired, and what the runner keeps that
 //! cannot be read are refused; the link socket is this user's alone and goes when the host ends.
-//! The paired desktop has the runner keep its profiles (1.42, #2049).
+//! The paired desktop has the runner keep its profiles (1.43, #2049).
 //!
 //! These bind a socket, which a sandboxed agent cannot: they first run on CI.
 
@@ -305,7 +305,7 @@ async fn the_paired_desktop_unpairs_the_runner_and_is_linked_no_more() {
     assert!(link(&place, &desktop, &runner_pinned).await.is_err());
 }
 
-/// **The paired desktop has the runner keep its profile** (1.42, #2049): the runner is handed the
+/// **The paired desktop has the runner keep its profile** (1.43, #2049): the runner is handed the
 /// profile's name, harness, sandbox-only mark and pin, and answers whether it is signed in there.
 #[tokio::test]
 async fn the_paired_desktop_has_the_runner_keep_its_profile_and_hears_where_it_stands() {

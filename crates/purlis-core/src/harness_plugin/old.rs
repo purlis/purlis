@@ -8,9 +8,10 @@
 //! Inbox ask that says so, and makes the text without them, for the change the person applies
 //! (`Remove`, held as a proposed change: [`crate::proposed`]).
 //!
-//! The project's two files are found here and made without the keys. A workspace's
-//! `settings.harness_plugins` is only named: its manifest has its own writer, and the
-//! Workspace settings tab's Edit as JSON takes the key out.
+//! The project's two files are found here and made without the keys, and so is each
+//! workspace's manifest that holds `settings.harness_plugins` (#3486): made as a form's save
+//! makes it ([`crate::settings::workspace::saved_without`]), and written by the manifest's own
+//! writer once the person applies it, so it keeps its stamp.
 
 use std::path::Path;
 
@@ -27,8 +28,19 @@ pub struct Found {
     pub file: String,
     /// Which of the project's two files it is, or `None` for a workspace's manifest.
     pub which: Option<Which>,
-    /// Its text as read, which the change is worked out against.
+    /// Its text as read, which the change is worked out against ([`Found::removed`]).
     pub text: String,
+}
+
+impl Found {
+    /// **Its text without [`TABLE`]**: a TOML file's by [`removed`], a workspace's manifest's by
+    /// [`removed_from_manifest`] in the project at `root`. The change Remove proposes.
+    pub fn removed(&self, root: &Path) -> Result<String, String> {
+        match self.which {
+            Some(_) => removed(&self.text),
+            None => removed_from_manifest(root, &self.text),
+        }
+    }
 }
 
 /// Whether `top`, a TOML file's top or a workspace's settings, holds [`TABLE`].
@@ -63,11 +75,18 @@ pub fn found(root: &Path) -> Vec<Found> {
         .unwrap_or_default();
     names.sort();
     for name in names {
-        if crate::settings::workspace::read(root, &name).is_some_and(|top| holds(&top)) {
+        let Some(text) = crate::workspaces::Plane::open(root)
+            .workspace(&name)
+            .ok()
+            .and_then(|ws| ws.manifest_text().ok().flatten())
+        else {
+            continue;
+        };
+        if crate::settings::workspace::table_in(&text).is_some_and(|top| holds(&top)) {
             out.push(Found {
                 file: crate::settings::workspace::named(&name),
                 which: None,
-                text: String::new(),
+                text,
             });
         }
     }
@@ -86,29 +105,23 @@ pub fn removed(text: &str) -> Result<String, String> {
     )
 }
 
-/// What the Inbox ask says, for the files in `found`: the keys are ignored, the harness decides,
-/// and where Remove reaches.
+/// **A workspace's manifest whose text is `text`, without `settings.`[`TABLE`]**, as a form's
+/// save in the project at `root` writes it ([`crate::settings::workspace::saved_without`]).
+/// Refused where `text` is not a manifest whose settings are an object.
+pub fn removed_from_manifest(root: &Path, text: &str) -> Result<String, String> {
+    crate::settings::workspace::saved_without(root, text, TABLE)
+}
+
+/// What the Inbox ask says, for the files in `found`: the keys are ignored, and the harness
+/// decides.
 pub fn said(found: &[Found]) -> String {
     let files: Vec<&str> = found.iter().map(|one| one.file.as_str()).collect();
-    let mut said = format!(
+    format!(
         "purlis no longer turns other harnesses' plugins on or off per project, so [{TABLE}] in \
          {} is ignored: each harness decides from its own settings. purlis's own plugin is \
          loaded as before.",
         list(&files)
-    );
-    let manifests: Vec<&str> = found
-        .iter()
-        .filter(|one| one.which.is_none())
-        .map(|one| one.file.as_str())
-        .collect();
-    if !manifests.is_empty() {
-        said.push_str(&format!(
-            " Remove takes it out of the project's own files; take settings.{TABLE} out of {} \
-             with that workspace's Edit as JSON.",
-            list(&manifests)
-        ));
-    }
-    said
+    )
 }
 
 /// `a`, `a and b`, `a, b and c`.

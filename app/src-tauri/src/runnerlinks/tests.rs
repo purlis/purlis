@@ -536,18 +536,18 @@ async fn a_link_of(host: Hosting) -> link::Link {
     client.unwrap()
 }
 
-/// **Only a runner of 1.42 or later is asked to keep a profile** (#2049): one before it is sent
+/// **Only a runner of 1.43 or later is asked to keep a profile** (#2049): one before it is sent
 /// nothing, and its chats run on the profiles it has of its own.
 #[test]
-fn only_a_runner_of_1_42_or_later_keeps_a_desktops_profiles() {
+fn only_a_runner_of_1_43_or_later_keeps_a_desktops_profiles() {
     use purlis_session_protocol::version::Version;
     assert!(!keeps_profiles(Version {
         major: 1,
-        minor: 41
+        minor: 42
     }));
     assert!(keeps_profiles(Version {
         major: 1,
-        minor: 42
+        minor: 43
     }));
     assert!(keeps_profiles(Version {
         major: 1,

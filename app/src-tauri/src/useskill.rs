@@ -128,6 +128,9 @@ pub struct ChatSkills {
     pub skills: Vec<ChatSkill>,
     /// Its budget, where it is known.
     pub budget: Option<SkillBudget>,
+    /// The clones of its workspace it works in, by name, whose repo skills its harness reads
+    /// (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
+    pub repos: Vec<String>,
 }
 
 impl ChatSkills {
@@ -138,6 +141,7 @@ impl ChatSkills {
             known: false,
             skills: Vec::new(),
             budget: None,
+            repos: Vec::new(),
         }
     }
 }
@@ -172,7 +176,17 @@ fn of_the_chat(
     purlis_core::skills::ChatSkills,
     Option<purlis_core::skillspan::PromptSalt>,
 )> {
-    let chat = held.chats().skills_of(session)?;
+    of_this_chat(held, &held.chats().skills_of(session)?)
+}
+
+/// [`of_the_chat`], for `chat`, read of the open chats once.
+fn of_this_chat(
+    held: &Held,
+    chat: &crate::chats::ChatForSkills,
+) -> Option<(
+    purlis_core::skills::ChatSkills,
+    Option<purlis_core::skillspan::PromptSalt>,
+)> {
     let built_in =
         crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
     let skills = purlis_core::skills::for_use_skill(&purlis_core::skills::Running {
@@ -184,7 +198,19 @@ fn of_the_chat(
         plane_skills: chat.plane_skills,
         start: Some(&chat.start),
     });
-    Some((skills, chat.salt))
+    Some((skills, chat.salt.clone()))
+}
+
+/// **The clones `chat` of `held` works in**, by name (#3462): none for a chat at the project's
+/// root or in no clone.
+fn repos_of_the_chat(held: &Held, chat: &crate::chats::ChatForSkills) -> Vec<String> {
+    let (Some(workspace), Some(cwd)) = (chat.workspace.as_deref(), chat.cwd.as_deref()) else {
+        return Vec::new();
+    };
+    purlis_core::skills::clones_of_chat(held.root(), workspace, cwd)
+        .into_iter()
+        .map(|repo| repo.name)
+        .collect()
 }
 
 /// `skills`, for the window: none for a chat that runs no tool purlis knows.
@@ -229,6 +255,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
             pinned_by: skills.pinned_by.iter().cloned().map(Into::into).collect(),
             pins_together: skills.pins_together.as_ref().map(Into::into),
         }),
+        repos: Vec::new(),
     }
 }
 
@@ -246,11 +273,18 @@ pub(crate) async fn chat_skills(
         if !purlis_core::skills::studio_on_here() {
             return Ok(ChatSkills::none(false));
         }
-        Ok(shown(
-            of_the_chat(&held, session)
+        let Some(chat) = held.chats().skills_of(session) else {
+            return Ok(shown(None));
+        };
+        let mut shown = shown(
+            of_this_chat(&held, &chat)
                 .map(|(skills, _)| skills)
                 .as_ref(),
-        ))
+        );
+        if shown.known {
+            shown.repos = repos_of_the_chat(&held, &chat);
+        }
+        Ok(shown)
     })
     .await
 }

@@ -305,7 +305,7 @@ fn every_command() -> Vec<Command> {
         },
         // The desktop taken out of a runner's peers (1.25, #2525).
         Command::Unpair,
-        // A desktop's profile kept on its runner (1.42, #2049).
+        // A desktop's profile kept on its runner (1.43, #2049).
         Command::KeepProfile(session::ProfileToKeep {
             name: "work".into(),
             harness: "claude".into(),

@@ -40,6 +40,8 @@ export function endedSaid(step: SkillGradeStep): string {
       return `The grade stopped: its chats did not start. ${step.said ?? ""}`.trim();
     case "over-cap":
       return `Stopped at its cap of ${tokensSaid(step.cap ?? 0)} after ${chats}${spent}. What ran is scored in Grades below.`;
+    case "over-limit":
+      return `Stopped at its dollar limit after ${chats}${spent}. What ran is scored in Grades below.`;
     case "spend-not-reported":
       return `Stopped after ${chats}: ${step.said ?? "a chat did not say what it spent, so the grade could not be held to its cap."}`;
     case "failed":
@@ -49,16 +51,42 @@ export function endedSaid(step: SkillGradeStep): string {
   }
 }
 
-/** What a grade should spend, from the last one, in one sentence: never a figure that was not
- *  measured. */
+/** What a grade should spend, from a grade before, in one sentence: never a figure that was not
+ *  measured, and always which grade it is worked out from (#3273). A grade whose chats said
+ *  nothing of what they spent was a grade still: its cost is not known. */
 export function costSaid(plan: SkillGradePlan): string {
   const estimate = plan.estimate;
-  if (estimate === null || (estimate.tokens === null && estimate.cost_usd === null))
+  if (estimate === null)
     return "This skill has not been graded here before, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill starts.";
+  const on =
+    estimate.profile === null
+      ? ""
+      : estimate.same_profile === false
+        ? ` on another profile, ${estimate.profile}`
+        : ` on ${estimate.profile}`;
+  const ran = `${on}${estimate.harness === null ? "" : ` (${estimate.harness})`}, ${estimate.ts.slice(0, 10)}`;
+  if (estimate.chats_then === 0)
+    return `Its last grade${ran}, ran no chat, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill starts.`;
+  if (estimate.tokens === null && estimate.cost_usd === null)
+    return `Its last grade${ran}, did not say what its chats spent, so purlis cannot say what this one spends. Each chat is one turn, and ends once the skill starts.`;
   const parts: string[] = [];
   if (estimate.tokens !== null) parts.push(`about ${tokensSaid(estimate.tokens)}`);
   if (estimate.cost_usd !== null) parts.push(`about $${estimate.cost_usd.toFixed(2)}`);
-  return `From its last grade, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
+  return `From its grade${ran}, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
+}
+
+/** The dollar limit a grade is held to, and the price it was worked out at (#3469): the model's,
+ *  or the dearest known where the model or its price is not. */
+export function limitSaid(plan: SkillGradePlan): string {
+  const limit = `$${(plan.cost_cap_usd ?? 0).toFixed(2)}`;
+  const price = `$${(plan.priced.usd_per_million ?? 0).toFixed(2)} a million tokens`;
+  if (plan.priced.of_the_model)
+    return `${limit}, its tokens at ${plan.priced.model ?? "its model"}'s ${price}`;
+  const why =
+    plan.priced.model === null
+      ? "as no model is named for its chats"
+      : `as ${plan.priced.model}'s price is not known`;
+  return `${limit}, its tokens at the dearest known price of ${price}, ${why}`;
 }
 
 /**
@@ -311,13 +339,17 @@ function GradePlan({
             {counted(plan.runs, "time", "times")} without it, up to{" "}
             {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min. {costSaid(plan)} It
             stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
-            {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or cost
-            ${(plan.cost_cap_usd ?? 0).toFixed(2)} where they say what they cost. The chats run on
-            the profile you pick
+            {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or cost{" "}
+            {limitSaid(plan)}. The chats run on the profile you pick
             {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of your
             own Allows and no tools but purlis's that only read, and its account pays for them as
             for any chat.
           </p>
+          {plan.record_said !== null && (
+            <p className="honest" role="note" data-testid="skill-grade-record">
+              {plan.record_said}
+            </p>
+          )}
           <ol aria-label={`Trigger tests of ${name}`}>
             {plan.tests.map((test, at) => (
               <li key={at} data-testid="skill-grade-test">

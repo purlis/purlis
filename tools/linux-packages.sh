@@ -205,7 +205,11 @@ if [ "$refresh" = false ] && [ -n "$cache" ] && ls "$cache"/*.deb > /dev/null 2>
     debs+=("$ARCHIVES/$(basename "$deb")")
   done
   offline=0
-  said=$(apt "$OFFLINE_SECONDS" install --no-download "${debs[@]}" 2>&1) || offline=$?
+  # The packages by name as well as the files: restored from an older image's key (#3547), the
+  # files are what that image lacked, and a package it had and this image has not is in none of
+  # them. Named, it cannot be downloaded, so the install fails and goes on to the mirror.
+  # shellcheck disable=SC2086 # split into its names on purpose.
+  said=$(apt "$OFFLINE_SECONDS" install --no-download $packages "${debs[@]}" 2>&1) || offline=$?
   printf '%s\n' "$said"
   if [ "$offline" -eq 0 ]; then
     done_saying "$count packages installed in $(elapsed) s from the cache, without asking the mirror."

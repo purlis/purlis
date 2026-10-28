@@ -2542,6 +2542,8 @@ impl SessionHost for HostedSessions {
             cols: Some(opening.size.columns),
             rows: Some(opening.size.rows),
             launch: Some(launch_of(opening, program)),
+            // A host before 1.42 ignores it, and this window ends the chat as it comes back.
+            ends_with_its_window: opening.ends_with_its_window,
             ..StartProgram::of(project, kind_of(opening))
         };
         self.started(&link, id, start, opening.operator_shell, announce)

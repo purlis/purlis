@@ -44,7 +44,7 @@
 //! | `log_in`, a login purlis performs with a vault's values (1.18) | yes | | | | | relayed (1.38) |
 //! | a kept login: a browser's start from one, and a `log_in` that keeps one (1.27) | yes | | | | | |
 //! | `unpair`, the desktop taken out of a runner's peers (1.25) | | | | | | yes |
-//! | `keep_profile`, a desktop's profile kept on its runner (1.42) | | | | | | yes |
+//! | `keep_profile`, a desktop's profile kept on its runner (1.43) | | | | | | yes |
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
@@ -188,7 +188,7 @@
 //!   for the desktop the link's handshake proved, never another. No other scope is granted it,
 //!   the window's included, whose own host holds no peers; and a relaying host refuses it, so it
 //!   never reaches a runner but from the desktop that removes it.
-//! - **`keep_profile` is the paired desktop's, on its own link to the runner** (1.42, #2049),
+//! - **`keep_profile` is the paired desktop's, on its own link to the runner** (1.43, #2049),
 //!   as `unpair` is. It names a profile of the desktop's, which the runner keeps in a folder of
 //!   its own with nothing of the desktop's in it, so a runner's chats can start on it. No other
 //!   scope is granted it, the window's included, whose own host has its profiles already; and a
@@ -290,7 +290,7 @@ pub enum Power {
     /// `unpair` (1.25, #2525): the desktop on a link between hosts taken out of the runner's
     /// peers, as it removes the runner.
     Unpair,
-    /// `keep_profile` (1.42, #2049): a desktop's profile kept on its runner.
+    /// `keep_profile` (1.43, #2049): a desktop's profile kept on its runner.
     KeepProfile,
     /// `name_window` (1.31, #2623): the window names itself on a link to its own host, by the
     /// name it keeps for that link. The window's alone.

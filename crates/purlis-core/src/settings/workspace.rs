@@ -629,6 +629,30 @@ pub fn save(
     })
 }
 
+/// **The manifest whose text is `text`, with `settings.<table>` taken out, as a form's save
+/// writes it** ([`save`]) in the plane at `root`: every other key kept in its place, a `settings`
+/// left empty taken out with it, and the manifest stamped again where purlis wrote it and left
+/// unstamped where a hand did, so it stays whose it was. What purlis's own proposed change to a
+/// manifest shows (#3486); [`save_text`] then writes exactly it. Refused where `text` is not a
+/// JSON object whose `settings` is one.
+pub fn saved_without(root: &Path, text: &str, table: &str) -> Result<String, String> {
+    let not_one = || format!("the manifest is not a JSON object whose {KEY} are one");
+    let Ok(Json::Object(mut doc)) = serde_json::from_str::<Json>(text) else {
+        return Err(not_one());
+    };
+    let Some(Json::Object(settings)) = doc.get_mut(KEY) else {
+        return Err(not_one());
+    };
+    settings.shift_remove(table);
+    if settings.is_empty() {
+        doc.shift_remove(KEY);
+    }
+    let stamped = crate::manifest::ownership(Some(text)) != Ownership::Operator;
+    let mut doc = Json::Object(doc);
+    crate::manifest::stamp(&mut doc, stamped, crate::manifest::key_for(root));
+    Ok(crate::pyjson::dumps_indent2(&doc))
+}
+
 /// **Write `text` as the whole manifest of `workspace`** (Edit as JSON, NO-7 #1232) — or say
 /// every reason it was not written. The Workspace level's counterpart of Edit as TOML
 /// (`settings::save`), under the same rules:

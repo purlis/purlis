@@ -10,7 +10,7 @@ device, through the harness's own flow) stands, and is what this applies to runn
 
 1. **A runner keeps a profile for each of its desktop's profiles.** The desktop sends its runner
    the profile's name, its harness, whether it is for sandboxed chats only and the version it is
-   pinned to (session protocol 1.42, `keep_profile`, on the desktop's own link to the runner;
+   pinned to (session protocol 1.43, `keep_profile`, on the desktop's own link to the runner;
    never relayed). **No file of the desktop's profile folder, no setting, no sign-in and no vault
    reference has a field in what is sent**, so none can reach a runner through it. The runner
    marks every record it keeps so with the desktop's device id (`kept_for`).
@@ -24,7 +24,7 @@ device, through the harness's own flow) stands, and is what this applies to runn
 2. **Only a runner shown to be the person's own is sent a profile or signed in**: a Docker pool
    whose engine is a local socket on this machine, by the check browser logins and tools use,
    until a pool can be marked owned (#2561). To any other pool nothing is sent, and its chats
-   start on the profiles its runner has of its own; a runner of a purlis before 1.42 is sent
+   start on the profiles its runner has of its own; a runner of a purlis before 1.43 is sent
    nothing either. Signing in on a pool is offered for an owned pool alone.
 3. **A subscription is signed in on the runner through its harness's own flow, once per device.**
    Sign in opens a shell tab on the desktop and types the line that runs the runner's own

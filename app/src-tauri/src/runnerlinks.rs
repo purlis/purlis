@@ -373,9 +373,9 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
 pub type ProfilesKept = Vec<Result<purlis_session_protocol::session::ProfileStanding, String>>;
 
 /// **Has the runner keep each of this desktop's `profiles` over one link of its own**
-/// (`keep_profile`, 1.42, #2049), in order: whether each is signed in there, or why the runner
+/// (`keep_profile`, 1.43, #2049), in order: whether each is signed in there, or why the runner
 /// did not keep it, its own words marked as its and cut short. `None` for a runner of a purlis
-/// before 1.42, which is sent nothing and runs chats on profiles of its own.
+/// before 1.43, which is sent nothing and runs chats on profiles of its own.
 pub fn keep_profiles(
     to: &ToARunner,
     profiles: Vec<purlis_session_protocol::session::ProfileToKeep>,
@@ -401,7 +401,7 @@ pub fn keep_profiles(
     })
 }
 
-/// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.42).
+/// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.43).
 pub fn keeps_profiles(version: purlis_session_protocol::version::Version) -> bool {
     version >= purlis_session_protocol::session::KNOWS_KEEP_PROFILE
 }

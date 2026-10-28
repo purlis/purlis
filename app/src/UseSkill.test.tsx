@@ -71,7 +71,7 @@ const TOGETHER: SkillBudget = {
 };
 
 function skills(listed: ChatSkill[], budget: SkillBudget | null = BUDGET): ChatSkills {
-  return { on: true, known: true, skills: listed, budget };
+  return { on: true, known: true, skills: listed, budget, repos: [] };
 }
 
 function opened(listed: ChatSkills | undefined, onUse = vi.fn(), onOpenStudio = vi.fn()) {
@@ -248,7 +248,7 @@ describe("Use skill…", () => {
     opened(undefined);
     expect(screen.getByText("Reading this chat's skills…")).toBeTruthy();
     cleanup();
-    opened({ on: true, known: false, skills: [], budget: null });
+    opened({ on: true, known: false, skills: [], budget: null, repos: [] });
     expect(screen.getByTestId("use-skill-none").textContent).toMatch(/runs no tool purlis knows/);
     cleanup();
     opened(skills([]));

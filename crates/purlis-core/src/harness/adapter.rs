@@ -85,17 +85,35 @@ pub trait HarnessAdapter: Sync {
 
     /// **Whether a grade's chats can run on this harness** (SK-16, ADR 0105, #3310): purlis can
     /// hold one of its chats to the grade's limits there (to purlis's MCP server alone and its
-    /// read tools) and read what it spent, the operator's ruling of 2026-10-26. No default: each
-    /// adapter says, and every grade's chat on one that says `false` is refused
-    /// ([`crate::skills::grades::chat_refused`]).
-    fn can_grade(&self) -> bool;
+    /// read tools), read what it spent, the operator's ruling of 2026-10-26, and turn off every
+    /// plugin but purlis's own for that chat alone, so a grade measures the skill alone (P8,
+    /// #3468). Where it cannot, the reason, as a clause the refusal is worded around
+    /// ([`crate::skills::grades::refused_because`]). No default: each adapter says, and every grade's
+    /// chat on one that cannot is refused ([`crate::skills::grades::chat_refused`]).
+    fn can_grade(&self) -> Result<(), String>;
 
     /// **Why a grade's chat on this harness may not start** as `command` (the program, then the
     /// profile's own words) under the chat's environment `env` would start it, or `None` where it
     /// may: a command, or the person's own settings, that keep the chat from ever asking, so a
     /// grade's "end at the first ask" would never fire. Asked only where [`Self::can_grade`]
-    /// says `true`. The default is a harness with no such switch.
+    /// says it can. The default is a harness with no such switch.
     fn grade_refused(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        let _ = (command, env);
+        None
+    }
+
+    /// **The model a grade's chat on this harness runs on**, as `command` (the program, then the
+    /// profile's own words) under the chat's environment `env` would start it, where the
+    /// harness's words say one (#3469): what its dollar limit is priced from
+    /// ([`crate::skills::grades::price`]). `None` where they leave it to the harness's own
+    /// default, which the limit then prices at the dearest. Asked only where
+    /// [`Self::can_grade`] says `true`; the default is a harness whose model purlis does not
+    /// read.
+    fn grade_model(
         &self,
         command: &[String],
         env: &crate::harness_plugin::Env<'_>,

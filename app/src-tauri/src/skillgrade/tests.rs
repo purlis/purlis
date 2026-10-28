@@ -29,6 +29,8 @@ fn planned(query: &str) -> Planned {
         plan: Some(grading::plan(&request)),
         request: Some(request),
         estimate: None,
+        record_said: None,
+        record: grades::Read::default(),
         unseen: if query.contains('\u{202e}') {
             vec![0]
         } else {
@@ -52,7 +54,11 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     let plan = SkillGradePlan::of(
         &planned("ship it\u{202e}now"),
         None,
-        (Some("work".into()), Ok("full sandbox".into())),
+        (
+            Some("work".into()),
+            Ok("full sandbox".into()),
+            grades::price::of_model(None),
+        ),
     );
     assert_eq!(plan.chats, 6);
     assert_eq!(plan.runs, 3);
@@ -77,6 +83,15 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
         "{}",
         plan.cost_cap_usd
     );
+    assert_eq!(
+        plan.priced,
+        GradePrice {
+            usd_per_million: 75.0,
+            of_the_model: false,
+            model: None,
+        },
+        "no model said: the dearest known price"
+    );
     assert_eq!(plan.chat_minutes, 5);
     assert_eq!(plan.sandbox.as_deref(), Some("full sandbox"));
     assert_eq!((plan.refused, plan.consent.as_deref()), (None, Some("abc")));
@@ -84,13 +99,44 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     let refused = SkillGradePlan::of(
         &planned("ship it"),
         None,
-        (Some("work".into()), Err("the sandbox is off".into())),
+        (
+            Some("work".into()),
+            Err("the sandbox is off".into()),
+            grades::price::of_model(None),
+        ),
     );
     assert_eq!(refused.refused.as_deref(), Some("the sandbox is off"));
     assert_eq!(refused.sandbox, None);
     assert!(
         !refused.tests[0].hides,
         "the hidden mark is the plan's own reading"
+    );
+}
+
+#[test]
+fn the_plan_says_the_limit_at_the_price_of_the_model_its_chats_run_on() {
+    let plan = SkillGradePlan::of(
+        &planned("ship it"),
+        None,
+        (
+            Some("work".into()),
+            Ok("full sandbox".into()),
+            grades::price::of_model(Some("claude-sonnet-4-6")),
+        ),
+    );
+    // 50,000 tokens at $15 a million.
+    assert!(
+        (plan.cost_cap_usd - 0.75).abs() < 1e-9,
+        "{}",
+        plan.cost_cap_usd
+    );
+    assert_eq!(
+        plan.priced,
+        GradePrice {
+            usd_per_million: 15.0,
+            of_the_model: true,
+            model: Some("claude-sonnet-4-6".into()),
+        }
     );
 }
 

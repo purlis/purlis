@@ -4,7 +4,7 @@
 //! **This machine's profiles on its pools' runners** (#2049, spec #2041's *Profiles on runners*).
 //!
 //! A chat on a pool's runner starts on a profile the runner keeps of its own: the desktop has
-//! its runner keep each of its profiles (`keep_profile`, session protocol 1.42), over a link of
+//! its runner keep each of its profiles (`keep_profile`, session protocol 1.43), over a link of
 //! its own to it, with nothing of this machine's folder in it
 //! ([`purlis_core::profilestore::onrunner`]). A subscription is signed in there through its
 //! harness's own flow, run on the runner from a shell tab here ([`sign_in_line`]), once per
@@ -14,7 +14,7 @@
 //! ([`owned`], the check browser logins and tools use, D-2050-4): until a pool can be marked
 //! owned (#2561), a Docker pool whose engine is a local socket on this machine. To any other
 //! pool nothing is sent, and its chats start on the profiles its runner has of its own; its
-//! profiles are not offered for sign-in. A runner of a purlis before 1.42 is sent nothing either.
+//! profiles are not offered for sign-in. A runner of a purlis before 1.43 is sent nothing either.
 //!
 //! Adding a pool ends with its profiles (Settings › Pools, `pool_profiles`); a start on a pool
 //! keeps its profile there first ([`Linked`]): signed in, it starts with nobody asked, a moved
@@ -68,7 +68,7 @@ pub fn owned() -> Result<PathBuf, String> {
 
 /// **Has pool `pool`'s runner, as this machine keeps it under `config`, keep `kept`**, over a
 /// link of its own: whether its harness says it is signed in there. `None`, with nothing sent,
-/// for a runner not shown to be the person's own ([`owned`]) and one of a purlis before 1.42:
+/// for a runner not shown to be the person's own ([`owned`]) and one of a purlis before 1.43:
 /// what it runs on is its own to say.
 pub fn keep_on(
     config: &Path,
@@ -135,8 +135,8 @@ pub struct PoolProfileRow {
     pub plans: Vec<crate::machineprofiles::PlanRow>,
 }
 
-/// Why a runner of a purlis before 1.42 keeps none of this machine's profiles.
-const OLDER_RUNNER: &str = "its runner runs a purlis before 1.42, so its chats start on the \
+/// Why a runner of a purlis before 1.43 keeps none of this machine's profiles.
+const OLDER_RUNNER: &str = "its runner runs a purlis before 1.43, so its chats start on the \
                             profiles it has of its own";
 
 /// **Every profile of this machine's, kept on pool `pool`'s runner**, as the runner stands with

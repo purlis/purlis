@@ -270,15 +270,23 @@ use crate::view::{Limits, Views};
 /// already (`already`), so a runner stopped from its own command line is not re-armed by its
 /// desktop (#2051).
 ///
-/// 1.42 added a desktop's profiles on its runner (#2049, spec #2041): `keep_profile`, sent by
+/// 1.42 added a program that ends with its window (#3274): a start from this machine's window
+/// may say so (`ends_with_its_window`), and the host then ends that program as soon as its last
+/// window link ends without a `quit`, rather than keeping it for the window to come back to. A
+/// grade's chat is started so (SK-16): only the window that started it watches it. The word is
+/// the window's alone ([`crate::auth::Scope::LocalUi`]): a host takes it from no other link, so
+/// a relayed start keeps its program as any other. A host before 1.42 ignores the word and keeps
+/// the program as any other, and the window ends it as it comes back, as nothing takes it back.
+///
+/// 1.43 added a desktop's profiles on its runner (#2049, spec #2041): `keep_profile`, sent by
 /// the desktop on its own link to the runner, has the runner keep a profile of that name in a
 /// folder of its own ([`ProfileToKeep`]: its name, harness, sandbox-only mark and pinned
 /// version, and nothing of the desktop's folder), and answers `profile_kept` with whether its
-/// harness says it is signed in there. A host before 1.42 refuses it `unknown_command`, and its
+/// harness says it is signed in there. A host before 1.43 refuses it `unknown_command`, and its
 /// pool's chats run on the profiles the runner has of its own.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 42,
+    minor: 43,
 };
 
 /// The version that first pushes a host's own event log to a link that asks with a cursor for its
@@ -291,7 +299,7 @@ pub const KNOWS_EVENT_LOG: Version = Version {
 /// The version that first keeps a desktop's profile on a runner (#2049).
 pub const KNOWS_KEEP_PROFILE: Version = Version {
     major: 1,
-    minor: 42,
+    minor: 43,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -627,7 +635,7 @@ pub enum Command {
     /// paired with, carries it out; every other host refuses it [`NOT_ALLOWED`]
     /// ([`crate::grants::Power::Unpair`]).
     Unpair,
-    /// The desktop on this link has the runner keep its profile (1.42, #2049): the runner's
+    /// The desktop on this link has the runner keep its profile (1.43, #2049): the runner's
     /// host keeps a profile of that name in a folder of its own, made where it has none, and
     /// answers [`Answer::ProfileKept`] with whether its harness says it is signed in there.
     /// Nothing of the desktop's profile folder, sign-in or settings is in it. Only a runner's
@@ -919,7 +927,7 @@ pub struct Start {
     pub harness: Option<String>,
 }
 
-/// **A desktop's profile, as its runner keeps it** (1.42, #2049): what [`Command::KeepProfile`]
+/// **A desktop's profile, as its runner keeps it** (1.43, #2049): what [`Command::KeepProfile`]
 /// sends, and nothing else. No file, setting, sign-in or vault reference of the desktop's
 /// profile has a field here, so none can reach a runner through it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -936,7 +944,7 @@ pub struct ProfileToKeep {
     pub pinned: Option<String>,
 }
 
-/// **Whether a profile a runner keeps is signed in there**, as its harness says (1.42, #2049).
+/// **Whether a profile a runner keeps is signed in there**, as its harness says (1.43, #2049).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProfileStanding {
@@ -1032,6 +1040,12 @@ pub struct StartProgram {
     /// ([`crate::grants::Power::Reattach`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<ProgramNote>,
+    /// The program ends with its window (1.42, #3274): once the host's last window link ends
+    /// without a `quit`, the host ends it at once, rather than keeping it for the grace period a
+    /// window has to come back in. Taken from a `local-ui` link alone; a browser never takes it.
+    /// A grade's chat is started so (SK-16).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ends_with_its_window: bool,
 }
 
 impl StartProgram {
@@ -1058,6 +1072,7 @@ impl StartProgram {
             alone: Vec::new(),
             kept: None,
             note: None,
+            ends_with_its_window: false,
         }
     }
 }
@@ -1214,7 +1229,7 @@ pub enum Answer {
     /// [`Command::GiveCode`].
     Code { heads: Vec<CodeRef> },
     /// Whether the profile a runner keeps is signed in there, as its harness says:
-    /// [`Command::KeepProfile`] (1.42).
+    /// [`Command::KeepProfile`] (1.43).
     ProfileKept { standing: ProfileStanding },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
@@ -2739,7 +2754,7 @@ impl Client {
         self.done(Command::Unpair).await
     }
 
-    /// Have the runner keep this link's desktop's profile `profile` (1.42, #2049): whether its
+    /// Have the runner keep this link's desktop's profile `profile` (1.43, #2049): whether its
     /// harness says it is signed in there. Refused by every host but a runner's, on its link
     /// from that desktop.
     pub async fn keep_profile(&self, profile: ProfileToKeep) -> Result<ProfileStanding, CallError> {

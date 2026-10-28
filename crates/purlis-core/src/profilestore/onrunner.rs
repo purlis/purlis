@@ -304,7 +304,7 @@ pub fn standing_for_the_wire(
     }
 }
 
-/// **What a runner's host answers its desktop's `keep_profile` with** (1.42): the profile
+/// **What a runner's host answers its desktop's `keep_profile` with** (1.43): the profile
 /// `sent` kept for the desktop `desktop` in this runner's store under `homes`, with `home` the
 /// runner's home, at `now`, and whether its harness says, through `look`, that it is signed in
 /// here.
@@ -323,7 +323,7 @@ pub fn kept_for_the_desktop(
 /// **Whether a chat on the desktop's profile `name` may start on pool `pool`'s runner**, for the
 /// project at `root`, with this desktop's profiles in the store under `config_root`, the runner
 /// asked to keep it through `keep`, which answers `None` where it sent nothing (a runner not
-/// shown to be the person's own, or one of a purlis before 1.42). A profile this desktop keeps
+/// shown to be the person's own, or one of a purlis before 1.43). A profile this desktop keeps
 /// no record of (a built-in, or one a clone declares), and one `keep` sent nothing of, is the
 /// runner's own to say. One that goes to no runner is refused in words; one its harness says is
 /// signed out on the runner is refused with a wait the window shows as the Ask *Profile

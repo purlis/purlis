@@ -440,7 +440,7 @@ fn a_profile_with_no_record_is_the_runners_and_a_key_profile_is_refused_unsent()
     assert_eq!(asked.get(), 0);
 }
 
-/// A runner sent nothing (one not shown to be the person's own, or of a purlis before 1.42) is
+/// A runner sent nothing (one not shown to be the person's own, or of a purlis before 1.43) is
 /// the runner's own to say: the chat starts there, on whatever profiles it has, and nothing waits.
 #[test]
 fn a_runner_sent_nothing_is_its_own_to_say() {

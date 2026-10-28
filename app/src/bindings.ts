@@ -5357,6 +5357,11 @@ export type ChatSkills = {
 	skills: ChatSkill[],
 	/**  Its budget, where it is known. */
 	budget: SkillBudget | null,
+	/**
+	 *  The clones of its workspace it works in, by name, whose repo skills its harness reads
+	 *  (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
+	 */
+	repos: string[],
 };
 
 /**  One step of one chat's stop, as the window is told it. */
@@ -5591,6 +5596,11 @@ export type DeletedSkill = {
 	level: SkillLevel,
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
+	/**
+	 *  How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
+	 *  in the project's history` (SK-33).
+	 */
+	stays: string,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -7186,17 +7196,28 @@ export type GoneProject = {
 export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" | 
 /**  It reached its token cap. */
 "over-cap" | 
+/**  It reached its dollar limit (#3469). */
+"over-limit" | 
 /**  A chat did not say what it spent, so the cap could not be held. */
 "spend-not-reported" | 
 /**  A fault in purlis ended it before it was scored (#3353): recorded as interrupted. */
 "failed";
 
-/**  What a grade's chats spent last time, worked out for this one. */
+/**
+ *  What a grade's chats spent before, worked out for this one (`grades::Estimate`): both
+ *  figures are `None` where that grade's chats did not say what they spent.
+ */
 export type GradeEstimate = {
 	tokens: number | null,
 	cost_usd: number | null,
-	/**  The chats of the grade it is worked out from. */
+	/**  The chats the grade it is worked out from asked for: none where none ran. */
 	chats_then: number,
+	/**  That grade: when it ran, and the profile and the harness its chats ran on. */
+	ts: string,
+	profile: string | null,
+	harness: string | null,
+	/**  Whether it ran on the profile this grade runs on, or `None` where that is not known. */
+	same_profile: boolean | null,
 };
 
 /**
@@ -7206,6 +7227,16 @@ export type GradeEstimate = {
 export type GradeLeftOut = {
 	at: number,
 	why: string,
+};
+
+/**  **The price a grade's dollar limit is worked out at** (`grades::price`), as the plan says it. */
+export type GradePrice = {
+	/**  Dollars a million tokens. */
+	usd_per_million: number | null,
+	/**  Whether it is the price of the model the chats run on, rather than the dearest known. */
+	of_the_model: boolean,
+	/**  The model the chats run on, where the profile says one. */
+	model: string | null,
 };
 
 /**  One trigger test, as the plan shows it before anything runs. */
@@ -11747,16 +11778,19 @@ export type SkillGradePlan = {
 	outcome_evals: number,
 	outcomes_refused: string | null,
 	estimate: GradeEstimate | null,
+	/**  What the grade record left out as it was read: rows skipped, files not read. */
+	record_said: string | null,
 	/**  The grade of this skill running now, where one is. */
 	running: string | null,
 	/**  The tokens a grade may spend before it stops, and whether this machine set it. */
 	token_cap: number | null,
 	cap_set_here: boolean,
 	/**
-	 *  The cost a grade may reach besides, where its chats say what they cost: the cap's tokens
-	 *  at the dearest price (`grades::cap::Cap::cost_usd`).
+	 *  The dollar limit a grade is held to besides (the operator's ruling G12, #3469): the cap's
+	 *  tokens at `priced` (`grades::cap::Cap::cost_usd`).
 	 */
 	cost_cap_usd: number | null,
+	priced: GradePrice,
 	/**  The longest one of its chats runs, in minutes: the plan's "up to". */
 	chat_minutes: number,
 	/**
