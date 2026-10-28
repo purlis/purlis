@@ -13,7 +13,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { BrowsersGridTab } from "./BrowsersGridTab";
 import { forgetProjectsBrowsers, tellProjectBrowsers, type GridTile } from "./browsersGrid";
 import { forgetProjectViews } from "./projectViews";
-import { expectFocusInSight } from "./stories.testkit";
+import { expectFocusInSight, untilFocused } from "./stories.testkit";
 
 const HERE = "/home/dev/plane";
 const THERE = "/home/dev/shop";
@@ -98,7 +98,7 @@ export const ThisProject: Story = {
     expectFocusInSight();
     await userEvent.tab();
     const first = canvas.getByRole("option", { name: /Browser b1 of steward 1/ });
-    await waitFor(() => expect(first).toHaveFocus());
+    await untilFocused(() => first, "Tab from the scope switch lands on the first tile");
     expectFocusInSight();
     await userEvent.keyboard("{ArrowRight}");
     await expect(canvas.getByRole("option", { name: /Browser b2 of steward 1/ })).toHaveFocus();
