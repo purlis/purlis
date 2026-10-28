@@ -580,6 +580,11 @@ impl Held {
         &self.pool_tools
     }
 
+    /// What each chat's browsers downloaded, and what each chat may save of it (#2020).
+    pub fn browser_files(&self) -> &crate::browserfiles::Files {
+        self.browsers.files()
+    }
+
     /// Where the chats' browsers run: none where the window has no session host.
     pub fn browser_driver(&self) -> Option<&Arc<dyn crate::chatbrowsers::Driver>> {
         self.browser_driver.as_ref()

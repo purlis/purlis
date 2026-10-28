@@ -327,6 +327,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Whether this desktop sends a persona's tool its vault values on a pool's runner (#2047):
     // the person's answer alone. No chat allows its own tool.
     "answer_pool_tool",
+    // Whether a chat may save its browser's downloads from an origin into its folder (#2020):
+    // the person's answer alone. No chat allows its own saves.
+    "answer_browser_saves",
+    // Open and Show in folder on a browser's download (#2020): the person's, on their machine.
+    "open_browser_download",
+    "show_browser_download",
     // A chat's browser sites (#2018): the person's answer alone. No chat allows its own
     // browser a site.
     "allow_browser_sites",

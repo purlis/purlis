@@ -381,6 +381,15 @@ pub enum Call {
     Screenshot {
         page: Option<PageId>,
     },
+    /// Every download of the browser's, as [`Answer::downloads`] says them (#2020).
+    Downloads,
+    /// Puts `files` into the file input `target` (#2020), as the page's own file chooser would.
+    /// Each is a file purlis made for the browser alone, never one an agent named: the caller
+    /// copies what it may read into the browser's own folder first.
+    Upload {
+        target: Ref,
+        files: Vec<std::path::PathBuf>,
+    },
 }
 
 impl Call {
@@ -393,6 +402,7 @@ impl Call {
                 | Call::WaitForText { .. }
                 | Call::Pages
                 | Call::Screenshot { .. }
+                | Call::Downloads
         )
     }
 }
@@ -444,6 +454,81 @@ pub struct Answer {
     /// The sites the judge asked the person about since the last answer, each once (#2018):
     /// what the browser did not reach or send to, or where it typed nothing, until they say.
     pub asked: Vec<String>,
+    /// The downloads that began or moved on since the last answer (#2020), or for
+    /// [`Call::Downloads`], every one.
+    pub downloads: Vec<DownloadInfo>,
+}
+
+/// **One download of a browser's** (#2020): held in the folder the browser was given
+/// ([`Browser::hold_downloads_in`]), under the name the engine made for it, never the page's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadInfo {
+    /// Its name in the browser (`d1`), in the order they began.
+    pub id: String,
+    /// The name the page suggested, made plain ([`plain_file_name`]): words to show, never a
+    /// path purlis writes.
+    pub name: String,
+    /// The origin it came from (`https://host[:port]`): its own address's, or for one at no web
+    /// address (a `blob:` or `data:` one), the page's that began it. None where neither is one.
+    pub origin: Option<String>,
+    /// The bytes received so far.
+    pub received: u64,
+    /// The bytes it has in all, where the site said.
+    pub total: Option<u64>,
+    pub state: DownloadState,
+    /// The engine's name for its file in the holding folder: what the host opens it by.
+    pub file: String,
+}
+
+/// How far a download has come (#2020).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadState {
+    Going,
+    Done,
+    /// The engine or the page cancelled it.
+    Cancelled,
+    /// purlis cancelled it: past [`Limits::most_download_bytes`], or past
+    /// [`Limits::most_held_bytes`] with the browser's others.
+    TooLarge,
+    /// purlis cancelled it: the browser had [`Limits::most_downloads`] already.
+    TooMany,
+}
+
+/// The longest name [`plain_file_name`] keeps, in characters.
+pub const MOST_FILE_NAME_CHARS: usize = 120;
+
+/// **A name a page suggested for a file, made plain** (#2020): no path, no control or
+/// direction-changing character, no leading dot, at most [`MOST_FILE_NAME_CHARS`] characters;
+/// `download` where nothing is left.
+pub fn plain_file_name(suggested: &str) -> String {
+    let kept: String = suggested
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .filter(|c| !c.is_control() && !is_direction_mark(*c))
+        .collect();
+    let trimmed = kept.trim().trim_start_matches('.').trim();
+    let cut: String = trimmed.chars().take(MOST_FILE_NAME_CHARS).collect();
+    let cut = cut.trim();
+    if cut.is_empty() {
+        "download".to_owned()
+    } else {
+        cut.to_owned()
+    }
+}
+
+/// Whether `c` changes the direction text is drawn in, which could make a name read as
+/// another (`exe.txt` drawn as `txt.exe`).
+fn is_direction_mark(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{061c}'
+    )
 }
 
 /// **What a request a page is about to send is**, as the driver tells the browser's judge
@@ -534,6 +619,8 @@ pub enum Refusal {
     StaleRef(Ref),
     #[error("{0} is not shown on the page now (hidden, or gone): take a new snapshot")]
     NotShown(Ref),
+    #[error("{0} is not a file input: find the page's file input and upload into it")]
+    NotAFileInput(Ref),
     #[error("{0} is not a drop-down: click its options instead")]
     NotADropDown(Ref),
     #[error("{target} has no option {missing}; its options are: {options}")]
@@ -612,6 +699,15 @@ pub enum Refusal {
 /// answers.
 pub const MOST_TREE_READ_BYTES: usize = 2 * crate::cdp::MAX_MESSAGE_BYTES;
 
+/// The most bytes one download holds by default (#2020): 512 MiB.
+pub const MOST_DOWNLOAD_BYTES: u64 = 512 << 20;
+
+/// The most downloads one browser makes by default (#2020).
+pub const MOST_DOWNLOADS: usize = 64;
+
+/// The most bytes a browser's downloads hold together by default (#2020): 1 GiB.
+pub const MOST_HELD_BYTES: u64 = 1 << 30;
+
 /// How long and how much, all configurable (from Settings, by the session host).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Limits {
@@ -654,6 +750,13 @@ pub struct Limits {
     /// holds of the engine's answers, every frame's in all (#3277): past it, the read fails as
     /// too large.
     pub most_tree_read_bytes: usize,
+    /// The most bytes one download may hold (#2020): past it, purlis cancels it.
+    pub most_download_bytes: u64,
+    /// The most downloads one browser makes (#2020): any after it is cancelled as it begins.
+    pub most_downloads: usize,
+    /// The most bytes a browser's downloads hold together (#2020): the one that passes it is
+    /// cancelled.
+    pub most_held_bytes: u64,
 }
 
 impl Default for Limits {
@@ -673,6 +776,9 @@ impl Default for Limits {
             page_reads_within: Duration::from_secs(60),
             page_read_kept_for: Duration::from_secs(60),
             most_tree_read_bytes: MOST_TREE_READ_BYTES,
+            most_download_bytes: MOST_DOWNLOAD_BYTES,
+            most_downloads: MOST_DOWNLOADS,
+            most_held_bytes: MOST_HELD_BYTES,
         }
     }
 }

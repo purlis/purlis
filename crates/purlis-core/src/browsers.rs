@@ -107,6 +107,14 @@ pub fn browsers_in(data: &Path) -> PathBuf {
     data.join(crate::datahome::BROWSERS)
 }
 
+/// **The folder in a browser's data folder its downloads are held in** (#2020): each under the
+/// engine's own name for it. Inside `<data>/browsers`, which no chat reads or writes; removed
+/// with the browser's folder as it ends, and never kept with a kept login.
+pub const DOWNLOADS: &str = "downloads";
+
+/// The folder in a browser's data folder each upload's copies are made in (#2020).
+pub const UPLOADS: &str = "uploads";
+
 /// How many engines' logs are kept under `<data>/browsers` (#2745): the newest, whatever
 /// browsers they were of.
 pub const ENGINE_LOGS_KEPT: usize = 20;
@@ -433,7 +441,17 @@ impl Browsers for EngineBrowsers {
             None => Browser::new(engine, Limits::default()),
         }
         .map_err(|why| no_sandbox_or(why.to_string()))?;
+        // Its downloads are held in its own folder, which no chat reads (#2020), before any
+        // page of it loads.
+        let held_in = data.join(DOWNLOADS);
+        purlis_same_user::private_directory(&held_in)
+            .map_err(|why| format!("the browser's downloads folder could not be made ({why})"))?;
+        browser
+            .hold_downloads_in(&held_in)
+            .map_err(|why| format!("the browser did not take its downloads folder: {why}"))?;
         Ok(Arc::new(EngineScreen {
+            data: data.to_path_buf(),
+            uploads: std::sync::atomic::AtomicU64::new(0),
             process: browser.process(),
             log,
             fresh: Arc::clone(&keeping.fresh),
@@ -788,6 +806,11 @@ pub fn call_of(act: Act) -> Result<drive::Call, String> {
             page: PageId::new(to),
         },
         Act::Screenshot { page: on } => Call::Screenshot { page: page(on) },
+        Act::Downloads => Call::Downloads,
+        // Each needs the browser's own folder: the screen carries them out ([`EngineScreen`]).
+        Act::Upload { .. } | Act::SaveDownload { .. } => {
+            return Err("purlis's own screen carries this out, not the driver".into());
+        }
     })
 }
 
@@ -815,6 +838,7 @@ pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
         note: answer.note,
         repeated: answer.repeated,
         asked: answer.asked,
+        downloads: answer.downloads.into_iter().map(download_said).collect(),
         ..Browsed::default()
     };
     let mut also = |note: String| {
@@ -842,6 +866,25 @@ pub fn browsed(answer: drive::Answer, most: usize) -> Browsed {
         },
     }
     out
+}
+
+/// A download as the protocol says it (#2020).
+fn download_said(download: drive::DownloadInfo) -> wire::DownloadSaid {
+    wire::DownloadSaid {
+        download: download.id,
+        name: download.name,
+        origin: download.origin,
+        bytes: download.received,
+        total: download.total,
+        state: match download.state {
+            drive::DownloadState::Going => wire::DownloadState::Going,
+            drive::DownloadState::Done => wire::DownloadState::Done,
+            drive::DownloadState::Cancelled => wire::DownloadState::Cancelled,
+            drive::DownloadState::TooLarge => wire::DownloadState::TooLarge,
+            drive::DownloadState::TooMany => wire::DownloadState::TooMany,
+        },
+        file: download.file,
+    }
 }
 
 /// **The person's input as the driver's own event** (#2014), aimed where they aimed it.
@@ -1221,6 +1264,11 @@ struct Held {
 
 /// One browser on its engine, as the host drives it.
 struct EngineScreen {
+    /// Its own data folder (#2020): its downloads are held in it, and each upload copied into
+    /// it, where no chat reads or writes.
+    data: PathBuf,
+    /// How many uploads it was given, each copied into a folder of its own.
+    uploads: std::sync::atomic::AtomicU64,
     process: Option<u32>,
     /// Where its engine writes its log (#2745).
     log: PathBuf,
@@ -1245,6 +1293,91 @@ impl EngineScreen {
             .unwrap_or_else(PoisonError::into_inner)
             .as_ref()
             .map(|held| act(&held.browser))
+    }
+}
+
+impl EngineScreen {
+    /// **The upload of `files` of the chat's folder `from` into `target`** (#2020), as the
+    /// driver's call: each file copied into a folder of the browser's own first
+    /// ([`crate::browserfiles::stage`]), and the driver handed the copies.
+    fn staged(
+        &self,
+        target: &str,
+        files: &[String],
+        from: Option<&str>,
+    ) -> Result<drive::Call, NotActed> {
+        let from = from.ok_or_else(|| {
+            NotActed::Refused("an upload names the chat's folder it reads from".into())
+        })?;
+        let n = self
+            .uploads
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let into = self.data.join(UPLOADS).join(n.to_string());
+        let copies =
+            crate::browserfiles::stage(Path::new(from), files, &into).map_err(NotActed::Refused)?;
+        Ok(drive::Call::Upload {
+            target: Ref::new(target),
+            files: copies,
+        })
+    }
+
+    /// **Brings download `download` into the chat's folder `into` as `to`** (#2020): only one
+    /// that is done, as a new file ([`crate::browserfiles::bring`]). Answered with the browser's
+    /// page as it is, and a note of what was brought.
+    fn save_download(
+        &self,
+        epoch: u64,
+        download: &str,
+        to: &str,
+        into: Option<&str>,
+    ) -> Result<Browsed, NotActed> {
+        let into = into.ok_or_else(|| {
+            NotActed::Refused("bringing a download in names the chat's folder".into())
+        })?;
+        let browser = self.with(Arc::clone).ok_or(NotActed::Ended)?;
+        let one = browser
+            .downloads()
+            .into_iter()
+            .find(|one| one.id == download)
+            .ok_or_else(|| {
+                NotActed::Refused(format!(
+                    "this browser has no download {download}: list its downloads to see them"
+                ))
+            })?;
+        if one.state != drive::DownloadState::Done {
+            return Err(NotActed::Refused(format!(
+                "download {download} is not done ({}), so it is not brought in",
+                state_said(one.state)
+            )));
+        }
+        let from = self.data.join(DOWNLOADS).join(&one.file);
+        let bytes =
+            crate::browserfiles::bring(&from, Path::new(into), to).map_err(NotActed::Refused)?;
+        let id = CallId::new(format!("kept:{download}"))
+            .map_err(|why| NotActed::Refused(why.to_string()))?;
+        let listed = browser
+            .call_at(epoch, &id, drive::Call::Downloads)
+            .map_err(not_acted)?;
+        let mut out = browsed(listed, MOST_SCREENSHOT_BYTES);
+        out.note = Some(format!(
+            "brought {download} ({}, {}) into the chat's folder as {to}",
+            one.name,
+            crate::browserfiles::bytes_said(bytes)
+        ));
+        Ok(out)
+    }
+}
+
+/// How far a download came, in words.
+fn state_said(state: drive::DownloadState) -> &'static str {
+    match state {
+        drive::DownloadState::Going => "still downloading",
+        drive::DownloadState::Done => "done",
+        drive::DownloadState::Cancelled => "cancelled",
+        drive::DownloadState::TooLarge => "cancelled by purlis: larger than a download may be",
+        drive::DownloadState::TooMany => {
+            "cancelled by purlis: the browser had as many downloads as it may"
+        }
     }
 }
 
@@ -1305,7 +1438,17 @@ impl Screen for EngineScreen {
     fn act(&self, call_id: &str, act: Act, epoch: u64) -> Result<Browsed, NotActed> {
         self.browsed();
         let id = CallId::new(call_id).map_err(|why| NotActed::Refused(why.to_string()))?;
-        let call = call_of(act).map_err(NotActed::Refused)?;
+        let call = match act {
+            Act::Upload {
+                target,
+                files,
+                from,
+            } => self.staged(&target, &files, from.as_deref())?,
+            Act::SaveDownload { download, to, into } => {
+                return self.save_download(epoch, &download, &to, into.as_deref());
+            }
+            act => call_of(act).map_err(NotActed::Refused)?,
+        };
         // The call waits on the engine: it is made outside the lock, so frames and a stop are
         // never held up behind it.
         let browser = self.with(Arc::clone);

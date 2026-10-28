@@ -344,6 +344,15 @@ export async function answerTaken(
         if (option === "allow") return commands.answerPoolTool(plane, ask.session, path.run, true);
         if (option === "keep") return commands.answerPoolTool(plane, ask.session, path.run, false);
         break;
+      case "browser-saves":
+        // A chat's saves of its browser's downloads from these origins into its folder (#2020):
+        // Allow for this chat saves them from its next call; Keep out refuses them. The chat is
+        // told on its next turn.
+        if (option === "allow")
+          return commands.answerBrowserSaves(plane, ask.session, path.origins, true);
+        if (option === "keep")
+          return commands.answerBrowserSaves(plane, ask.session, path.origins, false);
+        break;
       case "take-over": {
         // A browser whose page needs the person (#2015): Take over takes the session host's
         // lease first, so their first click or key reaches the page, then opens its view. The

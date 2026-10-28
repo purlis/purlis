@@ -1,16 +1,16 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useRef } from "react";
-import { Globe } from "lucide-react";
+import { memo, useRef, useState } from "react";
+import { Download, Globe } from "lucide-react";
 import type { Catalogued, Offer } from "./actions";
-import type { BrowserDriver, ChatBrowser } from "./bindings";
+import { commands, type BrowserDriver, type ChatBrowser, type RowDownload } from "./bindings";
 import { addressChip, chatBrowserTitle, deviceOf } from "./browsers";
 import { Menued } from "./Menus";
 import { THUMBNAIL_ACROSS, useBrowserOrigin, useBrowserWatch, useWindowSeen } from "./browserWatch";
 import { useProjectShown } from "./projectShown";
 import { onAMac } from "./tabKeys";
-import { Button } from "./ui/button/Button";
+import { Button, ButtonRow } from "./ui/button/Button";
 import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
@@ -172,6 +172,7 @@ export const BrowserRows = memo(function BrowserRows({
   offers = NO_OFFERS,
   onPress,
   handTo = NO_CHATS,
+  plane,
 }: {
   /** The chat they are of, by the name its row has. */
   chat: string;
@@ -186,6 +187,9 @@ export const BrowserRows = memo(function BrowserRows({
   onPress?: (offer: Offer) => void;
   /** The open chats a browser no chat uses may be handed to, by number. */
   handTo?: readonly number[];
+  /** The project the browsers are of: what a download's Open and Show in folder name (#2020).
+   *  Without it, the downloads are listed with neither. */
+  plane?: string;
 }) {
   if (browsers.length === 0) return null;
   return (
@@ -199,6 +203,7 @@ export const BrowserRows = memo(function BrowserRows({
             offers={offers}
             onPress={onPress}
             handTo={handTo}
+            plane={plane}
           />
         ))}
       </div>
@@ -214,16 +219,19 @@ function BrowserRow({
   offers,
   onPress,
   handTo,
+  plane,
 }: {
   shown: BrowserShown;
   onOpen: (shown: BrowserShown) => void;
   offers: Catalogued;
   onPress?: (offer: Offer) => void;
   handTo: readonly number[];
+  plane: string | undefined;
 }) {
   const origin = useBrowserOrigin(shown.browser.program);
   const driver = shown.browser.driver;
   return (
+    <>
     <Menued
       on={{
         on: "browser",
@@ -280,5 +288,94 @@ function BrowserRow({
         </button>
       </Tooltip>
     </Menued>
+    <BrowserDownloads browser={shown.browser} plane={plane} />
+    </>
+  );
+}
+
+/** How a download on a row is said beside its size (#2020). */
+export const DOWNLOAD_STATE: Record<RowDownload["state"], string> = {
+  going: "downloading",
+  done: "downloaded",
+  cancelled: "cancelled",
+  refused: "stopped by purlis",
+};
+
+/** **What a row's download says beside its name** (#2020): its size, how far it has come, and
+ *  the origin it came from. */
+export function downloadSaid(download: RowDownload): string {
+  const said = `${download.size} · ${DOWNLOAD_STATE[download.state]}`;
+  return download.origin !== null ? `${said} · from ${download.origin}` : said;
+}
+
+/**
+ * **A browser's downloads, under its row** (#2020): each by the page's name for it, its size
+ * and how far it has come, with Open and Show in folder once it is done, for a browser on this
+ * machine. Every word of a download's is the page's, drawn as text. A refusal to open says why,
+ * under the download, until the next press.
+ */
+function BrowserDownloads({
+  browser,
+  plane,
+}: {
+  browser: ChatBrowser;
+  plane: string | undefined;
+}) {
+  const [said, setSaid] = useState<{ download: string; why: string } | null>(null);
+  if (browser.downloads.length === 0) return null;
+  const onThisMachine = browser.pool === null;
+  const press = (download: RowDownload, how: "open" | "show") => {
+    if (plane === undefined) return;
+    setSaid(null);
+    const asked =
+      how === "open"
+        ? commands.openBrowserDownload(plane, browser.program, download.download)
+        : commands.showBrowserDownload(plane, browser.program, download.download);
+    void asked
+      .catch((err: unknown) => ({ status: "error" as const, error: String(err) }))
+      .then((answer) => {
+        if (answer.status === "error") setSaid({ download: download.download, why: answer.error });
+      });
+  };
+  return (
+    <ul className="chat-browser-downloads" aria-label={`Downloads of browser ${browser.name}`}>
+      {browser.downloads.map((download) => (
+        <li key={download.download} className="chat-browser-download">
+          <span className="chat-browser-download-line">
+            <Download className="node-icon" aria-hidden="true" />
+            <span className="chat-browser-download-name ui-text-secondary">{download.name}</span>
+            <span className="ui-text-meta" data-state={download.state}>
+              {downloadSaid(download)}
+            </span>
+          </span>
+          {download.state === "done" && onThisMachine && plane !== undefined && (
+            <ButtonRow size="sm" className="chat-browser-download-actions">
+              {/* A page names its files: one that opens as a program is shown, never opened. */}
+              {!download.opens_as_a_program && (
+                <Button
+                  variant="ghost"
+                  aria-label={`Open ${download.name}`}
+                  onPress={() => press(download, "open")}
+                >
+                  Open
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                aria-label={`Show ${download.name} in its folder`}
+                onPress={() => press(download, "show")}
+              >
+                Show in folder
+              </Button>
+            </ButtonRow>
+          )}
+          {said?.download === download.download && (
+            <span className="chat-browser-download-refused ui-text-meta" role="alert">
+              {said.why}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

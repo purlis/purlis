@@ -294,9 +294,23 @@ use crate::view::{Limits, Views};
 /// harness's declaration keeps it. The window's alone, relayed for it. A host before 1.44 reads
 /// no `moving` or `with_work` and refuses the conversation commands `unknown_command`, so the
 /// window moves no chat to or from one.
+///
+/// 1.46 added files across a browser's edge (#2020): `browse` may carry the acts `downloads`,
+/// `upload` (files of the chat's folder the window names, which the host copies into the
+/// browser's own folder, following no link) and `save_download` (a download brought into the
+/// chat's folder as a new file); and `browsed` says the downloads that began or moved on since
+/// the act before (`downloads`), each by a plain name, its origin and its size, never a path. A
+/// host before 1.46 reads none of the three acts, so the window sends it none.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 44,
+    minor: 46,
+};
+
+/// The version that first carries a browser's files (#2020): the window sends no `downloads`,
+/// `upload` or `save_download` to a host before it.
+pub const KNOWS_BROWSER_FILES: Version = Version {
+    major: 1,
+    minor: 46,
 };
 
 /// The version that first moves a chat's work tree and conversation (#2048): the window moves

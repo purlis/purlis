@@ -32,6 +32,7 @@ mod awayrunners;
 mod blockedsave;
 mod branchwatch;
 mod brokered;
+mod browserfiles;
 mod browserlimits;
 mod browserneedsyou;
 mod browserproof;

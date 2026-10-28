@@ -176,6 +176,9 @@ pub enum AskSource {
     /// One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
     /// lets this desktop send that tool its vault values on the pool's runner for that run alone.
     PoolTool,
+    /// Downloads a chat's browser would save into the chat's folder, from an origin the person
+    /// has not answered for that chat (#2020): an Allow saves them, for this chat alone.
+    BrowserSave,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -242,6 +245,9 @@ pub enum AnswerPath {
     /// `answer_pool_tool`, allowing for Allow this run and not for Keep off, for run `run` of
     /// the chat that asked (#2047).
     PoolTool { run: u32 },
+    /// `answer_browser_saves`, allowing for Allow for this chat and not for Keep out, for
+    /// `origins`, the origins the ask showed (#2020).
+    BrowserSaves { origins: Vec<String> },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -1186,6 +1192,52 @@ pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
     }
 }
 
+/// The key of chat `session`'s saves of downloads (#2020): one Ask per chat.
+fn browser_saves_key(session: u32) -> String {
+    format!("browser-saves:{session}")
+}
+
+/// The id of Allow on a browser saves Ask (#2020).
+pub const BROWSER_SAVES_ALLOW: &str = "allow";
+
+/// **The browser saves adapter** (#2020, spec #2008 story 37): a chat asked to save a download of
+/// its browser's into its folder, from an origin the person has not answered for it. It names
+/// the origins, oldest first; Allow for this chat saves downloads from them into its folder while
+/// the app holds it, and Keep out refuses them. Every word is purlis's; an origin is a page's
+/// own, drawn as text.
+pub fn browser_saves(waits: &crate::browserfiles::SavesWait) -> Shown {
+    let named = match waits.origins.as_slice() {
+        [one] => one.clone(),
+        many => many.join(", "),
+    };
+    let says = format!(
+        "Wants to save downloads from {named} into its folder. Until you allow it, they stay          where no chat reaches them"
+    );
+    Shown {
+        session: waits.session,
+        ask: browser_saves_key(waits.session),
+        says: said_inertly(&says),
+        options: vec![
+            Offered {
+                id: BROWSER_SAVES_ALLOW.to_owned(),
+                label: "Allow for this chat".to_owned(),
+                allows: true,
+                preselected: None,
+            },
+            refuses(KEEP, "Keep out"),
+        ],
+        source: AskSource::BrowserSave,
+        chain: Vec::new(),
+        answer: AnswerPath::BrowserSaves {
+            origins: waits.origins.clone(),
+        },
+        since: None,
+        held_until: None,
+        writes: None,
+        lines: None,
+    }
+}
+
 /// The key of run `run` of chat `session`'s tool on its pool (#2047): one Ask per run.
 fn pool_tool_key(session: u32, run: u32) -> String {
     format!("pool-tool:{session}:{run}")
@@ -1765,6 +1817,8 @@ pub struct Waiting<'a> {
     pub pool_logins: Vec<crate::chatbrowsers::PoolLoginWaits>,
     /// The runs of runner chats' declared tools that wait on the person (#2047).
     pub pool_tools: Vec<crate::pooltools::PoolToolWaits>,
+    /// The chats whose browser's downloads wait on the person to be saved (#2020).
+    pub browser_saves: Vec<crate::browserfiles::SavesWait>,
     /// The administrator's policy, which the levels an Allow is offered at answer to.
     pub locks: &'a purlis_core::sandbox::policy::Locks,
     /// Whether a browser site for everyone in the project reaches a browser here: only where the
@@ -1842,6 +1896,8 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     asks.extend(waiting.pool_logins.iter().map(pool_login));
     // A runner chat whose declared tool waits on the person's Allow for its pool (#2047).
     asks.extend(waiting.pool_tools.iter().map(pool_tool));
+    // A chat whose browser's downloads wait to be saved into its folder (#2020).
+    asks.extend(waiting.browser_saves.iter().map(browser_saves));
     let said: std::collections::HashSet<u32> = asks.iter().map(|ask| ask.session).collect();
     // About no chat: a profile that waits to be signed in (#2035).
     let signing = asks.len();
@@ -2042,6 +2098,10 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &pool_tools {
         since.insert(pool_tool_key(one.session, one.run), one.since);
     }
+    let browser_saves = held.browser_files().saves_waiting();
+    for one in &browser_saves {
+        since.insert(browser_saves_key(one.session), one.since);
+    }
     let declared = purlis_core::sandbox::services::declared(root);
     let waiting = Waiting {
         browsers,
@@ -2049,6 +2109,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         browser_sites,
         pool_logins,
         pool_tools,
+        browser_saves,
         sandbox_only,
         sign_ins,
         pool_sign_ins,

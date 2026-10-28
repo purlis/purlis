@@ -2208,6 +2208,20 @@ impl Hosting {
         reach: Option<purlis_session_protocol::browsing::BrowserReach>,
     ) -> Result<Answer, Refusal> {
         let running = self.running(program)?;
+        // A folder an act names is one of the browser's own project's (#2020): the window
+        // names a chat's, which is in its project, and nothing outside it is read or written.
+        if let Some(folder) = folder_named(&act) {
+            let project = self
+                .state()
+                .programs
+                .get(program)
+                .map(|hosted| hosted.at.path.clone())
+                .ok_or_else(|| no_such_program(program))?;
+            in_its_project(Path::new(folder), &project).map_err(|why| Refusal {
+                code: session::MALFORMED.into(),
+                why,
+            })?;
+        }
         tokio::task::spawn_blocking(move || {
             // What it reaches is what the window says now, before the act (#2018).
             if let Some(reach) = &reach {
@@ -3772,6 +3786,35 @@ impl Drop for PlaceInTheBudget {
 
 /// The refusal of a browser that did not start (#2899): `no_engine_sandbox` where its engine
 /// cannot make its sandbox here, `not_started` for anything else; in the binary's words.
+/// The folder of this machine an act of a browser's names (#2020): the chat's folder an upload
+/// reads from, or one a download is brought into.
+fn folder_named(act: &purlis_session_protocol::browsing::Act) -> Option<&str> {
+    use purlis_session_protocol::browsing::Act;
+    match act {
+        Act::Upload { from, .. } => Some(from.as_deref().unwrap_or_default()),
+        Act::SaveDownload { into, .. } => Some(into.as_deref().unwrap_or_default()),
+        _ => None,
+    }
+}
+
+/// **Whether `folder` is inside `project`**, each as the kernel names it (#2020), or why not.
+fn in_its_project(folder: &Path, project: &Path) -> Result<(), String> {
+    let outside = || {
+        "a browser's files are read from and written to its own project's folders alone".to_owned()
+    };
+    if !folder.is_absolute() {
+        return Err(outside());
+    }
+    let (Ok(folder), Ok(project)) = (folder.canonicalize(), project.canonicalize()) else {
+        return Err(outside());
+    };
+    if folder.starts_with(&project) {
+        Ok(())
+    } else {
+        Err(outside())
+    }
+}
+
 fn browser_not_started(why: crate::browsers::NotStarted) -> Refusal {
     match why {
         crate::browsers::NotStarted::NoEngineSandbox(why) => Refusal {

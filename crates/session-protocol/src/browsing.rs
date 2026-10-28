@@ -139,6 +139,29 @@ pub enum Act {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         page: Option<String>,
     },
+    /// Every download of the browser's (1.46, #2020), in [`Browsed::downloads`].
+    Downloads,
+    /// Puts `files` into the file input `target` (1.46, #2020): each a path relative to the
+    /// chat's folder, as the agent wrote it. The window names that folder (`from`), its own
+    /// record of where the chat runs, never the chat's word; the host reads each file there
+    /// following no link and copies it into the browser's own folder, and the engine reads only
+    /// that copy. A host refuses one that names no folder, or one outside the browser's project.
+    Upload {
+        target: String,
+        files: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+    },
+    /// Brings download `download` (`d1`) into the chat's folder as `to`, a path relative to it
+    /// (1.46, #2020), once the person allowed downloads from its origin into that chat. The
+    /// window names the folder (`into`), as for [`Act::Upload`]; the host writes a new file there
+    /// following no link, and never over one that is there.
+    SaveDownload {
+        download: String,
+        to: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        into: Option<String>,
+    },
 }
 
 fn is_zero(n: &i32) -> bool {
@@ -155,6 +178,7 @@ impl Act {
                 | Act::WaitForText { .. }
                 | Act::Pages
                 | Act::Screenshot { .. }
+                | Act::Downloads
         )
     }
 }
@@ -229,6 +253,41 @@ pub struct Browsed {
     /// #2018): each once, since the act before.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub asked: Vec<String>,
+    /// The downloads that began or moved on since the act before (1.46, #2020), or for
+    /// [`Act::Downloads`] every one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub downloads: Vec<DownloadSaid>,
+}
+
+/// **One download of a browser's, as an answer says it** (1.46, #2020): its name in the browser
+/// (`d1`), the name its page suggested made plain, the origin it came from, its size, how far it
+/// has come, and the engine's own name for its file in the browser's holding folder, which no
+/// chat reads. Never a path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadSaid {
+    pub download: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    pub bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
+    pub state: DownloadState,
+    pub file: String,
+}
+
+/// How far a download has come (1.46, #2020).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadState {
+    Going,
+    Done,
+    /// The page or the engine cancelled it.
+    Cancelled,
+    /// purlis cancelled it: larger than a download may be.
+    TooLarge,
+    /// purlis cancelled it: the browser had as many downloads as it may.
+    TooMany,
 }
 
 /// What a browser may reach, given as it starts (1.11): the hosts its chat's sandbox lists, each
