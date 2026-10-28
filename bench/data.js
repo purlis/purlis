@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793210954636,
+  "lastUpdate": 1793212456406,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28602,6 +28602,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2326745,
             "unit": "ms",
             "extra": "median of 5 runs: 100.041, 100.966, 101.233, 102.153, 102.746 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fd9f765724b59bf9e8034c377d97c041c6596aee",
+          "message": "Runners: hardening of a kept home's first step (#2057) (#3726)\n\nThe first step compares the image's HOME with the runner's home as the\nfolders they are, reads and writes its claim mark never through a\nlink, and makes again a home made warm before any claim once a claim\ntakes the runner. The operator vouches for a kept claim's pod only\nwhen the pod names its claim. A statement's expiry words mention this\nmachine's clock, and its margin is worded as it is.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T17:43:59Z",
+          "tree_id": "993af1cea1d154f46e22f2320523a8752e6eb40a",
+          "url": "https://github.com/purlis/purlis/commit/fd9f765724b59bf9e8034c377d97c041c6596aee"
+        },
+        "date": 1793212449787,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.480653,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.475, 0.476, 0.481, 0.483, 0.489 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.386624,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.290, 16.294, 16.387, 16.570, 16.602 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5985575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.497, 101.158, 101.599, 102.068, 102.116 ms"
           }
         ]
       }
