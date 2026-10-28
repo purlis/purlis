@@ -10,7 +10,7 @@ its rulings. Its item is **decided in implementation, to be confirmed** (D-2686-
    does not ignore. The flow makes a folder with `mktemp -d` and stops if it cannot. Before
    `open`, it sets `PLAYWRIGHT_MCP_OUTPUT_DIR` to that folder, which `playwright-cli` reads when
    a session starts, as it reads the secrets file. When the flow exits, however it exits, it
-   closes the session and removes the folder. `crates/purlis-core/tests/the_browser_skills_terminal_flow_keeps_playwrights_output_out_of_the_project.rs`
+   closes the session and removes the folder. `crates/purlis-core/tests/it/the_browser_skills_terminal_flow_keeps_playwrights_output_out_of_the_project.rs`
    holds the flow to it. *D-2686-1.*
 
    *Rejected:* having the skill tell the project to ignore `.playwright-cli/`. That needs every

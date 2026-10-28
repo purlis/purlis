@@ -4,7 +4,7 @@
 //! **Counts agree with their noun** (`docs/ui-copy.md`: *1 file*, *2 files*). Every sentence
 //! purlis writes with a count says it through [`counted`], and a word that follows the count
 //! (*is*/*are*, *it*/*them*) through [`plural`], so nothing shipped says "N file(s)".
-//! `crates/purlis-core/tests/no_count_says_thing_s.rs` fails on a new one.
+//! `crates/purlis-core/tests/it/no_count_says_thing_s.rs` fails on a new one.
 
 use std::fmt::Display;
 

@@ -24,7 +24,7 @@
 # **The profiles purlis emits** (#2128). Given a folder, the profiles a wrapped chat (Codex,
 # opencode) starts under, at the full sandbox and at the floor, are applied whole: built by the
 # core as a start builds them and written there by
-# `crates/purlis-core/tests/the_profiles_a_wrapped_chat_starts_under_are_written_out.rs`, with
+# `crates/purlis-core/tests/it/the_profiles_a_wrapped_chat_starts_under_are_written_out.rs`, with
 # the sample project each was built for. Asserted: in each, a held name, as written and in
 # another case, is refused, and what nothing holds goes through. So a change in how a profile is
 # assembled, a rule's order or a later allow, is applied where it ships.
@@ -33,7 +33,7 @@
 # the same probes of a sample project, and nothing else, in the sandbox this script already runs
 # in, with no `sandbox-exec` of its own. Claude Code builds its sandbox itself from the settings
 # purlis writes, so
-# `crates/purlis-core/tests/claude_codes_own_sandbox_holds_the_settings_purlis_writes.rs` has the
+# `crates/purlis-core/tests/it/claude_codes_own_sandbox_holds_the_settings_purlis_writes.rs` has the
 # real Claude Code run this line through its Bash tool, at the full sandbox and at the floor. The
 # last line says how many answers were checked and how many were wrong.
 set -eu

@@ -174,7 +174,7 @@ A tier line is `**Tier:** <tier>[, <mark>…]`, optionally followed by ` — ` a
 and marks carry no punctuation of their own: a line with no reason has no full stop. A new
 store lands in this document with its tier, under its own heading or as a row of a table whose
 first column is `Path`.
-`crates/purlis-core/tests/every_store_the_plane_format_names_has_a_tier.rs` fails until it
+`crates/purlis-core/tests/it/every_store_the_plane_format_names_has_a_tier.rs` fails until it
 has one, and it fails on any new heading in the file sections that has no tier and is not
 listed in the test as something other than a store. It does not see a store named only in the
 prose under another heading, which is why every store gets a heading or a row.

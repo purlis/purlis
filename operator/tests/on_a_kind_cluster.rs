@@ -1417,7 +1417,7 @@ async fn a_fresh_claim_takes_a_warm_runner_and_a_kept_one_starts_cold_saying_its
         .await
         .expect("the pool's kept volume edited");
     // Its pod lost, it is made again on that volume. (That it keeps its pairing there is the
-    // desktop's side to show: crates/purlis-core/tests/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs.)
+    // desktop's side to show: crates/purlis-core/tests/it/a_chat_runs_on_a_cluster_runner_through_kubectl_exec.rs.)
     let first = pods.get("ada-kept").await.expect("its pod").uid();
     pods.delete("ada-kept", &DeleteParams::default())
         .await

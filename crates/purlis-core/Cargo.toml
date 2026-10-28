@@ -242,6 +242,14 @@ log = { version = "0.4", features = ["std"] }
 # brings into this workspace's lockfile.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
+# Every integration test but one, as modules of one binary (#3613): each `tests/*.rs` was a binary
+# of its own that linked the whole graph, 160 of them. `tests/it/main.rs` fails on a `.rs` left
+# straight under `tests/`, and on a file in `tests/it/` it does not name. `design_tokens_memory`
+# stays a binary of its own, found by Cargo as before: its counting allocator is the process's.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
 [lints]
 workspace = true
 
