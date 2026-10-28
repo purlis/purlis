@@ -658,6 +658,8 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel; `PanelTitle`, the title of the view it shows (`ui/panel/Panel.tsx`) | `root`, `title` | `side`, `content`, `bottom` |
 | Panel section | `PanelSection` (with `view` and `top`), `PanelSectionHead`, `PanelSectionTitle`, `InPanelTop` (`ui/panel/Panel.tsx`) | `root`, `head`, `title`, `top` | `default` |
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
+| View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
+| View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 
@@ -689,6 +691,32 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   drawn on it, in a half of the Panel or in either sidebar, and so are Personas, Vaults and every
   extension's panel (#3341), and the Chats view (#3342), whose rows lead with the
   persona's mark and the chat's state as a dot on its corner.
+- **A view tab laid out as pages is a view frame** (#3666, the Skill studio frame's variant A,
+  `purlis/view-frame-family`): the page navigation, the page's list (its heading and lead line,
+  `ViewListHead`, then a list or table) and the item chosen in it beside it (its page header,
+  `ViewPageHeader`: the name, a tag and one mark, the one-line description, up to three actions
+  and a "…" menu; then its banner, a Notice `alone`, and its body). The navigation is one Tab
+  stop, the current page `aria-current="page"` and marked at its start edge as well as by its
+  colour; ↑ ↓ Home End walk it and Enter, Space or a press chooses. A page's count is the count
+  family's, `waiting` for what waits for the person, and a page with nothing in it is left out.
+  Each pane scrolls on its own and the page header stays in view; the panes' sizes are the
+  frame's, so a new item or a changed count moves nothing, and the list and the item are resized
+  through the panel separator. Under 720px wide (a narrow tab, a split pane) it is page-and-back:
+  the navigation is a `Select`, the list comes first, an opened item is drawn alone with a way
+  back, and the keyboard follows: onto the way back as the item opens, onto the list as the
+  person comes back.
+- **A view tab has its own back and forward** (#3667, `ui/panel/viewHistory.ts`): the tab's
+  history is kept by its id in memory (`useViewHistory`), so another tab never shares it and a
+  relaunch starts afresh, and a place reached from outside the tab (`openViewAt`: the run chip's
+  Runs) is a step on a tab that has a history and its start on one that has none. `ViewBar` draws
+  back and forward at the bar's start, each unavailable with its reason at its end, and the path
+  (`ViewCrumbs`, a list named "Path": each name before the last on the quiet ghost inline, the
+  last `aria-current="page"` and no button, long names cut first, the whole path its tooltip),
+  then the view's own controls. ⌘[ and ⌘] on a Mac, Alt+← and Alt+→ elsewhere (`view.back`,
+  `view.forward` in the key registry, in its new `view` place; Ctrl+[ is a terminal's Escape and
+  an editor's indent, so Ctrl does not take ⌘'s place), and the mouse's own back and forward
+  buttons walk it anywhere in a `ViewFrame` handed the `history`; an editor, a menu or a dialog
+  keeps the keys.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right
@@ -1186,8 +1214,20 @@ WAI-ARIA "Tabs" pattern:
   tables and trees) and the collapse into show-more (`fits.ts`, which counts the theme's gap
   between tabs).
 
+**A page's tabs are `PageTabs`** (#3668, `app/src/ui/tabs/PageTabs.tsx`, the skill page
+prototype's variant A): React Aria's `Tabs`, `TabList`, `Tab` and `TabPanel`, with automatic
+activation (one Tab stop on the row, ← and → choose the tab beside, Home and End the first and
+the last), each panel named by its tab. A count after a tab's words is its description, never
+part of its name, in room kept for three figures (past 99 it says 99+), so 9 to 10 widens
+nothing. The chosen tab is told by the indicator under it as well as by its words' colour, and no
+state changes a size. Narrow, the row scrolls along and never wraps. The chosen tab is the
+owner's (`selected`, `onSelect`), so a view's history brings it back. Its parts are the
+`page-tabs` family's: `tab`, `label`, `count`, `indicator`, `list` and `panel`. The segmented
+control is a radio group, never a page's tabs.
+
 `purlis/tabs-family` (an error) refuses a `tab`, `tablist` or `tabpanel` role written by hand,
-the old hand-made tablist (`StripTablist`) and `data-scope="tabs"` outside `src/ui`. The tablists
+a page's or a strip's alike, the old hand-made tablist (`StripTablist`) and `data-scope="tabs"`
+or `"page-tabs"` outside `src/ui`. The tablists
 still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
 file in `eslint.config.js` until their own tickets move them.
 
