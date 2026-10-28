@@ -29,16 +29,21 @@ const made = (workspace: string): Said => ({
 });
 const refused: Said = { from: "workspace.pin", refused: true, words: "Not pinned." };
 
-type Props = { said: Said | undefined; kept: readonly KeptResult[]; plane: string };
+type Props = {
+  said: Said | undefined;
+  kept: readonly KeptResult[];
+  plane: string;
+  chips?: readonly Chip[];
+};
 
 function hook(first: Props) {
   return renderHook(
-    ({ said, kept, plane }: Props) =>
+    ({ said, kept, plane, chips = CHIPS }: Props) =>
       useChipNotices({
         said,
         kept,
         plane,
-        chips: CHIPS,
+        chips,
         drop: () => undefined,
         onSettings: () => undefined,
       }),
@@ -79,5 +84,20 @@ describe("a chip's card comes up", () => {
     expect(result.current.open).toBe("docs");
     rerender({ said: refused, kept: [{ id: 2, said: refused, plane: A }, ...kept], plane: A });
     expect(result.current.open).toBeUndefined();
+  });
+
+  it("never for a workspace that lost its chip and came back (#3648's review)", () => {
+    const docs = made("docs");
+    const kept: KeptResult[] = [{ id: 1, said: docs, plane: A }];
+    const { result, rerender } = hook({ said: undefined, kept: [], plane: A });
+    rerender({ said: docs, kept, plane: A });
+    expect(result.current.open).toBe("docs");
+    // docs unpinned and not in front: no chip, so no card, and none wanted.
+    rerender({ said: docs, kept, plane: A, chips: [CHIPS[0]] });
+    expect(result.current.open).toBeUndefined();
+    // Much later its chip is back: its notice is behind its dot, and no card comes up unasked.
+    rerender({ said: docs, kept, plane: A, chips: CHIPS });
+    expect(result.current.open).toBeUndefined();
+    expect(result.current.on.get("docs")).toHaveLength(1);
   });
 });

@@ -241,3 +241,46 @@ export const AtTheWindowEdge: Story = {
     ).toBeLessThanOrEqual(1.5);
   },
 };
+
+/** Workspaces enough that the strip is too long to show whole (R103). */
+const MANY = [
+  "skills-studio",
+  "another-workspace",
+  "3rd-try",
+  "release-notes",
+  "billing-migration",
+  "search-reindex",
+  "onboarding-flow",
+  "docs-site",
+  "mobile-shell",
+  "infra-terraform",
+  "data-pipeline",
+  "design-tokens",
+];
+
+/**
+ * **A strip too long to show whole** (#3648's review): the card follows its chip as the strip
+ * scrolls, centred on it, and goes down, dismissing nothing, once the chip has scrolled out of
+ * the strip's sight. Its dot stays on the chip for when it comes back.
+ */
+export const InAStripTooLongToShow: Story = {
+  args: { pins: MANY, hasNotice: "3rd-try" },
+  play: async ({ canvas }) => {
+    const strip = canvas.getByRole("toolbar", { name: "Pinned workspaces" });
+    await expect(strip.scrollWidth).toBeGreaterThan(strip.clientWidth);
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    // A little way along: still in sight, and followed.
+    strip.scrollLeft = 40;
+    await waitFor(() => {
+      const chip = chipOf("3rd-try").getBoundingClientRect();
+      const surface = surfaceOf(card).getBoundingClientRect();
+      expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1.5);
+    });
+    // Its chip out of the strip's sight: down, and its notice is not dismissed.
+    strip.scrollLeft = strip.scrollWidth;
+    await waitFor(() => expect(cardOf()).toBeNull());
+    await expect(
+      canvas.getByRole("button", { name: "Show the notice on 3rd-try" }),
+    ).toBeInTheDocument();
+  },
+};

@@ -438,6 +438,8 @@ export function TitleBarSwitch({
             anchor={anchor}
             does={notices}
             takesKeyboard={handTo === cardOn}
+            // The house is in no strip, so nothing clips it.
+            clip={cardOn === OUTSIDE ? undefined : strip}
             onKeyboardTaken={() => setHandTo(undefined)}
           />
         )}

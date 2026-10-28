@@ -468,14 +468,17 @@ export function HeldPopover({
  *   inside it: a card's Esc dismisses what it says, and Esc anywhere else is not the card's (a
  *   terminal's Esc is the chat's).
  * - **No timer** takes it down (WCAG 2.2.1).
- * - **What it hangs from scrolling moves it, never takes it down** (#3648's review): React Aria
- *   closes a popover that is not modal when an ancestor of its trigger scrolls, but a strip
- *   scrolling a chip into sight (R104) is no reason to hide that chip's card. The scroll is
- *   followed instead: a nudge of a hundredth of a pixel along its side is what asks React Aria
- *   to place it again.
+ * - **What it hangs from scrolling moves it** (#3648's review): React Aria closes a popover that
+ *   is not modal when an ancestor of its trigger scrolls, but a strip scrolling a chip into sight
+ *   (R104) is no reason to hide that chip's card. The scroll is followed instead: a nudge of a
+ *   hundredth of a pixel along its side is what asks React Aria to place it again. Once what it
+ *   hangs from is out of its `clipRef`'s sight (scrolled, or the window narrowed), it is hidden
+ *   with `onHide`, which dismisses nothing.
+ * - **The keyboard leaving it leaves it up**: Tab or F6 out of it does not take it down.
  */
 export function HungPopover({
   triggerRef,
+  clipRef,
   isOpen,
   onHide,
   side = "bottom",
@@ -484,28 +487,58 @@ export function HungPopover({
   ...surface
 }: Omit<SurfaceProps, "align" | "isNonModal"> & {
   triggerRef: RefObject<Element | null>;
+  /** What clips what it hangs from (a strip that scrolls sideways): once that has scrolled what
+   *  it hangs from out of its sight, the card is hidden, as a press elsewhere hides it. */
+  clipRef?: RefObject<Element | null>;
   isOpen: boolean;
   onHide: () => void;
   children: ReactNode;
 }) {
   useClosedFromOutside({ isOpen, close: onHide, triggerRef, opener: "none", escape: false });
+  const hide = useRef(onHide);
+  useLayoutEffect(() => {
+    hide.current = onHide;
+  });
   const [nudge, setNudge] = useState(0);
   useEffect(() => {
     if (!isOpen) return;
     let asked = 0;
+    /** Placed again where what it hangs from is now, or hidden once that is out of sight. */
+    const follow = () => {
+      cancelAnimationFrame(asked);
+      asked = requestAnimationFrame(() => {
+        const trigger = triggerRef.current;
+        const clip = clipRef?.current;
+        if (trigger !== null && clip !== null && clip !== undefined) {
+          const at = trigger.getBoundingClientRect();
+          const seen = clip.getBoundingClientRect();
+          const inSight =
+            at.right > seen.left &&
+            at.left < seen.right &&
+            at.bottom > seen.top &&
+            at.top < seen.bottom;
+          if (!inSight) {
+            hide.current();
+            return;
+          }
+        }
+        setNudge((was) => (was === 0 ? 0.01 : 0));
+      });
+    };
     const scrolled = (event: Event) => {
       const on = event.target;
       const trigger = triggerRef.current;
       if (!(on instanceof Node) || trigger === null || !on.contains(trigger)) return;
-      cancelAnimationFrame(asked);
-      asked = requestAnimationFrame(() => setNudge((was) => (was === 0 ? 0.01 : 0)));
+      follow();
     };
     window.addEventListener("scroll", scrolled, true);
+    window.addEventListener("resize", follow);
     return () => {
       window.removeEventListener("scroll", scrolled, true);
+      window.removeEventListener("resize", follow);
       cancelAnimationFrame(asked);
     };
-  }, [isOpen, triggerRef]);
+  }, [isOpen, triggerRef, clipRef]);
   return (
     <Surface
       {...surface}
@@ -517,7 +550,10 @@ export function HungPopover({
       kind="notice"
       triggerRef={triggerRef}
       isOpen={isOpen}
-      // React Aria's only close of a popover that is not modal is its scroll's (above): ignored.
+      // React Aria closes a popover that is not modal when an ancestor of its trigger scrolls,
+      // and as the keyboard leaves it for another element (`useOverlay`'s close on blur): both
+      // are ignored. What it hangs from scrolling is followed (above), and Tab or F6 out of it
+      // leaves it up: only a press elsewhere, or that going out of sight, hides it.
       onOpenChange={() => undefined}
     >
       {/* Its point: a box of the surface's own ground and edge, turned and half shown, which a

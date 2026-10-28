@@ -5,8 +5,8 @@
  * **The popover family's wrapper** (#2909): a popover held up by its owner comes and goes as its
  * owner says, every time, and R165's anatomy is one list.
  */
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -70,14 +70,23 @@ describe("a popover laid out as a list (R165)", () => {
 /** A card hung from a chip (#3648): up until a press elsewhere hides it. */
 function Hung() {
   const chip = useRef<HTMLButtonElement>(null);
+  const strip = useRef<HTMLDivElement>(null);
   const [up, setUp] = useState(true);
   return (
     <>
-      <button ref={chip} type="button">
-        gamma
-      </button>
+      <div ref={strip} data-testid="clip">
+        <button ref={chip} type="button">
+          gamma
+        </button>
+      </div>
       <button type="button">elsewhere</button>
-      <HungPopover triggerRef={chip} isOpen={up} onHide={() => setUp(false)} aria-label="gamma">
+      <HungPopover
+        triggerRef={chip}
+        clipRef={strip}
+        isOpen={up}
+        onHide={() => setUp(false)}
+        aria-label="gamma"
+      >
         <div role="region" aria-label="Notices for gamma">
           <button type="button">Add a vision</button>
         </div>
@@ -125,6 +134,48 @@ describe("a popover hung from what it is about (#3648)", () => {
       </div>,
     );
     fireEvent.scroll(screen.getByTestId("strip"));
+    expect(screen.getByRole("region", { name: "Notices for gamma" })).toBeInTheDocument();
+  });
+
+  it("is hidden once what it hangs from has scrolled out of its strip's sight (#3648's review)", async () => {
+    // A box per element: the strip 0–300 across, the chip where the test puts it.
+    let chipAt = 100;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const strip = this.getAttribute("data-testid") === "clip";
+      const left = strip ? 0 : this.textContent === "gamma" ? chipAt : 0;
+      const width = strip ? 300 : 60;
+      return {
+        x: left,
+        y: 0,
+        left,
+        top: 0,
+        right: left + width,
+        bottom: 28,
+        width,
+        height: 28,
+        toJSON: () => ({}),
+      } as DOMRect;
+    });
+    render(<Hung />);
+    // Still in sight: it follows, and stays up.
+    chipAt = 200;
+    fireEvent.scroll(screen.getByTestId("clip"));
+    await act(() => new Promise(requestAnimationFrame));
+    expect(screen.getByRole("region", { name: "Notices for gamma" })).toBeInTheDocument();
+    // Out of sight past the strip's start: down, and nothing is dismissed (its owner hides it).
+    chipAt = -80;
+    fireEvent.scroll(screen.getByTestId("clip"));
+    await act(() => new Promise(requestAnimationFrame));
+    expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it("stays up when the keyboard leaves it, by Tab or F6: only a press elsewhere hides it", () => {
+    render(<Hung />);
+    screen.getByRole("button", { name: "Add a vision" }).focus();
+    screen.getByRole("button", { name: "elsewhere" }).focus();
     expect(screen.getByRole("region", { name: "Notices for gamma" })).toBeInTheDocument();
   });
 

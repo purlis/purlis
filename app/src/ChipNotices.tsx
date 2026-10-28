@@ -92,9 +92,12 @@ export function useChipNotices({
     on: string | undefined;
     seen: Said | undefined;
     in: string | undefined;
-  }>({ open: undefined, on: plane, seen: said, in: plane });
+    /** The card's chip has been drawn since it was wanted. */
+    chipped: boolean;
+  }>({ open: undefined, on: plane, seen: said, in: plane, chipped: false });
   let open = up.open;
   let openIn = up.on;
+  let chipped = up.chipped;
   if (said !== up.seen || plane !== up.in) {
     if (plane === up.in) {
       // A new result in the project in front. By what it is about, not by the chips drawn now:
@@ -103,16 +106,35 @@ export function useChipNotices({
       const about = said === undefined ? undefined : aboutOf(said);
       open = about !== undefined && "workspace" in about ? about.workspace : undefined;
       openIn = plane;
+      chipped = false;
     }
     // Another project in front: what it said while it was behind stays behind its dots.
-    setUp({ open, on: openIn, seen: said, in: plane });
   }
+  // **A card wanted on a chip that has gone is no longer wanted** (#3648's review): once its
+  // chip was drawn and then is not (unpinned, and another workspace in front), its notice is
+  // behind its dot when the chip comes back, never a card coming up unasked.
+  const drawn = open !== undefined && chips.some((one) => one.workspace === open);
+  if (open !== undefined && openIn === plane) {
+    if (drawn) chipped = true;
+    else if (chipped) {
+      open = undefined;
+      chipped = false;
+    }
+  }
+  if (
+    open !== up.open ||
+    openIn !== up.on ||
+    said !== up.seen ||
+    plane !== up.in ||
+    chipped !== up.chipped
+  )
+    setUp({ open, on: openIn, seen: said, in: plane, chipped });
   const shown = openIn === plane ? open : undefined;
   return {
     on,
     // A card with nothing left on it is down.
     open: shown !== undefined && on.has(shown) ? shown : undefined,
-    show: (workspace) => setUp((was) => ({ ...was, open: workspace, on: plane })),
+    show: (workspace) => setUp((was) => ({ ...was, open: workspace, on: plane, chipped: true })),
     hide: () => setUp((was) => ({ ...was, open: undefined })),
     dismiss: drop,
     onSettings,
@@ -143,7 +165,10 @@ export function ChipCard({
   does,
   takesKeyboard = false,
   onKeyboardTaken,
+  clip,
 }: {
+  /** What clips the chip it hangs from (the strip): out of its sight, the card is hidden. */
+  clip?: RefObject<Element | null>;
   /** Brought back by a press of its dot: the keyboard goes into it as it comes, which no notice
    *  coming of itself ever does. */
   takesKeyboard?: boolean;
@@ -178,6 +203,26 @@ export function ChipCard({
     asked = requestAnimationFrame(land);
     return () => cancelAnimationFrame(asked);
   }, [takesKeyboard]);
+  // **The keyboard back on the chip** (#3648's review, WCAG 2.4.3): a card the keyboard was in
+  // that goes (its last notice dismissed) hands it to the chip it hung from, which is still
+  // drawn, unless something else took it as it went. The dot it may have come from is gone.
+  const chip = useRef<Element | null>(null);
+  useLayoutEffect(() => {
+    chip.current = anchor.current;
+  });
+  useLayoutEffect(
+    () => () => {
+      const had = region.current?.contains(document.activeElement) ?? false;
+      const to = chip.current;
+      if (!had || !(to instanceof HTMLElement)) return;
+      queueMicrotask(() => {
+        const at = document.activeElement;
+        if ((at === null || at === document.body) && to.isConnected)
+          to.focus({ preventScroll: true });
+      });
+    },
+    [],
+  );
   const escape = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return;
     event.stopPropagation();
@@ -185,7 +230,7 @@ export function ChipCard({
     for (const one of notices) does.dismiss(one.id);
   };
   return (
-    <HungPopover triggerRef={anchor} isOpen onHide={does.hide} className="chip-card">
+    <HungPopover triggerRef={anchor} clipRef={clip} isOpen onHide={does.hide} className="chip-card">
       <div
         ref={region}
         role="region"

@@ -3,7 +3,7 @@
 
 import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -293,13 +293,13 @@ describe("the ready notice hangs from its chip (#3648)", () => {
  *  hidden, as the window holds it. */
 function Bar({ on, startOpen }: { on: string; startOpen: boolean }) {
   const [open, setOpen] = useState<string | undefined>(startOpen ? on : undefined);
-  const said: Said = {
+  const [said, setSaid] = useState<Said | undefined>({
     from: "x",
     refused: false,
     title: on === OUTSIDE ? "The root moved" : `About ${on}`,
     words: "",
     workspace: on,
-  };
+  });
   return (
     <TitleBarSwitch
       projects={[
@@ -319,11 +319,11 @@ function Bar({ on, startOpen }: { on: string; startOpen: boolean }) {
         create: () => undefined,
       }}
       notices={{
-        on: new Map([[on, [{ id: 1, kind: "info", said }]]]),
-        open,
+        on: new Map(said === undefined ? [] : [[on, [{ id: 1, kind: "info" as const, said }]]]),
+        open: said === undefined ? undefined : open,
         show: setOpen,
         hide: () => setOpen(undefined),
-        dismiss: () => undefined,
+        dismiss: () => setSaid(undefined),
         onSettings: () => undefined,
       }}
     />
@@ -338,6 +338,54 @@ describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
     await userEvent.keyboard("{Enter}");
     const card = await screen.findByRole("region", { name: "Notices for alpha" });
     await waitFor(() => expect(card).toHaveFocus());
+  });
+
+  it("gives the keyboard to the chip once the card it went into is dismissed", async () => {
+    render(<Bar on="alpha" startOpen={false} />);
+    screen.getByRole("button", { name: "Show the notice on alpha" }).focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await screen.findByRole("region", { name: "Notices for alpha" });
+    await waitFor(() => expect(card).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Notices for alpha" })).toBeNull(),
+    );
+    // The dot went with its notice: the chip it hung from has the keyboard, never the page.
+    await waitFor(() => expect(screen.getByRole("button", { name: "alpha" })).toHaveFocus());
+  });
+});
+
+describe("a card whose chip scrolls out of the strip's sight (#3648's review)", () => {
+  it("is hidden, and leaves the dot for when the chip comes back", async () => {
+    let chipAt = 100;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      const strip = this.getAttribute("role") === "toolbar";
+      const chip = this.getAttribute("data-part") === "workspace" && this.textContent === "alpha";
+      const left = strip ? 0 : chip ? chipAt : 0;
+      const width = strip ? 300 : 60;
+      return {
+        x: left,
+        y: 0,
+        left,
+        top: 0,
+        right: left + width,
+        bottom: 28,
+        width,
+        height: 28,
+        toJSON: () => ({}),
+      } as DOMRect;
+    });
+    render(<Bar on="alpha" startOpen />);
+    await screen.findByRole("region", { name: "Notices for alpha" });
+    chipAt = -120;
+    fireEvent.scroll(screen.getByRole("toolbar", { name: "Pinned workspaces" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Notices for alpha" })).toBeNull(),
+    );
+    expect(screen.getByRole("button", { name: "Show the notice on alpha" })).toBeInTheDocument();
+    vi.restoreAllMocks();
   });
 });
 

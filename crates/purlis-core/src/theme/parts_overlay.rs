@@ -109,7 +109,8 @@ pub(super) const POPOVER: Family = Family {
     // (`popover.css`), read on that cap (#3099).
     words: &[("footer", "text.quiet"), ("key", "text.secondary")],
     corner_most: None,
-    // The notice card's point is beside the surface's root, not inside it (`HungPopover`).
+    // The notice card's point (`HungPopover`) is drawn inside the surface's root, but it is the
+    // same in every variant and state: listed here, it takes no variant or state keys.
     around: &["point"],
     fills: &[("key", "surface.raised")],
     under: &[],
