@@ -31,8 +31,9 @@
 //   7. reads main once more, then enqueues through GraphQL `enqueuePullRequest` with the head it
 //      checked as `expectedHeadOid`, so a push since is refused by GitHub;
 //   8. prints the queue position, and with `--watch` waits until the pull request merges, or
-//      says it left the queue unmerged, with GitHub's reason and the failing checks of its queue
-//      run, from their annotations.
+//      says it left the queue unmerged, with GitHub's reason and the failing checks of the queue
+//      run this enqueue started, from their annotations. A merge conflict built no run: it says
+//      so, and prints no checks.
 //
 // The queue tests each entry on top of main and the entries ahead of it, and merges on green, so
 // this never updates the branch, never merges by hand, and never deletes a branch. It never
@@ -154,6 +155,11 @@ export function unposted(checks, runs) {
   return missing.map((check) => check.name);
 }
 
+/** Whether GitHub's `reason` for a drop is a merge conflict, which builds no queue run. */
+export function conflicted(reason) {
+  return /merge[\s_-]*conflict/i.test(reason ?? "");
+}
+
 /** One line per check, for a refusal. */
 const named = (checks) =>
   checks.map((check) => `  ${check.name}: ${check.state}${check.link ? ` ${check.link}` : ""}`);
@@ -170,11 +176,15 @@ export function dropReason(events, since) {
 
 /**
  * The runs of a merge-group commit to read when pull request `number` left the queue unmerged,
- * of `runs` (the repository's `merge_group` runs): those of the newest group it was tested in.
+ * of `runs` (the repository's `merge_group` runs): those of the newest group it was tested in
+ * since `since` (when this enqueue was made). A group from an earlier time in the queue is not
+ * why it left this time.
  */
-export function queueRuns(runs, number) {
-  const mine = runs.filter((run) =>
-    (run.head_branch ?? "").startsWith(`gh-readonly-queue/main/pr-${number}-`),
+export function queueRuns(runs, number, since = "") {
+  const mine = runs.filter(
+    (run) =>
+      (run.head_branch ?? "").startsWith(`gh-readonly-queue/main/pr-${number}-`) &&
+      (run.created_at ?? "") >= since,
   );
   const newest = [...mine].sort((a, b) => b.id - a.id)[0];
   return newest ? mine.filter((run) => run.head_sha === newest.head_sha) : [];
@@ -457,6 +467,14 @@ function main(options) {
   /** Says why the pull request left the queue unmerged, from the annotations of its queue run. */
   function dropped(reason) {
     const lines = [`#${options.pr} left the merge queue unmerged${reason ? `: ${reason}` : ""}`];
+    // A conflict is found before any group is built, so no queue run says anything about it, and
+    // an older group's failures would only mislead.
+    if (conflicted(reason)) {
+      lines.push(
+        "  it conflicts with main, or with an entry ahead of it: bring main into its branch, resolve the conflict, have the new head reviewed, and land again",
+      );
+      stop(lines.join("\n"), 3);
+    }
     // The newest 50 merge-group runs of the whole repository: with at most five groups building
     // and a few workflows each, that holds the group this pull request just left, read within a
     // poll of it leaving. Keep it at 50 or more.
@@ -472,7 +490,7 @@ function main(options) {
       "--jq",
       ".workflow_runs",
     ]);
-    for (const run of queueRuns(runs ?? [], options.pr)) {
+    for (const run of queueRuns(runs ?? [], options.pr, entry.enqueuedAt ?? "")) {
       const jobs = gh([
         "api",
         "-X",
