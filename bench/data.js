@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793145670899,
+  "lastUpdate": 1793147573576,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27468,6 +27468,48 @@ window.BENCHMARK_DATA = {
             "value": 103.917417,
             "unit": "ms",
             "extra": "median of 5 runs: 103.056, 103.176, 103.917, 103.972, 105.044 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7e843000e6ca80b1ccac41148d928c7635ac2343",
+          "message": "Old harness plugin keys: Remove also covers a workspace's settings.harness_plugins (#3486) (#3568)\n\n* #3486: Remove also proposes taking settings.harness_plugins out of a workspace's manifest\n\nThe old-keys ask's Remove now holds a proposed change for each workspace\nmanifest that holds settings.harness_plugins, worked out as a form's save\nwould write it (settings::workspace::saved_without). On Apply it is written\nby the manifest's own writer (save_text) under its lock, pinned to the\nmanifest as read, so a manifest purlis wrote keeps its stamp.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3486: rustfmt\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3486: review fixes: a file Remove cannot make is skipped, the writer's reason is said\n\nremoval_held leaves out a file it cannot make rather than failing the whole\nRemove. Apply tells the person the manifest writer's own sentence when it\nrefuses. manifest_of uses Plane::workspace_of. The ask's doc names\nworkspace manifests.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-27T23:44:31Z",
+          "tree_id": "57d802ee2087a96ddfbf0758784fa7904b4fc814",
+          "url": "https://github.com/purlis/purlis/commit/7e843000e6ca80b1ccac41148d928c7635ac2343"
+        },
+        "date": 1793147569158,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.2722915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.251, 0.264, 0.272, 0.274, 0.288 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.62043,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.497, 16.576, 16.620, 16.637, 16.646 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.776951,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.862, 101.570, 101.777, 102.052, 102.263 ms"
           }
         ]
       }
