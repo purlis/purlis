@@ -4821,6 +4821,105 @@ fn a_runners_run_logs_none_of_its_values() {
     assert!(!logged.contains("team"), "nor the vault: {logged}");
 }
 
+/// Every line of chat `chat`'s trace in `project`.
+fn traced(project: &Path, chat: &str) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(crate::trace::file(project, chat))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("a trace line"))
+        .collect()
+}
+
+#[test]
+fn a_runners_record_of_a_run_says_its_values_came_from_its_desktop() {
+    let project = a_runners_project();
+    let mut want = wanted(project.path(), "team", sh("true"));
+    want.file = vec!["KUBECONFIG=KUBECONFIG".into()];
+
+    served_handed(
+        &asker(project.path(), Some("devops")),
+        want,
+        kubeconfig_handed(),
+    );
+
+    let ran = traced(project.path(), "7");
+    let ran = ran
+        .iter()
+        .find(|line| line["event"] == "secret-exec")
+        .expect("the run is recorded");
+    assert_eq!(ran["mode"], "brokered");
+    assert_eq!(ran["from"], "desktop", "{ran}");
+    assert_eq!(
+        ran["request"],
+        request_of("a-run"),
+        "the request the desktop's record answers"
+    );
+    assert!(!ran.to_string().contains("k8s-s3cret"), "{ran}");
+}
+
+#[test]
+fn a_value_sent_to_a_runner_is_recorded_on_the_desktop_by_its_keys_and_never_its_value() {
+    let desktop = tempfile::tempdir().unwrap();
+    let handed = Handed::of(
+        7,
+        "kubectl",
+        "a-run",
+        [
+            ("KUBECONFIG".to_owned(), KUBECONFIG.to_owned()),
+            ("TOKEN".to_owned(), "t0ken-s3cret".to_owned()),
+        ],
+    );
+
+    let forwarded = Forwarded::of(&handed);
+    drop(handed);
+    forwarded.record(
+        desktop.path(),
+        &Sent {
+            persona: "devops",
+            vault: "team",
+            pool: "builds",
+            runner: "01JB0RUNNER0000000000000000",
+        },
+    );
+
+    let lines = traced(desktop.path(), "7");
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let sent = &lines[0];
+    assert_eq!(sent["event"], "secret.forwarded");
+    assert_eq!(sent["vault"], "team");
+    assert_eq!(
+        sent["key_names"],
+        serde_json::json!(["KUBECONFIG", "TOKEN"])
+    );
+    assert_eq!(sent["runner"], "01JB0RUNNER0000000000000000");
+    assert_eq!(sent["pool"], "builds");
+    assert_eq!(sent["chat"], 7);
+    assert_eq!(sent["persona"], "devops");
+    assert_eq!(sent["tool"], "kubectl");
+    assert_eq!(sent["request"], request_of("a-run"));
+    let said = sent.to_string();
+    assert!(
+        !said.contains("k8s-s3cret") && !said.contains("t0ken-s3cret"),
+        "{said}"
+    );
+    assert!(
+        !said.contains("a-run"),
+        "the run's own number is never written: {said}"
+    );
+    assert!(
+        crate::secrets::cmd::HANDED_OUT.contains(&FORWARDED),
+        "kept by the sweep until it is audited"
+    );
+}
+
+#[test]
+fn a_request_is_named_by_a_digest_of_its_run_that_tells_runs_apart() {
+    assert_eq!(request_of("a-run"), request_of("a-run"));
+    assert_ne!(request_of("a-run"), request_of("another-run"));
+    // The first 8 bytes of SHA-256 of "a-run", in hex.
+    assert_eq!(request_of("a-run"), "484d9350f0337a01");
+}
+
 #[test]
 fn the_values_sent_for_a_run_say_their_keys_alone() {
     let handed = kubeconfig_handed();

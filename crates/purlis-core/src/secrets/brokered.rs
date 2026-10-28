@@ -1807,6 +1807,89 @@ pub fn a_run_number() -> Option<String> {
     Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+/// **The event a desktop records each run's values it sent to a runner under** (#3406, ADR 0078
+/// §10, its registry row in ADR 0075 as amended there): on the desktop's own record, where the
+/// runner records the run itself as `secret-exec`.
+pub const FORWARDED: &str = "secret.forwarded";
+
+/// **What the desktop's record of values it sent names beside the run's own** ([`Forwarded`]).
+pub struct Sent<'a> {
+    /// The persona whose tool it is.
+    pub persona: &'a str,
+    /// The vault the values were read from.
+    pub vault: &'a str,
+    /// The pool whose runner they went to.
+    pub pool: &'a str,
+    /// That runner's device id.
+    pub runner: &'a str,
+}
+
+/// **The request a run's values answer, as both chains name it** (#3406): the first 8 bytes of
+/// the SHA-256 of the run's number, in hex. The desktop's [`FORWARDED`] and the runner's
+/// `secret-exec` say the same, so each is found from the other; the number itself is never
+/// written.
+pub fn request_of(run: &str) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(run.as_bytes())
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// **What the desktop records of values it sends a runner for one run** (#3406), taken from
+/// them before they go: the chat, the tool, the keys and the request ([`request_of`]); never a
+/// value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Forwarded {
+    chat: u32,
+    tool: String,
+    keys: Vec<String>,
+    request: String,
+}
+
+impl Forwarded {
+    /// What `handed` is recorded by.
+    pub fn of(handed: &Handed) -> Forwarded {
+        let mut keys: Vec<String> = handed.keys().map(str::to_owned).collect();
+        keys.sort();
+        keys.dedup();
+        Forwarded {
+            chat: handed.chat,
+            tool: handed.tool.clone(),
+            keys,
+            request: request_of(&handed.run),
+        }
+    }
+
+    /// **Records on this desktop that the values were sent** (#3406): [`FORWARDED`] under the
+    /// chat's own session in project `root`, naming the vault, the keys, the runner's device id,
+    /// its pool, the chat, its persona, the tool and the request. Kept by the 30-day sweep, as
+    /// every hand-out is, until it is audited (V71).
+    pub fn record(&self, root: &Path, sent: &Sent<'_>) {
+        let chat = self.chat.to_string();
+        let ctx = Ctx::new(root, Env::of(&[(crate::active::SESSION_ID_ENV, &chat)]));
+        cmd::trace_secret_use(
+            &ctx,
+            "secret.forwarded",
+            &[],
+            &[
+                ("vault", Value::String(sent.vault.to_owned())),
+                (
+                    "key_names",
+                    Value::Array(self.keys.iter().cloned().map(Value::String).collect()),
+                ),
+                ("runner", Value::String(sent.runner.to_owned())),
+                ("pool", Value::String(sent.pool.to_owned())),
+                ("chat", Value::from(self.chat)),
+                ("persona", Value::String(sent.persona.to_owned())),
+                ("tool", Value::String(self.tool.clone())),
+                ("request", Value::String(self.request.clone())),
+            ],
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn serve_recorded(
     asker: &Asker,
@@ -2257,6 +2340,16 @@ pub(crate) fn serve_recorded(
             (
                 "persona",
                 Value::String(asker.persona.clone().unwrap_or_default()),
+            ),
+            // Values its desktop sent (#3406): said so, with the request its desktop's
+            // `secret.forwarded` names.
+            (
+                "from",
+                handed.map_or(Value::Null, |_| Value::String("desktop".to_owned())),
+            ),
+            (
+                "request",
+                handed.map_or(Value::Null, |handed| Value::String(request_of(&handed.run))),
             ),
         ],
     );

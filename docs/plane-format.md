@@ -102,8 +102,9 @@ its own plane:
 - a `.charter/sessions/<sid>.<ending>` marker last written 30 days or more before
   (`retention::KEEP_FOR`) — every ending but `.tools` and `.gate`, which go sooner (below);
 - a `.charter/persona-state/trace/<session>.jsonl` trace last appended to 30 days or more
-  before, **unless it records a secret handed out** (`secret-exec`, `secret-reveal`,
-  `secret-cp`, `identity-move`: `secrets::cmd::HANDED_OUT`). Such a trace is kept until AU-5
+  before, **unless it records a secret handed out** (`secret-exec`, `secret.forwarded`,
+  `secret-reveal`, `secret-cp`, `identity-move`, `profile-sign-in`:
+  `secrets::cmd::HANDED_OUT`). Such a trace is kept until AU-5
   writes those events into the audit chain, and after that it follows the 30-day rule (V71);
 - a `.charter/reports/<id>.json` draft the Python charter left, last written 30 days or more
   before.

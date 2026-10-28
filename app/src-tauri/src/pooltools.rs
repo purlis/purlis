@@ -43,7 +43,7 @@ use std::time::{Duration, Instant};
 use purlis_core::hookwire::relay::{A_HANDED_LINE_WAITS_AT_MOST, waits_at_most_said};
 use purlis_core::poollogins::Bound;
 use purlis_core::sandbox::tools::{self, Tool};
-use purlis_core::secrets::brokered::{self, Frame, Handed};
+use purlis_core::secrets::brokered::{self, Forwarded, Frame, Handed, Sent};
 use purlis_core::secrets::{Ctx, Env, Zeroizing};
 
 /// How often a command that waits on the person looks at its asker.
@@ -333,6 +333,14 @@ pub struct Waiting<'a> {
     pub now: u64,
 }
 
+/// **What the person allowed for one run**: its values, and what passed the gate, which this
+/// desktop's record of the values it sent names ([`sent`]).
+#[derive(Debug)]
+pub struct Approved {
+    pub handed: Handed,
+    pub checked: Checked,
+}
+
 /// **Asks the person about one run that passed the gate, and waits for the answer** (module
 /// docs): its values on Allow, read once the pool, as `gate` reads it again, is still as the Ask
 /// showed it; or what the asker is told. The asker is told on `writer` while the person is asked.
@@ -341,7 +349,7 @@ pub fn answered(
     checked: Checked,
     waiting: &Waiting<'_>,
     writer: &mut dyn Write,
-) -> Result<Handed, String> {
+) -> Result<Approved, String> {
     let ask = gate.ask;
     let (answered, run) = waiting.tools.ask(PoolToolWaits {
         session: ask.chat,
@@ -398,12 +406,36 @@ pub fn answered(
         return Err(changed_said(&checked.tool.name, gate.pool));
     }
     let values = (waiting.read)(&checked.tool)?;
-    Ok(Handed::of(
-        ask.chat,
-        &checked.tool.name,
-        &checked.run,
-        values,
-    ))
+    Ok(Approved {
+        handed: Handed::of(ask.chat, &checked.tool.name, &checked.run, values),
+        checked,
+    })
+}
+
+/// **Sends the values the person allowed through `hand`, and records on this desktop, in
+/// project `root`, that they were sent** (#3406, ADR 0078 §10): `secret.forwarded`, naming the
+/// vault, the keys, the runner's device id, the pool, the chat, its persona, the tool and the
+/// request, and never a value. Written once `hand` has sent them, so a run sent nothing is never
+/// recorded as sent. The values given back by a `hand` that sent nothing, where it gives any,
+/// are wiped as they go.
+pub fn sent(
+    root: &Path,
+    approved: Approved,
+    hand: impl FnOnce(Handed) -> Result<(), Handed>,
+) -> Result<(), ()> {
+    let Approved { handed, checked } = approved;
+    let forwarded = Forwarded::of(&handed);
+    hand(handed).map_err(drop)?;
+    forwarded.record(
+        root,
+        &Sent {
+            persona: &checked.persona,
+            vault: &checked.tool.vault,
+            pool: &checked.bound.pool,
+            runner: &checked.bound.runner,
+        },
+    );
+    Ok(())
 }
 
 /// **Runner chat `ask.chat`'s `secret exec`, heard over pool `pool`'s link, in project `held`**
@@ -459,7 +491,7 @@ pub fn run_on_its_runner(
         )
     });
     match decided {
-        Ok(handed) => match purlis_core::hookwire::relay::hand_values(handed) {
+        Ok(approved) => match sent(root, approved, purlis_core::hookwire::relay::hand_values) {
             Ok(()) => tracing::info!(
                 "purlis: chat {session} on pool {pool} ran {} with its values sent from this \
                  desktop",
