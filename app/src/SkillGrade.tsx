@@ -220,7 +220,11 @@ export function SkillGrade({
             ended: null,
             said: null,
           });
-        } else setSaid({ tone: "trouble", text: answer.error });
+        } else {
+          setSaid({ tone: "trouble", text: answer.error });
+          // A plan that changed since it was shown is shown again, to be read and pressed anew.
+          read(picked, pickedModel);
+        }
       });
   };
 
