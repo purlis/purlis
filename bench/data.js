@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793181144504,
+  "lastUpdate": 1793184223591,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28098,6 +28098,48 @@ window.BENCHMARK_DATA = {
             "value": 104.453823,
             "unit": "ms",
             "extra": "median of 5 runs: 103.578, 103.714, 104.454, 105.063, 105.704 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5e1053031f296375ff87c75a587fdf1fde958f2e",
+          "message": "Skills: grade against the previous version, and after each edit as an opt-in (#3237, #3238) (#3606)\n\n* Skills: a grade compares with the skill's previous version (#3237)\n\nSK-57. A skill with history is graded in three arms: with the skill, without\nit, and with its previous version, which is the baseline the difference is\nagainst. The previous version is the newest whose folder held another tree,\nlaid out from git's tree of that commit (no link followed, no evals/, text\nfiles only), never from a folder a chat can write. The plan names the version\nand its consent covers it; the record keeps `previous`; the Grades panel,\nthe scorecard and `purlis skill grade` show the arm and both differences.\n\nThe grade start is split into `begin` so a saved edit can start one too\n(SK-58, next commit), and the record gains `after_edit` for it. The\ngenerated bindings land with the next commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: grade after each edit, as an opt-in per skill (#3238)\n\nSK-58. Off for every skill until the person turns it on from a grade's plan,\non this machine: the plan's chats, cap and dollar limit are kept as what they\naccepted (<state>/skill-grade-after-edit.json, device-bound, window-only\ncommands). Only the editor's save counts as an edit. Ten quiet seconds after\nthe last save, the skill is graded on the accepted profile and model, held to\nthe same cap and dollar limit as a pressed grade, and only while the grade\nruns no more chats and may spend no more than was accepted; otherwise nothing\nstarts and it waits for the person. A copy already graded is not graded\nagain, a second save stops the grade an edit started, and nothing runs on a\ntimer.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: review fixes for the previous arm and grading after each edit\n\nFrom the two-axis review of #3237 and #3238:\n- an after-edit grade is keyed by its copy (level and name), so a save of\n  another level's copy of the same name stops nothing of this one;\n- the burst thread loops: a save while its grade was read and started stops\n  that grade and grades again, and a grade another start took the project\n  from under is waited for rather than reported as not run;\n- the opt-in file's read-modify-write holds a lock, so turning it off is never\n  undone by a grade keeping what it graded;\n- the opt-in pins the trigger tests and the version compared with, so a\n  fixture or a commit a chat could make waits for the person, and a kept\n  limit past any grade's is refused;\n- Graded::compared_with shared by the panel, the scorecard and the CLI; the\n  leftover block in begin flattened; changelog fragments.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* docs: the after-edit store's tier is Clone state, as the tier check reads it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T10:11:06Z",
+          "tree_id": "ccb878f0ba4539635b3d84d1424823a3e6dd0832",
+          "url": "https://github.com/purlis/purlis/commit/5e1053031f296375ff87c75a587fdf1fde958f2e"
+        },
+        "date": 1793184218808,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5248035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.520, 0.521, 0.525, 0.529, 0.533 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.06778,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.560, 16.681, 17.068, 17.136, 17.314 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.978873,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.136, 103.845, 103.979, 104.033, 105.148 ms"
           }
         ]
       }
