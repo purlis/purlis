@@ -345,7 +345,7 @@ const WALK_ONLY_CODE = {
   "app/src/community.test.ts": "root files and .github/, which run everything",
   "app/src/copy.rust.test.ts": "crates/purlis-core/src and app/src-tauri/src",
   "app/src/theme/themeIds.test.ts": "app/src and app/e2e (both run web)",
-  "crates/purlis-cli/tests/every_command_charter_names_is_one_it_has.rs":
+  "crates/purlis-cli/tests/it/every_command_charter_names_is_one_it_has.rs":
     "crates/*/src, app/src-tauri/src and the plugin's skills",
   "crates/purlis-core/src/doctor/shadowed/tests.rs": "a plane's docs/; purlis's own is exempt",
   "crates/purlis-core/tests/every_deferral_names_its_ticket.rs": "crates/, app/src-tauri, app/src",

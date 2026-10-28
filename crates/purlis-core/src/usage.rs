@@ -21,7 +21,7 @@
 //! `.claude/settings.json`" — does not remove a duplicate. **It deletes the record, silently,
 //! and nothing notices until somebody goes looking for a history that stopped being written
 //! months earlier.** This module is that record, and
-//! `crates/purlis-cli/tests/statusline.rs` holds the test that goes red if the drawing path
+//! `crates/purlis-cli/tests/it/statusline.rs` holds the test that goes red if the drawing path
 //! stops writing it.
 //!
 //! # The file is a session's, and a session id arrives on stdin
