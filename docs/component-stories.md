@@ -82,8 +82,10 @@ Story Format 3. `app/src/settings/Choice.stories.tsx` is the first, and the one 
   answers to, Esc where it dismisses something, and Tab or Shift+Tab out again. Wait for what a
   key causes with `waitFor` rather than assuming it is synchronous. Wait for the keyboard to land
   with `untilFocused(() => element, "where in the story")` from `app/src/stories.testkit.ts`,
-  never `waitFor(() => expect(element).toHaveFocus())`: storybook's 1 s gives up before an
-  engine that draws late moves the focus, and the lint (`purlis-stories/focus-wait`,
+  or anywhere in a surface (a popover's card, a submenu) with `untilFocusWithin`, never
+  `waitFor(() => expect(element).toHaveFocus())` nor a `waitFor` around
+  `document.activeElement` or `:focus-within`: storybook's 1 s gives up before an engine that
+  draws late moves the focus, and the lint (`purlis-stories/focus-wait`,
   `app/eslint.story-rules.js`) refuses it.
 - After each move, `expectFocusInSight()` from `app/src/stories.testkit.ts` checks that the focus
   is on screen and not under anything the page draws over it, such as a dialog's sticky footer
