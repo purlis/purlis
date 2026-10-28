@@ -923,3 +923,40 @@ fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582()
     unlike.spent.tokens = Some(9_001);
     assert!(!unlike.sound(now), "a spend its report does not say");
 }
+
+/// #3584: the estimate shares what a grade spent over every chat that spent it: a chat ended at
+/// its ask spends as one that ran, so it is counted among the chats the plan names, and the
+/// figure per chat is not raised by it.
+#[test]
+fn the_estimate_shares_the_spend_over_the_chats_that_asked_too_3584() {
+    let mut row = uncommitted_row();
+    // One chat ran its turn and two were ended at their asks: all three spent.
+    row.report.triggers[0].runs = 1;
+    row.report.triggers[0].triggered = 1;
+    row.report.triggers[0].rate = Some(1.0);
+    row.report.triggers[0].asked = 2;
+    row.report.arms[0].chats = 1;
+    row.report.arms[0].not_run = 2;
+    row.report.spent_tokens = Some(3_000);
+    row.report.spent_usd = Some(0.03);
+    row.spent = Spent {
+        chats: 1,
+        tokens: Some(3_000),
+        cost_usd: Some(0.03),
+    };
+    assert!(row.sound(chrono::Utc::now()), "{row:?}");
+    let estimate = estimate_of(&[row], 12, Some("work")).unwrap();
+    assert_eq!(
+        estimate.chats_then, 3,
+        "every chat it asked for, the asked ones too"
+    );
+    assert_eq!(
+        estimate.tokens,
+        Some(12_000),
+        "a thousand a chat, not three"
+    );
+    assert!(
+        (estimate.cost_usd.unwrap() - 0.12).abs() < 1e-9,
+        "{estimate:?}"
+    );
+}
