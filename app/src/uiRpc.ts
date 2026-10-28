@@ -1030,6 +1030,20 @@ export const commands = {
 	 */
 	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
 	skillGradeSetCap: __WINDOW_ONLY_RESULT,
+	/**  **The opt-in of the copy of `skill` at `level`**, where it is on. */
+	skillGradeAfterEdit: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<{
+	profile: string,
+	/**  The model picked, or `None` for the profile's own. */
+	model: string | null,
+	/**  The most chats each grade runs, and the cap and dollar limit each is held to. */
+	chats: number,
+	token_cap: number | null,
+	limit_usd: number | null,
+	/**  Why a saved edit does not grade it now: what a grade would run is past what was accepted. */
+	waits: string | null,
+} | null, string>(__TAURI_INVOKE("skill_grade_after_edit", { plane, level, skill })),
+	skillGradeAfterEditOn: __WINDOW_ONLY_RESULT,
+	skillGradeAfterEditOff: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
 	skillSourcesOffered: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
@@ -2077,6 +2091,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
 export const SKILL_GRADE = "skill-grade" as const;
+
+export const SKILL_GRADE_AFTER_EDIT = "skill-grade-after-edit" as const;
 
 export const SKILL_RUNS_PANEL = "runs" as const;
 
@@ -5324,6 +5340,12 @@ export type GradeLeftOut = {
 	why: string,
 };
 
+/**  **The version a grade compares with, as its plan says it** (SK-57). */
+export type GradePrevious = {
+	commit: string,
+	subject: string,
+};
+
 /**  **The price a grade's dollar limit is worked out at** (`grades::price`), as the plan says it. */
 export type GradePrice = {
 	/**  Dollars a million tokens. */
@@ -5359,8 +5381,19 @@ export type GradeScorecard = {
 	version: string,
 	ran_on: string,
 	ended: string,
-	/**  The difference the skill made, in points, where both arms ran. */
+	/**
+	 *  The difference the skill made, in points, where both arms ran: against its previous
+	 *  version where the grade compared one (SK-57), else against no skill.
+	 */
 	delta: number | null,
+	/**
+	 *  **The version it compared with** (SK-57, #3237), its commit shortened, where it compared
+	 *  one; and the difference against no skill then, in points, where both arms ran.
+	 */
+	against: string | null,
+	delta_without: number | null,
+	/**  Whether a saved edit started it (SK-58, #3238), rather than a press of Grade. */
+	after_edit: boolean,
 	/**  How many of its chats asked the person something and were ended there. */
 	asked: number,
 	tests: ScoredTest[],
@@ -9899,6 +9932,29 @@ export type SkillGrade = {
 	fixtures: number,
 };
 
+/**
+ *  **A skill's opt-in, as its tab says it**: what the person accepted, and why it waits where it
+ *  does.
+ */
+export type SkillGradeAfterEdit = {
+	profile: string,
+	/**  The model picked, or `None` for the profile's own. */
+	model: string | null,
+	/**  The most chats each grade runs, and the cap and dollar limit each is held to. */
+	chats: number,
+	token_cap: number | null,
+	limit_usd: number | null,
+	/**  Why a saved edit does not grade it now: what a grade would run is past what was accepted. */
+	waits: string | null,
+};
+
+/**  **What a saved edit did not grade, and why**, as [`EVENT`] tells the window. */
+export type SkillGradeAfterEditStep = {
+	plane: PlaneId,
+	skill: string,
+	said: string,
+};
+
 /**  **What grading a copy would run, before anything runs** (decision 22). */
 export type SkillGradePlan = {
 	/**  The trigger tests it runs, in the file's order. */
@@ -9947,6 +10003,12 @@ export type SkillGradePlan = {
 	 *  is refused.
 	 */
 	consent: string | null,
+	/**
+	 *  **The version it compares with too** (SK-57, #3237), where the skill has one: its commit
+	 *  shortened and its subject; and why one is not compared, where it did not read.
+	 */
+	previous: GradePrevious | null,
+	previous_refused: string | null,
 };
 
 /**

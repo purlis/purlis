@@ -1183,6 +1183,7 @@ fn not_on_this_harness() -> String {
     )
 }
 
+pub mod after_edit;
 pub mod cap;
 pub mod kept;
 pub mod price;

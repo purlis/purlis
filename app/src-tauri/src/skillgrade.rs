@@ -1309,5 +1309,7 @@ fn gathered(pieces: &std::sync::mpsc::Receiver<String>, begun: Instant) -> Optio
     heard.then_some(shown)
 }
 
+pub(crate) mod after_edit;
+
 #[cfg(test)]
 mod tests;

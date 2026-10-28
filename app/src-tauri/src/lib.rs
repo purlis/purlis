@@ -2943,6 +2943,9 @@ fn commands() -> Builder<tauri::Wry> {
         // What `skill-grade` carries, and the event's name (SK-16, #2779).
         .typ::<skillgrade::SkillGradeStep>()
         .constant("SKILL_GRADE", skillgrade::EVENT)
+        // What `skill-grade-after-edit` carries, and its name (SK-58, #3238).
+        .typ::<skillgrade::after_edit::SkillGradeAfterEditStep>()
+        .constant("SKILL_GRADE_AFTER_EDIT", skillgrade::after_edit::EVENT)
         .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
