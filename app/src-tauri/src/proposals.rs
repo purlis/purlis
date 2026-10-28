@@ -106,6 +106,16 @@ impl Proposals {
         Some(id)
     }
 
+    /// The files of every proposal of `session`'s that waits, read under the lock alone.
+    pub fn paths_of(&self, session: u32) -> Vec<String> {
+        self.lock()
+            .1
+            .iter()
+            .filter(|one| one.session == session)
+            .map(|one| one.path.clone())
+            .collect()
+    }
+
     /// The project's Apply lock ([`apply_in`]).
     pub fn applying(&self) -> &Mutex<()> {
         &self.applying

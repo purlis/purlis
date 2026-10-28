@@ -2032,8 +2032,11 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
             .into_iter()
             .filter(|ask| !chats.kept_from_the_window(ask.session))
             .chain(
-                crate::oldplugins::notice_of(root, &held.proposals().every())
-                    .map(|old| old_harness_plugins(&old)),
+                crate::oldplugins::notice_of(
+                    root,
+                    &held.proposals().paths_of(crate::proposals::BY_PURLIS),
+                )
+                .map(|old| old_harness_plugins(&old)),
             )
             .collect(),
     }

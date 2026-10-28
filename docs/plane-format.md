@@ -5996,12 +5996,15 @@ down rather than read off the code.
   `withdraw`).
 
 ### `app/old-harness-plugins-answered`
-- **Format:** an empty file. Present means the person answered the Inbox's Ask about the old
-  `[harness_plugins]` keys for this project (#3467): its Dismiss, or an Apply or a Dismiss of a
-  change its Remove held that still applied. Remove alone writes nothing here: while purlis's own
-  change to one of the files waits, the Ask stays out of the Inbox. A change that went stale, or
-  can no longer be made, is no answer: dismissing it removes this file while that file still
-  holds the keys, so the Ask comes back with Remove (#3569).
+- **Format:** UTF-8 text. Empty means the person answered the Inbox's whole Ask about the old
+  `[harness_plugins]` keys for this project with its Dismiss (#3467), and is what every answer
+  kept before #3569 looks like. Otherwise one line per file, relative to the project
+  (`charter.toml`, `workspaces/ops/workspace.json`), whose change from the Ask's Remove the person
+  applied, or dismissed while it still applied. Remove alone writes nothing here: a file with a
+  change of purlis's waiting is not asked about meanwhile. A change that went stale, or can no
+  longer be made, is no answer: dismissing it takes its file's line out, so the Ask comes back
+  with Remove for that file while it still holds the keys, whatever the other files' changes do
+  (#3569). Unreadable reads as the whole Ask answered.
 - **Status:** **internal** — written and read by purlis alone; no chat can write it (the sandbox denies every chat a write under `<state>/app`).
 - **Tier:** Clone state — deleting it brings the Ask back once more, while a file holds the keys.
 - **Code:** `app/src-tauri/src/oldplugins.rs` (`answered_at`, `notice_of`,
