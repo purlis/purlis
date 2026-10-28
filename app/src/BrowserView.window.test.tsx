@@ -90,11 +90,11 @@ function core(
   return {
     asked: (cmd: string) => asked.filter((one) => one.cmd === cmd).map(({ args }) => args),
     send: (jpeg: string, aim = "p1:1") =>
-      frames?.onmessage({ aim, jpeg, reconnection: null, page: null }),
+      frames?.onmessage({ aim, jpeg, reconnection: null, page: null, closed: null }),
     reconnection: (reconnection: "reconnecting" | "reconnected") =>
-      frames?.onmessage({ aim: "", jpeg: "", reconnection, page: null }),
+      frames?.onmessage({ aim: "", jpeg: "", reconnection, page: null, closed: null }),
     page: (origin: string | null) =>
-      frames?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin } }),
+      frames?.onmessage({ aim: "", jpeg: "", reconnection: null, page: { origin }, closed: null }),
     order: () => asked.map(({ cmd }) => cmd),
   };
 }

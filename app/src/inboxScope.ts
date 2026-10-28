@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useSyncExternalStore } from "react";
-import { keepFacet, keptFacet, onProjectViews } from "./projectViews";
+import { keepFacet, keptFacet, onProjectViews, type Facet } from "./projectViews";
 
 /**
  * **Which asks the Inbox lists** (qw359): every project's this window knows of, this project's
@@ -36,7 +36,25 @@ const isScope = (held: unknown): held is InboxScope =>
  * read with own properties only, and a value that is not a scope is the default.
  */
 export function keptInboxScope(plane: string | undefined): InboxScope {
-  const held = keptFacet(plane, "inbox");
+  return keptScopeOf(plane, "inbox");
+}
+
+/** Keeps `scope` as the one the person picked for `plane`. The default is kept as nothing. */
+export function keepInboxScope(plane: string | undefined, scope: InboxScope): void {
+  keepScopeOf(plane, "inbox", scope);
+}
+
+/** {@link keptInboxScope}, for a component that redraws when it is picked again. */
+export function useInboxScope(plane: string | undefined): InboxScope {
+  return useSyncExternalStore(onProjectViews, () => keptInboxScope(plane));
+}
+
+/**
+ * **The scope kept as `facet`'s `scope` for `plane`**, or the project's: the Inbox's and the
+ * Browsers grid's (#2027) are the one switch, each kept under its own facet.
+ */
+export function keptScopeOf(plane: string | undefined, facet: Facet): InboxScope {
+  const held = keptFacet(plane, facet);
   if (held === null || typeof held !== "object" || Array.isArray(held)) return DEFAULT_INBOX_SCOPE;
   const scope = Object.prototype.hasOwnProperty.call(held, "scope")
     ? (held as Record<string, unknown>).scope
@@ -44,14 +62,9 @@ export function keptInboxScope(plane: string | undefined): InboxScope {
   return isScope(scope) ? scope : DEFAULT_INBOX_SCOPE;
 }
 
-/** Keeps `scope` as the one the person picked for `plane`. The default is kept as nothing. */
-export function keepInboxScope(plane: string | undefined, scope: InboxScope): void {
-  keepFacet(plane, "inbox", scope === DEFAULT_INBOX_SCOPE ? undefined : { scope });
-}
-
-/** {@link keptInboxScope}, for a component that redraws when it is picked again. */
-export function useInboxScope(plane: string | undefined): InboxScope {
-  return useSyncExternalStore(onProjectViews, () => keptInboxScope(plane));
+/** Keeps `scope` as `facet`'s `scope` for `plane`. The default is kept as nothing. */
+export function keepScopeOf(plane: string | undefined, facet: Facet, scope: InboxScope): void {
+  keepFacet(plane, facet, scope === DEFAULT_INBOX_SCOPE ? undefined : { scope });
 }
 
 /** How many asks each scope lists; a scope that is not offered has no count. */

@@ -65,6 +65,7 @@ import type {
 } from "../bindings";
 import type { ViewRef } from "../tabs";
 import { complaints } from "./complaints.testkit";
+import { forgetProjectsBrowsers, tellProjectBrowsers } from "../browsersGrid";
 import { BUILT_IN, DEFAULT_THEME, drawIn } from "./theme";
 import { forgetGroups } from "../settings/links";
 import { forgetDevicesForTests } from "../devices";
@@ -1318,6 +1319,50 @@ const STATES: State[] = [
     view: { from: null, view: "browser", key: "01J9ZQ8000000000000000000D" },
     answers: { watch_browser: new Error("this session host holds no program 01J9ZQ8") },
     drawn: /holds no program/,
+  },
+  {
+    name: "a browser's DevTools, open",
+    view: { from: null, view: "devtools", key: "01J9ZQ8000000000000000000D" },
+    answers: {
+      watch_inspector: { view: 5, width: 1000, height: 700, person_drives: true, pool: null },
+    },
+    drawn: /DevTools of this browser's page/,
+  },
+  {
+    name: "a browser's DevTools, closed",
+    view: { from: null, view: "devtools", key: "01J9ZQ8000000000000000000D" },
+    answers: { watch_inspector: new Error("no DevTools are open for this browser") },
+    drawn: /DevTools are closed/,
+  },
+  {
+    name: "the Browsers grid, with a browser",
+    view: { from: null, view: "browsers", key: "" },
+    answers: { watch_browser: { view: 1, width: 1280, height: 800, person_drives: false } },
+    before: () =>
+      tellProjectBrowsers({
+        plane: PLANE,
+        project: "plane",
+        tiles: [
+          {
+            plane: PLANE,
+            program: "01J9ZQ8000000000000000000E",
+            own: false,
+            name: "b1",
+            chat: "steward 1",
+            workspace: WORKSPACE,
+            driver: "person",
+            pool: null,
+          },
+        ],
+        open: () => undefined,
+      }),
+    drawn: /Browser b1 of steward 1/,
+  },
+  {
+    name: "the Browsers grid, empty",
+    view: { from: null, view: "browsers", key: "" },
+    before: () => forgetProjectsBrowsers(),
+    drawn: /No browser runs in this project/,
   },
   {
     name: "a workspace's changes, a landing refused",

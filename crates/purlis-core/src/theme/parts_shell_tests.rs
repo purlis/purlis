@@ -465,6 +465,51 @@ fn the_title_bar_chip_s_defaults_are_what_titlebar_css_draws() {
     assert_eq!(text, token(declared(unpinned_lit, "color").unwrap()));
 }
 
+#[test]
+fn the_plane_root_s_chip_is_the_workspace_chip_s_root_variant_since_next() {
+    // A theme keys it as a chip (`titlebar.workspace.root.*`, #3654), new in the next release.
+    let manifest = parts::manifest_json();
+    let titlebar = manifest["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "titlebar")
+        .unwrap();
+    let root = titlebar["variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "root")
+        .expect("the root chip is a variant of the title bar's chip");
+    assert_eq!(root["since"], parts::NEXT);
+    assert_eq!(root["consent"], false);
+    // Drawn as a pin is (titlebar.css): quiet at rest, the card's fill under the pointer, the
+    // accent's wash while the plane root is in front, and never looking merely hovered then.
+    let css = css_of(include_str!("../../../../app/src/ui/titlebar/titlebar.css"));
+    let chip = "[data-part=\"workspace\"][data-scope=\"titlebar\"]";
+    for states in [
+        &[][..],
+        &[parts::State::Hover][..],
+        &[parts::State::Selected][..],
+        &[parts::State::Hover, parts::State::Selected][..],
+    ] {
+        assert_eq!(
+            parts::look_of("titlebar", "root", states),
+            parts::look_of("titlebar", "pinned", states),
+            "{states:?}"
+        );
+    }
+    let own = rule(&css, &format!("{chip}[data-variant=\"root\"]"));
+    assert!(declared(own, "background-color").is_none());
+    assert!(declared(own, "color").is_none());
+    // A theme's key for it is read and drawn on the root chip alone.
+    let sheet = sheet_of(json!({ "titlebar.workspace.root.selected.fill": "accent.surface" }));
+    assert!(
+        sheet.contains("[data-variant=\"root\"][data-selected]"),
+        "{sheet}"
+    );
+}
+
 // ---------------------------------------------------------------------------------------
 // The window's geometry (#2805)
 // ---------------------------------------------------------------------------------------

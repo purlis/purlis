@@ -527,3 +527,131 @@ describe("choosing a project lands on the workspace it was last on (R81)", () =>
     expect(chips()).toEqual(["alpha", "gamma*"]);
   });
 });
+
+describe("the plane root's chip (#3654, spec #3647)", () => {
+  /** The root's chip: the house after the project's name, outside the strip. */
+  const root = () => within(bar()).getByRole("button", { name: "Plane root" });
+
+  it("stands right after the project's name, outside the strip, and brings the root in front", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    const chip = root();
+    // Outside the scrolling strip, so it never scrolls away.
+    expect(pins().contains(chip)).toBe(false);
+    // After the project's name and the slash, before the strip.
+    const project = within(bar()).getByTestId("title-project");
+    expect(project.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(chip.compareDocumentPosition(pins()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(chip).not.toHaveAttribute("aria-current");
+    await userEvent.click(chip);
+    // The root in front: no workspace's chip is current, and the root's takes the chosen look.
+    await waitFor(() => expect(chips()).toEqual(["alpha", "gamma"]));
+    expect(root()).toHaveAttribute("aria-current", "true");
+    expect(root()).toHaveAttribute("data-selected");
+    // Back to a pin, and the root's chip lets the chosen look go.
+    await userEvent.click(within(pins()).getByRole("button", { name: "gamma" }));
+    await waitFor(() => expect(chips()).toEqual(["alpha", "gamma*"]));
+    expect(root()).not.toHaveAttribute("aria-current");
+  });
+
+  it("is reached from the keyboard, a Tab stop of its own", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    const chip = root();
+    expect(chip.tagName).toBe("BUTTON");
+    expect(chip).toHaveAttribute("tabindex", "0");
+    chip.focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(root()).toHaveAttribute("aria-current", "true"));
+  });
+
+  it("can't be unpinned from itself or its menu", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    // The chip draws only its house: no ×, no + and no pin of its own.
+    expect(root().querySelector('[data-part="plus"]')).toBeNull();
+    expect(within(root()).queryByRole("button")).toBeNull();
+    // Its context menu is the root's, with no pin row.
+    fireEvent.contextMenu(root());
+    const menu = await screen.findByRole("menu");
+    // The control: the root's own rows are there.
+    expect(within(menu).getByRole("menuitem", { name: "New chat" })).toBeInTheDocument();
+    expect(within(menu).queryByRole("menuitem", { name: /pin/i })).toBeNull();
+    await userEvent.keyboard("{Escape}");
+  });
+
+  /** The pin toggles a switcher draws, by name: one per workspace row, none for the root's. */
+  const toggles = (filter: HTMLElement) =>
+    within(filter.closest<HTMLElement>('[data-scope="popover"][data-part="root"]') as HTMLElement)
+      .queryAllByRole("button")
+      .filter((one) => one.hasAttribute("aria-pressed"))
+      .map((one) => one.getAttribute("aria-label"))
+      .sort();
+  const EVERY_TOGGLE = ["Pin beta to the title bar", "Unpin alpha", "Unpin gamma"];
+
+  it("has no pin toggle in the workspace popover, where every workspace has one", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    await userEvent.click(within(pins()).getByRole("button", { name: "All workspaces" }));
+    const filter = await screen.findByRole("combobox", { name: "Go to a workspace in one…" });
+    expect(rows("Workspaces in one")[0]).toBe("Plane root");
+    // A toggle for each workspace and none for the root, under any name it could take.
+    expect(toggles(filter)).toEqual(EVERY_TOGGLE);
+  });
+
+  it("has no pin toggle in the two-column switcher either, with the rail hidden", async () => {
+    RAIL_MODE.keep("auto");
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    // The house is drawn with the rail hidden too.
+    expect(root()).toBeInTheDocument();
+    await userEvent.click(within(bar()).getByTestId("title-project"));
+    const filter = await screen.findByRole("combobox", { name: "Go to a project or workspace…" });
+    expect(rows("Workspaces in one")[0]).toBe("Plane root");
+    expect(toggles(filter)).toEqual(EVERY_TOGGLE);
+  });
+
+  it("is offered no pin by the command palette, which offers each workspace's", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    await userEvent.keyboard("{F2}");
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.keyboard("pin workspace");
+    const offered = () =>
+      within(palette)
+        .queryAllByRole("option")
+        .map((one) => one.textContent ?? "");
+    // The control: the workspaces' pins are listed, so the palette is the one with the rows.
+    await waitFor(() => {
+      expect(offered().some((one) => /Unpin workspace alpha/.test(one))).toBe(true);
+      expect(offered().some((one) => /Pin workspace beta/.test(one))).toBe(true);
+    });
+    expect(offered().filter((one) => /outside\/every\/workspace|plane root/i.test(one))).toEqual(
+      [],
+    );
+  });
+
+  it("takes the keyboard back when a switch to the root leaves nothing it came from", async () => {
+    core();
+    opened();
+    await waitFor(() => expect(chips()).toEqual(["alpha*", "gamma"]));
+    // In beta, unpinned: its dashed chip is where the keyboard is.
+    await userEvent.click(within(pins()).getByRole("button", { name: "All workspaces" }));
+    await screen.findByRole("combobox", { name: "Go to a workspace in one…" });
+    await userEvent.keyboard("beta{Enter}");
+    await waitFor(() => expect(chips()).toEqual(["alpha", "gamma", "beta*+"]));
+    within(pins()).getByRole("button", { name: /beta/ }).focus();
+    // To the root from the popover: the dashed chip goes, so the keyboard lands on the house.
+    switcherKey();
+    await screen.findByRole("combobox", { name: "Go to a workspace in one…" });
+    await userEvent.keyboard("plane root{Enter}");
+    await waitFor(() => expect(root()).toHaveAttribute("aria-current", "true"));
+    await waitFor(() => expect(root()).toHaveFocus());
+  });
+});

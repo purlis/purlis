@@ -1151,3 +1151,21 @@ fn a_download_that_failed_says_what_to_do() {
     assert!(said.contains("was not kept"), "{said}");
     assert!(said.contains("open the browser again"), "{said}");
 }
+
+#[test]
+fn why_devtools_closed_is_said_in_a_word_their_view_reads() {
+    use purlis_browser_engine::drive::InspectEnded;
+    for why in [
+        InspectEnded::Closed,
+        InspectEnded::PageGone,
+        InspectEnded::FellBehind,
+        InspectEnded::TooLarge,
+        InspectEnded::Moved,
+        InspectEnded::Ended,
+    ] {
+        assert!(
+            purlis_session_protocol::view::frames::CLOSED_WHY.contains(&super::closed_word(why)),
+            "{why:?}"
+        );
+    }
+}
