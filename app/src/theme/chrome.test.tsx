@@ -663,6 +663,7 @@ const DIALOGS: Opened[] = [
               warns: "both",
             },
             repos: [],
+            routing: null,
           }}
           trouble="the chat is in the middle of a turn"
           busy={false}

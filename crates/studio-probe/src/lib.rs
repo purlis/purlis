@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The studio probe**: an extension that adds a skill source, a lint, a template and a panel
-//! to the Skill studio (ADR 0101), and one command, `try`, that attempts one thing from inside
+//! **The studio probe**: an extension that adds a skill source, a lint, a template, a panel and
+//! a skill router to the Skill studio (ADR 0101, ADR 0102), and one command, `try`, that attempts one thing from inside
 //! its sandbox and prints what happened, so a test reads what the confinement let it do.
 //!
 //! Test-only, and written as a stranger would write an extension: it knows the protocol and
@@ -118,8 +118,39 @@ fn studio(ask: &serde_json::Value) -> serde_json::Value {
                 },
             ],
         }),
+        "route" => routed(ask),
         other => serde_json::json!({ "error": format!("the probe has no answer to {other:?}") }),
     }
+}
+
+/// The skill whose name makes the probe's router take longer than any router has.
+pub const SLOW: &str = "probe-slow";
+
+/// The start of the names the probe's router hides.
+pub const HIDES: &str = "probe-hide";
+
+/// **A router's answer**: every skill it was asked about whose name starts with [`HIDES`], each
+/// "hidden by the probe"; after two seconds where one is named [`SLOW`].
+fn routed(ask: &serde_json::Value) -> serde_json::Value {
+    let names: Vec<&str> = ask
+        .get("skills")
+        .and_then(serde_json::Value::as_array)
+        .map(|skills| {
+            skills
+                .iter()
+                .filter_map(|one| one.get("name").and_then(serde_json::Value::as_str))
+                .collect()
+        })
+        .unwrap_or_default();
+    if names.contains(&SLOW) {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+    let hidden: Vec<serde_json::Value> = names
+        .iter()
+        .filter(|name| name.starts_with(HIDES))
+        .map(|name| serde_json::json!({ "skill": name, "why": "hidden by the probe" }))
+        .collect();
+    serde_json::json!({ "hidden": hidden })
 }
 
 /// **One thing tried from inside the sandbox**, and what happened, as one line: `ok` and what it

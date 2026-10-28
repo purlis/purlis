@@ -92,6 +92,7 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             clashes: Vec::new(),
             first: StudioFirst::default(),
             pins_refused: None,
+            router: None,
         }
     );
 }
@@ -551,4 +552,47 @@ fn a_row_says_which_of_the_studios_workspace_and_persona_pin_it_sk15d() {
             .pins_refused
             .is_none()
     );
+}
+
+#[test]
+fn the_studio_says_which_router_its_chats_are_routed_by() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    std::fs::create_dir_all(root.join("workspaces/alpha")).unwrap();
+    let router = |workspace: Option<&str>| {
+        studio(root, None, true, workspace, None, &no_harness())
+            .router
+            .expect("a router while the studio is on")
+    };
+
+    let built_in = router(Some("alpha"));
+    assert_eq!(
+        built_in.said,
+        "Chats here are routed by the built-in router."
+    );
+    assert_eq!(built_in.extension, None);
+    assert!(!built_in.problem);
+
+    std::fs::write(
+        root.join("workspaces/alpha/workspace.json"),
+        r#"{"settings": {"skills": {"router": "relevance"}}}"#,
+    )
+    .unwrap();
+    let chosen = router(Some("alpha"));
+    assert_eq!(chosen.extension.as_deref(), Some("relevance"));
+    assert!(
+        chosen.said.contains("the router relevance"),
+        "{}",
+        chosen.said
+    );
+
+    std::fs::write(
+        root.join("workspaces/alpha/workspace.json"),
+        r#"{"settings": {"skills": {"router": "no such/router"}}}"#,
+    )
+    .unwrap();
+    let wrong = router(Some("alpha"));
+    assert!(wrong.problem);
+    assert!(wrong.said.contains("built-in router"), "{}", wrong.said);
 }

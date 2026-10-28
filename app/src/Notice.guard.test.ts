@@ -468,14 +468,17 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "it moved to: what the last press answered, not a standing line",
   },
   "UseSkill.tsx": {
-    count: 3,
+    count: 4,
     why:
       ACTION +
       ", drawn once under the picker or the arguments form, one shown at a time (#2775). And the " +
       "dialog's warning that the chat's set is past its skill budget, read as it opens: about " +
       "the chat the dialog is for, gone with the dialog. And its line that the chat's workspace " +
       "and persona pin past the most it reads together, with a way to each one's studio (#3391): " +
-      "about the same chat, read as the dialog opens and gone with it",
+      "about the same chat, read as the dialog opens and gone with it. And its line that the " +
+      "chat's router fell back on the built-in router at its start (SK-15b): what that start " +
+      "did, read as the dialog opens and gone with it, with nothing to press: the next chat " +
+      "started there asks the router again",
   },
   "VaultSignIn.tsx": {
     count: 5,
