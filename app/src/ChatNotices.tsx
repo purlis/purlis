@@ -18,6 +18,7 @@ import { McpFailedNotice } from "./McpFailedNotice";
 import { SkillsMissingNotice } from "./SkillsMissingNotice";
 import { DraftReadyNotice } from "./DraftReadyNotice";
 import { HostLostNotice } from "./HostLostNotice";
+import { MoveNotice } from "./MoveNotice";
 import { TaskQuietNotice } from "./TaskQuietNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
@@ -439,6 +440,8 @@ export function ChatNotices({
       {/* A skill its persona names that it started without (#2768). */}
       <SkillsMissingNotice plane={plane} session={session} />
       <HostLostNotice plane={plane} session={session} onRestart={onRestart} />
+      {/* Its move to or from a pool's runner (#2048). */}
+      <MoveNotice plane={plane} session={session} />
       <TaskQuietNotice plane={plane} session={session} />
       {off > 0 && onShowInbox !== undefined && (
         <Notice

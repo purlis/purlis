@@ -284,9 +284,26 @@ use crate::view::{Limits, Views};
 /// version, and nothing of the desktop's folder), and answers `profile_kept` with whether its
 /// harness says it is signed in there. A host before 1.43 refuses it `unknown_command`, and its
 /// pool's chats run on the profiles the runner has of its own.
+///
+/// 1.44 added a chat moving between the desktop and a runner (#2048, spec #2041): `take_code`
+/// with `moving` takes a repository's work tree over onto the branch and work the client sends,
+/// where it is still what the two ends last agreed, and `give_code` with `with_work` sends the
+/// work tree's uncommitted work back as its branch's snapshot; `take_conversation` and
+/// `give_conversation` carry the chat's conversation into and out of the harness folder of the
+/// profile it runs on there, on a code stream, answered `conversation` with where the
+/// harness's declaration keeps it. The window's alone, relayed for it. A host before 1.44 reads
+/// no `moving` or `with_work` and refuses the conversation commands `unknown_command`, so the
+/// window moves no chat to or from one.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 43,
+    minor: 44,
+};
+
+/// The version that first moves a chat's work tree and conversation (#2048): the window moves
+/// no chat to or from a host before it.
+pub const MOVES_CHATS: Version = Version {
+    major: 1,
+    minor: 44,
 };
 
 /// The version that first pushes a host's own event log to a link that asks with a cursor for its
@@ -718,6 +735,13 @@ pub enum Command {
     /// branch's snapshot's uncommitted work in it where `refs` carries one: what the runner's
     /// chats then work in. A repository with something checked out is left as it is, and a
     /// branch one of its work trees has checked out is the runner's own and is never moved.
+    ///
+    /// `moving` (1.44, #2048) moves a chat's work tree with the chat: `refs` are exactly the
+    /// branch `checkout` names and its snapshot, and the repository's work tree is taken over
+    /// onto them, checked out or not, where it is still what the two ends last agreed (it was
+    /// left as a move left it, or has nothing uncommitted and no commit `checkout` lacks).
+    /// Refused [`NOT_ALLOWED`] otherwise, with nothing of the repository changed. A host before
+    /// 1.44 does not read it, so the window moves no chat to one.
     TakeCode {
         project: String,
         #[serde(default)]
@@ -726,12 +750,18 @@ pub enum Command {
         refs: Vec<CodeRef>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         checkout: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        moving: bool,
     },
     /// The host writes a git bundle of `repo`'s branches back to the client (1.34, #2046): on a
     /// code stream named `transfer`, leaving out every commit `have` reaches, and shuts it once
     /// written, an empty stream where there is nothing the client lacks. Answered
     /// [`Answer::Code`] with the branches the bundle is of. The window's alone
     /// ([`crate::grants::Power::Code`]), relayed for it.
+    ///
+    /// `with_work` (1.44, #2048) also carries the repository's work tree as a chat moving off the
+    /// host leaves it: a snapshot of its uncommitted work on the branch it is on, as
+    /// `refs/purlis/snapshots/<branch>`, which the two ends agree on from then on.
     GiveCode {
         project: String,
         #[serde(default)]
@@ -739,6 +769,37 @@ pub enum Command {
         transfer: u64,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         have: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        with_work: bool,
+    },
+    /// The client writes a chat's conversation into the host's harness folder (1.44, #2048), as
+    /// the chat moves there: on a code stream named `transfer`, as `take_code` reads a bundle,
+    /// at most [`crate::code::MOST_BUNDLE_BYTES`]. `conversation` is the harness's session id,
+    /// and `file` where the harness's declaration keeps it, every `*` part as found and
+    /// `{cwd_key}` as written: the host holds it to its own declaration of the harness that
+    /// `profile` runs, and keeps it in that profile's folder there, `{cwd_key}` made from
+    /// `workspace`'s folder in the held project. Answered [`Answer::Done`]; refused
+    /// [`NOT_ALLOWED`] for a file that is not where the declaration keeps one. The window's
+    /// alone ([`crate::grants::Power::Code`]), relayed for it.
+    TakeConversation {
+        project: String,
+        transfer: u64,
+        workspace: String,
+        profile: String,
+        conversation: String,
+        file: String,
+    },
+    /// The host writes a chat's conversation back to the client (1.44, #2048), as the chat
+    /// moves off it: found in the harness folder of `profile` there, as its declaration keeps
+    /// it, on a code stream named `transfer`. Answered [`Answer::Conversation`] with where the
+    /// declaration keeps it, as `take_conversation` names it. The window's alone
+    /// ([`crate::grants::Power::Code`]), relayed for it.
+    GiveConversation {
+        project: String,
+        transfer: u64,
+        workspace: String,
+        profile: String,
+        conversation: String,
     },
     /// The person cancels the engine's download for browser `program`'s start (1.37, #2207):
     /// the download stops, nothing of it is kept, and the start is refused in words that say
@@ -1228,6 +1289,9 @@ pub enum Answer {
     /// The refs a transfer of code left (1.34): [`Command::TakeCode`] and
     /// [`Command::GiveCode`].
     Code { heads: Vec<CodeRef> },
+    /// Where a conversation is kept, as its harness's declaration says it (1.44):
+    /// [`Command::GiveConversation`].
+    Conversation { file: String },
     /// Whether the profile a runner keeps is signed in there, as its harness says:
     /// [`Command::KeepProfile`] (1.43).
     ProfileKept { standing: ProfileStanding },
@@ -1582,6 +1646,8 @@ wire_words!(Command {
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
+    TakeConversation => "take_conversation",
+    GiveConversation => "give_conversation",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
     LogEnd => "log_end",
@@ -1634,7 +1700,10 @@ impl Command {
             Command::Unpair => Power::Unpair,
             Command::KeepProfile(_) => Power::KeepProfile,
             Command::RelayTo { .. } => Power::RelayTo,
-            Command::TakeCode { .. } | Command::GiveCode { .. } => Power::Code,
+            Command::TakeCode { .. }
+            | Command::GiveCode { .. }
+            | Command::TakeConversation { .. }
+            | Command::GiveConversation { .. } => Power::Code,
             Command::LogEnd => Power::EventLog,
         }
     }
@@ -1701,6 +1770,7 @@ wire_words!(Answer {
     Driving => "driving",
     TakenBack => "taken_back",
     Code => "code",
+    Conversation => "conversation",
     ProfileKept => "profile_kept",
     Subscribed => "subscribed",
     LogEnd => "log_end",
@@ -2136,6 +2206,8 @@ impl Lane {
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
+            | Command::TakeConversation { .. }
+            | Command::GiveConversation { .. }
             // Never behind the start it cancels, which waits on the download.
             | Command::CancelEngineDownload { .. } => None,
             Command::Attach { chat: program }
@@ -2792,8 +2864,97 @@ impl Client {
             transfer,
             refs,
             checkout,
+            moving: false,
         })
         .await
+    }
+
+    /// [`Client::take_code`], taking the repository's work tree over onto `checkout` and its
+    /// snapshot as a chat moves to the host (1.44, #2048).
+    pub async fn take_work(
+        &self,
+        project: &str,
+        repo: &str,
+        transfer: u64,
+        refs: Vec<CodeRef>,
+        checkout: String,
+    ) -> Result<Vec<CodeRef>, CallError> {
+        self.code(Command::TakeCode {
+            project: project.to_owned(),
+            repo: repo.to_owned(),
+            transfer,
+            refs,
+            checkout: Some(checkout),
+            moving: true,
+        })
+        .await
+    }
+
+    /// [`Client::give_code`], with the work tree's uncommitted work as its branch's snapshot, as
+    /// a chat moves off the host (1.44, #2048).
+    pub async fn give_work(
+        &self,
+        project: &str,
+        repo: &str,
+        transfer: u64,
+        have: Vec<String>,
+    ) -> Result<Vec<CodeRef>, CallError> {
+        self.code(Command::GiveCode {
+            project: project.to_owned(),
+            repo: repo.to_owned(),
+            transfer,
+            have,
+            with_work: true,
+        })
+        .await
+    }
+
+    /// Have the host keep chat's conversation `conversation`, written on the code stream it
+    /// opens for `transfer`, as `file` in the harness folder of `profile` there, for a chat in
+    /// `workspace` of `project` (1.44, #2048).
+    pub async fn take_conversation(
+        &self,
+        project: &str,
+        transfer: u64,
+        workspace: &str,
+        profile: &str,
+        conversation: &str,
+        file: &str,
+    ) -> Result<(), CallError> {
+        self.done(Command::TakeConversation {
+            project: project.to_owned(),
+            transfer,
+            workspace: workspace.to_owned(),
+            profile: profile.to_owned(),
+            conversation: conversation.to_owned(),
+            file: file.to_owned(),
+        })
+        .await
+    }
+
+    /// Have the host write chat's conversation `conversation` of `profile` on the code stream
+    /// it opens for `transfer` (1.44, #2048). Answers where the harness keeps it.
+    pub async fn give_conversation(
+        &self,
+        project: &str,
+        transfer: u64,
+        workspace: &str,
+        profile: &str,
+        conversation: &str,
+    ) -> Result<String, CallError> {
+        match self
+            .call(Command::GiveConversation {
+                project: project.to_owned(),
+                transfer,
+                workspace: workspace.to_owned(),
+                profile: profile.to_owned(),
+                conversation: conversation.to_owned(),
+            })
+            .await?
+        {
+            Answer::Conversation { file } => Ok(file),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// Have the host write a bundle of `repo`'s branches in `project` on the code stream it
@@ -2811,6 +2972,7 @@ impl Client {
             repo: repo.to_owned(),
             transfer,
             have,
+            with_work: false,
         })
         .await
     }

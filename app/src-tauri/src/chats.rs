@@ -1385,6 +1385,16 @@ impl Chats {
         self.profiles_on_pools = Some(on_pools);
     }
 
+    /// **Keeps `profile` on pool `pool`'s runner, signed in there** (#2049), as a start there
+    /// does first: what a chat moving there asks before its conversation goes (#2048). `Ok`
+    /// where this machine keeps no pool to ready it on.
+    pub fn ready_profile_on(&self, pool: &str, profile: &str) -> Result<(), String> {
+        match &self.profiles_on_pools {
+            Some(on_pools) => on_pools.ready_to_move(&self.project, pool, profile),
+            None => Ok(()),
+        }
+    }
+
     /// This machine's config home, where the pools it keeps are, where it keeps any (#2050).
     pub fn pools_in(&self) -> Option<PathBuf> {
         self.pools_in.clone()
@@ -2726,6 +2736,36 @@ impl Chats {
                 Err(why)
             }
         }
+    }
+
+    /// **Starts chat `session` again on its conversation, where its workspace's chats run
+    /// now** (#2048): what a move ends with, once the chat's work and conversation are there.
+    /// The old run stays until the new one has started, as [`Self::restart`]'s does; ending it
+    /// is the caller's next step. A person's opt-out is never carried: it starts sandboxed.
+    pub fn start_again_where_it_runs(&self, session: u32, size: Size) -> Result<u32, String> {
+        self.claim(session)?;
+        let started = self.again_on_its_conversation(session).and_then(|again| {
+            if again.resume.is_none() {
+                return Err(no_conversation(session));
+            }
+            self.start_recorded_told(&again, size, Why::Relaunch, None, None)
+        });
+        match started {
+            Ok(started) => self.restarted(session, started, true),
+            Err(why) => {
+                self.unclaim(session);
+                Err(why)
+            }
+        }
+    }
+
+    /// **Says `note` on chat `session`'s tab** with what its start found to say (#2048): what a
+    /// move found that the person is to look at.
+    pub fn note_on_its_tab(&self, session: u32, note: String) {
+        lock(&self.late_notes)
+            .entry(session)
+            .or_default()
+            .push(note);
     }
 
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.

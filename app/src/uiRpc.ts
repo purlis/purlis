@@ -665,6 +665,15 @@ export const commands = {
 	chats: OnOlderSandbox[],
 } | null, string>(__TAURI_INVOKE("chats_on_older_sandbox", { plane })),
 	restartChatWithoutSandbox: __WINDOW_ONLY_RESULT,
+	moveChat: __WINDOW_ONLY_RESULT,
+	moveChatNow: __WINDOW_ONLY_RESULT,
+	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
+	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
+	/**
+	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten, and a failed
+	 *  one's reason is dismissed.
+	 */
+	putAwayChatMove: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_move", { plane, session })),
 	/**
 	 *  What "Ask <persona>…" offers on this project's chats: its finished personas, or why it
 	 *  offers none, and the asks policy takes off one chat's tab.
@@ -3355,6 +3364,20 @@ export type ChatDoing = {
 export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
+};
+
+/**
+ *  **A chat's move as the window draws it** (#2048): what `chat-move` tells, and each row of
+ *  `chat_moves`.
+ */
+export type ChatMove = {
+	session: number,
+	/**  The pool it moves to, or `null` for this machine. */
+	to: string | null,
+	/**  `preparing`, `ready` or `failed`. */
+	stage: string,
+	/**  Why it failed, in a sentence: where it is `failed`. */
+	why: string | null,
 };
 
 /**  **A chat's Network view** (#1662): what it can reach now and what it was refused. */
@@ -6240,6 +6263,22 @@ export type MouseAct = "moved" | "pressed" | "released" | "wheel";
 /**  A mouse button (#2014). */
 export type MouseButton = "none" | "left" | "middle" | "right";
 
+/**  What the window is told of a move it asked for to switch now. */
+export type MoveNow = {
+	/**  The chat moved, as the window draws it in its place; `null` where it did not move now. */
+	chat: OpenChat | null,
+	/**  Why it did not move yet, in a sentence: it moves at a later pause. */
+	not_yet: string | null,
+	/**  What its tab says after the move: what came back that the person is to look at. */
+	notices: string[],
+};
+
+/**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
+export type MoveTold = {
+	plane: PlaneId,
+	moving: ChatMove,
+};
+
 /**
  *  The event the window listens for. One chat, its state, whether it is asking for you.
  * 
@@ -6673,6 +6712,11 @@ export type OpenChat = {
 	untaken?: string | null,
 	/**  The harness profile it started on, where it started on one. */
 	profile: string | null,
+	/**
+	 *  The pool whose runner it runs on (#2048), or `null` for this machine: its tab offers
+	 *  Move here, and a chat here Move to runner.
+	 */
+	pool?: string | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -7725,6 +7769,11 @@ export type PoolVersion = {
 export type PoolsShown = {
 	pools: PoolRow[],
 	defaults: PoolLimitsShown,
+	/**
+	 *  Whether this machine's pools' runners are shown to be the person's own (D-2050-4): their
+	 *  engine is a local socket on this machine. A chat moves only to such a pool (#2048).
+	 */
+	yours?: boolean | null,
 };
 
 /**
