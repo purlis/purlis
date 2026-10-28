@@ -25,9 +25,14 @@ fn a_projects_app_state_is_its_clone_key_under_the_data_homes_app_state() {
     let root = tmp.path();
     let dir = dir(root).expect("a fenced build always has one");
     let key = crate::plane::CloneKey::of(root);
-    // A fenced build's, in the test's own tree, beside the state folder and never in it.
-    assert_eq!(dir, root.join(FENCED_DATA).join(DIR).join(key.as_str()));
-    assert!(!dir.starts_with(crate::names::state(root)));
+    // A fenced build's, in the test's own project, beside the stores and never one of them.
+    assert_eq!(
+        dir,
+        crate::names::state(root)
+            .join(FENCED_DATA)
+            .join(DIR)
+            .join(key.as_str())
+    );
     assert_eq!(made(root).unwrap(), dir);
     #[cfg(unix)]
     {

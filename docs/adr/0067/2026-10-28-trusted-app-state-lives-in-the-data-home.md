@@ -13,7 +13,7 @@
    pull request each.
 2. **No data home, no store.** Where the machine has no data home the stores are unavailable and
    their callers refuse or say so; none falls back to the plane. A fenced build whose environment
-   names no data home inside its fence keeps the folder in the project's own tree.
+   names no data home inside its fence keeps the folder in the project's own state folder.
 3. **The integrity class holds it.** A chat's sandbox denies writing `<data>/app-state` and
    everything below it, and reads it: a Try it's chat reads its laid-out skill there. Purlis's own Seatbelt
    wrap also holds `<data>/app-state` and `<data>` itself as entries, so neither is renamed, moved

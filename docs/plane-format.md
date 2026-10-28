@@ -7808,7 +7808,7 @@ refuses a `<data>` under a project or inside any git work tree.
   with none of it. Where the machine has no data home, or one in a project or a git work tree, the
   stores are unavailable and say so, none falls back to the plane, and a sandboxed chat is not
   started, since no record of its start could be kept. A fenced (test) build whose environment names
-  no data home inside its fence keeps the folder in the project's own tree, in
+  no data home inside its fence keeps the folder in the project's own state folder, in
   `.fenced-app-state/`, which no shipped build makes.
 - **Status:** **internal**.
 - **Tier:** Machine, device-bound — this machine's own record of the project.

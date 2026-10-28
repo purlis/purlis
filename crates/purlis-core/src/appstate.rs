@@ -14,7 +14,7 @@
 //! - **No data home, no store.** Where this machine has no data home, [`dir`] answers `None`, and
 //!   each store's callers refuse or say so: none falls back to the plane.
 //! - **A fenced build** (every test build, [`crate::fence::FENCED`]) whose environment names no
-//!   data home inside its fence keeps the folder in the project's own tree instead
+//!   data home inside its fence keeps the folder in the project's own state folder instead
 //!   ([`FENCED_DATA`]), so a test never reaches the person's data home, no test passes a folder
 //!   in, and a test's temporary project takes its app state away with it.
 //! - **Bound to its project** ([`OWNER`], [`PLANE_ID`]): a new project made at a path an older one
@@ -31,8 +31,10 @@ use std::path::{Path, PathBuf};
 /// The folder of the data home the projects' app state is in, one folder each.
 pub const DIR: &str = "app-state";
 
-/// The folder of a project's own tree a fenced build keeps its data home in, where its environment
-/// names none inside its fence. Never in a shipped build.
+/// The folder of a project's own state folder a fenced build keeps its data home in, where its
+/// environment names none inside its fence: inside the test's own project, which git ignores with
+/// the rest of the state folder, and beside the stores an older purlis kept there, never one of
+/// them. Never in a shipped build.
 pub const FENCED_DATA: &str = ".fenced-app-state";
 
 /// What a store answers where this machine has no usable data home.
@@ -53,7 +55,7 @@ fn data_home(root: &Path) -> Option<PathBuf> {
             {
                 usable(&data).then_some(data)
             }
-            _ => Some(root.join(FENCED_DATA)),
+            _ => Some(crate::names::state(root).join(FENCED_DATA)),
         };
     }
     let data = crate::datahome::root()?;
