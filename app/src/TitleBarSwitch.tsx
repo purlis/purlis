@@ -323,7 +323,11 @@ export function TitleBarSwitch({
       <Fragment key="root">
         {withMenu(
           OUTSIDE,
-          <RootChip current={focused === OUTSIDE} onPress={() => goTo(OUTSIDE)} />,
+          <RootChip
+            name={OUTSIDE_TITLE}
+            current={focused === OUTSIDE}
+            onPress={() => goTo(OUTSIDE)}
+          />,
         )}
       </Fragment>
       {/* Drawn once its plane is read: which workspaces it has is the plane's answer. */}

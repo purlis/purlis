@@ -140,15 +140,18 @@ export function WorkspaceChip({
  * **The plane root's chip** (#3654, spec #3647): a house right after the project's name and
  * outside the strip, so it never scrolls away, the `root` variant of the workspace's chip. It is
  * always drawn and has no pin to let go. It takes the chosen look while the plane root is in
- * front, as a chip does while its workspace is; its name is the root's, "Plane root", as the
+ * front, as a chip does while its workspace is; its name is the root's (`name`), as the
  * workspace popover's row and the palette say it.
  */
 export function RootChip({
+  name,
   current,
   onPress,
   ref,
   ...handed
 }: Omit<Native, "onClick" | "aria-label"> & {
+  /** What the root is called: its name and its tooltip, the words the palette gives it. */
+  name: string;
   /** The plane root is in front. */
   current: boolean;
   onPress: () => void;
@@ -159,14 +162,14 @@ export function RootChip({
   // What a context menu around it hands it (`asChild`) reaches the button with the press.
   const marked = useMarked({ ...handed, onClick: onPress }, current);
   return (
-    <Tooltip tip="Plane root">
+    <Tooltip tip={name}>
       <button
         type="button"
         {...marked}
         ref={ref}
         // A Tab stop of its own, before the strip's one (it is not in the strip).
         tabIndex={0}
-        aria-label="Plane root"
+        aria-label={name}
         aria-current={current ? "true" : undefined}
         data-scope="titlebar"
         data-part="workspace"

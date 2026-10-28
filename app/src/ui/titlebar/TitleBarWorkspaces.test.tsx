@@ -52,7 +52,7 @@ describe("a workspace's chip", () => {
 
 describe("the plane root's chip (#3654)", () => {
   it("is a button named for the root, the workspace chip's root variant, drawing a house", () => {
-    render(<RootChip current={false} onPress={() => undefined} />);
+    render(<RootChip name="Plane root" current={false} onPress={() => undefined} />);
     const chip = screen.getByRole("button", { name: "Plane root" });
     expect(chip).toHaveAttribute("data-scope", "titlebar");
     expect(chip).toHaveAttribute("data-part", "workspace");
@@ -65,7 +65,7 @@ describe("the plane root's chip (#3654)", () => {
 
   it("takes the chosen look while the plane root is in front, and goes there on a press", async () => {
     let pressed = 0;
-    render(<RootChip current onPress={() => (pressed += 1)} />);
+    render(<RootChip name="Plane root" current onPress={() => (pressed += 1)} />);
     const chip = screen.getByRole("button", { name: "Plane root" });
     expect(chip).toHaveAttribute("aria-current", "true");
     expect(chip).toHaveAttribute("data-selected");
