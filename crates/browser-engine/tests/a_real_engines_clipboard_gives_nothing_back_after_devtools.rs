@@ -58,11 +58,11 @@ fn notice(what: &str) {
     let _ = std::io::stderr().write_all(line.as_bytes());
 }
 
-/// What the page's paste field holds, as the page writes it out.
+/// What the page's paste field holds, as the page's tree reads it.
 fn pasted(browser: &purlis_browser_engine::drive::Browser) -> String {
     snapshot(browser)
         .lines()
-        .find(|line| line.contains("The paste field holds"))
+        .find(|line| line.contains("textbox \"Paste into\""))
         .unwrap_or_default()
         .to_owned()
 }
@@ -88,11 +88,14 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
     );
     let copy = ref_on(&find(&browser, "Copy"), "button \"Copy\"");
     call(&browser, Call::Click { target: copy });
-    let copied = snapshot(&browser)
-        .lines()
-        .find(|line| line.contains("Copied:"))
-        .unwrap_or_default()
-        .to_owned();
+    let read = snapshot(&browser);
+    let copied = if read.contains("text \"yes\"") {
+        "yes"
+    } else if read.contains("text \"no\"") {
+        "no"
+    } else {
+        "not said"
+    };
     let system = system_clipboard();
     let engine_is_the_systems = system.as_deref() == Some(COPIED);
     notice(&format!(
@@ -149,6 +152,7 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
     ));
 
     // A paste after Done gets nothing of it.
+    let into = ref_on(&find(&browser, "Paste into"), "textbox \"Paste into\"");
     call(
         &browser,
         Call::Type {
