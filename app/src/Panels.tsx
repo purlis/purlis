@@ -1,7 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useHeldStill, useHeldWhile, type HeldBy } from "./heldStill";
 import { useLentMemoryStores } from "./MemoryEdits";
 import { useReadOnlySaid } from "./ReadOnlyLine";
 import {
@@ -356,12 +357,29 @@ function Contributed({
   /** The personas with a chat at work or asking: the Personas view's Working now (#3483), read
    *  as each row's mark reads its state, so a row's group and its mark agree. */
   const atWork = usePersonasAtWork(panel.key === PERSONAS ? personaChats : undefined);
-  const personaGroupOf = (row: { key: string }): PersonaGroup =>
-    atWork.has(row.key)
+  /** **No row moves under the pointer or the keyboard** (#3566, the Chats list's rule V100-47):
+   *  while either is in the list, each row keeps the group it had, and moves once both have
+   *  left. Its mark says what its chats do now meanwhile; another workspace focused is drawn as
+   *  it is at once. */
+  const { holding, held } = useHeldStill<HTMLDivElement>(
+    [panel.blocks, atWork, personasHere],
+    panel.key === PERSONAS,
+  );
+  /** Each row's group as the hold began. A row the plane added since is no row moving: it is
+   *  drawn at once, in the group it has now. */
+  const groupsHeld = useHeldWhile(
+    holding,
+    { atWork, personasHere, rows: rowKeysOf(panel.blocks) },
+    workspace,
+  );
+  const personaGroupOf = (row: { key: string }): PersonaGroup => {
+    const by = groupsHeld.rows.has(row.key) ? groupsHeld : { atWork, personasHere };
+    return by.atWork.has(row.key)
       ? "Working now"
-      : personasHere.has(row.key)
+      : by.personasHere.has(row.key)
         ? "In this workspace"
         : "On the plane";
+  };
   const open = shownRow?.startsWith(`${panel.key}/`)
     ? shownRow.slice(panel.key.length + 1)
     : undefined;
@@ -468,96 +486,123 @@ function Contributed({
             {block.text}
           </p>
         ) : (
-          <PanelList
-            /* By position, as above. */
-            key={at}
-            rows={
-              panel.key === TODOS
-                ? block.rows.filter(todosOf(todosShown))
-                : panel.key === PERSONAS
-                  ? byPersonaGroup(block.rows, personaGroupOf)
-                  : block.rows
-            }
-            empty={panel.key === TODOS && todosShown === "done" ? NOTHING_DONE : block.empty}
-            label={panel.title}
-            testid={`list-${named(panel)}`}
-            // One line a row on this side (#1674): the title, the note on hover, and a dated
-            // list under its days.
-            titleOnly
-            // In a view the search is in its top from the first row (the prototype's Q1 A), but
-            // the Todos view's top holds its box for adding one, and searches past a page.
-            search={panel.key !== TODOS ? "always" : "beyond-a-page"}
-            // A memory's and a session's date at the row's end, and no mark that every row
-            // would share, as the prototype's Q1 A draws them (#3340).
-            dateAtEnd={panel.key === MEMORY || panel.key === SESSIONS}
-            markless={panel.key === MEMORY || panel.key === SESSIONS}
-            // A list of things named is filtered; a store of things written is searched (Q1 A).
-            searchWord={panel.key === PERSONAS ? "Filter" : "Search"}
-            // **A persona's row says whether its chats are at work or ask for you** (#3341): the
-            // state's own mark at the row's end, the strongest of its chats'.
-            stateOf={
-              panel.key === PERSONAS
-                ? (row) => <PersonaAtWork sessions={personaChats?.get(row.key) ?? NO_CHATS} />
-                : undefined
-            }
-            open={open}
-            // The empty list's way out (#1156): the catalogue's row, as a row's is.
-            offerFor={lookUp}
-            onOpen={(key) => onShowRow(key === undefined ? undefined : `${panel.key}/${key}`)}
-            onRun={(id, kept) => {
-              // **The catalogue's row or nothing.** A row cannot invent a verb, and an id the
-              // catalogue has stopped offering runs nothing rather than something else — which
-              // is `Doer`'s rule for the bar's buttons, applied to a panel. A double-click keeps
-              // what a single click previews (`actions.toKeep`): this list stays on screen, so
-              // a second click can land on it (ADR 0065, as built in SI-9b).
-              const offer = lookUp(id);
-              if (offer) onPress(kept ? toKeep(offer) : offer);
-            }}
-            checkOf={todoCheck}
-            // The open todos under their days, then the done ones (ADR 0106).
-            // And the personas under who is at work, who works here, and the rest (#3483).
-            groupOf={
-              panel.key === TODOS
-                ? todoGroupOf
-                : panel.key === PERSONAS
-                  ? personaGroupOf
+          <HeldList key={at} held={panel.key === PERSONAS ? held : undefined}>
+            <PanelList
+              rows={
+                panel.key === TODOS
+                  ? block.rows.filter(todosOf(todosShown))
+                  : panel.key === PERSONAS
+                    ? byPersonaGroup(block.rows, personaGroupOf)
+                    : block.rows
+              }
+              empty={panel.key === TODOS && todosShown === "done" ? NOTHING_DONE : block.empty}
+              label={panel.title}
+              testid={`list-${named(panel)}`}
+              // One line a row on this side (#1674): the title, the note on hover, and a dated
+              // list under its days.
+              titleOnly
+              // In a view the search is in its top from the first row (the prototype's Q1 A), but
+              // the Todos view's top holds its box for adding one, and searches past a page.
+              search={panel.key !== TODOS ? "always" : "beyond-a-page"}
+              // A memory's and a session's date at the row's end, and no mark that every row
+              // would share, as the prototype's Q1 A draws them (#3340).
+              dateAtEnd={panel.key === MEMORY || panel.key === SESSIONS}
+              markless={panel.key === MEMORY || panel.key === SESSIONS}
+              // A list of things named is filtered; a store of things written is searched (Q1 A).
+              searchWord={panel.key === PERSONAS ? "Filter" : "Search"}
+              // **A persona's row says whether its chats are at work or ask for you** (#3341): the
+              // state's own mark at the row's end, the strongest of its chats'.
+              stateOf={
+                panel.key === PERSONAS
+                  ? (row) => <PersonaAtWork sessions={personaChats?.get(row.key) ?? NO_CHATS} />
                   : undefined
-            }
-            menuOf={(row) =>
-              panel.key === TODOS
-                ? /* Open, Mark done, and Forget (SI-3, #1214): the catalogue's rows for this todo
+              }
+              open={open}
+              // The empty list's way out (#1156): the catalogue's row, as a row's is.
+              offerFor={lookUp}
+              onOpen={(key) => onShowRow(key === undefined ? undefined : `${panel.key}/${key}`)}
+              onRun={(id, kept) => {
+                // **The catalogue's row or nothing.** A row cannot invent a verb, and an id the
+                // catalogue has stopped offering runs nothing rather than something else — which
+                // is `Doer`'s rule for the bar's buttons, applied to a panel. A double-click keeps
+                // what a single click previews (`actions.toKeep`): this list stays on screen, so
+                // a second click can land on it (ADR 0065, as built in SI-9b).
+                const offer = lookUp(id);
+                if (offer) onPress(kept ? toKeep(offer) : offer);
+              }}
+              checkOf={todoCheck}
+              // The open todos under their days, then the done ones (ADR 0106).
+              // And the personas under who is at work, who works here, and the rest (#3483).
+              groupOf={
+                panel.key === TODOS
+                  ? todoGroupOf
+                  : panel.key === PERSONAS
+                    ? personaGroupOf
+                    : undefined
+              }
+              menuOf={(row) =>
+                panel.key === TODOS
+                  ? /* Open, Mark done, and Forget (SI-3, #1214): the catalogue's rows for this todo
                      in the focused workspace, which is the one this panel is about. A done one's
                      are Reopen, and Delete under the line (ADR 0106). */
-                  catalogueMenu(
-                    doneSlugOf(row.key) === undefined
-                      ? { on: "todo", slug: row.key }
-                      : { on: "doneTodo", slug: doneSlugOf(row.key) ?? "" },
-                    offers,
-                    onPress,
-                  )
-                : panel.key === SESSIONS
-                  ? /* Open and Resume (SI-8d): the place's rows for this record, whose key is
+                    catalogueMenu(
+                      doneSlugOf(row.key) === undefined
+                        ? { on: "todo", slug: row.key }
+                        : { on: "doneTodo", slug: doneSlugOf(row.key) ?? "" },
+                      offers,
+                      onPress,
+                    )
+                  : panel.key === SESSIONS
+                    ? /* Open and Resume (SI-8d): the place's rows for this record, whose key is
                        its plane-relative path. */
-                    catalogueMenu({ on: "session", path: row.key }, sessions, onPress)
-                  : panel.key === MEMORY
-                    ? /* Open, Edit | Delete (ADR 0065 Q12): this memory's rows, from the lookup
+                      catalogueMenu({ on: "session", path: row.key }, sessions, onPress)
+                    : panel.key === MEMORY
+                      ? /* Open, Edit | Delete (ADR 0065 Q12): this memory's rows, from the lookup
                          above rather than the catalogue. */
-                      catalogueMenu(
-                        { on: "memory", key: memoryKeyRun(row.runs) ?? "" },
-                        memories,
-                        onPress,
-                      )
-                    : panel.key === PERSONAS && row.key !== SHARED_ROW
-                      ? /* Right-click is the third reader of the catalogue (`Menus.tsx`), and on
+                        catalogueMenu(
+                          { on: "memory", key: memoryKeyRun(row.runs) ?? "" },
+                          memories,
+                          onPress,
+                        )
+                      : panel.key === PERSONAS && row.key !== SHARED_ROW
+                        ? /* Right-click is the third reader of the catalogue (`Menus.tsx`), and on
                            a persona it has exactly one honest row: what the plane says this
                            persona is. */
-                        catalogueMenu({ on: "persona", persona: row.key }, offers, onPress)
-                      : undefined
-            }
-          />
+                          catalogueMenu({ on: "persona", persona: row.key }, offers, onPress)
+                        : undefined
+              }
+            />
+          </HeldList>
         ),
       )}
     </PanelSection>
+  );
+}
+
+/**
+ * **A list, and what holds it still** (`heldStill.ts`): the element the pointer and the
+ * keyboard are heard on, which draws no box of its own. A list nothing holds is drawn bare.
+ * Keyed by its block's position, as the block's list is.
+ */
+function HeldList({
+  held,
+  children,
+}: {
+  held: HeldBy<HTMLDivElement> | undefined;
+  children: ReactNode;
+}) {
+  if (held === undefined) return children;
+  return (
+    <div className="panel-list-held" {...held}>
+      {children}
+    </div>
+  );
+}
+
+/** The keys of every row a panel's lists hold. */
+function rowKeysOf(blocks: PanelView["blocks"]): ReadonlySet<string> {
+  return new Set(
+    blocks.flatMap((block) => (block.kind === "list" ? block.rows : [])).map((row) => row.key),
   );
 }
 

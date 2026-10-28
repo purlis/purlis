@@ -500,6 +500,7 @@ import {
 } from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
+import { useWorkedHere } from "./workedHere";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -6612,15 +6613,9 @@ export const PlaneView = memo(function PlaneView({
       if (row.persona !== null) of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
     return of;
   }, [listRows]);
-  /** The personas each workspace's chats run as (#3483): the Personas view's In this
-   *  workspace, with the ones the workspace's session records name. */
-  const chatPersonasIn = useMemo(() => {
-    const of = new Map<string, Set<string>>();
-    for (const row of listRows)
-      if (row.persona !== null)
-        of.set(row.workspace, (of.get(row.workspace) ?? new Set()).add(row.persona));
-    return of;
-  }, [listRows]);
+  /** The personas each workspace's chats ran as (#3483), kept after a chat closes (#3566): the
+   *  Personas view's In this workspace, with the ones the workspace's session records name. */
+  const chatPersonasIn = useWorkedHere(plane, listRows);
   /**
    * **How long each chat has been in its state, as this window saw it** (`stateClock.ts`): one
    * clock for the project, held here so it runs whether or not the Chats list is drawn, and
