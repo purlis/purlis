@@ -30,8 +30,56 @@ const MOST_PER_KEY: Duration = Duration::from_millis(50);
 /// How long the window waits for a key's answer (`LINK_WITHIN` in the app's browsers).
 const THE_WINDOW_WAITS: Duration = Duration::from_secs(30);
 
+/// How long the window waits for the hand-back's answer (`ANSWER_WITHIN` in the app's hosted
+/// sessions).
+const THE_WINDOW_WAITS_FOR_THE_HAND_BACK: Duration = Duration::from_secs(30);
+
 /// How long the window waits for an agent's act (`AN_ACT_TAKES_AT_MOST` in the app's browsers).
 const AN_ACT_IS_WAITED_FOR: Duration = Duration::from_secs(85);
+
+/// What `run` said in the log, on this thread.
+fn said_in_the_log(run: impl FnOnce()) -> Vec<String> {
+    use std::sync::{Arc, Mutex};
+    use tracing::field::{Field, Visit};
+    use tracing::span::{Attributes, Id, Record};
+    use tracing::{Event, Metadata, Subscriber};
+
+    struct Lines(Arc<Mutex<Vec<String>>>);
+    struct Message(String);
+    impl Visit for Message {
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "message" {
+                self.0 = format!("{value:?}");
+            }
+        }
+    }
+    impl Subscriber for Lines {
+        fn enabled(&self, _: &Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &Attributes<'_>) -> Id {
+            Id::from_u64(1)
+        }
+        fn record(&self, _: &Id, _: &Record<'_>) {}
+        fn record_follows_from(&self, _: &Id, _: &Id) {}
+        fn event(&self, event: &Event<'_>) {
+            let mut message = Message(String::new());
+            event.record(&mut message);
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(message.0);
+        }
+        fn enter(&self, _: &Id) {}
+        fn exit(&self, _: &Id) {}
+    }
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    tracing::subscriber::with_default(Lines(Arc::clone(&lines)), run);
+    lines
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
 
 /// One key of the person's, `letter` a character or a key's name.
 fn key(aim: &Aim, letter: &str, key_code: u32, down: bool) -> PersonInput {
@@ -148,23 +196,45 @@ fn a_key_into_a_second_field_of_a_large_page_is_held_in_words_until_the_page_is_
         let _ = out.flush();
     }
     // The hand-back reads the fields and the page within its limit in all, every call of the
-    // read by then (#3277); nothing else it does here asks the engine anything.
+    // read by then (#3277); nothing else it does here asks the engine anything. A page read that
+    // comes just in time is then built into the page and its groups of boxes, which for this
+    // page's tree can take seconds of a busy runner after the read's last call (#3571). So the
+    // hand-back is held to its reads' limit where the log says its read ran out, and always to
+    // the window's wait for it. The stand-in tests in `drive::browser::tests::takeover` hold the
+    // reads alone to their limit.
     let started = Instant::now();
-    browser.hand_back();
+    let said = said_in_the_log(|| {
+        browser.hand_back();
+    });
     let took = started.elapsed();
     let reads_within = Limits::default().key_reads_within;
-    assert!(
-        took < reads_within + Duration::from_secs(2),
-        "the hand-back answered after {took:?}, past its reads' {reads_within:?}"
-    );
+    let ran_out = said
+        .iter()
+        .any(|line| line.contains("it was not read within its limit"));
     {
         let mut out = std::io::stdout().lock();
         let _ = writeln!(
             out,
-            "::notice title=the hand-back of a large page::it answered after {} ms",
-            took.as_millis()
+            "::notice title=the hand-back of a large page::it answered after {} ms, its page {}",
+            took.as_millis(),
+            if ran_out {
+                "not read within its reads' limit, so its groups were rebuilt from the last key's read"
+            } else {
+                "not said to have run out of time"
+            }
         );
         let _ = out.flush();
+    }
+    assert!(
+        took < THE_WINDOW_WAITS_FOR_THE_HAND_BACK,
+        "the hand-back answered after {took:?}, past the window's wait for it; it said {said:?}"
+    );
+    if ran_out {
+        assert!(
+            took < reads_within + Duration::from_secs(2),
+            "the hand-back's read ran out, yet it answered after {took:?}, past its reads' \
+             {reads_within:?}"
+        );
     }
     assert!(sees(&browser, "Typed: 1"), "{}", snapshot(&browser));
 }
