@@ -42,7 +42,7 @@
 //!
 //! **What git answers is the reference** (RC-2's acceptance): each kind's file list, marks,
 //! renames, line counts and hunks are checked against `git diff` on fixtures
-//! (`tests/a_comparison_matches_git_diff.rs`).
+//! (`tests/it/a_comparison_matches_git_diff.rs`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;

@@ -12,7 +12,7 @@ asks for **one** engine, so RC-2 builds the engine on that reader rather than be
   `compare_file`, `compare_change`), with the config cut to the reader's allow-list. No git and
   no other program starts, so §2's "one fixed set of overrides" is the allow-list, held in one
   place, and the fixture with a hostile config is RC-2's
-  (`tests/a_comparison_matches_git_diff.rs`).
+  (`tests/it/a_comparison_matches_git_diff.rs`).
 - **The lines are git's algorithm, not git's program**: Myers, then git's indent heuristic, on
   lines that keep their line ends. RC-2's acceptance, *matches `git diff`*, is held by fixtures
   that run `git diff` as the oracle for every kind.

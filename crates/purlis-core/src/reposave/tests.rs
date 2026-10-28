@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! A repo save against a real clone and a local bare remote. The pull request modes, which ask
-//! a forge, are in `tests/a_repo_is_saved_by_its_mode.rs`, against a stand-in `gh`.
+//! a forge, are in `tests/it/a_repo_is_saved_by_its_mode.rs`, against a stand-in `gh`.
 //!
 //! The remote is reached the way `planegit`'s tests reach theirs: `origin` in the SSH form, and
 //! an `insteadOf` in the clone's own config keyed on the HTTPS base charter builds, so the URL

@@ -18,6 +18,14 @@ different users each use one of their own: `browser_new` opens another, and the 
 from then on (pass `browser` to pick one by the name a tool answered with, `b1`, `b2`).
 `browser_close` ends one and everything it held.
 
+## Files: downloads and uploads
+
+A download lands where no chat reaches it; each answer says new or changed downloads by name
+(`d1`), size and origin, and `browser_downloads` lists them all. `browser_save_download` saves a
+finished one into your working folder as a new file, once the person has said yes for its
+origin. `browser_upload` puts files of your working folder (paths relative to it) into a page's
+file input. Only files you may read are taken, and no link out of the folder is followed.
+
 ## Credentials: never typed, never printed
 
 **In a chat purlis started, log in with your persona's browser login, through purlis's own

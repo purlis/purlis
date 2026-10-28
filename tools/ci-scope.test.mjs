@@ -5,7 +5,7 @@
 // repository as it is. Run with `node --test tools/`.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { posix } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -481,21 +481,21 @@ const WALK_ONLY_CODE = {
   "crates/purlis-cli/tests/it/every_command_charter_names_is_one_it_has.rs":
     "crates/*/src, app/src-tauri/src and the plugin's skills",
   "crates/purlis-core/src/doctor/shadowed/tests.rs": "a plane's docs/; purlis's own is exempt",
-  "crates/purlis-core/tests/every_git_call_goes_through_the_runner.rs":
+  "crates/purlis-core/tests/it/every_git_call_goes_through_the_runner.rs":
     "crates/ and app/src-tauri/",
-  "crates/purlis-core/tests/four_unsafe_blocks.rs": "crates/ and app/src-tauri/ Rust",
-  "crates/purlis-core/tests/only_the_resolver_builds_the_native_transport.rs": "shipped Rust",
-  "crates/purlis-core/tests/only_the_updater_and_report_name_charters_own_address.rs":
+  "crates/purlis-core/tests/it/four_unsafe_blocks.rs": "crates/ and app/src-tauri/ Rust",
+  "crates/purlis-core/tests/it/only_the_resolver_builds_the_native_transport.rs": "shipped Rust",
+  "crates/purlis-core/tests/it/only_the_updater_and_report_name_charters_own_address.rs":
     "shipped Rust",
   "crates/purlis-core/tests/shipped_literals/mod.rs": "crates/ and app/src-tauri/ Rust",
-  "crates/purlis-core/tests/the_local_layer_has_one_reader.rs": "crates/ and app/src-tauri/ Rust",
+  "crates/purlis-core/tests/it/the_local_layer_has_one_reader.rs": "crates/ and app/src-tauri/ Rust",
 };
 
 test("a test that walks the repository from its root is a whole-tree guard or walks code", () => {
   const walkers = rootedFiles().filter((p) => WALKS.test(read(p)));
   const guards = GUARD_FILES;
-  for (const { crate, test: name } of WHOLE_TREE_GUARDS) {
-    const path = `crates/${crate}/tests/${name}.rs`;
+  for (const guard of WHOLE_TREE_GUARDS) {
+    const path = guardFile(guard);
     assert.ok(walkers.includes(path), `${path} is found as a walker`);
   }
   for (const path of Object.keys(WALK_ONLY_CODE)) {
@@ -518,8 +518,16 @@ test("the recorded job runs every guard when Rust is out of scope", () => {
   const run = step.slice(0, step.indexOf("\n      - "));
   assert.match(run, /needs\.changes\.outputs\.rust == 'false'/);
   for (const { crate, test: name } of [...WHOLE_TREE_GUARDS, ...WINDOW_SOURCE_GUARDS]) {
-    assert.ok(run.includes(`-p ${crate}`), crate);
-    assert.ok(run.includes(`--test ${name}`), name);
+    assert.ok(run.includes(`-p ${crate} --test it --`), crate);
+    assert.ok(new RegExp(`\\s${name}::(\\s|$)`).test(run), name);
+  }
+});
+
+// A guard is a module of its crate's one test binary (#3613): a name that is no file there
+// would be a filter that matches nothing, and `cargo test` passes a filter that matches nothing.
+test("every guard the recorded job runs is a test file of its crate's one binary", () => {
+  for (const guard of [...WHOLE_TREE_GUARDS, ...WINDOW_SOURCE_GUARDS]) {
+    assert.ok(existsSync(posix.join(ROOT, guardFile(guard))), `${guardFile(guard)} is not there`);
   }
 });
 
@@ -529,13 +537,13 @@ test("the recorded job runs every guard when Rust is out of scope", () => {
 // sources. A file named is read by Rust: it is in `READ_BY_RUST`, or the test naming it is a guard
 // `recorded` runs, or it is named below with why it is not read. A folder named is walked: the
 // test is a guard, or it is a known miss below. Comment lines read nothing.
-const guardFile = ({ crate, test: name }) => `crates/${crate}/tests/${name}.rs`;
+const guardFile = ({ crate, test: name }) => `crates/${crate}/tests/it/${name}.rs`;
 const GUARD_FILES = new Set([...WHOLE_TREE_GUARDS, ...WINDOW_SOURCE_GUARDS].map(guardFile));
 
 // A Rust file that names a file of the window's sources without reading it, and why.
 const NAMED_NOT_READ = {
   "crates/purlis-core/src/files/find.rs": "a fuzzy match's sample path, matched as text",
-  "crates/purlis-core/tests/a_file_is_found_by_fuzzy_name.rs":
+  "crates/purlis-core/tests/it/a_file_is_found_by_fuzzy_name.rs":
     "sample paths written into a fixture repository",
 };
 

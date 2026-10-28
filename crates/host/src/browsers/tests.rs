@@ -62,6 +62,7 @@ impl Screen for Slow {
         _call_id: &str,
         _act: purlis_session_protocol::browsing::Act,
         _epoch: u64,
+        _project: &std::path::Path,
     ) -> Result<purlis_session_protocol::browsing::Browsed, NotActed> {
         Err(NotActed::Refused("a stand-in".into()))
     }
