@@ -323,13 +323,6 @@ pub const VERSION: Version = Version {
     minor: 47,
 };
 
-/// The version that first holds a browser's views over a link to the frame limits its start
-/// gives (#3297): the window gives them to a runner of this version or later alone.
-pub const KNOWS_LINK_FRAMES: Version = Version {
-    major: 1,
-    minor: 47,
-};
-
 /// The version that first moves a chat's work tree and conversation (#2048): the window moves
 /// no chat to or from a host before it.
 pub const MOVES_CHATS: Version = Version {

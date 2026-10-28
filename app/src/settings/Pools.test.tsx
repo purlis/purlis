@@ -86,6 +86,8 @@ beforeEach(() => {
           pools: structuredClone(pools),
           defaults: { ...DEFAULTS },
           suspend_after: "24h",
+          frames: 15,
+          width: 1280,
         } satisfies PoolsShown;
       if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version") return version;

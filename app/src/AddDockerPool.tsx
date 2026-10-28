@@ -31,7 +31,17 @@ export function AddDockerPoolHost({ plane }: { plane?: string }) {
   if (!pools.adding) return null;
   const defaults = pools.read.state === "read" ? pools.read.shown.defaults : undefined;
   const suspendAfter = pools.read.state === "read" ? pools.read.shown.suspend_after : undefined;
-  return <AddDockerPool defaults={defaults} suspendAfter={suspendAfter} />;
+  const linkFrames = pools.read.state === "read" ? pools.read.shown : undefined;
+  return (
+    <AddDockerPool
+      defaults={defaults}
+      suspendAfter={suspendAfter}
+      linkFrames={{
+        frames: linkFrames?.frames ?? undefined,
+        width: linkFrames?.width ?? undefined,
+      }}
+    />
+  );
 }
 
 /** What adding pool `pool` ends with: this machine's profiles, to sign in there (#2049). */
@@ -48,12 +58,6 @@ function SignInOnTheAddedPool({ pool, plane }: { pool: string; plane: string | u
   );
 }
 
-/**
- * How a pool's runner's browsers are watched over the link by default (#3297, spec #2041): at
- * most 15 frames a second, 1280 pixels wide. The core holds a pool that sets neither to these.
- */
-const LINK_FRAMES_BY_DEFAULT = { frames: "15", width: "1280" };
-
 /** A count typed, or `null` for the default; `undefined` when it is not a count. */
 function count(typed: string): number | null | undefined {
   const trimmed = typed.trim();
@@ -64,10 +68,13 @@ function count(typed: string): number | null | undefined {
 function AddDockerPool({
   defaults,
   suspendAfter,
+  linkFrames,
 }: {
   defaults: PoolLimitsShown | undefined;
   /** How long a new pool's runner is left without a link before it suspends, by default. */
   suspendAfter: string | undefined;
+  /** How a new pool's runner's browsers are watched over the link, by default (#3297). */
+  linkFrames: { frames: number | undefined; width: number | undefined };
 }) {
   const [name, setName] = useState("");
   const [image, setImage] = useState("");
@@ -233,14 +240,14 @@ function AddDockerPool({
         "How many frames a second its runner's browsers are watched at over the link. Empty is the default.",
         frames,
         setFrames,
-        LINK_FRAMES_BY_DEFAULT.frames,
+        linkFrames.frames === undefined ? undefined : String(linkFrames.frames),
       )}
       {limit(
         "Browser width in pixels",
         "The widest frame its runner's browsers are watched at over the link. Empty is the default.",
         width,
         setWidth,
-        LINK_FRAMES_BY_DEFAULT.width,
+        linkFrames.width === undefined ? undefined : String(linkFrames.width),
       )}
 
       {trouble !== undefined && (

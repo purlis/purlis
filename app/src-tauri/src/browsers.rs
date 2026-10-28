@@ -659,6 +659,7 @@ mod hosted {
             let logged = Arc::clone(&self.logged);
             let closing = Arc::clone(&self.closing);
             let origins = Arc::clone(&self.origins);
+            let held_to = Arc::clone(&self.held_to);
             let says = Arc::clone(&self.says);
             let started_in = root.to_path_buf();
             let named = program.to_owned();
@@ -667,6 +668,7 @@ mod hosted {
                 Box::new(move |ending| {
                     lock(&logged).remove(&named);
                     lock(&origins).remove(&named);
+                    lock(&held_to).remove(&named);
                     // Who ended it and why is in the session host's own line (#2745).
                     tracing::info!("{}", ended_said(&named, &ending));
                     // An end this window did not ask for is a crash (#2842): said off the
@@ -1045,11 +1047,13 @@ mod hosted {
             // Followed before it draws, so its first frame finds it.
             self.follow(&link, attached.view, link_said);
             // A runner's browser is held to the link's frames by the window too (#2050, #3297).
-            let held = self.pool_of(program).map(|_| {
+            // A browser this window did not start (one taken back, #3380) is held to its pool's
+            // limits as this machine keeps them now.
+            let held = self.pool_of(program).map(|pool| {
                 lock(&self.held_to)
                     .get(program)
                     .copied()
-                    .unwrap_or_default()
+                    .unwrap_or_else(|| window_holds(purlis_core::runners::link_frames_of(&pool)))
             });
             // Where its page is, kept for what typing into it is said on (#2842).
             let kept = Arc::clone(&self.origins);

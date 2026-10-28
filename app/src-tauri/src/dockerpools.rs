@@ -9,10 +9,11 @@
 //! alone (`ui::WINDOW_ONLY`): only the person adds or removes a pool, which runs a container on
 //! their machine.
 
-#[cfg(unix)]
 use purlis_core::dockerpool::{Image, Limits};
 #[cfg(unix)]
 use purlis_core::runners::{Pool, Set};
+#[cfg(unix)]
+use purlis_session_protocol::browsing::LinkFrames;
 
 #[cfg(unix)]
 use crate::runnerlinks::{Machine, ToARunner};
@@ -55,6 +56,14 @@ pub struct PoolsShown {
     /// engine is a local socket on this machine. A chat moves only to such a pool (#2048).
     #[specta(optional)]
     pub yours: Option<bool>,
+    /// The most frames a second a new pool's runner's browsers are watched at over the link, by
+    /// default (#3297).
+    #[specta(optional)]
+    pub frames: Option<u32>,
+    /// The widest frame a new pool's runner's browsers are watched at over the link, in pixels,
+    /// by default (#3297).
+    #[specta(optional)]
+    pub width: Option<u32>,
 }
 
 /// A pool as the person typed it: each limit left empty takes the default.
@@ -269,6 +278,8 @@ pub fn pools_on(config: &std::path::Path) -> Result<PoolsShown, String> {
         defaults: shown(Limits::default()),
         suspend_after: after_shown(purlis_core::dockerpool::SUSPEND_AFTER),
         yours: Some(crate::poolprofiles::owned().is_ok()),
+        frames: Some(LinkFrames::DEFAULT.frames),
+        width: Some(u32::from(LinkFrames::DEFAULT.width)),
     })
 }
 
