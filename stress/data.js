@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793182329560,
+  "lastUpdate": 1793183685980,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8186,6 +8186,42 @@ window.BENCHMARK_DATA = {
             "value": 435.1,
             "unit": "MB",
             "extra": "median of 6 samples: 426.7, 432.7, 433.7, 436.5, 437.4, 548.6 MB; window 245.6 MB, session host 188.8 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8a1c1f0a2a8ef4e0192031c975de1ad3720315f5",
+          "message": "CI: the CLI's integration tests build as one binary (#3613) (#3614)\n\nEach of purlis-cli's 91 `tests/*.rs` was a test binary of its own, each\nlinking the CLI's whole dependency graph. They move, with `git mv`, into\n`tests/it/` as modules of one binary (`tests/it/main.rs`); a test's name\ngains its file's name as a module prefix and is otherwise unchanged.\n\n- `mod support;` in each file becomes `use crate::support;`; main.rs\n  declares it once by `#[path]`, so `recorded_behaviour` keeps sharing it.\n- The two tests that re-run themselves by `--exact` name\n  (`brokered_git`'s three, the permission prompt's stand-in) name their\n  full libtest path, module first.\n- `init.rs`'s `include_str!` climbs one folder more.\n- `tools/theme-parts-release.mjs` reads `tests/it/theme.rs`; a new test\n  fails when a file it names is not there (a missing one read as empty).\n- `tools/ci-scope.test.mjs`'s walker list and comments name the new path.\n- main.rs fails on a `.rs` left straight under `tests/` and on a file in\n  `tests/it/` it does not declare.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T08:27:41Z",
+          "tree_id": "2a7ffd70291165fbcd60d294bc453223073b5c96",
+          "url": "https://github.com/purlis/purlis/commit/8a1c1f0a2a8ef4e0192031c975de1ad3720315f5"
+        },
+        "date": 1793183681267,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 1403,
+            "unit": "MB",
+            "extra": "median of 3 samples: 1403, 1403, 1546 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 289.6,
+            "unit": "MB",
+            "extra": "median of 6 samples: 265.9, 304.8, 296, 288.9, 290.3, 222.6 MB; window 170.4 MB, session host 121.9 MB"
           }
         ]
       }
