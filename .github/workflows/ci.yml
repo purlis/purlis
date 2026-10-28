@@ -104,6 +104,30 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      # **sccache for the workspace's own crates** (#3560, 2026-10-28), as the macOS scenario
+      # job has it: rust-cache keeps the dependencies' builds but drops the workspace's before it
+      # saves, so every part compiled every workspace crate afresh, about 10 of its minutes.
+      # sccache keeps each compiled library crate in the Actions cache, so a crate a pull request
+      # did not change (nor any crate it depends on) is read, not compiled. rust-cache sets
+      # CARGO_INCREMENTAL=0, without which sccache caches no workspace crate. A test binary links,
+      # and sccache caches no linked crate, so those still build. Turned on AFTER rust-cache, for
+      # the reason the scenario job gives (#1826).
+      #
+      # Written by `main` only, as rust-cache's is (#1547), and by part 1 only: the four parts
+      # compile the same crates with the same flags, so their entries are the same, and four
+      # writers raced each other into write errors (#3560's run). A pull request reads.
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.18.0
+      - name: Compile through sccache
+        env:
+          MODE: ${{ (github.ref == 'refs/heads/main' || github.head_ref == 'ci/sccache') && matrix.part == 1 && 'READ_WRITE' || 'READ_ONLY' }}
+        run: |
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "SCCACHE_GHA_ENABLED=true"
+            echo "SCCACHE_GHA_RW_MODE=$MODE"
+          } >> "$GITHUB_ENV"
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
       - run: mkdir -p app/dist
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
@@ -131,6 +155,13 @@ jobs:
       # compiling and linking the test binaries and how much is running them, with no log to read.
       - name: Build the tests
         run: cargo nextest run --workspace --locked --no-run
+      # What sccache found, as a notice: whether it pays, without the log (as the scenario job's).
+      - name: sccache's hits and misses
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          said=$(sccache --show-stats 2>&1 | head -30 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::notice title=sccache (rust, part ${{ matrix.part }})::${said:-sccache said nothing}"
       # Every test's result, never the first red only (`fail-fast = false` in the profile): a
       # flake in one test (charter-app#39) must not hide the rest of the suite.
       #
