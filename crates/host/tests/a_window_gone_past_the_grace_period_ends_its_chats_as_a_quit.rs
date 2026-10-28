@@ -470,3 +470,39 @@ async fn a_window_that_quits_ends_a_program_that_ends_with_it_as_a_quit() {
         .unwrap();
     assert_eq!(host.ends.kept(), [(1, Some(Stopped::Quit))]);
 }
+
+#[tokio::test]
+async fn a_host_whose_only_program_ends_with_its_window_ends_it_and_then_stops() {
+    let host = a_host();
+    let lives = host.lives();
+    host.holding(PROJECT)
+        .await
+        .starts_ending_with_it(PROJECT, 1)
+        .await;
+
+    tokio::time::timeout(PATIENCE, lives)
+        .await
+        .expect("the host stops once nothing is left")
+        .unwrap();
+    assert_eq!(
+        host.ends.kept(),
+        [(1, Some(Stopped::Quit))],
+        "its end was kept before the host stopped"
+    );
+    assert!(host.runs.last().seen().stopped);
+}
+
+#[tokio::test]
+async fn a_window_link_that_ends_while_another_stays_ends_nothing() {
+    let host = a_host();
+    let _lives = host.lives();
+    let stays = host.holding(PROJECT).await;
+    host.holding(PROJECT)
+        .await
+        .starts_ending_with_it(PROJECT, 1)
+        .await;
+    tokio::time::sleep(GRACE / 4).await;
+
+    assert!(host.ends.kept().is_empty(), "a window is still there");
+    assert_eq!(stays.client.programs_of(PROJECT).await.unwrap().len(), 1);
+}

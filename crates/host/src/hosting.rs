@@ -833,9 +833,10 @@ struct Hosted {
     /// Who opened it, for a browser (#2050): this host's own window, or a link between hosts
     /// for the window it named, which alone may act on it from such a link.
     opened_by: OpenedBy,
-    /// The link it ends with, where its start said it does (1.42, #3274): once that link ends
-    /// without a quit, it is ended at once rather than kept for the grace period.
-    ends_with: Option<u64>,
+    /// Whether it ends with its window (1.42, #3274): once no window is linked to this host and
+    /// the last went without a quit, it is ended at once rather than kept for the grace period.
+    /// Taken from this machine's window alone.
+    ends_with_its_window: bool,
 }
 
 /// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
@@ -1927,32 +1928,39 @@ impl Hosting {
             channel.bind(number, pid);
         }
         let stopping: Arc<Mutex<Option<Stopped>>> = Arc::default();
-        self.state().programs.insert(
-            program.clone(),
-            Hosted {
-                kind: start.kind,
-                at: at.clone(),
-                number,
-                run: start.run.clone(),
-                running: Arc::clone(&running),
-                size,
-                process,
-                cwd: start
-                    .launch
-                    .as_ref()
-                    .and_then(|launch| launch.cwd.as_ref())
-                    .map(PathBuf::from)
-                    .or(cwd),
-                ended: false,
-                exit: None,
-                stopping: Arc::clone(&stopping),
-                sandbox: sandbox.clone(),
-                note: start.note.clone(),
-                logins: Arc::default(),
-                opened_by: OpenedBy::ThisHost,
-                ends_with: start.ends_with_its_window.then(|| link_of(peer)),
-            },
-        );
+        let ends_with_its_window = start.ends_with_its_window && peer.scope() == Scope::LocalUi;
+        let windowless = {
+            let mut state = self.state();
+            // Its window went while it was being started: ended once it is listed, below.
+            let windowless = ends_with_its_window && state.windows.is_empty();
+            state.programs.insert(
+                program.clone(),
+                Hosted {
+                    kind: start.kind,
+                    at: at.clone(),
+                    number,
+                    run: start.run.clone(),
+                    running: Arc::clone(&running),
+                    size,
+                    process,
+                    cwd: start
+                        .launch
+                        .as_ref()
+                        .and_then(|launch| launch.cwd.as_ref())
+                        .map(PathBuf::from)
+                        .or(cwd),
+                    ended: false,
+                    exit: None,
+                    stopping: Arc::clone(&stopping),
+                    sandbox: sandbox.clone(),
+                    note: start.note.clone(),
+                    logins: Arc::default(),
+                    opened_by: OpenedBy::ThisHost,
+                    ends_with_its_window,
+                },
+            );
+            windowless
+        };
         // Written down before the start is answered, so a host killed from here on leaves it
         // for the next to settle (#2007).
         if let Some(host_record) = &self.inner.host_record {
@@ -2019,6 +2027,9 @@ impl Hosting {
                 exit,
             });
         }));
+        if windowless {
+            self.end_what_ends_with_its_window().await;
+        }
         // Where the confinement composed for it is, where the start named one to this link and
         // its composition started one (#2407).
         let confined = start.confinement.as_ref().and_then(|id| {
@@ -2157,7 +2168,8 @@ impl Hosting {
                         .collect(),
                 )),
                 opened_by,
-                ends_with: start.ends_with_its_window.then(|| link_of(peer)),
+                // A browser lives as its chat's window keeps it (#2025), never by this word.
+                ends_with_its_window: false,
             },
         );
         drop(state);
@@ -2576,40 +2588,30 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
-    /// **Ends every program that ends with the link `link`** (1.42, #3274), as a quit would end
-    /// it: forgotten at once, its confinements with it, and stopped off the runtime. What a
-    /// link's end does before anything of it is kept for the grace period.
-    fn end_what_ends_with(&self, link: u64) {
+    /// **Ends every program that ends with its window** (1.42, #3274), as a quit would end it:
+    /// forgotten at once, its confinements with it, its end kept as a quit's. Answers once they
+    /// are gone, or [`ENDS_WITHIN`] has passed: what the last window's going does before
+    /// anything of it is kept for the grace period.
+    async fn end_what_ends_with_its_window(&self) {
         let (hosted, confinements) = {
             let mut state = self.state();
             let ids: Vec<String> = state
                 .programs
                 .iter()
-                .filter(|(_, hosted)| hosted.ends_with == Some(link))
+                .filter(|(_, hosted)| hosted.ends_with_its_window)
                 .map(|(id, _)| id.clone())
                 .collect();
             if ids.is_empty() {
                 return;
             }
-            let hosted: Vec<Hosted> = ids
-                .iter()
-                .filter_map(|id| state.programs.remove(id))
-                .inspect(|hosted| stopping_by(&hosted.stopping, Stopped::Quit))
-                .collect();
-            let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
-            state.closed.extend(processes);
-            let confinements = take_confinements(
-                &mut state,
-                |owner| matches!(owner, Owner::Program(program) if ids.contains(program)),
-            );
-            (hosted, confinements)
+            take_as_a_quit(&mut state, &ids)
         };
         for one in &hosted {
             if let Some(channel) = self.channel(&one.at) {
                 channel.forget(one.number);
             }
         }
-        tokio::task::spawn_blocking(move || {
+        let _ = tokio::task::spawn_blocking(move || {
             stop_together(
                 hosted
                     .iter()
@@ -2618,7 +2620,8 @@ impl Hosting {
             );
             drop(confinements);
             drop(hosted);
-        });
+        })
+        .await;
     }
 
     /// Ends the confinements `program` runs in, off the runtime.
@@ -2796,6 +2799,24 @@ fn note_a_window(state: &mut State, link: u64) {
     state.windows.insert(link);
     state.had_a_window = true;
     state.windowless_since = None;
+}
+
+/// **Takes the programs `ids` out of `state` as a quit ends them**: each kept as ended by a quit,
+/// its process kept for the admission check, and the confinements it runs in taken with it.
+/// Its caller stops them.
+fn take_as_a_quit(state: &mut State, ids: &[String]) -> (Vec<Hosted>, Vec<Arc<dyn Confining>>) {
+    let hosted: Vec<Hosted> = ids
+        .iter()
+        .filter_map(|id| state.programs.remove(id))
+        .inspect(|hosted| stopping_by(&hosted.stopping, Stopped::Quit))
+        .collect();
+    let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
+    state.closed.extend(processes);
+    let confinements = take_confinements(
+        state,
+        |owner| matches!(owner, Owner::Program(program) if ids.contains(program)),
+    );
+    (hosted, confinements)
 }
 
 /// Takes every confinement whose owner `whose` says, out of `state`.
@@ -3471,15 +3492,22 @@ impl session::Host for Hosting {
 
     async fn link_ended(&self, peer: &Peer) {
         self.inner.unattended.ended(peer);
-        // What ends with this link ends first, so a project it alone kept is let go of with it.
-        self.end_what_ends_with(link_of(peer));
-        self.let_go_of_the_links(peer);
-        {
+        // The last window going: what ends with its window ends first, and is gone before its
+        // holds are let go of, so a project it alone kept is let go of as any other.
+        // Under the one hold a start's check takes too: a program started as this goes is
+        // either ended here or by its start (`Self::start`).
+        let last_window = {
             let mut state = self.state();
-            if state.windows.remove(&link_of(peer)) && state.windows.is_empty() {
+            let last = state.windows.remove(&link_of(peer)) && state.windows.is_empty();
+            if last {
                 state.windowless_since = Some(Instant::now());
             }
+            last
+        };
+        if last_window {
+            self.end_what_ends_with_its_window().await;
         }
+        self.let_go_of_the_links(peer);
         self.inner.changed.notify_one();
         // What the link confined that nothing runs in yet goes with it; what a program runs in
         // stays with the program (#1999).
@@ -3790,17 +3818,7 @@ impl Hosting {
                 .filter(|(_, hosted)| due.contains(&hosted.at))
                 .map(|(id, _)| id.clone())
                 .collect();
-            let hosted: Vec<Hosted> = ids
-                .iter()
-                .filter_map(|id| state.programs.remove(id))
-                .inspect(|hosted| stopping_by(&hosted.stopping, Stopped::Quit))
-                .collect();
-            let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
-            state.closed.extend(processes);
-            let confinements = take_confinements(
-                &mut state,
-                |owner| matches!(owner, Owner::Program(program) if ids.contains(program)),
-            );
+            let (hosted, confinements) = take_as_a_quit(&mut state, &ids);
             let held: Vec<Held> = due
                 .iter()
                 .filter_map(|at| state.projects.remove(at))

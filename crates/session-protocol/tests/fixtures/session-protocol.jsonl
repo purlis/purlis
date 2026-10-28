@@ -159,3 +159,4 @@
 {"reply":{"re":155,"ok":{"log_end":{"device":"01JB0RUNNER0000000000000000","seq":42}}}}
 {"call":{"id":156,"command":"stop_all"}}
 {"reply":{"re":156,"ok":{"kill_switch":{"stopped":true,"already":true,"runners":["qa/r1"]}}}}
+{"call":{"id":157,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":4,"ends_with_its_window":true}}
