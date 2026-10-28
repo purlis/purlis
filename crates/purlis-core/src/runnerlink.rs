@@ -126,24 +126,25 @@ pub fn seed_home(home: &Path, image_home: Option<&Path>, claim: &str) -> Result<
     let marker = home.with_file_name(CLAIM_MARKER);
     match std::fs::symlink_metadata(home) {
         Ok(found) if found.is_dir() => {
-            let marked = match std::fs::read_to_string(&marker) {
-                Ok(marked) => Some(marked),
-                Err(why) if why.kind() == std::io::ErrorKind::NotFound => None,
-                Err(why) => {
+            let marked = read_mark(&marker)?;
+            match marked.as_deref().map(str::trim) {
+                Some(marked) if marked == claim => return Ok(()),
+                // Made by a runner made warm, before any claim: a fresh home, which keeps
+                // nothing, so the claim that took the runner makes it again as its own.
+                Some("") => std::fs::remove_dir_all(home).map_err(|why| {
+                    format!(
+                        "the runner's home made before its claim could not be made again: {why}"
+                    )
+                })?,
+                _ => {
                     return Err(format!(
-                        "the runner's home's claim could not be read: {why}"
+                        "the runner's home {} was not made for this claim, so the runner is not \
+                         started: its volume was made or filled elsewhere. Delete the claim and \
+                         make a new one",
+                        home.display()
                     ));
                 }
-            };
-            if marked.as_deref().map(str::trim) != Some(claim) {
-                return Err(format!(
-                    "the runner's home {} was not made for this claim, so the runner is not \
-                     started: its volume was made or filled elsewhere. Delete the claim and \
-                     make a new one",
-                    home.display()
-                ));
             }
-            return Ok(());
         }
         Ok(_) => {
             return Err(format!(
@@ -171,8 +172,15 @@ pub fn seed_home(home: &Path, image_home: Option<&Path>, claim: &str) -> Result<
         Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
         Err(why) => return Err(failed(why)),
     }
-    if let Some(source) = image_home
-        && (source.parent().is_none() || home.starts_with(source))
+    // Compared as the folders they are, through any link or `..` in either path.
+    let source = image_home
+        .map(|source| std::fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf()));
+    let home_seen = home
+        .parent()
+        .and_then(|parent| std::fs::canonicalize(parent).ok())
+        .map_or_else(|| home.to_path_buf(), |parent| parent.join(name));
+    if let Some(source) = source.as_deref()
+        && (source.parent().is_none() || home_seen.starts_with(source))
     {
         return Err(format!(
             "the image's HOME, {}, holds the runner's home {}, so it cannot be copied into it: \
@@ -182,8 +190,8 @@ pub fn seed_home(home: &Path, image_home: Option<&Path>, claim: &str) -> Result<
             home.display()
         ));
     }
-    std::fs::write(&marker, format!("{claim}\n")).map_err(failed)?;
-    let source = image_home.filter(|source| source.is_dir());
+    write_mark(&marker, claim).map_err(failed)?;
+    let source = source.as_deref().filter(|source| source.is_dir());
     match source {
         Some(source) => {
             copy_tree(source, &making).map_err(failed)?;
@@ -196,6 +204,48 @@ pub fn seed_home(home: &Path, image_home: Option<&Path>, claim: &str) -> Result<
     // A home is this user's alone, whatever mode the image gave its own.
     std::fs::set_permissions(&making, std::fs::Permissions::from_mode(0o700)).map_err(failed)?;
     std::fs::rename(&making, home).map_err(failed)
+}
+
+/// The claim [`seed_home`]'s mark at `marker` names, read only from a file there and never
+/// through a link; `None` when there is none.
+fn read_mark(marker: &Path) -> Result<Option<String>, String> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    let opened = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(marker);
+    let mut file = match opened {
+        Ok(file) => file,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(why) => {
+            return Err(format!(
+                "the runner's home's claim could not be read: {why}"
+            ));
+        }
+    };
+    let mut marked = String::new();
+    file.by_ref()
+        .take(256)
+        .read_to_string(&mut marked)
+        .map_err(|why| format!("the runner's home's claim could not be read: {why}"))?;
+    Ok(Some(marked))
+}
+
+/// [`seed_home`]'s mark at `marker`, naming `claim`: written to a file there, never through a
+/// link put in its place.
+fn write_mark(marker: &Path, claim: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(marker)?;
+    file.write_all(format!("{claim}\n").as_bytes())?;
+    file.sync_all()
 }
 
 /// The variable a cluster runner's pod's first step reads the uid of its upstream claim from:

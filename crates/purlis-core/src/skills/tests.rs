@@ -2522,3 +2522,54 @@ fn a_harness_purlis_ships_or_one_that_takes_mcp_is_never_said_unsupported() {
         assert_eq!(not_supported_on(shipped), None, "{}", shipped.name);
     }
 }
+
+/// Spec #3679 S12: the names compiled in as purlis's own are its bundle's skills, each folder
+/// named as its skill, so a name stays reserved where no bundle is found beside the binary.
+#[test]
+fn the_shipped_names_are_the_bundles_skills() {
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
+    let skills = crate::skills::read(&bundle);
+    let names: Vec<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
+    assert_eq!(names, crate::skills::SHIPPED);
+    for skill in &skills {
+        assert_eq!(
+            skill.path.parent().and_then(Path::file_name),
+            Some(std::ffi::OsStr::new(&skill.name)),
+            "{skill:?}"
+        );
+    }
+}
+
+#[test]
+fn a_built_in_skills_name_is_reserved_with_or_without_a_bundle() {
+    let bundle = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(bundle.path().join("bundled")).unwrap();
+    std::fs::write(
+        bundle.path().join("bundled/SKILL.md"),
+        "---\nname: bundled\ndescription: Comes with purlis.\n---\n",
+    )
+    .unwrap();
+    let with = Some(bundle.path());
+    for name in [
+        "secrets",
+        "browser",
+        "skill-index",
+        "purlis-secrets",
+        "purlis-skill-index",
+    ] {
+        assert!(crate::skills::name_reserved(None, name), "{name}");
+        assert!(crate::skills::name_reserved(with, name), "{name}");
+    }
+    assert!(crate::skills::name_reserved(with, "bundled"));
+    assert!(crate::skills::name_reserved(with, "purlis-bundled"));
+    assert!(!crate::skills::name_reserved(None, "bundled"));
+    for name in [
+        "deploy",
+        "purlis",
+        "purlis-deploy",
+        "my-secrets",
+        "secrets-two",
+    ] {
+        assert!(!crate::skills::name_reserved(with, name), "{name}");
+    }
+}

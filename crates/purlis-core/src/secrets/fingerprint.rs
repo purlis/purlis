@@ -44,6 +44,48 @@ fn key(trust: &Path, p: &Path) -> Option<Vec<u8>> {
     super::key_file(trust, p, KEY_BYTES).ok()
 }
 
+/// **A seal of `parts` for `purpose`**: the 64 hex characters of `HMAC-SHA256` of each part, each
+/// ended by a NUL, under a key derived for `purpose` alone ([`purpose_key`]), or `None` with no
+/// plane key. What purlis writes into a file it alone writes, so that it can tell its own file
+/// from one written otherwise: computing one needs the plane's key, which no sandboxed chat
+/// reads, and a seal for one purpose is never one for another, nor anything the plane's key
+/// signs itself.
+pub fn seal(ctx: &Ctx, purpose: &str, parts: &[&str]) -> Option<String> {
+    sealed_with(&key(ctx.trust(), &key_path(ctx))?, purpose, parts)
+}
+
+/// [`seal`], with the plane's key where it is already there, and never making one: what a seal
+/// is checked against, so a check leaves nothing behind. `None` where the plane has no key.
+pub fn seal_with_the_key_there(ctx: &Ctx, purpose: &str, parts: &[&str]) -> Option<String> {
+    let k = crate::contain::read_no_link(ctx.trust(), &key_path(ctx)).ok()?;
+    (k.len() == KEY_BYTES).then_some(())?;
+    sealed_with(&k, purpose, parts)
+}
+
+/// The seal of `parts` for `purpose` under the plane's key `plane_key`.
+fn sealed_with(plane_key: &[u8], purpose: &str, parts: &[&str]) -> Option<String> {
+    let k = purpose_key(plane_key, purpose)?;
+    let mut mac = Hmac::<Sha256>::new_from_slice(&k).ok()?;
+    for part in parts {
+        mac.update(part.as_bytes());
+        mac.update(b"\0");
+    }
+    Some(hex(&mac.finalize().into_bytes()))
+}
+
+/// The key a seal for `purpose` is made under: `HMAC-SHA256(plane key, "purlis seal key\0" +
+/// purpose)`, so each purpose has a key of its own, and none is the plane's key itself.
+fn purpose_key(plane_key: &[u8], purpose: &str) -> Option<Vec<u8>> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(plane_key).ok()?;
+    mac.update(b"purlis seal key\0");
+    mac.update(purpose.as_bytes());
+    Some(mac.finalize().into_bytes().to_vec())
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 /// `fingerprint`: 12 hex characters of `HMAC-SHA256(key, value)`, or `None` with no key.
 pub fn fingerprint(ctx: &Ctx, value: &str) -> Option<String> {
     let k = key(ctx.trust(), &key_path(ctx))?;

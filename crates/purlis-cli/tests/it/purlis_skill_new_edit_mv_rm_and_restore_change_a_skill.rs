@@ -327,3 +327,32 @@ fn a_personas_own_skill_is_made_moved_deleted_restored_and_shared_with_p() {
             .exists()
     );
 }
+
+/// Spec #3679 S12: `purlis skill` refuses a built-in skill's name as the window does, in the
+/// core's words, whether or not a bundle lies beside the binary.
+#[test]
+fn skill_new_and_mv_refuse_a_built_in_skills_name() {
+    let project = Project::new();
+    let reserved = "That name belongs to a built-in skill; pick another, or make a copy.";
+
+    let out = project.run(&["skill", "new", "secrets", "-d", "Stands in.", "-w", "alpha"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains(reserved), "{}", stderr(&out));
+    assert!(
+        !project
+            .root()
+            .join("workspaces/alpha/skills/secrets")
+            .exists()
+    );
+
+    assert!(
+        project
+            .run(&["skill", "new", "deploy", "-d", "Ships it.", "-w", "alpha"])
+            .status
+            .success()
+    );
+    let out = project.run(&["skill", "mv", "deploy", "-w", "alpha", "--name", "browser"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(stderr(&out).contains(reserved), "{}", stderr(&out));
+    assert_eq!(project.gets(Some("alpha")), ["deploy"]);
+}

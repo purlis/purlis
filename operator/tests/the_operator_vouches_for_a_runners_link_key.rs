@@ -984,6 +984,11 @@ fn kept_claim() -> Claim {
 
 /// What the operator says of a kept claim's runner in `pod`, its sandbox named `sandbox_name`.
 fn vouching_kept(sandbox_name: &str, pod: &Pod) -> Vouching {
+    vouching_kept_labelled(sandbox_name, pod, true)
+}
+
+/// [`vouching_kept`], with the pod named for its claim by upstream's label only if `labelled`.
+fn vouching_kept_labelled(sandbox_name: &str, pod: &Pod, labelled: bool) -> Vouching {
     let claim = kept_claim();
     let mut upstream = upstream::sandbox_claim_for(&claim, &Default::default());
     upstream.metadata.uid = Some(UPSTREAM_UID.into());
@@ -996,6 +1001,13 @@ fn vouching_kept(sandbox_name: &str, pod: &Pod) -> Vouching {
     let mut sandbox = sandbox(UPSTREAM_UID);
     sandbox.name = Some(sandbox_name.into());
     let mut pod = pod.clone();
+    if labelled {
+        pod.metadata
+            .labels
+            .get_or_insert_with(Default::default)
+            .entry(vouch::CLAIM_UID_LABEL.to_owned())
+            .or_insert_with(|| UPSTREAM_UID.to_owned());
+    }
     pod.metadata.owner_references = Some(owned_by(
         "Sandbox",
         "agents.x-k8s.io/v1beta1",
@@ -1066,6 +1078,18 @@ fn a_kept_claims_pod_is_vouched_for_with_its_own_volume_in_place_of_the_template
             "{what}"
         );
     }
+    // A kept claim's pod names its claim, and no other.
+    let mut another = on_volume("purlis-kept-ada-1");
+    another.metadata.labels =
+        Some([(vouch::CLAIM_UID_LABEL.to_owned(), SANDBOX_UID.to_owned())].into());
+    assert!(matches!(
+        vouching_kept("ada-1", &another),
+        Vouching::Refused(_)
+    ));
+    assert!(matches!(
+        vouching_kept_labelled("ada-1", &on_volume("purlis-kept-ada-1"), false),
+        Vouching::Refused(_)
+    ));
     // A fresh claim's pod keeps the template's folder, and no volume of its own.
     let upstream = upstream_claim("ada-1");
     let sandbox = sandbox(UPSTREAM_UID);

@@ -658,6 +658,8 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
 | Panel | `Panel`, or `panelRoot(variant)` on a library's resizable panel; `PanelTitle`, the title of the view it shows (`ui/panel/Panel.tsx`) | `root`, `title` | `side`, `content`, `bottom` |
 | Panel section | `PanelSection` (with `view` and `top`), `PanelSectionHead`, `PanelSectionTitle`, `InPanelTop` (`ui/panel/Panel.tsx`) | `root`, `head`, `title`, `top` | `default` |
 | Panel separator | `Separator` (`ui/panel/Separator.tsx`), every resize handle between two panels | `root`, `grip` | none |
+| View frame | `ViewFrame`, `ViewNav`, `ViewListHead`, `ViewPageHeader` (`ui/panel/ViewFrame.tsx`), a view tab laid out as pages; `ViewBar`, `ViewHistoryButtons`, `ViewCrumbs` (`ui/panel/ViewBar.tsx`), its top bar | `root`, `nav`, `list`, `item`, `head`, `header`, `name`, `lead`, `bar`, `history`, `path`, `crumb`, `crumb-separator` | none |
+| View nav | a page in the view frame's navigation, drawn by `ViewNav` | `item`, `label`, `indicator` | none |
 | Empty state | `EmptyState` (`ui/empty-state/EmptyState.tsx`) | `root`, `icon`, `headline`, `body`, `action` | `page`, `panel` |
 | Status item | `StatusItem` (pressed, runs a command), `StatusCell` (says, runs nothing), `StatusVerdict` (`ui/status/StatusItem.tsx`) | `root`, `icon`, `label`, `count` | `bar`, `pill`, `waiting`, `accent` |
 
@@ -689,6 +691,32 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   drawn on it, in a half of the Panel or in either sidebar, and so are Personas, Vaults and every
   extension's panel (#3341), and the Chats view (#3342), whose rows lead with the
   persona's mark and the chat's state as a dot on its corner.
+- **A view tab laid out as pages is a view frame** (#3666, the Skill studio frame's variant A,
+  `purlis/view-frame-family`): the page navigation, the page's list (its heading and lead line,
+  `ViewListHead`, then a list or table) and the item chosen in it beside it (its page header,
+  `ViewPageHeader`: the name, a tag and one mark, the one-line description, up to three actions
+  and a "…" menu; then its banner, a Notice `alone`, and its body). The navigation is one Tab
+  stop, the current page `aria-current="page"` and marked at its start edge as well as by its
+  colour; ↑ ↓ Home End walk it and Enter, Space or a press chooses. A page's count is the count
+  family's, `waiting` for what waits for the person, and a page with nothing in it is left out.
+  Each pane scrolls on its own and the page header stays in view; the panes' sizes are the
+  frame's, so a new item or a changed count moves nothing, and the list and the item are resized
+  through the panel separator. Under 720px wide (a narrow tab, a split pane) it is page-and-back:
+  the navigation is a `Select`, the list comes first, an opened item is drawn alone with a way
+  back, and the keyboard follows: onto the way back as the item opens, onto the list as the
+  person comes back.
+- **A view tab has its own back and forward** (#3667, `ui/panel/viewHistory.ts`): the tab's
+  history is kept by its id in memory (`useViewHistory`), so another tab never shares it and a
+  relaunch starts afresh, and a place reached from outside the tab (`openViewAt`: the run chip's
+  Runs) is a step on a tab that has a history and its start on one that has none. `ViewBar` draws
+  back and forward at the bar's start, each unavailable with its reason at its end, and the path
+  (`ViewCrumbs`, a list named "Path": each name before the last on the quiet ghost inline, the
+  last `aria-current="page"` and no button, long names cut first, the whole path its tooltip),
+  then the view's own controls. ⌘[ and ⌘] on a Mac, Alt+← and Alt+→ elsewhere (`view.back`,
+  `view.forward` in the key registry, in its new `view` place; Ctrl+[ is a terminal's Escape and
+  an editor's indent, so Ctrl does not take ⌘'s place), and the mouse's own back and forward
+  buttons walk it anywhere in a `ViewFrame` handed the `history`; an editor, a menu or a dialog
+  keeps the keys.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right
@@ -721,7 +749,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
-| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`) | `root`, `title` | `raised`, `ask` |
+| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value` | `raised`, `ask` |
 | Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
@@ -733,6 +761,19 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   `card.root.border-width: 0`); Classic on its raised ground with the subtle hairline. **An ask
   keeps its waiting edge in every theme** (ADR 0097 §6): no theme can take it away, as no theme
   can take Allow's.
+- **Facts, as label and value** (`Facts`, #3673): what a screen knows about one thing, read only,
+  a fact a line (a skill's Overview, a source's header, what a grade may spend). A `dl`, each fact
+  its label and value, so a reader hears them together; one label column in the secondary tier
+  (`card.facts-label`) and the value in the primary (`card.facts-value`), which may hold a badge,
+  a link or one button (a fix). Where its own room is under 24rem, each label stands over its
+  value. No screen writes its own `dl` grid.
+- **A row of totals tiles** (`Totals`, `Tile`, #3673): a tile's label in the label role, in
+  capitals; its value a size larger in figures of one width (`card.tile-value`); an optional
+  line under it in the quiet tier. The tiles share the row (each at least about 170px) and wrap
+  to more rows, never sideways; a tile is edged as a card is, with no ground of its own
+  (`card.tile`). A value that changes keeps its tile's size, and `live` totals say their
+  changes politely (`role="status"`), at most once a second (`ui/said.ts`). Facts and tiles stand
+  on a page as often as in a card, so a theme reaches them by their own attributes.
 - **A Notice is drawn by the notice family and is a Notice by `Notice.tsx`.** Its box is the
   family's `root`, its tone the variant and where it stands its `data-placement`: `pane` (its
   pane's row; in a chat's pane the band draws it as a washed card with its mark and no edge,
@@ -762,6 +803,35 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
   Inbox's list, a Notice alone, every badge and count, the hosts' statuses, a badge's hint, and a
   line across a card and down a strip, each walked by the keyboard and checked by axe.
+## The meter family
+
+**A value drawn as a bar is the meter family** (`app/src/ui/meter/`, #3674, on React Aria's
+`Meter` and `ProgressBar`, added to spec #2897's closed list by the operator on 2026-10-28). No
+screen writes a `<meter>` or a `<progress>`, or either role by hand: `purlis/meter-family` is an
+error (Get project's clone progress is still off, until it moves).
+
+| Wrapper | What it is |
+| --- | --- |
+| `Meter` (`Meter.tsx`) | **A labelled value on a known range**: a grade's score from 0 to 100. Its label at the start, its track, its value in figures of one width at the end (`valueLabel`, "86%"). Its `variant` says what it is in a comparison: `subject` (the accent), `baseline` (without it, the waiting colour) and `previous` (its previous version, the muted tier) |
+| `MeterGroup` | **Meters that compare**: one scale (0 to 100 unless said) and one label column, so their tracks are one length and a longer bar is a larger value; named for a reader ("Latest grade") |
+| `ProgressBar` | **How far something is**: done of N (`value`, `maxValue`, `valueLabel`), or going with no end known (`isIndeterminate`), its stripes moving, and standing still under reduced motion |
+
+- **A reader hears a meter by its label, with its value** (`aria-valuetext`). A progress bar's
+  value is said politely as it changes, at most once a second, in a status line beside it: its
+  own children are presentational to a reader.
+- **Told apart by more than colour** (WCAG 1.4.1): each bar's label and its value beside it.
+  Each fill is held at 3:1 on its track on every ground (`meter.fill.*.fill` on
+  `meter.track.fill`), by the theme engine: a theme that would lose a bar draws its default.
+- **Forced colours** draw the fill in the system's highlight on a track edged in the words'
+  colour and the previous version in the words' colour (`forced-colors.css`); the system's
+  palette has no pattern, so there the baseline is told by its label and its value. The value is
+  words, in the system's words' colour.
+- **Drawn by its parts** (ADR 0103): the `root` (its `data-variant`), `label`, `track`, `fill`
+  and `value`, in `meter.css`; a theme's parts reach the same attributes (`meter.*`, the next
+  release's manifest version).
+- **Stories hold it** (`Meter.stories.tsx`): the latest grade's three bars, a running grade's
+  progress that moves, and one going with no end known.
+
 ## The tooltip family
 
 **Every hint in the window is the shared tooltip** (`app/src/ui/tooltip/Tooltip.tsx`, #2908,
@@ -947,6 +1017,25 @@ Two members, by what a cell holds:
   `allowsSorting` sorts by a press on its name (`sortDescriptor`, `onSortChange`, `aria-sort`),
   its arrow keeping its room while another column sorts, so sorting moves no name. `onRowAction`
   (or a row's `onAction`) runs a row on Enter or a press.
+- **A view chooses for a column** (#3671, `CellWords.tsx`), on `TableColumn` and `ControlColumn`
+  alike, so a column of short facts (a date, a level, "Works on", "3 of 3") keeps one line where a
+  long column beside it takes the room, and no row grows tall word by word:
+  - `cut`: its cells keep one line, cut with an ellipsis where the column is narrower, and the
+    whole words are the cell's tooltip, only while they are cut;
+  - `clamp={2}`: its cells wrap to two lines at most and are cut after them, whole in the tooltip
+    (a description column, "What it does");
+  - `size`: `fit`, as narrow as its widest cell on one line, or `fill`, the room the others leave;
+  - `width`, `minWidth`, `maxWidth`: a length in px or CSS, the column's width and its words' least
+    and most (a `cut` column with a `maxWidth` is cut there).
+
+  A cut cell's tooltip opens under the pointer after the window's delay, and at once as the keyboard
+  reaches it: the grid's arrows on a table of data's cell, and in a table of controls the cut words
+  themselves, which are a Tab stop while they are cut, as a column's shortened name is. Esc takes it
+  down. The words stay the cell's, whole, so a screen reader hears them all. React Aria's own
+  `width` is read only by a column-resizing table, so the family's widths are its own. A column that
+  chooses nothing draws exactly as before. A table of data where its frame is narrow keeps its
+  one-line columns and scrolls sideways; it stacks only where the view asks (`stacks` on `Table`,
+  with `heading` on each `TableCell`), as a table of controls does.
 - **A row's menu** (`menu` on `TableRow`, `rowMenus` on the table): the row's actions under one ⋯
   in a column of its own at the row's end, named "More for" the row, aligned on every row (a row
   with none keeps its cell); a right-click on the row, Shift+F10 or the menu key open the same
@@ -1125,8 +1214,20 @@ WAI-ARIA "Tabs" pattern:
   tables and trees) and the collapse into show-more (`fits.ts`, which counts the theme's gap
   between tabs).
 
+**A page's tabs are `PageTabs`** (#3668, `app/src/ui/tabs/PageTabs.tsx`, the skill page
+prototype's variant A): React Aria's `Tabs`, `TabList`, `Tab` and `TabPanel`, with automatic
+activation (one Tab stop on the row, ← and → choose the tab beside, Home and End the first and
+the last), each panel named by its tab. A count after a tab's words is its description, never
+part of its name, in room kept for three figures (past 99 it says 99+), so 9 to 10 widens
+nothing. The chosen tab is told by the indicator under it as well as by its words' colour, and no
+state changes a size. Narrow, the row scrolls along and never wraps. The chosen tab is the
+owner's (`selected`, `onSelect`), so a view's history brings it back. Its parts are the
+`page-tabs` family's: `tab`, `label`, `count`, `indicator`, `list` and `panel`. The segmented
+control is a radio group, never a page's tabs.
+
 `purlis/tabs-family` (an error) refuses a `tab`, `tablist` or `tabpanel` role written by hand,
-the old hand-made tablist (`StripTablist`) and `data-scope="tabs"` outside `src/ui`. The tablists
+a page's or a strip's alike, the old hand-made tablist (`StripTablist`) and `data-scope="tabs"`
+or `"page-tabs"` outside `src/ui`. The tablists
 still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
 file in `eslint.config.js` until their own tickets move them.
 
