@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use purlis_session_protocol::browsing::{Act, DownloadSaid, DownloadState};
 
-use super::{ChatFolder, Files, Prepared, save_asked_said, save_kept_out_said};
+use super::{ChatFolder, Files, NOT_ON_A_RUNNER, Prepared, save_not_allowed_said};
 
 fn at(folder: &str) -> ChatFolder {
     ChatFolder {
@@ -47,11 +47,18 @@ fn done(download: &str, origin: Option<&str>) -> DownloadSaid {
     }
 }
 
+fn refused(prepared: Prepared) -> String {
+    match prepared {
+        Prepared::No(why) => why,
+        other => panic!("refused, not {other:?}"),
+    }
+}
+
 #[test]
 fn an_upload_names_the_chat_s_folder_as_the_window_knows_it_never_the_one_it_was_sent() {
     let files = Files::default();
     assert_eq!(
-        files.prepared(1, "B", upload(&["docs/a.pdf"]), from_here, false, 0),
+        files.prepared(1, "B", upload(&["docs/a.pdf"]), from_here, false),
         Prepared::Go(Act::Upload {
             target: "e4".into(),
             files: vec!["docs/a.pdf".into()],
@@ -64,172 +71,93 @@ fn an_upload_names_the_chat_s_folder_as_the_window_knows_it_never_the_one_it_was
 fn an_upload_from_outside_the_chat_s_folder_or_of_what_purlis_keeps_is_refused() {
     let files = Files::default();
     for outside in ["../other/secret", "/etc/hosts", "~/.ssh/id_ed25519"] {
-        assert!(
-            matches!(
-                files.prepared(1, "B", upload(&[outside]), from_here, false, 0),
-                Prepared::No(_)
-            ),
-            "{outside}"
-        );
+        refused(files.prepared(1, "B", upload(&[outside]), from_here, false));
     }
-    let kept_inside = || Ok(at("/p"));
-    let Prepared::No(why) = files.prepared(
+    let why = refused(files.prepared(
         1,
         "B",
         upload(&[".PURLIS/vaults/forge.json"]),
-        kept_inside,
+        || Ok(at("/p")),
         false,
-        0,
-    ) else {
-        panic!("a kept file is refused, whatever its spelling");
-    };
+    ));
     assert!(why.contains("keeps from every chat"), "{why}");
 }
 
 #[test]
-fn a_runner_chat_s_browser_takes_no_files() {
+fn a_runner_chat_s_browser_takes_no_files_and_a_folder_not_told_refuses_in_its_words() {
     let files = Files::default();
     assert_eq!(
-        files.prepared(1, "B", upload(&["a.pdf"]), from_here, true, 0),
-        Prepared::No(super::NOT_ON_A_RUNNER.to_owned())
+        refused(files.prepared(1, "B", upload(&["a.pdf"]), from_here, true)),
+        NOT_ON_A_RUNNER
+    );
+    assert_eq!(
+        refused(files.prepared(1, "B", upload(&["a"]), || Err("why".into()), false)),
+        "why"
     );
 }
 
 #[test]
-fn a_folder_that_cannot_be_told_refuses_the_upload_in_its_words() {
-    let files = Files::default();
-    assert_eq!(
-        files.prepared(1, "B", upload(&["a"]), || Err("why".into()), false, 0),
-        Prepared::No("why".into())
-    );
-}
-
-#[test]
-fn a_download_is_saved_only_once_the_person_allowed_its_origin_for_that_chat() {
+fn a_download_is_never_saved_into_a_chat_s_folder_without_the_person_s_yes_for_its_origin() {
     let files = Files::default();
     files.heard("B", &[done("d1", Some("https://files.example.com"))]);
-    // The first save asks, and saves nothing.
     assert_eq!(
-        files.prepared(1, "B", save("d1", "downloads/r.pdf"), from_here, false, 7),
-        Prepared::Asked(save_asked_said("https://files.example.com"))
+        refused(files.prepared(1, "B", save("d1", "downloads/r.pdf"), from_here, false)),
+        save_not_allowed_said("https://files.example.com")
     );
-    let waits = files.saves_waiting();
-    assert_eq!(waits.len(), 1);
-    assert_eq!(waits[0].session, 1);
-    assert_eq!(waits[0].since, 7);
-    assert_eq!(waits[0].origins, ["https://files.example.com"]);
-    // Asked once: the next call waits, and asks nothing more.
-    assert!(matches!(
-        files.prepared(1, "B", save("d1", "downloads/r.pdf"), from_here, false, 8),
-        Prepared::No(_)
-    ));
-    assert_eq!(files.saves_waiting().len(), 1);
-    // Another chat is asked on its own.
-    files.heard("C", &[done("d1", Some("https://files.example.com"))]);
-    assert!(matches!(
-        files.prepared(2, "C", save("d1", "r.pdf"), from_here, false, 9),
-        Prepared::Asked(_)
-    ));
-    files
-        .saves_answered(1, &["https://files.example.com".to_owned()], true)
-        .unwrap();
+    files.allow_saves(1, "https://files.example.com");
     assert_eq!(
-        files.prepared(1, "B", save("d1", "downloads/r.pdf"), from_here, false, 10),
+        files.prepared(1, "B", save("d1", "downloads/r.pdf"), from_here, false),
         Prepared::Go(Act::SaveDownload {
             download: "d1".into(),
             to: "downloads/r.pdf".into(),
             into: Some("/p/workspaces/app".into()),
         })
     );
-    // Allowed for chat 1 alone.
-    assert!(matches!(
-        files.prepared(2, "C", save("d1", "r.pdf"), from_here, false, 11),
-        Prepared::No(_)
-    ));
-}
-
-#[test]
-fn an_origin_kept_out_refuses_its_saves_and_an_answer_to_nothing_waiting_is_refused() {
-    let files = Files::default();
-    files.heard("B", &[done("d1", Some("https://x.test"))]);
-    let _ = files.prepared(1, "B", save("d1", "r"), from_here, false, 0);
-    assert!(
-        files
-            .saves_answered(1, &["https://other.test".to_owned()], true)
-            .is_err()
-    );
-    files
-        .saves_answered(1, &["https://x.test".to_owned()], false)
-        .unwrap();
-    assert_eq!(
-        files.prepared(1, "B", save("d1", "r"), from_here, false, 0),
-        Prepared::No(save_kept_out_said("https://x.test"))
-    );
-    assert!(files.saves_waiting().is_empty());
+    // A yes is for that chat alone, and goes with it.
+    files.heard("C", &[done("d1", Some("https://files.example.com"))]);
+    refused(files.prepared(2, "C", save("d1", "r.pdf"), from_here, false));
+    files.chat_ended(1);
+    refused(files.prepared(1, "B", save("d1", "downloads/r.pdf"), from_here, false));
 }
 
 #[test]
 fn a_save_goes_nowhere_a_chat_may_not_write_nor_out_of_its_folder() {
     let files = Files::default();
     files.heard("B", &[done("d1", Some("https://x.test"))]);
-    let _ = files.prepared(1, "B", save("d1", "r"), from_here, false, 0);
-    files
-        .saves_answered(1, &["https://x.test".to_owned()], true)
-        .unwrap();
-    for refused in [
+    files.allow_saves(1, "https://x.test");
+    for to in [
         ".git/hooks/pre-commit",
         ".claude/settings.json",
         ".envrc",
         "../outside",
         "/etc/x",
         "charter.toml",
+        ".purlis/vaults/x.json",
     ] {
-        assert!(
-            matches!(
-                files.prepared(1, "B", save("d1", refused), from_here, false, 0),
-                Prepared::No(_)
-            ),
-            "{refused}"
-        );
+        refused(files.prepared(1, "B", save("d1", to), || Ok(at("/p")), false));
     }
 }
 
 #[test]
-fn only_a_finished_download_with_an_origin_is_saved() {
+fn only_a_finished_download_with_an_origin_is_saved_and_one_gone_with_its_browser_is_not() {
     let files = Files::default();
     let going = DownloadSaid {
         state: DownloadState::Going,
         ..done("d1", Some("https://x.test"))
     };
     files.heard("B", &[going, done("d2", None)]);
+    files.allow_saves(1, "https://x.test");
     for download in ["d1", "d2", "d3"] {
-        assert!(
-            matches!(
-                files.prepared(1, "B", save(download, "r"), from_here, false, 0),
-                Prepared::No(_)
-            ),
-            "{download}"
-        );
+        refused(files.prepared(1, "B", save(download, "r"), from_here, false));
     }
-    assert!(files.saves_waiting().is_empty(), "nothing asked");
-}
-
-#[test]
-fn what_an_answer_said_of_a_download_is_kept_as_it_is_now_and_goes_with_its_browser() {
-    let files = Files::default();
-    let going = DownloadSaid {
-        state: DownloadState::Going,
-        ..done("d1", Some("https://x.test"))
-    };
-    assert!(files.heard("B", std::slice::from_ref(&going)));
-    assert!(
-        !files.heard("B", std::slice::from_ref(&going)),
-        "nothing new"
-    );
-    assert!(files.heard("B", &[done("d1", Some("https://x.test"))]));
-    assert_eq!(files.of("B"), vec![done("d1", Some("https://x.test"))]);
+    // The last word of a download is the one kept.
+    files.heard("B", &[done("d1", Some("https://x.test"))]);
+    assert!(matches!(
+        files.prepared(1, "B", save("d1", "r"), from_here, false),
+        Prepared::Go(_)
+    ));
     files.ended("B");
-    assert!(files.of("B").is_empty());
+    refused(files.prepared(1, "B", save("d1", "r"), from_here, false));
 }
 
 #[test]
@@ -239,30 +167,7 @@ fn an_act_that_names_no_folder_goes_as_it_is() {
         target: "e1".into(),
     };
     assert_eq!(
-        files.prepared(
-            1,
-            "B",
-            act.clone(),
-            || panic!("no folder is asked"),
-            false,
-            0
-        ),
+        files.prepared(1, "B", act.clone(), || panic!("no folder is asked"), false),
         Prepared::Go(act)
     );
-}
-
-#[test]
-fn a_download_named_as_a_program_is_never_opened() {
-    for program in [
-        "Invoice.command",
-        "setup.PKG",
-        "x.app",
-        "run.sh",
-        "a.webloc",
-    ] {
-        assert!(super::opens_as_a_program(program), "{program}");
-    }
-    for document in ["report.pdf", "photo.jpeg", "notes", "data.csv", "sh"] {
-        assert!(!super::opens_as_a_program(document), "{document}");
-    }
 }

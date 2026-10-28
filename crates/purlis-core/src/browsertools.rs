@@ -653,7 +653,9 @@ fn s_upload() -> Value {
                 "type": "array",
                 "minItems": 1,
                 "items": { "type": "string" },
-                "description": "Each file to upload, as a path relative to your working folder                                 (reports/summary.pdf). Only files in it that you may read; no                                 link out of it is followed.",
+                "description": "Each file to upload, as a path relative to your working folder \
+                                (reports/summary.pdf). Only files in it that you may read; no \
+                                link out of it is followed.",
             },
         }),
         &["target", "files"],
@@ -666,7 +668,9 @@ fn s_save_download() -> Value {
             "download": { "type": "string", "description": "The download, as an answer named it (d1)." },
             "to": {
                 "type": "string",
-                "description": "Where in your working folder to save it, as a path relative to                                 it (downloads/report.pdf). Its folder must be there, and nothing                                 there already.",
+                "description": "Where in your working folder to save it, as a path relative to \
+                                it (downloads/report.pdf). Its folder must be there, and nothing \
+                                there already.",
             },
         }),
         &["download", "to"],
@@ -872,19 +876,25 @@ pub const TOOLS: [Tool; 23] = [
     },
     Tool {
         name: "browser_downloads",
-        description: "The browser's downloads: each one's name (d1), the page's name for it,                       its size and where it came from. A download is held where no chat                       reaches it until you save it with browser_save_download.",
+        description: "The browser's downloads: each one's name (d1), the page's name for it, \
+                      its size and where it came from. A download is held where no chat \
+                      reaches it until you save it with browser_save_download.",
         schema: s_none,
         read_only: true,
     },
     Tool {
         name: "browser_save_download",
-        description: "Save a finished download into your working folder, as a new file. The                       first from a site asks the person, once; until they allow it, nothing is                       saved.",
+        description: "Save a finished download into your working folder, as a new file. It \
+                      needs the person's yes for the site it came from; until then nothing is \
+                      saved, and the download stays in the browser.",
         schema: s_save_download,
         read_only: false,
     },
     Tool {
         name: "browser_upload",
-        description: "Put files from your working folder into the page's file input, as if                       chosen in its file dialog. Only files in your working folder that you may                       read, at most 20 and 100 MB.",
+        description: "Put files from your working folder into the page's file input, as if \
+                      chosen in its file dialog. Only files in your working folder that you may \
+                      read, at most 20 and 100 MB.",
         schema: s_upload,
         read_only: false,
     },

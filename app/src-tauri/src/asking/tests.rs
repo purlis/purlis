@@ -114,7 +114,6 @@ struct World {
     browser_sites: Vec<crate::chatbrowsers::SitesWait>,
     pool_logins: Vec<crate::chatbrowsers::PoolLoginWaits>,
     pool_tools: Vec<crate::pooltools::PoolToolWaits>,
-    browser_saves: Vec<crate::browserfiles::SavesWait>,
     /// What the project's committed file declares it expects (ADR 0093).
     declared: purlis_core::sandbox::services::Declared,
 }
@@ -144,7 +143,6 @@ impl World {
             browser_sites: Vec::new(),
             pool_logins: Vec::new(),
             pool_tools: Vec::new(),
-            browser_saves: Vec::new(),
             declared: purlis_core::sandbox::services::Declared::default(),
         }
     }
@@ -180,7 +178,6 @@ impl World {
             browser_sites: self.browser_sites.clone(),
             pool_logins: self.pool_logins.clone(),
             pool_tools: self.pool_tools.clone(),
-            browser_saves: self.browser_saves.clone(),
             permissions: self.permissions.clone(),
             queue: self.queue.clone(),
             at_its_prompt: &at_prompt,

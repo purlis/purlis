@@ -542,7 +542,6 @@ export const ALLOW_OR_KEEP: ReadonlySet<Shown["source"]> = new Set<Shown["source
   "browser-site",
   "pool-login",
   "pool-tool",
-  "browser-save",
 ]);
 
 /** What one ask's row offers, decided once for its stops and its drawing. */
@@ -767,7 +766,6 @@ const SOURCE_SAID: Record<Shown["source"], string> = {
   "browser-site": "Asks to let its browser reach a new site",
   "pool-login": "Asks to log its browser in on a pool's runner",
   "pool-tool": "Asks to send a tool its vault values for a run on a pool's runner",
-  "browser-save": "Asks to save its browser's downloads into its folder",
   terminal: "In its terminal",
   question: "Waiting on your reply",
 };

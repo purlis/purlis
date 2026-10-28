@@ -709,22 +709,6 @@ export const commands = {
 	 */
 	answerPoolTool: (plane: PlaneId, session: number, run: number, allow: boolean) => typedError<null, string>(__TAURI_INVOKE("answer_pool_tool", { plane, session, run, allow })),
 	/**
-	 *  **The person answered chat `session`'s saves of downloads from `origins`** (#2020): Allow
-	 *  for this chat saves them from its next call; Keep out refuses them. The window's alone.
-	 */
-	answerBrowserSaves: (plane: PlaneId, session: number, origins: string[], allow: boolean) => typedError<null, string>(__TAURI_INVOKE("answer_browser_saves", { plane, session, origins, allow })),
-	/**
-	 *  **Opens download `download` of browser `program` with this machine's default for it**
-	 *  (#2020): the person's press on its row. Never one that opens as a program
-	 *  ([`opens_as_a_program`]): Show in folder is the way to it.
-	 */
-	openBrowserDownload: (plane: PlaneId, program: string, download: string) => typedError<null, string>(__TAURI_INVOKE("open_browser_download", { plane, program, download })),
-	/**
-	 *  **Shows download `download` of browser `program` in its folder** (#2020), in this machine's
-	 *  file manager, by its own name.
-	 */
-	showBrowserDownload: (plane: PlaneId, program: string, download: string) => typedError<null, string>(__TAURI_INVOKE("show_browser_download", { plane, program, download })),
-	/**
 	 *  **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
 	 *  browser sites at `level`: this chat, every chat of this project on this machine, or everyone
 	 *  in the project, committed (#2443). A grant for the browser alone (ruled 2026-10-17): the
@@ -4408,11 +4392,6 @@ export type AnswerPath =
  *  the chat that asked (#2047).
  */
 { via: "pool-tool"; run: number } | 
-/**
- *  `answer_browser_saves`, allowing for Allow for this chat and not for Keep out, for
- *  `origins`, the origins the ask showed (#2020).
- */
-{ via: "browser-saves"; origins: string[] } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -4582,12 +4561,7 @@ export type AskSource =
  *  One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
  *  lets this desktop send that tool its vault values on the pool's runner for that run alone.
  */
-"pool-tool" | 
-/**
- *  Downloads a chat's browser would save into the chat's folder, from an origin the person
- *  has not answered for that chat (#2020): an Allow saves them, for this chat alone.
- */
-"browser-save";
+"pool-tool";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -5305,11 +5279,6 @@ export type ChatBrowser = {
 	 *  what its row and thumbnail name as its device.
 	 */
 	pool: string | null,
-	/**
-	 *  Its downloads, oldest first (#2020): held where no chat reaches them, each opened or
-	 *  shown in its folder by the person from its row.
-	 */
-	downloads: RowDownload[],
 };
 
 /**
@@ -10768,35 +10737,6 @@ export type RowAction = {
 	/**  Whether it says it deletes, so the question the window asks can say so. */
 	deletes: boolean,
 };
-
-/**
- *  **One download of a browser's, as its row lists it** (#2020): its name in the browser
- *  (`d1`), the page's name for it made plain, where it came from, its size in words, and how
- *  far it has come. Data only: the window draws every word as text.
- */
-export type RowDownload = {
-	download: string,
-	name: string,
-	origin: string | null,
-	size: string,
-	state: RowDownloadState,
-	/**
-	 *  Its name says it opens as a program (an app, a script, an installer), so its row offers
-	 *  Show in folder and never Open.
-	 */
-	opens_as_a_program: boolean,
-};
-
-/**  How far a download on a browser's row has come (#2020). */
-export type RowDownloadState = 
-/**  It is downloading. */
-"going" | 
-/**  It is done: the person may open it or show it in its folder. */
-"done" | 
-/**  The page or the engine cancelled it. */
-"cancelled" | 
-/**  purlis cancelled it, for its size or for one too many. */
-"refused";
 
 /**  A dispatch's worktree, as its row lists it (#1453). */
 export type RowWorktree = {

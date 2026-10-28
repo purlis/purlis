@@ -394,9 +394,6 @@ export const commands = {
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
 	answerPoolTool: __WINDOW_ONLY_RESULT,
-	answerBrowserSaves: __WINDOW_ONLY_RESULT,
-	openBrowserDownload: __WINDOW_ONLY_RESULT,
-	showBrowserDownload: __WINDOW_ONLY_RESULT,
 	allowBrowserSites: __WINDOW_ONLY_RESULT,
 	allowPersonBrowserSites: __WINDOW_ONLY_RESULT,
 	keepBrowserSitesBlocked: __WINDOW_ONLY_RESULT,
@@ -2458,11 +2455,6 @@ export type AnswerPath =
  *  the chat that asked (#2047).
  */
 { via: "pool-tool"; run: number } | 
-/**
- *  `answer_browser_saves`, allowing for Allow for this chat and not for Keep out, for
- *  `origins`, the origins the ask showed (#2020).
- */
-{ via: "browser-saves"; origins: string[] } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -2632,12 +2624,7 @@ export type AskSource =
  *  One run of a runner chat's declared tool, which waits on the person (#2047): an Allow
  *  lets this desktop send that tool its vault values on the pool's runner for that run alone.
  */
-"pool-tool" | 
-/**
- *  Downloads a chat's browser would save into the chat's folder, from an origin the person
- *  has not answered for that chat (#2020): an Allow saves them, for this chat alone.
- */
-"browser-save";
+"pool-tool";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -3355,11 +3342,6 @@ export type ChatBrowser = {
 	 *  what its row and thumbnail name as its device.
 	 */
 	pool: string | null,
-	/**
-	 *  Its downloads, oldest first (#2020): held where no chat reaches them, each opened or
-	 *  shown in its folder by the person from its row.
-	 */
-	downloads: RowDownload[],
 };
 
 /**
@@ -8818,35 +8800,6 @@ export type RowAction = {
 	/**  Whether it says it deletes, so the question the window asks can say so. */
 	deletes: boolean,
 };
-
-/**
- *  **One download of a browser's, as its row lists it** (#2020): its name in the browser
- *  (`d1`), the page's name for it made plain, where it came from, its size in words, and how
- *  far it has come. Data only: the window draws every word as text.
- */
-export type RowDownload = {
-	download: string,
-	name: string,
-	origin: string | null,
-	size: string,
-	state: RowDownloadState,
-	/**
-	 *  Its name says it opens as a program (an app, a script, an installer), so its row offers
-	 *  Show in folder and never Open.
-	 */
-	opens_as_a_program: boolean,
-};
-
-/**  How far a download on a browser's row has come (#2020). */
-export type RowDownloadState = 
-/**  It is downloading. */
-"going" | 
-/**  It is done: the person may open it or show it in its folder. */
-"done" | 
-/**  The page or the engine cancelled it. */
-"cancelled" | 
-/**  purlis cancelled it, for its size or for one too many. */
-"refused";
 
 /**  A dispatch's worktree, as its row lists it (#1453). */
 export type RowWorktree = {

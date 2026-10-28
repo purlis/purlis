@@ -3671,50 +3671,6 @@ body {
   flex: none;
 }
 
-/* **A browser's downloads, under its row** (#2020): each a line at the browser's own indent,
-   its name giving way with an ellipsis and its size whole, then Open and Show in folder, which
-   go under the name where they do not fit beside it. */
-.chats-section .chat-browser-downloads {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.chats-section .chat-browser-download {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 var(--space-3);
-  min-width: 0;
-  margin-inline-start: calc((var(--finished-depth) + 1) * var(--ui-tree-step));
-}
-
-.chats-section .chat-browser-download-line {
-  display: flex;
-  flex: 1 1 8rem;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.chats-section .chat-browser-download-line > svg {
-  flex: none;
-  inline-size: var(--space-6);
-  block-size: var(--space-6);
-}
-
-.chats-section .chat-browser-download-name {
-  flex: 1 1 3rem;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chats-section .chat-browser-download-refused {
-  flex-basis: 100%;
-}
-
 /* Its mark and its name in a chat's row's columns, and its persona's mark at its end, the
    size a chat's is (DS-11). */
 .chats-section .finished-name {

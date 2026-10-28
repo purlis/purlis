@@ -1171,7 +1171,6 @@ export function ChatsSection({
                         onOpen={onBrowser}
                         offers={offers}
                         onPress={press}
-                        plane={chats.plane}
                       />
                     ),
                     // The finished tasks of each chat whose rows end here (#1485): this
@@ -1211,7 +1210,6 @@ export function ChatsSection({
                     offers={offers}
                     onPress={press}
                     handTo={listed}
-                    plane={chats.plane}
                   />
                 )}
               </ul>

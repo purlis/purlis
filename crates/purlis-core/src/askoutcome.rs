@@ -59,9 +59,6 @@ pub enum About {
     /// The chat's browser logins filled on pool `pool`'s runner, where its browser runs (#2050):
     /// an Allow is for chats of its persona, while the pool stays as it is.
     PoolLogin { pool: String },
-    /// Saving the chat's browser's downloads from `origin` into its folder (#2020): an Allow is
-    /// for this chat, while the app holds it.
-    BrowserSave { origin: String },
 }
 
 impl About {
@@ -131,10 +128,6 @@ impl About {
                     code(pool)
                 )
             }
-            Self::BrowserSave { origin } => format!(
-                "saving your browser's downloads from {} into your folder",
-                code(origin)
-            ),
             Self::TakeOver { browser } => {
                 format!(
                     "your ask that the person take over browser {}",

@@ -775,9 +775,8 @@ _Avoid_: filter, firewall, interceptor
 **Holding folder** (of a browser):
 Where a browser's downloads land: a folder of the browser's own data, which no chat reads or
 writes, each file under the engine's own name for it. The agent is told a download's name, size
-and origin; the person opens it, or shows it in its folder, from the browser's row. A chat has a
-download only once it **saves** it into its folder, which the person allows once per origin for
-that chat. It goes with the browser.
+and origin. A chat has a download only once it **saves** it into its folder, which needs the
+person's yes for its origin, for that chat. It goes with the browser.
 _Avoid_: downloads folder (that is the person's own), cache
 
 **Upload** (from a browser):

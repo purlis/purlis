@@ -383,8 +383,7 @@ pub struct ChatBrowsers {
     on_pools: Mutex<HashMap<String, String>>,
     /// Told what becomes of each browser for the event log (#2842), once the project is held.
     says: std::sync::OnceLock<ChatBrowsersSay>,
-    /// What each browser's downloads are, and what the person allowed each chat to save
-    /// (#2020).
+    /// What each browser's downloads are, and what each chat may save of them (#2020).
     files: crate::browserfiles::Files,
 }
 
@@ -629,65 +628,6 @@ pub struct ChatBrowser {
     /// The pool whose runner it runs on, beside its chat, or `null` on this machine (#2050):
     /// what its row and thumbnail name as its device.
     pub pool: Option<String>,
-    /// Its downloads, oldest first (#2020): held where no chat reaches them, each opened or
-    /// shown in its folder by the person from its row.
-    pub downloads: Vec<RowDownload>,
-}
-
-/// **One download of a browser's, as its row lists it** (#2020): its name in the browser
-/// (`d1`), the page's name for it made plain, where it came from, its size in words, and how
-/// far it has come. Data only: the window draws every word as text.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
-pub struct RowDownload {
-    pub download: String,
-    pub name: String,
-    pub origin: Option<String>,
-    pub size: String,
-    pub state: RowDownloadState,
-    /// Its name says it opens as a program (an app, a script, an installer), so its row offers
-    /// Show in folder and never Open.
-    pub opens_as_a_program: bool,
-}
-
-/// How far a download on a browser's row has come (#2020).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
-#[serde(rename_all = "snake_case")]
-pub enum RowDownloadState {
-    /// It is downloading.
-    Going,
-    /// It is done: the person may open it or show it in its folder.
-    Done,
-    /// The page or the engine cancelled it.
-    Cancelled,
-    /// purlis cancelled it, for its size or for one too many.
-    Refused,
-}
-
-impl RowDownload {
-    fn of(said: &purlis_session_protocol::browsing::DownloadSaid) -> Self {
-        use purlis_session_protocol::browsing::DownloadState;
-        let size = match (said.state, said.total) {
-            (DownloadState::Going, Some(total)) => format!(
-                "{} of {}",
-                purlis_core::browserfiles::bytes_said(said.bytes),
-                purlis_core::browserfiles::bytes_said(total)
-            ),
-            _ => purlis_core::browserfiles::bytes_said(said.bytes),
-        };
-        RowDownload {
-            download: said.download.clone(),
-            name: said.name.clone(),
-            origin: said.origin.clone(),
-            size,
-            opens_as_a_program: crate::browserfiles::opens_as_a_program(&said.name),
-            state: match said.state {
-                DownloadState::Going => RowDownloadState::Going,
-                DownloadState::Done => RowDownloadState::Done,
-                DownloadState::Cancelled => RowDownloadState::Cancelled,
-                DownloadState::TooLarge | DownloadState::TooMany => RowDownloadState::Refused,
-            },
-        }
-    }
 }
 
 /// **Who drives a browser, where its chat's agent does not** (#2300), as its row and thumbnail
@@ -1407,11 +1347,6 @@ impl ChatBrowsers {
 
     /// **Every browser of the project's chats**, by chat, each chat's oldest first, then any of
     /// its that is not ended yet.
-    /// What each browser's downloads are, and what each chat may save (#2020).
-    pub fn files(&self) -> &crate::browserfiles::Files {
-        &self.files
-    }
-
     pub fn listed(&self) -> Vec<ChatBrowser> {
         let mut listed: Vec<ChatBrowser> = self
             .lock()
@@ -1461,15 +1396,6 @@ impl ChatBrowsers {
                 .map(|held| held.login.clone());
         }
         drop(held);
-        // With what each downloaded (#2020).
-        for one in &mut listed {
-            one.downloads = self
-                .files
-                .of(&one.program)
-                .iter()
-                .map(RowDownload::of)
-                .collect();
-        }
         // And who drives each, where the agent does not (#2300).
         let person = self
             .person_drives
@@ -2207,7 +2133,7 @@ impl ChatBrowsers {
     /// Chat `session` has closed: its browsers end, and nothing of it is kept but a browser that
     /// could not be ended yet, which is tried again until it is.
     pub fn forget(&self, driver: Option<&Arc<dyn Driver>>, session: u32, was: &str) {
-        // What it was allowed to save goes with it, and its Ask (#2020).
+        // What it was allowed to save goes with it (#2020).
         self.files.chat_ended(session);
         // Its pool login Ask goes with it (#2050): nobody answers for a chat that has gone.
         self.pool_asks
@@ -2657,11 +2583,10 @@ impl ChatBrowsers {
             Doing::Act(act) if !ended => {
                 match self
                     .files
-                    .prepared(browse.chat, &program, act, folder, pool.is_some(), now)
+                    .prepared(browse.chat, &program, act, folder, pool.is_some())
                 {
                     crate::browserfiles::Prepared::Go(act) => Doing::Act(act),
                     crate::browserfiles::Prepared::No(why) => return (no(&why), false),
-                    crate::browserfiles::Prepared::Asked(why) => return (no(&why), true),
                 }
             }
             other => other,
@@ -2712,10 +2637,8 @@ impl ChatBrowsers {
         };
         match acted {
             Ok(browsed) => {
-                // What it downloaded, for its row and the chat's saves (#2020).
-                if self.files.heard(&program, &browsed.downloads) {
-                    self.relisted();
-                }
+                // What it downloaded, for the chat's saves (#2020).
+                self.files.heard(&program, &browsed.downloads);
                 // Where its page is now, for a quit to keep (#2022).
                 if let Some(page) = &browsed.page {
                     self.addresses

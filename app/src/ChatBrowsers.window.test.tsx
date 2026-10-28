@@ -188,7 +188,6 @@ const B7: ChatBrowser = {
   login: null,
   driver: null,
   pool: null,
-  downloads: [],
 };
 const B8: ChatBrowser = { ...B7, name: "b2", program: "B8" };
 /** A browser pinned by chat 9, which has closed (#2022). */
@@ -202,7 +201,6 @@ const B9: ChatBrowser = {
   login: null,
   driver: null,
   pool: null,
-  downloads: [],
 };
 
 /** Where the project's browsers were at the last quit, as the core says (#2022). */
@@ -376,80 +374,6 @@ describe("a chat's browsers counted on its tab", () => {
     const count = await screen.findByRole("img", { name: "2 browsers" });
     expect(count).toHaveAttribute("data-scope", "count");
     expect(count.closest(".tab")).not.toBeNull();
-  });
-});
-
-describe("a chat's browser's downloads (#2020)", () => {
-  const DOWNLOADS: ChatBrowser = {
-    ...B7,
-    downloads: [
-      {
-        download: "d1",
-        name: "report.pdf",
-        origin: "https://files.example.com",
-        size: "2.0 KB",
-        state: "done",
-        opens_as_a_program: false,
-      },
-      {
-        download: "d2",
-        name: "invoice.command",
-        origin: "https://files.example.com",
-        size: "1.0 KB",
-        state: "done",
-        opens_as_a_program: true,
-      },
-      {
-        download: "d3",
-        name: "big.iso",
-        origin: null,
-        size: "1.0 KB of 4.0 KB",
-        state: "going",
-        opens_as_a_program: false,
-      },
-    ],
-  };
-
-  it("are listed under its row, each with Open and Show in folder once done", async () => {
-    const ipc = core([DOWNLOADS]);
-    await opened();
-    const listed = within(await chatsTree()).getByRole("list", {
-      name: "Downloads of browser b1",
-    });
-    const items = within(listed).getAllByRole("listitem");
-    expect(items.map((item) => item.textContent)).toEqual([
-      expect.stringContaining("report.pdf2.0 KB · downloaded · from https://files.example.com"),
-      expect.stringContaining("invoice.command"),
-      expect.stringContaining("big.iso1.0 KB of 4.0 KB · downloading"),
-    ]);
-    await userEvent.click(within(items[0]).getByRole("button", { name: "Open report.pdf" }));
-    await waitFor(() =>
-      expect(ipc.asked("open_browser_download")).toEqual([
-        { plane: PLANE, program: "B7", download: "d1" },
-      ]),
-    );
-    await userEvent.click(
-      within(items[0]).getByRole("button", { name: "Show report.pdf in its folder" }),
-    );
-    await waitFor(() =>
-      expect(ipc.asked("show_browser_download")).toEqual([
-        { plane: PLANE, program: "B7", download: "d1" },
-      ]),
-    );
-    // A page names its files: one that opens as a program is shown, never opened.
-    expect(within(items[1]).queryByRole("button", { name: /^Open/ })).toBeNull();
-    within(items[1]).getByRole("button", { name: "Show invoice.command in its folder" });
-    // One still downloading offers neither.
-    expect(within(items[2]).queryAllByRole("button")).toEqual([]);
-  });
-
-  it("of a browser on a pool's runner offer neither Open nor Show in folder", async () => {
-    core([{ ...DOWNLOADS, pool: "gpu" }]);
-    await opened();
-    const listed = within(await chatsTree()).getByRole("list", {
-      name: "Downloads of browser b1",
-    });
-    expect(within(listed).queryAllByRole("button")).toEqual([]);
   });
 });
 

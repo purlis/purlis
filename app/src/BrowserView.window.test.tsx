@@ -729,7 +729,6 @@ describe("a browser the person opened goes where they send it (#2176)", () => {
           login: null,
           driver: null,
           pool: null,
-          downloads: [],
         },
       ];
     };
