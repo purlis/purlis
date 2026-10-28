@@ -32,6 +32,9 @@ pub enum Move {
         reports_its_process: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         conversation: Option<String>,
+        /// [`Board::opened_graded`]: a grade's chat, never in the queue (#3583).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        kept_from_the_window: bool,
     },
     /// [`Board::closed`].
     Closed,
@@ -135,8 +138,14 @@ impl Board {
             Move::Opened {
                 reports_its_process,
                 conversation,
+                kept_from_the_window,
             } => {
-                self.opened_reporting(number, reports_its_process, conversation);
+                self.opened_reporting(
+                    number,
+                    reports_its_process,
+                    conversation,
+                    kept_from_the_window,
+                );
                 true
             }
             Move::Closed => {

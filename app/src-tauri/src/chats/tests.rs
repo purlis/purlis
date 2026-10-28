@@ -696,7 +696,7 @@ fn a_chat_is_announced_before_its_program_starts() {
 
     let chats = Chats::new();
     let (tx, rx) = mpsc::channel();
-    chats.when_one_starts(Box::new(move |session, harness, conversation| {
+    chats.when_one_starts(Box::new(move |session, harness, conversation, _| {
         let _ = tx.send((session, harness, conversation));
     }));
 
@@ -757,7 +757,7 @@ fn a_chat_is_announced_before_its_program_could_have_run_a_single_byte() {
     chats.when_one_starts({
         let mark = mark.clone();
         let seen = Arc::clone(&seen);
-        Box::new(move |_, _, _| {
+        Box::new(move |_, _, _, _| {
             let deadline = std::time::Instant::now() + std::time::Duration::from_millis(750);
             while std::time::Instant::now() < deadline && !mark.exists() {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -814,7 +814,7 @@ fn a_chat_that_was_announced_and_then_did_not_start_is_taken_back() {
     let taken_back = Arc::new(Mutex::new(Vec::new()));
     chats.when_one_starts({
         let announced = Arc::clone(&announced);
-        Box::new(move |session, _, _| announced.lock().expect("not poisoned").push(session))
+        Box::new(move |session, _, _, _| announced.lock().expect("not poisoned").push(session))
     });
     chats.when_one_does_not_start({
         let taken_back = Arc::clone(&taken_back);
@@ -860,8 +860,8 @@ fn a_chat_is_announced_with_the_harness_and_conversation_it_was_started_under() 
 
     let chats = Chats::new();
     let (tx, rx) = mpsc::channel();
-    chats.when_one_starts(Box::new(move |session, harness, conversation| {
-        let _ = tx.send((session, harness, conversation));
+    chats.when_one_starts(Box::new(move |session, harness, conversation, graded| {
+        let _ = tx.send((session, harness, conversation, graded));
     }));
 
     // A program named `claude` is what `Harness::of_command` reads, and it is the file
@@ -896,7 +896,7 @@ fn a_chat_is_announced_with_the_harness_and_conversation_it_was_started_under() 
         )
         .expect("the chat starts");
 
-    let (_, harness, conversation) = rx
+    let (_, harness, conversation, graded) = rx
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("the board was told");
     assert_eq!(harness, Some(Harness::ClaudeCode));
@@ -906,6 +906,27 @@ fn a_chat_is_announced_with_the_harness_and_conversation_it_was_started_under() 
         conversation.is_some(),
         "the chosen conversation was not passed on"
     );
+    assert!(!graded, "a chat of the person's is queued as ever");
+
+    // A grade's chat is announced as one, so the board never queues it (#3583).
+    chats
+        .start(
+            &Chat {
+                program: claude.display().to_string(),
+                name: "ide.8".to_owned(),
+                graded: true,
+                ..Default::default()
+            },
+            Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("the grade's chat starts");
+    let (_, _, _, graded) = rx
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the board was told");
+    assert!(graded, "a grade's chat is announced as one");
 }
 use purlis_core::harness::SessionId;
 use purlis_core::reopen::Fresh;
@@ -6757,7 +6778,7 @@ fn the_board_is_told_the_harness_the_profile_declared_before_the_program_starts(
     let chats = Chats::new();
     {
         let told = std::sync::Arc::clone(&told);
-        chats.when_one_starts(Box::new(move |session, harness, conversation| {
+        chats.when_one_starts(Box::new(move |session, harness, conversation, _| {
             lock(&told).push((session, harness, conversation));
         }));
     }

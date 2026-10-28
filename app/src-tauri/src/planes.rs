@@ -4001,9 +4001,16 @@ impl Planes {
                 let started_on = Arc::clone(&started_on);
                 let mcp_failures = Arc::clone(&mcp_failures);
                 let root = root.clone();
-                move |session, harness, conversation| {
+                move |session, harness, conversation, graded| {
                     mcp_failures.began(session, std::time::Instant::now());
-                    hooks::held_board(&board).opened(session, harness, conversation);
+                    // A grade's chat is drawn nowhere, so it is never in the queue (#3583).
+                    let mut board = hooks::held_board(&board);
+                    if graded {
+                        board.opened_graded(session, harness, conversation);
+                    } else {
+                        board.opened(session, harness, conversation);
+                    }
+                    drop(board);
                     // Read before the lock is taken: a stamp is a read of several files.
                     let stamp = Stamp::of(&root);
                     lock_started(&started_on).insert(session, stamp);
@@ -4015,12 +4022,16 @@ impl Planes {
                 let board = Arc::clone(&board);
                 let started_on = Arc::clone(&started_on);
                 let root = root.clone();
-                move |session, harness, conversation| {
+                move |session, harness, conversation, graded| {
                     let stamp = Stamp::of(&root);
                     {
                         let mut board = hooks::held_board(&board);
                         if !board.chats().any(|chat| chat == session) {
-                            board.opened(session, harness, conversation);
+                            if graded {
+                                board.opened_graded(session, harness, conversation);
+                            } else {
+                                board.opened(session, harness, conversation);
+                            }
                         }
                     }
                     lock_started(&started_on).insert(session, stamp);

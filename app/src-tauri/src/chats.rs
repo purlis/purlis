@@ -226,9 +226,11 @@ const MOST_AT_ONCE: usize = 200;
 /// plane — and so a test can see exactly when a write would happen.
 pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 
-/// Told as each chat starts, BEFORE its program does: its number, the harness it runs and the
-/// conversation charter chose for it. Everything the board needs to judge a report about it.
-pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>) + Send + Sync>;
+/// Told as each chat starts, BEFORE its program does: its number, the harness it runs, the
+/// conversation charter chose for it, and whether it is a grade's chat, which the window draws
+/// nowhere and the board never queues (SK-16, #3583). Everything the board needs to judge a
+/// report about it.
+pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>, bool) + Send + Sync>;
 
 /// Told as each chat starts, BEFORE its program does, of the run the start begins: the chat's
 /// number, its id, the run's id, why it began and what it is (ADR 0066, #868), and whether its
@@ -3863,14 +3865,14 @@ impl Chats {
             // host kept them (#2006).
             if reattaching {
                 if let Some(reattached) = lock(&self.reattached).as_ref() {
-                    reattached(session, harness, conversation.clone());
+                    reattached(session, harness, conversation.clone(), chat.graded);
                 }
                 return;
             }
             // A new program knows no model until its harness says (#1021).
             lock(&self.models).remove(&session);
             if let Some(starting) = lock(&self.starting).as_ref() {
-                starting(session, harness, conversation.clone());
+                starting(session, harness, conversation.clone(), chat.graded);
             }
             // A run on a runner is written there, where it runs, never here.
             if let Some(beginning) = lock(&self.beginning).as_ref().filter(|_| !on_the_runner)
