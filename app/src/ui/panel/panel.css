@@ -308,6 +308,11 @@
   min-inline-size: 0;
 }
 
+/* It takes the keyboard only when a crumb it was on has gone, and draws no ring for it. */
+[data-scope="view-frame"][data-part="root"]:focus {
+  outline: none;
+}
+
 [data-scope="view-frame"][data-part="body"] {
   flex: 1 1 auto;
   /* The navigation's column: the prototype's 170. A box's size, not a step of the scale. */
@@ -412,7 +417,7 @@
   gap: var(--space-4);
   padding: var(--space-6) var(--space-6) var(--space-5);
   border-block-end: 1px solid var(--border-subtle);
-  background-color: var(--panel-fill, var(--surface-base));
+  background-color: var(--panel-fill);
 }
 
 [data-scope="view-frame"][data-part="header"] > h2 {

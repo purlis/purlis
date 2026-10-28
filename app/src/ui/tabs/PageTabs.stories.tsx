@@ -80,7 +80,8 @@ export const SkillPage: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "One more grade" }));
     await waitFor(() => expect(grades).toHaveAccessibleDescription("10 grades"));
     await expect(boxes(canvasElement)).toBe(before);
-    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    // From the button the count was changed by, Tab lands on the chosen tab again.
+    await userEvent.tab();
     await untilFocused(() => grades, "back on the chosen tab");
     await userEvent.keyboard("{End}");
     await waitFor(() =>

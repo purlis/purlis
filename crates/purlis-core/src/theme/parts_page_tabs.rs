@@ -23,7 +23,7 @@ pub(super) const PAGE_TABS: Family = Family {
             name: "tab",
             since: super::NEXT,
             description: "One tab: its words' colour, at rest and in each state.",
-            properties: &[Prop::Text, Prop::Fill, Prop::CornerRadius],
+            properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
         Part {
             name: "label",
@@ -42,7 +42,7 @@ pub(super) const PAGE_TABS: Family = Family {
             since: super::NEXT,
             description: "The bar under the chosen tab, which tells it apart by more than its \
                           colour.",
-            properties: &[Prop::Fill, Prop::Height, Prop::CornerRadius],
+            properties: &[Prop::Fill, Prop::CornerRadius],
         },
         Part {
             name: "list",

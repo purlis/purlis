@@ -51,7 +51,6 @@ fn a_theme_reaches_the_chosen_tab_and_its_indicator() {
         json!({
             "page-tabs.tab.selected.text": "accent.text",
             "page-tabs.indicator.selected.fill": "accent.text",
-            "page-tabs.indicator.height": 3,
         }),
     ));
     assert!(!loaded.refused, "{:?}", said(&loaded));
@@ -72,15 +71,10 @@ fn a_theme_reaches_the_chosen_tab_and_its_indicator() {
 
 #[test]
 fn a_size_in_a_state_is_refused_so_no_tab_moves() {
-    for key in [
-        "page-tabs.label.selected.font-weight",
-        "page-tabs.indicator.selected.height",
+    for (key, value) in [
+        ("page-tabs.label.selected.font-weight", json!(600)),
+        ("page-tabs.label.hover.font-size", json!(14)),
     ] {
-        let value = if key.ends_with("height") {
-            json!(3)
-        } else {
-            json!(600)
-        };
         let loaded = load(&over(PURLIS, json!({ key: value })));
         assert!(
             said(&loaded)

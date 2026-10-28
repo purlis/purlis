@@ -311,7 +311,11 @@ function useNarrow(element: HTMLElement | null, given: boolean | undefined): boo
   const [narrow, setNarrow] = useState(false);
   useLayoutEffect(() => {
     if (given !== undefined || element === null) return;
-    const measure = () => setNarrow(element.getBoundingClientRect().width < NARROW_BELOW);
+    // A frame not laid out yet (no width at all) is drawn wide, as it is meant to be seen first.
+    const measure = () => {
+      const width = element.getBoundingClientRect().width;
+      setNarrow(width > 0 && width < NARROW_BELOW);
+    };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const watch = new ResizeObserver(measure);
@@ -449,6 +453,8 @@ export function ViewFrame({
   return (
     <div
       ref={setRoot}
+      // The keyboard's place when a crumb it was on goes (`ViewBar.tsx`); never a Tab stop.
+      tabIndex={-1}
       data-scope="view-frame"
       data-part="root"
       data-narrow={narrow ? "" : undefined}

@@ -312,6 +312,7 @@ says what each family, part and variant is):
 | `menu` (since version 6) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`) | `default`, `danger` | `hover`, `focused`, `selected`, `disabled`, `open` |
 | `notice` (since the next release) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`) | `news`, `trouble` | none |
 | `option-card` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon` (`text`), `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` | `hover`, `selected`, `focused`, `disabled` |
+| `page-tabs` (since the next release) | `tab` (`fill`, `text`, `corner-radius`), `label` (`font-size`, `font-weight`), `count` (`text`, `font-size`), `indicator` (`fill`, `corner-radius`), `list` (`border-colour`, `border-width`, `gap`, `padding`), `panel` (`padding`) | none | `hover`, `selected`, `focused` |
 | `panel` (since version 4) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`) (since the next release) | `side`, `content`, `bottom` | none |
 | `panel-section` (since version 4) | `root` (`padding`, `gap`), `head` (`padding`, `gap`), `title` (`text`, `font-size`, `font-weight`), `top` (`padding`, `gap`) (since the next release) | `default` | none |
 | `panel-separator` (since the next release) | `root` (`fill`), `grip` (`fill`) | none | `hover`, `pressed`, `focused` |
@@ -332,6 +333,8 @@ says what each family, part and variant is):
 | `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`) | `pinned`, `unpinned` | `hover`, `selected`, `focused` |
 | `tooltip` (since version 5) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | none | none |
 | `tree` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `twist` (`text`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`) | none | `hover`, `focused`, `selected`, `disabled` |
+| `view-frame` (since the next release) | `root` (`fill`), `nav` (`fill`, `border-colour`, `border-width`, `padding`), `list` (`fill`, `border-colour`, `border-width`), `item` (`fill`), `head` (`padding`, `gap`), `header` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `name` (`text`, `font-size`, `font-weight`), `lead` (`text`, `font-size`), `bar` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `history` (`gap`), `path` (`text`, `font-size`), `crumb` (`text`, `font-weight`), `crumb-separator` (`text`) | none | none |
+| `view-nav` (since the next release) | `item` (`fill`, `text`, `corner-radius`), `label` (`font-size`, `font-weight`), `indicator` (`fill`, `corner-radius`) | none | `hover`, `pressed`, `selected`, `focused` |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -508,6 +511,21 @@ faint grip under the pointer, a muted one while dragged and one in `focus.ring` 
 on it, in place of a ring the handle's length. Purlis Classic's own `parts` draw its accent line in all three and no grip
 (`panel-separator.root.hover.fill: accent.base`, `panel-separator.grip.hover.fill: transparent`,
 and the same for `pressed` and `focused`).
+
+**The view frame** (the next release's manifest version, #3666, #3667): `view-frame` lays a view
+tab out as pages: its `nav` (the page navigation's column), the page's `list` pane with its
+`head` and `lead` line, the `item` pane with its sticky page `header` and the item's `name`, and
+the top `bar` with back and forward (`history`), the `path` of the view's pages, the `crumb`
+where the person is and the `crumb-separator`. It draws no state. A page in its navigation is
+`view-nav`: its `item` (the root: colours and corners, never a size), its `label` and the
+`indicator` at the current page's start edge, which tells it apart by more than colour. Both
+built-ins draw the family default.
+
+**Page tabs** (the next release's manifest version, #3668): `page-tabs`, the tabs inside a page.
+Its root is a `tab` (React Aria's state attributes), with its `label`, its `count` (quiet words,
+in room kept for three figures) and its `indicator` under the chosen tab; the `list` row and the
+chosen tab's `panel` are drawn around it. No state changes a size. Both built-ins draw the family
+default.
 
 **The table** (the next release's manifest version, #2911): `table`. Its `root` is a table's row,
 at rest and in each state (`fill`, `text`); `frame` is the card that holds the table; `head` a

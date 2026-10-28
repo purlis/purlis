@@ -44,6 +44,22 @@ function ariaKeys(id: string, mac: boolean): string {
     .join(" ");
 }
 
+/** The view frame's root, which takes the keyboard when the crumb it was on goes. */
+const FRAME = '[data-scope="view-frame"][data-part="root"]';
+
+/**
+ * **The keyboard stays in the view** after a crumb is pressed: the page it goes to is the path's
+ * last name, which is no button, so the crumb with the keyboard goes. The frame takes it then, so
+ * ⌘[ still answers and Tab goes on from the view.
+ */
+function keepTheKeyboardIn(frame: HTMLElement | null): void {
+  if (frame === null) return;
+  requestAnimationFrame(() => {
+    const on = document.activeElement;
+    if (on === null || on === document.body || !on.isConnected) frame.focus();
+  });
+}
+
 /** **Back and forward**: two icon buttons, each unavailable with a reason at its end. */
 export function ViewHistoryButtons({ history }: { history: HistorySteps }) {
   const mac = onAMac();
@@ -96,7 +112,16 @@ export function ViewCrumbs({
                 {one.label}
               </span>
             ) : (
-              <Button variant="quiet" size="sm" inline onPress={() => onGo(one, at)}>
+              <Button
+                variant="quiet"
+                size="sm"
+                inline
+                onPress={(event) => {
+                  const frame = event.target.closest<HTMLElement>(FRAME);
+                  onGo(one, at);
+                  keepTheKeyboardIn(frame);
+                }}
+              >
                 {one.label}
               </Button>
             )}

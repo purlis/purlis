@@ -238,7 +238,12 @@ export const Wide: Story = {
     await untilFocusWithin(() => canvas.getByRole("grid", { name: "Skills" }), "the list");
     expectFocusInSight();
     await expect(nav.contains(document.activeElement)).toBe(false);
-    // Then the item's actions, the suggested one first.
+    // Then the handle between the list and the item, then the item's actions.
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("separator", { name: "Resize the list and the item beside it" }),
+      "the handle between the panes",
+    );
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "Use in this chat" }),
@@ -246,6 +251,7 @@ export const Wide: Story = {
     );
     expectFocusInSight();
     // Back into the navigation: its stop is the current page again; Enter chooses another.
+    await userEvent.tab({ shift: true });
     await userEvent.tab({ shift: true });
     await userEvent.tab({ shift: true });
     await untilFocused(() => library, "the current page again");

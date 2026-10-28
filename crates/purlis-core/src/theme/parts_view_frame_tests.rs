@@ -253,7 +253,11 @@ fn a_state_of_a_page_changes_no_size() {
     let css = css_of(include_str!("../../../../app/src/ui/panel/panel.css"));
     for state in ["[data-hovered]", "[data-selected]", "[data-focus-visible]"] {
         let body = rule(&css, &format!("{NAV_ITEM}{state}"));
-        for line in body.lines().skip(1).map(str::trim).filter(|one| !one.is_empty()) {
+        for line in body
+            .lines()
+            .map(str::trim)
+            .filter(|one| one.ends_with(';'))
+        {
             let property = line.split(':').next().unwrap();
             assert!(
                 [
