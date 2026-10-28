@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793175757051,
+  "lastUpdate": 1793177224356,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27972,6 +27972,48 @@ window.BENCHMARK_DATA = {
             "value": 100.7873425,
             "unit": "ms",
             "extra": "median of 5 runs: 100.173, 100.635, 100.787, 101.644, 102.457 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b50a1f1600e8cf883ed03bb1d79f9eca98addc83",
+          "message": "CI: a change to the window's sources alone runs no Rust suite on its pull request (#3596) (#3607)\n\n* ci: a change to the window's sources alone runs no Rust suite on its pull request (#3596)\n\n`app/src/` now needs the web, app, scenario and stories scopes, not `rust`: the Rust parts,\nfmt and clippy, and cargo-deny are skipped, and `rust (fmt, clippy, test)` posts green as for\na docs-only change. The app/src files Rust reads by name (`READ_BY_RUST`: the bindings, the\ntheme module and the stylesheets the theme engine's tests hold) still run everything, and the\ntwo core tests that walk all of app/src (`WINDOW_SOURCE_GUARDS`) run in `recorded` beside the\nwhole-tree guards. A test finds every app/src path a Rust file names and fails when one is not\ncovered. The merge group, push and nightly still run every scope.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* ci: the window-source scan finds paths built from pieces, in every Rust file (#3596)\n\nReview of #3607: a literal is also read from the folder above its crate when the file climbs\nthere with `.parent()` from CARGO_MANIFEST_DIR; a file with \"app\" and \"src\" literals within\nthree lines of each other that lists or reads files counts as walking app/src; every tracked\n.rs file is scanned, operator/ and tools/ included. A fixture test holds each case and two\nnear misses. savefix/tests.rs's WALK_ONLY_CODE reason now says its app/src walk is a known miss.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T08:09:42Z",
+          "tree_id": "d07a4b9d193dcb45b32bf85059ba2ef65902277f",
+          "url": "https://github.com/purlis/purlis/commit/b50a1f1600e8cf883ed03bb1d79f9eca98addc83"
+        },
+        "date": 1793177219816,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5164085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.505, 0.515, 0.516, 0.526, 0.528 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.906124000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.712, 16.825, 16.906, 16.986, 17.293 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.37239199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.543, 103.760, 104.372, 104.819, 105.328 ms"
           }
         ]
       }
