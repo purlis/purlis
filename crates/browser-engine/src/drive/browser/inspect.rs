@@ -155,10 +155,11 @@ pub(crate) const HOSTED: &str = r"JSON.stringify({
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
 })";
 
-/// The script that empties the clipboard of the page it runs in, the engine's: a constant.
+/// The script that empties the clipboard of the page it runs in, the engine's: a constant. It
+/// leaves a single space there, since an engine keeps what it held where a copy writes nothing.
 pub(crate) const EMPTY_CLIPBOARD: &str = r"(() => {
   let emptied = false;
-  document.addEventListener('copy', (e) => { e.clipboardData.setData('text/plain', ''); e.preventDefault(); emptied = true; }, { once: true, capture: true });
+  document.addEventListener('copy', (e) => { e.clipboardData.setData('text/plain', ' '); e.preventDefault(); emptied = true; }, { once: true, capture: true });
   const copied = document.execCommand('copy');
   return copied && emptied;
 })()";

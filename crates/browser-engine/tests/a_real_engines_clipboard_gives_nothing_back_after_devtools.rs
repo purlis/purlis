@@ -58,11 +58,12 @@ fn notice(what: &str) {
     let _ = std::io::stderr().write_all(line.as_bytes());
 }
 
-/// What the page's paste field holds, as the page's tree reads it.
-fn pasted(browser: &purlis_browser_engine::drive::Browser) -> String {
+/// What the page's field `named` holds, as the page's tree reads it.
+fn pasted(browser: &purlis_browser_engine::drive::Browser, named: &str) -> String {
+    let field = format!("textbox \"{named}\"");
     snapshot(browser)
         .lines()
-        .find(|line| line.contains("textbox \"Paste into\""))
+        .find(|line| line.contains(&field))
         .unwrap_or_default()
         .to_owned()
 }
@@ -122,7 +123,7 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
             keys: vec!["Control+v".to_owned()],
         },
     );
-    let mut before = pasted(&browser);
+    let mut before = pasted(&browser, "Paste into");
     if !before.contains(COPIED) {
         call(
             &browser,
@@ -131,7 +132,7 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
                 keys: vec!["Meta+v".to_owned()],
             },
         );
-        before = pasted(&browser);
+        before = pasted(&browser, "Paste into");
     }
     notice(&format!(
         "on {}: a paste before DevTools got {before:?}",
@@ -152,18 +153,7 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
     ));
 
     // A paste after Done gets nothing of it.
-    let into = ref_on(&find(&browser, "Paste into"), "textbox \"Paste into\"");
-    call(
-        &browser,
-        Call::Type {
-            page: None,
-            fields: vec![Field {
-                into: Some(into.clone()),
-                text: String::new(),
-                replace: true,
-            }],
-        },
-    );
+    let into = ref_on(&find(&browser, "Paste after"), "textbox \"Paste after\"");
     call(&browser, Call::Click { target: into });
     call(
         &browser,
@@ -172,7 +162,7 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
             keys: vec!["Control+v".to_owned(), "Meta+v".to_owned()],
         },
     );
-    let after = pasted(&browser);
+    let after = pasted(&browser, "Paste after");
     notice(&format!(
         "on {}: a paste after Done got {after:?}; pasting works here: {paste_works}",
         std::env::consts::OS
