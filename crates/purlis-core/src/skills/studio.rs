@@ -391,10 +391,34 @@ fn arm_said(graded: &super::grades::Graded, arm: purlis_skills::grade::Arm) -> S
     }
 }
 
+/// **The version a grade graded, as its row and its scorecard say it**: the commit, shortened,
+/// or that it held changes not saved.
+pub fn version_said(graded: &super::grades::Graded) -> String {
+    match (&graded.commit, graded.content()) {
+        (Some(commit), _) => super::history::short(commit).to_owned(),
+        (None, Some(crate::skilluse::Content::Uncommitted)) => "Changes not saved".to_owned(),
+        (None, _) => "Not known".to_owned(),
+    }
+}
+
+/// **What a grade's chats ran on, as its row says it** (SK-60, #3240): the harness, then the
+/// model they reported, where the record says one (`Claude Code · claude-sonnet-4-5`).
+pub fn ran_on_said(graded: &super::grades::Graded) -> String {
+    let harness = graded
+        .harness
+        .as_deref()
+        .map(crate::skilluse::harness_title)
+        .unwrap_or_else(|| "Not recorded".to_owned());
+    match &graded.model {
+        Some(model) => format!("{harness} · {model}"),
+        None => harness,
+    }
+}
+
 /// The Grades panel's blocks for `grades` of `skill`: a sentence on what a grade is, then the
 /// table, or the empty table's claim and its way on.
 fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
-    use purlis_skills::grade::{Arm, GradeEnd};
+    use purlis_skills::grade::Arm;
     let mut out = Vec::new();
     if !grades.is_empty() {
         out.push(Block::Note {
@@ -414,18 +438,8 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
                 key: graded.grade.clone(),
                 cells: vec![
                     said_at(&graded.ts),
-                    match (&graded.commit, graded.content()) {
-                        (Some(commit), _) => super::history::short(commit).to_owned(),
-                        (None, Some(crate::skilluse::Content::Uncommitted)) => {
-                            "Changes not saved".to_owned()
-                        }
-                        (None, _) => "Not known".to_owned(),
-                    },
-                    graded
-                        .harness
-                        .as_deref()
-                        .map(crate::skilluse::harness_title)
-                        .unwrap_or_else(|| "Not recorded".to_owned()),
+                    version_said(graded),
+                    ran_on_said(graded),
                     format!("{passed} of {of}"),
                     arm_said(graded, Arm::With),
                     arm_said(graded, Arm::Without),
@@ -435,16 +449,7 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
                         .map(|delta| format!("{:+.0} points", delta * 100.0))
                         .unwrap_or_default(),
                     crate::counts::counted(u64::from(graded.spent.chats), "chat", "chats"),
-                    match graded.report.ended {
-                        GradeEnd::Whole => "Finished",
-                        GradeEnd::Cancelled => "Stopped",
-                        GradeEnd::ChatsDidNotStart => "Chats did not start",
-                        GradeEnd::OverCap => "Stopped at its token cap",
-                        GradeEnd::OverLimit => "Stopped at its dollar limit",
-                        GradeEnd::SpendNotReported => "Stopped: spend not reported",
-                        GradeEnd::Interrupted => "Interrupted: not scored",
-                    }
-                    .to_owned(),
+                    super::grades::ended_said(graded.report.ended).to_owned(),
                 ],
             }
         })
@@ -603,7 +608,7 @@ const NEW_CHAT: &str = "chat.new";
 
 /// A stamp as a row says it: `2026-10-20 10:00 UTC` for a stamp written in UTC, as every run's
 /// is; the stamp itself for one this cannot read.
-fn said_at(stamp: &str) -> String {
+pub fn said_at(stamp: &str) -> String {
     let bytes = stamp.as_bytes();
     let digits = |range: std::ops::Range<usize>| {
         bytes

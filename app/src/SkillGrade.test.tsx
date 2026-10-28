@@ -3,6 +3,7 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import { SkillGrade, costSaid, endedSaid, limitSaid } from "./SkillGrade";
@@ -34,6 +35,8 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     cap_set_here: false,
     chat_minutes: 5,
     profile: "work",
+    models: ["opus", "sonnet", "haiku"],
+    model: null,
     sandbox: "full sandbox",
     refused: null,
     consent: "c0ffee",
@@ -104,11 +107,90 @@ describe("Grade, cost first", () => {
       of: 12,
       tokens: 8000,
       cap: 200000,
+      asked: 0,
       ended: "stopped",
       said: null,
     });
     await screen.findByText("Stopped after 4 chats. What ran is scored in Grades below.");
     expect(graded).toBe(1);
+  });
+
+  it("offers the models the profile's program can run, and grades on the one picked (SK-60)", async () => {
+    const asked: Array<{ cmd: string; args: Record<string, unknown> }> = [];
+    mockIPC(
+      (cmd, args) => {
+        asked.push({ cmd, args: args as Record<string, unknown> });
+        if (cmd === "skill_grade_plan") {
+          const model = (args as { model: string | null }).model;
+          return plan({
+            model,
+            priced:
+              model === null
+                ? { usd_per_million: 75, of_the_model: false, model: null }
+                : { usd_per_million: 22.5, of_the_model: true, model },
+          });
+        }
+        if (cmd === "start_options") return { profiles: [{ name: "work" }] };
+        if (cmd === "skill_grade_start") return "01GRADE";
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    await screen.findByTestId("skill-grade-cost");
+    await userEvent.click(screen.getByRole("button", { name: /Model deploy's grade runs on/ }));
+    for (const model of ["The profile's own model", "opus", "sonnet", "haiku"])
+      expect(await screen.findByRole("option", { name: model })).toBeTruthy();
+    await userEvent.click(screen.getByRole("option", { name: "sonnet" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-grade-cost").textContent).toContain(
+        "its tokens at sonnet's $22.50 a million tokens",
+      ),
+    );
+    expect(asked.filter((one) => one.cmd === "skill_grade_plan").at(-1)?.args).toMatchObject({
+      profile: null,
+      model: "sonnet",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Grade" }));
+    await screen.findByTestId("skill-grade-running");
+    expect(asked.find((one) => one.cmd === "skill_grade_start")?.args).toMatchObject({
+      model: "sonnet",
+      consent: "c0ffee",
+    });
+  });
+
+  it("offers no model where the profile's program offers none", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return plan({ models: [] });
+      if (cmd === "start_options") return { profiles: [] };
+      return null;
+    });
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    await screen.findByTestId("skill-grade-cost");
+    expect(screen.queryByRole("button", { name: /Model deploy's grade runs on/ })).toBeNull();
+  });
+
+  it("says in the grade the chats that asked you something (SK-59)", () => {
+    const step = {
+      plane: "p",
+      skill: "deploy",
+      grade: "g",
+      ran: 10,
+      of: 12,
+      tokens: null,
+      cap: 200000,
+      asked: 2,
+      ended: "whole" as const,
+      said: null,
+    };
+    expect(endedSaid(step)).toBe(
+      "Graded in 10 chats. The scorecard is in Grades below. 2 chats asked you something, and purlis ended them there without counting them: the grade's scorecard opens each.",
+    );
+    expect(endedSaid({ ...step, asked: 0 })).toBe(
+      "Graded in 10 chats. The scorecard is in Grades below.",
+    );
   });
 
   it("says a skill with no trigger tests has none, and starts nothing", async () => {
@@ -128,6 +210,7 @@ describe("Grade, cost first", () => {
       ts: "2026-10-25T10:00:00+00:00",
       profile: "work",
       harness: "Claude Code",
+      model: null as string | null,
       same_profile: true as boolean | null,
     };
     expect(
@@ -142,6 +225,20 @@ describe("Grade, cost first", () => {
         }),
       ),
     ).toContain("From its grade on another profile, work (Claude Code)");
+    // SK-60: the model its chats reported is named, as another model spends otherwise.
+    expect(
+      costSaid(
+        plan({
+          estimate: {
+            tokens: 6000,
+            cost_usd: null,
+            chats_then: 3,
+            ...from,
+            model: "claude-haiku-4-5",
+          },
+        }),
+      ),
+    ).toContain("From its grade on work (Claude Code, claude-haiku-4-5)");
     // #3273: graded, and its chats said nothing of what they spent: the cost is not known.
     const unknown = costSaid(
       plan({ estimate: { tokens: null, cost_usd: null, chats_then: 6, ...from } }),
@@ -169,6 +266,7 @@ describe("Grade, cost first", () => {
         of: 12,
         tokens: null,
         cap: 200000,
+        asked: 0,
         ended: "chats-did-not-start",
         said: "The default profile is signed out.",
       }),
@@ -227,6 +325,7 @@ describe("a grade's token cap", () => {
         of: 12,
         tokens: 201345,
         cap: 200000,
+        asked: 0,
         ended: "over-cap",
         said: null,
       }),
@@ -264,6 +363,7 @@ describe("a grade's dollar limit (#3469)", () => {
         of: 12,
         tokens: 30000,
         cap: 200000,
+        asked: 0,
         ended: "over-limit",
         said: null,
       }),
@@ -300,6 +400,7 @@ describe("a grade a fault ended", () => {
         of: 12,
         tokens: null,
         cap: 200000,
+        asked: 0,
         ended: "failed",
         said: "A fault in purlis ended the grade before it was scored.",
       }),

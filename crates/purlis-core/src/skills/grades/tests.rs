@@ -73,6 +73,7 @@ fn report(passed_with: bool) -> GradeReport {
             rate: Some(if passed_with { 1.0 } else { 0.0 }),
             pass: Some(passed_with),
             chats: vec![Some("01A".into()), Some("01B".into()), Some("01C".into())],
+            asked: 0,
         }],
         arms: vec![ArmScore {
             arm: Arm::With,
@@ -126,6 +127,7 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
         report,
         spent,
         plugins_off: Some(vec!["figma@claude-plugins-official".to_owned()]),
+        model: None,
     }
 }
 
@@ -360,6 +362,8 @@ fn a_row_that_says_more_than_purlis_writes_is_skipped() {
         ("ts", serde_json::json!("yesterday")),
         ("plugins_off", serde_json::json!(["figma@x\u{1b}[31m"])),
         ("plugins_off", serde_json::json!("figma@x")),
+        ("model", serde_json::json!("sonnet\u{202e}")),
+        ("model", serde_json::json!("two words")),
     ] {
         let mut row = serde_json::to_value(graded(
             root,
@@ -526,6 +530,7 @@ fn uncommitted_row() -> Graded {
             cost_usd: Some(0.04),
         },
         plugins_off: None,
+        model: None,
     }
 }
 
@@ -538,7 +543,10 @@ fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
         "a row purlis writes is kept"
     );
     type Breaks = fn(&mut Graded);
-    let broken: [(&str, Breaks); 17] = [
+    let broken: [(&str, Breaks); 18] = [
+        ("more chats asked and run than the grade had", |row| {
+            row.report.triggers[0].asked = 1;
+        }),
         ("a cost below nothing", |row| {
             row.spent.cost_usd = Some(-1.0)
         }),
@@ -646,6 +654,26 @@ fn a_harness_that_cannot_grade_is_refused_with_its_own_reason() {
     assert!(!codex.contains("plugins"), "{codex}");
 }
 
+/// SK-60 (#3240): the record keeps the model its chats reported, the first that is a model's
+/// id, and reads it back.
+#[test]
+fn a_grade_records_the_model_its_chats_reported() {
+    assert_eq!(
+        reported_model(["", "two words", "claude-sonnet-4-5", "claude-opus-4-1"]),
+        Some("claude-sonnet-4-5".to_owned())
+    );
+    assert_eq!(reported_model(["\u{1b}[31m"]), None);
+    let plane = plane();
+    let root = plane.path();
+    let mut one = graded(root, "one", "2026-10-25T10:00:00+00:00", Spent::default());
+    one.model = Some("claude-sonnet-4-5".to_owned());
+    record(root, &Level::project(), &one, "laptop");
+    assert_eq!(
+        grades_of(root, "deploy", None)[0].model.as_deref(),
+        Some("claude-sonnet-4-5")
+    );
+}
+
 /// [`uncommitted_row`] as grade `id`, stamped `ts`, its chats on `profile`, having spent
 /// `tokens` (as its report says too), or nothing ran where `ran` is false.
 fn a_row(id: &str, ts: &str, profile: &str, tokens: Option<u64>, ran: bool) -> Graded {
@@ -677,6 +705,17 @@ fn a_grade_whose_chats_said_no_spend_gives_an_estimate_whose_cost_is_not_known()
     assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00");
     assert_eq!(estimate.profile.as_deref(), Some("work"));
     assert_eq!(estimate.same_profile, Some(true));
+    assert_eq!(estimate.model, None, "no chat said its model");
+    let mut on_haiku = rows[0].clone();
+    on_haiku.model = Some("claude-haiku-4-5".into());
+    assert_eq!(
+        estimate_of(&[on_haiku], 12, Some("work"))
+            .unwrap()
+            .model
+            .as_deref(),
+        Some("claude-haiku-4-5"),
+        "SK-60: the estimate names the model its grade ran on"
+    );
     assert_eq!(estimate_of(&[], 12, Some("work")), None, "never graded");
 }
 

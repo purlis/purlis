@@ -4790,6 +4790,12 @@ impl Chats {
         }
     }
 
+    /// **The model chat `session`'s harness said it runs on** (ADR 0087 §6, #1021), where it
+    /// said one ([`Self::heard_model`]): what a grade records its chats ran on (SK-60, #3240).
+    pub fn model_of(&self, session: u32) -> Option<String> {
+        lock(&self.models).get(&session).cloned()
+    }
+
     /// What the window says its view tabs are now. Written down when it differs from what was
     /// held, and not otherwise — for [`Self::pin`]'s reason: every write is a fingerprint the
     /// machine store then has to vouch for.

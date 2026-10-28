@@ -174,6 +174,7 @@ fn a_grade() -> super::super::grades::Graded {
         rate: Some(if pass { 1.0 } else { 0.0 }),
         pass: Some(pass),
         chats: vec![None; 3],
+        asked: 0,
     };
     let arm = |arm: Arm, mean: f64, stddev: f64| ArmScore {
         arm,
@@ -214,6 +215,7 @@ fn a_grade() -> super::super::grades::Graded {
             cost_usd: None,
         },
         plugins_off: None,
+        model: None,
     }
 }
 
@@ -240,6 +242,18 @@ fn the_grades_panel_is_a_scorecard_of_each_grade_against_no_skill() {
         ]
     );
     assert_eq!(table.columns.len(), table.rows[0].cells.len());
+}
+
+/// SK-60 (#3240): each grade says the model its chats ran on, beside the program.
+#[test]
+fn a_grades_row_says_the_model_its_chats_ran_on() {
+    let mut graded = a_grade();
+    graded.model = Some("claude-sonnet-4-5".into());
+    let blocks = grades_blocks(&[graded], "deploy");
+    let [_, Block::Table(table)] = blocks.as_slice() else {
+        panic!("{blocks:?}");
+    };
+    assert_eq!(table.rows[0].cells[2], "Claude Code · claude-sonnet-4-5");
 }
 
 #[test]

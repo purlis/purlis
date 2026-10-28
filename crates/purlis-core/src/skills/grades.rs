@@ -125,6 +125,11 @@ pub struct Graded {
     /// grade is under way (so an interrupted grade's record has none).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugins_off: Option<Vec<String>>,
+    /// **The model its chats ran on, as they reported it** (SK-60, #3240; ADR 0087 §6): the one
+    /// the first chat that said its model said, by the harness's own id for it. `None` in a row
+    /// written before #3240, and where no chat said ([`reported_model`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl Graded {
@@ -159,9 +164,20 @@ impl Graded {
                 ids.len() <= MOST_PLUGINS_OFF
                     && ids.iter().all(|id| crate::harness_plugin::id_ok(id))
             })
+            && self.model.as_deref().is_none_or(price::model_id)
             && report_holds_together(&self.report, self.runs)
             && spent_is_the_reports(&self.spent, &self.report)
     }
+}
+
+/// **The model a grade records its chats ran on** (SK-60, #3240), from `said`, what each chat
+/// reported in order: the first that is a model's id as a harness names one, so the record
+/// never holds words no reader could take for one.
+pub fn reported_model<'a>(said: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    said.into_iter()
+        .map(str::trim)
+        .find(|model| price::model_id(model))
+        .map(str::to_owned)
 }
 
 /// The most runs a row read back says each test had in each arm: past any grade's.
@@ -275,6 +291,7 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
             && rate
             && test.pass.is_some() == test.rate.is_some()
             && test.chats.len() <= usize::from(runs)
+            && u64::from(test.runs) + u64::from(test.asked) <= u64::from(runs)
             && test.chats.iter().flatten().all(|chat| plain(chat))
     });
     let mut arms = std::collections::HashSet::new();
@@ -576,6 +593,28 @@ fn read_at(
     out
 }
 
+/// **How a grade ended, as its row and its scorecard say it.**
+pub fn ended_said(end: grade::GradeEnd) -> &'static str {
+    use grade::GradeEnd;
+    match end {
+        GradeEnd::Whole => "Finished",
+        GradeEnd::Cancelled => "Stopped",
+        GradeEnd::ChatsDidNotStart => "Chats did not start",
+        GradeEnd::OverCap => "Stopped at its token cap",
+        GradeEnd::OverLimit => "Stopped at its dollar limit",
+        GradeEnd::SpendNotReported => "Stopped: spend not reported",
+        GradeEnd::Interrupted => "Interrupted: not scored",
+    }
+}
+
+/// **The grade `grade` of the skill `name`** in the project at `root`, as the eval record holds
+/// it (SK-59, #3239): what its scorecard is drawn from. `None` where no row of it is read.
+pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
+    grades_of(root, name, None)
+        .into_iter()
+        .find(|one| one.grade == grade)
+}
+
 /// **What a grade of a copy would cost**, from what a grade of it before spent per chat
 /// ([`estimate_of`]), and which grade that was. Its tokens and cost are both `None` where that
 /// grade's chats did not say what they spent: the copy was graded, and the cost is not known.
@@ -590,6 +629,9 @@ pub struct Estimate {
     pub ts: String,
     pub profile: Option<String>,
     pub harness: Option<String>,
+    /// The model its chats reported (SK-60, #3240): a grade on another model spends otherwise,
+    /// so the plan names it. `None` in a row from before #3240 and where no chat said.
+    pub model: Option<String>,
     /// Whether it ran on the profile this grade runs on (a grade on another one may have spent
     /// otherwise), or `None` where this grade's profile is not known.
     pub same_profile: Option<bool>,
@@ -629,6 +671,7 @@ fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<E
         ts: last.ts.clone(),
         profile: last.profile.clone(),
         harness: last.harness.clone(),
+        model: last.model.clone(),
         same_profile: profile.map(|profile| last.profile.as_deref() == Some(profile)),
     })
 }
@@ -842,9 +885,32 @@ pub fn ready_to_grade(
     start: &crate::start::Start,
     root: &Path,
 ) -> Result<crate::start::Ready, String> {
+    ready_to_grade_on(start, root, None)
+}
+
+/// **[`ready_to_grade`], on the model `model` the person picked** (SK-60, #3240): one of those
+/// its harness's adapter offers ([`models_for`]), started by that adapter's own words after the
+/// profile's ([`crate::harness::HarnessAdapter::model_words`]), so the chat runs on it and its
+/// dollar limit is priced from it ([`priced`]). `None` is the profile's own model. A model the
+/// adapter does not offer is refused, so nothing but a name it takes reaches the line.
+pub fn ready_to_grade_on(
+    start: &crate::start::Start,
+    root: &Path,
+    model: Option<&str>,
+) -> Result<crate::start::Ready, String> {
     let mut ready =
         crate::sandbox::policy::holding_no_kept_grants(|| crate::start::ready(start, root))?;
     chat_refused(&ready)?;
+    if let Some(model) = model {
+        let adapter = ready.harness.map(crate::harness::Harness::adapter);
+        let offered = models_for(&ready);
+        match adapter {
+            Some(adapter) if offered.contains(&model) => {
+                ready.command.extend(adapter.model_words(model));
+            }
+            _ => return Err(model_not_offered(model, offered)),
+        }
+    }
     if let Some(harness) = ready.harness {
         let adapter = harness.adapter().plugins();
         ready.plugins.plugins = crate::harness_plugin::only_purlis_on(
@@ -860,6 +926,31 @@ pub fn ready_to_grade(
         })?;
     }
     Ok(ready)
+}
+
+/// **The models a grade's chat that starts as `ready` can be picked to run on** (SK-60, #3240):
+/// what its harness's adapter offers ([`crate::harness::HarnessAdapter::grade_models`]), none
+/// for a chat on no harness.
+pub fn models_for(ready: &crate::start::Ready) -> &'static [&'static str] {
+    ready
+        .harness
+        .map_or(&[], |harness| harness.adapter().grade_models())
+}
+
+/// Why the model `model` is refused for a grade whose harness offers `offered`, in a sentence.
+fn model_not_offered(model: &str, offered: &[&str]) -> String {
+    let model = crate::shown::one_line(model, 60);
+    if offered.is_empty() {
+        return format!(
+            "A grade on this profile runs on the profile's own model, so it cannot be picked as \
+             {model}: pick the profile's own model."
+        );
+    }
+    format!(
+        "{model} is not a model a grade on this profile can pick: pick {}, or the profile's own \
+         model.",
+        offered.join(", ")
+    )
 }
 
 /// **The harness's own plugins a grade's chat that starts as `ready` is handed off** (#3468):
@@ -1004,6 +1095,7 @@ fn commit_of(root: &Path, level: &Level, name: &str, content: &Content) -> Optio
 }
 
 pub mod cap;
+pub mod kept;
 pub mod price;
 pub mod underway;
 

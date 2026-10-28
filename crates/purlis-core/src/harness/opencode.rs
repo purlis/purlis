@@ -226,6 +226,11 @@ impl HarnessAdapter for Opencode {
         )
     }
 
+    /// `--model <provider/model>`, as `opencode --help` names it (`-m, --model`).
+    fn model_words(&self, model: &str) -> Vec<String> {
+        vec!["--model".to_owned(), model.to_owned()]
+    }
+
     /// The wrap's program first, with the profile written for where the chat opens, then the
     /// chat's whole line. Its traffic is pointed at charter's egress proxy, the only place the
     /// profile lets it connect, and its temp directory is its own.

@@ -1507,6 +1507,58 @@ const STATES: State[] = [
     drawn: /From before runs were recorded/,
   },
   {
+    name: "a grade's scorecard, each chat one click away (SK-59)",
+    view: { from: null, view: "skill-grade", key: "deploy@01GRADE" },
+    answers: {
+      skill_grade_scorecard: {
+        grade: "01GRADE",
+        skill: "deploy",
+        graded: "2026-10-28 10:00 UTC",
+        version: "0123456789ab",
+        ran_on: "Claude Code · claude-sonnet-4-5",
+        ended: "Finished",
+        delta: 33,
+        asked: 1,
+        tests: [
+          {
+            query: "ship it to production",
+            should_trigger: true,
+            arms: [
+              {
+                arm: "with",
+                runs: 3,
+                triggered: 3,
+                pass: true,
+                asked: 0,
+                chats: [
+                  { id: "01A", run: 1, kept: true },
+                  { id: "01B", run: 2, kept: false },
+                ],
+              },
+              {
+                arm: "without",
+                runs: 2,
+                triggered: 0,
+                pass: false,
+                asked: 1,
+                chats: [{ id: "01C", run: 1, kept: true }],
+              },
+            ],
+          },
+        ],
+      },
+    },
+    drawn: /1 chat asked you something/,
+  },
+  {
+    name: "a grade's chat this machine did not keep (SK-59)",
+    view: { from: null, view: "skill-grade-chat", key: "deploy@01GRADE@01B" },
+    answers: {
+      skill_grade_chat: new Error("purlis keeps a grade's chats on the machine that ran it."),
+    },
+    drawn: /not kept here/,
+  },
+  {
     name: "a skill's tab, with no runs yet",
     view: { from: null, view: "skill", key: "deploy" },
     answers: {
