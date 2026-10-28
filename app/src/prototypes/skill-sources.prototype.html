@@ -1,0 +1,195 @@
+<title>Skill sources</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the Skill studio frame (A) on its Sources page; the subject is sources, install review and update review.
+   PROTOTYPE for "Prototype: sources, install and update" (purlis#3632): throwaway, fake data. */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b4232c; --bad-soft:#fbe5e6;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --add:#e3f4e8; --del:#fbe8e8; --shadow:0 10px 30px rgba(20,24,40,.16);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --add:#16301f; --del:#3a1c1f; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --add:#16301f; --del:#3a1c1f; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 72px;box-sizing:border-box}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+input,select{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+.note{max-width:1400px;margin:0 auto 10px;color:var(--muted);font-size:12px}.note b{color:var(--fg)}
+.win{max-width:1400px;margin:0 auto;height:calc(100% - 30px);min-height:600px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tabs span{padding:6px 12px;border-radius:7px 7px 0 0;color:var(--muted)}.tabs span.on{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.nav2{display:flex;gap:2px}.nav2 button{width:26px;height:24px;border-radius:5px;border:1px solid var(--line)}.nav2 button:disabled{opacity:.35}
+.crumb{color:var(--muted)}.crumb button{color:var(--muted);text-decoration:underline}.crumb b{color:var(--fg);font-weight:500}
+.studio{flex:1;display:grid;grid-template-columns:160px minmax(0,1fr);min-height:0}
+.snav{border-right:1px solid var(--line);padding:8px 6px;display:flex;flex-direction:column;gap:1px}
+.snav span{padding:5px 9px;border-radius:6px;color:var(--muted);display:flex;justify-content:space-between}.snav span.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.snav .cnt{font-size:11px}
+.content{overflow:auto;min-width:0}
+.pg{padding:18px 22px;display:grid;gap:18px;max-width:960px}
+.pg h1{margin:0;font-size:18px;font-weight:600}
+.pg h2{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.lead{color:var(--muted);margin:0;max-width:72ch}
+.btn{border:1px solid var(--line);border-radius:6px;padding:5px 10px;background:var(--panel);white-space:nowrap}
+.btn:hover{background:var(--panel2)}.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}.btn.danger{color:var(--bad);border-color:var(--bad)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:6px;align-content:start}
+.card b{font-weight:600}.card small{color:var(--muted)}
+.rows{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.r{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:center}
+.r:last-child{border-bottom:0}.r.click{cursor:pointer}.r.click:hover{background:var(--panel2)}
+.r .t{font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.r .t code{font-family:var(--mono);font-size:12.5px}
+.r .s{grid-column:1;color:var(--muted);font-size:12px}
+.r .a{grid-row:1/span 2;grid-column:2;display:flex;gap:6px}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted);white-space:nowrap}
+.mark{font-size:10.5px;padding:0 6px;border-radius:9px;white-space:nowrap}.mark.acc{background:var(--accent-soft);color:var(--accent)}.mark.warn{background:var(--warn-soft);color:var(--warn)}.mark.ok{background:var(--ok-soft);color:var(--ok)}.mark.bad{background:var(--bad-soft);color:var(--bad)}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:8px}
+.banner.warn{background:var(--warn-soft)}.banner.acc{background:var(--accent-soft)}.banner span{flex:1 1 300px}
+.risk{display:grid;gap:4px}.risk div{display:flex;gap:8px;align-items:baseline}.risk code{font-family:var(--mono);font-size:12px}
+.file{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.file summary{padding:7px 10px;cursor:pointer;display:flex;gap:8px;align-items:center;background:var(--panel2)}
+.file pre{margin:0;padding:10px;font-family:var(--mono);font-size:12px;white-space:pre-wrap;max-height:220px;overflow:auto}
+.diff div{font-family:var(--mono);font-size:12px;padding:1px 10px;white-space:pre-wrap}.diff .a{background:var(--add)}.diff .d{background:var(--del)}
+.lvls{display:grid;gap:6px}
+.lvl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;border:1px solid var(--line);border-radius:8px;padding:8px 11px;cursor:pointer}
+.lvl input{width:auto;margin-top:3px}.lvl small{grid-column:2;color:var(--muted)}.lvl.on{border-color:var(--accent);background:var(--accent-soft)}
+.sticky{position:sticky;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:12px 22px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;align-items:center}
+.sticky span{color:var(--muted);margin-right:auto}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:0;min-height:100%}
+.two>div{min-width:0}.two>div:first-child{border-right:1px solid var(--line)}
+.facets{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);border-radius:12px;padding:2px 9px;font-size:12px;color:var(--muted)}.chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.dialogwrap{position:fixed;inset:0;background:rgba(10,12,20,.38);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);width:min(520px,100%);padding:20px;display:grid;gap:12px;max-height:calc(100% - 32px);overflow:auto}
+.dialog h2{margin:0;font-size:16px}.dialog p{margin:0;color:var(--muted)}
+.field{display:grid;gap:4px}.field label{font-weight:500}.field small{color:var(--muted)}
+details.more summary{cursor:pointer;color:var(--accent)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--panel);padding:8px 14px;border-radius:8px;z-index:25}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));background:#11131a;color:#f2f3f7;border-radius:24px;padding:6px 8px;display:flex;align-items:center;gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:30;font-size:12.5px;max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+.switcher button{color:#f2f3f7;border-radius:16px;padding:4px 10px}.switcher button:hover{background:#2a2e3a}
+.switcher .lbl{padding:0 6px;font-weight:600}.switcher .st{color:#aab0c0;padding:0 6px;font-size:11.5px}
+@media (max-width:900px){.studio{grid-template-columns:minmax(0,1fr)}.snav{display:none}.two{grid-template-columns:minmax(0,1fr)}.two>div:first-child{border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+
+<div class="note"><b>Prototype, fake data.</b> The studio's Sources page, a source's page, the install review and the update review, inside the frame that won. The three variants differ in what the Sources page leads with. Flip with the bar or ← →; back and forward work as in the frame. Nothing is installed.</div>
+<div id="app"></div>
+
+<script>
+const V={a:"A · Your sources, then what to add",b:"B · One catalogue across sources",c:"C · Updates first, source and skill side by side"};
+const SRC=[
+ {id:"superpowers",name:"Superpowers",url:"github.com/obra/superpowers",commit:"3f2a1c9",checked:"today 09:12",who:"The whole project",skills:[
+   {n:"brainstorming",d:"Turns a loose idea into a short design before any code is written.",inst:true,upd:true},
+   {n:"test-driven-development",d:"Builds each behaviour test-first, one red-green slice at a time.",inst:false},
+   {n:"systematic-debugging",d:"Finds the cause of a bug before fixing it, with a loop that goes red.",inst:false,risk:"runs a script"}]},
+ {id:"team",name:"platform-skills",url:"git.example.com/platform/skills",commit:"a91d004",checked:"yesterday",who:"Only this machine",vault:"forge-token",unconfirmed:true,skills:[
+   {n:"deploy-checks",d:"The deploy checklist the platform team keeps.",inst:false,risk:"reaches 1 host"}]}];
+const OFFER=[["Anthropic's skills","The collection the open skill format began with: documents, design, building with Claude."],["OpenAI's curated skills","The skills OpenAI curates for Codex, kept by its makers."]];
+const S={v:(location.hash||"#a").slice(1),page:"sources",src:null,skill:null,back:[],fwd:[],dlg:null,lands:"project",cat:"all",toast:null};
+if(!V[S.v])S.v="a";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const findSrc=id=>SRC.find(s=>s.id===id);
+function go(page,src,skill){S.back.push([S.page,S.src,S.skill]);S.fwd=[];S.page=page;S.src=src??S.src;S.skill=skill??null;render()}
+function back(){if(!S.back.length)return;S.fwd.push([S.page,S.src,S.skill]);[S.page,S.src,S.skill]=S.back.pop();render()}
+function fwd(){if(!S.fwd.length)return;S.back.push([S.page,S.src,S.skill]);[S.page,S.src,S.skill]=S.fwd.pop();render()}
+const updates=()=>SRC.flatMap(s=>s.skills.filter(k=>k.upd).map(k=>({s,k})));
+function skillRow(s,k){return `<div class="r"><div class="t"><code>${esc(k.n)}</code>${k.inst?`<span class="mark ok">Installed</span>`:""}${k.upd?`<span class="mark acc">Update available</span>`:""}${k.risk?`<span class="mark warn">${esc(k.risk)}</span>`:""}</div><div class="s">${esc(k.d)}</div>
+ <div class="a">${k.upd?`<button class="btn primary" data-go="update" data-src="${s.id}" data-skill="${k.n}">Review update</button>`:k.inst?`<button class="btn" data-a="openlib">Open in Library</button>`:`<button class="btn" data-go="install" data-src="${s.id}" data-skill="${k.n}">Review install</button>`}</div></div>`}
+function sourceRow(s){const n=s.skills.length,u=s.skills.filter(k=>k.upd).length,i=s.skills.filter(k=>k.inst).length;
+ return `<div class="r click" data-go="source" data-src="${s.id}" tabindex="0"><div class="t">${esc(s.name)}${s.unconfirmed?`<span class="mark warn">Not confirmed on this machine</span>`:""}${u?`<span class="mark acc">${u} update</span>`:""}</div><div class="s">${esc(s.url)} · ${n} skills, ${i} installed · checked ${esc(s.checked)} · ${esc(s.who)}${s.vault?" · signs in with "+esc(s.vault):""}</div><div class="a"><button class="btn" data-go="source" data-src="${s.id}">Open</button></div></div>`}
+function offers(){return `<div><h2>Sources to start from</h2><div class="cards">${OFFER.map(([n,w])=>`<div class="card"><b>${esc(n)}</b><small>${esc(w)} · from purlis</small><div><button class="btn" data-dlg="add" data-offer="${esc(n)}">Add…</button></div></div>`).join("")}</div></div>`}
+function sourcesPage(){
+ const ups=updates();
+ if(S.v==="b"){const all=SRC.flatMap(s=>s.skills.map(k=>({s,k}))).filter(x=>S.cat==="all"||x.s.id===S.cat||(S.cat==="installed"&&x.k.inst)||(S.cat==="updates"&&x.k.upd));
+  return `<div class="pg"><div class="row"><h1 style="flex:1">Sources</h1><button class="btn" data-a="manage">Manage sources (${SRC.length})</button><button class="btn primary" data-dlg="add">Add source…</button></div>
+   <p class="lead">Every skill your sources offer, in one list. An install copies a reviewed skill into the project, pinned to that commit; nothing changes until you accept a newer one.</p>
+   <div class="facets">${[["all","All"],["updates","Updates ("+ups.length+")"],["installed","Installed"],...SRC.map(s=>[s.id,s.name])].map(([id,l])=>`<button class="chip ${S.cat===id?"on":""}" data-cat="${id}">${esc(l)}</button>`).join("")}</div>
+   <div class="rows">${all.map(x=>skillRow(x.s,x.k).replace('<div class="s">',`<div class="s">${esc(x.s.name)} · `)).join("")||`<div class="r"><div class="s">Nothing here.</div></div>`}</div>${offers()}</div>`}
+ const upBanner=ups.length?`<div class="banner acc"><span>${ups.length} installed skill has a newer version: ${ups.map(x=>`<code>${esc(x.k.n)}</code> from ${esc(x.s.name)}`).join(", ")}. Nothing changes until you accept it.</span><button class="btn primary" data-go="update" data-src="${ups[0].s.id}" data-skill="${ups[0].k.n}">Review update</button></div>`:"";
+ const unconf=SRC.filter(s=>s.unconfirmed).map(s=>`<div class="banner warn"><span><b>${esc(s.name)}</b> came with the project but isn't confirmed on this machine, so purlis asks it nothing yet.</span><button class="btn" data-a="confirm">Confirm it</button></div>`).join("");
+ if(S.v==="c")return `<div class="pg"><div class="row"><h1 style="flex:1">Sources</h1><button class="btn primary" data-dlg="add">Add source…</button></div>
+   <div><h2>Updates</h2>${ups.length?`<div class="rows">${ups.map(x=>skillRow(x.s,x.k)).join("")}</div>`:`<p class="lead">Every installed skill is on its newest version.</p>`}</div>
+   ${unconf}<div><h2>Your sources</h2><div class="rows">${SRC.map(sourceRow).join("")}</div></div>${offers()}</div>`;
+ return `<div class="pg"><div class="row"><h1 style="flex:1">Sources</h1><button class="btn primary" data-dlg="add">Add source…</button></div>
+   <p class="lead">A source is a git repository of skills. An install copies a skill into this project, pinned to the commit you reviewed.</p>
+   ${upBanner}${unconf}<div><h2>Your sources</h2><div class="rows">${SRC.map(sourceRow).join("")}</div></div>${offers()}</div>`}
+function sourcePage(){const s=findSrc(S.src);
+ const head=`<div class="row"><h1 style="flex:1">${esc(s.name)}</h1><button class="btn" data-a="refresh">Check for updates</button><button class="btn" data-dlg="remove">Remove source…</button></div><p class="lead">${esc(s.url)} at <code>${esc(s.commit)}</code> · checked ${esc(s.checked)} · ${esc(s.who)}${s.vault?" · signs in with "+esc(s.vault):""}</p>`;
+ if(S.v==="c"){const k=s.skills.find(x=>x.n===S.skill)||s.skills[0];
+  return `<div class="two"><div><div class="pg">${head}<div class="rows">${s.skills.map(x=>`<div class="r click" data-pick="${x.n}" style="${x.n===k.n?"background:var(--accent-soft)":""}"><div class="t"><code>${esc(x.n)}</code>${x.inst?`<span class="mark ok">Installed</span>`:""}${x.upd?`<span class="mark acc">Update</span>`:""}</div><div class="s">${esc(x.d)}</div></div>`).join("")}</div></div></div>
+   <div><div class="pg"><h1 style="font-family:var(--mono);font-weight:500">${esc(k.n)}</h1><p class="lead">${esc(k.d)}</p>${k.risk?`<div class="banner warn"><span>It ${esc(k.risk)}. The review shows the file before you install.</span></div>`:""}<div class="file"><details open><summary>SKILL.md</summary><pre>---\nname: ${esc(k.n)}\ndescription: ${esc(k.d)}\n---\n\n# ${esc(k.n)}\n…</pre></details></div>
+   <div class="row">${k.upd?`<button class="btn primary" data-go="update" data-src="${s.id}" data-skill="${k.n}">Review update</button>`:k.inst?`<button class="btn" data-a="openlib">Open in Library</button>`:`<button class="btn primary" data-go="install" data-src="${s.id}" data-skill="${k.n}">Review install</button>`}</div></div></div></div>`}
+ return `<div class="pg">${head}${s.unconfirmed?`<div class="banner warn"><span>Not confirmed on this machine: purlis asks it nothing until you confirm it.</span><button class="btn" data-a="confirm">Confirm it</button></div>`:""}<div class="rows">${s.skills.map(k=>skillRow(s,k)).join("")}</div><p class="lead">2 folders in it aren't skills (no SKILL.md): <code>docs/</code>, <code>scripts/</code>.</p></div>`}
+function installPage(){const s=findSrc(S.src),k=s.skills.find(x=>x.n===S.skill);
+ const L=[["project","Every chat in the project gets it."],["workspace smart-ide","Only chats in smart-ide get it."],["local","Only chats on this machine; never saved to the project."]];
+ return `<div class="pg"><h1>Install <code style="font-family:var(--mono);font-weight:500">${esc(k.n)}</code> from ${esc(s.name)}</h1>
+  <p class="lead">You are reviewing ${esc(s.name)} at commit <code>${esc(s.commit)}</code>. What you install stays pinned to this commit; a newer one is offered later and changes nothing until you accept it.</p>
+  <div><h2>What it adds</h2><div class="risk"><div><span class="mark ok">ok</span><code>SKILL.md</code> instructions, 64 lines</div>${k.risk==="runs a script"?`<div><span class="mark warn">look</span><code>scripts/repro.sh</code> a shell script the skill tells a chat to run</div>`:""}${k.risk==="reaches 1 host"?`<div><span class="mark warn">look</span><code>SKILL.md</code> tells a chat to reach deploy.example.com</div>`:""}<div><span class="mark ok">ok</span>It passes the skill checks.</div></div></div>
+  <div class="file"><details><summary>Show SKILL.md</summary><pre>---\nname: ${esc(k.n)}\ndescription: ${esc(k.d)}\n---\n\n# ${esc(k.n)}\n\n1. …</pre></details></div>
+  ${k.risk==="runs a script"?`<div class="file"><details><summary>Show scripts/repro.sh</summary><pre>#!/bin/sh\nset -eu\ncargo test --quiet "$1"</pre></details></div>`:""}
+  <div><h2>Lands in</h2><div class="lvls">${L.map(([l,w])=>`<label class="lvl ${S.lands===l?"on":""}"><input type="radio" name="ln" data-lands="${l}" ${S.lands===l?"checked":""}><b>${l}</b><small>${w}</small></label>`).join("")}</div></div></div>
+  <div class="sticky"><span>Nothing is installed until you press Install.</span><button class="btn" data-a="back">Cancel</button><button class="btn primary" data-a="install">Install</button></div>`}
+function updatePage(){const s=findSrc(S.src),k=s.skills.find(x=>x.n===S.skill);
+ return `<div class="pg"><h1>Update <code style="font-family:var(--mono);font-weight:500">${esc(k.n)}</code></h1>
+  <p class="lead">${esc(s.name)} moved it from <code>3f2a1c9</code> to <code>8be07d2</code>. You also changed it here since you installed it; your change is kept where it doesn't overlap.</p>
+  <div><h2>What changes</h2><div class="risk"><div><span class="mark ok">new</span>A step that asks for constraints first</div><div><span class="mark warn">gone</span>The "list three options" step</div></div></div>
+  <div class="file"><details open><summary>The source's change · SKILL.md</summary><div class="diff"><div class="d">- 2. List three options.</div><div class="a">+ 2. Ask for the constraints before any option.</div><div class="a">+ 3. Then list at most three options.</div></div></details></div>
+  <div class="file"><details><summary>Your change since the install · SKILL.md</summary><div class="diff"><div class="a">+ 5. Write the design to docs/designs/.</div></div></details></div></div>
+  <div class="sticky"><span>Chats keep the current version until you accept.</span><button class="btn" data-a="back">Not now</button><button class="btn primary" data-a="accept">Accept update</button></div>`}
+function dialog(){if(!S.dlg)return "";
+ if(S.dlg==="add")return `<div class="dialogwrap" data-a="scrim"><div class="dialog" role="dialog" aria-modal="true"><h2>Add ${S.offer?esc(S.offer):"a source"}</h2><p>Nothing is installed until you review a skill from it.</p>
+  <div class="field"><label for="u">Repository</label><input id="u" value="${S.offer?"https://github.com/anthropics/skills":""}" placeholder="https://… or a folder on this machine"></div>
+  <div class="field"><label>Who can browse it</label><select><option>The whole project</option><option>Only this machine</option></select></div>
+  <details class="more"><summary>More: branch, folder, sign-in</summary><div style="display:grid;gap:10px;margin-top:10px"><div class="field"><label>Branch</label><input placeholder="main"></div><div class="field"><label>Folder in the repository</label><input placeholder="skills/"></div><div class="field"><label>Signs in with vault</label><select><option>None</option><option>forge-token</option></select></div></div></details>
+  <div class="row" style="justify-content:flex-end"><button class="btn" data-a="close">Cancel</button><button class="btn primary" data-a="added">Add source</button></div></div></div>`;
+ if(S.dlg==="remove")return `<div class="dialogwrap" data-a="scrim"><div class="dialog" role="dialog" aria-modal="true"><h2>Remove ${esc(findSrc(S.src).name)}?</h2><p>Skills you installed from it stay, pinned where they are; they just stop being offered updates.</p><div class="row" style="justify-content:flex-end"><button class="btn" data-a="close">Cancel</button><button class="btn danger" data-a="removed">Remove source</button></div></div></div>`;
+ return ""}
+function crumb(){const parts=[["sources","Sources"]];if(S.page!=="sources"&&S.page!=="manage"){parts.push(["source",findSrc(S.src).name]);if(S.page==="install")parts.push([null,"Install "+S.skill]);if(S.page==="update")parts.push([null,"Update "+S.skill])}if(S.page==="manage")parts.push([null,"Manage sources"]);
+ return parts.map(([p,l],i)=>i===parts.length-1?`<b>${esc(l)}</b>`:`<button data-go="${p}">${esc(l)}</button>`).join(" › ")}
+function render(){
+ let body=S.page==="sources"?sourcesPage():S.page==="source"?sourcePage():S.page==="install"?installPage():S.page==="update"?updatePage():`<div class="pg"><h1>Manage sources</h1><div class="rows">${SRC.map(sourceRow).join("")}</div></div>`;
+ document.getElementById("app").innerHTML=`<div class="win"><div class="tabs"><span>steward 5</span><span class="on">Skill studio</span></div>
+  <div class="bar"><div class="nav2"><button aria-label="Back" data-a="back" ${S.back.length?"":"disabled"}>‹</button><button aria-label="Forward" data-a="fwd" ${S.fwd.length?"":"disabled"}>›</button></div><span class="crumb">${crumb()}</span></div>
+  <div class="studio"><div class="snav"><span>Library</span><span>Needs you <span class="cnt">2</span></span><span>Drafts</span><span class="on">Sources <span class="cnt">${updates().length}</span></span><span>Deleted</span><span>Harness skills</span><span>Routing</span></div><div class="content">${body}</div></div></div>
+  ${dialog()}${S.toast?`<div class="toast" role="status">${S.toast}</div>`:""}
+  <div class="switcher" role="toolbar" aria-label="Prototype switcher"><button data-a="prev" aria-label="Previous variant">←</button><span class="lbl">${V[S.v]}</span><button data-a="next" aria-label="Next variant">→</button><span class="st">${S.page}${S.skill?" · "+S.skill:""}</span></div>`}
+function toast(t){S.toast=t;render();clearTimeout(S.tt);S.tt=setTimeout(()=>{S.toast=null;render()},3500)}
+document.addEventListener("click",e=>{const t=e.target.closest("[data-a],[data-go],[data-dlg],[data-cat],[data-lands],[data-pick]");if(!t)return;const d=t.dataset;
+ if(d.lands){S.lands=d.lands;render();return}
+ if(d.pick){S.skill=d.pick;render();return}
+ if(d.cat){S.cat=d.cat;render();return}
+ if(d.dlg){S.dlg=d.dlg;S.offer=d.offer||null;render();return}
+ if(d.go){e.stopPropagation();go(d.go,d.src||null,d.skill||null);return}
+ const a=d.a;
+ if(a==="scrim"){if(e.target===t){S.dlg=null;render()}return}
+ if(a==="close"){S.dlg=null;render()}
+ else if(a==="back")back(); else if(a==="fwd")fwd();
+ else if(a==="manage")go("manage");
+ else if(a==="added"){S.dlg=null;toast("Added. Its skills are listed; nothing is installed.")}
+ else if(a==="removed"){S.dlg=null;S.page="sources";toast("Removed the source. Its installed skills stay.")}
+ else if(a==="install"){const k=findSrc(S.src).skills.find(x=>x.n===S.skill);k.inst=true;S.page="source";toast(`Installed ${esc(k.n)} in the ${esc(S.lands)} skills, pinned to ${esc(findSrc(S.src).commit)}.`)}
+ else if(a==="accept"){const k=findSrc(S.src).skills.find(x=>x.n===S.skill);k.upd=false;S.page="sources";toast(`Updated ${esc(k.n)}. Chats started from now get it.`)}
+ else if(a==="confirm"){findSrc("team").unconfirmed=false;toast("Confirmed on this machine.")}
+ else if(a==="refresh")toast("Checked: nothing newer.");
+ else if(a==="openlib")toast("Library opens on that skill's page.");
+ else if(a==="prev"||a==="next"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(a==="next"?1:2))%3];S.page="sources";S.back=[];S.fwd=[];try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}
+});
+document.addEventListener("keydown",e=>{if((e.metaKey||e.ctrlKey)&&e.key==="["){e.preventDefault();back();return}if((e.metaKey||e.ctrlKey)&&e.key==="]"){e.preventDefault();fwd();return}
+ if(e.key==="Escape"){S.dlg=null;render();return}
+ if(e.target.closest&&e.target.closest("input,textarea,select,[contenteditable]"))return;
+ if(e.key==="ArrowLeft"||e.key==="ArrowRight"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(e.key==="ArrowRight"?1:2))%3];S.page="sources";S.back=[];S.fwd=[];try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}
+ if(e.key==="Enter"&&e.target.dataset&&e.target.dataset.go)e.target.click()});
+render();
+</script>
