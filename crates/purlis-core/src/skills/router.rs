@@ -355,8 +355,24 @@ impl TryFrom<KeptOnDisk> for Kept {
         if ulid::Ulid::from_string(&record.routing).is_err() {
             return Err("a routing that is not a ULID".to_owned());
         }
-        if !record.router.is_empty() && !crate::extension::an_id(&record.router) {
+        // A choice that names no router is the one routing with no router's id.
+        let unchosen = record.fell_back == Some(FellBack::Unchosen);
+        if record.router.is_empty() != unchosen
+            || !(record.router.is_empty() || crate::extension::an_id(&record.router))
+        {
             return Err("a router that is not an extension's id".to_owned());
+        }
+        // An answer is kept exactly where it was taken: where the chat did not fall back.
+        if record.fell_back.is_some() != answer.is_none() {
+            return Err("an answer beside a fallback, or a routing with neither".to_owned());
+        }
+        let named = record
+            .hidden
+            .iter()
+            .map(|one| one.skill.as_str())
+            .chain(answer.iter().flatten().map(|one| one.skill.as_str()));
+        if let Some(bad) = named.into_iter().find(|name| !a_skill_name(name)) {
+            return Err(format!("a skill named {bad:?}"));
         }
         if let Some(bad) = record
             .hidden
@@ -380,6 +396,19 @@ impl TryFrom<KeptOnDisk> for Kept {
         Ok(Self::Asked(Routed { record, answer }))
     }
 }
+
+/// Whether `name` could name a skill a routing hid: a word a reader sees whole, of at most
+/// [`MOST_NAME_CHARS`] characters.
+fn a_skill_name(name: &str) -> bool {
+    !name.trim().is_empty()
+        && name.chars().count() <= MOST_NAME_CHARS
+        && !name.chars().any(char::is_control)
+        && !purlis_unicode::hides(name, purlis_unicode::Breaks::Marked)
+}
+
+/// The most characters a kept skill name has: well above the open format's 64, for a plugin's
+/// prefix.
+const MOST_NAME_CHARS: usize = 200;
 
 /// `why` on one line a reader sees whole, cut at [`MOST_ERROR_CHARS`] characters with `…`.
 fn clipped(why: &str) -> String {

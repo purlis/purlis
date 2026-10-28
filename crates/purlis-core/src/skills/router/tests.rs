@@ -543,7 +543,7 @@ fn reattached(root: &Path, persona: Option<&str>, kept: Kept) -> ChatSkills {
         Some(&root.join("workspaces/smart-ide")),
         persona,
     )
-    .routed_as(kept)
+    .routed_as(kept, Some(Harness::ClaudeCode))
 }
 
 #[test]
@@ -654,6 +654,16 @@ fn nothing_kept_is_applied_where_the_plane_s_skills_do_not_reach_the_reattached_
         Some(&root.join("workspaces/smart-ide")),
         None,
     )
-    .routed_as(kept);
+    .routed_as(kept.clone(), Some(Harness::ClaudeCode));
     assert_eq!(off.routed, None);
+    // Nor on a program purlis knows as no harness.
+    let unknown = ChatSkills::read(
+        true,
+        root,
+        None,
+        Some(&root.join("workspaces/smart-ide")),
+        None,
+    )
+    .routed_as(kept, None);
+    assert_eq!(unknown.routed, None);
 }

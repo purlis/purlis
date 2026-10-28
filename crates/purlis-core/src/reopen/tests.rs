@@ -2852,6 +2852,10 @@ fn a_routing_that_does_not_read_whole_reads_as_not_known_3578() {
         text.replacen("01HZY3M6S4K9Q2W7E8R5T1Y6V0", "not-a-ulid", 1),
         text.replacen("\"relevance\"", "\"../relevance\"", 1),
         text.replacen("\"by\": \"extension\"", "\"by\": \"someone\"", 1),
+        // An answer beside a fallback, a router named by nothing, a skill no reader sees whole.
+        text.replacen("\"fell_back\": null", "\"fell_back\": \"slow\"", 1),
+        text.replacen("\"router\": \"relevance\"", "\"router\": \"\"", 1),
+        text.replacen("\"skill\": \"skill-02\"", "\"skill\": \"skill\\u0007\"", 1),
     ] {
         fs::write(path(plane.path()), &spoiled).unwrap();
         let back = read(plane.path());

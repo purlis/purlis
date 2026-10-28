@@ -251,15 +251,15 @@ pub struct Chat {
     /// flag as the window that started it read it (`purlis_core::skills::reach_chats_here`). A
     /// chat reattached from the session host (#2006) takes this, not the flag as read at its
     /// reattach, so its arming, its Notice, its stamp and Use skill… keep its start's word.
-    /// `None` is a chat whose start in this launch has not returned or did not happen, and every
+    /// `None` is a chat whose start in this launch has not returned, and every
     /// record written before this field: a reattach then reads the flag again, as before. Not a format change, for [`Self::pinned`]'s reason.
     pub plane_skills: Option<bool>,
     /// **How the chat's start routed its skills** (SK-15f, #3578): the built-in router, or what
     /// came of asking the router extension its persona or workspace chose (SK-15b). A chat
     /// reattached from the session host routes its set by this, as its harness still holds the
     /// listing that start handed it, and its router is not asked again. `None` is a chat whose
-    /// start in this launch has not returned or did not happen, one its runner armed, and every
-    /// record written before this field: a reattach then asks its router again, as before. Not a
+    /// start in this launch has not returned, one its runner armed, and every record written
+    /// before this field: a reattach then asks its router again, as before. Not a
     /// format change, for [`Self::pinned`]'s reason.
     pub routing: Option<crate::skills::router::Kept>,
 }

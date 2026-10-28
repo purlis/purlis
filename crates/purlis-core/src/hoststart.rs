@@ -302,11 +302,11 @@ impl ChatSkills {
 
     /// **These skills, routed as the chat's start routed them** (SK-15f, #3578): for a chat
     /// reattached from the session host, whose harness still holds the listing that start handed
-    /// it. Its router is not asked again; a chat the plane's skills do not reach, or a Try it's,
-    /// keeps routing nothing, as [`Self::routed_by`] would.
+    /// it. Its router is not asked again; a chat the plane's skills do not reach, a Try it's, or
+    /// one on no harness purlis knows, keeps routing nothing, as [`Self::routed_by`] would.
     #[must_use]
-    pub fn routed_as(self, kept: crate::skills::router::Kept) -> Self {
-        if !self.on || self.tried {
+    pub fn routed_as(self, kept: crate::skills::router::Kept, harness: Option<Harness>) -> Self {
+        if !self.on || self.tried || harness.is_none() {
             return self;
         }
         Self {

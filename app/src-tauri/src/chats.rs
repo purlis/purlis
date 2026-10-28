@@ -451,14 +451,16 @@ fn plane_skills_at_start(
 
 /// **The routing a chat starting now keeps from its first start** (SK-15f, #3578): a chat
 /// `reattaching` from the session host routes its set as its record says its start did, where
-/// the record says, and its router is not asked again. Any other start, and a runner's chat,
-/// which its runner arms, keeps nothing: it is routed now.
+/// the record says, and its router is not asked again. Only beside the Skill studio flag that
+/// start took (`flag_recorded`, #3466): a routing kept without it would be judged by a flag read
+/// now, which may not be the one it was routed under. Any other start keeps nothing: it is
+/// routed now.
 fn routing_kept_at_start(
     reattaching: bool,
-    on_the_runner: bool,
+    flag_recorded: bool,
     recorded: Option<&purlis_core::skills::router::Kept>,
 ) -> Option<purlis_core::skills::router::Kept> {
-    recorded.filter(|_| reattaching && !on_the_runner).cloned()
+    recorded.filter(|_| reattaching && flag_recorded).cloned()
 }
 
 /// **The personas a chat is named by** (#2691), from one read of the app's record of its run
@@ -3469,7 +3471,12 @@ impl Chats {
         // extension's (SK-15b); a chat reattached routes as its start did, from its record, and
         // its router is not asked again (#3578).
         let router = lock(&self.router).clone();
-        let kept_routing = routing_kept_at_start(reattaching, on_the_runner, chat.routing.as_ref());
+        let kept_routing = routing_kept_at_start(
+            reattaching,
+            chat.plane_skills.is_some(),
+            chat.routing.as_ref(),
+        );
+        let routing_was_kept = kept_routing.is_some();
         let skills = std::cell::LazyCell::new(|| {
             if on_the_runner {
                 return purlis_core::hoststart::ChatSkills::default();
@@ -3481,8 +3488,8 @@ impl Chats {
                 chat.cwd.as_deref(),
                 runs_as.as_deref(),
             );
-            match kept_routing.clone() {
-                Some(kept) => read.routed_as(kept),
+            match kept_routing {
+                Some(kept) => read.routed_as(kept, harness),
                 None => read.routed_by(built_in_skills_here().as_deref(), harness, router.as_ref()),
             }
         });
@@ -4077,7 +4084,7 @@ impl Chats {
         // already (#3578), and one whose record kept none had its router asked again, an answer
         // recorded under the run it is in.
         if !on_the_runner
-            && kept_routing.is_none()
+            && !routing_was_kept
             && let Some(routed) = skills.routed.as_ref()
             && let Some(tell) = lock(&self.routed).as_ref()
         {
@@ -5295,9 +5302,9 @@ impl Chats {
             .map(|chat| Chat {
                 pid: None,
                 model: None,
-                // Not started this launch, so no flag or routing of a start of its (#3466, #3578).
-                plane_skills: None,
-                routing: None,
+                // Not started this launch: the flag and the routing its record had are its last
+                // start's, which a program the host still runs was started with (#3466, #3578),
+                // and a start that is not a reattach reads neither.
                 ..chat.clone()
             })
             .collect();

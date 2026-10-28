@@ -8301,14 +8301,15 @@ fn a_reattached_chat_keeps_the_routing_its_start_kept_3578() {
     use purlis_core::skills::router::Kept;
     let kept = Kept::BuiltIn;
     assert_eq!(
-        routing_kept_at_start(true, false, Some(&kept)),
+        routing_kept_at_start(true, true, Some(&kept)),
         Some(kept.clone())
     );
     // A record written before the routing was kept: its router is asked again, as before.
-    assert_eq!(routing_kept_at_start(true, false, None), None);
-    // A start that is not a reattach, or a runner's chat, is routed now.
-    assert_eq!(routing_kept_at_start(false, false, Some(&kept)), None);
-    assert_eq!(routing_kept_at_start(true, true, Some(&kept)), None);
+    assert_eq!(routing_kept_at_start(true, true, None), None);
+    // A start that is not a reattach is routed now.
+    assert_eq!(routing_kept_at_start(false, true, Some(&kept)), None);
+    // Nor is a routing kept without the studio flag its start took: it is routed again too.
+    assert_eq!(routing_kept_at_start(true, false, Some(&kept)), None);
 }
 
 #[test]

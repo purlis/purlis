@@ -55,7 +55,7 @@ The chat's Use skill… says the router and its timing, or why it fell back. The
 
 ## What this does not do
 
-- **A reattached chat asks its router again** where its window was restarted: what its start answered is not kept in the reopen record. #3578 keeps it, and amends this in [A reattached chat keeps its start's routing](2026-10-28-a-reattached-chat-keeps-its-start-s-routing.md).
+- **A reattached chat's routing** was not kept when #3230 shipped, so a reattached chat asked its router again. #3578 keeps it: see [A reattached chat keeps its start's routing](2026-10-28-a-reattached-chat-keeps-its-start-s-routing.md). Only a chat whose record was written before #3578 is asked again.
 - **The studio's rows show what the built-in router would hide**, per harness, as before: an extension's answer is per chat, and the studio says that.
 
 **Built by #3230.**
