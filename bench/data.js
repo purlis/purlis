@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793213834353,
+  "lastUpdate": 1793215448978,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28686,6 +28686,48 @@ window.BENCHMARK_DATA = {
             "value": 102.08131650000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.232, 101.651, 102.081, 102.439, 102.745 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "319ae5fa6093525d62b323431ded9a13f73cf481",
+          "message": "Handbacks: reports are only ever written by the app (#3721)\n\n* Handbacks: reports are only ever written by the app\n\nThe folder a chat's reports and messages wait in is denied to sandboxed\nchats' writes on every harness. The chat's hook reads what waits and asks\nthe app over the hook socket to take it (TookHandbacks, TookMessages);\nthe app removes each file and says which it wrote. Each report carries a\nseal, an HMAC under the plane's key of its text, folder and name; one\nwhose seal does not hold is handed as quoted words alone, never as the\napp's word on a dispatch, a stop or a task's outcome.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Handbacks: a seal is made under a key derived for seals alone\n\nThe plane's key is not the seal's key: a seal is HMAC-SHA256 under\nHMAC(plane key, \"purlis seal key\" + purpose), so it is never confused with\nanything else the plane's key signs. A seal made with the plane's key\nitself is not one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Handbacks: a seal is checked against the key that is there, and the scenarios show both kinds\n\nA check of a report's seal reads the plane's key where it is and never\nmakes one, so a check leaves nothing behind. The recorded scenario that\nhands the asking chat purlis's word on a closed task now seals its report\nunder the fixture's own key, and a second hands an unsealed word only as\na chat's quoted words. Two clippy fixes, and two tests read the take's\nfolder and the messages' denial as they now are.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T18:39:55Z",
+          "tree_id": "d84b7ac887ee1266e64a613a84d8823f4c443623",
+          "url": "https://github.com/purlis/purlis/commit/319ae5fa6093525d62b323431ded9a13f73cf481"
+        },
+        "date": 1793215444398,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6124890000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.582, 0.595, 0.612, 0.613, 0.622 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6733765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.565, 16.640, 16.673, 16.698, 16.805 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2858025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.693, 101.463, 102.286, 102.316, 102.910 ms"
           }
         ]
       }
