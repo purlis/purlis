@@ -41,11 +41,11 @@ So **a router never adds a skill the set leaves out, and never hides a pin**: it
 
 **What it hid is a skill's reason of its own**, `HiddenWhy::ByRouter(Line)`, never a free string: "hidden by the router relevance: not relevant to this workspace". The index skill names each hidden skill, as the built-in router's does.
 
-**The answer is kept with the chat's start** (`hoststart::ChatSkills::routed`), and every later routing of its set applies it again: the folder its harness is handed, its arming, Use skill…, its restart stamp. Where its set changed so the answer no longer fits, that routing falls back on the built-in router, as a set that changed past its budget would.
+**The answer is kept with the chat's start** (`hoststart::ChatSkills::routed`), and every later routing of its set applies it again: the folder its harness is handed, its arming, Use skill…, its restart stamp. Where its set changed since, a skill pinned or gone since is listed or gone as the set says and the rest of the answer holds; only where what is left leaves the list over the budget does that routing fall back on the built-in router.
 
 ## The routing record
 
-`skill.routed` in the chat's event log, under the run its start began (after its `run.started`, and never for a start taken back): its ULID (`routing`), the extension (`router`), how long the question took (`ms`), `fell_back` (`slow`, `failed`, `wrong`, `unchosen`, or null) with `error`, and every skill the routing hid with its `why` (the router's line, or `over-budget` for the built-in router's fallback). It names skills and nothing of a prompt or a description. **Every `skill.started` of that chat's run names it** as `routing`, with `routing_fell_back` where it fell back.
+`skill.routed` in the chat's event log, under the run its start began (after its `run.started`, and never for a start taken back): its ULID (`routing`), the extension (`router`), how long the question took (`ms`), `fell_back` (`slow`, `failed`, `wrong`, `unchosen`, or null) with `error`, and every skill the routing hid with its `why` (the router's line, or `over-budget` for the built-in router's fallback). It names skills and nothing of a prompt or a description. **Every `skill.started` of that chat's run names it** as `routing`, with `routing_fell_back` where it fell back, and so does every run a `/clear` of the chat begins, which keeps its listing.
 
 The chat's Use skill… says the router and its timing, or why it fell back. The Skill studio, filtered to a workspace or persona that chose an extension's router, says so, and lists how it did at the start of each such chat open in the window.
 
@@ -55,7 +55,7 @@ The chat's Use skill… says the router and its timing, or why it fell back. The
 
 ## What this does not do
 
-- **A reattached chat asks its router again** where its window was restarted: what its start answered is not kept in the reopen record. A router that answers the same for the same skills is not affected. #3578 follows it up.
+- **A reattached chat asks its router again** where its window was restarted: what its start answered is not kept in the reopen record. The new answer is recorded under the run the chat is in, and is what its skills are routed by from then on; its harness keeps the listing it was handed. A router that answers the same for the same skills is not affected. #3578 follows it up.
 - **The studio's rows show what the built-in router would hide**, per harness, as before: an extension's answer is per chat, and the studio says that.
 
 **Built by #3230.**
