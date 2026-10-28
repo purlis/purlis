@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FocusEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -92,6 +93,7 @@ import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 import { byKeyboard } from "./heldStill";
+import { property } from "./theme/theme";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -105,6 +107,13 @@ type ShownFacts = {
 
 /** A row's id in the section's roving focus. */
 const rowId = (session: number) => `chats:${session}`;
+
+/** The hand of a chat below that needs you, in the needs-you colour at the words' size. */
+const HAND: CSSProperties = {
+  width: "1em",
+  height: "1em",
+  color: `var(${property("needs-you.base")})`,
+};
 
 /** No rows of the catalogue: what a section drawn on its own, in a test, offers. */
 const NO_OFFERS: Catalogued = new Map();
@@ -1656,19 +1665,18 @@ const Row = memo(function Row({
         /* **A chat below this one needs you**: the hand, and a press goes to that chat. Its
            own button beside the row, since the row goes to this row's chat. Out of the arrows'
            way; the keyboard's way to that chat is the title bar's list. */
-        <Tooltip tip={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}>
-          <button
-            type="button"
-            className="needs-you-mark rolled-up"
-            data-mark="needs-you"
-            data-leads-to={needs}
-            tabIndex={-1}
-            aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
-            onClick={() => onOpen(needs)}
-          >
-            <Hand aria-hidden="true" />
-          </button>
-        </Tooltip>
+        // The family's quiet ghost (#3523), as the tab chip's hand is: its tooltip is its name.
+        <IconButton
+          variant="quiet"
+          size="sm"
+          icon={<Hand aria-hidden="true" style={HAND} />}
+          className="rolled-up"
+          data-mark="needs-you"
+          data-leads-to={needs}
+          tabIndex={-1}
+          aria-label={`Go to ${needsName ?? "the chat"} below ${name}, which needs you`}
+          onPress={() => onOpen(needs)}
+        />
       )}
     </li>
   );

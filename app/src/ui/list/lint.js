@@ -27,14 +27,11 @@ export const rules = {
 };
 
 /**
- * **This family's controls still drawn as a raw `<button>`** (D-2904-9): A list's row drawn by hand, said by its role
- * or its class, which the button family's rule lets through until this family's lane moves them.
+ * **This family's controls still drawn as a raw `<button>`** (D-2904-9, #3523): a list's row
+ * drawn by hand, by the family's row class (`ui-row`), which the button family's rule lets
+ * through until this family's lane moves them. Never a word a view picked: the Activity line's
+ * name and a row's rolled-up hand are the button family's now.
  */
 export const rawButtons = {
-  classes: [
-    // A list's row, a vault's secret, and a needs-you mark on a row.
-    "ui-row",
-    "vault-secret",
-    "needs-you-mark",
-  ],
+  classes: ["ui-row"],
 };

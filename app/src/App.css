@@ -3225,10 +3225,6 @@ body {
   flex: none;
 }
 
-.explorer .needs-you-mark.rolled-up:hover {
-  background: var(--surface-hover);
-}
-
 /* **A row another part of the window asked for** (#1490, `revealTask.ts`): the explorer's
    line was pressed, and this is where it went. Marked for a moment with the band a hovered
    row has, which is still there under reduced motion, and faded in once. A pointer's press
@@ -3245,17 +3241,6 @@ body {
 .chats-section li:has(> .ui-row[data-revealed]) {
   background-color: var(--surface-hover);
   animation: charter-revealed var(--motion-duration-settle) var(--motion-easing-standard);
-}
-
-/* The hand a session's row wears for a task of it that needs you: a button of its own beside
-   the row, as on a row of the Chats section. */
-.explorer .needs-you-mark.rolled-up {
-  padding: var(--space-1);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  vertical-align: top;
-  cursor: default;
 }
 
 .chats-section {
@@ -3592,14 +3577,9 @@ body {
 }
 
 /* The hand rolled up from a chat below: a button of its own beside the row, since a press goes
-   to that chat and not to the row's. */
-.chats-section .needs-you-mark.rolled-up {
+   to that chat and not to the row's. The button family draws it (#3523); here is its place. */
+.chats-section .rolled-up {
   flex: none;
-  padding: var(--space-1);
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  cursor: default;
 }
 
 /* **A chat's finished tasks, under its row** (#1485): the rows that stand alone, then the one
@@ -3730,10 +3710,6 @@ body {
 .chats-section .finished-report .report-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.chats-section .needs-you-mark.rolled-up:hover {
-  background: var(--surface-hover);
 }
 
 .needs-you-mark svg {
@@ -5817,11 +5793,6 @@ nav.piece-files-head {
 
 .vault-secret-name {
   overflow-wrap: anywhere;
-}
-
-/* A line's name that shows its chat (the Activity tab): words, in the line's own type. */
-.vault-secret {
-  font: inherit;
 }
 
 /* A revealed value, under its name: the only place one is ever drawn, for 30 seconds. It wraps
