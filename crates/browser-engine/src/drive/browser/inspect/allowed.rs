@@ -189,7 +189,6 @@ const METHODS: &[(&str, &[&str])] = &[
         &[
             "enable",
             "disable",
-            "addInspectedHeapObject",
             "collectGarbage",
             "getHeapObjectId",
             "getSamplingProfile",
@@ -879,6 +878,13 @@ mod tests {
             check(
                 "HeapProfiler.getObjectByHeapObjectId",
                 json!({ "objectId": "1" })
+            )
+            .is_some()
+        );
+        assert!(
+            check(
+                "HeapProfiler.addInspectedHeapObject",
+                json!({ "heapObjectId": "1" })
             )
             .is_some()
         );

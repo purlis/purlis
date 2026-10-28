@@ -298,5 +298,34 @@ mod tests {
             ),
             vec!["inserted-text"]
         );
+        // A breakpoint's condition, and a logpoint, which DevTools send as one.
+        for method in [
+            "Debugger.setBreakpoint",
+            "Debugger.setBreakpointByUrl",
+            "Debugger.setBreakpointOnFunctionCall",
+        ] {
+            assert_eq!(
+                written(
+                    method,
+                    &json!({ "lineNumber": 3, "condition": "user.pin === 'cond-4471'" })
+                ),
+                vec!["cond-4471"],
+                "{method}"
+            );
+        }
+        assert_eq!(
+            written(
+                "Debugger.setBreakpointByUrl",
+                &json!({ "lineNumber": 3, "url": "http://fixture.test/app.js", "condition": "console.log('logpoint-said'), false" })
+            ),
+            vec!["logpoint-said"]
+        );
+        assert_eq!(
+            written(
+                "Page.reload",
+                &json!({ "ignoreCache": false, "scriptToEvaluateOnLoad": "window.k = 'on-load-9'" })
+            ),
+            vec!["on-load-9"]
+        );
     }
 }

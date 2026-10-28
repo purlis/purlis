@@ -34,9 +34,10 @@ be confirmed**, and carries the number its D-line has in the pull request.
    method is listed by name, so a method a later engine adds, to any domain, is refused until
    it is listed; and so are a session other than DevTools' own and those attached under it, and
    an origin other than the inspected page's. purlis's own world in the page is never told to
-   DevTools: its contexts and its scripts are kept from them, a call that names either is
-   refused, no object is reached by its heap id, and a pause inside one of its scripts goes on
-   at once, unseen. Cookies are read for the page's own origins alone and never written; a
+   DevTools: its contexts and its scripts are kept from them, and taken out of every stack and
+   place DevTools are told of; a script told before its world waits until the world is known,
+   and is never shown if the world is purlis's. A call that names either is refused, no object
+   is reached by its heap id, and a pause inside one of its scripts goes on at once, unseen. Cookies are read for the page's own origins alone and never written; a
    resource is asked of the page's own origins alone; no file is read or dragged in; what a
    cache holds is not read by an id that does not say whose it is; and the page's lifecycle
    and virtual time are not set. The front end's own requests to the web are failed where

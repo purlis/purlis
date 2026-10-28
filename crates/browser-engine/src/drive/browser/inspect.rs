@@ -38,7 +38,7 @@
 mod allowed;
 mod written;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex, Weak};
@@ -250,14 +250,23 @@ pub(crate) struct Inspection {
     /// told to DevTools, and never reached by them.
     ours: Mutex<HashSet<i64>>,
     ours_unique: Mutex<HashSet<String>>,
-    /// The scripts of those worlds, by id: never told to DevTools, never reached by them.
+    /// The scripts DevTools are not shown, by id: those of purlis's own worlds, and those of a
+    /// world not yet told of. Never reached by DevTools, and taken out of every stack they are in.
     our_scripts: Mutex<HashSet<String>>,
+    /// The worlds of the page told of so far, by session and id: a script of any other waits.
+    known: Mutex<HashSet<World>>,
+    /// The scripts that wait for their world to be told of, kept in order, by session and world:
+    /// told to DevTools once their world is the page's, never once it is purlis's.
+    held: Mutex<HashMap<World, Vec<crate::cdp::Event>>>,
     /// The methods the front end asked of the page, by name alone, the first [`MOST_HEARD`].
     heard: Mutex<Vec<String>>,
     /// What the engine told of the front end's own page, by method, and which of purlis's
     /// calls on it it refused: the first [`MOST_HEARD`], each once.
     told: Mutex<Vec<String>>,
 }
+
+/// A world of the inspected page: the session that told of it, and its id there.
+type World = (Option<String>, i64);
 
 /// How many of the front end's methods are kept to say what it asked.
 const MOST_HEARD: usize = 256;
@@ -434,6 +443,8 @@ impl Browser {
             ours: Mutex::new(HashSet::new()),
             ours_unique: Mutex::new(HashSet::new()),
             our_scripts: Mutex::new(HashSet::new()),
+            known: Mutex::new(HashSet::new()),
+            held: Mutex::new(HashMap::new()),
             heard: Mutex::new(Vec::new()),
             told: Mutex::new(Vec::new()),
         });
@@ -964,11 +975,8 @@ fn run(weak: &Weak<Inner>, open: &Arc<Inspection>, todo: &Receiver<Work>) {
                         {
                             return stop(InspectEnded::PageGone);
                         }
-                        if ours(open, event) {
-                            continue;
-                        }
-                        // Paused inside purlis's own script: it goes on at once, and DevTools
-                        // are never told.
+                        // Paused inside a script DevTools are not shown: it goes on at once, and
+                        // DevTools are never told.
                         if event.method == "Debugger.paused" && paused_in_ours(open, &event.params)
                         {
                             let _ = inner.devtools.call(
@@ -979,12 +987,30 @@ fn run(weak: &Weak<Inner>, open: &Arc<Inspection>, todo: &Receiver<Work>) {
                             continue;
                         }
                     }
-                    match for_the_front_end(tapped, open.root().as_deref()) {
-                        Some(message) => {
-                            bytes += message.len();
-                            batch.push(message);
+                    let told = match tapped {
+                        Tapped::Event(event) => {
+                            passed(open, event).into_iter().map(Tapped::Event).collect()
                         }
-                        None => return stop(InspectEnded::TooLarge),
+                        Tapped::Answer {
+                            id,
+                            outcome: Ok(mut result),
+                        } => {
+                            unshown(&mut result, &lock(&open.our_scripts));
+                            vec![Tapped::Answer {
+                                id,
+                                outcome: Ok(result),
+                            }]
+                        }
+                        other => vec![other],
+                    };
+                    for tapped in told {
+                        match for_the_front_end(tapped, open.root().as_deref()) {
+                            Some(message) => {
+                                bytes += message.len();
+                                batch.push(message);
+                            }
+                            None => return stop(InspectEnded::TooLarge),
+                        }
                     }
                 }
                 Work::Front(Tapped::Event(event)) => {
@@ -1092,41 +1118,152 @@ fn paused_in_ours(open: &Inspection, params: &Value) -> bool {
         })
 }
 
-/// Whether `event` tells of one of purlis's own worlds in the page: kept, and never told to
-/// DevTools.
-fn ours(open: &Inspection, event: &crate::cdp::Event) -> bool {
+/// How many scripts wait at most for their world to be told of: past it, a script is never
+/// shown.
+const MOST_HELD: usize = 4096;
+
+/// The events of the page that are DevTools' to see, for `event`: none where it tells of
+/// purlis's own worlds or their scripts, or stands in a world of purlis's; a script whose world
+/// is not yet told of waits for it, and comes after the event that tells of it. Every script
+/// DevTools are not shown is taken out of the stacks and places they are told of.
+fn passed(open: &Inspection, event: crate::cdp::Event) -> Vec<crate::cdp::Event> {
+    let session = event.session_id.clone();
+    let mut told = Vec::new();
     match event.method.as_str() {
         "Runtime.executionContextCreated" => {
             let context = &event.params["context"];
-            if !context["name"].as_str().is_some_and(super::world::is_ours)
-                || context["auxData"]["type"] != "isolated"
+            let Some(id) = context["id"].as_i64() else {
+                return Vec::new();
+            };
+            let waited = lock(&open.held).remove(&(session.clone(), id));
+            let mut scripts = lock(&open.our_scripts);
+            if context["name"].as_str().is_some_and(super::world::is_ours)
+                && context["auxData"]["type"] == "isolated"
             {
-                return false;
-            }
-            if let Some(id) = context["id"].as_i64() {
                 lock(&open.ours).insert(id);
+                if let Some(unique) = context["uniqueId"].as_str() {
+                    lock(&open.ours_unique).insert(unique.to_owned());
+                }
+                return Vec::new();
             }
-            if let Some(unique) = context["uniqueId"].as_str() {
-                lock(&open.ours_unique).insert(unique.to_owned());
+            lock(&open.known).insert((session, id));
+            for script in waited.iter().flatten() {
+                if let Some(script) = script.params["scriptId"].as_str() {
+                    scripts.remove(script);
+                }
             }
-            true
+            told.push(event);
+            told.extend(waited.into_iter().flatten());
         }
         "Runtime.executionContextDestroyed" => {
             let id = event.params["executionContextId"].as_i64();
             let unique = event.params["executionContextUniqueId"].as_str();
-            id.is_some_and(|id| lock(&open.ours).contains(&id))
-                || unique.is_some_and(|unique| lock(&open.ours_unique).contains(unique))
-        }
-        // A script of purlis's own world is never DevTools' to see.
-        "Debugger.scriptParsed" | "Debugger.scriptFailedToParse" => {
-            let context = event.params["executionContextId"].as_i64();
-            let ours = context.is_some_and(|id| lock(&open.ours).contains(&id));
-            if ours && let Some(script) = event.params["scriptId"].as_str() {
-                lock(&open.our_scripts).insert(script.to_owned());
+            if let Some(id) = id {
+                lock(&open.known).remove(&(session.clone(), id));
+                lock(&open.held).remove(&(session, id));
             }
-            ours
+            if id.is_some_and(|id| lock(&open.ours).contains(&id))
+                || unique.is_some_and(|unique| lock(&open.ours_unique).contains(unique))
+            {
+                return Vec::new();
+            }
+            told.push(event);
         }
-        _ => false,
+        "Runtime.executionContextsCleared" => {
+            lock(&open.known).retain(|(of, _)| *of != session);
+            lock(&open.held).retain(|(of, _), _| *of != session);
+            told.push(event);
+        }
+        // A script of purlis's own world is never DevTools' to see, and one of a world not yet
+        // told of waits until it is.
+        "Debugger.scriptParsed" | "Debugger.scriptFailedToParse" => {
+            let Some(script) = event.params["scriptId"].as_str().map(str::to_owned) else {
+                return Vec::new();
+            };
+            let context = event.params["executionContextId"].as_i64();
+            let known =
+                context.is_some_and(|id| lock(&open.known).contains(&(session.clone(), id)));
+            if known {
+                told.push(event);
+            } else {
+                lock(&open.our_scripts).insert(script);
+                let ours = context.is_none_or(|id| lock(&open.ours).contains(&id));
+                let mut held = lock(&open.held);
+                if !ours
+                    && held.values().map(Vec::len).sum::<usize>() < MOST_HELD
+                    && let Some(id) = context
+                {
+                    held.entry((session, id)).or_default().push(event);
+                }
+                return Vec::new();
+            }
+        }
+        _ => {
+            let ours = lock(&open.ours);
+            let in_ours = [
+                "/executionContextId",
+                "/exceptionDetails/executionContextId",
+            ]
+            .iter()
+            .any(|at| {
+                event
+                    .params
+                    .pointer(at)
+                    .and_then(Value::as_i64)
+                    .is_some_and(|id| ours.contains(&id))
+            });
+            drop(ours);
+            let at_ours = event
+                .params
+                .pointer("/location/scriptId")
+                .and_then(Value::as_str)
+                .is_some_and(|script| lock(&open.our_scripts).contains(script));
+            if in_ours || at_ours {
+                return Vec::new();
+            }
+            told.push(event);
+        }
+    }
+    let scripts = lock(&open.our_scripts);
+    for event in &mut told {
+        unshown(&mut event.params, &scripts);
+    }
+    told
+}
+
+/// Takes the scripts DevTools are not shown out of `value`: a frame of a stack in one is
+/// dropped, and a place in one loses the script it names.
+fn unshown(value: &mut Value, scripts: &HashSet<String>) {
+    if scripts.is_empty() {
+        return;
+    }
+    let names = |value: &Value, at: &str| {
+        value
+            .pointer(at)
+            .and_then(Value::as_str)
+            .is_some_and(|script| scripts.contains(script))
+    };
+    match value {
+        Value::Array(items) => {
+            items.retain(|item| !names(item, "/scriptId") && !names(item, "/location/scriptId"));
+            for item in items {
+                unshown(item, scripts);
+            }
+        }
+        Value::Object(map) => {
+            if map
+                .get("scriptId")
+                .and_then(Value::as_str)
+                .is_some_and(|script| scripts.contains(script))
+            {
+                map.remove("scriptId");
+                map.remove("url");
+            }
+            for item in map.values_mut() {
+                unshown(item, scripts);
+            }
+        }
+        _ => {}
     }
 }
 
