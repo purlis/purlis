@@ -15,7 +15,8 @@ import { PoolProfiles } from "./PoolProfiles";
 
 /**
  * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
- * added on this machine, each with its image, its limits and Remove, and Add a Docker pool….
+ * added on this machine, each with its image, its limits, how long its runner is left without a
+ * link before it suspends itself (#3471) and Remove, and Add a Docker pool….
  * Offered only while this machine keeps a pool (`SettingsTab`'s You level, and the palette): the
  * first is added from the palette's Add a Docker pool….
  *
@@ -168,6 +169,9 @@ function PoolEntry({
       >
         {removing ? "Removing…" : "Remove"}
       </Button>
+      <p className="ui-setting-help">
+        Suspends after {pool.suspend_after} without a link from this machine
+      </p>
       {typeof link === "object" && link.state === "key_changed" && (
         <Notice
           cause={`pool-key-changed:${pool.name}`}

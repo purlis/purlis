@@ -108,9 +108,9 @@ it starts the image's default command. It prints every problem it found, one to 
 | The `purlis` binary | An executable at `/usr/local/bin/purlis`, and `purlis --version` answers with a line that starts with `purlis `. |
 | purlis's plugin | `/usr/local/lib/purlis/plugin`, holding `.claude-plugin/plugin.json`, readable by the image's user. `purlis serve` arms a Claude Code chat with the plugin it finds beside its binary, and refuses a sandboxed Claude Code chat when there is none. |
 | A user who is not root | `USER` is a user number other than 0 (`USER 10001:10001`), so a cluster can check `runAsNonRoot`. Inside the image, `id -u` is not 0. |
-| A home | `HOME` is an absolute path to a folder the user can write. purlis keeps its config and data under it, by the XDG base directory rules, and a kept claim's volume is mounted there. |
+| A home | `HOME` is an absolute path to a folder the user can write. purlis keeps its config and data under it, by the XDG base directory rules. On a Docker pool a volume of the runner's own is mounted there; on a cluster pool the runner's home is made on its pod's volume from it ([below](#on-a-cluster-pool)). |
 | `/tmp` | Writable. The session host makes its socket's folder there (`/tmp/purlis-<uid>/`, closed to every other user) unless `XDG_RUNTIME_DIR` names a folder of the user's own. With a read-only root file system, mount a writable volume at `/tmp` and at `HOME`. A Docker pool runs every runner that way: a read-only root, its home on a volume of its own, and a `tmpfs` at `/tmp` mounted `noexec`, so nothing in the image may need to run a program from `/tmp`. |
-| The default command | `purlis serve`, run under an init that reaps processes (`tini`, `dumb-init`, `catatonit` or `docker-init`) as PID 1: `ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/purlis"]` and `CMD ["serve"]`. It prints `ready` within a minute. A Docker pool runs it as `purlis serve --suspends-unlinked`, so a runner left a day without a link from its desktop stops itself, keeping its home (#2051). Its standard error is its log: purlis's own `info` lines and up, and a library's warnings, each redacted as the app's log is, kept by whatever keeps the container's log. |
+| The default command | `purlis serve`, run under an init that reaps processes (`tini`, `dumb-init`, `catatonit` or `docker-init`) as PID 1: `ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/purlis"]` and `CMD ["serve"]`. It prints `ready` within a minute. A Docker pool runs it as `purlis serve --suspends-unlinked`, so a runner left a day without a link from its desktop stops itself, keeping its home (#2051); a pool with its own time (`suspendAfter`, #3471) runs it as `purlis serve --suspends-unlinked=<duration>`, such as `=12h`, which only a purlis since #3471 takes. Its standard error is its log: purlis's own `info` lines and up, and a library's warnings, each redacted as the app's log is, kept by whatever keeps the container's log. |
 | Tools | `git` and `bash` on `PATH`, and a certificate bundle at `/etc/ssl/certs/ca-certificates.crt`. |
 | No harness | No `claude`, `codex` or `opencode` on `PATH`. A runner gets exactly the harness version its profile pins (spec #2030). |
 
@@ -174,8 +174,19 @@ the pod gives it, as `ENTRYPOINT [..., "/usr/local/bin/purlis"]` with `CMD ["ser
 key's private half is handed to the runner in `/run/purlis-link/`, a folder in memory the pod
 mounts there, so nothing of the image may be needed at that path; its public half is written
 to `/dev/termination-log`, for the operator to vouch for (#2056). That step is the one
-`purlis` command a cluster pod runs before `purlis serve`: it mints no device id and writes
-nothing in `HOME`.
+`purlis` command a cluster pod runs before `purlis serve`: it mints no device id.
+
+**The runner's home is on the pod's volume** (#2057). A cluster pod mounts a volume at
+`/var/lib/purlis` (a kept claim's own, or a folder of the node's for a fresh one) and sets the
+runner's `HOME` to `/var/lib/purlis/home`, so nothing of the image may be needed at those paths.
+The first step makes that home, the first time the volume is used, as a copy of the image's own
+`HOME`: its folders, files and links, as the image holds them. So the image's `HOME` is still
+the runner's first contents, as on a Docker pool. On a kept claim's volume the home is left as
+it is after that, and when it already keeps the runner's pairing, the step publishes the key the
+runner was paired with instead of making one. Keep `XDG_CONFIG_HOME` and `PURLIS_CONFIG_HOME`
+unset in the image, or under `HOME`: purlis keeps the runner's pairing in its config home, and a
+config home off the volume is lost with the pod. The pod's processes are in group 10001, which
+may write the volume.
 
 ## A team's own image
 

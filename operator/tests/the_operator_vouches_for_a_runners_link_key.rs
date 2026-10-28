@@ -54,11 +54,14 @@ fn the_example() -> About<'static> {
         claim: "ada-1",
         claim_uid: "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60",
         pod: "ada-1",
-        pod_uid: "0a1b2c3d-4e5f-4061-8728-394a5b6c7d8e",
         key: KEY,
         requester: "ada@example.com",
+        until: 1798761600,
     }
 }
+
+/// Now, as the tests' operator signs: a statement it signs holds until ten minutes after.
+const NOW: u64 = 1_798_000_000;
 
 #[test]
 fn the_statement_and_its_signature_are_the_worked_example_the_desktop_reads() {
@@ -122,6 +125,7 @@ fn pool() -> Pool {
         "team",
         PoolSpec {
             image: IMAGE.to_owned(),
+            kept_volume: Default::default(),
         },
     )
 }
@@ -174,7 +178,9 @@ fn the_pods_first_step_makes_the_key_before_anything_else_and_hands_it_to_the_ru
             "--make-key",
             "/run/purlis-link/link-key",
             "--publish",
-            "/dev/termination-log"
+            "/dev/termination-log",
+            "--home",
+            "/var/lib/purlis/home"
         ]
     );
     assert_eq!(step.security_context, spec.containers[0].security_context);
@@ -187,10 +193,14 @@ fn the_pods_first_step_makes_the_key_before_anything_else_and_hands_it_to_the_ru
     );
     for container in [step, &spec.containers[0]] {
         let mounts = container.volume_mounts.clone().unwrap();
-        assert_eq!(mounts.len(), 1);
+        assert_eq!(mounts.len(), 2);
         assert_eq!(
             (mounts[0].name.as_str(), mounts[0].mount_path.as_str()),
             (folder.name.as_str(), upstream::LINK_FOLDER)
+        );
+        assert_eq!(
+            (mounts[1].name.as_str(), mounts[1].mount_path.as_str()),
+            (upstream::KEPT_VOLUME, upstream::KEPT_FOLDER)
         );
     }
 }
@@ -263,6 +273,7 @@ fn a_pod_differing_from_the_template_in_anything_that_decides_what_runs_is_never
         "team",
         PoolSpec {
             image: "ghcr.io/purlis/purlis-runner@sha256:3333333333333333333333333333333333333333333333333333333333333333".into(),
+            kept_volume: Default::default(),
         },
     );
     assert!(matches!(
@@ -471,7 +482,6 @@ fn what_the_cluster_sets_on_a_pod_does_not_stop_it_being_vouched_for() {
         spec.preemption_policy = Some("PreemptLowerPriority".into());
         spec.service_account_name = Some("default".into());
         spec.service_account = Some("default".into());
-        spec.security_context = Some(PodSecurityContext::default());
         spec.tolerations = Some(
             [
                 "node.kubernetes.io/not-ready",
@@ -543,6 +553,7 @@ fn claim() -> Claim {
         ClaimSpec {
             pool: "team".into(),
             requester: "ada@example.com".into(),
+            kept: false,
         },
     );
     claim.metadata.namespace = Some("ada".into());
@@ -551,7 +562,7 @@ fn claim() -> Claim {
 }
 
 fn upstream_claim(names: &str) -> SandboxClaim {
-    let mut held = upstream::sandbox_claim_for(&claim());
+    let mut held = upstream::sandbox_claim_for(&claim(), &Default::default());
     held.metadata.uid = Some(UPSTREAM_UID.into());
     held.status = Some(SandboxClaimStatus {
         conditions: Vec::new(),
@@ -599,6 +610,7 @@ fn vouching(
     let claim = claim();
     vouch::vouch(
         &Held {
+            now: NOW,
             claim: &claim,
             upstream,
             template: held_template,
@@ -619,11 +631,8 @@ fn a_claim_is_followed_to_its_pod_by_uid_and_its_key_vouched_for() {
     let Vouching::Vouched(link_key) = vouching(&upstream, Some(&sandbox), Some(&pod), None) else {
         panic!("not vouched for");
     };
-    assert!(
-        link_key
-            .statement
-            .contains(&format!("pod uid: {POD_UID}\n"))
-    );
+    assert!(link_key.statement.contains("pod: ada-1\n"));
+    assert!(!link_key.statement.contains("pod uid"));
     assert!(link_key.statement.contains(&format!("key: {KEY}\n")));
     assert_eq!(link_key.signature, signing().sign(&link_key.statement));
     assert!(matches!(
@@ -743,9 +752,25 @@ fn a_statement_once_written_goes_when_it_no_longer_holds() {
     };
     let patch = status_patch(Some(&written), next.clone(), LinkKeyIs::Said).expect("a change");
     assert_eq!(patch["status"]["linkKey"], serde_json::Value::Null);
-    // Its pod replaced: the new pod's statement is written over the old one.
+    // Its pod replaced by one that made another key: that key's statement is written over
+    // the old one.
     let mut replaced = runner_pod(the_sandboxes());
     replaced.metadata.uid = Some("55555555-5555-4555-8555-555555555555".into());
+    let another = "9".repeat(64);
+    replaced
+        .status
+        .as_mut()
+        .unwrap()
+        .init_container_statuses
+        .as_mut()
+        .unwrap()[0]
+        .state
+        .as_mut()
+        .unwrap()
+        .terminated
+        .as_mut()
+        .unwrap()
+        .message = Some(another.clone());
     let again = vouching(&upstream, Some(&sandbox), Some(&replaced), None);
     let patch = status_patch(
         Some(&written),
@@ -760,8 +785,14 @@ fn a_statement_once_written_goes_when_it_no_longer_holds() {
         patch["status"]["linkKey"]["statement"]
             .as_str()
             .unwrap()
-            .contains("pod uid: 55555555-5555-4555-8555-555555555555")
+            .contains(&format!("key: {another}\n"))
     );
+    // Its pod made again with the key it keeps: the statement says the same, and nothing is
+    // written (#2057).
+    let mut remade = runner_pod(the_sandboxes());
+    remade.metadata.uid = Some("55555555-5555-4555-8555-555555555555".into());
+    let same = vouching(&upstream, Some(&sandbox), Some(&remade), None);
+    assert_eq!(same.link_key(), written.link_key);
     // A pass that did not look at the key leaves it.
     written.conditions.clear();
     let kept = status_patch(Some(&written), ClaimStatus::default(), LinkKeyIs::Kept);
@@ -790,10 +821,6 @@ fn a_name_or_uid_that_is_not_kubernetes_own_makes_no_statement() {
         },
         About {
             claim_uid: "not-a-uid",
-            ..the_example()
-        },
-        About {
-            pod_uid: "6F1C2B8E-0F43-4C2E-9D7A-1B2C3D4E5F60",
             ..the_example()
         },
     ] {
@@ -899,6 +926,7 @@ fn a_pools_template_is_held_to_the_operators_own_whatever_manager_changed_it() {
     let claim = claim();
     let vouching = vouch::vouch(
         &Held {
+            now: NOW,
             claim: &claim,
             upstream: &upstream,
             template: None,
@@ -946,4 +974,252 @@ fn a_container_may_ask_only_for_what_the_node_itself_gives() {
         vouch::key_published(&claiming, &template()),
         Err(NotYet::Refused(_))
     ));
+}
+
+fn kept_claim() -> Claim {
+    let mut claim = claim();
+    claim.spec.kept = true;
+    claim
+}
+
+/// What the operator says of a kept claim's runner in `pod`, its sandbox named `sandbox_name`.
+fn vouching_kept(sandbox_name: &str, pod: &Pod) -> Vouching {
+    let claim = kept_claim();
+    let mut upstream = upstream::sandbox_claim_for(&claim, &Default::default());
+    upstream.metadata.uid = Some(UPSTREAM_UID.into());
+    upstream.status = Some(SandboxClaimStatus {
+        conditions: Vec::new(),
+        sandbox: Some(Reference {
+            name: sandbox_name.into(),
+        }),
+    });
+    let mut sandbox = sandbox(UPSTREAM_UID);
+    sandbox.name = Some(sandbox_name.into());
+    let mut pod = pod.clone();
+    pod.metadata.owner_references = Some(owned_by(
+        "Sandbox",
+        "agents.x-k8s.io/v1beta1",
+        sandbox_name,
+        SANDBOX_UID,
+    ));
+    vouch::vouch(
+        &Held {
+            now: NOW,
+            claim: &claim,
+            upstream: &upstream,
+            template: None,
+            template_spec: None,
+            sandbox: Some(&sandbox),
+            pod: Some(&pod),
+        },
+        &pod_template(),
+        &signing(),
+    )
+}
+
+/// A runner's pod whose home is on the volume claim `claim_name`, as upstream makes a kept
+/// claim's: the template's volume of that name taken out, the claim's last.
+fn on_volume(claim_name: &str) -> Pod {
+    let mut pod = runner_pod(the_sandboxes());
+    let volumes = spec(&mut pod).volumes.as_mut().unwrap();
+    volumes.retain(|volume| volume.name != upstream::KEPT_VOLUME);
+    volumes.push(Volume {
+        name: upstream::KEPT_VOLUME.into(),
+        persistent_volume_claim: Some(
+            k8s_openapi::api::core::v1::PersistentVolumeClaimVolumeSource {
+                claim_name: claim_name.into(),
+                ..Default::default()
+            },
+        ),
+        ..Volume::default()
+    });
+    pod
+}
+
+#[test]
+fn a_kept_claims_pod_is_vouched_for_with_its_own_volume_in_place_of_the_templates() {
+    assert!(matches!(
+        vouching_kept("ada-1", &on_volume("purlis-kept-ada-1")),
+        Vouching::Vouched(_)
+    ));
+    let refused = [
+        (
+            "the template's own folder",
+            "ada-1",
+            runner_pod(the_sandboxes()),
+        ),
+        (
+            "another claim's volume",
+            "ada-1",
+            on_volume("purlis-kept-ada-2"),
+        ),
+        ("a volume of anyone's", "ada-1", on_volume("data")),
+        (
+            "a sandbox not named as the claim",
+            "purlis-pool-team-x7k2q",
+            on_volume("purlis-kept-purlis-pool-team-x7k2q"),
+        ),
+    ];
+    for (what, sandbox, pod) in &refused {
+        assert!(
+            matches!(vouching_kept(sandbox, pod), Vouching::Refused(_)),
+            "{what}"
+        );
+    }
+    // A fresh claim's pod keeps the template's folder, and no volume of its own.
+    let upstream = upstream_claim("ada-1");
+    let sandbox = sandbox(UPSTREAM_UID);
+    let on_a_volume = {
+        let mut pod = on_volume("purlis-kept-ada-1");
+        pod.metadata.owner_references = Some(the_sandboxes());
+        pod
+    };
+    assert!(matches!(
+        vouching(&upstream, Some(&sandbox), Some(&on_a_volume), None),
+        Vouching::Refused(_)
+    ));
+}
+
+#[test]
+fn a_kept_claim_asks_upstream_for_its_own_volume_and_a_fresh_one_for_none() {
+    let volume = purlis_cluster_operator::KeptVolume {
+        size: "20Gi".into(),
+        storage_class_name: Some("fast".into()),
+    };
+    let kept = serde_json::to_value(upstream::sandbox_claim_for(&kept_claim(), &volume)).unwrap();
+    assert_eq!(
+        kept["spec"]["volumeClaimTemplates"],
+        serde_json::json!([{
+            "metadata": { "name": "purlis-kept" },
+            "spec": {
+                "accessModes": ["ReadWriteOnce"],
+                "resources": { "requests": { "storage": "20Gi" } },
+                "storageClassName": "fast",
+            },
+        }])
+    );
+    let fresh = serde_json::to_value(upstream::sandbox_claim_for(&claim(), &volume)).unwrap();
+    assert!(
+        fresh["spec"].get("volumeClaimTemplates").is_none(),
+        "{fresh}"
+    );
+    assert_eq!(
+        upstream::kept_volume_name(&kept_claim()),
+        "purlis-kept-ada-1"
+    );
+    // The template lets a claim add a volume, and holds none a claim could replace.
+    let template = serde_json::to_value(template_for(&pool(), "ada", Vec::new())).unwrap();
+    assert_eq!(template["spec"]["volumeClaimTemplatesPolicy"], "Allowed");
+    assert!(template["spec"].get("volumeClaimTemplates").is_none());
+}
+
+#[test]
+fn a_warm_runner_a_fresh_claim_took_keeps_the_labels_its_warm_pool_gave_it() {
+    let upstream = upstream_claim("ada-1");
+    let sandbox = sandbox(UPSTREAM_UID);
+    let warm = [
+        (vouch::CLAIM_UID_LABEL, UPSTREAM_UID),
+        ("agents.x-k8s.io/sandbox-name-hash", "900bf6e9"),
+        ("agents.x-k8s.io/sandbox-template-ref-hash", "85e22c3a"),
+        // The warm pool `purlis-pool-team`'s name, as upstream hashes it.
+        ("agents.x-k8s.io/warm-pool-sandbox", "7c9f77a9"),
+        ("agents.x-k8s.io/sandbox-pod-template-hash", "6c9d8e7f"),
+        ("agents.x-k8s.io/sandbox-template-hash", "1a2b3c4d"),
+    ];
+    assert!(matches!(
+        vouching(&upstream, Some(&sandbox), Some(&labelled(&warm, &[])), None),
+        Vouching::Vouched(_)
+    ));
+    let mut another = warm;
+    another[3].1 = "4be1c2d3";
+    assert!(matches!(
+        vouching(
+            &upstream,
+            Some(&sandbox),
+            Some(&labelled(&another, &[])),
+            None
+        ),
+        Vouching::Refused(_)
+    ));
+    // FNV-1a, 32 bits, as Go's hash/fnv gives it.
+    assert_eq!(vouch::name_hash(""), "811c9dc5");
+    assert_eq!(vouch::name_hash("a"), "e40c292c");
+    assert_eq!(vouch::name_hash("purlis-pool-team"), "7c9f77a9");
+}
+
+#[test]
+fn the_pods_first_step_is_told_the_claim_its_home_is_made_for() {
+    let spec = template_for(&pool(), "ada", Vec::new())
+        .spec
+        .pod_template
+        .spec
+        .unwrap();
+    let step = &spec.init_containers.unwrap()[0];
+    let env = serde_json::to_value(step.env.as_ref().unwrap()).unwrap();
+    assert_eq!(
+        env,
+        serde_json::json!([{
+            "name": "PURLIS_CLAIM_UID",
+            "valueFrom": { "fieldRef": {
+                "apiVersion": "v1",
+                "fieldPath": "metadata.labels['agents.x-k8s.io/claim-uid']",
+            } },
+        }])
+    );
+    assert_eq!(upstream::CLAIM_VAR, "PURLIS_CLAIM_UID");
+}
+
+#[test]
+fn a_statement_holds_ten_minutes_and_is_signed_again_in_its_last_five() {
+    let upstream = upstream_claim("ada-1");
+    let sandbox = sandbox(UPSTREAM_UID);
+    let pod = runner_pod(the_sandboxes());
+    let at = |now: u64, claim: &Claim| {
+        vouch::vouch(
+            &Held {
+                now,
+                claim,
+                upstream: &upstream,
+                template: None,
+                template_spec: None,
+                sandbox: Some(&sandbox),
+                pod: Some(&pod),
+            },
+            &pod_template(),
+            &signing(),
+        )
+    };
+    let mut claim = claim();
+    let Vouching::Vouched(first) = at(NOW, &claim) else {
+        panic!("not vouched for");
+    };
+    assert!(
+        first
+            .statement
+            .ends_with(&format!("until: {}\n", NOW + 600))
+    );
+    assert_eq!(vouch::until_of(&first.statement), Some(NOW + 600));
+    claim.status = Some(ClaimStatus {
+        conditions: Vec::new(),
+        link_key: Some(first.clone()),
+    });
+    // Looked at again before its last five minutes: the same statement, nothing written.
+    assert_eq!(at(NOW + 290, &claim).link_key(), Some(first.clone()));
+    // In them: signed again, holding ten minutes from now.
+    let again = at(NOW + 310, &claim).link_key().expect("vouched");
+    assert_ne!(again, first);
+    assert_eq!(vouch::until_of(&again.statement), Some(NOW + 910));
+    // A statement on the status that is not the operator's own is never kept.
+    claim
+        .status
+        .as_mut()
+        .unwrap()
+        .link_key
+        .as_mut()
+        .unwrap()
+        .signature = "0".repeat(128);
+    assert_ne!(
+        at(NOW + 10, &claim).link_key(),
+        claim.status.as_ref().unwrap().link_key
+    );
 }

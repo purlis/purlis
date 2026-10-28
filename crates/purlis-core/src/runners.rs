@@ -3,13 +3,15 @@
 
 //! **The pools this desktop added, and the runners it pinned** (ADR 0078 §3 and §8, #2525,
 //! #2679, #2749): `<config>/runners.json`, ruled 2026-10-18 and 2026-10-20, `{"version": 1,
-//! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp"}], "runners":
+//! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter"}],
+//! "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
 //! "draining"?}]}`.
 //!
 //! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
 //!   image by digest, and the limits the person set, each left out where purlis's default
-//!   holds ([`crate::dockerpool::Limits`]). A workspace names a pool (`machine.json`), and a name
+//!   holds ([`crate::dockerpool::Limits`]), and how long its runner is left without a link
+//!   before it suspends itself (`suspendAfter`, #3471, ruled 2026-10-28), left out at a day. A workspace names a pool (`machine.json`), and a name
 //!   that is not kept here, or whose runner is not, starts no chat ([`runner_for`]).
 //! - **A runner's device id and public link key are kept once** ([`keep`]): a later answer for
 //!   a runner already kept, with another device id or key, is refused and what was kept stays
@@ -60,15 +62,17 @@ impl std::fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-/// The limits a person set on a pool, each `None` where purlis's default holds
-/// ([`Limits::default`]): its CPUs in thousandths, its memory and its `/tmp` in MiB, and its
-/// processes.
+/// What a person set on a pool, each `None` where purlis's default holds: its limits
+/// ([`Limits::default`]), its CPUs in thousandths, its memory and its `/tmp` in MiB, and its
+/// processes; and how long its runner is left without a link from this desktop before it
+/// suspends itself (`suspendAfter`, #3471, [`crate::dockerpool::SUSPEND_AFTER`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Set {
     pub millicpus: Option<u32>,
     pub memory_mib: Option<u64>,
     pub processes: Option<u32>,
     pub tmp_mib: Option<u64>,
+    pub suspend_after: Option<std::time::Duration>,
 }
 
 /// One Docker pool on this machine, as the person added it (#2679): its name, which its one
@@ -85,7 +89,7 @@ impl Pool {
     /// A pool called `name` (a runner's name: lower-case letters, digits and dashes, at most
     /// 40), of `image`, held to `set` over purlis's defaults, which together are limits a
     /// runner can start a chat within.
-    pub fn new(name: &str, image: Image, set: Set) -> Result<Pool, Refused> {
+    pub fn new(name: &str, image: Image, mut set: Set) -> Result<Pool, Refused> {
         usable_pool_name(name).map_err(Refused::Other)?;
         let default = Limits::default();
         let limits = Limits::new(
@@ -95,6 +99,13 @@ impl Pool {
             set.tmp_mib.unwrap_or(default.tmp_mib()),
         )
         .map_err(|why| Refused::Other(why.0))?;
+        if let Some(after) = set.suspend_after {
+            crate::dockerpool::suspend_after(after).map_err(|why| Refused::Other(why.0))?;
+        }
+        // A day is the default, so it is left out of the file as an unset one is.
+        set.suspend_after = set
+            .suspend_after
+            .filter(|after| *after != crate::dockerpool::SUSPEND_AFTER);
         Ok(Pool {
             name: name.to_owned(),
             image,
@@ -121,9 +132,17 @@ impl Pool {
         self.limits
     }
 
+    /// How long its runner is left without a link from this desktop before it suspends
+    /// itself: what the person set, or a day.
+    pub fn suspend_after(&self) -> std::time::Duration {
+        self.set
+            .suspend_after
+            .unwrap_or(crate::dockerpool::SUSPEND_AFTER)
+    }
+
     /// **What defines this pool, as a digest** (#2050): SHA-256, in hex, of its row as this file
-    /// keeps it (its name, kind, image and the limits the person set), so any change to how it is
-    /// defined changes it.
+    /// keeps it (its name, kind, image, the limits the person set and its `suspendAfter`), so any
+    /// change to how it is defined changes it.
     pub fn definition_digest(&self) -> String {
         use sha2::Digest as _;
         let row = pool_to_row(self).to_string();
@@ -742,12 +761,19 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
     if let Some(tmp) = set.tmp_mib {
         row["tmp"] = tmp.into();
     }
+    if let Some(after) = set
+        .suspend_after
+        .and_then(|after| crate::spelledtime::spelled(after, crate::spelledtime::UP_TO_HOURS))
+    {
+        row["suspendAfter"] = after.into();
+    }
     row
 }
 
 /// A pool's row: its name, kind `docker` and image, and each limit the person set, as
 /// [`pool_to_row`] writes them: `cpus` a number of CPUs to the thousandth, `memory` and `tmp`
-/// in MiB, `processes` a count. Any other key, or a value of another shape, is refused.
+/// in MiB, `processes` a count, and `suspendAfter` a duration in seconds, minutes or hours
+/// (`"24h"`, [`crate::spelledtime`]). Any other key, or a value of another shape, is refused.
 fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
     let fields = row.as_object()?;
     let known = [
@@ -758,6 +784,7 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "memory",
         "processes",
         "tmp",
+        "suspendAfter",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -794,6 +821,13 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         memory_mib: count(fields.get("memory"))?,
         processes: count(fields.get("processes"))?,
         tmp_mib: count(fields.get("tmp"))?,
+        suspend_after: match fields.get("suspendAfter") {
+            None => None,
+            Some(after) => Some(crate::spelledtime::read(
+                after.as_str()?,
+                crate::spelledtime::UP_TO_HOURS,
+            )?),
+        },
     };
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
 }

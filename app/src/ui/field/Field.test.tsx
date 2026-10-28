@@ -292,6 +292,26 @@ describe("a form (N26)", () => {
     expect(sent).not.toHaveBeenCalled();
   });
 
+  // #3636: an unavailable submit button that keeps the focus is still the form's primary action.
+  for (const [way, off] of [
+    ["made unavailable by hand", { "aria-disabled": true }],
+    ["disabled with a reason", { isDisabled: true, tooltip: "Type an address first." }],
+  ] as const)
+    it(`sends nothing on ⌘⏎ while its submit button is ${way}`, () => {
+      const sent = vi.fn();
+      render(
+        <Form aria-label="Go to an address" onSubmit={(e) => (e.preventDefault(), sent())}>
+          <TextField label="Address" value="" onChange={() => {}} />
+          <Button type="submit" {...off}>
+            Go
+          </Button>
+        </Form>,
+      );
+      expect(screen.getByRole("button", { name: "Go" })).toHaveAttribute("type", "submit");
+      fireEvent.keyDown(screen.getByRole("textbox", { name: "Address" }), SEND);
+      expect(sent).not.toHaveBeenCalled();
+    });
+
   it("never gives a grant or what cannot be undone on ⌘⏎: those are pressed", () => {
     for (const variant of ["grants", "danger"] as const) {
       const sent = vi.fn();

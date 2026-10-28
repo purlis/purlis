@@ -11,6 +11,7 @@ import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
 import { Plus, RefreshCw, X } from "lucide-react";
 import { expectFocusInSight } from "../../stories.testkit";
+import { Form, TextField } from "../field/Field";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import {
   Button,
@@ -167,6 +168,96 @@ export const QuietInline: Story = {
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Showing talk"));
   },
 };
+/** An Activity line: its name, which shows its chat, as words in the line (#3523). */
+function ActivityLine() {
+  const [shown, setShown] = useState("nothing");
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <p style={{ margin: 0 }}>
+        <Button
+          inline
+          variant="ghost"
+          tooltip="Show its chat"
+          aria-label="Show chat talk"
+          onPress={() => setShown("talk")}
+        >
+          talk
+        </Button>{" "}
+        asked devops 3 to check the staging cluster.
+      </p>
+      <p role="status" style={{ margin: 0 }}>
+        {`Showing ${shown}`}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * **A line's name that shows its chat** (#3523, the Activity tab): the inline ghost, the line's
+ * own words in the primary tier, underlined under the pointer and the keyboard. The picture is
+ * the line at rest.
+ */
+export const GhostInline: Story = {
+  render: () => <ActivityLine />,
+  play: async ({ canvas, userEvent }) => {
+    const name = canvas.getByRole("button", { name: "Show chat talk" });
+    await expect(name).toHaveAttribute("data-inline");
+    await expect(getComputedStyle(name).textDecorationLine).toBe("none");
+    await userEvent.tab();
+    await expect(name).toHaveFocus();
+    await expect(getComputedStyle(name).textDecorationLine).toBe("underline");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Showing talk"));
+  },
+};
+
+/** An address bar whose Go is unavailable while the address is empty (`BrowserView`). */
+function AddressBar() {
+  const [sent, setSent] = useState(0);
+  return (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <Form
+        aria-label="Go to an address"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setSent((was) => was + 1);
+        }}
+      >
+        <TextField aria-label="Address" value="" onChange={() => {}} />
+        <Button type="submit" aria-disabled>
+          Go
+        </Button>
+      </Form>
+      <p role="status" style={{ margin: 0 }}>
+        {`Sent ${sent} times`}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * **An unavailable submit button sends nothing** (#3522, #3636): it stays its form's submit
+ * button, so Enter in the lone field (the browser's own submit, a click on that button) and ⌘⏎
+ * (the form's, which finds its primary action unavailable) send nothing, and a click on it is
+ * refused.
+ */
+export const UnavailableSubmit: Story = {
+  render: () => <AddressBar />,
+  play: async ({ canvas, userEvent }) => {
+    const go = canvas.getByRole("button", { name: "Go" });
+    await expect(go).toHaveAttribute("type", "submit");
+    await userEvent.click(canvas.getByRole("textbox", { name: "Address" }));
+    await userEvent.keyboard("{Enter}");
+    await userEvent.keyboard(
+      navigator.platform.startsWith("Mac")
+        ? "{Meta>}{Enter}{/Meta}"
+        : "{Control>}{Enter}{/Control}",
+    );
+    await userEvent.click(go);
+    await expect(canvas.getByRole("status")).toHaveTextContent("Sent 0 times");
+  },
+};
+
 /**
  * **The quiet ghost as the window draws it** (#3214): small icon marks in a pane's corner, split
  * and close, where the close that ends a chat takes the danger colour under the pointer
@@ -266,6 +357,60 @@ export const UnavailableMenuTrigger: Story = {
     await userEvent.click(share);
     await noMenu();
     await expect(share).toHaveAttribute("aria-expanded", "false");
+  },
+};
+
+/** The variants with a fill under the pointer, each drawn as a trigger whose menu is open. */
+const OPENED: readonly ButtonVariant[] = [
+  "secondary",
+  "primary",
+  "ghost",
+  "quiet",
+  "danger",
+  "grants",
+  "soft-accent",
+  "warning-soft",
+];
+
+/**
+ * **A trigger whose menu is open** (#3524): drawn as it is under the pointer, in every variant
+ * with a hover fill, so the press that opened it still shows while the pointer is in the menu.
+ * The row is each variant held open; the `3 more` beside it opens a real menu, and is drawn at
+ * rest again once it closes.
+ */
+export const OpenTrigger: Story = {
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <ButtonRow aria-label="Open triggers" role="group">
+        {OPENED.map((variant) => (
+          <Button key={variant} variant={variant} aria-haspopup="menu" aria-expanded>
+            {variant}
+          </Button>
+        ))}
+      </ButtonRow>
+      <MenuTrigger>
+        <Button variant="quiet" size="sm">
+          3 more
+        </Button>
+        <Menu aria-label="More">
+          <MenuItem id="one" textValue="One">
+            <MenuWords said="One" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    for (const variant of OPENED)
+      await expect(canvas.getByRole("button", { name: variant })).toHaveAttribute("data-open");
+    const more = canvas.getByRole("button", { name: "3 more" });
+    await expect(more).not.toHaveAttribute("data-open");
+    await userEvent.click(more);
+    await waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull());
+    await expect(more).toHaveAttribute("data-open");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
+    await expect(more).not.toHaveAttribute("data-open");
   },
 };
 

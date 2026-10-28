@@ -553,7 +553,8 @@ describe("a button's tooltip", () => {
         </form>,
       );
       const answer = screen.getByRole("button", { name: "Answer" });
-      expect(answer).toHaveAttribute("type", "button");
+      // Still its form's submit button (#3636), so ⌘⏎ finds it unavailable; its click is refused.
+      expect(answer).toHaveAttribute("type", "submit");
       await user.click(answer);
       answer.focus();
       await user.keyboard("{Enter}");
