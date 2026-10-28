@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793177224356,
+  "lastUpdate": 1793178712413,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28014,6 +28014,48 @@ window.BENCHMARK_DATA = {
             "value": 104.37239199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 103.543, 103.760, 104.372, 104.819, 105.328 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8a1c1f0a2a8ef4e0192031c975de1ad3720315f5",
+          "message": "CI: the CLI's integration tests build as one binary (#3613) (#3614)\n\nEach of purlis-cli's 91 `tests/*.rs` was a test binary of its own, each\nlinking the CLI's whole dependency graph. They move, with `git mv`, into\n`tests/it/` as modules of one binary (`tests/it/main.rs`); a test's name\ngains its file's name as a module prefix and is otherwise unchanged.\n\n- `mod support;` in each file becomes `use crate::support;`; main.rs\n  declares it once by `#[path]`, so `recorded_behaviour` keeps sharing it.\n- The two tests that re-run themselves by `--exact` name\n  (`brokered_git`'s three, the permission prompt's stand-in) name their\n  full libtest path, module first.\n- `init.rs`'s `include_str!` climbs one folder more.\n- `tools/theme-parts-release.mjs` reads `tests/it/theme.rs`; a new test\n  fails when a file it names is not there (a missing one read as empty).\n- `tools/ci-scope.test.mjs`'s walker list and comments name the new path.\n- main.rs fails on a `.rs` left straight under `tests/` and on a file in\n  `tests/it/` it does not declare.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T08:27:41Z",
+          "tree_id": "2a7ffd70291165fbcd60d294bc453223073b5c96",
+          "url": "https://github.com/purlis/purlis/commit/8a1c1f0a2a8ef4e0192031c975de1ad3720315f5"
+        },
+        "date": 1793178707147,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5273209999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.501, 0.511, 0.527, 0.529, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.1235755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.982, 17.063, 17.124, 17.251, 17.399 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.3494835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 103.809, 103.868, 104.349, 105.209, 105.396 ms"
           }
         ]
       }
