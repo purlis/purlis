@@ -36,6 +36,8 @@
 //!   [`MOST_RELAYED_BYTES`] is handed on; DevTools that fall further behind close, saying why.
 
 mod allowed;
+#[cfg(test)]
+mod tests;
 mod written;
 
 use std::collections::{HashMap, HashSet};

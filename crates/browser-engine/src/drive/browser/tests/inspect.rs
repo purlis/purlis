@@ -1383,3 +1383,90 @@ fn a_page_never_read_at_the_hand_back_lets_the_agent_go_back_and_its_next_docume
         browser.call(&id(5), Call::Pages) != Err(Refusal::NotKeptOutYet)
     });
 }
+
+#[test]
+fn a_request_devtools_are_told_has_no_frame_of_purlis_own_scripts_in_its_initiator() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    both_worlds(&engine);
+    engine.emit(
+        "Network.requestWillBeSent",
+        json!({"requestId":"R1","loaderId":"L1","documentURL":"http://fixture.test/","timestamp":1.0,"wallTime":1.0,"type":"Fetch",
+               "request":{"url":"http://fixture.test/api","method":"GET","headers":{}},
+               "initiator":{"type":"script","stack":{"callFrames":[frame_in("71"), frame_in("72")],
+                                                     "parent":{"description":"await","callFrames":[frame_in("71")]}}}}),
+        Some("S-INSPECTED"),
+    );
+    let handed = handed_up_to_the_next_word(&engine);
+    assert!(!handed.iter().any(names_ours), "{handed:?}");
+    let sent = handed
+        .iter()
+        .find(|m| m["method"] == "Network.requestWillBeSent")
+        .expect("the page's request is told");
+    let stack = &sent["params"]["initiator"]["stack"];
+    assert_eq!(stack["callFrames"], json!([frame_in("72")]));
+    assert_eq!(stack["parent"]["callFrames"], json!([]));
+}
+
+#[test]
+fn a_pause_in_a_script_waiting_for_its_world_goes_on_at_once_and_is_never_told() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    engine.emit(
+        "Debugger.scriptParsed",
+        json!({"scriptId":"72","url":"http://fixture.test/app.js","executionContextId":3,"hash":"y"}),
+        Some("S-INSPECTED"),
+    );
+    engine.emit(
+        "Debugger.paused",
+        json!({"reason":"other","callFrames":[{"callFrameId":"f","functionName":"","location":{"scriptId":"72","lineNumber":0},"scopeChain":[],"this":{"type":"undefined"}}]}),
+        Some("S-INSPECTED"),
+    );
+    let handed = handed_up_to_the_next_word(&engine);
+    assert!(
+        handed.iter().all(|m| m["method"] != "Debugger.paused"),
+        "{handed:?}"
+    );
+    assert!(
+        engine
+            .sent("Debugger.resume")
+            .iter()
+            .any(|s| s.session.as_deref() == Some("S-INSPECTED"))
+    );
+}
+
+#[test]
+fn a_script_whose_world_went_before_it_was_told_of_is_never_shown() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    engine.emit(
+        "Debugger.scriptParsed",
+        json!({"scriptId":"72","url":"http://fixture.test/app.js","executionContextId":3,"hash":"y"}),
+        Some("S-INSPECTED"),
+    );
+    engine.emit(
+        "Runtime.executionContextDestroyed",
+        json!({"executionContextId":3,"executionContextUniqueId":"PAGE-3"}),
+        Some("S-INSPECTED"),
+    );
+    // A world told of later under the same id does not bring the script back.
+    page_world(&engine);
+    front_end_sends(
+        &engine,
+        &json!({"id": 31, "method": "Debugger.getScriptSource", "params": {"scriptId": "72"}}),
+    );
+    wait_for("it is answered", || {
+        handed_to_the_front_end(&engine)
+            .iter()
+            .any(|m| m["id"] == 31)
+    });
+    let handed = handed_up_to_the_next_word(&engine);
+    assert!(
+        handed
+            .iter()
+            .all(|m| m["method"] != "Debugger.scriptParsed"),
+        "{handed:?}"
+    );
+    let answer = handed.iter().find(|m| m["id"] == 31).unwrap();
+    assert!(answer.get("error").is_some());
+}
