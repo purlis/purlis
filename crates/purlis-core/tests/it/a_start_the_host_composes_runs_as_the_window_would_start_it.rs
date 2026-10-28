@@ -73,6 +73,7 @@ impl Project {
             plugin: Some(plugin),
             git_hooks: None,
             skill_sets: None,
+            chat_settings: None,
         }
     }
 
