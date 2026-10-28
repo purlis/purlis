@@ -2073,6 +2073,12 @@ Ctrl+Tab, so the window walks the engine's sequence itself (`app/src/tabSequence
 above written down once and shared with the tests). The palette (`F2`, `⌘K`) remains the other
 way to act from inside a chat without leaving it.
 
+**A browser the person drives, and a browser's DevTools, keep every key too** (#2014, #2028):
+each key goes to the page or to DevTools. The same chord leaves them
+(`leaveKeys.leavesTheSurface`), on the capture phase of the surface, so Ctrl+Tab and
+Ctrl+Shift+Tab never reach the page or DevTools; neither has a use for it that the window
+needs to pass on.
+
 **What only a person can confirm**, because a scenario cannot press Tab (above): that WebKit
 walks this sequence in the real window with full keyboard access off; that `Ctrl+Tab` reaches
 the page on macOS and on GTK rather than being taken by the window system first; and that the
@@ -2635,6 +2641,18 @@ file (`inboxScope.ts`, `projects[path].inbox.scope`). A scope with nothing in it
 wait in the nearest wider scope and widens in one press, and a notification about a chat the
 scope leaves out widens it to the project's before it lands. Notices and updates are the
 project's and are listed whatever the scope.
+
+**The Browsers grid** (#2027, `BrowsersGridTab.tsx`, `browsersGrid.ts`) is a view tab, one per
+project, opened by *Open browsers* in the palette and on the Chats view's heading while the
+project has a browser. It wears the Inbox's switch over the same three scopes, kept as
+`projects[path].browsers.scope`; This workspace is the strip the tab is on, and All projects is
+every project this window holds. Its tiles are one `ListBox` with `layout="grid"`: one Tab stop,
+the arrows walk the grid, and a press or Enter opens the browser's view in its own project,
+which comes to the front. A tile is the browser's thumbnail view (about a frame a second, drawn
+only while the tab can be seen) over its name and, in the quiet tier, where it is: its project
+among every project's, its workspace, its page and device as the chip says them, and who drives
+it. An empty scope is the empty state family, saying how many run in the nearest wider scope and
+widening in one press.
 
 **An Inbox row reads in three ranks** (`InboxRow.tsx`), from the existing tokens only:
 

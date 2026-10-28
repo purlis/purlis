@@ -51,6 +51,7 @@
 //! | `take_conversation`, `give_conversation`, a moving chat's conversation carried over the link (1.44) | yes | | | | | relayed |
 //! | `cancel_engine_download`, and the pushed `engine_download`: a browser engine's first download (1.37) | yes | | | | | |
 //! | `log_end`, and the host's own event log pushed from a cursor for its device (1.41) | yes | | | | | relayed |
+//! | `inspect`, `inspector_input`, `attach_view` of kind `inspector`: the person's DevTools of a browser they drive (1.45) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -217,6 +218,12 @@
 //! - **`take_conversation` and `give_conversation` are the window's, relayed for it** (1.44,
 //!   #2048), for the same reason: they carry the conversation of a chat the window moves, into
 //!   and out of the harness folder of a profile the host holds it on.
+//! - **DevTools are the window's alone, on its own host** (1.45, #2028). What DevTools reach is
+//!   the whole of the inspected page: its scripts, its storage, what it typed and was filled
+//!   with. Only the person, driving the browser in their own window, opens them, so `inspect`,
+//!   `inspector_input` and a view of DevTools are `local-ui`'s, never relayed to a runner's
+//!   browser, and no other scope's: a chat's tools, the fleet's and the terminal's never reach
+//!   them.
 
 use crate::auth::Scope;
 
@@ -305,6 +312,10 @@ pub enum Power {
     /// desktop and a runner as a git bundle; and `take_conversation` and `give_conversation`
     /// (1.44, #2048): a moving chat's conversation carried with it.
     Code,
+    /// `inspect`, `inspector_input` and `attach_view` of the kind `inspector` (1.45, #2028): the
+    /// real DevTools of a page the person drives. The window's alone, on its own host: never
+    /// relayed, since what DevTools reach is the whole of the page, and never any other scope's.
+    Inspect,
     /// `log_end`, and the host's own event log pushed from a cursor for its device (1.41,
     /// #3393): the window's, on its own host or relayed to a runner's.
     EventLog,

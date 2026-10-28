@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { PinnedStrip, TitleBarSlash, WorkspaceChip } from "./TitleBarWorkspaces";
+import { PinnedStrip, RootChip, TitleBarSlash, WorkspaceChip } from "./TitleBarWorkspaces";
 
 afterEach(cleanup);
 
@@ -50,6 +50,30 @@ describe("a workspace's chip", () => {
   });
 });
 
+describe("the plane root's chip (#3654)", () => {
+  it("is a button named for the root, the workspace chip's root variant, drawing a house", () => {
+    render(<RootChip name="Plane root" current={false} onPress={() => undefined} />);
+    const chip = screen.getByRole("button", { name: "Plane root" });
+    expect(chip).toHaveAttribute("data-scope", "titlebar");
+    expect(chip).toHaveAttribute("data-part", "workspace");
+    expect(chip).toHaveAttribute("data-variant", "root");
+    expect(chip).not.toHaveAttribute("aria-current");
+    expect(chip.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    // Nothing to let go: no name, no + and no count of a pin's.
+    expect(chip.querySelector('[data-part="plus"], [data-part="count"]')).toBeNull();
+  });
+
+  it("takes the chosen look while the plane root is in front, and goes there on a press", async () => {
+    let pressed = 0;
+    render(<RootChip name="Plane root" current onPress={() => (pressed += 1)} />);
+    const chip = screen.getByRole("button", { name: "Plane root" });
+    expect(chip).toHaveAttribute("aria-current", "true");
+    expect(chip).toHaveAttribute("data-selected");
+    await userEvent.click(chip);
+    expect(pressed).toBe(1);
+  });
+});
+
 describe("the strip", () => {
   it("is one toolbar named for what it holds, after a slash no one hears", () => {
     render(
@@ -84,7 +108,13 @@ describe("its stylesheet (R101, R103, R153, R167)", () => {
     expect(base).toContain("block-size: max(28px");
     expect(base).toContain("border: 1px solid transparent");
     // A state changes colours only.
-    for (const state of ["[data-hovered]", "[data-selected]", '[data-variant="unpinned"]']) {
+    for (const state of [
+      "[data-hovered]",
+      "[data-selected]",
+      '[data-variant="unpinned"]',
+      '[data-variant="root"][data-hovered]',
+      '[data-variant="root"][data-selected]',
+    ]) {
       const body = css
         .split("}")
         .filter((one) => one.includes(`${chip}${state}`))

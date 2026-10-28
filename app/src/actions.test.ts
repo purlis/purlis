@@ -1811,6 +1811,7 @@ describe("carrying out a row", () => {
         // A chat's Activity, one row per chat tab (#1495).
         "openView:charter/activity/7,Activity · one",
         "openView:charter/activity/8,Activity · two",
+        "openView:charter/browsers/,Browsers",
         "openView:charter/chat-network/7,Network · one",
         "openView:charter/chat-network/8,Network · two",
         "openView:charter/todo/alpha/20260302-091400-review,Review the plan",
@@ -2304,9 +2305,10 @@ describe("the palette at fifty chats", () => {
       // front, before the branch's two in the catalogue. One more under `r` since #1137:
       // `Search in files` (`search` has an `r`). One more under `r` since #2176: `New browser`.
       // One more under `r` since #2679: `Add a Docker pool…` (`Docker` has an `r`). One more
-      // under `r` since #2921: `Keyboard shortcuts` (`keyboard` has an `r`).
+      // under `r` since #2921: `Keyboard shortcuts` (`keyboard` has an `r`). One more under `r`
+      // since #2027: `Open browsers` (`browsers` has an `r`).
       expect(at("re", loaded())).toBe(8);
-      expect(at("r", loaded())).toBe(18);
+      expect(at("r", loaded())).toBe(19);
       expect(at("rem", loaded())).toBe(1);
     });
 
@@ -2448,8 +2450,8 @@ describe("the palette at fifty chats", () => {
     // Your settings: Previews (Open Skill studio is offered only while its flag is on). 920
     // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
     // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
-    // or the Workspace level.
-    expect(offers).toHaveLength(920);
+    // or the Workspace level. 921 since #2027: Open browsers.
+    expect(offers).toHaveLength(921);
   });
 
   /**

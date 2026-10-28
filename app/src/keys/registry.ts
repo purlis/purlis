@@ -657,7 +657,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   },
   {
     id: "chat.leave",
-    does: "Out of the chat's terminal (with Shift, back)",
+    does: "Out of the chat's terminal, a browser you drive or DevTools (with Shift, back)",
     group: "Tabs and chats",
     where: "terminal",
     kind: "key",

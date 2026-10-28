@@ -1091,6 +1091,9 @@ has it; nothing reads the key after that.
   - **`inbox`**: **`scope`**, whose asks the Inbox lists: `all` (All projects) or `workspace`
     (This workspace). Leave it out for the project's, the default. A value that is neither is
     read as the default.
+  - **`browsers`**: **`scope`**, which browsers the Browsers grid shows (#2027), in the Inbox's
+    words: `all` (All projects) or `workspace` (This workspace). Leave it out for the project's,
+    the default. A value that is neither is read as the default.
 
   purlis writes a project's entry when anything in it changes; the core keeps the entries a
   window did not send, so two windows keep each other's. It keeps at most 32, and at most

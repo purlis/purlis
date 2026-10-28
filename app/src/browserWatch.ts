@@ -32,7 +32,7 @@ export const THUMBNAIL_ACROSS = 64;
 export type Watched =
   | { kind: "opening" }
   | { kind: "live"; width: number; height: number }
-  | { kind: "ended" }
+  | { kind: "ended"; closed?: string }
   | { kind: "refused"; why: string };
 
 /**
@@ -91,6 +91,9 @@ export type BrowserWatch = { watched: Watched; reconnecting: boolean };
  * Where its page is goes to the browsers' origins ({@link useBrowserOrigin}, #2300), what each
  * frame shows and the view's attachment to `heard`, and whether the link to the runner it is
  * drawn from is down (#2542) is in the answer.
+ *
+ * `of` `"devtools"` watches the browser's open DevTools instead of its page (#2028): their
+ * frames, as the page's are, which name no page's origin.
  */
 export function useBrowserWatch(
   program: string,
@@ -99,6 +102,7 @@ export function useBrowserWatch(
   seen: boolean,
   across?: number,
   heard?: WatchHeard,
+  of: "page" | "devtools" = "page",
 ): BrowserWatch {
   const [watched, setWatched] = useState<Watched>({ kind: "opening" });
   const [reconnecting, setReconnecting] = useState(false);
@@ -111,6 +115,7 @@ export function useBrowserWatch(
     if (!seen) return;
     let gone = false;
     let view: number | undefined;
+    let closedWhy: string | undefined;
     const draw = latestOnly((jpeg) =>
       canvas.current === null ? Promise.resolve() : paint(canvas.current, jpeg, across),
     );
@@ -122,6 +127,11 @@ export function useBrowserWatch(
         setReconnecting(frame.reconnection === "reconnecting");
         return;
       }
+      // Why a browser's DevTools closed, just before their view ends (#2028).
+      if (frame.closed !== null) {
+        closedWhy = frame.closed;
+        return;
+      }
       // Where its page is, its origin alone (#2300): no image of its own.
       if (frame.page !== null) {
         originTold(program, frame.page.origin);
@@ -129,7 +139,9 @@ export function useBrowserWatch(
       }
       // An empty frame is the host's word that the view has ended for good.
       if (frame.jpeg === "") {
-        setWatched({ kind: "ended" });
+        setWatched(
+          closedWhy === undefined ? { kind: "ended" } : { kind: "ended", closed: closedWhy },
+        );
         return;
       }
       // A frame comes only over a link that is up.
@@ -137,7 +149,11 @@ export function useBrowserWatch(
       told.current?.aimed?.(frame.aim);
       draw(frameBytes(frame.jpeg));
     };
-    void commands.watchBrowser(program, role, frames).then((answer) => {
+    const watching =
+      of === "devtools"
+        ? commands.watchInspector(program, frames)
+        : commands.watchBrowser(program, role, frames);
+    void watching.then((answer) => {
       if (answer.status === "error") {
         if (!gone) setWatched({ kind: "refused", why: answer.error });
         return;
@@ -154,6 +170,6 @@ export function useBrowserWatch(
       gone = true;
       if (view !== undefined) void commands.unwatchBrowser(program, view);
     };
-  }, [program, role, canvas, seen, across]);
+  }, [program, role, canvas, seen, across, of]);
   return { watched, reconnecting };
 }
