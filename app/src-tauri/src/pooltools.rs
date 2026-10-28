@@ -18,10 +18,11 @@
 //! - **that tool is the persona's, declared and allowed on this machine, asked for with exactly
 //!   its vault and hand-over**, and the vault is one the persona may use here, as for a chat of
 //!   this machine;
-//! - **the runner is shown to be the person's own** (`purlis_core::poollogins::Bound::read`, the
-//!   one check browser logins use, D-2050-4): until a pool can be marked owned (#2561), a Docker
-//!   pool whose engine is a local socket on this machine. A runner not shown to be owned is never
-//!   sent a value, and neither is a hosted one.
+//! - **the runner is shown to be the person's own** (`purlis_core::poollogins::Bound::reached`,
+//!   the one check browser logins use, D-2050-4): until a pool can be marked owned (#2561), a
+//!   Docker pool whose engine is a local socket on this machine. A runner not shown to be owned is
+//!   never sent a value, and neither is a hosted one. A chat that stays on a draining runner,
+//!   reached as `<pool>/<runner>`, is judged by its pool and that runner as they are kept (#3417).
 //!
 //! Then **the person is asked about this run** ([`PoolTools`]), as one Ask in the Inbox, and the
 //! command waits for the answer at most [`purlis_core::hookwire::relay::A_HANDED_LINE_WAITS_AT_MOST`].
@@ -217,8 +218,8 @@ pub struct Gate<'a> {
     pub tools: ToolsOf<'a>,
     /// Whether the persona may use the vault here (`brokered::authorise`).
     pub authorised: &'a dyn Fn(&str, &str) -> Result<(), String>,
-    /// The pool as it is now, where its runner is shown to be the person's own
-    /// (`Bound::read`).
+    /// The pool as it is now, with the runner the chat's link reaches, where that runner is shown
+    /// to be the person's own (`Bound::reached`).
     pub owned: &'a dyn Fn(&Path, &str) -> Result<Bound, String>,
 }
 
@@ -435,7 +436,7 @@ pub fn run_on_its_runner(
         pools_in: held.chats().pools_in(),
         tools: &tools::declared_and_allowed_here,
         authorised: &authorised,
-        owned: &Bound::read,
+        owned: &Bound::reached,
     };
     let decided = checked(&gate).and_then(|checked| {
         tracing::info!(

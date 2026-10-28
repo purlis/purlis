@@ -170,3 +170,74 @@ fn a_pools_bound_follows_its_image_its_limits_and_its_runner() {
     );
     assert_ne!(a, Bound::of(&one, &again, engine), "a runner paired again");
 }
+
+/// A pool `first` that moved on to a new runner, its runner before kept draining (#2749).
+fn a_pool_with_a_runner_draining() -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt;
+    let config = tempfile::tempdir().unwrap();
+    let path = crate::machine::dir(config.path()).join(crate::machine::RUNNERS_FILE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let image = format!("ghcr.io/purlis/purlis-runner@sha256:{}", "a".repeat(64));
+    let row = |name: &str, device: &str, extra: serde_json::Value| {
+        let mut row = serde_json::json!({
+            "name": name,
+            "pool": "docker",
+            "container": "e".repeat(64),
+            "image": image,
+            "user": "10001:10001",
+            "home": "/home/purlis",
+            "device": device,
+            "key": "12".repeat(32),
+            "paired": 1,
+        });
+        for (key, value) in extra.as_object().unwrap() {
+            row[key] = value.clone();
+        }
+        row
+    };
+    let text = serde_json::json!({
+        "version": 1,
+        "pools": [{ "name": "first", "kind": "docker", "image": image }],
+        "runners": [
+            row("first", "01JB0DRAINING000000000000000", serde_json::json!({ "draining": true })),
+            row("first-01234567", "01JB0NEW00000000000000000000", serde_json::json!({ "of": "first" })),
+        ],
+    });
+    std::fs::write(&path, text.to_string()).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    config
+}
+
+/// A chat that stays on a draining runner is reached by `<pool>/<runner>` (#3417): it is
+/// judged by its pool and that runner as they are kept, by the same check as any runner chat.
+#[test]
+fn a_draining_runners_chat_is_judged_by_its_pool_and_that_runner_as_they_are_kept() {
+    let config = a_pool_with_a_runner_draining();
+    let here = || Ok("/var/run/docker.sock".into());
+
+    let draining = Bound::reached_with(here(), config.path(), "first/first").unwrap();
+    let new = Bound::reached_with(here(), config.path(), "first").unwrap();
+
+    assert_eq!(draining.pool, "first", "its pool, by its own name");
+    assert_eq!(draining.runner, "01JB0DRAINING000000000000000");
+    assert_eq!(new.runner, "01JB0NEW00000000000000000000");
+    assert_eq!(draining.definition, new.definition, "the one pool");
+}
+
+#[test]
+fn a_name_that_reaches_no_runner_kept_draining_or_one_not_shown_to_be_yours_is_refused() {
+    let config = a_pool_with_a_runner_draining();
+    for name in ["first/first-01234567", "first/none", "other/first", "none"] {
+        assert!(
+            Bound::reached_with(Ok("/var/run/docker.sock".into()), config.path(), name).is_err(),
+            "{name}"
+        );
+    }
+    let refused = Bound::reached_with(
+        Err("this machine's DOCKER_HOST is tcp://build-box.example:2376".into()),
+        config.path(),
+        "first/first",
+    )
+    .unwrap_err();
+    assert!(refused.contains("sends no vault value there"), "{refused}");
+}

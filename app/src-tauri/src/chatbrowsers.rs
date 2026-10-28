@@ -3135,8 +3135,9 @@ fn pool_login_of(
     let config = held.chats().pools_in().ok_or_else(|| {
         format!("purlis keeps no pools on this machine, so no login {name} was filled on {pool}")
     })?;
-    // Only a runner shown to be yours is ever asked about (#2050).
-    let bound = purlis_core::poollogins::Bound::read(&config, pool)
+    // Only a runner shown to be yours is ever asked about (#2050): the one the chat's link
+    // reaches, a draining one too (#3417).
+    let bound = purlis_core::poollogins::Bound::reached(&config, pool)
         .map_err(|why| format!("no login {name} was filled on pool {pool}: {why}"))?;
     // Its tools are the runner's, never this window's record of a sandbox here: the login is
     // the persona's as declared and allowed here, checked before anyone is asked about it.

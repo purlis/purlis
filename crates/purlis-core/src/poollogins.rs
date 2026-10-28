@@ -75,6 +75,38 @@ impl Bound {
             crate::runners::runner_for(config_root, pool).map_err(|why| why.to_string())?;
         Ok(Bound::of(&kept, &runner, &engine))
     }
+
+    /// **The pool and runner a chat's link named `name` reaches, as this machine keeps them now**
+    /// (#3417), where purlis can show that runner is the person's own ([`owned`]): a pool's own
+    /// name reaches its runner as [`Bound::read`] does, and `<pool>/<runner>` that pool's runner
+    /// of that name only while it is kept draining (`crate::runners::reachable`, ADR 0078 amended
+    /// 2026-10-21). What the window judges a chat already on a runner by; a new chat or a move
+    /// goes by [`Bound::read`], which reaches no draining runner.
+    pub fn reached(config_root: &Path, name: &str) -> Result<Bound, String> {
+        Self::reached_with(
+            crate::dockerpool::Docker::engine_on_this_machine(),
+            config_root,
+            name,
+        )
+    }
+
+    /// [`Bound::reached`] on `engine`, the engine this machine's Docker pools run on.
+    pub fn reached_with(
+        engine: Result<std::path::PathBuf, String>,
+        config_root: &Path,
+        name: &str,
+    ) -> Result<Bound, String> {
+        let engine = owned(engine)?;
+        let (runner, _) =
+            crate::runners::reachable(config_root, name).map_err(|why| why.to_string())?;
+        let pool = name.split_once('/').map_or(name, |(pool, _)| pool);
+        let kept = crate::runners::pools(config_root)
+            .map_err(|why| why.to_string())?
+            .into_iter()
+            .find(|one| one.name() == pool)
+            .ok_or_else(|| format!("no pool named {pool} is on this machine"))?;
+        Ok(Bound::of(&kept, &runner, &engine))
+    }
 }
 
 /// **Whether a Docker pool's runner is shown to be the person's own** (#2050): its engine is a
