@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793215448978,
+  "lastUpdate": 1793216929410,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28728,6 +28728,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2858025,
             "unit": "ms",
             "extra": "median of 5 runs: 100.693, 101.463, 102.286, 102.316, 102.910 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d509c3ff49294ae0d90eb0cc09c9c8f703e13942",
+          "message": "M66: table column choices, card facts and totals, meter family (#3671, #3673, #3674) (#3732)\n\n* Table family: columns that keep one line, sized by the view (#3671)\n\nTableColumn and ControlColumn take a view's column choices: cut (one\nline, an ellipsis, the whole words in the cell's tooltip while they\nare cut), clamp (at most N lines), size fit or fill, width, minWidth\nand maxWidth. A data table's cell reads its column's choices back from\nReact Aria's column node, a table of controls' cell from its column's\nname. The tooltip opens under the pointer after the window's delay and\nat once as the keyboard reaches the cell, or the cut words in a table\nof controls, which are a Tab stop while cut; Esc takes it down. A data\ntable stacks where a view asks. A column that chooses nothing draws as\nbefore, with no wrapper element.\n\nStories: the skills' table at a 1280 px window and in a narrow split,\nand the studio's table of controls with the same choices.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Card family: facts as label and value, and a row of totals tiles (#3673)\n\nFacts and Fact draw a dl of label and value: one label column in the\nsecondary tier, the value in the primary (a badge, a link or one fix\nin it), each label over its value under 24rem of its own room. Totals\nand Tile draw a row of tiles that share its width and wrap, never\nsideways: a label in the label role, a value a size larger in figures\nof one width, a quiet line under it. Live totals say their changes\npolitely, at most once a second (ui/said.ts), nothing as first drawn.\n\nThe card's manifest gains facts-label, facts-value, tile and\ntile-value since NEXT, drawn around a card and reached by their own\nattributes. Stories: a skill's Overview facts and the grade plan's\ntotals, wide and narrow, and Running's counts changing without moving\na tile.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Meter family: result bars that compare, and a progress bar (#3674)\n\nA new family of the closed list (the operator's ruling of 2026-10-28\non spec #2897), on React Aria's Meter and ProgressBar: Meter in the\nvariants subject, baseline (hatched) and previous; MeterGroup, meters\non one scale and one label column; ProgressBar, done of N or going\nwith no end known, its value said politely at most once a second\nbeside the bar. Forced colours draw the fill in the highlight on a\ntrack edged in the words' colour. purlis/meter-family refuses a raw\nmeter or progress and either role by hand (Get project's still off).\n\nThe theme engine reads a meter's fill on its track (Tracked): 3:1 on\nevery ground in each variant, and a theme that would lose a bar draws\nthe variant's default fill and track back. The schema and the docs'\nfamily table are written again from the manifest.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Review: live totals keep their order, bars said with their names, the check holds the subject's bar (#3671, #3673, #3674)\n\nFrom the review of this branch:\n- Totals: a tile whose words change keeps its place in the sentence.\n- ui/said.ts: words after a time with none are said; only the first are not.\n- A progress bar says its label with its value.\n- Meter: no hatch (its stripes were the track's colour, unmeasured); each\n  variant is told by its label and value beside it.\n- The theme check holds the subject's fill on the track for a palette alone\n  (check.rs); the baseline's and previous version's wait on #3735.\n- Totals: a tile's value wraps, never cut.\n- Table: a stacked form takes no view lengths; a fixed table takes no\n  fit or fill; a table of controls' cell reads its column on every draw;\n  a cut cell keeps one observer.\n- ci-scope reads meter.css; the Notice guard lists the two live regions;\n  the wide totals story is wide enough for four tiles; a story's lint.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Theme check: a meter's track waits on a reported pair, not PAIRS (#3674)\n\nPAIRS also decides which of the person's own colours a theme accepts, so\nthe subject's fill on border.subtle there broke the first frame's\ncolours (windowprefs). The pair moves to #3735, which holds the meter's\nfills on a pair that is only reported.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Story pictures: the new table, card and meter stories (#3671, #3673, #3674)\n\nTen new stories in every appearance and both engines, taken from the\nPR's own stories run. No existing picture changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T19:18:22Z",
+          "tree_id": "e9910bd2ed2b405bdba16734be543a4ec0911a6d",
+          "url": "https://github.com/purlis/purlis/commit/d509c3ff49294ae0d90eb0cc09c9c8f703e13942"
+        },
+        "date": 1793216924531,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.645131,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.632, 0.641, 0.645, 0.664, 0.669 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6426645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.473, 16.584, 16.643, 16.985, 17.015 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8223035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.361, 101.775, 101.822, 103.122, 103.314 ms"
           }
         ]
       }
