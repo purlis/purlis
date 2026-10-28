@@ -59,6 +59,11 @@ pub struct Accepted {
     pub tests: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous: Option<String>,
+    /// **The model its chats ran on as the plan showed it** (#3622): the one their line names,
+    /// where it names one, else the one picked. A grade after an edit whose chats would run on
+    /// another waits for the person, as the plan's consent covers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_on: Option<String>,
     /// When it was turned on.
     pub at: String,
     /// What the copy held when an edit last graded it, by its plan's consent: a save that
@@ -76,6 +81,7 @@ impl Accepted {
     fn sound(&self) -> bool {
         plain(&self.profile)
             && self.model.as_deref().is_none_or(plain)
+            && self.runs_on.as_deref().is_none_or(super::price::model_id)
             && (1..=MOST_CHATS).contains(&self.chats)
             && (cap::LEAST..=cap::MOST).contains(&self.token_cap)
             && self.limit_usd.is_finite()
@@ -285,6 +291,9 @@ pub fn update(
 /// consent, the digest of what it would grade.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Now {
+    /// The profile and the model its chats would run on (#3622).
+    pub profile: String,
+    pub runs_on: Option<String>,
     pub chats: u32,
     pub token_cap: u64,
     pub limit_usd: f64,
@@ -294,11 +303,15 @@ pub struct Now {
 }
 
 impl Now {
-    /// What a grade of `planned` would run, held to `limit_usd` (the plan's cap at the price of
-    /// the model its chats run on): `None` where it has nothing to grade.
-    pub fn of(planned: &super::Planned, limit_usd: f64) -> Option<Now> {
+    /// What a grade of `planned` would run on `terms` (its profile, the model its chats run on,
+    /// and `limit_usd`, the plan's cap at that model's price): `None` where it has nothing to
+    /// grade.
+    pub fn of(planned: &super::Planned, terms: &super::Terms<'_>) -> Option<Now> {
         let request = planned.request.as_ref()?;
+        let limit_usd = terms.limit_usd;
         Some(Now {
+            profile: terms.profile?.to_owned(),
+            runs_on: terms.model.map(str::to_owned),
             chats: planned.plan?.chats,
             token_cap: planned.cap.tokens,
             limit_usd,
@@ -331,6 +344,14 @@ pub fn next(accepted: &Accepted, now: &Now) -> Next {
     }
     if accepted.graded.as_deref() == Some(now.consent.as_str()) {
         return Next::Same;
+    }
+    if now.profile != accepted.profile || now.runs_on != accepted.runs_on {
+        return Next::Waits(
+            "The profile or the model a grade of it runs on changed since you turned grading \
+             after each edit on, so no grade was started after your edit: see the plan again and \
+             turn it on again."
+                .to_owned(),
+        );
     }
     if now.tests != accepted.tests {
         return Next::Waits(

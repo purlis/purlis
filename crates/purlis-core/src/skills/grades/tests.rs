@@ -1093,3 +1093,48 @@ fn the_estimate_shares_the_spend_over_the_chats_that_asked_too_3584() {
         "{estimate:?}"
     );
 }
+
+#[test]
+fn a_plans_consent_covers_the_profile_model_and_limits_it_shows() {
+    let terms = Terms {
+        profile: Some("work"),
+        model: Some("sonnet"),
+        token_cap: 200_000,
+        limit_usd: 3.0,
+    };
+    let shown = consent_on("abc", &terms);
+    assert_eq!(
+        consent_on("abc", &terms),
+        shown,
+        "the same plan, the same consent"
+    );
+    for other in [
+        Terms {
+            profile: Some("home"),
+            ..terms
+        },
+        Terms {
+            profile: None,
+            ..terms
+        },
+        Terms {
+            model: Some("opus"),
+            ..terms
+        },
+        Terms {
+            model: None,
+            ..terms
+        },
+        Terms {
+            token_cap: 400_000,
+            ..terms
+        },
+        Terms {
+            limit_usd: 3.01,
+            ..terms
+        },
+    ] {
+        assert_ne!(consent_on("abc", &other), shown, "{other:?}");
+    }
+    assert_ne!(consent_on("abd", &terms), shown, "and what it grades");
+}

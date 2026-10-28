@@ -282,7 +282,12 @@ export function SkillGrade({
             ended: null,
             said: null,
           });
-        } else setSaid({ tone: "trouble", text: answer.error });
+        } else {
+          setSaid({ tone: "trouble", text: answer.error });
+          // The plan is read again after any refusal: one that changed since it was shown is shown
+          // anew, to be read and pressed again.
+          read(picked, pickedModel);
+        }
       });
   };
 
