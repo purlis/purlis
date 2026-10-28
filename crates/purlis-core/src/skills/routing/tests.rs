@@ -90,13 +90,16 @@ fn hidden(skills: &ChatSkills) -> Vec<&str> {
 /// The set's folder laid out for a chat in `smart-ide`, as `persona` or on none.
 fn the_folder(root: &Path, bundle: &Path, persona: Option<&str>) -> PathBuf {
     crate::skills::lay_out_for_chat(
-        Some(root),
-        Some("smart-ide"),
+        Some(crate::skills::PlaneSkills {
+            plane: root,
+            workspace: Some("smart-ide"),
+            repo: &[],
+            routed: None,
+        }),
         persona,
         Some(bundle),
         &root.join("sets"),
         Harness::ClaudeCode,
-        &[],
     )
     .expect("a set's folder")
 }
@@ -119,13 +122,16 @@ fn above_the_budget_an_opencode_chat_is_handed_the_index_as_purlis_skill_index()
     let (tmp, bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
     let folder = crate::skills::lay_out_for_chat(
-        Some(root),
-        Some("smart-ide"),
+        Some(crate::skills::PlaneSkills {
+            plane: root,
+            workspace: Some("smart-ide"),
+            repo: &[],
+            routed: None,
+        }),
         None,
         Some(&bundle),
         &root.join("sets"),
         Harness::Opencode,
-        &[],
     )
     .expect("a set's folder");
     let mut names: Vec<String> = std::fs::read_dir(folder.join(DIR_IN_BUNDLE))
@@ -432,13 +438,16 @@ fn a_briefed_chat_over_the_budget_is_briefed_on_the_index_and_not_on_what_it_hid
     let (tmp, bundle) = a_plane_of(MOST + 5);
     let root = tmp.path();
     let folder = crate::skills::lay_out_for_chat(
-        Some(root),
-        Some("smart-ide"),
+        Some(crate::skills::PlaneSkills {
+            plane: root,
+            workspace: Some("smart-ide"),
+            repo: &[],
+            routed: None,
+        }),
         None,
         Some(&bundle),
         &root.join("sets"),
         Harness::Codex,
-        &[],
     )
     .expect("a set's folder");
     let env = |key: &str| match key {
@@ -703,13 +712,16 @@ fn use_skill_and_the_stamp_of_a_chat_in_a_clone_route_its_repo_skills_as_its_fol
     let repo = crate::skills::repo_skills_of_chat(Harness::Codex, root, "smart-ide", &clone);
     assert_eq!(repo.len(), 5, "{repo:?}");
     let folder = crate::skills::lay_out_for_chat(
-        Some(root),
-        Some("smart-ide"),
+        Some(crate::skills::PlaneSkills {
+            plane: root,
+            workspace: Some("smart-ide"),
+            repo: &repo,
+            routed: None,
+        }),
         None,
         Some(&bundle),
         &root.join("sets"),
         Harness::Codex,
-        &repo,
     )
     .expect("a set's folder");
     let handed: Vec<String> = std::fs::read_dir(folder.join(DIR_IN_BUNDLE))

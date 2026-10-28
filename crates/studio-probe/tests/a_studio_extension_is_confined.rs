@@ -583,7 +583,115 @@ fn first_file(folder: &Path, depth: usize) -> Option<PathBuf> {
 // The runner
 // ---------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------
+// A skill router (SK-15b, #3230; ADR 0102 §6)
+// ---------------------------------------------------------------------------------------
+
+/// The router's question about `names`, each a skill it may hide.
+fn route_about(names: &[&str]) -> Vec<purlis_core::extension::studio::RouteSkill> {
+    names
+        .iter()
+        .map(|name| purlis_core::extension::studio::RouteSkill {
+            name: (*name).to_owned(),
+            description: format!("Does {name}."),
+            pinned: false,
+        })
+        .collect()
+}
+
+fn routed_by(executor: &Executor, probe: &Probe, names: &[&str]) -> Result<Vec<String>, String> {
+    let skills = route_about(names);
+    let budget = purlis_core::extension::studio::RouteBudget {
+        skills: 30,
+        chars: 4000,
+    };
+    let doc = executor.studio(
+        &probe.config(),
+        &Choices::read(&probe.plane()),
+        ID,
+        &purlis_core::extension::studio::Ask::Route {
+            skills: &skills,
+            budget,
+            besides: budget,
+        },
+    )?;
+    let hidden = purlis_core::extension::studio::routed_of(ID, names.len(), &doc)?;
+    Ok(hidden.into_iter().map(|(name, _)| name).collect())
+}
+
+fn a_router_answers_confined_and_is_stopped_at_its_deadline() {
+    let probe = Probe::approved();
+    // A program copied in fresh is assessed by macOS the first time it runs: asked once with
+    // time for that, and timed for the record.
+    let patient = Executor::default()
+        .with_deadline(PATIENT)
+        .with_router_deadline(PATIENT);
+    routed_by(&patient, &probe, &["warm"]).expect("the probe's router answers");
+    let began = std::time::Instant::now();
+    let hidden = routed_by(&patient, &probe, &["deploy", "probe-hide-lint", "review"])
+        .expect("the probe's router answers");
+    eprintln!(
+        "a confined router answered in {} ms, its start included",
+        began.elapsed().as_millis()
+    );
+    assert_eq!(hidden, ["probe-hide-lint"]);
+
+    // One that takes two seconds is stopped at the router's own deadline, never the five a
+    // view has.
+    let real = Executor::default();
+    let began = std::time::Instant::now();
+    let refused =
+        routed_by(&real, &probe, &["probe-slow", "probe-hide-x"]).expect_err("past its deadline");
+    let took = began.elapsed();
+    assert!(
+        took < std::time::Duration::from_millis(1500),
+        "a router two seconds slow held its question {took:?}"
+    );
+    assert!(refused.contains("did not answer within"), "{refused}");
+    assert!(real.running().is_empty(), "its program was stopped");
+}
+
+fn a_router_that_reads_prompts_points_one_confined() {
+    let probe = Probe::approved();
+    let patient = Executor::default()
+        .with_deadline(PATIENT)
+        .with_router_deadline(PATIENT);
+    let skills = [
+        purlis_core::extension::studio::PromptSkill {
+            name: "deploy".to_owned(),
+            line: "Deploys.".to_owned(),
+        },
+        purlis_core::extension::studio::PromptSkill {
+            name: "probe-point-release".to_owned(),
+            line: "Cuts a release.".to_owned(),
+        },
+    ];
+    let doc = patient
+        .studio(
+            &probe.config(),
+            &Choices::read(&probe.plane()),
+            ID,
+            &purlis_core::extension::studio::Ask::Prompt {
+                prompt: purlis_core::extension::studio::HandedPrompt::of("cut the release"),
+                skills: &skills,
+            },
+        )
+        .expect("the probe's router answers a prompt");
+    let pointed =
+        purlis_core::extension::studio::pointed_of(ID, &["deploy", "probe-point-release"], &doc)
+            .expect("pointers it takes");
+    assert_eq!(pointed, ["probe-point-release"]);
+}
+
 const TESTS: &[(&str, fn())] = &[
+    (
+        "a_router_that_reads_prompts_points_one_confined",
+        a_router_that_reads_prompts_points_one_confined,
+    ),
+    (
+        "a_router_answers_confined_and_is_stopped_at_its_deadline",
+        a_router_answers_confined_and_is_stopped_at_its_deadline,
+    ),
     (
         "it_adds_a_template_a_lint_a_panel_and_a_source",
         it_adds_a_template_a_lint_a_panel_and_a_source,

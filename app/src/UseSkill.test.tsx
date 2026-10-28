@@ -71,7 +71,7 @@ const TOGETHER: SkillBudget = {
 };
 
 function skills(listed: ChatSkill[], budget: SkillBudget | null = BUDGET): ChatSkills {
-  return { on: true, known: true, skills: listed, budget, repos: [] };
+  return { on: true, known: true, skills: listed, budget, repos: [], routing: null };
 }
 
 function opened(listed: ChatSkills | undefined, onUse = vi.fn(), onOpenStudio = vi.fn()) {
@@ -199,6 +199,37 @@ describe("Use skill…", () => {
     expect(openStudio).toHaveBeenLastCalledWith({ at: "workspace", name: "ops" });
   });
 
+  it("says how the chat's router extension did at its start, and why it fell back (SK-15b)", () => {
+    opened({
+      ...skills([skill("deploy")]),
+      routing: {
+        router: "relevance",
+        ms: 34,
+        fell_back: false,
+        said: "Routed by the router relevance in 34 ms.",
+      },
+    });
+    const taken = screen.getByTestId("use-skill-routing");
+    expect(taken.textContent).toBe("Routed by the router relevance in 34 ms.");
+    expect(taken.getAttribute("role")).toBeNull();
+    cleanup();
+    opened({
+      ...skills([skill("deploy")]),
+      routing: {
+        router: "relevance",
+        ms: 100,
+        fell_back: true,
+        said: "The router relevance did not answer within 100 ms, so this chat lists what the built-in router shows.",
+      },
+    });
+    const fell = screen.getByTestId("use-skill-routing");
+    expect(fell.getAttribute("role")).toBe("status");
+    expect(fell.textContent).toMatch(/did not answer within 100 ms/);
+    cleanup();
+    opened(skills([skill("deploy")]));
+    expect(screen.queryByTestId("use-skill-routing")).toBeNull();
+  });
+
   it("says how many skills the router hid behind the index skill, and marks each (SK-15)", () => {
     const over = { ...BUDGET, warns: "skills" as const, hidden: 2 };
     expect(budgetSaid({ ...over, manual: 0 })).toBe(
@@ -248,7 +279,7 @@ describe("Use skill…", () => {
     opened(undefined);
     expect(screen.getByText("Reading this chat's skills…")).toBeTruthy();
     cleanup();
-    opened({ on: true, known: false, skills: [], budget: null, repos: [] });
+    opened({ on: true, known: false, skills: [], budget: null, repos: [], routing: null });
     expect(screen.getByTestId("use-skill-none").textContent).toMatch(/runs no tool purlis knows/);
     cleanup();
     opened(skills([]));

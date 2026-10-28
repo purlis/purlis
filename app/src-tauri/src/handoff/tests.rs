@@ -3008,6 +3008,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Browse(_) => 14,
             Ask::ThemePreview(_) => 15,
             Ask::ThemeDraft(_) => 16,
+            Ask::Prompt(_) => 17,
         }
     }
     let asks = vec![
@@ -3101,10 +3102,15 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             folder: "dusk".to_owned(),
             files: None,
         })),
+        // A prompt for the chat's router (SK-15c): it names the asking chat alone.
+        Ask::Prompt(Box::new(purlis_core::hookwire::PromptAsk {
+            chat,
+            prompt: "stop everything".to_owned(),
+        })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=16).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=17).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -11429,4 +11435,31 @@ fn a_chat_open_in_a_workspace_with_no_id_is_drawn_specimens_from_the_plane_root_
             id: None,
         })
     );
+}
+
+#[test]
+fn a_prompt_of_a_chat_whose_start_chose_no_router_is_pointed_at_nothing() {
+    // SK-15c: the app asks no router for a chat its start did not arm for one, whatever the
+    // line says, and answers no pointer.
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+
+    let said = answer(
+        &held,
+        &id,
+        &tickets,
+        1,
+        Ask::Prompt(Box::new(purlis_core::hookwire::PromptAsk {
+            chat: asking,
+            prompt: "deploy it".to_owned(),
+        })),
+        &|_| {},
+    );
+
+    assert_eq!(said, Answer::Pointed { pointer: None });
 }

@@ -3443,6 +3443,11 @@ export type ChatSkills = {
 	 *  (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
 	 */
 	repos: string[],
+	/**
+	 *  How its router extension did at its start (SK-15b): null for a chat routed by the
+	 *  built-in router, which is asked nothing.
+	 */
+	routing: SkillRouting | null,
 };
 
 /**  One step of one chat's stop, as the window is told it. */
@@ -9920,7 +9925,9 @@ export type SkillHiddenOn = {
 /**  Why a router hid a skill: the core's `HiddenWhy`. */
 export type SkillHiddenWhy = 
 /**  The chat's skills are past its budget, and this one is not pinned. */
-"over-budget";
+"over-budget" | 
+/**  An extension router hid it, with its own one line (SK-15b). */
+{ "by-router": string };
 
 /**
  *  A level of the project's, as the studio names one: the project's root, a workspace's or a
@@ -10015,7 +10022,24 @@ export type SkillPinsTogether = {
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
 /**  purlis's own. */
-"built-in";
+"built-in" | 
+/**  An extension that declares `skill-router`, by its id (SK-15b). */
+{ extension: string };
+
+/**
+ *  **How a chat's router extension did at its start** (SK-15b, ADR 0102 §6): the core's routing
+ *  record, as the chat's tab and the studio say it.
+ */
+export type SkillRouting = {
+	/**  The router asked, by its extension's id. */
+	router: string,
+	/**  How long its question took, in milliseconds. */
+	ms: number,
+	/**  Whether the chat lists what the built-in router shows instead. */
+	fell_back: boolean,
+	/**  What a person is told of it, in the core's words. */
+	said: string,
+};
 
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {
@@ -10428,6 +10452,11 @@ export type Studio = {
 	 *  where it reads none (SK-15d): its rows' Pin switches then say so.
 	 */
 	pins_refused: SkillPinsRefused | null,
+	/**
+	 *  The router its chats are routed by, and how it did at each one's start (SK-15b). Null
+	 *  while the studio is off.
+	 */
+	router: StudioRouter | null,
 };
 
 /**
@@ -10491,6 +10520,30 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
+};
+
+/**  One chat a router extension was asked about at its start. */
+export type StudioRouted = {
+	session: number,
+	routing: SkillRouting,
+};
+
+/**
+ *  **The router a studio's chats are routed by** (SK-15b, ADR 0102 §5, §6), and how it did at
+ *  the start of each such chat open here.
+ */
+export type StudioRouter = {
+	/**  Which router, in a sentence; or why the one chosen is not one, where it is not. */
+	said: string,
+	/**  Whether the choice names no router, so its chats are routed by the built-in one. */
+	problem: boolean,
+	/**  The extension's id, where an extension's router is chosen. */
+	extension: string | null,
+	/**
+	 *  Each chat open here that its start routed by an extension, by its number, with how
+	 *  that went: its timing, and whether it fell back on the built-in router.
+	 */
+	chats: StudioRouted[],
 };
 
 /**

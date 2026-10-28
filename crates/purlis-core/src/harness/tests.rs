@@ -1973,6 +1973,7 @@ fn a_clones_own_skill_index_is_left_out_where_the_harness_keeps_purliss_and_only
             plane: plane.path(),
             workspace: Some("alpha"),
             repo: &repo,
+            routed: None,
         }),
         ..kit("/bin/charter")
     };
@@ -2011,6 +2012,7 @@ fn a_clones_own_skill_index_is_left_out_where_the_harness_keeps_purliss_and_only
             plane: plane.path(),
             workspace: Some("alpha"),
             repo: &[],
+            routed: None,
         }),
         ..kit
     };

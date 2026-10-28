@@ -51,6 +51,7 @@ use crate::harness::{Harness, Kit};
 pub mod levels;
 mod on_machine;
 pub mod persona;
+pub mod router;
 mod routing;
 
 pub use routing::{
@@ -88,6 +89,9 @@ pub struct PlaneSkills<'a> {
     /// harness is handed, the narrower repo copy wins and the plane's is left out (SK-6, decision
     /// 51). Empty for a chat in no clone.
     pub repo: &'a [OutsideSkill],
+    /// What the chat's router extension answered at its start (SK-15b), which every routing of
+    /// its set applies again: `None` for a chat routed by the built-in router.
+    pub routed: Option<&'a router::Routed>,
 }
 
 /// The skill set of a chat on `harness` armed with `kit`, asked of [`purlis_skills::skill_set`].
@@ -194,29 +198,22 @@ pub fn linked<'a>(set: &SkillSet, kit: Kit<'a>) -> Option<&'a Path> {
 }
 
 /// **The host's part of arming a chat with the skills its set's folder holds**: the folder of
-/// links for the set of a chat in `plane`, at its root or in `workspace`, running as `persona`,
-/// with the built-in skills in `built_in`, laid out under `sets`. `plane` is `None` where the
-/// plane's skills do not reach chats: the set is then the built-in skills alone, laid out only
-/// on a route that names them their own ([`Route::names_built_ins_its_own`]). `None` where the
-/// set holds nothing the folder holds ([`SkillSet::in_the_folder`]), or the folder could not be
-/// laid out (said in the log). The set is the one [`for_chat`] works out for that chat on
-/// `harness`, with `repo` the repo skills of the clone it works in: a plane skill a narrower
-/// repo copy hides is not laid out (SK-6). Each skill is handed as `harness` reads it
-/// ([`crate::harness::Harness::skill_frontmatter`], SK-8).
+/// links for the set of a chat whose plane skills come from `at` (its plane, its workspace or
+/// none, the repo skills of its clone and its router's answer), running as `persona`, with the
+/// built-in skills in `built_in`, laid out under `sets`. `at` is `None` where the plane's skills
+/// do not reach chats: the set is then the built-in skills alone, laid out only on a route that
+/// names them their own ([`Route::names_built_ins_its_own`]). `None` where the set holds nothing
+/// the folder holds ([`SkillSet::in_the_folder`]), or the folder could not be laid out (said in
+/// the log). The set is the one [`for_chat`] works out for that chat on `harness`: a plane skill
+/// a narrower repo copy hides is not laid out (SK-6), nor one its router hid (SK-15b). Each skill
+/// is handed as `harness` reads it ([`crate::harness::Harness::skill_frontmatter`], SK-8).
 pub fn lay_out_for_chat(
-    plane: Option<&Path>,
-    workspace: Option<&str>,
+    at: Option<PlaneSkills<'_>>,
     persona: Option<&str>,
     built_in: Option<&Path>,
     sets: &Path,
     harness: Harness,
-    repo: &[OutsideSkill],
 ) -> Option<PathBuf> {
-    let at = plane.map(|plane| PlaneSkills {
-        plane,
-        workspace,
-        repo,
-    });
     let set = routed(built_in, at, persona, harness);
     match lay_out(&set, sets, &harness.skill_frontmatter()) {
         Ok(folder) => folder,
@@ -379,6 +376,13 @@ fn touched(folder: &Path) -> bool {
 /// environment again by [`take_hold`] where its terminal is started, so its program never sees
 /// it and the terminal notes, while the program runs, that it uses the folder.
 pub const SET_ENV: &str = "PURLIS_SKILL_SET";
+
+/// **The variable a chat whose router reads prompts is started with** (SK-15c): `1`, where
+/// its start asked a router extension whose approval said it reads prompts and its list leaves
+/// skills out ([`router::Routed::points`]). Only then does its prompt hook hand the prompt to
+/// the app, which asks the router which of those skills suit it: no other chat's prompt leaves
+/// its hook.
+pub const PROMPT_ROUTER_ENV: &str = "PURLIS_PROMPT_ROUTER";
 
 /// The folder of a set's folder's notes, beside the sets: `<sets>/.held/<digest>/<pid>`, one
 /// file for each running program that was handed it ([`crate::session::Spec::holds`]).
@@ -849,6 +853,7 @@ pub fn briefed(
             plane: root,
             workspace,
             repo: &repo,
+            routed: None,
         }),
         persona.as_deref(),
         Route::Briefing,
@@ -963,6 +968,7 @@ impl Running<'_> {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
+            routed: start.and_then(|start| start.routed.as_deref()),
         });
         routed(
             self.built_in,
@@ -1185,6 +1191,19 @@ fn routed(
     )
 }
 
+/// **The set of a chat on `harness` before it is routed, and its pins** (SK-15b): what its
+/// router extension is asked about at its start ([`router::at_start`]), from the same skills
+/// [`routed`] routes.
+pub(crate) fn unrouted(
+    built_in: Option<&Path>,
+    at: PlaneSkills<'_>,
+    persona: Option<&str>,
+    harness: Harness,
+) -> (SkillSet, Vec<String>) {
+    let set = ask(built_in, Some(at), persona, harness.skills(), None, None);
+    (set, pins_or_none(at.plane, at.workspace, persona))
+}
+
 /// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace
 /// the chat works in (where the plane's skills are let in), the persona a chat runs as (whose
 /// `skills:` list is read where the plane's skills are let in), the chat's route, the harness
@@ -1239,7 +1258,10 @@ fn ask(
             let pins = plane
                 .map(|at| pins_or_none(at.plane, at.workspace, persona))
                 .unwrap_or_default();
-            set.routed(budget, &pins)
+            match plane.and_then(|at| at.routed) {
+                Some(routed) => routed.apply(set, budget, &pins),
+                None => set.routed(budget, &pins),
+            }
         }
         None => set,
     }
@@ -1350,6 +1372,7 @@ pub fn not_here_beside(
         plane,
         workspace,
         repo,
+        routed: None,
     };
     let set = ask(
         built_in,
@@ -1631,6 +1654,7 @@ fn in_the_studio_on(
         plane,
         workspace,
         repo: &[],
+        routed: None,
     };
     let here = persona.map(|_| {
         let env = crate::harness_plugin::Env::of(&[]);
@@ -1770,6 +1794,7 @@ pub fn of_a_chat(
         plane,
         workspace,
         repo: &[],
+        routed: None,
     };
     // The harness's own installed skills are the harness's to hand over, never these tools'.
     // Not routed: a skill a router hides is the chat's all the same (ADR 0102 §7).
@@ -2224,8 +2249,15 @@ fn badges(
             compat: match &text {
                 Ok(text) => {
                     let badge = compat(text, origin, &harness.skill_frontmatter());
-                    if kept_manual_beside(*harness, (root, path), origin) {
+                    let badge = if kept_manual_beside(*harness, (root, path), origin) {
                         badge.kept_manual()
+                    } else {
+                        badge
+                    };
+                    // A plane skill a router may leave out of a chat's list is pointed at
+                    // only through a prompt hook (SK-15c).
+                    if origin.of_the_plane() && !harness.prompt_hook() {
+                        badge.without_a_pointer()
                     } else {
                         badge
                     }

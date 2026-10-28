@@ -959,6 +959,13 @@ impl purlis_host::Compose for Composes {
             &(
                 |plan: &purlis_host::protocol::session::ConfinePlan| beside.confine(plan),
                 |entry| beside.record(entry),
+                // A chat's router extension, asked at its start with this program's own
+                // executor (SK-15b).
+                std::sync::Arc::new(
+                    purlis_core::skills::router::OnThisMachine::with_this_programs(
+                        starting.project_path,
+                    ),
+                ) as std::sync::Arc<dyn purlis_core::skills::router::AskRouter>,
             ),
         )
     }
