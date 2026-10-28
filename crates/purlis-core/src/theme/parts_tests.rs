@@ -806,7 +806,8 @@ fn the_buttons_family_default_is_what_button_css_draws() {
     // A selector prettier wraps (a long variant's `:not(…)`) read back onto one line.
     let css = &include_str!("../../../../app/src/ui/button/button.css")
         .replace("(\n    ", "(")
-        .replace("\n  ) {", ") {");
+        .replace("\n  ) {", ") {")
+        .replace("\n  ),\n", "),\n");
     let token = |var: &str| -> Value {
         if var == "transparent" {
             return Value::from(var);
@@ -829,6 +830,19 @@ fn the_buttons_family_default_is_what_button_css_draws() {
         .and_then(|it| it.split_whitespace().last())
         .expect("the button's border");
     let base_hover = rule(css, &format!("{root}[data-hovered]:not([data-disabled])"));
+    // **Open is drawn as under the pointer** (#3524): every hover rule names the open state
+    // first, at the same weight, so the two cannot drift apart.
+    let opens_as_hover = |selector: &str| {
+        let open = selector.replace("[data-hovered]", "[data-open]");
+        assert!(
+            css.contains(&format!("\n{open},\n{selector} {{")),
+            "{selector} does not name {open} (#3524)"
+        );
+    };
+    opens_as_hover(&format!("{root}[data-hovered]:not([data-disabled])"));
+    opens_as_hover(&format!(
+        "{root}[data-selected][data-hovered]:not([data-disabled])"
+    ));
     for variant in parts::MANIFEST[0].variants.iter().map(|one| one.name) {
         let own_selector = format!("{root}[data-variant=\"{variant}\"]");
         let own = if css.contains(&format!("\n{own_selector} {{")) {
@@ -838,6 +852,7 @@ fn the_buttons_family_default_is_what_button_css_draws() {
         };
         let hovered = format!("{own_selector}[data-hovered]:not([data-disabled])");
         let own_hover = if css.contains(&format!("\n{hovered} {{")) {
+            opens_as_hover(&hovered);
             rule(css, &hovered)
         } else {
             ""
@@ -862,6 +877,16 @@ fn the_buttons_family_default_is_what_button_css_draws() {
         for key in ["fill", "text", "border", "hover", "hover_text"] {
             assert_eq!(held[key], drawn[key], "{variant}'s {key}");
         }
+        // The engine holds the open look to the hover look the stylesheet draws it as.
+        assert_eq!(
+            held["open"],
+            json!({ "fill": drawn["hover"], "text": drawn["hover_text"] }),
+            "{variant} open"
+        );
+        assert_eq!(
+            held["open_selected"], held["selected_hover"],
+            "{variant} open, on"
+        );
     }
     let pressed = rule(css, &format!("{root}[data-selected]"));
     assert_eq!(

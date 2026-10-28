@@ -185,6 +185,99 @@ pub fn built_in_names(dir: Option<&Path>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// **The skills purlis ships**, by name: the bundle's `plugin/skills/<name>/SKILL.md`, each
+/// folder named as its skill (held to that folder by a test). Compiled in, so a name stays
+/// reserved ([`name_reserved`]) where this binary finds no bundle beside it.
+pub const SHIPPED: [&str; 11] = [
+    "add-curation-action",
+    "browser",
+    "compact",
+    "handoff",
+    "persona",
+    "safe-remove",
+    "secrets",
+    "smart-close",
+    "theme",
+    "update",
+    "working-in-a-clone",
+];
+
+/// **What a skill that would take a built-in skill's name is refused with** (spec #3679 S12),
+/// by the window and `purlis skill` alike.
+pub const NAME_RESERVED: &str =
+    "That name belongs to a built-in skill; pick another, or make a copy.";
+
+/// **The names that belong to a built-in skill**, so no skill of the plane may take one (spec
+/// #3679 S12, ADR 0099 §3): each skill purlis ships ([`SHIPPED`]) or the bundle's `skills/`
+/// holds, and every name a chat knows purlis's own skills by on any route
+/// ([`Route::built_in_names`]: `purlis-<name>`, and the index skill's). Read once, then asked of
+/// as many names as need it. A skill of such a name never reaches a chat beside the built-in one
+/// anyway; this keeps one from being made at all.
+pub struct Reserved(std::collections::HashSet<String>);
+
+impl Reserved {
+    /// The names reserved with the built-in skills in `built_in`, the bundle's `skills/`, read
+    /// once: [`SHIPPED`]'s, and whatever it holds.
+    pub fn of(built_in: Option<&Path>) -> Reserved {
+        let bundled = built_in_names(built_in);
+        let bare: Vec<&str> = SHIPPED
+            .iter()
+            .copied()
+            .chain(bundled.iter().map(String::as_str))
+            .chain([INDEX])
+            .collect();
+        let mut names = Route::Config.built_in_names(bare.iter().copied());
+        names.extend(bare.iter().map(|name| (*name).to_owned()));
+        Reserved(names)
+    }
+
+    /// Whether `name` belongs to a built-in skill.
+    pub fn holds(&self, name: &str) -> bool {
+        self.0.contains(name)
+    }
+}
+
+/// **Whether `name` belongs to a built-in skill** ([`Reserved`]) with the built-in skills in
+/// `built_in`: the one check every change that lands a skill under a name makes
+/// ([`verbs::Ctx::not_built_in`]), Make my own copy's too (#3686).
+pub fn name_reserved(built_in: Option<&Path>, name: &str) -> bool {
+    Reserved::of(built_in).holds(name)
+}
+
+/// **A skill of the plane named as a built-in skill** (spec #3679 S12): one made before its name
+/// was reserved, by a purlis older than the built-in, or written into the plane by hand. No chat
+/// gets it, since the built-in skill has its name; Needs you lists it as a clash to rename
+/// (#3689).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedAsABuiltIn {
+    pub name: String,
+    pub level: verbs::Level,
+    /// Its folder, relative to the plane, `/` between the parts.
+    pub folder: String,
+}
+
+/// **Every skill of the plane at `plane` named as a built-in skill** ([`name_reserved`], with the
+/// built-in skills in `built_in`), at every level ([`verbs::Level::every`]), in that order.
+pub fn named_as_a_built_in(plane: &Path, built_in: Option<&Path>) -> Vec<NamedAsABuiltIn> {
+    let reserved = Reserved::of(built_in);
+    let mut out = Vec::new();
+    for level in verbs::Level::every(plane) {
+        let Some(dir) = level.dir(plane) else {
+            continue;
+        };
+        for skill in read(&dir) {
+            if reserved.holds(&skill.name) {
+                out.push(NamedAsABuiltIn {
+                    folder: verbs::rel(plane, skill.path.parent().unwrap_or(&skill.path)),
+                    name: skill.name,
+                    level: level.clone(),
+                });
+            }
+        }
+    }
+    out
+}
+
 /// The folder of links a harness on [`Route::Plugin`] or [`Route::Config`] is handed the skills
 /// of `set` its folder holds by ([`SkillSet::in_the_folder`]: the plane's, and on the config
 /// route the built-in ones under their own names): the one the host laid out

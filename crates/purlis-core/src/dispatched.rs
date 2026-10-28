@@ -124,6 +124,13 @@ pub enum What {
     /// next turn. By number, so what the person said since the list was read is never counted
     /// as had.
     HasFromThePerson { numbers: Vec<u32> },
+    /// **The turn has read the reports named `names` in `folder`** ([`crate::handback::waiting`]):
+    /// the app takes them off disk, and says which it took and which of those it wrote. Asked by
+    /// the chat's own hook as its turn begins, of its own folder, or of its place's at its start.
+    TookHandbacks { folder: String, names: Vec<String> },
+    /// **The turn has read the messages named `names`** waiting for this chat
+    /// ([`crate::dispatchtalk::waiting`]): the app takes them off disk, and says which it took.
+    TookMessages { names: Vec<String> },
 }
 
 /// What the app answers an [`Asked`] with.
@@ -134,6 +141,11 @@ pub enum Answered {
     Waited { of: u32, name: String, what: Waited },
     /// Taken note of.
     Noted,
+    /// The reports a [`What::TookHandbacks`] named that the app took, and which of those it
+    /// wrote.
+    Took { taken: crate::handback::Taken },
+    /// The messages a [`What::TookMessages`] named that the app took.
+    TookMessages { taken: Vec<String> },
     /// The asking chat's tasks, oldest first.
     Listed { rows: Vec<Row> },
     /// Task `of`, called `name`, is being cancelled; its report follows as any report does.

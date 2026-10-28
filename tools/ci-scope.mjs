@@ -28,7 +28,8 @@
 //    by name (`community.test.ts` holds `README.md`, `CONTRIBUTING.md`, `SUPPORT.md`,
 //    `CODE_OF_CONDUCT.md` and the `SECURITY.md` they link to; `app/src-tauri` reads `LICENSE`
 //    and `NOTICE`), and a manifest or a lockfile is read by every build. A file deleted from
-//    `docs/` runs everything too: a root file a test holds may link to it.
+//    any of these runs everything too: a root file a test holds may link to it
+//    (`CONTRIBUTING.md` links `changes/README.md`, #3520).
 // 3. A file under `tools/` that CI runs (`ciTools`): every scope. So is a file deleted from
 //    `tools/` (a rename is a deletion and an addition): what named it may name it still, and a
 //    deleted file can no longer be read for what it names. Any other file there, a tool a person
@@ -119,6 +120,7 @@ export const READ_BY_RUST = [
   "app/src/ui/field/field.css",
   "app/src/ui/list/list.css",
   "app/src/ui/menu/menu.css",
+  "app/src/ui/meter/meter.css",
   "app/src/ui/notice/notice.css",
   "app/src/ui/panel/panel.css",
   "app/src/ui/popover/popover.css",
@@ -177,6 +179,14 @@ export function scopesOfPath(path, ciToolNames) {
   return ALL;
 }
 
+// A path whose deletion runs everything though its edit runs less: a file under `tools/`, which
+// what named it may name still, and a file that runs the docs alone (`docs/`, `site/`,
+// `changes/`, an agent's steering), which a root file a test holds may link to:
+// `CONTRIBUTING.md` links `changes/README.md`, and `community.test.ts` fails on a dead link
+// (#3520). A rename is a deletion and an addition (`--no-renames`), so it counts too.
+const narrowWhenDeleted = (path) =>
+  /^(tools|docs|site|changes)\//.test(path) || AGENT_STEERING.has(path);
+
 // The scopes a change needs: the union of its paths', and every scope for an event that is not a
 // pull request or a change of no paths. `deleted` is the paths the change deletes.
 export function scopesOf({ event, paths, ciToolNames, deleted = new Set() }) {
@@ -185,7 +195,7 @@ export function scopesOf({ event, paths, ciToolNames, deleted = new Set() }) {
   const why = [];
   for (const path of paths) {
     const needs =
-      /^(tools|docs)\//.test(path) && deleted.has(path) ? ALL : scopesOfPath(path, ciToolNames);
+      deleted.has(path) && narrowWhenDeleted(path) ? ALL : scopesOfPath(path, ciToolNames);
     if (needs === ALL) why.push(path);
     for (const scope of needs) scopes.add(scope);
   }

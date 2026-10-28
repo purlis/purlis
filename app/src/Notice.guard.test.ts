@@ -114,6 +114,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: ACTION,
   },
+  "InspectorView.tsx": {
+    count: 1,
+    why:
+      "a DevTools view's bar (#2028): that the person drives the browser while DevTools are " +
+      "open, drawn by purlis outside the frame, with a refusal of their input said in it, " +
+      "replaced by the next; Done on the browser closes them",
+  },
   "BrowserView.tsx": {
     count: 1,
     why:
@@ -149,6 +156,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why:
       'the role a caller passes (`role="status"`) for an empty state that is a surface\'s ' +
       "answer, not a standing line: each caller is listed here by its own count",
+  },
+  "ui/card/Totals.tsx": {
+    count: 1,
+    why: "live totals' counts, said politely as they change, at most once a second (#3673): a live value, not a line",
+  },
+  "ui/meter/Meter.tsx": {
+    count: 1,
+    why: "a progress bar's value, said politely as it changes, at most once a second (#3674): a live value, not a line",
   },
   "Cockpit.tsx": {
     count: 1,

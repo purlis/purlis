@@ -11,7 +11,8 @@ import { userEvent } from "@testing-library/user-event";
 
 /**
  * **Devices** (#2052): this machine and every runner, each with its chats and browsers, its
- * version, how it is and when it last answered; then each pool's use, with no money.
+ * version, how it is and when it last answered; then each pool's use, with money only where a
+ * pool declares a price per hour.
  */
 
 const PLANE = "/plane" as DevicesShown["placement"]["here"]["chats"][number]["plane"];
@@ -47,8 +48,8 @@ beforeEach(() => {
     },
     owned: true,
     pools: [
-      { pool: "builds", limits: LIMITS, millicpus: 2000 },
-      { pool: "qa", limits: LIMITS, millicpus: 2000 },
+      { pool: "builds", limits: LIMITS, millicpus: 2000, removed_ran_this_week: 0, price: null },
+      { pool: "qa", limits: LIMITS, millicpus: 2000, removed_ran_this_week: 1800, price: null },
     ],
   };
   asked = {
@@ -58,6 +59,7 @@ beforeEach(() => {
       version: "0.8.1",
       contacted: Math.floor(Date.now() / 1000),
       holds: { open: [{ plane: PLANE, session: 2 }], browsers_open: [], chats: 1, browsers: 0 },
+      ran_this_week: 9000,
     },
     "qa/qa": {
       standing: { state: "suspended" },
@@ -65,6 +67,7 @@ beforeEach(() => {
       version: null,
       contacted: null,
       holds: { open: [], browsers_open: [], chats: 0, browsers: 0 },
+      ran_this_week: 3600,
     },
   };
   runnersAsked = [];
@@ -129,7 +132,7 @@ describe("DevicesView", () => {
     expect(runnersAsked.sort()).toEqual(["builds/builds", "qa/qa"]);
   });
 
-  it("shows each pool's use per person, and no money", async () => {
+  it("shows each pool's use per person with its hours this week, and no money", async () => {
     render(<DevicesView />);
     const table = await screen.findByRole("grid", { name: "Use per pool and person" });
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(3));
@@ -138,14 +141,38 @@ describe("DevicesView", () => {
       within(builds)
         .getAllByRole("gridcell")
         .map((cell) => cell.textContent),
-    ).toEqual(["You", "1", "0", "2", "4096 MiB"]);
+    ).toEqual(["You", "1", "0", "2", "4096 MiB", "2.5"]);
     const qa = within(table).getByRole("row", { name: /qa/ });
+    // An hour of its runner, and half an hour of one removed since.
     expect(
       within(qa)
         .getAllByRole("gridcell")
         .map((cell) => cell.textContent),
-    ).toEqual(["You", "0", "1", "0", "0 MiB"]);
+    ).toEqual(["You", "0", "1", "0", "0 MiB", "1.5"]);
     expect(screen.queryByText(/\$|cost|price/i)).toBeNull();
+    expect(within(table).queryByRole("columnheader", { name: "Money this week" })).toBeNull();
+  });
+
+  it("shows money this week only for a pool that declares a price per hour, in its currency", async () => {
+    shown.pools[0].price = { amount: "0.40", currency: "EUR" };
+    render(<DevicesView />);
+    const table = await screen.findByRole("grid", { name: "Use per pool and person" });
+    expect(
+      within(table).getByRole("columnheader", { name: "Money this week" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(within(table).getByRole("row", { name: /builds/ }))
+          .getAllByRole("gridcell")
+          .map((cell) => cell.textContent),
+      ).toEqual(["You", "1", "0", "2", "4096 MiB", "2.5", "1.00 EUR"]),
+    );
+    // A pool that declares no price shows no money.
+    expect(
+      within(within(table).getByRole("row", { name: /qa/ }))
+        .getAllByRole("gridcell")
+        .map((cell) => cell.textContent),
+    ).toEqual(["You", "0", "1", "0", "0 MiB", "1.5", ""]);
   });
 
   it("lists what runs on a pool this machine no longer keeps, chats and browsers alike", async () => {

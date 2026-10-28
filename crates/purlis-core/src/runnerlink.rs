@@ -13,6 +13,10 @@
 //! - **A runner holds one peer** (ADR 0078, ruled 2026-10-15): the desktop that paired it, in
 //!   `<config>/peers.json` ([`PEERS_FILE`]), which chats may neither read nor write. A runner
 //!   is paired once: a second pairing is refused whichever desktop asks, and the first stays.
+//! - **A kept claim's runner keeps its pairing** (#2057, ruled 2026-10-28): its home is on its
+//!   pod's own volume, so a pod made again finds its device id, key and peer there, and its
+//!   first step publishes the key it keeps ([`make_at_start_in`]). Its pairing is the claim's,
+//!   not the pod's.
 //! - **Its host answers a link only once it is paired** ([`answering`]), reading both files as
 //!   each link arrives, so a pairing made while the host runs is in force at the next link. A
 //!   file another user could read or write, a link in its place, or one that is not what this
@@ -77,6 +81,229 @@ pub fn make_at_start(handoff: &Path, published: &Path) -> Result<(), String> {
         .map_err(|why| format!("the runner's link key could not be written: {why}"))?;
     std::fs::write(published, hex_of(key.public().as_bytes()))
         .map_err(|why| format!("the runner's public link key could not be published: {why}"))
+}
+
+/// **A cluster runner's pod's first step, with the runner's home on its pod's volume**
+/// (#2057): the home is made at `home` from `image_home` (the image's own `HOME`) the first
+/// time the volume is used ([`seed_home`]). A home whose config home `config` (as the runner
+/// will read it, [`crate::machine::config_root_under`]) keeps the runner's pairing, as a kept
+/// claim's does when its pod is made again, keeps its key: that key's public half is published,
+/// and nothing is handed over, so the runner answers with the key it was paired with. Otherwise
+/// the key is made as [`make_at_start`] makes it.
+pub fn make_at_start_in(
+    handoff: &Path,
+    published: &Path,
+    home: &Path,
+    image_home: Option<&Path>,
+    config: &Path,
+    claim: &str,
+) -> Result<(), String> {
+    seed_home(home, image_home, claim)?;
+    match answering(config)? {
+        Some((ours, _desktop)) => std::fs::write(published, hex_of(ours.key.public().as_bytes()))
+            .map_err(|why| {
+                format!("the runner's kept public link key could not be published: {why}")
+            }),
+        None => {
+            // A key an earlier sandbox of this pod handed over and nobody paired with: the
+            // folder in memory can outlive a sandbox the runtime makes again. It is this pod's
+            // own, and a new key is made in its place (#2057).
+            match std::fs::remove_file(handoff) {
+                Ok(()) => {}
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+                Err(why) => {
+                    return Err(format!(
+                        "the link key an earlier start of this pod left could not be removed: {why}"
+                    ));
+                }
+            }
+            make_at_start(handoff, published)
+        }
+    }
+}
+
+/// **The runner's home on its pod's volume, made once** (#2057): where `home` is not yet, a
+/// copy of `image_home` (its folders, files and links, each as the image holds it, nothing
+/// followed) is made beside it and renamed into place, so a step stopped half-way leaves no
+/// half home; with no image home, an empty folder this user's alone. A home already there is
+/// left exactly as it is: it is the runner's, kept from its earlier pods. One that is not a
+/// folder is refused.
+///
+/// **A home is made for one claim** (#2057): `claim`, the uid of the upstream claim the pod is
+/// for, is written beside it ([`CLAIM_MARKER`]) before it is made, and a home already there is
+/// taken only where the mark names that claim. So a volume someone made ready before the claim
+/// was (whose uid they could not know) is refused rather than taken as the runner's. An image
+/// `HOME` that holds the runner's home (`/`, or the volume itself) is refused too: it would be
+/// copied into itself.
+pub fn seed_home(home: &Path, image_home: Option<&Path>, claim: &str) -> Result<(), String> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let marker = home.with_file_name(CLAIM_MARKER);
+    match std::fs::symlink_metadata(home) {
+        Ok(found) if found.is_dir() => {
+            let marked = read_mark(&marker)?;
+            match marked.as_deref().map(str::trim) {
+                Some(marked) if marked == claim => return Ok(()),
+                // Made by a runner made warm, before any claim: a fresh home, which keeps
+                // nothing, so the claim that took the runner makes it again as its own.
+                Some("") => std::fs::remove_dir_all(home).map_err(|why| {
+                    format!(
+                        "the runner's home made before its claim could not be made again: {why}"
+                    )
+                })?,
+                _ => {
+                    return Err(format!(
+                        "the runner's home {} was not made for this claim, so the runner is not \
+                         started: its volume was made or filled elsewhere. Delete the claim and \
+                         make a new one",
+                        home.display()
+                    ));
+                }
+            }
+        }
+        Ok(_) => {
+            return Err(format!(
+                "the runner's home {} is not a folder, so the runner is not started",
+                home.display()
+            ));
+        }
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+        Err(why) => return Err(format!("the runner's home could not be looked at: {why}")),
+    }
+    let name = home
+        .file_name()
+        .ok_or_else(|| format!("{} cannot be a runner's home", home.display()))?;
+    let mut making = name.to_owned();
+    making.push(".making");
+    let making = home.with_file_name(making);
+    let failed = |why: std::io::Error| {
+        format!(
+            "the runner's home could not be made at {}: {why}",
+            home.display()
+        )
+    };
+    match std::fs::remove_dir_all(&making) {
+        Ok(()) => {}
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+        Err(why) => return Err(failed(why)),
+    }
+    // Compared as the folders they are, through any link or `..` in either path.
+    let source = image_home
+        .map(|source| std::fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf()));
+    let home_seen = home
+        .parent()
+        .and_then(|parent| std::fs::canonicalize(parent).ok())
+        .map_or_else(|| home.to_path_buf(), |parent| parent.join(name));
+    if let Some(source) = source.as_deref()
+        && (source.parent().is_none() || home_seen.starts_with(source))
+    {
+        return Err(format!(
+            "the image's HOME, {}, holds the runner's home {}, so it cannot be copied into it: \
+             the runner image contract wants HOME to be a folder of the image user's own \
+             (docs/runner-image.md)",
+            source.display(),
+            home.display()
+        ));
+    }
+    write_mark(&marker, claim).map_err(failed)?;
+    let source = source.as_deref().filter(|source| source.is_dir());
+    match source {
+        Some(source) => {
+            copy_tree(source, &making).map_err(failed)?;
+        }
+        None => std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&making)
+            .map_err(failed)?,
+    }
+    // A home is this user's alone, whatever mode the image gave its own.
+    std::fs::set_permissions(&making, std::fs::Permissions::from_mode(0o700)).map_err(failed)?;
+    std::fs::rename(&making, home).map_err(failed)
+}
+
+/// The claim [`seed_home`]'s mark at `marker` names, read only from a plain file there, never
+/// through a link and never waiting on anything else put there; `None` when there is none.
+fn read_mark(marker: &Path) -> Result<Option<String>, String> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    let opened = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(marker);
+    let mut file = match opened {
+        Ok(file) => file,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(why) => {
+            return Err(format!(
+                "the runner's home's claim could not be read: {why}"
+            ));
+        }
+    };
+    plain_file(&file)
+        .map_err(|why| format!("the runner's home's claim could not be read: {why}"))?;
+    let mut marked = String::new();
+    file.by_ref()
+        .take(256)
+        .read_to_string(&mut marked)
+        .map_err(|why| format!("the runner's home's claim could not be read: {why}"))?;
+    Ok(Some(marked))
+}
+
+/// Refuses `file` unless it is a plain file: a fifo, a device or a folder put where a mark
+/// belongs is not one.
+fn plain_file(file: &std::fs::File) -> std::io::Result<()> {
+    if file.metadata()?.is_file() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other("it is not a plain file"))
+    }
+}
+
+/// [`seed_home`]'s mark at `marker`, naming `claim`: written to a file there, never through a
+/// link put in its place.
+fn write_mark(marker: &Path, claim: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(marker)?;
+    plain_file(&file)?;
+    file.set_len(0)?;
+    file.write_all(format!("{claim}\n").as_bytes())?;
+    file.sync_all()
+}
+
+/// The variable a cluster runner's pod's first step reads the uid of its upstream claim from:
+/// the pod's own `agents.x-k8s.io/claim-uid` label, by the downward API (#2057). Empty for a
+/// runner made warm, before any claim, whose home is never kept.
+pub const CLAIM_VAR: &str = "PURLIS_CLAIM_UID";
+
+/// The file beside a cluster runner's home that names the claim it was made for
+/// ([`seed_home`]).
+pub const CLAIM_MARKER: &str = "claim";
+
+/// `from`, copied to `to` (which is not there yet): folders and files with their modes, links
+/// as links. Nothing else (a socket, a device) is copied.
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let mode = std::fs::symlink_metadata(from)?.permissions().mode() & 0o7777;
+    std::fs::DirBuilder::new().mode(0o700).create(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let (source, target) = (entry.path(), to.join(entry.file_name()));
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            std::os::unix::fs::symlink(std::fs::read_link(&source)?, &target)?;
+        } else if kind.is_dir() {
+            copy_tree(&source, &target)?;
+        } else if kind.is_file() {
+            std::fs::copy(&source, &target)?;
+        }
+    }
+    std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode))
 }
 
 /// **Pair a cluster runner with the key its pod made as it started** (#2056), read from

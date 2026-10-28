@@ -288,19 +288,23 @@ impl Ctx<'_> {
         }
     }
 
-    /// Refused where a built-in skill has `name`: a built-in skill's name is never taken (ADR
-    /// 0099 §3), so a skill of that name would never reach a chat.
-    pub(in crate::skills) fn not_built_in(&self, name: &str) -> Result<(), String> {
-        let taken = self
-            .built_in
-            .is_some_and(|dir| super::read(dir).iter().any(|skill| skill.name == name));
-        if taken {
-            return Err(format!(
-                "a built-in skill is named {name}, and a built-in skill's name is never taken: \
-                 pick another name"
-            ));
+    /// **Refused where `name` belongs to a built-in skill** ([`super::name_reserved`], spec
+    /// #3679 S12), with [`super::NAME_RESERVED`]: so no skill of the plane stands in for a
+    /// guarded built-in such as `secrets`. Every change that lands a skill under a name asks it
+    /// first: [`create`], [`rename`], [`move_to`], [`share`] and a draft's accept, and Make my own
+    /// copy of the copy's name (#3686). [`restore`], an install and an update's skills brought
+    /// along ask [`Self::reserved`], and say it in their own words.
+    pub fn not_built_in(&self, name: &str) -> Result<(), String> {
+        if self.reserved(name) {
+            return Err(super::NAME_RESERVED.to_owned());
         }
         Ok(())
+    }
+
+    /// Whether `name` belongs to a built-in skill ([`super::name_reserved`]): what a change that
+    /// cannot offer another name (a restore, an install) asks, and says in its own words.
+    pub fn reserved(&self, name: &str) -> bool {
+        super::name_reserved(self.built_in, name)
     }
 
     /// Says `line` as a warning.
@@ -737,6 +741,7 @@ pub fn move_to(
             }
         }
     }
+    cx.not_built_in(name)?;
     let folder = find(plane, from, name)?;
     let folder_is = folder_name(&folder);
     let dir = free_at(plane, to, name, &folder_is)?;
@@ -1594,6 +1599,11 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
         ));
     }
     let name = &deleted.name;
+    if cx.reserved(name) {
+        return Err(format!(
+            "{name} cannot be restored under its name: it belongs to a built-in skill now"
+        ));
+    }
     let dir = level_is_there(plane, &deleted.level)?;
     let folder = dir.join(&deleted.folder);
     let folder_rel = rel(plane, &folder);
@@ -1688,6 +1698,7 @@ pub fn pin(cx: &mut Ctx<'_>, by: &super::PinnedBy, name: &str, on: bool) -> Resu
 /// persona (`at`) moved into its level's `skills/`, committed (#2770).
 pub fn share(cx: &mut Ctx<'_>, at: &Whose, name: &str) -> Result<PathBuf, String> {
     let plane = cx.plane;
+    cx.not_built_in(name)?;
     // What is committed is what the share moved, never a folder looked up again by path.
     let super::Shared { from, to: folder } = super::share_here(plane, at, name)?;
     cx.done(format!(
