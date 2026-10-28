@@ -145,58 +145,58 @@ draws `light` as the theme it extends does, square if it extends Classic: name t
 every appearance. A theme option's value may set geometry too, within the same bounds, drawn
 over the appearance as its colours are.
 
-| Token                    | Unit       | Bounds  | Classic | Compact | What it reaches                                                                                                                                                                           |
-| ------------------------ | ---------- | ------- | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `space.0`                | px at 14px | 0–0     | 0       | 0       | no space: 0 in every theme                                                                                                                                                                |
-| `space.1`                | px at 14px | 0–4     | 2       | 2       | padding, gaps and margins: the smallest step                                                                                                                                              |
-| `space.2`                | px at 14px | 1–8     | 4       | 3       | padding, gaps and margins                                                                                                                                                                 |
-| `space.3`                | px at 14px | 2–10    | 6       | 4       | padding, gaps and margins                                                                                                                                                                 |
-| `space.4`                | px at 14px | 4–12    | 8       | 6       | a control's side padding; padding, gaps and margins                                                                                                                                       |
-| `space.5`                | px at 14px | 6–16    | 12      | 8       | padding, gaps and margins                                                                                                                                                                 |
-| `space.6`                | px at 14px | 8–24    | 16      | 12      | padding, gaps and margins                                                                                                                                                                 |
-| `space.7`                | px at 14px | 12–32   | 24      | 16      | padding, gaps and margins                                                                                                                                                                 |
-| `space.8`                | px at 14px | 16–48   | 32      | 24      | the largest padding and margins, and the width of menus and tooltips (a share of it)                                                                                                      |
-| `font-size.2xs`          | px at 14px | 8–12    | 10      | 10      | the small levels control                                                                                                                                                                  |
-| `font-size.xs`           | px at 14px | 9–13    | 11      | 11      | the meta and label roles: badges, counts                                                                                                                                                  |
-| `font-size.sm`           | px at 14px | 10–14   | 12      | 12      | the secondary role: secondary lines, help text                                                                                                                                            |
-| `font-size.md`           | px at 14px | 11–15   | 13      | 13      | the body role: a tab's title, dense lists, a menu's rows                                                                                                                                  |
-| `font-size.base`         | px at 14px | 12–18   | 14      | 14      | fields', buttons' and segmented controls' words, the heading role                                                                                                                         |
-| `font-size.lg`           | px at 14px | 13–22   | 16      | 16      | the title role                                                                                                                                                                            |
-| `font-size.xl`           | px at 14px | 16–28   | 20      | 20      | the Welcome page's heading and its doors' marks                                                                                                                                           |
-| `font-weight.regular`    | weight     | 300–500 | 400     | 400     | the body, secondary, meta and code roles, menu rows                                                                                                                                       |
-| `font-weight.medium`     | weight     | 400–600 | 500     | 500     | a form's label: a setting's name, a choice's name                                                                                                                                         |
-| `font-weight.strong`     | weight     | 500–800 | 600     | 600     | titles, headings, labels, a row's strong line                                                                                                                                             |
-| `line-height.tight`      | × text     | 1–1.4   | 1.2     | 1.2     | a compact line: counts                                                                                                                                                                    |
-| `line-height.body`       | × text     | 1.2–1.8 | 1.4     | 1.3     | the window's own line, and every line the fit checks hold                                                                                                                                 |
-| `radius.sm`              | px         | 0–8     | 3       | 3       | labels, chips, crumbs, badges, checkboxes, error and report boxes                                                                                                                         |
-| `radius.md`              | px         | 0–10    | 4       | 4       | menu rows, Notices, the palette's rows, Inbox asks, a tab's hover pill and its `×`                                                                                                        |
-| `radius.control`         | px         | 0–14    | 4       | 4       | an md control's corner: buttons, fields, selects, a list's rows, title-bar chips, a tab's top (#3113)                                                                                     |
-| `radius.lg`              | px         | 0–14    | 6       | 6       | dialogs, popovers, menus, tooltips, segmented controls                                                                                                                                    |
-| `radius.xl`              | px         | 0–18    | 8       | 8       | the Welcome page's doors, nothing else                                                                                                                                                    |
-| `radius.full`            | px         | 0–9999  | 9999    | 9999    | pills: counts, toggle tracks                                                                                                                                                              |
-| `size.control`           | px at 14px | 20–40   | 28      | 24      | buttons, fields, selects, menu rows, a list's rows, the workspace strip                                                                                                                   |
-| `size.chrome`            | px at 14px | 16–32   | 21      | 18      | small buttons, the chat strip, pane and panel headers, a dense list's rows and every tree row                                                                                             |
-| `window.gutter`          | px         | 0–16    | 0       | 0       | the gap between the window's regions, and around them inside the frame                                                                                                                    |
-| `panel.corner-radius`    | px         | 0–24    | 0       | 0       | a region panel's corners: the sides, the content and the bottom panel's halves                                                                                                            |
-| `panel.border-width`     | px         | 0–2     | 1       | 1       | the hairline between two regions, drawn only while they sit flush (no gutter)                                                                                                             |
-| `separator.width`        | px         | 0–2     | 1       | 1       | the separator part: the line between two groups inside a surface (a menu's sections, a dialog's footer, the rows of the Inbox's Notices), 0 for none; its colour is `separator.root.fill` |
-| `focus-ring.width`       | px         | 1–4     | 2       | 2       | every focus ring, and the selected row's edge                                                                                                                                             |
-| `focus-ring.offset`      | px         | 0–4     | 2       | 2       | a ring outside its element: a control's, a card's                                                                                                                                         |
-| `focus-ring.inset`       | px         | −4–0    | −2      | −2      | a ring inside its element: a list row's, a tab's, a segment's                                                                                                                             |
-| `pane.border-width`      | px         | 0–2     | 1       | 1       | the line around a pane, the focused one's in the accent; Purlis draws none (#2914)                                                                                                        |
-| `elevation.raised-y`     | px at 14px | 0–8     | 2       | 2       | how far a raised bar's shadow falls: the find bar                                                                                                                                         |
-| `elevation.raised-blur`  | px at 14px | 0–24    | 8       | 8       | how soft that shadow is                                                                                                                                                                   |
-| `elevation.overlay-y`    | px at 14px | 0–16    | 8       | 8       | how far an overlay's shadow falls: dialogs, popovers, menus, tooltips                                                                                                                     |
-| `elevation.overlay-blur` | px at 14px | 0–48    | 24      | 24      | how soft that shadow is                                                                                                                                                                   |
+| Token | Unit | Bounds | Classic | Compact | What it reaches |
+|---|---|---|---|---|---|
+| `space.0` | px at 14px | 0–0 | 0 | 0 | no space: 0 in every theme |
+| `space.1` | px at 14px | 0–4 | 2 | 2 | padding, gaps and margins: the smallest step |
+| `space.2` | px at 14px | 1–8 | 4 | 3 | padding, gaps and margins |
+| `space.3` | px at 14px | 2–10 | 6 | 4 | padding, gaps and margins |
+| `space.4` | px at 14px | 4–12 | 8 | 6 | a control's side padding; padding, gaps and margins |
+| `space.5` | px at 14px | 6–16 | 12 | 8 | padding, gaps and margins |
+| `space.6` | px at 14px | 8–24 | 16 | 12 | padding, gaps and margins |
+| `space.7` | px at 14px | 12–32 | 24 | 16 | padding, gaps and margins |
+| `space.8` | px at 14px | 16–48 | 32 | 24 | the largest padding and margins, and the width of menus and tooltips (a share of it) |
+| `font-size.2xs` | px at 14px | 8–12 | 10 | 10 | the small levels control |
+| `font-size.xs` | px at 14px | 9–13 | 11 | 11 | the meta and label roles: badges, counts |
+| `font-size.sm` | px at 14px | 10–14 | 12 | 12 | the secondary role: secondary lines, help text |
+| `font-size.md` | px at 14px | 11–15 | 13 | 13 | the body role: a tab's title, dense lists, a menu's rows |
+| `font-size.base` | px at 14px | 12–18 | 14 | 14 | fields', buttons' and segmented controls' words, the heading role |
+| `font-size.lg` | px at 14px | 13–22 | 16 | 16 | the title role |
+| `font-size.xl` | px at 14px | 16–28 | 20 | 20 | the Welcome page's heading and its doors' marks |
+| `font-weight.regular` | weight | 300–500 | 400 | 400 | the body, secondary, meta and code roles, menu rows |
+| `font-weight.medium` | weight | 400–600 | 500 | 500 | a form's label: a setting's name, a choice's name |
+| `font-weight.strong` | weight | 500–800 | 600 | 600 | titles, headings, labels, a row's strong line |
+| `line-height.tight` | × text | 1–1.4 | 1.2 | 1.2 | a compact line: counts |
+| `line-height.body` | × text | 1.2–1.8 | 1.4 | 1.3 | the window's own line, and every line the fit checks hold |
+| `radius.sm` | px | 0–8 | 3 | 3 | labels, chips, crumbs, badges, checkboxes, error and report boxes |
+| `radius.md` | px | 0–10 | 4 | 4 | menu rows, Notices, the palette's rows, Inbox asks, a tab's hover pill and its `×` |
+| `radius.control` | px | 0–14 | 4 | 4 | an md control's corner: buttons, fields, selects, a list's rows, title-bar chips, a tab's top (#3113) |
+| `radius.lg` | px | 0–14 | 6 | 6 | dialogs, popovers, menus, tooltips, segmented controls |
+| `radius.xl` | px | 0–18 | 8 | 8 | the Welcome page's doors, nothing else |
+| `radius.full` | px | 0–9999 | 9999 | 9999 | pills: counts, toggle tracks |
+| `size.control` | px at 14px | 20–40 | 28 | 24 | buttons, fields, selects, menu rows, a list's rows, the workspace strip |
+| `size.chrome` | px at 14px | 16–32 | 21 | 18 | small buttons, the chat strip, pane and panel headers, a dense list's rows and every tree row |
+| `window.gutter` | px | 0–16 | 0 | 0 | the gap between the window's regions, and around them inside the frame |
+| `panel.corner-radius` | px | 0–24 | 0 | 0 | a region panel's corners: the sides, the content and the bottom panel's halves |
+| `panel.border-width` | px | 0–2 | 1 | 1 | the hairline between two regions, drawn only while they sit flush (no gutter) |
+| `separator.width` | px | 0–2 | 1 | 1 | the separator part: the line between two groups inside a surface (a menu's sections, a dialog's footer, the rows of the Inbox's Notices), 0 for none; its colour is `separator.root.fill` |
+| `focus-ring.width` | px | 1–4 | 2 | 2 | every focus ring, and the selected row's edge |
+| `focus-ring.offset` | px | 0–4 | 2 | 2 | a ring outside its element: a control's, a card's |
+| `focus-ring.inset` | px | −4–0 | −2 | −2 | a ring inside its element: a list row's, a tab's, a segment's |
+| `pane.border-width` | px | 0–2 | 1 | 1 | the line around a pane, the focused one's in the accent; Purlis draws none (#2914) |
+| `elevation.raised-y` | px at 14px | 0–8 | 2 | 2 | how far a raised bar's shadow falls: the find bar |
+| `elevation.raised-blur` | px at 14px | 0–24 | 8 | 8 | how soft that shadow is |
+| `elevation.overlay-y` | px at 14px | 0–16 | 8 | 8 | how far an overlay's shadow falls: dialogs, popovers, menus, tooltips |
+| `elevation.overlay-blur` | px at 14px | 0–48 | 24 | 24 | how soft that shadow is |
 
-**The units.** _px at 14px_ is a length in px at the window's default text size, written in rem,
-so it grows with the person's text-size setting. _px_ is a length that does not grow: corners
-and the focus ring. _weight_ is a font weight. _× text_ is a line height, a share of the text's
+**The units.** *px at 14px* is a length in px at the window's default text size, written in rem,
+so it grows with the person's text-size setting. *px* is a length that does not grow: corners
+and the focus ring. *weight* is a font weight. *× text* is a line height, a share of the text's
 own size, and the only kind that takes a fraction. **Classic** is Purlis Classic's comfortable
 value, which a theme that extends nothing draws unless it names the token; **Compact** is
 Purlis Classic's compact value. The window's own text size is the person's text-size setting,
 not a token: words with no size of their own (a list row's, a paragraph's) follow it, and every
-_px at 14px_ length grows with it.
+*px at 14px* length grows with it.
 
 The project strip sits in the title bar, whose height no token reaches yet. **Still square,
 whatever `radius.*` says:** the project and workspace strip tabs, the settings gear on a strip,
@@ -295,49 +295,49 @@ an unknown token is.
 One row a family, in the families' names' order, written from the manifest (`purlis theme parts`
 says what each family, part and variant is):
 
-| Family                                       | Parts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Variants                                                                                                                                                                           | States                                                        |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `activity` (since version 10)                | `item` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `icon` (`text`), `count` (`fill`, `text`), `indicator` (`fill`)                                                                                                                                                                                                                                                                                                                                                        | `tab`, `bar`                                                                                                                                                                       | `hover`, `pressed`, `selected`, `focused`                     |
-| `badge` (since the next release)             | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`)                                                                                                                                                                                                                                                                                                                                                                                            | `neutral`, `accent`, `waiting`, `ok`                                                                                                                                               | none                                                          |
-| `button`                                     | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`), `shortcut` (`text`, `font-size`) (since the next release)                                                                                                                                                                                                                                       | `secondary`, `primary`, `ghost`, `danger`, `grants`, `soft-accent` (since version 2), `warning-soft` (since version 2), `link` (since version 2), `quiet` (since the next release) | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
-| `card` (since the next release)              | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`, `padding`, `gap`), `title` (`text`, `font-size`, `font-weight`), `facts-label` (`text`, `font-size`, `font-weight`), `facts-value` (`text`, `font-size`, `font-weight`), `tile` (`border-colour`, `border-width`, `corner-radius`, `padding`, `gap`), `tile-value` (`text`, `font-size`, `font-weight`)                                                                                                                 | `raised`, `ask`                                                                                                                                                                    | none                                                          |
-| `checkbox` (since the next release)          | `root` (`fill`, `text`, `corner-radius`, `gap`), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`), `description` (`text`, `font-size`)                                                                                                                                                                                                                                                                                      | `box`, `chip`                                                                                                                                                                      | `hover`, `selected`, `focused`, `disabled`                    |
-| `combobox` (since the next release)          | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `chevron` (`text`)                                                                                                                                                                                                                                                                                                                                                            | none                                                                                                                                                                               | `hover`, `focused`, `disabled`, `open`, `invalid`             |
-| `count` (since the next release)             | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`), `group` (`corner-radius`)                                                                                                                                                                                                                                                                                                                                                                 | `neutral`, `accent`, `waiting`, `hot`                                                                                                                                              | none                                                          |
-| `dialog` (since version 7)                   | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle` (`text`), `description` (`text`), `separator` (`fill`), `summary` (`text`)                                                                                                                                                                                                                                                                                            | `dialog`, `alert`                                                                                                                                                                  | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
-| `disclosure` (since the next release)        | `root` (`gap`), `trigger` (`padding`, `gap`), `twist` (`text`), `panel` (`fill`, `border-colour`, `corner-radius`, `padding`, `gap`)                                                                                                                                                                                                                                                                                                                                                                        | none                                                                                                                                                                               | none                                                          |
-| `editor` (since version 8)                   | `toolbar` (`fill`, `text`, `padding`, `gap`, `font-size`)                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `default`                                                                                                                                                                          | none                                                          |
-| `empty-state` (since version 4)              | `root` (`padding`, `gap`), `icon` (`text`), `headline` (`text`, `font-size`, `font-weight`), `body` (`text`, `font-size`), `action` (`gap`)                                                                                                                                                                                                                                                                                                                                                                 | `page`, `panel`                                                                                                                                                                    | none                                                          |
-| `field` (since version 3)                    | `root` (`gap`), `label` (`text`, `font-size`, `font-weight`), `help` (`text`, `font-size`), `error` (`text`, `font-size`)                                                                                                                                                                                                                                                                                                                                                                                   | none                                                                                                                                                                               | `disabled`                                                    |
-| `list` (since version 11)                    | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`), `shortcut` (`text`, `font-size`) (since the next release)                                                                                        | none                                                                                                                                                                               | `hover`, `focused`, `selected`, `disabled`                    |
-| `menu` (since version 6)                     | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`)                                                                                                                                                                                                                      | `default`, `danger`                                                                                                                                                                | `hover`, `focused`, `selected`, `disabled`, `open`            |
-| `meter` (since the next release)             | `root` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `track` (`fill`, `corner-radius`), `fill` (`fill`), `value` (`text`, `font-size`, `font-weight`)                                                                                                                                                                                                                                                                                                                                      | `subject`, `baseline`, `previous`                                                                                                                                                  | none                                                          |
-| `notice` (since the next release)            | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`)                                                                                                                                                                                                                                                                                                                                                               | `news`, `trouble`                                                                                                                                                                  | none                                                          |
-| `option-card` (since the next release)       | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon` (`text`), `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`)                                                                                                                                                                                                                                                                                                      | `card`, `tile`                                                                                                                                                                     | `hover`, `selected`, `focused`, `disabled`                    |
-| `page-tabs` (since the next release)         | `tab` (`fill`, `text`, `corner-radius`), `label` (`font-size`, `font-weight`), `count` (`text`, `font-size`), `indicator` (`fill`, `corner-radius`), `list` (`border-colour`, `border-width`, `gap`, `padding`), `panel` (`padding`)                                                                                                                                                                                                                                                                        | none                                                                                                                                                                               | `hover`, `selected`, `focused`                                |
-| `panel` (since version 4)                    | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`) (since the next release)                                                                                                                                                                                                                                                                                                                                                          | `side`, `content`, `bottom`                                                                                                                                                        | none                                                          |
-| `panel-section` (since version 4)            | `root` (`padding`, `gap`), `head` (`padding`, `gap`), `title` (`text`, `font-size`, `font-weight`), `top` (`padding`, `gap`) (since the next release)                                                                                                                                                                                                                                                                                                                                                       | `default`                                                                                                                                                                          | none                                                          |
-| `panel-separator` (since the next release)   | `root` (`fill`), `grip` (`fill`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | none                                                                                                                                                                               | `hover`, `pressed`, `focused`                                 |
-| `popover` (since version 6)                  | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`)                                                                                                                                                                                                    | `popover`, `menu`                                                                                                                                                                  | none                                                          |
-| `radio` (since the next release)             | `root` (`text`, `gap`), `mark` (`fill`, `border-colour`, `border-width`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`)                                                                                                                                                                                                                                                                                                                                                 | none                                                                                                                                                                               | `hover`, `selected`, `focused`, `disabled`                    |
-| `rail` (since version 9)                     | `button` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `monogram` (`font-size`, `font-weight`), `badge` (`fill`, `text`), `unsaved` (`fill`)                                                                                                                                                                                                                                                                        | `project`, `action`                                                                                                                                                                | `hover`, `selected`, `focused`                                |
-| `review-page` (since the next release)       | `root` (`fill`), `body` (`padding`, `gap`), `bar` (`fill`, `padding`, `gap`), `summary` (`text`, `font-size`), `answers` (`gap`)                                                                                                                                                                                                                                                                                                                                                                            | none                                                                                                                                                                               | none                                                          |
-| `segment` (since the next release)           | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` (`text`), `count` (`text`)                                                                                                                                                                                                                                                                                                                                                                                                                      | none                                                                                                                                                                               | `hover`, `selected`, `focused`, `disabled`                    |
-| `segmented-control` (since the next release) | `root` (`fill`, `corner-radius`, `shadow`, `padding`, `gap`)                                                                                                                                                                                                                                                                                                                                                                                                                                                | none                                                                                                                                                                               | none                                                          |
-| `select` (since the next release)            | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `placeholder` (`text`), `chevron` (`text`)                                                                                                                                                                                                                                                                                                                                    | none                                                                                                                                                                               | `hover`, `focused`, `disabled`, `open`, `invalid`             |
-| `separator` (since the next release)         | `root` (`fill`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | none                                                                                                                                                                               | none                                                          |
-| `slider` (since the next release)            | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`)                                                                                                                                                                                                                                                                                                                                          | none                                                                                                                                                                               | `disabled`                                                    |
-| `status-item` (since version 4)              | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `icon` (`text`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`)                                                                                                                                                                                                                                                                                | `bar`, `pill`, `waiting`, `accent`                                                                                                                                                 | `hover`, `pressed`, `focused`, `disabled`                     |
-| `switch` (since the next release)            | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`)                                                                                                                                                                                                                                                                                                                                                                  | none                                                                                                                                                                               | `hover`, `selected`, `focused`, `disabled`                    |
-| `table` (since the next release)             | `root` (`fill`, `text`), `frame` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `head` (`text`, `font-size`, `font-weight`), `cell` (`padding`), `rule` (`fill`), `bar` (`gap`)                                                                                                                                                                                                                                                                                                      | none                                                                                                                                                                               | `hover`, `focused`, `selected`, `disabled`                    |
-| `tabs` (since version 8)                     | `tab` (`fill`, `text`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`, `max-width`, `flare`, `inset`), `label` (`text`, `font-size`, `font-weight`), `closer` (`fill`, `text`, `corner-radius`), `count` (`fill`, `text`, `corner-radius`), `indicator` (`fill`, `height`, `corner-radius`, `position`), `strip` (`fill`, `border-colour`, `border-width`), `layout` (`attach`, `sizing`, `dividers`, `gap`)                                                                       | `chat`, `view`, `file`, `background`                                                                                                                                               | `hover`, `selected`                                           |
-| `text-input` (since version 3)               | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`)                                                                                                                                                                                                                                                                                                                                                               | none                                                                                                                                                                               | `hover`, `focused`, `disabled`, `invalid`                     |
-| `textarea` (since version 3)                 | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`)                                                                                                                                                                                                                                                                                                                                                                                                 | none                                                                                                                                                                               | `hover`, `focused`, `disabled`, `invalid`                     |
-| `titlebar` (since version 12)                | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`)                                                                                                                                                            | `pinned`, `unpinned`, `root` (since the next release)                                                                                                                              | `hover`, `selected`, `focused`                                |
-| `tooltip` (since version 5)                  | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`), `shortcut` (`text`, `font-size`) (since the next release)                                                                                                                                                                                                                                                                                                                                           | none                                                                                                                                                                               | none                                                          |
-| `tree` (since the next release)              | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `twist` (`text`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`)                                                                                                                                            | none                                                                                                                                                                               | `hover`, `focused`, `selected`, `disabled`                    |
-| `view-frame` (since the next release)        | `root` (`fill`), `nav` (`fill`, `border-colour`, `border-width`, `padding`), `list` (`fill`, `border-colour`, `border-width`), `item` (`fill`), `head` (`padding`, `gap`), `header` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `name` (`text`, `font-size`, `font-weight`), `lead` (`text`, `font-size`), `bar` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `history` (`gap`), `path` (`text`, `font-size`), `crumb` (`text`, `font-weight`), `crumb-separator` (`text`) | none                                                                                                                                                                               | none                                                          |
-| `view-nav` (since the next release)          | `item` (`fill`, `text`, `corner-radius`), `label` (`font-size`, `font-weight`), `indicator` (`fill`, `corner-radius`)                                                                                                                                                                                                                                                                                                                                                                                       | none                                                                                                                                                                               | `hover`, `pressed`, `selected`, `focused`                     |
+| Family | Parts | Variants | States |
+|---|---|---|---|
+| `activity` (since version 10) | `item` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `icon` (`text`), `count` (`fill`, `text`), `indicator` (`fill`) | `tab`, `bar` | `hover`, `pressed`, `selected`, `focused` |
+| `badge` (since the next release) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`) | `neutral`, `accent`, `waiting`, `ok` | none |
+| `button` | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `icon` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | `secondary`, `primary`, `ghost`, `danger`, `grants`, `soft-accent` (since version 2), `warning-soft` (since version 2), `link` (since version 2), `quiet` (since the next release) | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
+| `card` (since the next release) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`, `padding`, `gap`), `title` (`text`, `font-size`, `font-weight`), `facts-label` (`text`, `font-size`, `font-weight`), `facts-value` (`text`, `font-size`, `font-weight`), `tile` (`border-colour`, `border-width`, `corner-radius`, `padding`, `gap`), `tile-value` (`text`, `font-size`, `font-weight`) | `raised`, `ask` | none |
+| `checkbox` (since the next release) | `root` (`fill`, `text`, `corner-radius`, `gap`), `box` (`fill`, `border-colour`, `border-width`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`), `description` (`text`, `font-size`) | `box`, `chip` | `hover`, `selected`, `focused`, `disabled` |
+| `combobox` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `chevron` (`text`) | none | `hover`, `focused`, `disabled`, `open`, `invalid` |
+| `count` (since the next release) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `padding`, `font-size`, `font-weight`), `group` (`corner-radius`) | `neutral`, `accent`, `waiting`, `hot` | none |
+| `dialog` (since version 7) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`), `subtitle` (`text`), `description` (`text`), `separator` (`fill`), `summary` (`text`) | `dialog`, `alert` | `hover`, `pressed`, `selected`, `focused`, `disabled`, `open` |
+| `disclosure` (since the next release) | `root` (`gap`), `trigger` (`padding`, `gap`), `twist` (`text`), `panel` (`fill`, `border-colour`, `corner-radius`, `padding`, `gap`) | none | none |
+| `editor` (since version 8) | `toolbar` (`fill`, `text`, `padding`, `gap`, `font-size`) | `default` | none |
+| `empty-state` (since version 4) | `root` (`padding`, `gap`), `icon` (`text`), `headline` (`text`, `font-size`, `font-weight`), `body` (`text`, `font-size`), `action` (`gap`) | `page`, `panel` | none |
+| `field` (since version 3) | `root` (`gap`), `label` (`text`, `font-size`, `font-weight`), `help` (`text`, `font-size`), `error` (`text`, `font-size`) | none | `disabled` |
+| `list` (since version 11) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`), `shortcut` (`text`, `font-size`) (since the next release) | none | `hover`, `focused`, `selected`, `disabled` |
+| `menu` (since version 6) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `shortcut` (`text`, `font-size`), `indicator` (`text`) | `default`, `danger` | `hover`, `focused`, `selected`, `disabled`, `open` |
+| `meter` (since the next release) | `root` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `track` (`fill`, `corner-radius`), `fill` (`fill`), `value` (`text`, `font-size`, `font-weight`) | `subject`, `baseline`, `previous` | none |
+| `notice` (since the next release) | `root` (`fill`, `text`, `border-colour`, `corner-radius`, `padding`, `gap`), `message` (`text`, `font-size`), `whose` (`text`, `font-weight`) | `news`, `trouble` | none |
+| `option-card` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `corner-radius`, `padding`, `gap`), `icon` (`text`), `title` (`text`, `font-size`, `font-weight`), `detail` (`text`, `font-size`), `check` (`text`) | `card`, `tile` | `hover`, `selected`, `focused`, `disabled` |
+| `page-tabs` (since the next release) | `tab` (`fill`, `text`, `corner-radius`), `label` (`font-size`, `font-weight`), `count` (`text`, `font-size`), `indicator` (`fill`, `corner-radius`), `list` (`border-colour`, `border-width`, `gap`, `padding`), `panel` (`padding`) | none | `hover`, `selected`, `focused` |
+| `panel` (since version 4) | `root` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `title` (`text`, `font-size`, `font-weight`) (since the next release) | `side`, `content`, `bottom` | none |
+| `panel-section` (since version 4) | `root` (`padding`, `gap`), `head` (`padding`, `gap`), `title` (`text`, `font-size`, `font-weight`), `top` (`padding`, `gap`) (since the next release) | `default` | none |
+| `panel-separator` (since the next release) | `root` (`fill`), `grip` (`fill`) | none | `hover`, `pressed`, `focused` |
+| `popover` (since version 6) | `root` (`fill`, `text`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `filter` (`fill`, `padding`), `rule` (`fill`), `list` (`padding`, `gap`), `header` (`text`, `font-size`, `font-weight`), `footer` (`fill`, `text`, `padding`, `font-size`), `key` (`fill`, `text`, `corner-radius`) | `popover`, `menu` | none |
+| `radio` (since the next release) | `root` (`text`, `gap`), `mark` (`fill`, `border-colour`, `border-width`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`) | none | `hover`, `selected`, `focused`, `disabled` |
+| `rail` (since version 9) | `button` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `monogram` (`font-size`, `font-weight`), `badge` (`fill`, `text`), `unsaved` (`fill`) | `project`, `action` | `hover`, `selected`, `focused` |
+| `review-page` (since the next release) | `root` (`fill`), `body` (`padding`, `gap`), `bar` (`fill`, `padding`, `gap`), `summary` (`text`, `font-size`), `answers` (`gap`) | none | none |
+| `segment` (since the next release) | `root` (`fill`, `text`, `shadow`, `corner-radius`), `label` (`text`), `count` (`text`) | none | `hover`, `selected`, `focused`, `disabled` |
+| `segmented-control` (since the next release) | `root` (`fill`, `corner-radius`, `shadow`, `padding`, `gap`) | none | none |
+| `select` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `placeholder` (`text`), `chevron` (`text`) | none | `hover`, `focused`, `disabled`, `open`, `invalid` |
+| `separator` (since the next release) | `root` (`fill`) | none | none |
+| `slider` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `fill` (`fill`, `corner-radius`), `thumb` (`fill`, `border-colour`, `corner-radius`), `output` (`text`) | none | `disabled` |
+| `status-item` (since version 4) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `icon` (`text`), `label` (`text`, `font-size`, `font-weight`), `count` (`text`) | `bar`, `pill`, `waiting`, `accent` | `hover`, `pressed`, `focused`, `disabled` |
+| `switch` (since the next release) | `root` (`text`, `gap`), `track` (`fill`, `corner-radius`), `thumb` (`fill`, `corner-radius`), `label` (`text`, `font-size`, `font-weight`) | none | `hover`, `selected`, `focused`, `disabled` |
+| `table` (since the next release) | `root` (`fill`, `text`), `frame` (`fill`, `border-colour`, `border-width`, `corner-radius`, `shadow`), `head` (`text`, `font-size`, `font-weight`), `cell` (`padding`), `rule` (`fill`), `bar` (`gap`) | none | `hover`, `focused`, `selected`, `disabled` |
+| `tabs` (since version 8) | `tab` (`fill`, `text`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`, `max-width`, `flare`, `inset`), `label` (`text`, `font-size`, `font-weight`), `closer` (`fill`, `text`, `corner-radius`), `count` (`fill`, `text`, `corner-radius`), `indicator` (`fill`, `height`, `corner-radius`, `position`), `strip` (`fill`, `border-colour`, `border-width`), `layout` (`attach`, `sizing`, `dividers`, `gap`) | `chat`, `view`, `file`, `background` | `hover`, `selected` |
+| `text-input` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `height`), `icon` (`text`) | none | `hover`, `focused`, `disabled`, `invalid` |
+| `textarea` (since version 3) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `font-size`) | none | `hover`, `focused`, `disabled`, `invalid` |
+| `titlebar` (since version 12) | `workspace` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `padding`, `gap`, `font-size`, `font-weight`, `height`), `count` (`fill`, `text`), `crumb` (`fill`, `text`, `corner-radius`), `all` (`fill`, `text`, `corner-radius`), `pin` (`fill`, `text`, `corner-radius`), `row` (`fill`, `text`, `corner-radius`) | `pinned`, `unpinned`, `root` (since the next release) | `hover`, `selected`, `focused` |
+| `tooltip` (since version 5) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`), `detail` (`text`), `shortcut` (`text`, `font-size`) (since the next release) | none | none |
+| `tree` (since the next release) | `root` (`fill`, `text`, `border-colour`, `shadow`, `border-width`, `corner-radius`, `gap`, `font-size`, `font-weight`, `height`), `body` (`padding`, `gap`), `twist` (`text`), `lead` (`text`, `gap`), `label` (`text`, `font-size`, `font-weight`), `description` (`text`, `font-size`), `trail` (`text`, `gap`), `header` (`text`, `font-size`, `font-weight`) | none | `hover`, `focused`, `selected`, `disabled` |
+| `view-frame` (since the next release) | `root` (`fill`), `nav` (`fill`, `border-colour`, `border-width`, `padding`), `list` (`fill`, `border-colour`, `border-width`), `item` (`fill`), `head` (`padding`, `gap`), `header` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `name` (`text`, `font-size`, `font-weight`), `lead` (`text`, `font-size`), `bar` (`fill`, `border-colour`, `border-width`, `padding`, `gap`), `history` (`gap`), `path` (`text`, `font-size`), `crumb` (`text`, `font-weight`), `crumb-separator` (`text`) | none | none |
+| `view-nav` (since the next release) | `item` (`fill`, `text`, `corner-radius`), `label` (`font-size`, `font-weight`), `indicator` (`fill`, `corner-radius`) | none | `hover`, `pressed`, `selected`, `focused` |
 
 A field is its label, its control (a `text-input` or a `textarea`), its help and its error, as
 one: `field.help.text` reaches a field's help line, `text-input.root.border-width` every one-line
@@ -390,19 +390,19 @@ dialog every one, though none changes its size; a choice `hover`, `selected`, `f
 the keyboard). A key naming another is said and left
 out.
 
-| Property        | Value                                                                                                | Bounds                                                                       |
-| --------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `fill`          | a semantic colour token, or `transparent`                                                            |                                                                              |
-| `text`          | a semantic colour token                                                                              |                                                                              |
-| `border-colour` | a semantic colour token, or `transparent`                                                            |                                                                              |
-| `shadow`        | `none`, `raised` or `overlay`                                                                        |                                                                              |
-| `border-width`  | px                                                                                                   | 0–4                                                                          |
+| Property | Value | Bounds |
+|---|---|---|
+| `fill` | a semantic colour token, or `transparent` | |
+| `text` | a semantic colour token | |
+| `border-colour` | a semantic colour token, or `transparent` | |
+| `shadow` | `none`, `raised` or `overlay` | |
+| `border-width` | px | 0–4 |
 | `corner-radius` | one value or four (top left, top right, bottom right, bottom left): px, a `radius.*` token or `full` | 0–9999, drawn at most half the part's height; `full` is a pill at any height |
-| `padding`       | one value, or two (block, inline): px at 14px or a `space.*` token                                   | block 0–12, inline 0–32                                                      |
-| `gap`           | px at 14px or a `space.*` token                                                                      | 0–16                                                                         |
-| `font-size`     | px at 14px or a `font-size.*` token                                                                  | 10–18                                                                        |
-| `font-weight`   | a weight or a `font-weight.*` token                                                                  | 300–700                                                                      |
-| `height`        | px at 14px or a `size.*` token                                                                       | 24–48                                                                        |
+| `padding` | one value, or two (block, inline): px at 14px or a `space.*` token | block 0–12, inline 0–32 |
+| `gap` | px at 14px or a `space.*` token | 0–16 |
+| `font-size` | px at 14px or a `font-size.*` token | 10–18 |
+| `font-weight` | a weight or a `font-weight.*` token | 300–700 |
+| `height` | px at 14px or a `size.*` token | 24–48 |
 
 **A colour names a semantic token**, never a hex or a palette name, so the palette, the
 appearances, the tints and the floors keep working for a part as they do for a token. A geometry
@@ -688,35 +688,17 @@ is refused, **2** when there is no such theme.
 {
   "schema": 1,
   "theme_schema": "https://raw.githubusercontent.com/purlis/purlis/v<version>/docs/schema/theme.v2.schema.json",
-  "theme": {
-    "id": "mine",
-    "name": "Dim",
-    "appearances": [
-      { "id": "dark", "appearance": "dark", "high_contrast": false }
-    ],
-    "options": [],
-    "combinations": 1,
-    "level": "machine",
-    "from": { "kind": "mine", "path": "/home/me/.config/purlis/theme.json" }
-  },
+  "theme": {"id": "mine", "name": "Dim",
+            "appearances": [{"id": "dark", "appearance": "dark", "high_contrast": false}],
+            "options": [], "combinations": 1, "level": "machine",
+            "from": {"kind": "mine", "path": "/home/me/.config/purlis/theme.json"}},
   "refused": null,
   "errors": [],
-  "notes": [
-    {
-      "said": "text.primry is not a purlis token, so it is left out",
-      "token": "text.primry"
-    }
-  ],
-  "warnings": [
-    {
-      "appearance": "dark",
-      "options": {},
-      "kind": "contrast",
-      "tint": null,
-      "pair": { "front": "text.muted", "back": "surface.base", "floor": 4.5 },
-      "ratio": 2.38
-    }
-  ],
+  "notes": [{"said": "text.primry is not a purlis token, so it is left out",
+             "token": "text.primry"}],
+  "warnings": [{"appearance": "dark", "options": {}, "kind": "contrast", "tint": null,
+                "pair": {"front": "text.muted", "back": "surface.base", "floor": 4.5},
+                "ratio": 2.38}],
   "held": [],
   "hard_floors": [],
   "clean": false
@@ -806,7 +788,7 @@ over theme files only.
 - **A draft that breaks a hard floor is not drawn**, in any combination of its appearances and
   option values: the last good version of it stays drawn, or the kept theme when there is none,
   and the chat is told which floor (by `--save`'s answer, and by `purlis
-theme check draft:<folder>`). The consent floors hold on a draft as on any theme.
+  theme check draft:<folder>`). The consent floors hold on a draft as on any theme.
 - **A strip on the workspace** says `Theme draft — <folder>, edited by <chat>`, with **Keep**,
   **Revert** and **Compare**. **Keep** copies the draft into the real folder it is a draft of (the
   workspace's theme folder of that name, else the project's; a new theme goes in the chat's own
@@ -895,16 +877,16 @@ theme that leaves one out draws as it did before it existed**: while the theme i
 the new token and the token that drew its part before alike, as Purlis Classic does, the new one
 follows the value the theme gives the old one (`vocabulary::KIN`):
 
-| new                 | follows          |
-| ------------------- | ---------------- |
-| `border.control`    | `border.strong`  |
-| `accent.wash`       | `accent.surface` |
-| `accent.text`       | `accent.base`    |
-| `accent.fill`       | `accent.surface` |
-| `accent.fill-hover` | `tab.active`     |
-| `accent.fill-edge`  | `accent.base`    |
-| `accent.fill-text`  | `text.primary`   |
-| `accent.wash-hover` | `tab.active`     |
+| new | follows |
+|---|---|
+| `border.control` | `border.strong` |
+| `accent.wash` | `accent.surface` |
+| `accent.text` | `accent.base` |
+| `accent.fill` | `accent.surface` |
+| `accent.fill-hover` | `tab.active` |
+| `accent.fill-edge` | `accent.base` |
+| `accent.fill-text` | `text.primary` |
+| `accent.wash-hover` | `tab.active` |
 
 Later, `accent.wash-hover` came in (#3345): the chosen title-bar chip's ground under the pointer,
 a step stronger than `accent.wash`, which is the chosen chip's ground at rest; both hold the
@@ -926,7 +908,7 @@ neither.
 - a **Ghostty theme** (`ghostty`): its `key = value` lines;
 - a **theme folder's zip** (`zip`), as `purlis theme export` writes one;
 - a **W3C design-tokens file** (`design-tokens`), format 2025.10, as `purlis theme export --kind
-design-tokens` or a design tool writes one: see [Design tokens](#design-tokens).
+  design-tokens` or a design tool writes one: see [Design tokens](#design-tokens).
 
 The kind is told from the file's name and its first words; `--kind` says it when they do not.
 The new folder goes in `--into <folder>`, a `themes/` folder, or in your own themes' folder,
@@ -1002,680 +984,680 @@ there is no such file.
 
 A VS Code theme's `colors`:
 
-| Token                           | Takes, nearest first                                                     |
-| ------------------------------- | ------------------------------------------------------------------------ |
-| `surface.base`                  | `editor.background`                                                      |
-| `surface.sunken`                | `sideBar.background`                                                     |
-| `surface.deep`                  | `titleBar.activeBackground`, `activityBar.background`                    |
-| `surface.raised`                | `editorWidget.background`                                                |
-| `surface.overlay`               | `quickInput.background`, `menu.background`, `editorWidget.background`    |
-| `surface.hover`                 | `list.hoverBackground`                                                   |
-| `control.base`                  | `input.background`, `dropdown.background`                                |
-| `control.hover`                 | `toolbar.hoverBackground`                                                |
-| `text.primary`                  | `editor.foreground`, `foreground`                                        |
-| `text.secondary`                | `descriptionForeground`                                                  |
-| `text.muted`                    | `editorLineNumber.foreground`, `disabledForeground`                      |
-| `text.quiet`                    | `editorLineNumber.foreground`                                            |
-| `text.faint`                    | `disabledForeground`                                                     |
-| `border.subtle`                 | `panel.border`, `sideBar.border`, `editorGroup.border`                   |
-| `border.strong`                 | `input.border`, `contrastBorder`                                         |
-| `accent.base`                   | `button.background`, `focusBorder`                                       |
-| `focus.ring`                    | `focusBorder`                                                            |
-| `tab.active`                    | `tab.activeBackground`                                                   |
-| `list.selected`                 | `list.activeSelectionBackground`                                         |
-| `tree.guide`                    | `tree.indentGuidesStroke`                                                |
-| `danger.base`                   | `errorForeground`, `editorError.foreground`                              |
-| `diff.deleted`                  | `diffEditor.removedLineBackground`, `diffEditor.removedTextBackground`   |
-| `diff.inserted`                 | `diffEditor.insertedLineBackground`, `diffEditor.insertedTextBackground` |
-| `diff.deleted-text`             | `diffEditor.removedTextBackground`                                       |
-| `diff.inserted-text`            | `diffEditor.insertedTextBackground`                                      |
-| `icon.red`                      | `charts.red`                                                             |
-| `icon.orange`                   | `charts.orange`                                                          |
-| `icon.yellow`                   | `charts.yellow`                                                          |
-| `icon.green`                    | `charts.green`                                                           |
-| `icon.blue`                     | `charts.blue`                                                            |
-| `icon.purple`                   | `charts.purple`                                                          |
-| `state.running`                 | `progressBar.background`                                                 |
-| `state.waiting`                 | `editorWarning.foreground`                                               |
-| `state.failed`                  | `editorError.foreground`, `errorForeground`                              |
-| `state.success`                 | `testing.iconPassed`                                                     |
-| `overlay.shadow`                | `widget.shadow`                                                          |
-| `terminal.background`           | `terminal.background`, `panel.background`, `editor.background`           |
-| `terminal.foreground`           | `terminal.foreground`, `editor.foreground`, `foreground`                 |
-| `terminal.cursor`               | `terminalCursor.foreground`, `editorCursor.foreground`                   |
-| `terminal.cursor-accent`        | `terminalCursor.background`                                              |
-| `terminal.selection`            | `terminal.selectionBackground`, `editor.selectionBackground`             |
-| `terminal.find-match`           | `terminal.findMatchHighlightBackground`                                  |
-| `terminal.find-match-active`    | `terminal.findMatchBackground`                                           |
-| `terminal.selection-foreground` | `terminal.selectionForeground`                                           |
-| `terminal.selection-inactive`   | `terminal.inactiveSelectionBackground`                                   |
-| `terminal.scrollbar`            | `scrollbarSlider.background`                                             |
-| `terminal.scrollbar-hover`      | `scrollbarSlider.hoverBackground`                                        |
-| `terminal.scrollbar-active`     | `scrollbarSlider.activeBackground`                                       |
-| `terminal.ansi.black`           | `terminal.ansiBlack`                                                     |
-| `terminal.ansi.red`             | `terminal.ansiRed`                                                       |
-| `terminal.ansi.green`           | `terminal.ansiGreen`                                                     |
-| `terminal.ansi.yellow`          | `terminal.ansiYellow`                                                    |
-| `terminal.ansi.blue`            | `terminal.ansiBlue`                                                      |
-| `terminal.ansi.magenta`         | `terminal.ansiMagenta`                                                   |
-| `terminal.ansi.cyan`            | `terminal.ansiCyan`                                                      |
-| `terminal.ansi.white`           | `terminal.ansiWhite`                                                     |
-| `terminal.ansi.bright-black`    | `terminal.ansiBrightBlack`                                               |
-| `terminal.ansi.bright-red`      | `terminal.ansiBrightRed`                                                 |
-| `terminal.ansi.bright-green`    | `terminal.ansiBrightGreen`                                               |
-| `terminal.ansi.bright-yellow`   | `terminal.ansiBrightYellow`                                              |
-| `terminal.ansi.bright-blue`     | `terminal.ansiBrightBlue`                                                |
-| `terminal.ansi.bright-magenta`  | `terminal.ansiBrightMagenta`                                             |
-| `terminal.ansi.bright-cyan`     | `terminal.ansiBrightCyan`                                                |
-| `terminal.ansi.bright-white`    | `terminal.ansiBrightWhite`                                               |
-| `markdown.link`                 | `textLink.foreground`                                                    |
-| `markdown.code`                 | `textPreformat.foreground`                                               |
-| `markdown.code-block`           | `textPreformat.foreground`                                               |
-| `selection.background`          | `editor.selectionBackground`                                             |
-| `selection.text`                | `editor.selectionForeground`                                             |
-| `caret`                         | `editorCursor.foreground`                                                |
-| `placeholder`                   | `input.placeholderForeground`                                            |
-| `scrollbar.thumb`               | `scrollbarSlider.background`                                             |
-| `chart.1`                       | `charts.blue`                                                            |
-| `chart.2`                       | `charts.green`                                                           |
-| `chart.3`                       | `charts.yellow`                                                          |
-| `chart.4`                       | `charts.purple`                                                          |
-| `chart.5`                       | `charts.red`                                                             |
-| `chart.6`                       | `charts.orange`                                                          |
-| `chart.7`                       | `terminal.ansiCyan`                                                      |
-| `chart.8`                       | `terminal.ansiMagenta`                                                   |
-| `window.background`             | `titleBar.activeBackground`, `editor.background`                         |
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `editor.background` |
+| `surface.sunken` | `sideBar.background` |
+| `surface.deep` | `titleBar.activeBackground`, `activityBar.background` |
+| `surface.raised` | `editorWidget.background` |
+| `surface.overlay` | `quickInput.background`, `menu.background`, `editorWidget.background` |
+| `surface.hover` | `list.hoverBackground` |
+| `control.base` | `input.background`, `dropdown.background` |
+| `control.hover` | `toolbar.hoverBackground` |
+| `text.primary` | `editor.foreground`, `foreground` |
+| `text.secondary` | `descriptionForeground` |
+| `text.muted` | `editorLineNumber.foreground`, `disabledForeground` |
+| `text.quiet` | `editorLineNumber.foreground` |
+| `text.faint` | `disabledForeground` |
+| `border.subtle` | `panel.border`, `sideBar.border`, `editorGroup.border` |
+| `border.strong` | `input.border`, `contrastBorder` |
+| `accent.base` | `button.background`, `focusBorder` |
+| `focus.ring` | `focusBorder` |
+| `tab.active` | `tab.activeBackground` |
+| `list.selected` | `list.activeSelectionBackground` |
+| `tree.guide` | `tree.indentGuidesStroke` |
+| `danger.base` | `errorForeground`, `editorError.foreground` |
+| `diff.deleted` | `diffEditor.removedLineBackground`, `diffEditor.removedTextBackground` |
+| `diff.inserted` | `diffEditor.insertedLineBackground`, `diffEditor.insertedTextBackground` |
+| `diff.deleted-text` | `diffEditor.removedTextBackground` |
+| `diff.inserted-text` | `diffEditor.insertedTextBackground` |
+| `icon.red` | `charts.red` |
+| `icon.orange` | `charts.orange` |
+| `icon.yellow` | `charts.yellow` |
+| `icon.green` | `charts.green` |
+| `icon.blue` | `charts.blue` |
+| `icon.purple` | `charts.purple` |
+| `state.running` | `progressBar.background` |
+| `state.waiting` | `editorWarning.foreground` |
+| `state.failed` | `editorError.foreground`, `errorForeground` |
+| `state.success` | `testing.iconPassed` |
+| `overlay.shadow` | `widget.shadow` |
+| `terminal.background` | `terminal.background`, `panel.background`, `editor.background` |
+| `terminal.foreground` | `terminal.foreground`, `editor.foreground`, `foreground` |
+| `terminal.cursor` | `terminalCursor.foreground`, `editorCursor.foreground` |
+| `terminal.cursor-accent` | `terminalCursor.background` |
+| `terminal.selection` | `terminal.selectionBackground`, `editor.selectionBackground` |
+| `terminal.find-match` | `terminal.findMatchHighlightBackground` |
+| `terminal.find-match-active` | `terminal.findMatchBackground` |
+| `terminal.selection-foreground` | `terminal.selectionForeground` |
+| `terminal.selection-inactive` | `terminal.inactiveSelectionBackground` |
+| `terminal.scrollbar` | `scrollbarSlider.background` |
+| `terminal.scrollbar-hover` | `scrollbarSlider.hoverBackground` |
+| `terminal.scrollbar-active` | `scrollbarSlider.activeBackground` |
+| `terminal.ansi.black` | `terminal.ansiBlack` |
+| `terminal.ansi.red` | `terminal.ansiRed` |
+| `terminal.ansi.green` | `terminal.ansiGreen` |
+| `terminal.ansi.yellow` | `terminal.ansiYellow` |
+| `terminal.ansi.blue` | `terminal.ansiBlue` |
+| `terminal.ansi.magenta` | `terminal.ansiMagenta` |
+| `terminal.ansi.cyan` | `terminal.ansiCyan` |
+| `terminal.ansi.white` | `terminal.ansiWhite` |
+| `terminal.ansi.bright-black` | `terminal.ansiBrightBlack` |
+| `terminal.ansi.bright-red` | `terminal.ansiBrightRed` |
+| `terminal.ansi.bright-green` | `terminal.ansiBrightGreen` |
+| `terminal.ansi.bright-yellow` | `terminal.ansiBrightYellow` |
+| `terminal.ansi.bright-blue` | `terminal.ansiBrightBlue` |
+| `terminal.ansi.bright-magenta` | `terminal.ansiBrightMagenta` |
+| `terminal.ansi.bright-cyan` | `terminal.ansiBrightCyan` |
+| `terminal.ansi.bright-white` | `terminal.ansiBrightWhite` |
+| `markdown.link` | `textLink.foreground` |
+| `markdown.code` | `textPreformat.foreground` |
+| `markdown.code-block` | `textPreformat.foreground` |
+| `selection.background` | `editor.selectionBackground` |
+| `selection.text` | `editor.selectionForeground` |
+| `caret` | `editorCursor.foreground` |
+| `placeholder` | `input.placeholderForeground` |
+| `scrollbar.thumb` | `scrollbarSlider.background` |
+| `chart.1` | `charts.blue` |
+| `chart.2` | `charts.green` |
+| `chart.3` | `charts.yellow` |
+| `chart.4` | `charts.purple` |
+| `chart.5` | `charts.red` |
+| `chart.6` | `charts.orange` |
+| `chart.7` | `terminal.ansiCyan` |
+| `chart.8` | `terminal.ansiMagenta` |
+| `window.background` | `titleBar.activeBackground`, `editor.background` |
 
 Tuned after the table (#2589): a VS Code theme names a colour for nearly every role, and those are taken as they are. Selected text it leaves to the selection is the editor's words. Its muted words take the louder of its line numbers' grey and its disabled grey, and its faint follows quiet when the disabled grey reads louder than the line numbers.
 
-| Token            | Tuned                                                                                                      |
-| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Token | Tuned |
+|---|---|
 | `selection.text` | when the theme's `selection.background` is filled and the table left it: `editor.foreground`, `foreground` |
-| `text.muted`     | the one of `editorLineNumber.foreground`, `disabledForeground` that reads most on `surface.base`           |
-| `text.faint`     | left out when it reads louder than `text.quiet` on `surface.base`                                          |
+| `text.muted` | the one of `editorLineNumber.foreground`, `disabledForeground` that reads most on `surface.base` |
+| `text.faint` | left out when it reads louder than `text.quiet` on `surface.base` |
 
 Its `tokenColors` fill the syntax tokens. A rule's scope fills a token when it is one of the
 token's scopes or under one (`keyword.control` is `keyword`'s), the nearest scope winning and,
 between rules of one scope, the last; a scope with a space in it (`meta.embedded string`) is
 about a context and fills none. A rule's `fontStyle` sets the token's italic and bold.
 
-| Token                | Scopes, nearest first                                                              |
-| -------------------- | ---------------------------------------------------------------------------------- |
-| `syntax.keyword`     | `keyword`, `storage`                                                               |
-| `syntax.string`      | `string`                                                                           |
-| `syntax.number`      | `constant.numeric`                                                                 |
-| `syntax.constant`    | `constant.language`, `constant`, `support.constant`                                |
-| `syntax.comment`     | `comment`                                                                          |
-| `syntax.function`    | `entity.name.function`, `support.function`                                         |
-| `syntax.type`        | `entity.name.type`, `entity.name.class`, `support.type`, `support.class`           |
-| `syntax.property`    | `variable.other.property`, `support.type.property-name`, `meta.object-literal.key` |
-| `syntax.attribute`   | `entity.other.attribute-name`                                                      |
-| `syntax.tag`         | `entity.name.tag`                                                                  |
-| `syntax.heading`     | `markup.heading`, `entity.name.section`                                            |
-| `syntax.invalid`     | `invalid`                                                                          |
-| `syntax.variable`    | `variable`                                                                         |
-| `syntax.operator`    | `keyword.operator`                                                                 |
-| `syntax.punctuation` | `punctuation`                                                                      |
-| `markdown.heading`   | `markup.heading`                                                                   |
+| Token | Scopes, nearest first |
+|---|---|
+| `syntax.keyword` | `keyword`, `storage` |
+| `syntax.string` | `string` |
+| `syntax.number` | `constant.numeric` |
+| `syntax.constant` | `constant.language`, `constant`, `support.constant` |
+| `syntax.comment` | `comment` |
+| `syntax.function` | `entity.name.function`, `support.function` |
+| `syntax.type` | `entity.name.type`, `entity.name.class`, `support.type`, `support.class` |
+| `syntax.property` | `variable.other.property`, `support.type.property-name`, `meta.object-literal.key` |
+| `syntax.attribute` | `entity.other.attribute-name` |
+| `syntax.tag` | `entity.name.tag` |
+| `syntax.heading` | `markup.heading`, `entity.name.section` |
+| `syntax.invalid` | `invalid` |
+| `syntax.variable` | `variable` |
+| `syntax.operator` | `keyword.operator` |
+| `syntax.punctuation` | `punctuation` |
+| `markdown.heading` | `markup.heading` |
 
 ### base16
 
-| Token                          | Takes, nearest first |
-| ------------------------------ | -------------------- |
-| `surface.base`                 | `base00`             |
-| `surface.sunken`               | `base01`             |
-| `surface.raised`               | `base01`             |
-| `surface.overlay`              | `base01`             |
-| `surface.hover`                | `base02`             |
-| `control.base`                 | `base01`             |
-| `control.hover`                | `base02`             |
-| `text.primary`                 | `base05`             |
-| `text.secondary`               | `base04`             |
-| `text.muted`                   | `base03`             |
-| `text.faint`                   | `base03`             |
-| `border.subtle`                | `base02`             |
-| `border.strong`                | `base03`             |
-| `accent.base`                  | `base0d`             |
-| `focus.ring`                   | `base0d`             |
-| `list.selected`                | `base02`             |
-| `needs-you.base`               | `base08`             |
-| `needs-you.text`               | `base00`             |
-| `danger.base`                  | `base08`             |
-| `icon.red`                     | `base08`             |
-| `icon.orange`                  | `base09`             |
-| `icon.yellow`                  | `base0a`             |
-| `icon.green`                   | `base0b`             |
-| `icon.teal`                    | `base0c`             |
-| `icon.blue`                    | `base0d`             |
-| `icon.purple`                  | `base0e`             |
-| `icon.pink`                    | `base0f`             |
-| `state.running`                | `base0d`             |
-| `state.waiting`                | `base0a`             |
-| `state.failed`                 | `base08`             |
-| `state.success`                | `base0b`             |
-| `state.unreadable`             | `base09`             |
-| `terminal.background`          | `base00`             |
-| `terminal.foreground`          | `base05`             |
-| `terminal.cursor`              | `base05`             |
-| `terminal.cursor-accent`       | `base00`             |
-| `terminal.selection`           | `base02`             |
-| `terminal.ansi.black`          | `base00`             |
-| `terminal.ansi.red`            | `base08`             |
-| `terminal.ansi.green`          | `base0b`             |
-| `terminal.ansi.yellow`         | `base0a`             |
-| `terminal.ansi.blue`           | `base0d`             |
-| `terminal.ansi.magenta`        | `base0e`             |
-| `terminal.ansi.cyan`           | `base0c`             |
-| `terminal.ansi.white`          | `base05`             |
-| `terminal.ansi.bright-black`   | `base03`             |
-| `terminal.ansi.bright-red`     | `base08`             |
-| `terminal.ansi.bright-green`   | `base0b`             |
-| `terminal.ansi.bright-yellow`  | `base0a`             |
-| `terminal.ansi.bright-blue`    | `base0d`             |
-| `terminal.ansi.bright-magenta` | `base0e`             |
-| `terminal.ansi.bright-cyan`    | `base0c`             |
-| `terminal.ansi.bright-white`   | `base07`             |
-| `syntax.keyword`               | `base0e`             |
-| `syntax.string`                | `base0b`             |
-| `syntax.number`                | `base09`             |
-| `syntax.constant`              | `base09`             |
-| `syntax.comment`               | `base03`             |
-| `syntax.function`              | `base0d`             |
-| `syntax.type`                  | `base0a`             |
-| `syntax.property`              | `base0c`             |
-| `syntax.attribute`             | `base09`             |
-| `syntax.tag`                   | `base08`             |
-| `syntax.heading`               | `base0d`             |
-| `syntax.invalid`               | `base08`             |
-| `syntax.variable`              | `base08`             |
-| `syntax.operator`              | `base05`             |
-| `syntax.punctuation`           | `base05`             |
-| `markdown.link`                | `base0d`             |
-| `markdown.code`                | `base0b`             |
-| `markdown.code-block`          | `base05`             |
-| `markdown.quote`               | `base0c`             |
-| `markdown.heading`             | `base0d`             |
-| `selection.background`         | `base02`             |
-| `caret`                        | `base05`             |
-| `placeholder`                  | `base04`             |
-| `scrollbar.thumb`              | `base03`             |
-| `chart.1`                      | `base0d`             |
-| `chart.2`                      | `base0b`             |
-| `chart.3`                      | `base0a`             |
-| `chart.4`                      | `base0e`             |
-| `chart.5`                      | `base08`             |
-| `chart.6`                      | `base0c`             |
-| `chart.7`                      | `base09`             |
-| `chart.8`                      | `base0f`             |
-| `window.background`            | `base00`             |
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `base00` |
+| `surface.sunken` | `base01` |
+| `surface.raised` | `base01` |
+| `surface.overlay` | `base01` |
+| `surface.hover` | `base02` |
+| `control.base` | `base01` |
+| `control.hover` | `base02` |
+| `text.primary` | `base05` |
+| `text.secondary` | `base04` |
+| `text.muted` | `base03` |
+| `text.faint` | `base03` |
+| `border.subtle` | `base02` |
+| `border.strong` | `base03` |
+| `accent.base` | `base0d` |
+| `focus.ring` | `base0d` |
+| `list.selected` | `base02` |
+| `needs-you.base` | `base08` |
+| `needs-you.text` | `base00` |
+| `danger.base` | `base08` |
+| `icon.red` | `base08` |
+| `icon.orange` | `base09` |
+| `icon.yellow` | `base0a` |
+| `icon.green` | `base0b` |
+| `icon.teal` | `base0c` |
+| `icon.blue` | `base0d` |
+| `icon.purple` | `base0e` |
+| `icon.pink` | `base0f` |
+| `state.running` | `base0d` |
+| `state.waiting` | `base0a` |
+| `state.failed` | `base08` |
+| `state.success` | `base0b` |
+| `state.unreadable` | `base09` |
+| `terminal.background` | `base00` |
+| `terminal.foreground` | `base05` |
+| `terminal.cursor` | `base05` |
+| `terminal.cursor-accent` | `base00` |
+| `terminal.selection` | `base02` |
+| `terminal.ansi.black` | `base00` |
+| `terminal.ansi.red` | `base08` |
+| `terminal.ansi.green` | `base0b` |
+| `terminal.ansi.yellow` | `base0a` |
+| `terminal.ansi.blue` | `base0d` |
+| `terminal.ansi.magenta` | `base0e` |
+| `terminal.ansi.cyan` | `base0c` |
+| `terminal.ansi.white` | `base05` |
+| `terminal.ansi.bright-black` | `base03` |
+| `terminal.ansi.bright-red` | `base08` |
+| `terminal.ansi.bright-green` | `base0b` |
+| `terminal.ansi.bright-yellow` | `base0a` |
+| `terminal.ansi.bright-blue` | `base0d` |
+| `terminal.ansi.bright-magenta` | `base0e` |
+| `terminal.ansi.bright-cyan` | `base0c` |
+| `terminal.ansi.bright-white` | `base07` |
+| `syntax.keyword` | `base0e` |
+| `syntax.string` | `base0b` |
+| `syntax.number` | `base09` |
+| `syntax.constant` | `base09` |
+| `syntax.comment` | `base03` |
+| `syntax.function` | `base0d` |
+| `syntax.type` | `base0a` |
+| `syntax.property` | `base0c` |
+| `syntax.attribute` | `base09` |
+| `syntax.tag` | `base08` |
+| `syntax.heading` | `base0d` |
+| `syntax.invalid` | `base08` |
+| `syntax.variable` | `base08` |
+| `syntax.operator` | `base05` |
+| `syntax.punctuation` | `base05` |
+| `markdown.link` | `base0d` |
+| `markdown.code` | `base0b` |
+| `markdown.code-block` | `base05` |
+| `markdown.quote` | `base0c` |
+| `markdown.heading` | `base0d` |
+| `selection.background` | `base02` |
+| `caret` | `base05` |
+| `placeholder` | `base04` |
+| `scrollbar.thumb` | `base03` |
+| `chart.1` | `base0d` |
+| `chart.2` | `base0b` |
+| `chart.3` | `base0a` |
+| `chart.4` | `base0e` |
+| `chart.5` | `base08` |
+| `chart.6` | `base0c` |
+| `chart.7` | `base09` |
+| `chart.8` | `base0f` |
+| `window.background` | `base00` |
 
 Tuned after the table (#2589), in this order. base16 makes some roles one colour, and names hues on a scale rather than words on a ground, so these take a nearer step on the scheme's own scale, or a colour between two of its own:
 
-| Token                          | Tuned                                                                             |
-| ------------------------------ | --------------------------------------------------------------------------------- |
-| `surface.hover`                | halfway between `base01` and `base02`                                             |
-| `selection.text`               | when the theme's `selection.background` is filled and the table left it: `base05` |
-| `terminal.ansi.black`          | toward `base01`, then `base02`, then `base03`                                     |
-| `text.muted`                   | toward `base04`, then `base05`                                                    |
-| `text.faint`                   | toward `base04`, then `base05`                                                    |
-| `text.faint`                   | left out when it reads louder than `text.muted` on `surface.base`                 |
-| `syntax.comment`               | toward `base04`, then `base05`                                                    |
-| `terminal.ansi.bright-black`   | toward `base04`, then `base05`                                                    |
-| `text.secondary`               | toward `base05`                                                                   |
-| `placeholder`                  | toward `base05`                                                                   |
-| `danger.base`                  | toward `base05`                                                                   |
-| `accent.base`                  | toward `base05`                                                                   |
-| `focus.ring`                   | toward `base05`                                                                   |
-| `icon.red`                     | toward `base05`                                                                   |
-| `icon.orange`                  | toward `base05`                                                                   |
-| `icon.yellow`                  | toward `base05`                                                                   |
-| `icon.green`                   | toward `base05`                                                                   |
-| `icon.teal`                    | toward `base05`                                                                   |
-| `icon.blue`                    | toward `base05`                                                                   |
-| `icon.purple`                  | toward `base05`                                                                   |
-| `icon.pink`                    | toward `base05`                                                                   |
-| `state.running`                | toward `base05`                                                                   |
-| `state.waiting`                | toward `base05`                                                                   |
-| `state.failed`                 | toward `base05`                                                                   |
-| `state.success`                | toward `base05`                                                                   |
-| `state.unreadable`             | toward `base05`                                                                   |
-| `needs-you.base`               | toward `base05`                                                                   |
-| `syntax.keyword`               | toward `base05`                                                                   |
-| `syntax.string`                | toward `base05`                                                                   |
-| `syntax.number`                | toward `base05`                                                                   |
-| `syntax.constant`              | toward `base05`                                                                   |
-| `syntax.function`              | toward `base05`                                                                   |
-| `syntax.type`                  | toward `base05`                                                                   |
-| `syntax.property`              | toward `base05`                                                                   |
-| `syntax.attribute`             | toward `base05`                                                                   |
-| `syntax.tag`                   | toward `base05`                                                                   |
-| `syntax.heading`               | toward `base05`                                                                   |
-| `syntax.invalid`               | toward `base05`                                                                   |
-| `syntax.variable`              | toward `base05`                                                                   |
-| `markdown.link`                | toward `base05`                                                                   |
-| `markdown.code`                | toward `base05`                                                                   |
-| `markdown.quote`               | toward `base05`                                                                   |
-| `markdown.heading`             | toward `base05`                                                                   |
-| `chart.1`                      | toward `base05`                                                                   |
-| `chart.2`                      | toward `base05`                                                                   |
-| `chart.3`                      | toward `base05`                                                                   |
-| `chart.4`                      | toward `base05`                                                                   |
-| `chart.5`                      | toward `base05`                                                                   |
-| `chart.6`                      | toward `base05`                                                                   |
-| `chart.7`                      | toward `base05`                                                                   |
-| `chart.8`                      | toward `base05`                                                                   |
-| `terminal.ansi.red`            | toward `base05`                                                                   |
-| `terminal.ansi.green`          | toward `base05`                                                                   |
-| `terminal.ansi.yellow`         | toward `base05`                                                                   |
-| `terminal.ansi.blue`           | toward `base05`                                                                   |
-| `terminal.ansi.magenta`        | toward `base05`                                                                   |
-| `terminal.ansi.cyan`           | toward `base05`                                                                   |
-| `terminal.ansi.bright-red`     | toward `base05`                                                                   |
-| `terminal.ansi.bright-green`   | toward `base05`                                                                   |
-| `terminal.ansi.bright-yellow`  | toward `base05`                                                                   |
-| `terminal.ansi.bright-blue`    | toward `base05`                                                                   |
-| `terminal.ansi.bright-magenta` | toward `base05`                                                                   |
-| `terminal.ansi.bright-cyan`    | toward `base05`                                                                   |
+| Token | Tuned |
+|---|---|
+| `surface.hover` | halfway between `base01` and `base02` |
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
+| `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
+| `text.muted` | toward `base04`, then `base05` |
+| `text.faint` | toward `base04`, then `base05` |
+| `text.faint` | left out when it reads louder than `text.muted` on `surface.base` |
+| `syntax.comment` | toward `base04`, then `base05` |
+| `terminal.ansi.bright-black` | toward `base04`, then `base05` |
+| `text.secondary` | toward `base05` |
+| `placeholder` | toward `base05` |
+| `danger.base` | toward `base05` |
+| `accent.base` | toward `base05` |
+| `focus.ring` | toward `base05` |
+| `icon.red` | toward `base05` |
+| `icon.orange` | toward `base05` |
+| `icon.yellow` | toward `base05` |
+| `icon.green` | toward `base05` |
+| `icon.teal` | toward `base05` |
+| `icon.blue` | toward `base05` |
+| `icon.purple` | toward `base05` |
+| `icon.pink` | toward `base05` |
+| `state.running` | toward `base05` |
+| `state.waiting` | toward `base05` |
+| `state.failed` | toward `base05` |
+| `state.success` | toward `base05` |
+| `state.unreadable` | toward `base05` |
+| `needs-you.base` | toward `base05` |
+| `syntax.keyword` | toward `base05` |
+| `syntax.string` | toward `base05` |
+| `syntax.number` | toward `base05` |
+| `syntax.constant` | toward `base05` |
+| `syntax.function` | toward `base05` |
+| `syntax.type` | toward `base05` |
+| `syntax.property` | toward `base05` |
+| `syntax.attribute` | toward `base05` |
+| `syntax.tag` | toward `base05` |
+| `syntax.heading` | toward `base05` |
+| `syntax.invalid` | toward `base05` |
+| `syntax.variable` | toward `base05` |
+| `markdown.link` | toward `base05` |
+| `markdown.code` | toward `base05` |
+| `markdown.quote` | toward `base05` |
+| `markdown.heading` | toward `base05` |
+| `chart.1` | toward `base05` |
+| `chart.2` | toward `base05` |
+| `chart.3` | toward `base05` |
+| `chart.4` | toward `base05` |
+| `chart.5` | toward `base05` |
+| `chart.6` | toward `base05` |
+| `chart.7` | toward `base05` |
+| `chart.8` | toward `base05` |
+| `terminal.ansi.red` | toward `base05` |
+| `terminal.ansi.green` | toward `base05` |
+| `terminal.ansi.yellow` | toward `base05` |
+| `terminal.ansi.blue` | toward `base05` |
+| `terminal.ansi.magenta` | toward `base05` |
+| `terminal.ansi.cyan` | toward `base05` |
+| `terminal.ansi.bright-red` | toward `base05` |
+| `terminal.ansi.bright-green` | toward `base05` |
+| `terminal.ansi.bright-yellow` | toward `base05` |
+| `terminal.ansi.bright-blue` | toward `base05` |
+| `terminal.ansi.bright-magenta` | toward `base05` |
+| `terminal.ansi.bright-cyan` | toward `base05` |
 
 ### base24
 
-| Token                          | Takes, nearest first |
-| ------------------------------ | -------------------- |
-| `surface.base`                 | `base00`             |
-| `surface.sunken`               | `base10`, `base01`   |
-| `surface.deep`                 | `base11`, `base10`   |
-| `surface.raised`               | `base01`             |
-| `surface.overlay`              | `base01`             |
-| `surface.hover`                | `base02`             |
-| `control.base`                 | `base01`             |
-| `control.hover`                | `base02`             |
-| `text.primary`                 | `base05`             |
-| `text.secondary`               | `base04`             |
-| `text.muted`                   | `base03`             |
-| `text.faint`                   | `base03`             |
-| `border.subtle`                | `base02`             |
-| `border.strong`                | `base03`             |
-| `accent.base`                  | `base0d`             |
-| `focus.ring`                   | `base0d`             |
-| `list.selected`                | `base02`             |
-| `needs-you.base`               | `base08`             |
-| `needs-you.text`               | `base00`             |
-| `danger.base`                  | `base08`             |
-| `icon.red`                     | `base08`             |
-| `icon.orange`                  | `base09`             |
-| `icon.yellow`                  | `base0a`             |
-| `icon.green`                   | `base0b`             |
-| `icon.teal`                    | `base0c`             |
-| `icon.blue`                    | `base0d`             |
-| `icon.purple`                  | `base0e`             |
-| `icon.pink`                    | `base0f`             |
-| `state.running`                | `base0d`             |
-| `state.waiting`                | `base0a`             |
-| `state.failed`                 | `base08`             |
-| `state.success`                | `base0b`             |
-| `state.unreadable`             | `base09`             |
-| `terminal.background`          | `base00`             |
-| `terminal.foreground`          | `base05`             |
-| `terminal.cursor`              | `base05`             |
-| `terminal.cursor-accent`       | `base00`             |
-| `terminal.selection`           | `base02`             |
-| `terminal.ansi.black`          | `base00`             |
-| `terminal.ansi.red`            | `base08`             |
-| `terminal.ansi.green`          | `base0b`             |
-| `terminal.ansi.yellow`         | `base0a`             |
-| `terminal.ansi.blue`           | `base0d`             |
-| `terminal.ansi.magenta`        | `base0e`             |
-| `terminal.ansi.cyan`           | `base0c`             |
-| `terminal.ansi.white`          | `base05`             |
-| `terminal.ansi.bright-black`   | `base03`             |
-| `terminal.ansi.bright-red`     | `base12`, `base08`   |
-| `terminal.ansi.bright-green`   | `base14`, `base0b`   |
-| `terminal.ansi.bright-yellow`  | `base13`, `base0a`   |
-| `terminal.ansi.bright-blue`    | `base16`, `base0d`   |
-| `terminal.ansi.bright-magenta` | `base17`, `base0e`   |
-| `terminal.ansi.bright-cyan`    | `base15`, `base0c`   |
-| `terminal.ansi.bright-white`   | `base07`             |
-| `syntax.keyword`               | `base0e`             |
-| `syntax.string`                | `base0b`             |
-| `syntax.number`                | `base09`             |
-| `syntax.constant`              | `base09`             |
-| `syntax.comment`               | `base03`             |
-| `syntax.function`              | `base0d`             |
-| `syntax.type`                  | `base0a`             |
-| `syntax.property`              | `base0c`             |
-| `syntax.attribute`             | `base09`             |
-| `syntax.tag`                   | `base08`             |
-| `syntax.heading`               | `base0d`             |
-| `syntax.invalid`               | `base08`             |
-| `syntax.variable`              | `base08`             |
-| `syntax.operator`              | `base05`             |
-| `syntax.punctuation`           | `base05`             |
-| `markdown.link`                | `base0d`             |
-| `markdown.code`                | `base0b`             |
-| `markdown.code-block`          | `base05`             |
-| `markdown.quote`               | `base0c`             |
-| `markdown.heading`             | `base0d`             |
-| `selection.background`         | `base02`             |
-| `caret`                        | `base05`             |
-| `placeholder`                  | `base04`             |
-| `scrollbar.thumb`              | `base03`             |
-| `chart.1`                      | `base0d`             |
-| `chart.2`                      | `base0b`             |
-| `chart.3`                      | `base0a`             |
-| `chart.4`                      | `base0e`             |
-| `chart.5`                      | `base08`             |
-| `chart.6`                      | `base0c`             |
-| `chart.7`                      | `base09`             |
-| `chart.8`                      | `base0f`             |
-| `window.background`            | `base00`             |
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `base00` |
+| `surface.sunken` | `base10`, `base01` |
+| `surface.deep` | `base11`, `base10` |
+| `surface.raised` | `base01` |
+| `surface.overlay` | `base01` |
+| `surface.hover` | `base02` |
+| `control.base` | `base01` |
+| `control.hover` | `base02` |
+| `text.primary` | `base05` |
+| `text.secondary` | `base04` |
+| `text.muted` | `base03` |
+| `text.faint` | `base03` |
+| `border.subtle` | `base02` |
+| `border.strong` | `base03` |
+| `accent.base` | `base0d` |
+| `focus.ring` | `base0d` |
+| `list.selected` | `base02` |
+| `needs-you.base` | `base08` |
+| `needs-you.text` | `base00` |
+| `danger.base` | `base08` |
+| `icon.red` | `base08` |
+| `icon.orange` | `base09` |
+| `icon.yellow` | `base0a` |
+| `icon.green` | `base0b` |
+| `icon.teal` | `base0c` |
+| `icon.blue` | `base0d` |
+| `icon.purple` | `base0e` |
+| `icon.pink` | `base0f` |
+| `state.running` | `base0d` |
+| `state.waiting` | `base0a` |
+| `state.failed` | `base08` |
+| `state.success` | `base0b` |
+| `state.unreadable` | `base09` |
+| `terminal.background` | `base00` |
+| `terminal.foreground` | `base05` |
+| `terminal.cursor` | `base05` |
+| `terminal.cursor-accent` | `base00` |
+| `terminal.selection` | `base02` |
+| `terminal.ansi.black` | `base00` |
+| `terminal.ansi.red` | `base08` |
+| `terminal.ansi.green` | `base0b` |
+| `terminal.ansi.yellow` | `base0a` |
+| `terminal.ansi.blue` | `base0d` |
+| `terminal.ansi.magenta` | `base0e` |
+| `terminal.ansi.cyan` | `base0c` |
+| `terminal.ansi.white` | `base05` |
+| `terminal.ansi.bright-black` | `base03` |
+| `terminal.ansi.bright-red` | `base12`, `base08` |
+| `terminal.ansi.bright-green` | `base14`, `base0b` |
+| `terminal.ansi.bright-yellow` | `base13`, `base0a` |
+| `terminal.ansi.bright-blue` | `base16`, `base0d` |
+| `terminal.ansi.bright-magenta` | `base17`, `base0e` |
+| `terminal.ansi.bright-cyan` | `base15`, `base0c` |
+| `terminal.ansi.bright-white` | `base07` |
+| `syntax.keyword` | `base0e` |
+| `syntax.string` | `base0b` |
+| `syntax.number` | `base09` |
+| `syntax.constant` | `base09` |
+| `syntax.comment` | `base03` |
+| `syntax.function` | `base0d` |
+| `syntax.type` | `base0a` |
+| `syntax.property` | `base0c` |
+| `syntax.attribute` | `base09` |
+| `syntax.tag` | `base08` |
+| `syntax.heading` | `base0d` |
+| `syntax.invalid` | `base08` |
+| `syntax.variable` | `base08` |
+| `syntax.operator` | `base05` |
+| `syntax.punctuation` | `base05` |
+| `markdown.link` | `base0d` |
+| `markdown.code` | `base0b` |
+| `markdown.code-block` | `base05` |
+| `markdown.quote` | `base0c` |
+| `markdown.heading` | `base0d` |
+| `selection.background` | `base02` |
+| `caret` | `base05` |
+| `placeholder` | `base04` |
+| `scrollbar.thumb` | `base03` |
+| `chart.1` | `base0d` |
+| `chart.2` | `base0b` |
+| `chart.3` | `base0a` |
+| `chart.4` | `base0e` |
+| `chart.5` | `base08` |
+| `chart.6` | `base0c` |
+| `chart.7` | `base09` |
+| `chart.8` | `base0f` |
+| `window.background` | `base00` |
 
 Tuned as a base16 scheme is, after the table (#2589):
 
-| Token                          | Tuned                                                                             |
-| ------------------------------ | --------------------------------------------------------------------------------- |
-| `surface.hover`                | halfway between `base01` and `base02`                                             |
-| `selection.text`               | when the theme's `selection.background` is filled and the table left it: `base05` |
-| `terminal.ansi.black`          | toward `base01`, then `base02`, then `base03`                                     |
-| `text.muted`                   | toward `base04`, then `base05`                                                    |
-| `text.faint`                   | toward `base04`, then `base05`                                                    |
-| `text.faint`                   | left out when it reads louder than `text.muted` on `surface.base`                 |
-| `syntax.comment`               | toward `base04`, then `base05`                                                    |
-| `terminal.ansi.bright-black`   | toward `base04`, then `base05`                                                    |
-| `text.secondary`               | toward `base05`                                                                   |
-| `placeholder`                  | toward `base05`                                                                   |
-| `danger.base`                  | toward `base05`                                                                   |
-| `accent.base`                  | toward `base05`                                                                   |
-| `focus.ring`                   | toward `base05`                                                                   |
-| `icon.red`                     | toward `base05`                                                                   |
-| `icon.orange`                  | toward `base05`                                                                   |
-| `icon.yellow`                  | toward `base05`                                                                   |
-| `icon.green`                   | toward `base05`                                                                   |
-| `icon.teal`                    | toward `base05`                                                                   |
-| `icon.blue`                    | toward `base05`                                                                   |
-| `icon.purple`                  | toward `base05`                                                                   |
-| `icon.pink`                    | toward `base05`                                                                   |
-| `state.running`                | toward `base05`                                                                   |
-| `state.waiting`                | toward `base05`                                                                   |
-| `state.failed`                 | toward `base05`                                                                   |
-| `state.success`                | toward `base05`                                                                   |
-| `state.unreadable`             | toward `base05`                                                                   |
-| `needs-you.base`               | toward `base05`                                                                   |
-| `syntax.keyword`               | toward `base05`                                                                   |
-| `syntax.string`                | toward `base05`                                                                   |
-| `syntax.number`                | toward `base05`                                                                   |
-| `syntax.constant`              | toward `base05`                                                                   |
-| `syntax.function`              | toward `base05`                                                                   |
-| `syntax.type`                  | toward `base05`                                                                   |
-| `syntax.property`              | toward `base05`                                                                   |
-| `syntax.attribute`             | toward `base05`                                                                   |
-| `syntax.tag`                   | toward `base05`                                                                   |
-| `syntax.heading`               | toward `base05`                                                                   |
-| `syntax.invalid`               | toward `base05`                                                                   |
-| `syntax.variable`              | toward `base05`                                                                   |
-| `markdown.link`                | toward `base05`                                                                   |
-| `markdown.code`                | toward `base05`                                                                   |
-| `markdown.quote`               | toward `base05`                                                                   |
-| `markdown.heading`             | toward `base05`                                                                   |
-| `chart.1`                      | toward `base05`                                                                   |
-| `chart.2`                      | toward `base05`                                                                   |
-| `chart.3`                      | toward `base05`                                                                   |
-| `chart.4`                      | toward `base05`                                                                   |
-| `chart.5`                      | toward `base05`                                                                   |
-| `chart.6`                      | toward `base05`                                                                   |
-| `chart.7`                      | toward `base05`                                                                   |
-| `chart.8`                      | toward `base05`                                                                   |
-| `terminal.ansi.red`            | toward `base05`                                                                   |
-| `terminal.ansi.green`          | toward `base05`                                                                   |
-| `terminal.ansi.yellow`         | toward `base05`                                                                   |
-| `terminal.ansi.blue`           | toward `base05`                                                                   |
-| `terminal.ansi.magenta`        | toward `base05`                                                                   |
-| `terminal.ansi.cyan`           | toward `base05`                                                                   |
-| `terminal.ansi.bright-red`     | toward `base05`                                                                   |
-| `terminal.ansi.bright-green`   | toward `base05`                                                                   |
-| `terminal.ansi.bright-yellow`  | toward `base05`                                                                   |
-| `terminal.ansi.bright-blue`    | toward `base05`                                                                   |
-| `terminal.ansi.bright-magenta` | toward `base05`                                                                   |
-| `terminal.ansi.bright-cyan`    | toward `base05`                                                                   |
+| Token | Tuned |
+|---|---|
+| `surface.hover` | halfway between `base01` and `base02` |
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `base05` |
+| `terminal.ansi.black` | toward `base01`, then `base02`, then `base03` |
+| `text.muted` | toward `base04`, then `base05` |
+| `text.faint` | toward `base04`, then `base05` |
+| `text.faint` | left out when it reads louder than `text.muted` on `surface.base` |
+| `syntax.comment` | toward `base04`, then `base05` |
+| `terminal.ansi.bright-black` | toward `base04`, then `base05` |
+| `text.secondary` | toward `base05` |
+| `placeholder` | toward `base05` |
+| `danger.base` | toward `base05` |
+| `accent.base` | toward `base05` |
+| `focus.ring` | toward `base05` |
+| `icon.red` | toward `base05` |
+| `icon.orange` | toward `base05` |
+| `icon.yellow` | toward `base05` |
+| `icon.green` | toward `base05` |
+| `icon.teal` | toward `base05` |
+| `icon.blue` | toward `base05` |
+| `icon.purple` | toward `base05` |
+| `icon.pink` | toward `base05` |
+| `state.running` | toward `base05` |
+| `state.waiting` | toward `base05` |
+| `state.failed` | toward `base05` |
+| `state.success` | toward `base05` |
+| `state.unreadable` | toward `base05` |
+| `needs-you.base` | toward `base05` |
+| `syntax.keyword` | toward `base05` |
+| `syntax.string` | toward `base05` |
+| `syntax.number` | toward `base05` |
+| `syntax.constant` | toward `base05` |
+| `syntax.function` | toward `base05` |
+| `syntax.type` | toward `base05` |
+| `syntax.property` | toward `base05` |
+| `syntax.attribute` | toward `base05` |
+| `syntax.tag` | toward `base05` |
+| `syntax.heading` | toward `base05` |
+| `syntax.invalid` | toward `base05` |
+| `syntax.variable` | toward `base05` |
+| `markdown.link` | toward `base05` |
+| `markdown.code` | toward `base05` |
+| `markdown.quote` | toward `base05` |
+| `markdown.heading` | toward `base05` |
+| `chart.1` | toward `base05` |
+| `chart.2` | toward `base05` |
+| `chart.3` | toward `base05` |
+| `chart.4` | toward `base05` |
+| `chart.5` | toward `base05` |
+| `chart.6` | toward `base05` |
+| `chart.7` | toward `base05` |
+| `chart.8` | toward `base05` |
+| `terminal.ansi.red` | toward `base05` |
+| `terminal.ansi.green` | toward `base05` |
+| `terminal.ansi.yellow` | toward `base05` |
+| `terminal.ansi.blue` | toward `base05` |
+| `terminal.ansi.magenta` | toward `base05` |
+| `terminal.ansi.cyan` | toward `base05` |
+| `terminal.ansi.bright-red` | toward `base05` |
+| `terminal.ansi.bright-green` | toward `base05` |
+| `terminal.ansi.bright-yellow` | toward `base05` |
+| `terminal.ansi.bright-blue` | toward `base05` |
+| `terminal.ansi.bright-magenta` | toward `base05` |
+| `terminal.ansi.bright-cyan` | toward `base05` |
 
 ### iTerm2
 
-| Token                           | Takes, nearest first         |
-| ------------------------------- | ---------------------------- |
-| `surface.base`                  | `Background Color`           |
-| `text.primary`                  | `Foreground Color`           |
-| `text.muted`                    | `Ansi 8 Color`               |
-| `accent.base`                   | `Ansi 4 Color`               |
-| `focus.ring`                    | `Ansi 4 Color`               |
-| `danger.base`                   | `Ansi 1 Color`               |
-| `icon.red`                      | `Ansi 1 Color`               |
-| `icon.yellow`                   | `Ansi 3 Color`               |
-| `icon.green`                    | `Ansi 2 Color`               |
-| `icon.teal`                     | `Ansi 6 Color`               |
-| `icon.blue`                     | `Ansi 4 Color`               |
-| `icon.purple`                   | `Ansi 5 Color`               |
-| `state.running`                 | `Ansi 4 Color`               |
-| `state.waiting`                 | `Ansi 3 Color`               |
-| `state.failed`                  | `Ansi 1 Color`               |
-| `state.success`                 | `Ansi 2 Color`               |
-| `terminal.background`           | `Background Color`           |
-| `terminal.foreground`           | `Foreground Color`           |
-| `terminal.cursor`               | `Cursor Color`               |
-| `terminal.cursor-accent`        | `Cursor Text Color`          |
-| `terminal.selection`            | `Selection Color`            |
-| `terminal.selection-foreground` | `Selected Text Color`        |
-| `terminal.ansi.black`           | `Ansi 0 Color`               |
-| `terminal.ansi.red`             | `Ansi 1 Color`               |
-| `terminal.ansi.green`           | `Ansi 2 Color`               |
-| `terminal.ansi.yellow`          | `Ansi 3 Color`               |
-| `terminal.ansi.blue`            | `Ansi 4 Color`               |
-| `terminal.ansi.magenta`         | `Ansi 5 Color`               |
-| `terminal.ansi.cyan`            | `Ansi 6 Color`               |
-| `terminal.ansi.white`           | `Ansi 7 Color`               |
-| `terminal.ansi.bright-black`    | `Ansi 8 Color`               |
-| `terminal.ansi.bright-red`      | `Ansi 9 Color`               |
-| `terminal.ansi.bright-green`    | `Ansi 10 Color`              |
-| `terminal.ansi.bright-yellow`   | `Ansi 11 Color`              |
-| `terminal.ansi.bright-blue`     | `Ansi 12 Color`              |
-| `terminal.ansi.bright-magenta`  | `Ansi 13 Color`              |
-| `terminal.ansi.bright-cyan`     | `Ansi 14 Color`              |
-| `terminal.ansi.bright-white`    | `Ansi 15 Color`              |
-| `syntax.keyword`                | `Ansi 5 Color`               |
-| `syntax.string`                 | `Ansi 2 Color`               |
-| `syntax.number`                 | `Ansi 11 Color`              |
-| `syntax.constant`               | `Ansi 11 Color`              |
-| `syntax.comment`                | `Ansi 8 Color`               |
-| `syntax.function`               | `Ansi 4 Color`               |
-| `syntax.type`                   | `Ansi 3 Color`               |
-| `syntax.property`               | `Ansi 6 Color`               |
-| `syntax.tag`                    | `Ansi 1 Color`               |
-| `syntax.heading`                | `Ansi 4 Color`               |
-| `syntax.invalid`                | `Ansi 1 Color`               |
-| `syntax.variable`               | `Ansi 1 Color`               |
-| `markdown.link`                 | `Link Color`, `Ansi 4 Color` |
-| `markdown.code`                 | `Ansi 2 Color`               |
-| `markdown.quote`                | `Ansi 6 Color`               |
-| `markdown.heading`              | `Ansi 4 Color`               |
-| `selection.background`          | `Selection Color`            |
-| `selection.text`                | `Selected Text Color`        |
-| `caret`                         | `Cursor Color`               |
-| `chart.1`                       | `Ansi 4 Color`               |
-| `chart.2`                       | `Ansi 2 Color`               |
-| `chart.3`                       | `Ansi 3 Color`               |
-| `chart.4`                       | `Ansi 5 Color`               |
-| `chart.5`                       | `Ansi 1 Color`               |
-| `chart.6`                       | `Ansi 6 Color`               |
-| `chart.7`                       | `Ansi 12 Color`              |
-| `chart.8`                       | `Ansi 13 Color`              |
-| `window.background`             | `Background Color`           |
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `Background Color` |
+| `text.primary` | `Foreground Color` |
+| `text.muted` | `Ansi 8 Color` |
+| `accent.base` | `Ansi 4 Color` |
+| `focus.ring` | `Ansi 4 Color` |
+| `danger.base` | `Ansi 1 Color` |
+| `icon.red` | `Ansi 1 Color` |
+| `icon.yellow` | `Ansi 3 Color` |
+| `icon.green` | `Ansi 2 Color` |
+| `icon.teal` | `Ansi 6 Color` |
+| `icon.blue` | `Ansi 4 Color` |
+| `icon.purple` | `Ansi 5 Color` |
+| `state.running` | `Ansi 4 Color` |
+| `state.waiting` | `Ansi 3 Color` |
+| `state.failed` | `Ansi 1 Color` |
+| `state.success` | `Ansi 2 Color` |
+| `terminal.background` | `Background Color` |
+| `terminal.foreground` | `Foreground Color` |
+| `terminal.cursor` | `Cursor Color` |
+| `terminal.cursor-accent` | `Cursor Text Color` |
+| `terminal.selection` | `Selection Color` |
+| `terminal.selection-foreground` | `Selected Text Color` |
+| `terminal.ansi.black` | `Ansi 0 Color` |
+| `terminal.ansi.red` | `Ansi 1 Color` |
+| `terminal.ansi.green` | `Ansi 2 Color` |
+| `terminal.ansi.yellow` | `Ansi 3 Color` |
+| `terminal.ansi.blue` | `Ansi 4 Color` |
+| `terminal.ansi.magenta` | `Ansi 5 Color` |
+| `terminal.ansi.cyan` | `Ansi 6 Color` |
+| `terminal.ansi.white` | `Ansi 7 Color` |
+| `terminal.ansi.bright-black` | `Ansi 8 Color` |
+| `terminal.ansi.bright-red` | `Ansi 9 Color` |
+| `terminal.ansi.bright-green` | `Ansi 10 Color` |
+| `terminal.ansi.bright-yellow` | `Ansi 11 Color` |
+| `terminal.ansi.bright-blue` | `Ansi 12 Color` |
+| `terminal.ansi.bright-magenta` | `Ansi 13 Color` |
+| `terminal.ansi.bright-cyan` | `Ansi 14 Color` |
+| `terminal.ansi.bright-white` | `Ansi 15 Color` |
+| `syntax.keyword` | `Ansi 5 Color` |
+| `syntax.string` | `Ansi 2 Color` |
+| `syntax.number` | `Ansi 11 Color` |
+| `syntax.constant` | `Ansi 11 Color` |
+| `syntax.comment` | `Ansi 8 Color` |
+| `syntax.function` | `Ansi 4 Color` |
+| `syntax.type` | `Ansi 3 Color` |
+| `syntax.property` | `Ansi 6 Color` |
+| `syntax.tag` | `Ansi 1 Color` |
+| `syntax.heading` | `Ansi 4 Color` |
+| `syntax.invalid` | `Ansi 1 Color` |
+| `syntax.variable` | `Ansi 1 Color` |
+| `markdown.link` | `Link Color`, `Ansi 4 Color` |
+| `markdown.code` | `Ansi 2 Color` |
+| `markdown.quote` | `Ansi 6 Color` |
+| `markdown.heading` | `Ansi 4 Color` |
+| `selection.background` | `Selection Color` |
+| `selection.text` | `Selected Text Color` |
+| `caret` | `Cursor Color` |
+| `chart.1` | `Ansi 4 Color` |
+| `chart.2` | `Ansi 2 Color` |
+| `chart.3` | `Ansi 3 Color` |
+| `chart.4` | `Ansi 5 Color` |
+| `chart.5` | `Ansi 1 Color` |
+| `chart.6` | `Ansi 6 Color` |
+| `chart.7` | `Ansi 12 Color` |
+| `chart.8` | `Ansi 13 Color` |
+| `window.background` | `Background Color` |
 
 Tuned after the table (#2589). The terminal's own colours (its background, its words, its sixteen ANSI colours, its cursor and its selection) are what it draws, and are taken as they are:
 
-| Token              | Tuned                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| `selection.text`   | when the theme's `selection.background` is filled and the table left it: `Foreground Color` |
-| `text.muted`       | toward `Foreground Color`                                                                   |
-| `syntax.comment`   | toward `Foreground Color`                                                                   |
-| `danger.base`      | toward `Foreground Color`                                                                   |
-| `accent.base`      | toward `Foreground Color`                                                                   |
-| `focus.ring`       | toward `Foreground Color`                                                                   |
-| `icon.red`         | toward `Foreground Color`                                                                   |
-| `icon.orange`      | toward `Foreground Color`                                                                   |
-| `icon.yellow`      | toward `Foreground Color`                                                                   |
-| `icon.green`       | toward `Foreground Color`                                                                   |
-| `icon.teal`        | toward `Foreground Color`                                                                   |
-| `icon.blue`        | toward `Foreground Color`                                                                   |
-| `icon.purple`      | toward `Foreground Color`                                                                   |
-| `icon.pink`        | toward `Foreground Color`                                                                   |
-| `state.running`    | toward `Foreground Color`                                                                   |
-| `state.waiting`    | toward `Foreground Color`                                                                   |
-| `state.failed`     | toward `Foreground Color`                                                                   |
-| `state.success`    | toward `Foreground Color`                                                                   |
-| `state.unreadable` | toward `Foreground Color`                                                                   |
-| `needs-you.base`   | toward `Foreground Color`                                                                   |
-| `syntax.keyword`   | toward `Foreground Color`                                                                   |
-| `syntax.string`    | toward `Foreground Color`                                                                   |
-| `syntax.number`    | toward `Foreground Color`                                                                   |
-| `syntax.constant`  | toward `Foreground Color`                                                                   |
-| `syntax.function`  | toward `Foreground Color`                                                                   |
-| `syntax.type`      | toward `Foreground Color`                                                                   |
-| `syntax.property`  | toward `Foreground Color`                                                                   |
-| `syntax.attribute` | toward `Foreground Color`                                                                   |
-| `syntax.tag`       | toward `Foreground Color`                                                                   |
-| `syntax.heading`   | toward `Foreground Color`                                                                   |
-| `syntax.invalid`   | toward `Foreground Color`                                                                   |
-| `syntax.variable`  | toward `Foreground Color`                                                                   |
-| `markdown.link`    | toward `Foreground Color`                                                                   |
-| `markdown.code`    | toward `Foreground Color`                                                                   |
-| `markdown.quote`   | toward `Foreground Color`                                                                   |
-| `markdown.heading` | toward `Foreground Color`                                                                   |
-| `chart.1`          | toward `Foreground Color`                                                                   |
-| `chart.2`          | toward `Foreground Color`                                                                   |
-| `chart.3`          | toward `Foreground Color`                                                                   |
-| `chart.4`          | toward `Foreground Color`                                                                   |
-| `chart.5`          | toward `Foreground Color`                                                                   |
-| `chart.6`          | toward `Foreground Color`                                                                   |
-| `chart.7`          | toward `Foreground Color`                                                                   |
-| `chart.8`          | toward `Foreground Color`                                                                   |
+| Token | Tuned |
+|---|---|
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `Foreground Color` |
+| `text.muted` | toward `Foreground Color` |
+| `syntax.comment` | toward `Foreground Color` |
+| `danger.base` | toward `Foreground Color` |
+| `accent.base` | toward `Foreground Color` |
+| `focus.ring` | toward `Foreground Color` |
+| `icon.red` | toward `Foreground Color` |
+| `icon.orange` | toward `Foreground Color` |
+| `icon.yellow` | toward `Foreground Color` |
+| `icon.green` | toward `Foreground Color` |
+| `icon.teal` | toward `Foreground Color` |
+| `icon.blue` | toward `Foreground Color` |
+| `icon.purple` | toward `Foreground Color` |
+| `icon.pink` | toward `Foreground Color` |
+| `state.running` | toward `Foreground Color` |
+| `state.waiting` | toward `Foreground Color` |
+| `state.failed` | toward `Foreground Color` |
+| `state.success` | toward `Foreground Color` |
+| `state.unreadable` | toward `Foreground Color` |
+| `needs-you.base` | toward `Foreground Color` |
+| `syntax.keyword` | toward `Foreground Color` |
+| `syntax.string` | toward `Foreground Color` |
+| `syntax.number` | toward `Foreground Color` |
+| `syntax.constant` | toward `Foreground Color` |
+| `syntax.function` | toward `Foreground Color` |
+| `syntax.type` | toward `Foreground Color` |
+| `syntax.property` | toward `Foreground Color` |
+| `syntax.attribute` | toward `Foreground Color` |
+| `syntax.tag` | toward `Foreground Color` |
+| `syntax.heading` | toward `Foreground Color` |
+| `syntax.invalid` | toward `Foreground Color` |
+| `syntax.variable` | toward `Foreground Color` |
+| `markdown.link` | toward `Foreground Color` |
+| `markdown.code` | toward `Foreground Color` |
+| `markdown.quote` | toward `Foreground Color` |
+| `markdown.heading` | toward `Foreground Color` |
+| `chart.1` | toward `Foreground Color` |
+| `chart.2` | toward `Foreground Color` |
+| `chart.3` | toward `Foreground Color` |
+| `chart.4` | toward `Foreground Color` |
+| `chart.5` | toward `Foreground Color` |
+| `chart.6` | toward `Foreground Color` |
+| `chart.7` | toward `Foreground Color` |
+| `chart.8` | toward `Foreground Color` |
 
 ### Ghostty
 
-| Token                           | Takes, nearest first   |
-| ------------------------------- | ---------------------- |
-| `surface.base`                  | `background`           |
-| `text.primary`                  | `foreground`           |
-| `text.muted`                    | `palette 8`            |
-| `accent.base`                   | `palette 4`            |
-| `focus.ring`                    | `palette 4`            |
-| `danger.base`                   | `palette 1`            |
-| `icon.red`                      | `palette 1`            |
-| `icon.yellow`                   | `palette 3`            |
-| `icon.green`                    | `palette 2`            |
-| `icon.teal`                     | `palette 6`            |
-| `icon.blue`                     | `palette 4`            |
-| `icon.purple`                   | `palette 5`            |
-| `state.running`                 | `palette 4`            |
-| `state.waiting`                 | `palette 3`            |
-| `state.failed`                  | `palette 1`            |
-| `state.success`                 | `palette 2`            |
-| `terminal.background`           | `background`           |
-| `terminal.foreground`           | `foreground`           |
-| `terminal.cursor`               | `cursor-color`         |
-| `terminal.cursor-accent`        | `cursor-text`          |
-| `terminal.selection`            | `selection-background` |
+| Token | Takes, nearest first |
+|---|---|
+| `surface.base` | `background` |
+| `text.primary` | `foreground` |
+| `text.muted` | `palette 8` |
+| `accent.base` | `palette 4` |
+| `focus.ring` | `palette 4` |
+| `danger.base` | `palette 1` |
+| `icon.red` | `palette 1` |
+| `icon.yellow` | `palette 3` |
+| `icon.green` | `palette 2` |
+| `icon.teal` | `palette 6` |
+| `icon.blue` | `palette 4` |
+| `icon.purple` | `palette 5` |
+| `state.running` | `palette 4` |
+| `state.waiting` | `palette 3` |
+| `state.failed` | `palette 1` |
+| `state.success` | `palette 2` |
+| `terminal.background` | `background` |
+| `terminal.foreground` | `foreground` |
+| `terminal.cursor` | `cursor-color` |
+| `terminal.cursor-accent` | `cursor-text` |
+| `terminal.selection` | `selection-background` |
 | `terminal.selection-foreground` | `selection-foreground` |
-| `terminal.ansi.black`           | `palette 0`            |
-| `terminal.ansi.red`             | `palette 1`            |
-| `terminal.ansi.green`           | `palette 2`            |
-| `terminal.ansi.yellow`          | `palette 3`            |
-| `terminal.ansi.blue`            | `palette 4`            |
-| `terminal.ansi.magenta`         | `palette 5`            |
-| `terminal.ansi.cyan`            | `palette 6`            |
-| `terminal.ansi.white`           | `palette 7`            |
-| `terminal.ansi.bright-black`    | `palette 8`            |
-| `terminal.ansi.bright-red`      | `palette 9`            |
-| `terminal.ansi.bright-green`    | `palette 10`           |
-| `terminal.ansi.bright-yellow`   | `palette 11`           |
-| `terminal.ansi.bright-blue`     | `palette 12`           |
-| `terminal.ansi.bright-magenta`  | `palette 13`           |
-| `terminal.ansi.bright-cyan`     | `palette 14`           |
-| `terminal.ansi.bright-white`    | `palette 15`           |
-| `syntax.keyword`                | `palette 5`            |
-| `syntax.string`                 | `palette 2`            |
-| `syntax.number`                 | `palette 11`           |
-| `syntax.constant`               | `palette 11`           |
-| `syntax.comment`                | `palette 8`            |
-| `syntax.function`               | `palette 4`            |
-| `syntax.type`                   | `palette 3`            |
-| `syntax.property`               | `palette 6`            |
-| `syntax.tag`                    | `palette 1`            |
-| `syntax.heading`                | `palette 4`            |
-| `syntax.invalid`                | `palette 1`            |
-| `syntax.variable`               | `palette 1`            |
-| `markdown.link`                 | `palette 4`            |
-| `markdown.code`                 | `palette 2`            |
-| `markdown.quote`                | `palette 6`            |
-| `markdown.heading`              | `palette 4`            |
-| `selection.background`          | `selection-background` |
-| `selection.text`                | `selection-foreground` |
-| `caret`                         | `cursor-color`         |
-| `chart.1`                       | `palette 4`            |
-| `chart.2`                       | `palette 2`            |
-| `chart.3`                       | `palette 3`            |
-| `chart.4`                       | `palette 5`            |
-| `chart.5`                       | `palette 1`            |
-| `chart.6`                       | `palette 6`            |
-| `chart.7`                       | `palette 12`           |
-| `chart.8`                       | `palette 13`           |
-| `window.background`             | `background`           |
+| `terminal.ansi.black` | `palette 0` |
+| `terminal.ansi.red` | `palette 1` |
+| `terminal.ansi.green` | `palette 2` |
+| `terminal.ansi.yellow` | `palette 3` |
+| `terminal.ansi.blue` | `palette 4` |
+| `terminal.ansi.magenta` | `palette 5` |
+| `terminal.ansi.cyan` | `palette 6` |
+| `terminal.ansi.white` | `palette 7` |
+| `terminal.ansi.bright-black` | `palette 8` |
+| `terminal.ansi.bright-red` | `palette 9` |
+| `terminal.ansi.bright-green` | `palette 10` |
+| `terminal.ansi.bright-yellow` | `palette 11` |
+| `terminal.ansi.bright-blue` | `palette 12` |
+| `terminal.ansi.bright-magenta` | `palette 13` |
+| `terminal.ansi.bright-cyan` | `palette 14` |
+| `terminal.ansi.bright-white` | `palette 15` |
+| `syntax.keyword` | `palette 5` |
+| `syntax.string` | `palette 2` |
+| `syntax.number` | `palette 11` |
+| `syntax.constant` | `palette 11` |
+| `syntax.comment` | `palette 8` |
+| `syntax.function` | `palette 4` |
+| `syntax.type` | `palette 3` |
+| `syntax.property` | `palette 6` |
+| `syntax.tag` | `palette 1` |
+| `syntax.heading` | `palette 4` |
+| `syntax.invalid` | `palette 1` |
+| `syntax.variable` | `palette 1` |
+| `markdown.link` | `palette 4` |
+| `markdown.code` | `palette 2` |
+| `markdown.quote` | `palette 6` |
+| `markdown.heading` | `palette 4` |
+| `selection.background` | `selection-background` |
+| `selection.text` | `selection-foreground` |
+| `caret` | `cursor-color` |
+| `chart.1` | `palette 4` |
+| `chart.2` | `palette 2` |
+| `chart.3` | `palette 3` |
+| `chart.4` | `palette 5` |
+| `chart.5` | `palette 1` |
+| `chart.6` | `palette 6` |
+| `chart.7` | `palette 12` |
+| `chart.8` | `palette 13` |
+| `window.background` | `background` |
 
 Tuned as an iTerm2 preset is, after the table (#2589):
 
-| Token              | Tuned                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------- |
-| `selection.text`   | when the theme's `selection.background` is filled and the table left it: `foreground` |
-| `text.muted`       | toward `foreground`                                                                   |
-| `syntax.comment`   | toward `foreground`                                                                   |
-| `danger.base`      | toward `foreground`                                                                   |
-| `accent.base`      | toward `foreground`                                                                   |
-| `focus.ring`       | toward `foreground`                                                                   |
-| `icon.red`         | toward `foreground`                                                                   |
-| `icon.orange`      | toward `foreground`                                                                   |
-| `icon.yellow`      | toward `foreground`                                                                   |
-| `icon.green`       | toward `foreground`                                                                   |
-| `icon.teal`        | toward `foreground`                                                                   |
-| `icon.blue`        | toward `foreground`                                                                   |
-| `icon.purple`      | toward `foreground`                                                                   |
-| `icon.pink`        | toward `foreground`                                                                   |
-| `state.running`    | toward `foreground`                                                                   |
-| `state.waiting`    | toward `foreground`                                                                   |
-| `state.failed`     | toward `foreground`                                                                   |
-| `state.success`    | toward `foreground`                                                                   |
-| `state.unreadable` | toward `foreground`                                                                   |
-| `needs-you.base`   | toward `foreground`                                                                   |
-| `syntax.keyword`   | toward `foreground`                                                                   |
-| `syntax.string`    | toward `foreground`                                                                   |
-| `syntax.number`    | toward `foreground`                                                                   |
-| `syntax.constant`  | toward `foreground`                                                                   |
-| `syntax.function`  | toward `foreground`                                                                   |
-| `syntax.type`      | toward `foreground`                                                                   |
-| `syntax.property`  | toward `foreground`                                                                   |
-| `syntax.attribute` | toward `foreground`                                                                   |
-| `syntax.tag`       | toward `foreground`                                                                   |
-| `syntax.heading`   | toward `foreground`                                                                   |
-| `syntax.invalid`   | toward `foreground`                                                                   |
-| `syntax.variable`  | toward `foreground`                                                                   |
-| `markdown.link`    | toward `foreground`                                                                   |
-| `markdown.code`    | toward `foreground`                                                                   |
-| `markdown.quote`   | toward `foreground`                                                                   |
-| `markdown.heading` | toward `foreground`                                                                   |
-| `chart.1`          | toward `foreground`                                                                   |
-| `chart.2`          | toward `foreground`                                                                   |
-| `chart.3`          | toward `foreground`                                                                   |
-| `chart.4`          | toward `foreground`                                                                   |
-| `chart.5`          | toward `foreground`                                                                   |
-| `chart.6`          | toward `foreground`                                                                   |
-| `chart.7`          | toward `foreground`                                                                   |
-| `chart.8`          | toward `foreground`                                                                   |
+| Token | Tuned |
+|---|---|
+| `selection.text` | when the theme's `selection.background` is filled and the table left it: `foreground` |
+| `text.muted` | toward `foreground` |
+| `syntax.comment` | toward `foreground` |
+| `danger.base` | toward `foreground` |
+| `accent.base` | toward `foreground` |
+| `focus.ring` | toward `foreground` |
+| `icon.red` | toward `foreground` |
+| `icon.orange` | toward `foreground` |
+| `icon.yellow` | toward `foreground` |
+| `icon.green` | toward `foreground` |
+| `icon.teal` | toward `foreground` |
+| `icon.blue` | toward `foreground` |
+| `icon.purple` | toward `foreground` |
+| `icon.pink` | toward `foreground` |
+| `state.running` | toward `foreground` |
+| `state.waiting` | toward `foreground` |
+| `state.failed` | toward `foreground` |
+| `state.success` | toward `foreground` |
+| `state.unreadable` | toward `foreground` |
+| `needs-you.base` | toward `foreground` |
+| `syntax.keyword` | toward `foreground` |
+| `syntax.string` | toward `foreground` |
+| `syntax.number` | toward `foreground` |
+| `syntax.constant` | toward `foreground` |
+| `syntax.function` | toward `foreground` |
+| `syntax.type` | toward `foreground` |
+| `syntax.property` | toward `foreground` |
+| `syntax.attribute` | toward `foreground` |
+| `syntax.tag` | toward `foreground` |
+| `syntax.heading` | toward `foreground` |
+| `syntax.invalid` | toward `foreground` |
+| `syntax.variable` | toward `foreground` |
+| `markdown.link` | toward `foreground` |
+| `markdown.code` | toward `foreground` |
+| `markdown.quote` | toward `foreground` |
+| `markdown.heading` | toward `foreground` |
+| `chart.1` | toward `foreground` |
+| `chart.2` | toward `foreground` |
+| `chart.3` | toward `foreground` |
+| `chart.4` | toward `foreground` |
+| `chart.5` | toward `foreground` |
+| `chart.6` | toward `foreground` |
+| `chart.7` | toward `foreground` |
+| `chart.8` | toward `foreground` |
 
 ## Exporting a theme
 
