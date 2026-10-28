@@ -85,6 +85,7 @@ fn host_armed_on(
         plugin: Some(here.plugin.clone()),
         git_hooks: None,
         skill_sets: Some(here.sets.clone()),
+        chat_settings: None,
     };
     let linked = purlis_core::hoststart::plane_skills_laid_out(
         on,

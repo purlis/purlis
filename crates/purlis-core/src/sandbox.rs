@@ -1774,6 +1774,22 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             deny(Class::Integrity, folder, Access::Write);
         }
     }
+    // …and the state folder that is there is held whole: the entry itself is never renamed,
+    // moved or removed, so what purlis holds below it stays where purlis holds it. What is below
+    // it is held as the rows above say.
+    let held_whole: Vec<Denial> = crate::names::STATE_DIR
+        .spellings()
+        .map(|state| root.join(state))
+        .filter(|folder| std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()))
+        .map(|folder| Denial {
+            class: Class::Integrity,
+            path: folder,
+            access: Access::Write,
+            named: None,
+            reach: Reach::Itself,
+            any_case: true,
+        })
+        .collect();
 
     // 3. Human powers: the approvals a person gave on this machine.
     let config_root = crate::machine::rooted(
@@ -1915,6 +1931,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             unresolved.get_or_insert(why);
         }
     }
+    paths.extend(held_whole);
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {
@@ -2886,6 +2903,9 @@ pub struct ArmedWith<'a> {
     /// Where a chat's folders of links to the plane's skills are laid out (ADR 0063 as amended
     /// 2026-10-20): a plugin folder too, held as the git hooks are.
     pub skill_sets: Option<&'a Path>,
+    /// Where chats' settings files are kept (`hoststart::settings_in_a_file`): held at every
+    /// level, inside a folder a person let the chat write too.
+    pub chat_settings: Option<&'a Path>,
 }
 
 /// **The whole install `program` belongs to**, as the kernel names it: the app bundle it is
@@ -3702,6 +3722,19 @@ impl Applied {
             {
                 return Err(NotStarted::KitWritable(path.to_path_buf()));
             }
+        }
+        // Chats' settings files, at every level: a grant that reaches them lifts nothing here.
+        if let Some(folder) = kit.chat_settings {
+            let held: Vec<PathBuf> = [folder.to_path_buf(), real(folder)].into_iter().fold(
+                Vec::new(),
+                |mut all, one| {
+                    if !all.contains(&one) {
+                        all.push(one);
+                    }
+                    all
+                },
+            );
+            self.hold_past_grants(held);
         }
         if self.level != Level::Floor {
             return Ok(());

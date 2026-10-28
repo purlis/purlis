@@ -46,6 +46,9 @@ pub struct Kit {
     /// Where the folders of links a chat is handed the plane's skills by are laid out
     /// ([`crate::skills::lay_out`]): `<app data>/skill-sets`, where purlis has a data folder.
     pub skill_sets: Option<PathBuf>,
+    /// Where a chat's settings too long for its command line are kept ([`settings_in_a_file`]):
+    /// `<app data>/chat-settings`, where purlis has a data folder.
+    pub chat_settings: Option<PathBuf>,
 }
 
 impl Kit {
@@ -57,6 +60,7 @@ impl Kit {
             plugin: self.plugin.as_deref(),
             git_hooks: self.git_hooks.as_ref().map(crate::githooks::GitHooks::dir),
             skill_sets: self.skill_sets.as_deref(),
+            chat_settings: self.chat_settings.as_deref(),
         }
     }
 
@@ -73,6 +77,7 @@ impl Kit {
             plugin,
             git_hooks,
             skill_sets: skill_sets_here(),
+            chat_settings: chat_settings_here(),
         }
     }
 
@@ -104,6 +109,7 @@ impl Kit {
             plugin,
             git_hooks,
             skill_sets: Some(skill_sets_in(data)),
+            chat_settings: Some(chat_settings_in(data)),
         }
     }
 
@@ -117,6 +123,7 @@ impl Kit {
                 plugin: None,
                 git_hooks: None,
                 skill_sets: None,
+                chat_settings: None,
             },
         }
     }
@@ -137,6 +144,20 @@ pub fn skill_sets_here() -> Option<PathBuf> {
 /// [`SKILL_SETS`] in the app data folder of the data home `data`: the one spelling of its path.
 pub fn skill_sets_in(data: &Path) -> PathBuf {
     data.join(crate::names::BUNDLE_ID.write).join(SKILL_SETS)
+}
+
+/// The folder of the app's data folder chats' settings files are kept in, one folder per plane
+/// by its clone key ([`settings_in_a_file`]).
+pub const CHAT_SETTINGS: &str = "chat-settings";
+
+/// [`CHAT_SETTINGS`] in this user's app data folder.
+pub fn chat_settings_here() -> Option<PathBuf> {
+    dirs::data_dir().map(|data| chat_settings_in(&data))
+}
+
+/// [`CHAT_SETTINGS`] in the app data folder of the data home `data`.
+pub fn chat_settings_in(data: &Path) -> PathBuf {
+    data.join(crate::names::BUNDLE_ID.write).join(CHAT_SETTINGS)
 }
 
 /// **The folder of links a chat in `root` is handed its set's folder by**, laid out by the host
@@ -586,7 +607,7 @@ pub fn compose_ready(
     };
     // Settings too long for one word of a command line go through a file of their own (SK-9).
     let args = match start.program.as_deref() {
-        Some(id) => settings_in_a_file(root, id, args)?,
+        Some(id) => settings_in_a_file(kit.chat_settings.as_deref(), root, id, args)?,
         None => args,
     };
     let env = finished_env(
@@ -831,17 +852,22 @@ fn recorded(
 /// level of which it is denied writing, goes through a file.
 pub const SETTINGS_IN_A_WORD: usize = 96 * 1024;
 
-/// The folder of this machine's state a chat's settings file is kept in, by the chat's id.
+/// The folder of the plane's state chats' settings files were kept in by earlier builds
+/// (`<state>/chat-settings`): never read now, swept ([`sweep_settings`]), and held as an
+/// integrity path.
 pub const SETTINGS_DIR: &str = "chat-settings";
 
 /// **`args` with a `--settings` JSON longer than [`SETTINGS_IN_A_WORD`] put in a file**, the
-/// chat `id`'s in this machine's state of the project at `root`
-/// (`chat-settings/<id>.<digest>.json`, private, written through folder handles with no link
-/// followed), and its path in the JSON's place: Claude Code reads `--settings` as JSON or as a
-/// file. The file's name carries the digest of what purlis wrote ([`settings_digest`]), so what
-/// it is read back as is only ever what was written ([`settings_from_its_file`]). Words with a
-/// shorter one, or none, are as they were. Refused for an id that is no chat's.
+/// chat `id`'s in `folder`, the app data folder's [`CHAT_SETTINGS`], under the clone key of the
+/// project at `root` (`<app data>/chat-settings/<clone key>/<id>.<digest>.json`, private,
+/// written through folder handles with no link followed), and its path in the JSON's place:
+/// Claude Code reads `--settings` as JSON or as a file. The app data folder is outside every
+/// plane, so the file sits apart from what a chat works in. Its name carries the digest of what
+/// purlis wrote ([`settings_digest`]), so what it is read back as is only ever what was written
+/// ([`settings_from_its_file`]). Words with a shorter one, or none, are as they were. Refused for
+/// an id that is no chat's, and where purlis has no data folder.
 pub fn settings_in_a_file(
+    folder: Option<&Path>,
     root: &Path,
     id: &str,
     mut args: Vec<String>,
@@ -864,21 +890,28 @@ pub fn settings_in_a_file(
                 .to_owned(),
         );
     }
-    let state = crate::plane::state_dir(root);
-    std::fs::create_dir_all(&state).map_err(|why| why.to_string())?;
-    crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
-    let rel = std::path::PathBuf::from(SETTINGS_DIR).join(format!(
+    let Some(folder) = folder else {
+        return Err(
+            "a chat whose settings are too long for its command line was not started: purlis \
+             has no data folder to keep them in"
+                .to_owned(),
+        );
+    };
+    std::fs::create_dir_all(folder).map_err(|why| why.to_string())?;
+    crate::profiletrust::private_dir(folder).map_err(|why| why.to_string())?;
+    let key = crate::plane::CloneKey::of(root);
+    let rel = std::path::PathBuf::from(key.as_str()).join(format!(
         "{id}.{}.json",
         settings_digest(args[at].as_bytes())
     ));
-    let was = crate::proposed::read_pinned(&state, &rel)
+    let was = crate::proposed::read_pinned(folder, &rel)
         .map_err(|_| "a chat's settings file is not a plain file, so it was not started")?;
     let base = was
         .as_deref()
         .and_then(|bytes| crate::proposed::base_of(Some(bytes)));
-    crate::proposed::write_pinned_making(&state, &rel, base.as_deref(), &args[at], &|_, _| true)
+    crate::proposed::write_pinned_making(folder, &rel, base.as_deref(), &args[at], &|_, _| true)
         .map_err(|_| "a chat's settings could not be written to its file, so it was not started")?;
-    args[at] = state.join(&rel).display().to_string();
+    args[at] = folder.join(&rel).display().to_string();
     Ok(args)
 }
 
@@ -900,45 +933,64 @@ fn settings_file_name(name: &str) -> Option<(String, &str)> {
     (digest.len() == 32 && digest.bytes().all(|b| b.is_ascii_hexdigit())).then_some((id, digest))
 }
 
+/// The parts of `path` a chat's settings file purlis writes is named by: the [`CHAT_SETTINGS`]
+/// folder, the plane's clone key, and the file's name with its digest.
+fn settings_file_parts(path: &Path) -> Option<(&Path, &str, &str, &str)> {
+    let name = path.file_name()?.to_str()?;
+    let (_, digest) = settings_file_name(name)?;
+    let plane = path.parent()?;
+    let key = plane.file_name()?.to_str()?;
+    crate::plane::CloneKey::parse(key)?;
+    let folder = plane.parent()?;
+    (folder.file_name()? == CHAT_SETTINGS).then_some((folder, key, name, digest))
+}
+
 /// **Whether `path` is named as a chat's settings file purlis writes**
-/// (`<state>/chat-settings/<chat id>.<digest>.json`), whatever it holds now.
+/// (`<app data>/chat-settings/<clone key>/<chat id>.<digest>.json`), whatever it holds now.
 pub fn names_a_settings_file(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .and_then(settings_file_name)
-        .is_some()
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|dir| dir == SETTINGS_DIR)
+    settings_file_parts(path).is_some()
 }
 
 /// **The settings in `path`, where it is a chat's settings file purlis wrote**
-/// ([`settings_in_a_file`]): `<state>/chat-settings/<chat id>.<digest>.json`, read without
-/// following a link, and only while what it holds is what its name's digest says was written.
-/// `None` for any other path, and for a file that holds anything else.
+/// ([`settings_in_a_file`]): `<app data>/chat-settings/<clone key>/<chat id>.<digest>.json`,
+/// read without following a link, and only while what it holds is what its name's digest says
+/// was written. `None` for any other path, a file in the plane's state among them, and for a
+/// file that holds anything else.
 pub fn settings_from_its_file(path: &Path) -> Option<serde_json::Value> {
-    if !names_a_settings_file(path) {
-        return None;
-    }
-    let name = path.file_name()?.to_str()?;
-    let (_, digest) = settings_file_name(name)?;
-    let dir = path.parent()?;
-    let bytes =
-        crate::proposed::read_pinned(dir.parent()?, &Path::new(SETTINGS_DIR).join(name)).ok()??;
+    let (folder, key, name, digest) = settings_file_parts(path)?;
+    let bytes = crate::proposed::read_pinned(folder, &Path::new(key).join(name)).ok()??;
     if settings_digest(&bytes) != digest {
         return None;
     }
     serde_json::from_slice(&bytes).ok()
 }
 
-/// **Removes every chat's settings file whose chat is not among `open`**, older than a couple of
-/// minutes (the time between a start writing it and the chat being on the app's record): the
-/// app's, each time it writes that record. Only names this module makes, through the folder's
-/// handle.
-pub fn sweep_settings(root: &Path, open: &[String]) {
-    let dir = crate::plane::state_dir(root).join(SETTINGS_DIR);
-    let Ok(entries) = std::fs::read_dir(&dir) else {
+/// **Removes every settings file of the project at `root` whose chat is not among `open`**,
+/// older than a couple of minutes (the time between a start writing it and the chat being on
+/// the app's record), in `folder`, the app data folder's [`CHAT_SETTINGS`]; and every file an
+/// earlier build kept in the plane's state ([`SETTINGS_DIR`]) past that time, whatever its chat,
+/// as none is read now. The app's, each time it writes that record. Only names this module makes,
+/// through each folder's handle.
+pub fn sweep_settings(folder: Option<&Path>, root: &Path, open: &[String]) {
+    if let Some(folder) = folder {
+        let key = crate::plane::CloneKey::of(root);
+        sweep_in(&folder.join(key.as_str()), |name| {
+            settings_file_name(name).is_some_and(|(id, _)| !open.contains(&id))
+        });
+    }
+    sweep_in(&crate::plane::state_dir(root).join(SETTINGS_DIR), |name| {
+        settings_file_name(name).is_some()
+            || name
+                .strip_suffix(".json")
+                .and_then(crate::reopen::a_ulid)
+                .is_some()
+    });
+}
+
+/// Removes each file of `dir` that `goes` takes by its name, once it is older than the sweep's
+/// grace, through the folder's handle with no link followed.
+fn sweep_in(dir: &Path, goes: impl Fn(&str) -> bool) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.filter_map(Result::ok) {
@@ -946,26 +998,22 @@ pub fn sweep_settings(root: &Path, open: &[String]) {
         let Some(name) = file_name.to_str() else {
             continue;
         };
-        // A file of a start before its name carried its digest is swept as one of its chat.
-        let Some(id) = settings_file_name(name)
-            .map(|(id, _)| id)
-            .or_else(|| name.strip_suffix(".json").and_then(crate::reopen::a_ulid))
-        else {
+        if !goes(name) {
             continue;
-        };
+        }
         let young = entry
             .metadata()
             .and_then(|meta| meta.modified())
             .ok()
             .and_then(|at| at.elapsed().ok())
             .is_some_and(|age| age < crate::skills::verbs::drafts::SWEEP_GRACE);
-        if young || open.contains(&id) {
+        if young {
             continue;
         }
         #[cfg(unix)]
         if let Ok(at) = rustix::fs::openat(
             rustix::fs::CWD,
-            &dir,
+            dir,
             rustix::fs::OFlags::RDONLY
                 | rustix::fs::OFlags::DIRECTORY
                 | rustix::fs::OFlags::NOFOLLOW,

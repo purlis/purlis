@@ -63,6 +63,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
         plugin: Some(here.plugin.clone()),
         git_hooks: None,
         skill_sets: Some(here.sets.clone()),
+        chat_settings: None,
     };
     let linked = purlis_core::hoststart::plane_skills_laid_out(
         true,

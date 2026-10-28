@@ -1272,6 +1272,7 @@ fn armed<'a>(
         plugin,
         git_hooks,
         skill_sets: None,
+        chat_settings: None,
     }
 }
 

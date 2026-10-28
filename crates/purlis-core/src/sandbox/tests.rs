@@ -6794,3 +6794,107 @@ fn a_port_something_listens_on_is_neither_served_nor_reached_for_a_listen_grant(
     assert!(!widened.ports.contains(&port));
     assert!(widened.listen_only.is_empty());
 }
+
+/// The state folder is held whole: its entry is never renamed, moved or removed by a chat in
+/// purlis's own wrap, so what purlis holds below it stays where it is held. Claude Code's own
+/// sandbox holds only what is below a path, so it is not handed the entry.
+#[test]
+fn the_state_folder_is_held_whole_in_purlis_s_wrap() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let state = plane.path().join(".purlis");
+    std::fs::create_dir(&state).expect("a state folder");
+    let denied = Denied::of(plane.path(), &machine(Os::MacOs));
+    let whole: Vec<&Denial> = denied
+        .paths
+        .iter()
+        .filter(|it| it.path == state && it.reach == Reach::Itself)
+        .collect();
+    assert_eq!(whole.len(), 1, "{:?}", denied.paths);
+    assert_eq!(whole[0].class, Class::Integrity);
+    assert_eq!(whole[0].access, Access::Write);
+    // The spelling not there is still not the chat's to make, as before.
+    assert!(
+        paths(&denied, Class::Integrity, Access::Write).contains(&plane.path().join(".charter"))
+    );
+    let rules = seatbelt::denial_rules(whole[0]).expect("rules");
+
+    let mut wrapped_harnesses = 0;
+    for harness in Harness::ALL {
+        if compiler(harness).is_none() {
+            continue;
+        }
+        let applied = applied_for(
+            harness,
+            &policy_of(&[], false),
+            &Plane::of(None),
+            plane.path(),
+            &machine(Os::MacOs),
+        )
+        .expect("compiles");
+        match applied.form() {
+            Form::ClaudeCode(settings) => {
+                let deny_write = settings.sandbox["filesystem"]["denyWrite"].to_string();
+                let named = super::real(&state).display().to_string();
+                assert!(
+                    !deny_write.contains(&format!("\"{named}\"")),
+                    "the whole folder is not denied: {deny_write}"
+                );
+            }
+            Form::Codex(_) | Form::Opencode(_) => {
+                wrapped_harnesses += 1;
+                let profile = seatbelt::profile(
+                    applied.form().denied().expect("a wrap"),
+                    &seatbelt::Own::default(),
+                    plane.path(),
+                    std::path::Path::new("/private/tmp/chat"),
+                    &[4040],
+                    None,
+                )
+                .expect("a profile");
+                for rule in &rules {
+                    assert!(profile.contains(rule), "{harness:?}: {rule} missing");
+                }
+            }
+        }
+    }
+    assert_eq!(wrapped_harnesses, 2);
+}
+
+/// Chats' settings files live in the app's data folder, held at every level, inside a folder a
+/// person let the chat write too.
+#[test]
+fn chat_settings_in_the_app_data_folder_are_held_at_every_level() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let data = tempfile::tempdir().expect("an app data folder");
+    let settings = data.path().join(crate::hoststart::CHAT_SETTINGS);
+    std::fs::create_dir_all(&settings).unwrap();
+    for harness in Harness::ALL {
+        if compiler(harness).is_none() {
+            continue;
+        }
+        let mut applied = applied_for(
+            harness,
+            &policy_of(&[], false),
+            &Plane::of(None),
+            plane.path(),
+            &machine(Os::MacOs),
+        )
+        .expect("compiles");
+        applied
+            .hold_kit(
+                ArmedWith {
+                    chat_settings: Some(&settings),
+                    ..ArmedWith::default()
+                },
+                plane.path(),
+                &[],
+            )
+            .expect("held");
+        assert!(
+            applied.confines().held.contains(&settings)
+                || applied.confines().held.contains(&super::real(&settings)),
+            "{harness:?}: {:?}",
+            applied.confines().held
+        );
+    }
+}
