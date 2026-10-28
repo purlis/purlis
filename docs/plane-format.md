@@ -4076,13 +4076,12 @@ before it is stored.
   #1436), or a handed-off chat sends the one its stop asks for, by the same command, until the
   turn it is handed to. `purlis handoff report` sends nothing since #1471: it refuses, naming
   `purlis dispatch report`. A file an older purlis left here is read as before.
-- **Tier:** Clone state, transient — a report waiting to be taken by one chat's hook. **Not
-  readable or writable by a sandboxed chat of a harness whose hooks run outside its sandbox**
-  (Claude Code today; ADR 0067 class 2 as amended, D-T59-19): the app leaves these files and
-  purlis's hooks take them. **On Codex and opencode a chat can still read and write this
-  folder**: the wrap holds the whole harness, hooks included, and the hooks are what deliver,
-  so it is not denied there until delivery moves onto the hook socket (#1457); the checks each
-  file gets as it is read are what stand. `purlis workspace rename` run inside a chat that is
+- **Tier:** Clone state, transient — a report waiting to be taken by one chat's hook. **Written
+  by the app alone: no sandboxed chat writes it** (ADR 0067 class 2 as amended). **Not readable
+  either by a sandboxed chat of a harness whose hooks run outside its sandbox** (Claude Code
+  today, D-T59-19). On Codex and opencode the wrap holds the whole harness, hooks included, and
+  the hooks are what deliver, so a chat there reads it until delivery moves onto the hook
+  socket (#1457). `purlis workspace rename` run inside a chat that is
   denied the folder leaves `workspace-<old>/` where it is and says so; the app moves it to `workspace-<new>/` when the project is next opened, from the rename's
   journal (`wscmd::rename::kept_reports_follow`).
 - **Written by:** `purlis_core::handback::leave` (purlis#259), from the app's answer to a
@@ -4096,10 +4095,18 @@ before it is stored.
   same restart (`said-<old>/` to `said-<new>/`). Only the app writes either.
 - **Read by:** `charter hook userpromptsubmit` (`chat-<n>/`, `<n>` from `$CHARTER_SESSION_ID`)
   and `charter hook sessionstart` (`workspace-<ws>/`, the session's workspace, or `plane-root/`
-  for a session at the plane root), through
-  `handback::take`, which **removes each file it reads**: a report reaches one turn. The same
-  `userpromptsubmit` hook takes `said-<n>/` through `dispatchtalk::take`, which removes each
-  file it reads too. **Removed by:** the reader; `handback::took`, for a report the waiting
+  for a session at the plane root). **The hook reads, and the app takes**: the hook reads each
+  file (`handback::waiting`) and asks the app over the hook socket to take what it read
+  (`TookHandbacks`); the app removes each file and says which it wrote there
+  (`handback::took_waiting`), so a report reaches one turn. Where no app answers, the hook takes
+  them itself (`handback::take`). The same `userpromptsubmit` hook reads `said-<n>/`
+  (`dispatchtalk::waiting`), and the app takes those (`TookMessages`, `dispatchtalk::took`).
+  **Sealed:** each report's file carries `seal`, an HMAC-SHA256 under the plane's
+  `fingerprint.key` of the report, its folder and its file's name, which only the app can make.
+  A report whose seal does not hold where it waits is handed as a chat's words alone: its
+  summary, quoted as data, and never the app's word on a dispatch (`answered`), a stop
+  (`stopped`) or a task's outcome (`task`); one with no summary is not handed. **Removed by:**
+  the app's take, or the reader where no app answers; `handback::took`, for a report the waiting
   `purlis dispatch wait` printed itself (#1441); and `dispatchtalk::forget`, which empties
   `said-<n>/` when chat `<n>` is closed, because a message is for that one chat's turn.
 - **Git:** gitignored (under `/.charter/`).

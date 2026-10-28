@@ -1695,6 +1695,15 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             crate::hookwire::spool::dir_for(&app.join("hooks.sock")),
             Access::ReadWrite,
         );
+        // Every report a chat is handed (#1436): written by the app alone, and read by the
+        // hook of the chat it waits for, which may run inside the sandbox (Codex, opencode), so
+        // read, never written. Claude Code's hooks run outside it, and its chats are kept from
+        // reading it too (`Denied::and_what_waits_for_a_chat`).
+        deny(
+            Class::Integrity,
+            root.join(state).join(crate::handback::DIR_NAME),
+            Access::Write,
+        );
         // Every dispatch's record, neither read nor written (#1452, D-1452-11): a brief or a
         // report written for one persona is not for a chat running as another. A chat gets
         // its own dispatch's report on the delivery path and its own list from the app's
