@@ -104,7 +104,21 @@ pub fn make_at_start_in(
             .map_err(|why| {
                 format!("the runner's kept public link key could not be published: {why}")
             }),
-        None => make_at_start(handoff, published),
+        None => {
+            // A key an earlier sandbox of this pod handed over and nobody paired with: the
+            // folder in memory can outlive a sandbox the runtime makes again. It is this pod's
+            // own, and a new key is made in its place (#2057).
+            match std::fs::remove_file(handoff) {
+                Ok(()) => {}
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+                Err(why) => {
+                    return Err(format!(
+                        "the link key an earlier start of this pod left could not be removed: {why}"
+                    ));
+                }
+            }
+            make_at_start(handoff, published)
+        }
     }
 }
 
@@ -206,14 +220,14 @@ pub fn seed_home(home: &Path, image_home: Option<&Path>, claim: &str) -> Result<
     std::fs::rename(&making, home).map_err(failed)
 }
 
-/// The claim [`seed_home`]'s mark at `marker` names, read only from a file there and never
-/// through a link; `None` when there is none.
+/// The claim [`seed_home`]'s mark at `marker` names, read only from a plain file there, never
+/// through a link and never waiting on anything else put there; `None` when there is none.
 fn read_mark(marker: &Path) -> Result<Option<String>, String> {
     use std::io::Read;
     use std::os::unix::fs::OpenOptionsExt;
     let opened = std::fs::OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
         .open(marker);
     let mut file = match opened {
         Ok(file) => file,
@@ -224,12 +238,24 @@ fn read_mark(marker: &Path) -> Result<Option<String>, String> {
             ));
         }
     };
+    plain_file(&file)
+        .map_err(|why| format!("the runner's home's claim could not be read: {why}"))?;
     let mut marked = String::new();
     file.by_ref()
         .take(256)
         .read_to_string(&mut marked)
         .map_err(|why| format!("the runner's home's claim could not be read: {why}"))?;
     Ok(Some(marked))
+}
+
+/// Refuses `file` unless it is a plain file: a fifo, a device or a folder put where a mark
+/// belongs is not one.
+fn plain_file(file: &std::fs::File) -> std::io::Result<()> {
+    if file.metadata()?.is_file() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other("it is not a plain file"))
+    }
 }
 
 /// [`seed_home`]'s mark at `marker`, naming `claim`: written to a file there, never through a
@@ -240,10 +266,12 @@ fn write_mark(marker: &Path, claim: &str) -> std::io::Result<()> {
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
-        .truncate(true)
+        .truncate(false)
         .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
         .open(marker)?;
+    plain_file(&file)?;
+    file.set_len(0)?;
     file.write_all(format!("{claim}\n").as_bytes())?;
     file.sync_all()
 }

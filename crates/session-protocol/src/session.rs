@@ -303,6 +303,15 @@ use crate::view::{Limits, Views};
 /// window's alone, on its own host ([`crate::grants::Power::Inspect`]): never relayed, and never
 /// any other scope's. A host before 1.45 refuses `inspect` `unknown_command`.
 ///
+/// 1.46 added files across a browser's edge (#2020): `browse` may carry the acts `downloads`,
+/// `upload` (files of the chat's folder the window names, which the host copies into the
+/// browser's own folder, following no link) and `save_download` (a download brought into the
+/// chat's folder as a new file); and `browsed` says the downloads that began or moved on since
+/// the act before (`downloads`), each by a plain name, its origin and its size, never a path. A
+/// host before 1.46 cannot read any of the three acts. The window sends the two that name a
+/// chat's folder only to its own host, which is its own build, and refuses them for a chat on a
+/// runner.
+///
 /// 1.47 added a pool's own browser frame limits (#3297, spec #2041 story 53): a browser's start
 /// may say how its views over a link between hosts are held (`link_frames`: frames a second and
 /// the widest frame, each within its bounds), which the window gives as it starts a runner

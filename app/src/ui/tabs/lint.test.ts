@@ -21,6 +21,10 @@ tester.run("purlis/tabs-family", rules["tabs-family"], {
     // The id helper beside the old tablist is not a tablist.
     { code: `import { useTabIds } from "./StripTablist";` },
     { code: `<span data-scope="rail">x</span>` },
+    // A page's tabs, drawn by the family.
+    {
+      code: `<PageTabs label="deploy's sections" tabs={tabs} selected={tab} onSelect={setTab}>{panel}</PageTabs>`,
+    },
   ],
   invalid: [
     { code: `<button role="tab" aria-selected>talk</button>`, errors: [{ messageId: "role" }] },
@@ -38,6 +42,12 @@ tester.run("purlis/tabs-family", rules["tabs-family"], {
       errors: [{ messageId: "owner" }],
     },
     { code: `<span data-scope="tabs" data-part="tab" />`, errors: [{ messageId: "scope" }] },
+    // A page's tablist written by hand, as a skill page would (#3668).
+    {
+      code: `<div role="tablist" aria-label="deploy's sections"><button role="tab" aria-selected>Overview</button></div>`,
+      errors: [{ messageId: "role" }, { messageId: "role" }],
+    },
+    { code: `<div data-scope="page-tabs" data-part="list" />`, errors: [{ messageId: "scope" }] },
     {
       code: `const part = { "data-scope": "tabs", "data-part": "strip" };`,
       errors: [{ messageId: "scope" }],
