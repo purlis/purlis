@@ -82,6 +82,7 @@ fn made(kind: &str) -> MachineProfile {
         sign_in: None,
         pinned: None,
         sandbox_only: false,
+        kept_for: None,
         rest: Default::default(),
     }
 }
@@ -301,7 +302,7 @@ fn the_line_a_shell_runs_sets_the_folders_and_runs_the_program_it_names() {
 
     assert_eq!(
         login.line().unwrap(),
-        "env CLAUDE_CONFIG_DIR=/profiles/work/config /Users/me/.local/bin/claude auth login\n"
+        "/usr/bin/env CLAUDE_CONFIG_DIR=/profiles/work/config /Users/me/.local/bin/claude auth login\n"
     );
 }
 
@@ -318,7 +319,7 @@ fn a_folder_with_a_space_is_one_word_of_the_line() {
 
     assert_eq!(
         login.line().unwrap(),
-        "env 'CODEX_HOME=/Users/my profiles/work/config' /bin/codex login\n"
+        "/usr/bin/env 'CODEX_HOME=/Users/my profiles/work/config' /bin/codex login\n"
     );
 }
 

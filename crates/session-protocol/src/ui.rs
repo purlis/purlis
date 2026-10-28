@@ -694,6 +694,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
+    // runner, so only the person's own look in their window does.
+    "pool_profiles",
     // The Devices view (#2052): it reads this machine's runners and links to each, so only the
     // person's own window asks it.
     "devices",

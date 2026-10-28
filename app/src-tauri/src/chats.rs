@@ -684,6 +684,9 @@ pub struct Chats {
     /// This machine's config home, where the pools this machine keeps and which workspaces run
     /// their chats on one are (#2679); `None` where nothing is kept there, a test's.
     pools_in: Option<PathBuf>,
+    /// How a chat's profile is kept, and found signed in, on the pool's runner it starts on
+    /// (#2049); `None` where nothing is kept there, a test's.
+    profiles_on_pools: Option<Arc<dyn crate::poolprofiles::ProfilesOnPools>>,
     /// What each chat closed this launch was, by number, for a start in one's place: its ids,
     /// and where it stood in a lineage.
     let_go: Mutex<HashMap<u32, LetGo>>,
@@ -1196,6 +1199,7 @@ impl Chats {
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
             pools_in: None,
+            profiles_on_pools: None,
             let_go: Mutex::new(HashMap::new()),
             never_started: Mutex::new(None),
             shipped: crate::Shipped::default(),
@@ -1360,7 +1364,20 @@ impl Chats {
     /// Reads where each workspace runs its chats from this machine's config home `config`
     /// (#2679): a workspace whose chats run on a pool starts none here.
     pub fn keeping_pools_in(&mut self, config: Option<PathBuf>) {
+        self.profiles_on_pools = config.clone().map(|config| {
+            Arc::new(crate::poolprofiles::Linked::at(config))
+                as Arc<dyn crate::poolprofiles::ProfilesOnPools>
+        });
         self.pools_in = config;
+    }
+
+    /// Readies each chat's profile on the pool it starts on through `on_pools` (#2049).
+    #[cfg(test)]
+    pub fn readying_profiles_on_pools(
+        &mut self,
+        on_pools: Arc<dyn crate::poolprofiles::ProfilesOnPools>,
+    ) {
+        self.profiles_on_pools = Some(on_pools);
     }
 
     /// This machine's config home, where the pools it keeps are, where it keeps any (#2050).
@@ -3319,6 +3336,15 @@ impl Chats {
                  by a runner, so nothing was started."
                     .to_owned(),
             );
+        }
+        // **Its profile is kept, and signed in, on the pool's runner before it starts there**
+        // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
+        // starts nothing and waits as one Ask to sign it in on that pool.
+        if on_the_runner
+            && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
+            && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
+        {
+            on_pools.ready(&self.project, &pool, profile)?;
         }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).

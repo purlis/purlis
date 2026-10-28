@@ -1188,6 +1188,22 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
     );
 }
 
+/// **On a runner, a chat reads no other profile's folder** (#2049): a runner keeps each of its
+/// desktop's profiles under its own `<data>/profiles`, each with its sign-in, and its chats are
+/// held by the Linux sandbox, which denies the whole folder as on any machine.
+#[test]
+fn on_linux_no_chat_reads_or_writes_the_folders_of_the_profiles_kept_there() {
+    let profiles = Homes::charter_data(&machine(Os::Linux))
+        .expect("a data home")
+        .join(crate::profilestore::DIR);
+    let (_plane, denied) = denied_with(None, Os::Linux);
+    assert!(
+        paths(&denied, Class::HumanPowers, Access::ReadWrite).contains(&profiles),
+        "{:?}",
+        denied.paths
+    );
+}
+
 #[test]
 fn no_chat_reads_or_writes_the_folders_of_this_machines_profiles() {
     // A profile purlis made keeps its sign-in in its folder (ADR 0095 §1, #2034).
