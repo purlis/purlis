@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793147573576,
+  "lastUpdate": 1793150066026,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27510,6 +27510,48 @@ window.BENCHMARK_DATA = {
             "value": 101.776951,
             "unit": "ms",
             "extra": "median of 5 runs: 100.862, 101.570, 101.777, 102.052, 102.263 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a3c1ef312c16637bf38116987482b8378c1b64a2",
+          "message": "A graded chat runs with only purlis's plugin; opencode grades are refused (#3468) (#3567)\n\n* #3468: a graded chat runs with only purlis's plugin; opencode grades are refused\n\nready_to_grade hands a grade's chat every plugin its harness has installed\noff, purlis's pins over them (harness_plugin::only_purlis_on), for that chat\nalone; a record purlis cannot read refuses the grade. The eval record names\nthem in plugins_off. can_grade answers with the reason where a harness cannot\ngrade, so opencode's refusal says it cannot turn its plugins off for one chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3468: review fixes: --plugin-dir refuses a grade, no fail-open harness, the record is every chat's\n\nA profile command that loads a plugin with --plugin-dir refuses a grade\n(Claude Code's grade_refused). only_purlis_on refuses a harness whose plugin\nadapter cannot turn a plugin off for one chat. The record names what any\nchat had off, and leaves out purlis's installed copy as well as its pins.\nA Try it shares the same set (alone_on). refused_because takes the reason,\nand the unreadable-record refusal says what to do.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* #3468: a Try it hands only the plugins it turns off, as before\n\nalone_on took purlis's pins with the set; they are written at arming for\nevery chat, so the try's set keeps only what is off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T00:41:54Z",
+          "tree_id": "abd954554b8658bf2b3930f15bb59f885371f8e1",
+          "url": "https://github.com/purlis/purlis/commit/a3c1ef312c16637bf38116987482b8378c1b64a2"
+        },
+        "date": 1793150061545,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5179469999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.496, 0.511, 0.518, 0.525, 0.526 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.032131,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.761, 16.991, 17.032, 17.123, 17.272 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 105.379355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.469, 104.151, 105.379, 106.643, 107.481 ms"
           }
         ]
       }
