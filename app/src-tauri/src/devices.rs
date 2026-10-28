@@ -277,6 +277,15 @@ pub fn shown_safely(text: &str) -> String {
     if cut && words.last().is_some_and(|word| word.contains(':')) {
         words.pop();
     }
+    // Nor is an address the cut leaves open, one that may hold a user (`scheme://…`, or one whose
+    // authority holds a `:`) with no `@` after it, nor anything after it: what of it would be
+    // hidden may lie past the cut. Any other address (`unix:///…`, `https://host/…`) stays.
+    if cut
+        && let Some(open) = words.iter().rposition(|word| may_hold_a_user(word))
+        && !words[open..].iter().any(|word| decoded(word).contains('@'))
+    {
+        words.truncate(open);
+    }
     let mut out = String::new();
     for word in words {
         if !out.is_empty() {
@@ -292,60 +301,215 @@ pub fn shown_safely(text: &str) -> String {
     out
 }
 
+/// Whether `word` is an address that may hold a user once [`parted_addresses`] has read it:
+/// one it wrote `scheme://…`, or one whose authority, as its escapes read, still holds a `:`.
+fn may_hold_a_user(word: &str) -> bool {
+    if word.ends_with("://…") {
+        return true;
+    }
+    let read = decoded(word);
+    read.find("://").is_some_and(|scheme| {
+        read[scheme + 3..]
+            .split('/')
+            .next()
+            .is_some_and(|authority| authority.contains(':'))
+    })
+}
+
 /// `text` with the user and password before a host written `…`, word by word: in
 /// `scheme://user[:password]@host`, the whole of what stands between `://` and the word's last
 /// `@` (a password may hold a `/`), and in `user@host` without a scheme (as ssh writes it), what
 /// stands before the `@`, a password holding any character. An image named by its digest at its
 /// full length (`name[:tag]@sha256:…`) is kept whole ([`is_digest`]).
+///
+/// A word written in percent escapes (`%3A`, `%2F`, `%40`) is read as it would be written
+/// unescaped, and shown so where that hides a user. An address a blank parts
+/// (`scheme://user:pass word@host`) loses what stands between its `://` and its `@` across the
+/// words ([`parted_addresses`]).
 fn without_userinfo(text: &str) -> String {
-    text.split(' ')
-        .map(|word| {
-            let Some(at) = word.rfind('@') else {
-                return word.to_owned();
-            };
-            // An image named by its digest (`name[:tag]@sha256:<64 hex>`) is kept whole: no host
-            // is spelled that way.
-            if is_digest(&word[at..]) {
-                return word.to_owned();
-            }
-            if let Some(scheme) = word.find("://").filter(|scheme| scheme + 3 <= at) {
-                return format!("{}…{}", &word[..scheme + 3], &word[at..]);
-            }
-            let (before, after) = word.split_at(at);
-            // A name and a password (`name:…@`) is a user's, whatever the password holds: one at
-            // the word's start, or one after a path's last `/`. Anything else before its `@`
-            // names a path or a registry.
-            let whole = before
-                .split_once(':')
-                .is_some_and(|(name, _)| !name.is_empty() && !name.contains('/'));
-            let after_a_path = before.rsplit_once('/').filter(|(_, last)| {
-                last.split_once(':')
-                    .is_some_and(|(name, _)| !name.is_empty())
-            });
-            if !whole && after_a_path.is_none() && (before.is_empty() || before.contains('/')) {
-                return word.to_owned();
-            }
-            // Keep what opens the word (a quote, a bracket, a path): only the name itself goes.
-            let opens = if whole {
-                before
-                    .char_indices()
-                    .find(|(_, ch)| ch.is_alphanumeric())
-                    .map_or(before.len(), |(at, _)| at)
+    // Words alone: two blanks in a row (a `\r\n`) part two words as one blank does.
+    let mut words: Vec<String> = text
+        .split(' ')
+        .filter(|word| !word.is_empty())
+        .map(one_word)
+        .collect();
+    parted_addresses(&mut words);
+    words.join(" ")
+}
+
+/// [`without_userinfo`] of one word, as it is written or as its percent escapes read.
+fn one_word(word: &str) -> String {
+    let hidden = without_userinfo_in(word);
+    if hidden != word {
+        return hidden;
+    }
+    match unescaped(word) {
+        Some(read) => {
+            let hidden = without_userinfo_in(&read);
+            if hidden == read {
+                word.to_owned()
             } else {
-                after_a_path.map_or_else(
-                    || {
-                        before
-                            .char_indices()
-                            .find(|(_, ch)| ch.is_alphanumeric())
-                            .map_or(before.len(), |(at, _)| at)
-                    },
-                    |(path, _)| path.len() + 1,
-                )
-            };
-            format!("{}…{after}", &before[..opens])
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+                hidden
+            }
+        }
+        None => hidden,
+    }
+}
+
+/// `word` with its escapes of `:`, `/` and `@` (`%3A`, `%2F`, `%40`, in either case) read as
+/// those characters, where it holds an escaped `@`; `None` where it holds none.
+fn unescaped(word: &str) -> Option<String> {
+    word.to_ascii_lowercase()
+        .contains("%40")
+        .then(|| decoded(word))
+}
+
+/// `word` with its escapes of `:`, `/` and `@` (`%3A`, `%2F`, `%40`, in either case) read as
+/// those characters, and every other character as it is.
+fn decoded(word: &str) -> String {
+    let mut read = String::with_capacity(word.len());
+    let mut rest = word;
+    while let Some(at) = rest.find('%') {
+        read.push_str(&rest[..at]);
+        let escaped = rest.get(at + 1..at + 3).map(str::to_ascii_lowercase);
+        let ch = match escaped.as_deref() {
+            Some("3a") => Some(':'),
+            Some("2f") => Some('/'),
+            Some("40") => Some('@'),
+            _ => None,
+        };
+        match ch {
+            Some(ch) => {
+                read.push(ch);
+                rest = &rest[at + 3..];
+            }
+            None => {
+                read.push('%');
+                rest = &rest[at + 1..];
+            }
+        }
+    }
+    read.push_str(rest);
+    read
+}
+
+/// **An address a blank parts, hidden across its words**: a word `scheme://…:…` with no `@`,
+/// then the first later word with one (before any word that is an address of its own), each read
+/// as its percent escapes read ([`decoded`]). What stands between the `://` and that `@` is a
+/// user's where the first word is not a host and a port (`scheme://host:port`), where the word
+/// with the `@` comes right after it, or where that word is itself hidden as a user's
+/// (`…@host`) or begins with its `@`: the words between go, and both are written `scheme://…` and `…@host`. A word
+/// `scheme://user:…` that no `@` follows is written `scheme://…`.
+fn parted_addresses(words: &mut Vec<String>) {
+    let mut at = 0;
+    while at < words.len() {
+        let read = decoded(&words[at]);
+        let Some(scheme) = read.find("://") else {
+            at += 1;
+            continue;
+        };
+        let rest = &read[scheme + 3..];
+        let authority = rest.split('/').next().unwrap_or_default();
+        if read.contains('@') || !authority.contains(':') {
+            at += 1;
+            continue;
+        }
+        let hosted = is_host_and_port(authority);
+        let opened = read[..scheme + 3].to_owned();
+        let next = words[at + 1..]
+            .iter()
+            .map(|later| decoded(later))
+            .position(|later| later.contains('@') || later.contains("://"))
+            .map(|after| at + 1 + after)
+            .filter(|next| !decoded(&words[*next]).contains("://"));
+        let host_of = |word: &str| {
+            let word = decoded(word);
+            word.rfind('@')
+                .map(|sign| word[sign..].to_owned())
+                .unwrap_or_default()
+        };
+        match next {
+            Some(next)
+                if !hosted
+                    || next == at + 1
+                    || words[next].contains("…@")
+                    || words[next].starts_with('@') =>
+            {
+                let host = host_of(&words[next]);
+                words[at] = format!("{opened}…");
+                words[next] = format!("…{host}");
+                words.drain(at + 1..next);
+                at += 2;
+            }
+            None if !hosted => {
+                words[at] = format!("{opened}…");
+                at += 1;
+            }
+            _ => at += 1,
+        }
+    }
+}
+
+/// Whether `authority`, what follows `://` up to its first `/`, is a host and a port:
+/// `host:digits` or `[address]:digits`, the digits possibly none.
+fn is_host_and_port(authority: &str) -> bool {
+    let (host, port) = match authority.strip_prefix('[') {
+        Some(bracketed) => match bracketed.split_once(']') {
+            Some((_, "")) => return true,
+            Some((_, after)) => match after.strip_prefix(':') {
+                Some(port) => ("[]", port),
+                None => return false,
+            },
+            None => return false,
+        },
+        None => match authority.split_once(':') {
+            Some(parts) => parts,
+            None => return true,
+        },
+    };
+    !host.is_empty() && !host.contains(':') && port.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// [`without_userinfo`] of the one word `word`, as it is written.
+fn without_userinfo_in(word: &str) -> String {
+    let Some(at) = word.rfind('@') else {
+        return word.to_owned();
+    };
+    // An image named by its digest (`name[:tag]@sha256:<64 hex>`) is kept whole: no host is
+    // spelled that way.
+    if is_digest(&word[at..]) {
+        return word.to_owned();
+    }
+    if let Some(scheme) = word.find("://").filter(|scheme| scheme + 3 <= at) {
+        return format!("{}…{}", &word[..scheme + 3], &word[at..]);
+    }
+    let (before, after) = word.split_at(at);
+    // A name and a password (`name:…@`) is a user's, whatever the password holds: one at the
+    // word's start, or one after a path's last `/`. Anything else before its `@` names a path
+    // or a registry.
+    let whole = before
+        .split_once(':')
+        .is_some_and(|(name, _)| !name.is_empty() && !name.contains('/'));
+    let after_a_path = before.rsplit_once('/').filter(|(_, last)| {
+        last.split_once(':')
+            .is_some_and(|(name, _)| !name.is_empty())
+    });
+    if !whole && after_a_path.is_none() && (before.is_empty() || before.contains('/')) {
+        return word.to_owned();
+    }
+    // Keep what opens the word (a quote, a bracket, a path): only the name itself goes.
+    let first_letter = || {
+        before
+            .char_indices()
+            .find(|(_, ch)| ch.is_alphanumeric())
+            .map_or(before.len(), |(at, _)| at)
+    };
+    let opens = if whole {
+        first_letter()
+    } else {
+        after_a_path.map_or_else(first_letter, |(path, _)| path.len() + 1)
+    };
+    format!("{}…{after}", &before[..opens])
 }
 
 /// Whether `after`, a word from its `@` on, is a digest at its full length, in either case:
