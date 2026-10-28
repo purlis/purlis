@@ -70,26 +70,31 @@ spec:
       reason: Forbidden
     # An upstream claim on a purlis pool's warm pool, or a warm pool of a purlis pool's template,
     # is made by the operator alone, for a Claim it acts on: one made directly would have a
-    # runner without the checks above. Purlis's names start purlis-pool- (operator/src/upstream.rs).
+    # runner without the checks above. Nor is one moved onto or off a purlis pool's object by
+    # anyone else. Purlis's names start purlis-pool- (operator/src/upstream.rs).
     - expression: >-
         request.resource.resource != 'sandboxclaims' ||
         request.userInfo.username == 'system:serviceaccount:purlis-system:purlis-cluster-operator' ||
-        !object.spec.warmPoolRef.name.startsWith('purlis-pool-') ||
-        (request.operation == 'UPDATE' &&
-        oldObject.spec.warmPoolRef.name == object.spec.warmPoolRef.name)
+        (request.operation == 'UPDATE' ?
+        oldObject.spec.warmPoolRef.name == object.spec.warmPoolRef.name ||
+        !oldObject.spec.warmPoolRef.name.startsWith('purlis-pool-') &&
+        !object.spec.warmPoolRef.name.startsWith('purlis-pool-') :
+        !object.spec.warmPoolRef.name.startsWith('purlis-pool-'))
       messageExpression: >-
-        'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev), not with an
-        upstream claim on its warm pool ' + object.spec.warmPoolRef.name + '.'
+        'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev): only the purlis
+        cluster operator puts an upstream claim on the warm pool of a purlis pool, or takes one off it.'
       reason: Forbidden
     - expression: >-
         request.resource.resource != 'sandboxwarmpools' ||
         request.userInfo.username == 'system:serviceaccount:purlis-system:purlis-cluster-operator' ||
-        !object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') ||
-        (request.operation == 'UPDATE' &&
-        oldObject.spec.sandboxTemplateRef.name == object.spec.sandboxTemplateRef.name)
+        (request.operation == 'UPDATE' ?
+        oldObject.spec.sandboxTemplateRef.name == object.spec.sandboxTemplateRef.name ||
+        !oldObject.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') &&
+        !object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') :
+        !object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-'))
       messageExpression: >-
-        'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev), not from a
-        warm pool of its template ' + object.spec.sandboxTemplateRef.name + '.'
+        'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev): only the purlis
+        cluster operator puts a warm pool on the template of a purlis pool, or takes one off it.'
       reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml

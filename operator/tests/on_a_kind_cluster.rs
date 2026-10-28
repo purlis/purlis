@@ -939,12 +939,8 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
         "are claimed with a Claim",
     );
     // Upstream's own objects that are not purlis's are left to upstream.
-    let dry_run = PostParams {
-        dry_run: true,
-        ..PostParams::default()
-    };
-    upstream_claims
-        .create(&dry_run, &claim_on("theirs", "a-team-pool"))
+    let theirs_claim = upstream_claims
+        .create(&PostParams::default(), &claim_on("theirs", "a-team-pool"))
         .await
         .expect("an upstream claim on another warm pool is admitted");
     let theirs = warm_pools
@@ -954,20 +950,88 @@ async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
         )
         .await
         .expect("a warm pool of another template is admitted");
-    // Nor can one be moved onto purlis's template once made.
+    // Nor can one be moved onto a purlis pool's objects once made.
+    let moved = |reference: &str, name: &str| {
+        Patch::Merge(serde_json::json!({ "spec": { reference: { "name": name } } }))
+    };
+    refused_in_words(
+        "an upstream claim moved onto a purlis warm pool",
+        upstream_claims
+            .patch(
+                &theirs_claim.name_any(),
+                &PatchParams::default(),
+                &moved("warmPoolRef", &ours),
+            )
+            .await,
+        "are claimed with a Claim",
+    );
     refused_in_words(
         "a warm pool moved onto a purlis template",
         warm_pools
             .patch(
                 &theirs.name_any(),
                 &PatchParams::default(),
-                &Patch::Merge(serde_json::json!({
-                    "spec": { "sandboxTemplateRef": { "name": ours } }
-                })),
+                &moved("sandboxTemplateRef", &ours),
             )
             .await,
         "are claimed with a Claim",
     );
+
+    // And what the operator made for a Claim cannot be moved off a purlis pool's objects.
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-direct",
+        PoolSpec {
+            image: runner_image(),
+        },
+    );
+    pools
+        .patch(
+            "e2e-direct",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    Api::<Claim>::namespaced(client.clone(), &scratch.name)
+        .create(&PostParams::default(), &claim("ada-1", "e2e-direct"))
+        .await
+        .expect("the claim");
+    eventually(
+        "the operator asks upstream for the claim's runner",
+        Duration::from_secs(120),
+        || async {
+            let claim = upstream_claims.get("ada-1").await.ok()?;
+            let warm_pool = warm_pools.get(&ours).await.ok()?;
+            (claim.spec.warm_pool_ref.name == ours
+                && warm_pool.spec.sandbox_template_ref.name == ours)
+                .then_some(())
+        },
+    )
+    .await;
+    refused_in_words(
+        "the operator's upstream claim moved off its warm pool",
+        upstream_claims
+            .patch(
+                "ada-1",
+                &PatchParams::default(),
+                &moved("warmPoolRef", "a-team-pool"),
+            )
+            .await,
+        "are claimed with a Claim",
+    );
+    refused_in_words(
+        "the operator's warm pool moved off its template",
+        warm_pools
+            .patch(
+                &ours,
+                &PatchParams::default(),
+                &moved("sandboxTemplateRef", "a-team-template"),
+            )
+            .await,
+        "are claimed with a Claim",
+    );
+    let _ = pools.delete("e2e-direct", &DeleteParams::default()).await;
     scratch.end().await;
 }
 

@@ -300,7 +300,8 @@ fn an_upstream_claim_or_warm_pool_on_a_purlis_pools_objects_is_admitted_from_the
             .split_whitespace()
             .collect::<String>()
     };
-    // The prefix of every name the operator gives a pool's template and warm pool.
+    // The prefix of every name the operator gives a pool's template and warm pool. On an update,
+    // a reference may neither move onto one of them nor off one.
     let ours = purlis_cluster_operator::upstream::name_for("");
     let operator = "system:serviceaccount:purlis-system:purlis-cluster-operator";
     for (at, resource, reference) in [
@@ -312,9 +313,11 @@ fn an_upstream_claim_or_warm_pool_on_a_purlis_pools_objects_is_admitted_from_the
             format!(
                 "request.resource.resource!='{resource}'||\
                  request.userInfo.username=='{operator}'||\
-                 !object.spec.{reference}.name.startsWith('{ours}')||\
-                 (request.operation=='UPDATE'&&\
-                 oldObject.spec.{reference}.name==object.spec.{reference}.name)"
+                 (request.operation=='UPDATE'?\
+                 oldObject.spec.{reference}.name==object.spec.{reference}.name||\
+                 !oldObject.spec.{reference}.name.startsWith('{ours}')&&\
+                 !object.spec.{reference}.name.startsWith('{ours}'):\
+                 !object.spec.{reference}.name.startsWith('{ours}'))"
             )
         );
         assert_eq!(validations[at]["reason"], "Forbidden");

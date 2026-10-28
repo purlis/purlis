@@ -269,9 +269,12 @@ Who may create a Claim, and in which namespace, is RBAC on `claims` as usual.
 
 **A runner from a pool is had only through a Claim.** The same policy refuses an upstream
 `SandboxClaim` on one of a pool's warm pools, and an upstream `SandboxWarmPool` of one of a
-pool's templates (both named `purlis-pool-<pool>`, below), made or moved there by anyone but
-the operator, the cluster admin included: such a runner would skip the checks above. Upstream's
-own objects that are not a pool's are left to upstream.
+pool's templates (both named `purlis-pool-<pool>`, below), when it is made there, moved there or
+moved off one by anyone but the operator's service account: such a runner would skip the checks
+above. Upstream's own objects that are not a pool's are left to upstream. This holds as far as
+Kubernetes' usual boundary goes: whoever may act as the operator's service account (impersonate
+it, mint its tokens, or run a pod as it in the operator's namespace), or change the policy and its
+binding, passes it. Rights in the operator's namespace are the operator's rights.
 
 ## Who the runner is
 
