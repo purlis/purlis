@@ -393,6 +393,9 @@ pub fn accept(root: &Path, owner: &str) -> Result<(), String> {
     if !an_owner(owner) || !root.join(owner).is_dir() {
         return Err("that folder is no workspace or persona of this project".to_owned());
     }
+    if let Some(state) = crate::appstate::dir(root) {
+        repaired(&state)?;
+    }
     vouch(root, owner);
     let Some(state) = crate::appstate::dir(root) else {
         return Ok(());
@@ -459,10 +462,16 @@ pub fn sweep(root: &Path, open: &[String]) {
             .is_some_and(|age| age < super::verbs::drafts::SWEEP_GRACE);
         if an_id(&id) && !open.contains(&id) && !young {
             // What it could have made stays left out until the person accepts it.
-            // A record that cannot be read could have named any of them: every one is held.
-            let levels = read(&state, &id)
-                .map(|record| record.levels)
-                .unwrap_or_default();
+            // A record that cannot be read could have named any of them: every one is held. One
+            // removed meanwhile is no record.
+            let read_now = read(&state, &id);
+            if read_now.is_none()
+                && std::fs::symlink_metadata(state.join(rel_of(&id)))
+                    .is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound)
+            {
+                continue;
+            }
+            let levels = read_now.map(|record| record.levels).unwrap_or_default();
             let was = unaccepted_or_all(&state, root);
             let mut now = was.clone();
             now.levels.extend(owners(root).difference(&levels).cloned());
@@ -476,13 +485,8 @@ pub fn sweep(root: &Path, open: &[String]) {
 
 /// **Every workspace and persona folder of the project at `root` is held until the person
 /// accepts it again** in the Skill studio ([`accept`]): what the move of an older purlis's records
-/// out of the plane's state does (`crate::appstate`). Those records are not carried forward, so
-/// no folder is taken as vouched for on their word.
-pub(crate) fn ask_again(root: &Path) -> Result<(), String> {
-    ask_again_in(&crate::appstate::made(root)?, root)
-}
-
-/// [`ask_again`], in the project's app state `state`.
+/// out of the plane's state does (`crate::appstate`), with `state` the project's app state. Those
+/// records are not carried forward, so no folder is taken as vouched for on their word.
 pub(crate) fn ask_again_in(state: &Path, root: &Path) -> Result<(), String> {
     let was = unaccepted_or_all(state, root);
     let mut now = was.clone();
@@ -491,6 +495,42 @@ pub(crate) fn ask_again_in(state: &Path, root: &Path) -> Result<(), String> {
         return Ok(());
     }
     write_unaccepted(state, &now)
+}
+
+/// **Every record in the app state `state` that is there and cannot be read, replaced by one that
+/// still holds every folder**: a record naming no folder, so each is left out until the person
+/// accepts it, and Accept can then let them go one by one ([`vouch`]).
+fn repaired(state: &Path) -> Result<(), String> {
+    let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
+        return Ok(());
+    };
+    let ids: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.strip_suffix(".json"))
+                .filter(|id| *id == UNNOTED || an_id(id))
+                .map(str::to_owned)
+        })
+        .collect();
+    for id in ids {
+        if read(state, &id).is_some() {
+            continue;
+        }
+        remove(state, &id);
+        write(
+            state,
+            &id,
+            None,
+            &Record {
+                name: "a chat".to_owned(),
+                levels: BTreeSet::new(),
+            },
+        )?;
+    }
+    Ok(())
 }
 
 /// Removes the record of `id` from `state`, through its folder's handle: a name this module made.

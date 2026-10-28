@@ -176,12 +176,12 @@ fn read(root: &Path) -> Kept {
     }
 }
 
-/// Writes `kept` as the file, whole or not at all, private, through no link.
-fn write(root: &Path, kept: &Kept) -> Result<(), String> {
-    let dir = crate::appstate::made(root).map_err(|why| not_kept(&why))?;
+/// Writes `kept` as the file in the project's app state `dir`, whole or not at all, private,
+/// through no link.
+fn write(dir: &Path, kept: &Kept) -> Result<(), String> {
     let path = dir.join(FILE);
     let text = serde_json::to_string_pretty(kept).map_err(|why| not_kept(&why.to_string()))?;
-    crate::plane::write_private(&dir, &path, text.as_bytes())
+    crate::plane::write_private(dir, &path, text.as_bytes())
         .map_err(|why| not_kept(&why.to_string()))
 }
 
@@ -193,8 +193,9 @@ pub const LOCK: &str = "skill-grade-after-edit.lock";
 /// How long a change waits for another to let go of [`LOCK`].
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Takes [`LOCK`] for one change of the file of the project at `root`.
-fn held(root: &Path) -> Result<crate::filelock::Held, String> {
+/// Takes [`LOCK`] for one change of the file of the project at `root`: the lock, and the project's
+/// app state the file is written in.
+fn held(root: &Path) -> Result<(crate::filelock::Held, PathBuf), String> {
     let dir = crate::appstate::made(root).map_err(|why| not_kept(&why))?;
     let mut options = std::fs::OpenOptions::new();
     options.read(true).write(true).create(true).truncate(false);
@@ -206,8 +207,9 @@ fn held(root: &Path) -> Result<crate::filelock::Held, String> {
     let file = crate::contain::nofollow(&mut options)
         .open(dir.join(LOCK))
         .map_err(|why| not_kept(&why.to_string()))?;
-    crate::filelock::lock_within(file, LOCK_WAIT, "grading after each edit")
-        .map_err(|why| not_kept(&why.to_string()))
+    let held = crate::filelock::lock_within(file, LOCK_WAIT, "grading after each edit")
+        .map_err(|why| not_kept(&why.to_string()))?;
+    Ok((held, dir))
 }
 
 /// What a write that failed says.
@@ -237,7 +239,7 @@ pub fn turn_on(root: &Path, level: &Level, name: &str, accepted: Accepted) -> Re
              edit was not turned on."
         ));
     }
-    let _held = held(root)?;
+    let (_held, dir) = held(root)?;
     let mut kept = read(root);
     if !kept.skills.contains_key(&key) && kept.skills.len() >= MOST_SKILLS {
         return Err(format!(
@@ -247,7 +249,7 @@ pub fn turn_on(root: &Path, level: &Level, name: &str, accepted: Accepted) -> Re
     }
     kept.v = VERSION;
     kept.skills.insert(key, accepted);
-    write(root, &kept)
+    write(&dir, &kept)
 }
 
 /// **Turns grading after each edit off for the copy of `name` at `level`**: nothing where it was
@@ -256,13 +258,13 @@ pub fn turn_off(root: &Path, level: &Level, name: &str) -> Result<(), String> {
     let Some(key) = key(level, name) else {
         return Ok(());
     };
-    let _held = held(root)?;
+    let (_held, dir) = held(root)?;
     let mut kept = read(root);
     if kept.skills.remove(&key).is_none() {
         return Ok(());
     }
     kept.v = VERSION;
-    write(root, &kept)
+    write(&dir, &kept)
 }
 
 /// **Changes the opt-in of the copy of `name` at `level` by `change`**, where it is on: what a
@@ -276,14 +278,14 @@ pub fn update(
     let Some(key) = key(level, name) else {
         return Ok(());
     };
-    let _held = held(root)?;
+    let (_held, dir) = held(root)?;
     let mut kept = read(root);
     let Some(accepted) = kept.skills.get_mut(&key) else {
         return Ok(());
     };
     change(accepted);
     kept.v = VERSION;
-    write(root, &kept)
+    write(&dir, &kept)
 }
 
 /// **What a grade after an edit would run now**: the chats of the copy's plan, the cap and the

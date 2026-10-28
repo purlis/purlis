@@ -964,7 +964,10 @@ pub fn sweep_tries(root: &Path, open: &[PathBuf]) {
             let Some(id) = entry.name.strip_prefix(PIECE_PREFIX) else {
                 continue;
             };
-            if an_id(id) && !kept.iter().any(|one| one == id) {
+            // One an open chat stands in (a Try it's chat put back before its try) is kept.
+            let piece = root.join(PIECES[0]).join(PIECES[1]).join(&entry.name);
+            let stood_in = std::fs::canonicalize(&piece).is_ok_and(|real| open.contains(&real));
+            if an_id(id) && !kept.iter().any(|one| one == id) && !stood_in {
                 let _ = remove_piece(root, id);
             }
         }

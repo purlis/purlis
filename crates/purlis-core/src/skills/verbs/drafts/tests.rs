@@ -737,3 +737,17 @@ fn a_drafted_new_skill_with_a_built_in_skills_name_is_not_accepted() {
         assert!(!root.join(rel).exists(), "{rel}");
     }
 }
+
+#[test]
+fn a_throwaway_piece_an_open_chat_stands_in_is_kept_though_its_try_is_gone() {
+    // A Try it's chat put back after its try was not carried: its folder is its chat's still.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    let piece = root.join("workspaces/.throwaway/purlis-try-0123456789abcdef");
+    std::fs::create_dir_all(&piece).unwrap();
+    sweep_tries(root, std::slice::from_ref(&piece));
+    assert!(piece.is_dir());
+    sweep_tries(root, &[]);
+    assert!(!piece.exists(), "one no chat stands in goes");
+}

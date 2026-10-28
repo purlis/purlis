@@ -469,7 +469,7 @@ pub fn move_from(root: &Path, states: &[PathBuf], into: &Path) -> Moved {
                 }
             }
             if carried == Carried::AskedAgain
-                && let Err(why) = crate::skills::levels::ask_again(root)
+                && let Err(why) = crate::skills::levels::ask_again_in(into, root)
             {
                 out.left
                     .push(format!("{name} was left in the plane ({why})"));
@@ -664,14 +664,22 @@ fn carried_from(data: &Path, root: &Path, key: &str, old_root: &Path) -> Moved {
                 .push(format!("{name} was not carried: {}", missed.join("; ")));
         }
     }
-    if out.left.is_empty() {
-        if let Err(why) = std::fs::rename(&moving, into.join(format!("{MOVED}{key}"))) {
-            out.left
-                .push(format!("the carry was not marked whole ({why})"));
-        } else if let Err(why) = removed(&old) {
-            out.left
-                .push(format!("the old app state was not removed ({why})"));
-        }
+    // The old folder goes first, and only where its root is known gone (its folder above is
+    // there and it is not): one on a volume that is not mounted is another clone's still, and
+    // kept. A removal that fails leaves the carry under way, taken up again at the next open.
+    let known_gone = !old_root.exists() && old_root.parent().is_some_and(Path::is_dir);
+    if out.left.is_empty()
+        && known_gone
+        && let Err(why) = removed(&old)
+    {
+        out.left
+            .push(format!("the old app state was not removed ({why})"));
+    }
+    if out.left.is_empty()
+        && let Err(why) = std::fs::rename(&moving, into.join(format!("{MOVED}{key}")))
+    {
+        out.left
+            .push(format!("the carry was not marked whole ({why})"));
     }
     for line in &out.left {
         tracing::warn!(target: "purlis::appstate", "purlis: {line}");

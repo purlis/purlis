@@ -568,3 +568,30 @@ fn a_reader_before_the_project_s_first_open_sees_nothing_of_another_project_s_st
     assert_eq!(dir(root), Some(mine.clone()));
     assert!(!mine.join("skill-drafts").exists());
 }
+
+#[test]
+fn a_move_from_a_root_that_is_only_out_of_reach_carries_and_keeps_the_old_folder() {
+    let data = tempfile::tempdir().unwrap();
+    let old = project();
+    let mut was = moved_from(data.path(), old.path());
+    // The old root is on a volume that is not mounted: neither it nor its folder above is there.
+    let unreachable = std::path::PathBuf::from("/no-such-volume-3718/proj");
+    let old_folder = data.path().join(DIR).join(was.key.as_str());
+    std::fs::write(old_folder.join(ROOT_FILE), unreachable.to_str().unwrap()).unwrap();
+    was.root = unreachable;
+    let new = moved_to(old.path());
+    std::fs::remove_dir_all(old.path()).unwrap();
+    let root = new.path();
+    let moved = follow_arrival_in(data.path(), root, &was, Arrived::Moved);
+    assert!(moved.left.is_empty(), "{:?}", moved.left);
+    let here = in_data(data.path(), root);
+    assert!(
+        here.join("skill-drafts/abc/draft.json").is_file(),
+        "carried"
+    );
+    assert!(
+        old_folder.join("skill-drafts/abc/draft.json").is_file(),
+        "never removed"
+    );
+    assert!(here.join(format!("{MOVED}{}", was.key)).is_file());
+}

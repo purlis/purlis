@@ -332,3 +332,22 @@ fn with_no_app_state_the_folders_an_older_purlis_held_stay_held() {
     assert!(held(&root.join("workspaces/ops")).is_some());
     assert_eq!(held(&root.join("personas/steward")), None);
 }
+
+#[test]
+fn a_record_that_cannot_be_read_is_replaced_and_accept_then_lets_each_folder_go() {
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    let state = crate::appstate::made(root).unwrap();
+    std::fs::create_dir_all(state.join(DIR)).unwrap();
+    std::fs::write(
+        state.join(DIR).join(format!("{UNNOTED}.json")),
+        "{\"name\":",
+    )
+    .unwrap();
+    for owner in ["workspaces/ops", "personas/steward"] {
+        assert!(made_since(root)(&root.join(owner)).is_some(), "{owner}");
+    }
+    accept(root, "workspaces/ops").unwrap();
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+    assert!(made_since(root)(&root.join("personas/steward")).is_some());
+}
