@@ -14,7 +14,7 @@
 //! person sees the cost again and turns it on again. Nothing grades on a timer, and an edit
 //! whose copy was graded already is not graded twice.
 //!
-//! **Tier:** device-bound. It lives in this machine's state, `<state>/skill-grade-after-edit.json`
+//! **Tier:** Clone state, this machine's own. It lives in this machine's state, `<state>/skill-grade-after-edit.json`
 //! ([`FILE`]), which no chat writes and no commit carries: the person who pays turns it on, and a
 //! teammate's push never does. Read through no link, at most [`MOST_FILE_BYTES`], and a record
 //! that does not hold together is read as off.

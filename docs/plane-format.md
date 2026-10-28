@@ -7316,8 +7316,8 @@ rewritten.
   so does a copy whose entry does not hold together (a name that is no plain name, no chats, a cap
   out of its bounds, a limit that is no positive amount).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
-- **Tier:** Clone state, device-bound — the person who pays turns it on, on this machine; a
-  teammate's push never does. Losing it turns grading after each edit off.
+- **Tier:** Clone state — this machine's own: the person who pays turns it on, on this machine;
+  a teammate's push never does. Losing it turns grading after each edit off.
 - **Git:** gitignored, under the state directory.
 
 ### `<state>/grades-under-way/<grade>.json`
