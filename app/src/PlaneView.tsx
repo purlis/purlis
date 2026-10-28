@@ -319,7 +319,12 @@ import { sendToDriven } from "./browserDriving";
 import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import type { BrowserShown } from "./ChatBrowsersShown";
-import { forgetProjectsBrowsers, tellProjectBrowsers, type GridTile } from "./browsersGrid";
+import {
+  forgetProjectsBrowsers,
+  tellProjectBrowsers,
+  tileTitle,
+  type GridTile,
+} from "./browsersGrid";
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
  *  you, or a browser (#2012). */
@@ -4285,10 +4290,7 @@ export const PlaneView = memo(function PlaneView({
   const openGridTile = useCallback(
     (tile: GridTile) => {
       windowDoes.selectProject(plane);
-      if (tile.name === null || tile.chat === null)
-        showView(browserView(tile.program), BROWSER_TITLE, tile.workspace);
-      else
-        showView(browserView(tile.program), chatBrowserTitle(tile.chat, tile.name), tile.workspace);
+      showView(browserView(tile.program), tileTitle(tile), tile.workspace);
     },
     [windowDoes, plane, showView],
   );
@@ -4296,10 +4298,12 @@ export const PlaneView = memo(function PlaneView({
     tellProjectBrowsers({
       plane,
       project: projectName(plane),
-      tiles: gridTiles,
+      // **None until its tabs are back** (`settled`): putting them back lays the strip out
+      // afresh, which would lose a tab a press on a tile opened before.
+      tiles: settled ? gridTiles : [],
       open: openGridTile,
     });
-  }, [plane, gridTiles, openGridTile]);
+  }, [plane, gridTiles, openGridTile, settled]);
   useEffect(() => () => forgetProjectsBrowsers(plane), [plane]);
   /** **A chat's new browser opens beside it**, where the person's setting says so (#2024): only
    *  one that started after the window first read them, so a reload opens nothing. */

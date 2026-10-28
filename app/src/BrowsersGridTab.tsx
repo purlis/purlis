@@ -4,11 +4,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LayoutGrid } from "lucide-react";
 import { OUTSIDE, OUTSIDE_TITLE } from "./actions";
-import { BROWSER_TITLE, addressChip, chatBrowserTitle, deviceOf } from "./browsers";
+import { addressChip, deviceOf } from "./browsers";
 import {
   gridCounts,
   keepBrowsersScope,
   openTile,
+  tileTitle,
   tilesIn,
   useBrowsersScope,
   useProjectsBrowsers,
@@ -47,17 +48,6 @@ export const LIVE_AT_MOST = 24;
 const keyOf = (tile: GridTile): string => `${tile.plane}\u0000${tile.program}`;
 
 /**
- * What a tile is called: the person's own by that alone, else the chat's browser by its chat,
- * or by its name alone where no name of its chat was kept.
- */
-export function tileTitle(tile: GridTile): string {
-  if (tile.own || tile.name === null) return BROWSER_TITLE;
-  return tile.chat === null || tile.chat === ""
-    ? `${BROWSER_TITLE} ${tile.name}`
-    : chatBrowserTitle(tile.chat, tile.name);
-}
-
-/**
  * **Which tiles are in sight**, by key, as an `IntersectionObserver` sees them: `null` where the
  * window has none, and every tile counts as in sight. `observe` is each tile's ref.
  */
@@ -71,17 +61,18 @@ function useInSight(): {
   );
   const keys = useRef(new Map<Element, string>());
   const observer = useRef<IntersectionObserver | null>(null);
+  /** The keys the observer last said are in sight. */
+  const seen = useRef(new Set<string>());
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
-    const seen = new Set<string>();
     const watching = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         const key = keys.current.get(entry.target);
         if (key === undefined) continue;
-        if (entry.isIntersecting) seen.add(key);
-        else seen.delete(key);
+        if (entry.isIntersecting) seen.current.add(key);
+        else seen.current.delete(key);
       }
-      setInSight(new Set(seen));
+      setInSight(new Set(seen.current));
     });
     observer.current = watching;
     for (const element of keys.current.keys()) watching.observe(element);
@@ -100,6 +91,8 @@ function useInSight(): {
       if (at !== null) {
         keys.current.delete(at);
         observer.current?.unobserve(at);
+        // Listed again, it is in sight only once the observer says so of it again.
+        if (seen.current.delete(key)) setInSight(new Set(seen.current));
       }
       at = element;
       if (element === null) return;

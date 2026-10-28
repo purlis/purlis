@@ -62,6 +62,8 @@ describe("a browser's view tab (#2012)", () => {
 describe("a chat's browser (#2024)", () => {
   it("is named after its chat and the name the chat knows it by", () => {
     expect(chatBrowserTitle("steward 3", "b1")).toBe("Browser b1 of steward 3");
+    // A pinned browser whose chat's name was not kept is named by its own name alone.
+    expect(chatBrowserTitle("", "b1")).toBe("Browser b1");
   });
 
   it("is never let go of when a tab showing it closes: it ends with its chat", () => {

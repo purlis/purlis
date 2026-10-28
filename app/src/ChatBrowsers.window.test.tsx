@@ -80,7 +80,12 @@ const OTHER = "/home/dev/other";
 
 /** The core, with chats 1 and 2 open in alpha and `browsers` as their browsers; and, where
  *  `other` is given, a second project restored beside it, with chat 5 and `other` its browsers. */
-function core(browsers: ChatBrowser[], other?: ChatBrowser[]) {
+function core(
+  browsers: ChatBrowser[],
+  other?: ChatBrowser[],
+  /** Where given, the other project's view tabs are answered only once this settles. */
+  otherViews?: Promise<unknown>,
+) {
   const asked: Asked[] = [];
   // Every listener of each event: more than one part of the window hears an event.
   const listeners = new Map<string, number[]>();
@@ -101,6 +106,8 @@ function core(browsers: ChatBrowser[], other?: ChatBrowser[]) {
       return { windows: [{ planes: [PLANE, OTHER], active: 0 }], dropped: [] };
     if (cmd === "open_plane") return { plane: a.path, ask: null };
     if (cmd === "opened_chats") return there ? [chat(5)] : open;
+    if (cmd === "reopened_views" && there && otherViews !== undefined)
+      return otherViews.then(() => []);
     if (cmd === "chat_browsers") return there ? other : browsers;
     if (cmd === "browsers_taken_back") return takenBack.splice(0, takenBack.length);
     if (cmd === "chat_browser_timeline") return a.chat === CHAT_1 ? timeline : [];
@@ -940,6 +947,35 @@ describe("the Browsers grid (#2027)", () => {
     await fromThePalette("New browser");
     await waitFor(() => expect(tabNames()).toContain("Browser"));
     expect(await within(chats).findByRole("button", { name: "Open browsers" })).toBeTruthy();
+  });
+
+  it("offers another project's browsers once that project has put its tabs back", async () => {
+    let putBack: (value?: unknown) => void = () => undefined;
+    core(
+      [B7],
+      [{ ...B7, session: 5, program: "C1" }],
+      new Promise((done) => {
+        putBack = done;
+      }),
+    );
+    await opened();
+    await within(await chatsTree()).findByRole("group", { name: "Browsers of steward 1" });
+    await fromThePalette("Open browsers");
+    const scopes = await screen.findByRole("radiogroup", { name: "Show the browsers of" });
+    await userEvent.click(within(scopes).getByRole("radio", { name: /All projects/ }));
+    // Its tabs are not back yet: a tab its tile opened now would be laid out over.
+    expect(
+      within(await grid()).queryByRole("option", { name: "Browser b1 of steward 5" }),
+    ).toBeNull();
+
+    await act(async () => putBack());
+    await userEvent.click(
+      await within(await grid()).findByRole("option", { name: "Browser b1 of steward 5" }),
+    );
+    await waitFor(() => expect(tabNames()).toContain("Browser b1 of steward 5"));
+    // And it stays: nothing put back after it lays it out over.
+    await act(async () => new Promise((done) => setTimeout(done, 50)));
+    expect(tabNames()).toContain("Browser b1 of steward 5");
   });
 
   it("follows the chats' browsers as they come and go", async () => {

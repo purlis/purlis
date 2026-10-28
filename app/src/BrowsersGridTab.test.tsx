@@ -5,11 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { BrowsersGridTab, LIVE_AT_MOST, tileTitle } from "./BrowsersGridTab";
+import { BrowsersGridTab, LIVE_AT_MOST } from "./BrowsersGridTab";
 import {
   forgetProjectsBrowsers,
   keptBrowsersScope,
   tellProjectBrowsers,
+  tileTitle,
   type GridTile,
 } from "./browsersGrid";
 import { forgetProjectViews } from "./projectViews";
@@ -213,6 +214,21 @@ describe("live tiles are bounded", () => {
     seeing.show("A2", false);
     await vi.waitFor(() => expect(unwatched).toEqual(["A2"]));
     // A tile out of sight keeps its picture: nothing drew over it, and it asks for nothing.
+    expect(watched.map((one) => one.program)).toEqual(["A2"]);
+  });
+
+  it("asks again only once a tile listed again is seen in sight again", async () => {
+    const seeing = sight();
+    tell();
+    render(<BrowsersGridTab plane={HERE} workspace="alpha" />);
+    seeing.show("A2", true);
+    await vi.waitFor(() => expect(watched.map((one) => one.program)).toEqual(["A2"]));
+    const scopes = screen.getByRole("radiogroup", { name: "Show the browsers of" });
+    // A2 is filed in beta: This workspace (alpha) leaves it out, This project lists it again.
+    await userEvent.click(within(scopes).getByRole("radio", { name: /This workspace/ }));
+    await vi.waitFor(() => expect(unwatched).toEqual(["A2"]));
+    await userEvent.click(within(scopes).getByRole("radio", { name: /This project/ }));
+    expect(tiles()).toEqual(["A1", "A2"]);
     expect(watched.map((one) => one.program)).toEqual(["A2"]);
   });
 

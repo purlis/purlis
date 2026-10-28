@@ -3,6 +3,7 @@
 
 import { useSyncExternalStore } from "react";
 import type { BrowserDriver } from "./bindings";
+import { BROWSER_TITLE, chatBrowserTitle } from "./browsers";
 import { onProjectViews } from "./projectViews";
 import { keepScopeOf, keptScopeOf, type InboxScope, type ScopeCounts } from "./inboxScope";
 import type { ViewRef } from "./tabs";
@@ -52,6 +53,15 @@ export type GridTile = {
   /** The pool whose runner it runs on, or `null` on this machine (#2050). */
   pool: string | null;
 };
+
+/**
+ * What a tile is called: the person's own by that alone, else the chat's browser by its chat,
+ * or by its name alone where no name of its chat was kept.
+ */
+export function tileTitle(tile: GridTile): string {
+  if (tile.own || tile.name === null) return BROWSER_TITLE;
+  return chatBrowserTitle(tile.chat ?? "", tile.name);
+}
 
 /** What one project tells the grid. */
 export type ProjectBrowsers = {
