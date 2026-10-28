@@ -163,6 +163,73 @@
   box-shadow: inset 0 0 0 var(--focus-ring-width) var(--list-selected-edge);
 }
 
+/* **A card row** (`ListCardRow`, #3669, the sidebar Skills view's variant C): a small card of a
+   side view's list, as tall as its lines whatever the list's size. Its first line (its name, its
+   tag, its actions and its ⋯), its two lines about it and its action line. On the raised ground,
+   which a theme sets (`list.root.card.fill`); under the pointer the pill, chosen the wash ringed
+   all round, and the keyboard's ring inside it, so no state changes its height. Written after the
+   sizes, so a dense list's row padding never reaches it. */
+[data-scope="list"][data-part="root"][data-variant="card"] {
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
+  column-gap: var(--space-2);
+  min-block-size: 0;
+  padding-block: var(--space-3);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-lg);
+  background-color: var(--surface-raised);
+}
+
+[data-scope="list"][data-part="root"][data-variant="card"][data-hovered]:not([data-disabled]):not(
+    [data-selected]
+  ) {
+  background-color: var(--surface-hover);
+}
+
+[data-scope="list"][data-part="root"][data-variant="card"][data-selected]:is(:dir(ltr), :dir(rtl)) {
+  background-color: var(--list-selected);
+  box-shadow: inset 0 0 0 var(--focus-ring-width) var(--list-selected-edge);
+}
+
+/* Its name keeps its tag beside it, and its actions go to the line's end. */
+[data-scope="list"][data-part="root"][data-variant="card"] > [data-part="label"] {
+  flex: 0 1 auto;
+}
+
+/* **Its two lines about it** (#3669): its description in the muted tier, cut cleanly after the
+   second line; a reason in its place in the waiting colour or the quiet tier. */
+[data-scope="list"][data-part="summary"] {
+  display: -webkit-box;
+  flex: 1 0 100%;
+  min-inline-size: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+
+[data-scope="list"][data-part="summary"][data-tone="warning"] {
+  color: var(--state-waiting);
+}
+
+[data-scope="list"][data-part="summary"][data-tone="quiet"] {
+  color: var(--text-quiet);
+}
+
+/* **Its action line** (#3669): its one fix, under the summary. */
+[data-scope="list"][data-part="actions"] {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  margin-block-start: var(--space-1);
+}
+
 /* **A list a field aims at** (`AimedList.tsx`, the palette's): the pointer's pill under the
    pointer, and the aimed row, where the field's keys are, in the aim's own fill (`control.aimed`,
    quieter than a chosen row) with the keyboard's ring inside it. */

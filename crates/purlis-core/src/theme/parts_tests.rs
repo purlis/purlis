@@ -1425,7 +1425,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     // The list family (#2911): a row, the list around it, its slots and a group's name.
     let list = family("list");
     assert_eq!(list["since"], 11);
-    assert_eq!(list["variants"], json!([]));
+    assert_eq!(names(&list, "variants"), ["row", "card"]);
     assert_eq!(
         names(&list, "parts"),
         [
@@ -1436,11 +1436,15 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
             "description",
             "trail",
             "header",
-            "shortcut"
+            "shortcut",
+            "summary",
+            "actions"
         ]
     );
-    // The key at a row's end (#2921), the next release's.
-    assert_eq!(list["parts"][7]["since"], parts::NEXT);
+    // The key at a row's end (#2921), the next release's, and a card row's lines (#3669).
+    for at in 7..=9 {
+        assert_eq!(list["parts"][at]["since"], parts::NEXT);
+    }
     // The table family (#2911): a row, the card that holds the table, a column's name, a cell
     // and the bar over a table that chooses.
     let table = family("table");

@@ -61,7 +61,8 @@
     "dialog.root.border-width": 0,
     "popover.root.border-width": 0,
     "card.root.fill": "surface.base",
-    "card.root.border-width": 0
+    "card.root.border-width": 0,
+    "list.root.card.fill": "surface.base"
   },
   "appearances": [
     {

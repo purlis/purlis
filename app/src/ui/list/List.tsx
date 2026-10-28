@@ -267,6 +267,7 @@ export function ListOption<T extends object>({
       className={className}
       data-scope="list"
       data-part="root"
+      data-variant="row"
       data-size={size}
       data-unavailable={unavailable || undefined}
     >
@@ -350,10 +351,17 @@ export function List<T extends object>({
   );
 }
 
+/** **How a list's row is drawn** (#3669): a row of one line, or a card of a side view's list
+ *  (`ListCardRow`), whose height follows its lines. */
+export const LIST_ROW_VARIANTS = ["row", "card"] as const;
+export type ListRowVariant = (typeof LIST_ROW_VARIANTS)[number];
+
 export interface ListRowProps<T extends object> extends Omit<
   AriaGridListItemProps<T>,
   "className" | "style"
 > {
+  /** A row of one line (the default), or a card (`ListCardRow`, #3669). */
+  variant?: ListRowVariant;
   /** Its context menu: a right-click, Shift+F10 or the menu key opens it. */
   menu?: RowMenu;
   /** What it says that its words do not, beside it: under the pointer, and while the keyboard
@@ -370,6 +378,7 @@ export interface ListRowProps<T extends object> extends Omit<
 /** **One row**: its `textValue` is what typing finds it by and what a reader hears first. */
 export function ListRow<T extends object>({
   className,
+  variant = "row",
   menu,
   tip,
   children,
@@ -384,6 +393,7 @@ export function ListRow<T extends object>({
       className={className}
       data-scope="list"
       data-part="root"
+      data-variant={variant}
       data-size={size}
     >
       {rowHolds(children, own.menu, tipped)}

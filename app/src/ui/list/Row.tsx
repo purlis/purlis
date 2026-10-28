@@ -84,6 +84,36 @@ export const RowTrail = slot("trail");
  */
 export const RowBelow = slot("below");
 
+/** **What a card row's summary says it in** (#3669): its description in the muted tier, or a
+ *  reason in its place, in the waiting colour (it needs the person) or the quiet tier (it is
+ *  left out). */
+export type RowSummaryTone = "description" | "warning" | "quiet";
+
+/**
+ * **A card row's two lines about it** (#3669), under its first line: its description, or a
+ * reason in its place, cut cleanly after the second line. The card row says the whole of it in
+ * its tooltip (`ListCardRow`).
+ */
+export function RowSummary({
+  tone = "description",
+  ...rest
+}: Slot & {
+  tone?: RowSummaryTone;
+}) {
+  const scope = useContext(RowScope);
+  return (
+    <span
+      {...rest}
+      data-scope={scope}
+      data-part="summary"
+      data-tone={tone === "description" ? undefined : tone}
+    />
+  );
+}
+
+/** **A card row's action line** (#3669), under its summary: its one fix. */
+export const RowActions = slot("actions");
+
 /**
  * **The key that does the same**, at the row's end and read last (#2921, N25): a palette row's,
  * from the key registry (`keys/registry.ts`). Drawn, and hidden from a reader, who hears the key

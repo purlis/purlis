@@ -958,6 +958,7 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
 | `ListBox`, `ListOption`, `ListSection` | **A list to choose from** (the WAI-ARIA listbox): a persona to start a chat with, a theme, a search hit, a skill. A choice of one follows the arrows; `onAction` runs the one picked; `layout="grid"` lays its options out as cards the arrows walk in two directions; an option `unavailable` says so (`aria-disabled`) and keeps the keyboard, so why is read |
 | `List`, `ListRow`, `ListRowSection` | **A list of rows that act** (a grid of one column): a panel's todos, a vault's rows. A row runs something (`onAction`), may be chosen, and may hold its own buttons, which ← and → reach |
 | `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, `RowBelow` (`Row.tsx`) | A row's slots, the same in a list, a tree and a table: its marks, its words (one line, cut with an ellipsis), the one line about it in the quiet tier, its end (a count, its own actions), and a line under its words inside it (what a search matched in its body, why the core refused it). **In an option, its words are its name and its one line its description** (React Aria's `label` and `description` slots), so a reader hears the name alone and then what it is, never the row's content run together |
+| `ListCardRow`, `RowMenuButton` (`CardRow.tsx`); `RowSummary`, `RowActions` (`Row.tsx`) | **A card row** (#3669, the sidebar Skills view's variant C): a row of a `List` drawn as a small card (`variant="card"`), as tall as its lines. Its first line is its name, its tag, its own actions (Use) and its **⋯**, which opens the row's own menu (`menu`), the one a right-click and Shift+F10 open; then **two lines about it** (`RowSummary`), its description cut cleanly after the second line, or a reason in its place in the waiting colour (it needs the person) or the quiet tier (it is left out); then its **action line** (`RowActions`), its one fix. The whole of its summary is its tooltip. ← and → reach Use, the ⋯ and the fix; a press on it runs it. A state changes a fill or a ring, never its height; it fits a 260 px side view |
 | `AimedList`, `AimedOption` (`AimedList.tsx`) | **A list a field aims at**: a combobox's list drawn in place, the palette's actions, projects and files. The field keeps the keyboard and moves the aim (`aria-activedescendant`); the aimed row wears the keyboard's ring inside it and the aim's fill (`control.aimed`); a press runs a row |
 | `ListFilter`, `useListFilter`, `noMatchSaid` (`ListFilter.tsx`) | **A list over about seven items gets a filter** (R164): from eight, a field at the large size over the list, the total in its placeholder ("Filter 28 personas"), a case-insensitive part of each name, and "No persona is called “x”." where nothing matches. What is typed is the caller's, so drawing the list again keeps the field, its focus and its caret (R168) |
 | `useRowDrag` (`drag.ts`) | What a dragged row carries, by type, to a drop target outside the window's collections (a file's reference onto a chat) |
@@ -990,9 +991,13 @@ old `.ui-list` class: `eslint.config.js` refuses both (`purlis/list-family`, an 
   family's root (`data-part="root"`, its `data-size`) with React Aria's state attributes, its
   slots and a group's `header` (`data-named` for a name from data: a day, a file). `ui/list/list.css`
   draws the family default; a theme's parts reach the same attributes.
-- **Stories hold it** (`List.stories.tsx`): a list to choose from under its filter, a list a field aims at, rows that act
-  with a row's own button and its menu, a grid of cards, and an empty one, in
-  Chromium and WebKit, with axe.
+- **A card row is the row's `card` variant** (#3669): on the raised ground at rest (Purlis puts it
+  on the window's, `list.root.card.fill`), the pill under the pointer, the wash ringed all round
+  when chosen, and its own room whatever the list's size. A row of one line is the `row` variant;
+  a theme's `list.root.*` without a variant reaches both. Its parts are `summary` and `actions`.
+- **Stories hold it** (`List.stories.tsx`, `CardRow.stories.tsx`): a list to choose from under its
+  filter, a list a field aims at, rows that act with a row's own button and its menu, a grid of
+  cards, the Skills view's card rows, and an empty one, in Chromium and WebKit, with axe.
 
 ## The table family
 

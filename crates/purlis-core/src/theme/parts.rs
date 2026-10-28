@@ -2772,6 +2772,8 @@ const STANDS_ON: &[(&str, &[&str])] = &[
     // A card's ask and a Notice hold answers (#2912, `content::HOLDS_ANSWERS`).
     ("card", &["button"]),
     ("notice", &["button"]),
+    // A list's card row holds its own buttons: Use and its fix (#3669).
+    ("list", &["button"]),
 ];
 
 /// **The fill-taking families no consent family stands on**, each with why (#3083 review): a
