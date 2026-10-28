@@ -169,9 +169,8 @@ engine is not in the image. To start, the engine needs:
 - **its own sandbox.** purlis never runs the engine without it. The sandbox makes a user, a
   process and a network namespace and changes its root, so a Docker pool makes each runner
   with a profile that allows exactly those calls besides Docker's default
-  (`crates/purlis-core/src/dockerpool/seccomp.json`, ruled 2026-10-28). A sandboxed chat is
-  refused them by its own filter, so only the engine, a child of the runner's host, makes a
-  namespace. A runner made by a purlis from before this profile still links; its browsers are
+  (`crates/purlis-core/src/dockerpool/seccomp.json`, ruled 2026-10-28). A chat in purlis's own
+  Linux sandbox is refused them by that sandbox's filter. A runner made by a purlis from before this profile still links; its browsers are
   refused, and the person is told to remove its pool and add it again.
 - **shared memory.** A Docker pool gives each runner a `/dev/shm` a quarter of its memory: the
   engine shares its pages' memory there, and Docker's own 64 MiB is too little for a busy page.

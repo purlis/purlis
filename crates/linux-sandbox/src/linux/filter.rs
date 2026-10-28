@@ -14,8 +14,9 @@
 //!   store; opening a file by handle; a seccomp listener of the chat's own, which would take the
 //!   supervisor's calls; and making a namespace of any kind (`clone` or `unshare` with a
 //!   `CLONE_NEW…` flag), so a sandboxed chat reaches no more of the kernel than a process with
-//!   no capability may, even where its machine lets a program make a user namespace: a runner
-//!   allows it for the browser engine alone (#3298, ADR 0089 as amended 2026-10-28).
+//!   no capability may, even where its machine lets a program make a user namespace, as a
+//!   Docker pool's runner does for the browser engine's sandbox (#3298, ADR 0089 as amended
+//!   2026-10-28).
 //! - **Answered as done** without being done: making the process undumpable, which would stop
 //!   the supervisor reading its calls.
 

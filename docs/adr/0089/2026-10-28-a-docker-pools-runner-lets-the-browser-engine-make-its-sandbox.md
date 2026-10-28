@@ -14,12 +14,12 @@ a cluster's browser pods (*"the runtime default plus what Chrome's sandbox needs
    not (measured 2026-10-28). purlis never runs the engine without its sandbox. Every
    capability is still dropped and no new privileges are gained. `chroot` reaches nothing
    outside a user namespace a process made itself. *Decided in implementation (D-2050-15).*
-2. **A sandboxed chat makes no namespace.** Its own seccomp filter refuses `clone` and
-   `unshare` with any `CLONE_NEW…` flag (`EPERM`), and `clone3`, whose flags it cannot read
-   (`ENOSYS`, as Docker's default answers it). So on a runner only the engine, a child of the
-   runner's host, makes a user namespace, and a sandboxed chat beside it reaches no more of the
-   kernel than before. The filter is the same on every machine, so a runner chat is sandboxed
-   exactly as a local one (spec #2041). *Decided in implementation (D-2050-16).*
+2. **A chat in purlis's own Linux sandbox makes no namespace.** The sandbox's seccomp filter
+   refuses `clone` and `unshare` with any `CLONE_NEW…` flag (`EPERM`), and `clone3`, whose
+   flags it cannot read (`ENOSYS`, as Docker's default answers it), so such a chat beside the
+   engine reaches no more of the kernel than before. The filter is the same on every machine,
+   so a runner chat is sandboxed exactly as a local one (spec #2041). *Decided in
+   implementation (D-2050-16).*
 3. **A runner made before this profile stays usable**, on the profile it was made with
    (`Seccomp::RunnersEarlier`): its chats' servers listen, and its browsers are refused for the
    engine's sandbox until the person removes its pool and adds it again; the Notice says so. A

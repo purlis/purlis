@@ -5,8 +5,8 @@ amendment of 2026-10-27, as ADR 0089's amendment of 2026-10-28 says.
 
 1. **The runner's seccomp profile** (`purlis_core::dockerpool::SECCOMP_PROFILE`) is Docker's
    default with four rules added: `pidfd_getfd`, as before; `clone` and `unshare` making no
-   namespace but a user, a process and a network one; and `chroot`. A sandboxed chat is refused
-   the namespace calls by its own filter.
+   namespace but a user, a process and a network one; and `chroot`. A chat in purlis's own Linux
+   sandbox is refused the namespace calls by that sandbox's filter.
 2. **The check knows the earlier profile too** (`EARLIER_SECCOMP_PROFILE`, Docker's default and
    `pidfd_getfd`, kept as it was): Docker holds a runner to either, rule for rule; rootless
    Podman tells them apart by what it compiled; rootful Podman keeps the path alone, and its
