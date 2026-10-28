@@ -53,6 +53,80 @@ pub trait Code: Send + Sync + 'static {
         have: &[String],
         into: &Path,
     ) -> Result<(Vec<CodeRef>, bool), Refusal>;
+
+    /// **Take a moving chat's work tree over** (1.44, #2048): `refs`, the branch `checkout` and
+    /// its snapshot, from the bundle at `bundle` or what the repository holds, onto the
+    /// repository's work tree where it is still what both ends last agreed. Answers every branch
+    /// and snapshot it holds after. A binary that moves no chat refuses it.
+    fn take_work(
+        &self,
+        project: &Path,
+        repo: &str,
+        bundle: Option<&Path>,
+        refs: &[CodeRef],
+        checkout: &str,
+    ) -> Result<Vec<CodeRef>, Refusal> {
+        let _ = (project, repo, bundle, refs, checkout);
+        Err(moves_no_chat())
+    }
+
+    /// [`Code::give`], with the work tree's uncommitted work as its branch's snapshot, which both
+    /// ends agree on from then on (1.44, #2048).
+    fn give_work(
+        &self,
+        project: &Path,
+        repo: &str,
+        have: &[String],
+        into: &Path,
+    ) -> Result<(Vec<CodeRef>, bool), Refusal> {
+        let _ = (project, repo, have, into);
+        Err(moves_no_chat())
+    }
+
+    /// **Keep conversation `conversation`, carried as `file` at `from`**, in the harness folder
+    /// of `profile` for a chat in `workspace` of the project at `project` (1.44, #2048).
+    fn take_conversation(
+        &self,
+        project: &Path,
+        carried: &Carried,
+        from: &Path,
+    ) -> Result<(), Refusal> {
+        let _ = (project, carried, from);
+        Err(moves_no_chat())
+    }
+
+    /// **Write conversation `conversation`** of `profile`, for a chat in `workspace`, into
+    /// `into` (1.44, #2048). Answers where its harness keeps it, as [`Carried::file`] names it.
+    fn give_conversation(
+        &self,
+        project: &Path,
+        carried: &Carried,
+        into: &Path,
+    ) -> Result<String, Refusal> {
+        let _ = (project, carried, into);
+        Err(moves_no_chat())
+    }
+}
+
+/// **A conversation a moving chat carries** (1.44, #2048): what `take_conversation` and
+/// `give_conversation` name of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Carried {
+    /// The chat's workspace, whose folder it runs in.
+    pub workspace: String,
+    /// The profile it runs on, whose harness keeps it.
+    pub profile: String,
+    /// The harness's session id.
+    pub conversation: String,
+    /// Where the harness's declaration keeps it, as found: empty where it is to be found.
+    pub file: String,
+}
+
+fn moves_no_chat() -> Refusal {
+    Refusal {
+        code: session::NOT_STARTED.into(),
+        why: "this session host moves no chat".into(),
+    }
 }
 
 /// A host that moves no code: every transfer is refused.
@@ -97,17 +171,23 @@ fn not_started(why: impl Into<String>) -> Refusal {
 
 /// Which way a transfer's bundle goes.
 pub(crate) enum Way {
-    /// The client writes it: `take_code`.
+    /// The client writes it: `take_code`, taking a moving chat's work tree over where `moving`.
     In {
         refs: Vec<CodeRef>,
         checkout: Option<String>,
+        moving: bool,
     },
-    /// The host writes it: `give_code`.
-    Out { have: Vec<String> },
+    /// The host writes it: `give_code`, with the work tree's work where `with_work`.
+    Out { have: Vec<String>, with_work: bool },
+    /// The client writes a moving chat's conversation: `take_conversation` (1.44).
+    ConversationIn(Carried),
+    /// The host writes one: `give_conversation` (1.44).
+    ConversationOut(Carried),
 }
 
 impl Hosting {
-    /// Carry out one transfer of code in `repo` of `project`, on a code stream named `transfer`.
+    /// Carry out one transfer of code in `repo` of `project`, on a code stream named `transfer`:
+    /// a bundle, or a moving chat's conversation (1.44, #2048).
     pub(crate) async fn move_code(
         &self,
         project: &str,
@@ -122,7 +202,8 @@ impl Hosting {
             .prefix(".code-")
             .tempdir_in(self.code_scratch(&at))
             .map_err(|why| not_started(format!("there is no room for the bundle: {why}")))?;
-        let bundle = scratch.path().join("transfer.bundle");
+        let file = scratch.path().join("transfer.bundle");
+        let most = self.most_bundle();
         let moved = tokio::time::timeout(TRANSFER_WITHIN, async {
             let mut stream = peer
                 .opener()
@@ -133,60 +214,56 @@ impl Hosting {
                 .write_all(&Header { transfer }.to_bytes())
                 .await
                 .map_err(|why| not_started(format!("the code stream broke: {why}")))?;
+            let (at, file) = (at.clone(), file.clone());
             match way {
-                Way::In { refs, checkout } => {
-                    let mut file = tokio::fs::File::create(&bundle).await.map_err(|why| {
-                        not_started(format!("the bundle could not be kept: {why}"))
-                    })?;
-                    let read = code::copy_held_to(&mut stream, &mut file, self.most_bundle())
-                        .await
-                        .map_err(|why| match why {
-                            code::Unread::TooLarge { .. } => Refusal {
-                                code: session::TOO_LARGE.into(),
-                                why: why.to_string(),
-                            },
-                            code::Unread::Io(_) => not_started(why.to_string()),
-                        })?;
-                    file.flush().await.map_err(|why| {
-                        not_started(format!("the bundle could not be kept: {why}"))
-                    })?;
-                    drop(file);
-                    let (at, bundle) = (at.clone(), bundle.clone());
-                    let heads = tokio::task::spawn_blocking(move || {
-                        let came = (read > 0).then_some(bundle.as_path());
-                        code.take(&at, &repo, came, &refs, checkout.as_deref())
+                Way::In {
+                    refs,
+                    checkout,
+                    moving,
+                } => {
+                    let read = take_in(&mut stream, &file, most).await?;
+                    blocking(move || {
+                        let came = (read > 0).then_some(file.as_path());
+                        let heads = match (moving, checkout) {
+                            (true, Some(checkout)) => {
+                                code.take_work(&at, &repo, came, &refs, &checkout)
+                            }
+                            (true, None) => Err(Refusal {
+                                code: session::NOT_ALLOWED.into(),
+                                why: "a move names the branch its work tree goes onto".into(),
+                            }),
+                            (false, checkout) => {
+                                code.take(&at, &repo, came, &refs, checkout.as_deref())
+                            }
+                        }?;
+                        Ok(Answer::Code { heads })
                     })
                     .await
-                    .map_err(|why| not_started(format!("the transfer did not finish: {why}")))??;
-                    Ok(heads)
                 }
-                Way::Out { have } => {
-                    let (at, into) = (at.clone(), bundle.clone());
-                    let (heads, wrote) =
-                        tokio::task::spawn_blocking(move || code.give(&at, &repo, &have, &into))
-                            .await
-                            .map_err(|why| {
-                                not_started(format!("the transfer did not finish: {why}"))
-                            })??;
-                    if wrote {
-                        let mut file = tokio::fs::File::open(&bundle).await.map_err(|why| {
-                            not_started(format!("the bundle could not be read: {why}"))
-                        })?;
-                        code::copy_held_to(&mut file, &mut stream, self.most_bundle())
-                            .await
-                            .map_err(|why| match why {
-                                code::Unread::TooLarge { .. } => Refusal {
-                                    code: session::TOO_LARGE.into(),
-                                    why: why.to_string(),
-                                },
-                                code::Unread::Io(_) => not_started(why.to_string()),
-                            })?;
-                    }
-                    stream
-                        .shutdown()
-                        .await
-                        .map_err(|why| not_started(format!("the code stream broke: {why}")))?;
-                    Ok(heads)
+                Way::Out { have, with_work } => {
+                    let into = file.clone();
+                    let (heads, wrote) = blocking(move || {
+                        if with_work {
+                            code.give_work(&at, &repo, &have, &into)
+                        } else {
+                            code.give(&at, &repo, &have, &into)
+                        }
+                    })
+                    .await?;
+                    give_out(&mut stream, wrote.then_some(file.as_path()), most).await?;
+                    Ok(Answer::Code { heads })
+                }
+                Way::ConversationIn(carried) => {
+                    take_in(&mut stream, &file, most).await?;
+                    blocking(move || code.take_conversation(&at, &carried, &file)).await?;
+                    Ok(Answer::Done)
+                }
+                Way::ConversationOut(carried) => {
+                    let into = file.clone();
+                    let kept =
+                        blocking(move || code.give_conversation(&at, &carried, &into)).await?;
+                    give_out(&mut stream, Some(file.as_path()), most).await?;
+                    Ok(Answer::Conversation { file: kept })
                 }
             }
         })
@@ -197,7 +274,7 @@ impl Hosting {
                 TRANSFER_WITHIN.as_secs() / 60
             ))
         })??;
-        Ok(Answer::Code { heads: moved })
+        Ok(moved)
     }
 
     /// Where a transfer's bundle is kept while it moves: beside the projects the host keeps, so
@@ -208,6 +285,63 @@ impl Hosting {
             .map(Path::to_path_buf)
             .unwrap_or_else(std::env::temp_dir)
     }
+}
+
+/// Runs `work`, the binary's git or file work, off the link's threads.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, Refusal> + Send + 'static,
+) -> Result<T, Refusal> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|why| not_started(format!("the transfer did not finish: {why}")))?
+}
+
+fn unread(why: code::Unread) -> Refusal {
+    match why {
+        code::Unread::TooLarge { .. } => Refusal {
+            code: session::TOO_LARGE.into(),
+            why: why.to_string(),
+        },
+        code::Unread::Io(_) => not_started(why.to_string()),
+    }
+}
+
+/// Reads what the client writes on `stream` into `file`, at most `most` bytes. Answers how many.
+async fn take_in(
+    stream: &mut purlis_session_protocol::link::Stream,
+    file: &Path,
+    most: u64,
+) -> Result<u64, Refusal> {
+    let mut kept = tokio::fs::File::create(file)
+        .await
+        .map_err(|why| not_started(format!("the bundle could not be kept: {why}")))?;
+    let read = code::copy_held_to(stream, &mut kept, most)
+        .await
+        .map_err(unread)?;
+    kept.flush()
+        .await
+        .map_err(|why| not_started(format!("the bundle could not be kept: {why}")))?;
+    Ok(read)
+}
+
+/// Writes `file`, where there is one, on `stream` and shuts it.
+async fn give_out(
+    stream: &mut purlis_session_protocol::link::Stream,
+    file: Option<&Path>,
+    most: u64,
+) -> Result<(), Refusal> {
+    if let Some(file) = file {
+        let mut read = tokio::fs::File::open(file)
+            .await
+            .map_err(|why| not_started(format!("the bundle could not be read: {why}")))?;
+        code::copy_held_to(&mut read, stream, most)
+            .await
+            .map_err(unread)?;
+    }
+    stream
+        .shutdown()
+        .await
+        .map_err(|why| not_started(format!("the code stream broke: {why}")))
 }
 
 #[cfg(test)]

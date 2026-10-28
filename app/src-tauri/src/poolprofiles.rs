@@ -36,6 +36,11 @@ pub trait ProfilesOnPools: Send + Sync {
     /// `Ok` where a chat in the project at `root` on `profile` may start on pool `pool`'s
     /// runner, or why not, in words.
     fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String>;
+
+    /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move.
+    fn ready_to_move(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        self.ready(root, pool, profile)
+    }
 }
 
 /// The runners this machine keeps under its config home, each reached over a link of its own.
@@ -53,6 +58,12 @@ impl ProfilesOnPools for Linked {
     fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
         // A chat's start is what wakes a suspended runner (#2051), so its keep does too.
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
+            keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
+        })
+    }
+
+    fn ready_to_move(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        onrunner::ready_to_move_on(&self.config, root, pool, profile, &|kept| {
             keep_on_as(owned(), &self.config, pool, kept, Waking::Yes)
         })
     }

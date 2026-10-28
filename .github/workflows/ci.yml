@@ -352,7 +352,7 @@ jobs:
           mkdir -p app/dist
           cargo build --locked -p purlis-cli --bin purlis -p fake-harness --bin fake-harness
           cargo nextest run --locked -p purlis-app --lib --no-run
-          cargo nextest run --locked -p purlis-core --test a_docker_pool_runner_is_linked_through_docker_exec --test code_crosses_to_a_docker_pools_runner_and_back --no-run
+          cargo nextest run --locked -p purlis-core --test a_docker_pool_runner_is_linked_through_docker_exec --test code_crosses_to_a_docker_pools_runner_and_back --test a_chat_moves_to_a_docker_pools_runner_and_back --no-run
       - name: The runner image of this build, and the parity suite's around it, by digest
         if: steps.scope.outputs.run == 'true'
         run: |
@@ -416,13 +416,14 @@ jobs:
       # `--retries 0` in both: the `ci` profile's retry is reported by `rust`'s annotate step,
       # which this job has not, so a flake here fails as it did rather than pass unseen.
       # Run whatever the step above found, so each step's result is its own.
-      - name: The pool's link and code over it, on Docker
+      - name: The pool's link, code over it and a chat's move, on Docker
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
           tools/no-orphans.sh --reap --
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test a_docker_pool_runner_is_linked_through_docker_exec
           --test code_crosses_to_a_docker_pools_runner_and_back
+          --test a_chat_moves_to_a_docker_pools_runner_and_back
       - name: What the runners left, if a test failed
         if: failure() && steps.scope.outputs.run == 'true'
         run: docker ps --all --no-trunc || true
