@@ -1728,6 +1728,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 Access::Write,
             );
         }
+        // Every chat's settings file (SK-9): written by purlis as the chat starts, and read by
+        // its harness as the settings it runs with. Read, never written.
+        deny(
+            Class::Integrity,
+            root.join(state).join(crate::hoststart::SETTINGS_DIR),
+            Access::Write,
+        );
     }
     // The MCP approvals are read where `$PURLIS_HOME` puts the state folder, when it does.
     if !crate::names::STATE_DIR
@@ -1749,6 +1756,12 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         for kept in crate::skills::verbs::KEPT_BY_DELETES {
             deny(Class::Integrity, ctx.state.join(kept), Access::Write);
         }
+        // …and every chat's settings file, which a start writes there.
+        deny(
+            Class::Integrity,
+            ctx.state.join(crate::hoststart::SETTINGS_DIR),
+            Access::Write,
+        );
     }
     // …and a state folder the project does not have as a folder is not the chat's to make
     // (D-RN2a-7): which folder holds charter's state is decided by which are there, so making

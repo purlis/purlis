@@ -835,10 +835,12 @@ pub const SETTINGS_IN_A_WORD: usize = 96 * 1024;
 pub const SETTINGS_DIR: &str = "chat-settings";
 
 /// **`args` with a `--settings` JSON longer than [`SETTINGS_IN_A_WORD`] put in a file**, the
-/// chat `id`'s in this machine's state of the project at `root` (`chat-settings/<id>.json`,
-/// private, written through folder handles with no link followed), and its path in the JSON's
-/// place: Claude Code reads `--settings` as JSON or as a file. Words with a shorter one, or none,
-/// are as they were. Refused for an id that is no chat's.
+/// chat `id`'s in this machine's state of the project at `root`
+/// (`chat-settings/<id>.<digest>.json`, private, written through folder handles with no link
+/// followed), and its path in the JSON's place: Claude Code reads `--settings` as JSON or as a
+/// file. The file's name carries the digest of what purlis wrote ([`settings_digest`]), so what
+/// it is read back as is only ever what was written ([`settings_from_its_file`]). Words with a
+/// shorter one, or none, are as they were. Refused for an id that is no chat's.
 pub fn settings_in_a_file(
     root: &Path,
     id: &str,
@@ -865,7 +867,10 @@ pub fn settings_in_a_file(
     let state = crate::plane::state_dir(root);
     std::fs::create_dir_all(&state).map_err(|why| why.to_string())?;
     crate::profiletrust::private_dir(&state).map_err(|why| why.to_string())?;
-    let rel = std::path::PathBuf::from(SETTINGS_DIR).join(format!("{id}.json"));
+    let rel = std::path::PathBuf::from(SETTINGS_DIR).join(format!(
+        "{id}.{}.json",
+        settings_digest(args[at].as_bytes())
+    ));
     let was = crate::proposed::read_pinned(&state, &rel)
         .map_err(|_| "a chat's settings file is not a plain file, so it was not started")?;
     let base = was
@@ -877,18 +882,53 @@ pub fn settings_in_a_file(
     Ok(args)
 }
 
+/// The digest a chat's settings file is named by: the first 32 hex digits of the SHA-256 of what
+/// it holds.
+fn settings_digest(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(bytes)[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The chat id and the digest a chat's settings file `name` is named by, where it is one:
+/// `<chat id>.<digest>.json`.
+fn settings_file_name(name: &str) -> Option<(String, &str)> {
+    let (id, digest) = name.strip_suffix(".json")?.split_once('.')?;
+    let id = crate::reopen::a_ulid(id)?;
+    (digest.len() == 32 && digest.bytes().all(|b| b.is_ascii_hexdigit())).then_some((id, digest))
+}
+
+/// **Whether `path` is named as a chat's settings file purlis writes**
+/// (`<state>/chat-settings/<chat id>.<digest>.json`), whatever it holds now.
+pub fn names_a_settings_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .and_then(settings_file_name)
+        .is_some()
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|dir| dir == SETTINGS_DIR)
+}
+
 /// **The settings in `path`, where it is a chat's settings file purlis wrote**
-/// ([`settings_in_a_file`]): `<state>/chat-settings/<chat id>.json`, read without following a
-/// link. `None` for any other path.
+/// ([`settings_in_a_file`]): `<state>/chat-settings/<chat id>.<digest>.json`, read without
+/// following a link, and only while what it holds is what its name's digest says was written.
+/// `None` for any other path, and for a file that holds anything else.
 pub fn settings_from_its_file(path: &Path) -> Option<serde_json::Value> {
-    let name = path.file_name()?.to_str()?;
-    crate::reopen::a_ulid(name.strip_suffix(".json")?)?;
-    let dir = path.parent()?;
-    if dir.file_name()? != SETTINGS_DIR {
+    if !names_a_settings_file(path) {
         return None;
     }
+    let name = path.file_name()?.to_str()?;
+    let (_, digest) = settings_file_name(name)?;
+    let dir = path.parent()?;
     let bytes =
         crate::proposed::read_pinned(dir.parent()?, &Path::new(SETTINGS_DIR).join(name)).ok()??;
+    if settings_digest(&bytes) != digest {
+        return None;
+    }
     serde_json::from_slice(&bytes).ok()
 }
 
@@ -902,11 +942,14 @@ pub fn sweep_settings(root: &Path, open: &[String]) {
         return;
     };
     for entry in entries.filter_map(Result::ok) {
-        let Some(id) = entry
-            .file_name()
-            .to_str()
-            .and_then(|name| name.strip_suffix(".json"))
-            .and_then(crate::reopen::a_ulid)
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        // A file of a start before its name carried its digest is swept as one of its chat.
+        let Some(id) = settings_file_name(name)
+            .map(|(id, _)| id)
+            .or_else(|| name.strip_suffix(".json").and_then(crate::reopen::a_ulid))
         else {
             continue;
         };
@@ -928,11 +971,7 @@ pub fn sweep_settings(root: &Path, open: &[String]) {
                 | rustix::fs::OFlags::NOFOLLOW,
             rustix::fs::Mode::empty(),
         ) {
-            let _ = rustix::fs::unlinkat(
-                &at,
-                format!("{id}.json").as_str(),
-                rustix::fs::AtFlags::empty(),
-            );
+            let _ = rustix::fs::unlinkat(&at, name, rustix::fs::AtFlags::empty());
         }
     }
 }

@@ -348,7 +348,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`<state>/grades-under-way.lock`](#stategrades-under-waylock)
   - [`skill-tries/<id>/`](#skill-triesid)
   - [`skill-levels/<chat id>.json`](#skill-levelschat-idjson)
-  - [`chat-settings/<chat id>.json`](#chat-settingschat-idjson)
+  - [`chat-settings/<chat id>.<digest>.json`](#chat-settingschat-iddigestjson)
   - [`ws-edit-nudge/<sid>-<workspace>`](#ws-edit-nudgesid-workspace)
   - [`ws-autosave/<workspace>`](#ws-autosaveworkspace)
   - [`workspace-tab-order`](#workspace-tab-order)
@@ -7406,20 +7406,24 @@ rewritten.
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** gitignored, under the state directory; the piece is ignored and never staged.
 
-### `chat-settings/<chat id>.json`
+### `chat-settings/<chat id>.<digest>.json`
 - **Format:** a Claude Code chat's `--settings` JSON, as purlis armed it (SK-9, #2772), where it is
   longer than one word of a command line carries (`hoststart::SETTINGS_IN_A_WORD`, 96 KiB, under
   Linux's 128 KiB): the chat is started with `--settings <this file>` instead. `0600` in a
-  private folder.
+  private folder. `<digest>` is the first 32 hex digits of the SHA-256 of what purlis wrote.
 - **Status:** **internal**.
 - **Tier:** Clone state, transient — it lasts as long as its chat.
 - **Written by:** the session host as it starts the chat (`hoststart::settings_in_a_file`),
-  through folder handles, no link followed. No chat writes the state folder.
-- **Read by:** Claude Code, at the chat's start.
+  through folder handles, no link followed. The folder is held as an integrity path: no sandboxed
+  chat writes it, under either spelling of the state folder or where `$PURLIS_HOME` puts it.
+- **Read by:** Claude Code, at the chat's start; and purlis, to say how a run it finds is
+  sandboxed (`sandbox::ran`), only while the file holds what its digest names
+  (`hoststart::settings_from_its_file`). A file so named that holds anything else is read as
+  sandboxed, never as off.
 - **Removed by:** the app, each time it writes its record of open chats, for a chat not on it,
-  two minutes after it was written (`hoststart::sweep_settings`).
+  two minutes after it was written (`hoststart::sweep_settings`), and a `<chat id>.json` written
+  before the digest named the file the same way.
 - **Git:** gitignored, under the state directory.
-
 ### `skill-levels/<chat id>.json`
 - **Format:** JSON, one file per sandboxed chat that is running (SK-9, #2772): `name`, the chat's
   number as its tab says it, and `levels`, the workspace and persona folders there when it
