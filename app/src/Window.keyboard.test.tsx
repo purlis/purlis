@@ -372,10 +372,12 @@ describe("the window's tab order", () => {
       .map(said);
     expect(stops).toEqual([
       // The title bar, left to right (ADR 0054): with the rail shown, the project's pinned
-      // workspaces (#2916): ONE stop, the chip of the one in front, its name and its count;
-      // then its right-hand end: what comes and goes on its inner side, the needs-you button
+      // workspaces (#2916): the plane root's house, a stop of its own outside the strip (#3654),
+      // then ONE stop, the chip of the one in front, its name and its count; then its
+      // right-hand end: what comes and goes on its inner side, the needs-you button
       // (charter-app#249) and the update pill, then the kill switch (OV-1) and About, which
       // stays at the bar's end (#2913).
+      "button Plane root",
       "button alpha2",
       "button 2 chats need you",
       "button Updates — … channel, nothing new known",

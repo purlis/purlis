@@ -45,6 +45,7 @@ import type {
 import { activityTitle, activityView } from "./activity";
 import { chatNetworkTitle, chatNetworkView } from "./chatNetwork";
 import { DISPATCHES_TITLE, DISPATCHES_VIEW } from "./dispatches";
+import { BROWSERS_GRID_TITLE, BROWSERS_GRID_VIEW } from "./browsersGrid";
 import {
   SKILL_STUDIO_IN,
   SKILL_STUDIO_SHOW,
@@ -1412,6 +1413,8 @@ export const usingSkillId = (tab: number) => `tab.useskill:${tab}`;
 
 /** The catalogue's id for the row that opens the project's Dispatches tab (#1452). */
 export const DISPATCHES_SHOW = "dispatches.show";
+/** The catalogue's id for the row that opens the project's Browsers grid (#2027). */
+export const BROWSERS_SHOW = "browsers.show";
 /** The Skill studio (#2765), offered only while its flag is on: `skillStudio.ts` spells it. */
 export { SKILL_STUDIO_SHOW };
 
@@ -2566,6 +2569,17 @@ export function catalogue(now: Now): Offer[] {
         title: DISPATCHES_TITLE,
       }),
       note: "The work this project's chats handed to other chats, in a tab of its own.",
+    });
+    // **Every browser, live, in a tab of its own** (#2027): the Browsers grid, with the
+    // Inbox's scope switch. The Chats view's heading draws this row as a button while the
+    // project has a browser.
+    offers.push({
+      ...can(BROWSERS_SHOW, "Open browsers", {
+        verb: "openView",
+        view: BROWSERS_GRID_VIEW,
+        title: BROWSERS_GRID_TITLE,
+      }),
+      note: "Every browser, live, in a tab of its own: this project's, a workspace's or every project's.",
     });
     if (now.skillStudio)
       offers.push({

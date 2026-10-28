@@ -986,11 +986,52 @@ pub fn consent_of(request: &GradeRequest, copy: &SkillCopy) -> String {
         digest.update(previous.commit.as_bytes());
         files(&mut digest, &previous.snapshot);
     }
+    hex_of(digest)
+}
+
+/// A digest's bytes as lowercase hex.
+fn hex_of(digest: sha2::Sha256) -> String {
+    use sha2::Digest as _;
     digest
         .finalize()
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+/// **What a grade's plan says it may spend, beside what it grades**: the profile and the model
+/// its chats run on, the token cap and the dollar limit, as the plan shows them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Terms<'a> {
+    pub profile: Option<&'a str>,
+    pub model: Option<&'a str>,
+    pub token_cap: u64,
+    pub limit_usd: f64,
+}
+
+/// **The consent of a plan that shows `terms`**: `consent` (what it grades, [`consent_of`]) and
+/// the profile, model and limits it shows, in one digest. A press made on a plan whose profile,
+/// model, cap or limit is not the one a grade would start on now is refused, so a grade runs on
+/// the terms the person read.
+pub fn consent_on(consent: &str, terms: &Terms<'_>) -> String {
+    use sha2::Digest as _;
+    let mut digest = sha2::Sha256::new();
+    digest.update(consent.as_bytes());
+    for word in [terms.profile, terms.model] {
+        digest.update(b"\0");
+        match word {
+            Some(word) => {
+                digest.update(b"=");
+                digest.update(word.as_bytes());
+            }
+            None => digest.update(b"-"),
+        }
+    }
+    digest.update(b"\0");
+    digest.update(terms.token_cap.to_be_bytes());
+    digest.update(b"\0");
+    digest.update(terms.limit_usd.to_bits().to_be_bytes());
+    hex_of(digest)
 }
 
 use super::verbs::drafts::Snapshot;

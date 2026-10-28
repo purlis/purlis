@@ -124,6 +124,22 @@
   background-color: var(--surface-overlay);
 }
 
+/* The plane root's chip (#3654, spec #3647): a house, as square as its 28px allows, after the
+   slash and before the strip, so it never scrolls away. A chip in every other way: quiet at rest,
+   the card's fill under the pointer, the accent's wash while the plane root is in front. */
+[data-part="workspace"][data-scope="titlebar"][data-variant="root"] {
+  justify-content: center;
+  min-inline-size: max(28px, calc(28rem / 14));
+  margin-inline-end: var(--space-2);
+  padding-inline: var(--space-3);
+}
+
+[data-part="workspace"][data-scope="titlebar"][data-variant="root"] > svg {
+  inline-size: 15px;
+  block-size: 15px;
+  flex: none;
+}
+
 /* The ring from the keyboard only. Inside the chip, so the strip's clip leaves it whole. */
 [data-part="workspace"][data-scope="titlebar"][data-focus-visible] {
   outline: var(--focus-ring-width) solid var(--focus-ring);

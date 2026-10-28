@@ -34,6 +34,7 @@ import {
   AllWorkspaces,
   PinnedStrip,
   ProjectCrumb,
+  RootChip,
   TitleBarProject,
   TitleBarSlash,
   WorkspaceChip,
@@ -133,7 +134,8 @@ export function TitleBarSwitch({
   /** The palette is up: the keys are not this bar's (a modal is the key registry's to find). */
   held?: boolean;
   does: SwitchDoes;
-  /** A chip's context menu, around the chip: the workspace's rows of the catalogue. */
+  /** A chip's context menu, around the chip: the workspace's rows of the catalogue, or the
+   *  plane root's for its chip (`OUTSIDE`). */
   menuOf?: (workspace: string, chip: ReactNode) => ReactNode;
 }) {
   const mac = onAMac();
@@ -145,11 +147,13 @@ export function TitleBarSwitch({
   const crumb = useRef<HTMLButtonElement>(null);
   const all = useRef<HTMLButtonElement>(null);
   const strip = useRef<HTMLDivElement>(null);
+  const house = useRef<HTMLButtonElement>(null);
   const tintOf = useProjectTints();
   /** Where the keyboard was when a switcher opened, to give it back as the switcher closes. */
   const openedFrom = useRef<Element | null>(null);
   // **The keyboard back where it was** once a switcher has closed, by Escape or by a switch:
-  // where it was, while that is still drawn, else the chip of the workspace in front.
+  // where it was, while that is still drawn, else the chip of the workspace in front: the
+  // plane root's house while the root is (#3654), which stands outside the strip.
   const wasOpen = useRef(open);
   useEffect(() => {
     const before = wasOpen.current;
@@ -164,9 +168,11 @@ export function TitleBarSwitch({
         from.focus({ preventScroll: true });
         return;
       }
-      strip.current
-        ?.querySelector<HTMLElement>('[data-part="workspace"][data-selected], [data-titlebar-all]')
-        ?.focus({ preventScroll: true });
+      const chosen =
+        strip.current?.querySelector<HTMLElement>('[data-part="workspace"][data-selected]') ??
+        (house.current?.hasAttribute("data-selected") ? house.current : null) ??
+        strip.current?.querySelector<HTMLElement>("[data-titlebar-all]");
+      chosen?.focus({ preventScroll: true });
     });
   }, [open]);
 
@@ -316,6 +322,19 @@ export function TitleBarSwitch({
         />
       )}
       <TitleBarSlash />
+      {/* The plane root's chip (#3654): always here, outside the strip so it never scrolls
+          away, and with no pin to let go. Its menu is the root's, which has none either. */}
+      <Fragment key="root">
+        {withMenu(
+          OUTSIDE,
+          <RootChip
+            ref={house}
+            name={OUTSIDE_TITLE}
+            current={focused === OUTSIDE}
+            onPress={() => goTo(OUTSIDE)}
+          />,
+        )}
+      </Fragment>
       {/* Drawn once its plane is read: which workspaces it has is the plane's answer. */}
       {workspaces !== undefined && (
         <PinnedStrip name="Pinned workspaces" ref={strip}>
