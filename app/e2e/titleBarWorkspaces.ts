@@ -25,7 +25,7 @@ export async function chipsSeen(): Promise<{ names: string[]; current: string | 
   return browser.execute(() => {
     const chips = [
       ...document.querySelectorAll<HTMLElement>(
-        '[data-testid="title-bar"] [data-scope="titlebar"][data-part="workspace"]',
+        '[data-testid="title-bar"] [data-scope="titlebar"][data-part="workspace"]:not([data-variant="root"])',
       ),
     ];
     const name = (chip: HTMLElement) =>
@@ -100,9 +100,10 @@ export async function goToWorkspaceAt(at: number): Promise<void> {
   );
 }
 
-/** The chip of the workspace in front, while it is not the plane root. */
+/** The chip of the workspace in front, while it is not the plane root (whose house is no
+ *  workspace's chip, #3654). */
 export const CURRENT_CHIP =
-  '[data-testid="title-bar"] [data-scope="titlebar"][data-part="workspace"][aria-current="true"]';
+  '[data-testid="title-bar"] [data-scope="titlebar"][data-part="workspace"][aria-current="true"]:not([data-variant="root"])';
 
 /** Goes to the workspace called `name` (`Plane root` for the root), and waits until it is in
  *  front. */

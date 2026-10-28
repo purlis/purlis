@@ -29,6 +29,7 @@ import {
   Globe,
   History,
   KeyRound,
+  LayoutGrid,
   ListChecks,
   LoaderCircle,
   MonitorSmartphone,
@@ -91,6 +92,8 @@ import { BrowserView } from "./BrowserView";
 import { BrowserTimeline } from "./BrowserTimeline";
 import { isBrowserTimeline } from "./browserTimelines";
 import { BROWSER_VIEW, isBrowser } from "./browsers";
+import { BROWSERS_GRID_VIEW, isBrowsersGrid } from "./browsersGrid";
+import { BrowsersGridTab } from "./BrowsersGridTab";
 import { SessionRecordTab } from "./SessionRecordTab";
 import { useSessionOffers } from "./sessionOffers";
 import { TodoTab } from "./TodoTab";
@@ -343,6 +346,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [RUNNER_WRITE_VIEW]: GitCompare,
   /** A browser, drawn live (#2012, `browsers.ts`). */
   [BROWSER_VIEW]: Globe,
+  /** Every browser in scope, live (#2027, `browsersGrid.ts`). */
+  [BROWSERS_GRID_VIEW.view]: LayoutGrid,
   /** This machine and its runners (#2052, `DevicesView.tsx`). */
   [DEVICES_VIEW.view]: MonitorSmartphone,
 };
@@ -587,6 +592,9 @@ export function ViewPane({
           /* A runner chat's change to the project, whole, with Apply where it may be applied
              (#2046). Keyed by the held change, which is the project's. */
           <RunnerWriteTab key={`${plane}\u0000${view.key}`} plane={plane} id={Number(view.key)} />
+        ) : isBrowsersGrid(view) ? (
+          /* Every browser in scope, live (#2027): its This workspace is the strip's it is on. */
+          <BrowsersGridTab key={plane} plane={plane} workspace={workspace} />
         ) : isBrowser(view) ? (
           /* A browser the session host runs, drawn live from its frames (#2012). Keyed by the
              browser, so a pane that comes to show another one opens its own view. */

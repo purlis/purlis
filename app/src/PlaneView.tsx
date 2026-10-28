@@ -319,6 +319,12 @@ import { sendToDriven } from "./browserDriving";
 import { programsOf, useBrowsersTakenBack, useChatBrowsers } from "./chatBrowsers";
 import { browserTimelineTitle, browserTimelineView } from "./browserTimelines";
 import type { BrowserShown } from "./ChatBrowsersShown";
+import {
+  forgetProjectsBrowsers,
+  tellProjectBrowsers,
+  tileTitle,
+  type GridTile,
+} from "./browsersGrid";
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
  *  you, or a browser (#2012). */
@@ -4257,6 +4263,69 @@ export const PlaneView = memo(function PlaneView({
       ),
     [showView, filedIn],
   );
+  /**
+   * **This project's browsers, as the Browsers grid draws them** (#2027): its chats' (one not
+   * ended yet is no chat's, as on the tab), the pinned ones whose chat closed, and the person's
+   * own that its tabs show, each filed where its chat or its tab is. The grid of any project
+   * this window holds draws them; a press on one brings this project forward and opens its view
+   * here.
+   */
+  const gridTiles = useMemo((): GridTile[] => {
+    const ofChats: GridTile[] = [...chatBrowsersShown.values(), keptShown]
+      .flat()
+      .filter(({ browser }) => !browser.unended)
+      .map(({ browser, chat }) => ({
+        plane,
+        program: browser.program,
+        own: false,
+        name: browser.name,
+        // A pinned one whose chat's name was not kept is named by its own name alone.
+        chat: chat === "" ? null : chat,
+        workspace: filedIn(browser.session),
+        driver: browser.driver,
+        pool: browser.pool,
+      }));
+    const theirs = new Set(ofChats.map((one) => one.program));
+    const own = new Map<string, GridTile>();
+    for (const id of tabs.order)
+      for (const { content } of contentsOf(tabs, id))
+        if (
+          content.kind === "view" &&
+          isBrowser(content.view) &&
+          !theirs.has(content.view.key) &&
+          !chatPrograms.has(content.view.key) &&
+          !own.has(content.view.key)
+        )
+          own.set(content.view.key, {
+            plane,
+            program: content.view.key,
+            own: true,
+            name: null,
+            chat: null,
+            workspace: content.workspace,
+            driver: null,
+            pool: null,
+          });
+    return [...ofChats, ...own.values()];
+  }, [chatBrowsersShown, keptShown, tabs, chatPrograms, filedIn, plane]);
+  const openGridTile = useCallback(
+    (tile: GridTile) => {
+      windowDoes.selectProject(plane);
+      showView(browserView(tile.program), tileTitle(tile), tile.workspace);
+    },
+    [windowDoes, plane, showView],
+  );
+  useEffect(() => {
+    tellProjectBrowsers({
+      plane,
+      project: projectName(plane),
+      // **None until its tabs are back** (`settled`): putting them back lays the strip out
+      // afresh, which would lose a tab a press on a tile opened before.
+      tiles: settled ? gridTiles : [],
+      open: openGridTile,
+    });
+  }, [plane, gridTiles, openGridTile, settled]);
+  useEffect(() => () => forgetProjectsBrowsers(plane), [plane]);
   /** **A chat's new browser opens beside it**, where the person's setting says so (#2024): only
    *  one that started after the window first read them, so a reload opens nothing. */
   const { beside: browsersBeside } = useChatsListPrefs();
@@ -8948,6 +9017,8 @@ export const PlaneView = memo(function PlaneView({
                   }
                   browsers={chatBrowsersShown}
                   kept={keptShown}
+                  // The Browsers grid's button, while the grid has a tile (#2027).
+                  anyBrowser={gridTiles.length > 0}
                   onBrowser={openChatBrowser}
                   // The side panel's header (R123): the workspace, then the project, quiet.
                   heading={

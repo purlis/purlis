@@ -15,6 +15,7 @@ fn accepted() -> Accepted {
         limit_usd: 3.0,
         tests: TESTS.into(),
         previous: None,
+        runs_on: Some("sonnet".into()),
         at: "2026-10-28T10:00:00+00:00".into(),
         graded: None,
         paused: None,
@@ -26,6 +27,8 @@ const TESTS: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba98765
 
 fn now(chats: u32, token_cap: u64, limit_usd: f64) -> Now {
     Now {
+        profile: "work".into(),
+        runs_on: Some("sonnet".into()),
         chats,
         token_cap,
         limit_usd,
@@ -186,4 +189,32 @@ fn a_limit_past_any_grades_is_not_kept() {
         ..accepted()
     };
     assert!(turn_on(project.path(), &Level::project(), "deploy", wild).is_err());
+}
+
+#[test]
+fn a_changed_profile_model_cap_or_limit_pauses_the_opt_in() {
+    // #3622: an edit grades only on the terms the plan showed when it was turned on.
+    let changed = [
+        Now {
+            profile: "home".into(),
+            ..now(12, 200_000, 3.0)
+        },
+        Now {
+            runs_on: Some("opus".into()),
+            ..now(12, 200_000, 3.0)
+        },
+        Now {
+            runs_on: None,
+            ..now(12, 200_000, 3.0)
+        },
+        now(12, 400_000, 3.0),
+        now(12, 200_000, 3.5),
+    ];
+    for one in changed {
+        assert!(
+            matches!(next(&accepted(), &one), Next::Waits(_)),
+            "{one:?} graded past what was accepted"
+        );
+    }
+    assert_eq!(next(&accepted(), &now(12, 200_000, 3.0)), Next::Grade);
 }

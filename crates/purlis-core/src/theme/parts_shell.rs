@@ -461,7 +461,8 @@ fn rail_look(variant: &str, states: &[State]) -> Look {
 /// workspace while it is not pinned. A chip is 28px with corners of 8 and quiet words (R101); the
 /// current one takes the accent's wash and the primary words, the stronger wash under the
 /// pointer, while any other under the pointer takes the card's fill (R101 as amended by #3345);
-/// its waiting count is the amber one (R101).
+/// its waiting count is the amber one (R101). The plane root's chip is its `root` variant
+/// (#3654): a house drawn as a pin is, outside the strip.
 ///
 /// The family's root is the chip (`titlebar.workspace.*`, as the prototype's part keys name it):
 /// the strip around the chips lays them out and scrolls, and is no part a theme keys.
@@ -525,6 +526,13 @@ pub(super) const TITLEBAR: Family = Family {
             name: "unpinned",
             since: 12,
             description: "The current workspace while it is not pinned: a dashed edge, and a press pins it.",
+            consent: None,
+        },
+        Variant {
+            name: "root",
+            since: super::NEXT,
+            description: "The plane root's house after the project's name, outside the strip: \
+                          always there, never unpinned, the accent's wash while the root is in front.",
             consent: None,
         },
     ],
