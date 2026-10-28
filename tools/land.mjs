@@ -21,7 +21,10 @@
 //      their states from `gh pr checks --required`, which lists only the checks that have posted,
 //      so a required check not posted yet (a rerun's, just started) counts as pending. With
 //      `--watch` it waits until every one has posted and finished, and without it, it refuses
-//      while any is pending; either way it refuses while any failed, naming each;
+//      while any is pending; either way it refuses while any failed, naming each. A wait that
+//      can only end in GitHub's refusal stops early: when the only checks left are required ones
+//      that have not posted, and no run of the head is still going to post them, for a few polls
+//      running (a job renamed while protection still names it, or a run waiting on approval);
 //   6. marks a draft ready (`gh pr ready`), which the queue needs, and reads the checks again. No
 //      workflow here starts on `ready_for_review` today; the second read is a safety net for one
 //      that does;
@@ -105,9 +108,9 @@ export function redRun(runs) {
 }
 
 /**
- * The names of the checks main requires, of `rules` (the rules GitHub applies to the branch, from
- * its rulesets) and `protection` (the branch's classic protection, as the branch reads it):
- * either can require a check, and the queue waits on both.
+ * The names of the checks main requires, from `rules` (the rules GitHub applies to the branch,
+ * from its rulesets) and from `protection` (the branch's classic protection, as the branch reads
+ * it): either can require a check, and the queue waits on both.
  */
 export function requiredNames(rules, protection) {
   const fromRules = (rules ?? [])
@@ -134,6 +137,21 @@ export function sortChecks(checks, required = []) {
   ];
   const failing = checks.filter((check) => check.bucket === "fail" || check.bucket === "cancel");
   return { pending, failing };
+}
+
+/** Whether a workflow run (the REST API's) is still going, and so may yet post a check. */
+const going = (run) => run.status !== "completed" && run.status !== "action_required";
+
+/**
+ * The required names that will not post, of `checks` (`sortChecks`'s answer) and `runs` (the
+ * workflow runs of the head): those not posted yet, when every check that has posted has finished
+ * and no run of the head is still going. Anything still going might post them, so then it is none.
+ */
+export function unposted(checks, runs) {
+  const missing = checks.pending.filter((check) => check.state === "not posted yet");
+  if (missing.length === 0 || missing.length < checks.pending.length) return [];
+  if ((runs ?? []).some(going)) return [];
+  return missing.map((check) => check.name);
 }
 
 /** One line per check, for a refusal. */
@@ -174,6 +192,9 @@ const SETTLE = seconds("LAND_SETTLE_SECONDS", 30);
 // How long a wait lasts before it gives up: the checks, then the queue. The tests shorten the first.
 const CHECKS_FOR = seconds("LAND_CHECKS_FOR_SECONDS", 120 * 60);
 const QUEUE_FOR = 240 * 60;
+// How many polls running the required checks left must be ones that have not posted, with no run
+// of the head going, before the wait gives up on them: a run just queued takes a moment to show.
+const UNPOSTED_POLLS = 3;
 const waitedFor = (s) => (s % 60 === 0 ? `${s / 60} minutes` : `${s} seconds`);
 
 const pause = (s) =>
@@ -275,8 +296,9 @@ function main(options) {
 
   // 5, 6. The required checks. Their names come from main's rules, since gh lists only the
   // checks that have posted: right after a rerun, a required check can be missing altogether.
+  // The rules come a page at a time, 30 to a page: a required check can be on any page.
   const required = requiredNames(
-    gh(["api", `repos/${repo}/rules/branches/main`]),
+    (gh(["api", `repos/${repo}/rules/branches/main`, "--paginate", "--slurp"]) ?? []).flat(),
     gh(["api", `repos/${repo}/branches/main`, "--jq", ".protection"]),
   );
   const readChecks = () => {
@@ -303,14 +325,49 @@ function main(options) {
           };
     stop(`gh pr checks ${options.pr} failed: ${done.stderr}`);
   };
+  const headRuns = () =>
+    gh([
+      "api",
+      "-X",
+      "GET",
+      `repos/${repo}/actions/runs`,
+      "-f",
+      `head_sha=${head}`,
+      "-f",
+      "per_page=100",
+      "--jq",
+      ".workflow_runs",
+    ]);
   const checksGate = (wait) => {
     let checks = readChecks();
+    let stuck = { names: "", polls: 0 };
+    let said = "";
     for (let waited = 0; wait && checks.pending.length > 0 && checks.failing.length === 0;) {
       if (waited >= CHECKS_FOR)
         stop(
           [
             `the required checks are still going after ${waitedFor(CHECKS_FOR)}:`,
             ...named(checks.pending),
+          ].join("\n"),
+        );
+      // Each change in what has not posted is said, so a long wait names what it waits on.
+      const missing = checks.pending.filter((check) => check.state === "not posted yet");
+      const now = missing.map((check) => check.name).join(", ");
+      if (now && now !== said) console.log(`waiting on required checks not posted yet: ${now}`);
+      said = now;
+      // The runs are read only when nothing posted is still going: it is the one case they decide.
+      const names = missing.length === checks.pending.length ? unposted(checks, headRuns()) : [];
+      const key = names.join("\n");
+      stuck = {
+        names: key,
+        polls: names.length === 0 ? 0 : key === stuck.names ? stuck.polls + 1 : 1,
+      };
+      if (stuck.polls >= UNPOSTED_POLLS)
+        stop(
+          [
+            `pull request #${options.pr} waits on required checks that have not posted, and no run of its head is going to post them:`,
+            ...names.map((name) => `  ${name}`),
+            "A job renamed or removed while main still requires its old name, or a run waiting on approval, does this; GitHub would refuse the enqueue. Fix main's required checks or the run, and land again.",
           ].join("\n"),
         );
       pause(POLL);

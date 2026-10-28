@@ -20,6 +20,7 @@ import {
   refusal,
   requiredNames,
   sortChecks,
+  unposted,
 } from "./land.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "land.mjs");
@@ -35,7 +36,8 @@ const ENQUEUED_AT = "2026-10-27T12:00:00Z";
 //
 // A reply is what the API answers, whole. When the call passes `--jq`, the stand-in applies it,
 // as gh does, so the paths the script reads are tested too; it knows only plain paths
-// (`.a.b`) and fails on anything else, rather than guess.
+// (`.a.b`) and fails on anything else, rather than guess. With `--paginate --slurp`, it answers
+// the reply's `pages`, or its `out` as the one page, wrapped in an array, as gh does.
 const FAKE_GH = `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
@@ -47,7 +49,7 @@ if (!rule) { process.stderr.write("stand-in gh has no answer for: " + line); pro
 const reply = rule.replies[Math.min(rule.used ?? 0, rule.replies.length - 1)];
 rule.used = (rule.used ?? 0) + 1;
 fs.writeFileSync(process.env.FAKE_GH_STATE, JSON.stringify(state));
-let out = reply.out;
+let out = args.includes("--slurp") ? (reply.pages ?? (reply.out === undefined ? undefined : [reply.out])) : reply.out;
 const jq = args.indexOf("--jq");
 if (jq !== -1 && out !== undefined) {
   const path = args[jq + 1];
@@ -132,6 +134,8 @@ function rules(over = {}) {
     mainCi: { match: "workflows/ci.yml/runs", replies: [{ out: runs([ciRun()]) }] },
     waiting: { match: "status=action_required", replies: [{ out: runs([]) }] },
     rerun: { match: "^run rerun", replies: [{ out: "" }] },
+    // The head's runs, read when only required checks that have not posted are left.
+    headRuns: { match: "head_sha=.*per_page=100", replies: [{ out: runs([]) }] },
     // By default main requires nothing by name, so `gh pr checks --required` alone decides.
     ruleset: {
       match: "^api repos/purlis/purlis/rules/branches/main",
@@ -336,6 +340,21 @@ test("a drop is read from the newest merge group the pull request was tested in"
     [5, 6],
   );
   assert.deepEqual(queueRuns([], "7"), []);
+});
+
+test("only required checks that have not posted, with no run going, will not post", () => {
+  const notPosted = (name) => ({ name, state: "not posted yet" });
+  const left = { pending: [notPosted("docs")], failing: [] };
+  assert.deepEqual(unposted(left, []), ["docs"]);
+  assert.deepEqual(unposted(left, [{ status: "completed" }, { status: "action_required" }]), [
+    "docs",
+  ]);
+  // A run still going may post it.
+  for (const status of ["queued", "in_progress", "waiting", "requested", "pending"])
+    assert.deepEqual(unposted(left, [{ status }]), [], status);
+  // So may a posted check still going.
+  assert.deepEqual(unposted({ pending: [check("web", "pending"), notPosted("docs")] }, []), []);
+  assert.deepEqual(unposted({ pending: [] }, []), []);
 });
 
 // Against a stand-in gh.
@@ -544,6 +563,37 @@ test("with none reported yet, each required check is named as not posted", () =>
   assert.match(got.stderr, /docs \(build, links, reachable\): not posted yet/);
 });
 
+test("the rules are read every page, so a required check on a later page counts", () => {
+  const filler = Array.from({ length: 30 }, (_, i) => ({ type: "deletion", ruleset_id: i }));
+  const got = land(["7", "--sha", HEAD], {
+    ruleset: {
+      match: "^api repos/purlis/purlis/rules/branches/main",
+      replies: [{ pages: [filler, rulesFor(["docs (build, links, reachable)"])] }],
+    },
+  });
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /docs \(build, links, reachable\): not posted yet/);
+  const read = lines(got.calls).find((line) => line.includes("rules/branches/main"));
+  assert.match(read, /--paginate --slurp/);
+});
+
+test("a failed read of main's rules or its protection stops it, enqueueing nothing", () => {
+  // D-3539-3: falling back to the checks that have posted would bring #3539 back.
+  for (const which of ["ruleset", "branch"]) {
+    const match =
+      which === "ruleset"
+        ? "^api repos/purlis/purlis/rules/branches/main"
+        : "^api repos/purlis/purlis/branches/main";
+    const got = land(["7", "--sha", HEAD, "--watch"], {
+      [which]: { match, replies: [{ err: "HTTP 403: Resource not accessible", exit: 1 }] },
+    });
+    assert.equal(got.status, 1, which);
+    assert.match(got.stderr, /failed: HTTP 403: Resource not accessible/, which);
+    assert.equal(enqueueCall(got.calls), undefined, which);
+    assert.ok(!lines(got.calls).some((line) => line.startsWith("pr checks")), which);
+  }
+});
+
 test("with --watch, after a rerun it waits until every required check has posted and passed", () => {
   // #3539: the rerun runs' checks had not posted when the checks were read, so the tool read
   // nothing pending and enqueued, and GitHub refused: "5 of 9 required status checks are expected".
@@ -607,13 +657,57 @@ test("with --watch, a required check that never posts is given up on, named, and
         match: "^api repos/purlis/purlis/branches/main",
         replies: [{ out: branchFor(["recorded behaviour"]) }],
       },
+      // A run of the head still going might yet post it, so the wait goes on to its limit.
+      headRuns: {
+        match: "head_sha=.*per_page=100",
+        replies: [{ out: runs([{ id: 50, status: "in_progress" }]) }],
+      },
     },
     { LAND_CHECKS_FOR_SECONDS: "3" },
   );
   assert.equal(got.status, 1);
   assert.match(got.stderr, /still going after 3 seconds/);
   assert.match(got.stderr, /recorded behaviour: not posted yet/);
+  assert.match(got.stdout, /waiting on required checks not posted yet: recorded behaviour/);
   assert.equal(enqueueCall(got.calls), undefined);
+});
+
+test("with --watch, a required check nothing is left to post is refused early, named", () => {
+  // A name no workflow defines (a renamed job) never posts: rather than wait the whole limit for
+  // GitHub to refuse, it stops once nothing of the head is still going, a few polls running.
+  const got = land(
+    ["7", "--sha", HEAD, "--watch"],
+    {
+      branch: {
+        match: "^api repos/purlis/purlis/branches/main",
+        replies: [{ out: branchFor(["rust (fmt, clippy, test)", "renamed job"]) }],
+      },
+      checks: {
+        match: "^pr checks 7",
+        replies: [
+          { out: [check("rust (fmt, clippy, test)", "pending")], exit: 8 },
+          { out: [check("rust (fmt, clippy, test)", "pass")] },
+        ],
+      },
+      headRuns: {
+        match: "head_sha=.*per_page=100",
+        replies: [{ out: runs([{ id: 50, status: "completed", conclusion: "success" }]) }],
+      },
+    },
+    // The limit is far off: only the early stop ends this wait.
+    { LAND_CHECKS_FOR_SECONDS: "3600" },
+  );
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /no run of its head is going to post them:\n {2}renamed job$/m);
+  assert.doesNotMatch(got.stderr, /still going after/);
+  assert.equal(enqueueCall(got.calls), undefined);
+  const said = lines(got.calls);
+  // The runs are not read while a posted check is still going, and it gives up after three polls.
+  assert.equal(
+    said.filter((line) => line.includes("per_page=100") && line.includes("head_sha")).length,
+    3,
+  );
+  assert.equal(said.filter((line) => line.startsWith("pr checks")).length, 4);
 });
 
 test("a draft is marked ready, and its checks read again, before the enqueue", () => {
