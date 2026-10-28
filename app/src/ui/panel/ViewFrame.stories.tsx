@@ -17,7 +17,7 @@ import { expectFocusInSight, untilFocused, untilFocusWithin } from "../../storie
 import { Badge } from "../badge/Badge";
 import { Button, IconButton } from "../button/Button";
 import { List, ListRow, type Selection } from "../list/List";
-import { RowBelow, RowLabel, RowTrail } from "../list/Row";
+import { RowLabel, RowTrail } from "../list/Row";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import { NoticeBox, NoticeMessage } from "../notice/Notice";
 import { Panel } from "./Panel";
@@ -178,7 +178,6 @@ function Studio({ width, narrow }: { width: number; narrow?: boolean }) {
                     {SKILLS.map((one) => (
                       <ListRow key={one.name} id={one.name} textValue={one.name}>
                         <RowLabel>{one.name}</RowLabel>
-                        <RowBelow>{one.does}</RowBelow>
                         <RowTrail>
                           <Badge>{one.level.split(" ")[0]}</Badge>
                         </RowTrail>
