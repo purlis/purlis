@@ -20,7 +20,8 @@
 //! attached by `remote-link`, a runner's browser watched from its desktop, is sent at most
 //! [`LINK_MOST_FRAMES_A_SECOND`] and frames at most [`LINK_MOST_FRAME_WIDTH`] wide, so a remote
 //! browser stays smooth over a link that also carries what the person types. The engine is asked
-//! for frames as wide as the widest view wants them ([`Screen::narrow`]). **Every browser view
+//! for frames no wider than the narrowest view held to a width wants them ([`Screen::narrow`]),
+//! so a view on the runner's own host never widens what crosses the link (#3297). **Every browser view
 //! keeps one frame in flight**: the next frame is sent once the client has drawn the last, and
 //! it is the newest, so the person's input never waits behind a queue of frames
 //! ([`purlis_session_protocol::view::Source::one_frame_in_flight`]).
@@ -458,17 +459,15 @@ impl Hub {
         }
     }
 
-    /// Ask the engine for frames as often as the view that wants them most often, and as wide
-    /// as the view that wants them widest: no narrower than its pages where one view wants
-    /// them so.
+    /// Ask the engine for frames as often as the view that wants them most often, and no
+    /// wider than the narrowest view held to a width (#3297): one view not held to a width
+    /// never widens the frames a view over a link between hosts is sent, which the window would
+    /// drop as too wide. Only while no attached view is held to a width are they as wide as the
+    /// browser's pages.
     fn repace(screen: &Arc<dyn Screen>, viewers: &[Viewer]) {
         if let Some(every) = viewers.iter().map(|viewer| viewer.every).min() {
             screen.pace(every);
-            let widest = viewers
-                .iter()
-                .map(|viewer| viewer.most_width)
-                .try_fold(0, |widest, most| most.map(|most| most.max(widest)));
-            screen.narrow(widest);
+            screen.narrow(viewers.iter().filter_map(|viewer| viewer.most_width).min());
         }
     }
 

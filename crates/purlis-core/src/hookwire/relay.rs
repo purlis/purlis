@@ -257,6 +257,12 @@ pub const NOBODY_HEARS: &str = "purlis's window is not there to take this";
 
 /// The most lines that wait for the window at once, browser logins (#2050) and `secret exec`s
 /// (#2047) together.
+///
+/// This bound, [`MOST_WAITING_FOR_A_CHAT`] and `MOST_TOLD` are purlis's own, the same on
+/// every runner, and never a pool's settings (D-2050-14): they hold the memory a runner's host
+/// keeps for what waits (names alone, never a value) and keep one chat from crowding out
+/// another's, the same for a browser login as for a `secret exec`. A team tunes how its runners
+/// behave, not how much the host remembers for an absent desktop.
 pub const MOST_WAITING: usize = 16;
 
 /// The most of them one chat's: no chat crowds out another's.

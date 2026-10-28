@@ -46,3 +46,13 @@ keeps one label and never receives a vault value; an owned device receives one o
 9. **The values go from the vault, read by the window, to the runner's browser for the one
    login**, read as the persona declares the login and this machine allowed it, at the call. No
    vault value is stored on a runner.
+10. **The engine's frames are no wider than the narrowest view held to a width** (#3297): a view
+    on the runner's own host, which is not held to the link's width, never widens the frames a
+    view over the link is sent while one is attached. Only while no view over a link is attached
+    are they as wide as the browser's pages. *Decided in implementation, to be confirmed
+    (D-2050-13).*
+11. **The bounds on what waits for the desktop stay purlis's own** (#3297): at most 16 lines
+    waiting on a runner, 4 of one chat's, and 8 told to a chat's next browser call, the same on
+    every runner and never a pool's settings. They bound the memory a runner's host keeps for an
+    absent desktop and keep one chat from crowding out another's, for a `secret exec` as for a
+    login. *Decided in implementation, to be confirmed (D-2050-14).*
