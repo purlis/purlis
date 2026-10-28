@@ -183,6 +183,9 @@ pub struct DevicesShown {
     /// engine is a local socket on this machine. Only then does the use table name them as the
     /// person's.
     pub owned: bool,
+    /// How many projects the window holds (#3534): with more than one, each chat and browser
+    /// row names its project.
+    pub projects: u32,
 }
 
 /// **Where each chat and browser the window has open is** (#2052): on this machine, on a runner
@@ -1006,6 +1009,7 @@ pub async fn devices(
     planes: tauri::State<'_, crate::planes::Planes>,
 ) -> Result<DevicesShown, String> {
     let (chats, browsers, _) = what_is_open(&planes);
+    let projects = u32::try_from(planes.every_held().len()).unwrap_or(u32::MAX);
     crate::off_the_window("reading this machine's devices", move || {
         let (kept, pools, owned) = kept_here()?;
         Ok(DevicesShown {
@@ -1013,6 +1017,7 @@ pub async fn devices(
             placement: placed(&kept, chats, browsers),
             pools,
             owned,
+            projects,
         })
     })
     .await
