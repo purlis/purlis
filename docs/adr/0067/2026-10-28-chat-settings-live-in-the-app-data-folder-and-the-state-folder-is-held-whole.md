@@ -6,7 +6,7 @@
 
 Some Claude Code chats have settings too long for one word of a command line. Purlis writes those settings to a file and starts the chat with `--settings <file>`.
 
-That file now lives in the app's data folder, beside the skill sets: `<app data>/chat-settings/<clone key>/<chat id>.<digest>.json`. That folder is outside every plane. Each sandbox holds it from the chat's writes at every level, even inside a folder a person let the chat write. The file's name carries the digest of what purlis wrote. Purlis reads a file back only while it still holds that; a file so named that holds anything else is read as sandboxed.
+That file now lives in the app's data folder, beside the skill sets: `<app data>/chat-settings/<clone key>/<chat id>.<digest>.json`. That folder is outside every plane, so outside what a sandboxed chat writes unless a person's grant reaches it. Its move into the data home's `app-state`, which every sandbox holds as an integrity path, follows (#3718). The file's name carries the digest of what purlis wrote. Purlis reads a file back only while it still holds that; a file so named that holds anything else is read as sandboxed.
 
 Earlier builds kept these files in the plane's state, under `chat-settings/`. That folder is an integrity path now. It is swept, and never read.
 

@@ -60,7 +60,6 @@ impl Kit {
             plugin: self.plugin.as_deref(),
             git_hooks: self.git_hooks.as_ref().map(crate::githooks::GitHooks::dir),
             skill_sets: self.skill_sets.as_deref(),
-            chat_settings: self.chat_settings.as_deref(),
         }
     }
 
