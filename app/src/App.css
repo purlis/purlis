@@ -7801,3 +7801,8 @@ nav.piece-files-head {
   overflow-wrap: anywhere;
   font-size: var(--font-size-sm);
 }
+
+/* The Personas view's list is held still by an element around it (#3566), which is no box. */
+.panel-list-held {
+  display: contents;
+}
