@@ -765,6 +765,14 @@ pub const PAIRS: &[Pair] = &[
     // A ticked box, a picked radio and a switch that is on (#2907): the tick, the dot and the
     // thumb in the window's colour on the accent's fill, a mark held to 3:1.
     p("surface.base", "accent.base", 3.0),
+    // A meter's bar on its track (#3674): the subject's fill by default, the accent, a mark on
+    // the subtle hairline's colour the track is drawn in, as it stands on a page and on a raised
+    // panel, since a theme's palette alone can lose it and no part key names that. The
+    // baseline's and the previous version's fills are the waiting colour and the muted tier,
+    // whose pairs here the consent floors and an import's tiers act on, so they are held by the
+    // parts check where a theme names a meter's parts (`parts_meter.rs`, #3735).
+    p("accent.base", "border.subtle", 3.0).over("surface.base"),
+    p("accent.base", "border.subtle", 3.0).over("surface.raised"),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.

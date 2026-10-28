@@ -20,14 +20,19 @@ export const SAID_AT_MOST_EVERY = 1000;
 export function useSaidAtMost(said: string, every = SAID_AT_MOST_EVERY): string {
   const [spoken, setSpoken] = useState("");
   const last = useRef(Number.NEGATIVE_INFINITY);
-  // What was there before: the first words, as the row is drawn, are no change and not spoken.
+  // What was there before, and whether any words have been given yet: the first words, as the
+  // bar or the row is first drawn with them, are no change and are not spoken. Words after a
+  // time with none (a bar that was going with no end known) are.
   const before = useRef("");
+  const given = useRef(false);
   useEffect(() => {
     if (said === before.current) return;
-    const first = before.current === "";
     before.current = said;
-    // Nothing was said then, so the next change is said at once.
-    if (first || said === "") return;
+    if (said === "") return;
+    if (!given.current) {
+      given.current = true;
+      return;
+    }
     const soon = window.setTimeout(
       () => {
         last.current = Date.now();

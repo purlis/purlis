@@ -14,9 +14,8 @@
 //! **Its fill is a mark on its track** ([`super::Tracked`]): held at 3:1 there on every ground it
 //! stands on (WCAG 1.4.11), in each variant, so a theme that colours a fill or a track so the
 //! bar is lost draws that variant's default back. Its label and its value are words, held at
-//! 4.5:1 as every part's words are. A variant is told apart by its label and the baseline's
-//! hatch as well as its colour (WCAG 1.4.1), which no theme takes away: the hatch is the
-//! stylesheet's, not a part's property.
+//! 4.5:1 as every part's words are. A variant is told apart by its label and its value as well
+//! as its colour (WCAG 1.4.1).
 
 use super::{Family, Look, Part, Prop, State, TRANSPARENT, Tracked, Variant};
 
@@ -72,7 +71,7 @@ pub(super) const METER: Family = Family {
         Variant {
             name: "baseline",
             since: super::NEXT,
-            description: "What it is compared with: the chats without it, hatched.",
+            description: "What it is compared with: the chats without it.",
             consent: None,
         },
         Variant {

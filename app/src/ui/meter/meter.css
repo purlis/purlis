@@ -8,9 +8,9 @@
    A meter is one line: its label at the start (the secondary tier), its track (the subtle
    hairline's colour, a pill), and its value at the end in figures of one width. Meters in a group
    share the group's columns, so their labels line up and their tracks are one length on one
-   scale. The fill is the accent for the subject, the waiting colour hatched for the baseline
-   (without it) and the muted tier for the previous version: told apart by their labels and the
-   hatch as well as their colours (WCAG 1.4.1).
+   scale. The fill is the accent for the subject, the waiting colour for the baseline (without
+   it) and the muted tier for the previous version: told apart by the label beside each bar and
+   its value as well as its colour (WCAG 1.4.1).
 
    **In the `components` layer** (`styles.css`). Only tokens. */
 
@@ -72,11 +72,6 @@
 
 [data-scope="meter"][data-part="root"][data-variant="baseline"] [data-part="fill"] {
   background-color: var(--state-waiting);
-  background-image: repeating-linear-gradient(
-    -45deg,
-    transparent 0 var(--space-2),
-    var(--border-subtle) var(--space-2) var(--space-3)
-  );
 }
 
 [data-scope="meter"][data-part="root"][data-variant="previous"] [data-part="fill"] {

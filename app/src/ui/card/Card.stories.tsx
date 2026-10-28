@@ -191,7 +191,7 @@ const tilesOf = (canvas: HTMLElement) =>
  * their values a size larger in figures of one width.
  */
 export const PlanTotals: Story = {
-  render: () => <GradePlan inlineSize="48rem" />,
+  render: () => <GradePlan inlineSize="56rem" />,
   play: async ({ canvas, canvasElement }) => {
     await expect(canvas.getByRole("group", { name: "What the grade may spend" })).toBeVisible();
     const tiles = tilesOf(canvasElement);

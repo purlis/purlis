@@ -150,6 +150,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       'the role a caller passes (`role="status"`) for an empty state that is a surface\'s ' +
       "answer, not a standing line: each caller is listed here by its own count",
   },
+  "ui/card/Totals.tsx": {
+    count: 1,
+    why: "live totals' counts, said politely as they change, at most once a second (#3673): a live value, not a line",
+  },
+  "ui/meter/Meter.tsx": {
+    count: 1,
+    why: "a progress bar's value, said politely as it changes, at most once a second (#3674): a live value, not a line",
+  },
   "Cockpit.tsx": {
     count: 1,
     why: "a branch's apart count, said as it changes: a live value, not a line",

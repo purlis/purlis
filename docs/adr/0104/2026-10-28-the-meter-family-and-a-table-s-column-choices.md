@@ -7,8 +7,8 @@ a bar, and nothing in the window drew one.
 - **The meter family** (`app/src/ui/meter/`, on React Aria's `Meter` and `ProgressBar`): `Meter`,
   a labelled value on a known range; `MeterGroup`, meters that compare on one scale and one label
   column; `ProgressBar`, done of N or going with no end known. A meter's variant says what it is
-  in a comparison: `subject`, `baseline` (hatched) and `previous`, each told apart by its label
-  and its pattern as well as its colour (WCAG 1.4.1). A progress bar's value is said politely as
+  in a comparison: `subject`, `baseline` and `previous`, each told apart by its label
+  and its value as well as its colour (WCAG 1.4.1). A progress bar's value is said politely as
   it changes, at most once a second, beside the bar: a progress bar's own children are
   presentational to a reader. A raw `<meter>` or `<progress>`, and either role by hand, is
   `purlis/meter-family`, an error (Get project's clone progress is still off, until it moves).

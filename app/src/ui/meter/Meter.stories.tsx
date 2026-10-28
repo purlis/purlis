@@ -42,7 +42,7 @@ type Story = StoryObj<typeof meta>;
 /**
  * **Three bars that compare**: one scale and one label column, so the bars start together and a
  * longer bar is a larger score. A reader hears each meter by its label with its value. The
- * picture is the three, the baseline hatched.
+ * picture is the three, each in its own colour.
  */
 export const Compared: Story = {
   play: async ({ canvas }) => {

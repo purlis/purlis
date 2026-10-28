@@ -16,9 +16,6 @@ export default {
         "background-color": "Canvas",
       },
       '[data-scope="meter"][data-part="fill"]': { "background-color": "Highlight" },
-      '[data-scope="meter"][data-part="root"][data-variant="baseline"] [data-part="fill"]': {
-        "background-image": "none",
-      },
       '[data-scope="meter"][data-part="root"][data-variant="previous"] [data-part="fill"]': {
         "background-color": "CanvasText",
       },

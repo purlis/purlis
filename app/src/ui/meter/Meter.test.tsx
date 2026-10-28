@@ -31,7 +31,7 @@ describe("Meter", () => {
     expect(fillOf(meter)?.getAttribute("style")).toContain("inline-size: 86%");
   });
 
-  it("draws each variant's fill in its own colour, the baseline hatched too", () => {
+  it("draws each variant's fill in its own colour, each told by its colour", () => {
     render(
       <>
         <Meter label="With it" value={86} variant="subject" />
@@ -42,7 +42,6 @@ describe("Meter", () => {
     const fill = (name: string) => fillOf(screen.getByRole("meter", { name })) as HTMLElement;
     expect(drawnWith(fill("With it"), "background-color")).toBe("var(--accent-base)");
     expect(drawnWith(fill("Without it"), "background-color")).toBe("var(--state-waiting)");
-    expect(drawnWith(fill("Without it"), "background-image")).toMatch(/repeating-linear-gradient/);
     expect(drawnWith(fill("Previous version"), "background-color")).toBe("var(--text-muted)");
   });
 });

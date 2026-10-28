@@ -536,12 +536,10 @@ function skillWords(canvas: HTMLElement) {
   const grid = within(canvas).getByRole("grid", { name: "Skills" });
   const rows = within(grid).getAllByRole("row").slice(1);
   const of = (column: number) =>
-    rows.map(
-      (row) =>
-        row
-          .querySelectorAll('[role="rowheader"], [role="gridcell"]')
-          [column].querySelector('[data-part="words"]') as HTMLElement,
-    );
+    rows.map((row) => {
+      const cells = row.querySelectorAll('[role="rowheader"], [role="gridcell"]');
+      return cells[column].querySelector('[data-part="words"]') as HTMLElement;
+    });
   return { grid, rows, of };
 }
 

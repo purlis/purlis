@@ -194,6 +194,9 @@ function Chosen({
   const [whole, setWhole] = useState("");
   // Measured as it is drawn and again whenever its box changes: a column narrowed by a split, a
   // window made smaller, words that changed.
+  // One observer for as long as the column cuts; the words, read on each draw, measured again only
+  // when they change.
+  const measured = useRef<string | null>(null);
   useLayoutEffect(() => {
     const element = words.current;
     if (!cuts || element === null) return;
@@ -201,11 +204,19 @@ function Chosen({
       setCut(drawnCut(element));
       setWhole(element.textContent ?? "");
     };
-    measure();
     if (typeof ResizeObserver !== "function") return;
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
+  }, [cuts]);
+  useLayoutEffect(() => {
+    const element = words.current;
+    if (!cuts || element === null) return;
+    const text = element.textContent ?? "";
+    if (measured.current === text) return;
+    measured.current = text;
+    setCut(drawnCut(element));
+    setWhole(text);
   }, [cuts, children]);
 
   // The target a test and the tooltip family read the hint on (`data-tooltip-target`): a data

@@ -272,14 +272,27 @@ function headOf(cell: HTMLTableCellElement): HTMLTableCellElement | null {
   return null;
 }
 
-/** **What a cell's column chose** (#3671), read from the column's name once the cell is drawn. */
+/** Whether two columns' choices are the same. */
+const same = (one: Choices | null, other: Choices | null) =>
+  JSON.stringify(one) === JSON.stringify(other);
+
+/**
+ * **What a cell's column chose** (#3671), read from the column's name each time the cell is
+ * drawn, before it is painted: a column added before it, or a choice a view changes, reaches it.
+ * Only a change draws it again.
+ */
 function useColumnChoices() {
   const cell = useRef<HTMLTableCellElement>(null);
   const [choices, setChoices] = useState<Choices | null>(null);
+  // On every draw, by design: what it reads is the column's name in the DOM, which no prop
+  // names, and it sets only a change, so it settles at once.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const own = cell.current;
-    if (own !== null) setChoices(choicesOfElement(headOf(own)));
-  }, []);
+    if (own === null) return;
+    const now = choicesOfElement(headOf(own));
+    setChoices((was) => (same(was, now) ? was : now));
+  });
   return { cell, choices };
 }
 

@@ -273,6 +273,12 @@ tbody:first-of-type
   inline-size: 1%;
 }
 
+/* A table of controls whose view sizes its columns (`fixed`) takes their widths as written: a
+   share of the table is no "fit" or "fill" there. */
+[data-scope="table"][data-part="body"][data-fixed] [data-part="head"][data-size] {
+  inline-size: auto;
+}
+
 /* **The room the other columns leave** (`size="fill"`): its words take none of the table's least
    width of their own, so it is the column that gives way where the frame is narrow. */
 [data-scope="table"][data-part="head"][data-size="fill"] {
@@ -460,6 +466,10 @@ tbody:first-of-type
   [data-scope="table"][data-part="body"][data-stacks] [data-part="words"] {
     display: block;
     inline-size: auto;
+    /* Over the view's own lengths, which are written on the words: a form cuts nothing and
+       scrolls nothing sideways. */
+    min-inline-size: 0 !important;
+    max-inline-size: none !important;
     white-space: normal;
     overflow: visible;
   }

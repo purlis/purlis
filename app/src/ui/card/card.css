@@ -89,8 +89,8 @@
    **A row of totals tiles** (`Totals.tsx`, #3673): tiles that share the row's width, each at
    least five and a half of the spacing scale's largest step (about 170px), wrapping to more rows
    and never sideways. A tile is edged as a card is, with no ground of its own: its words stand on
-   the surface under it. Its value is a size larger, in figures of one width on one line, so a
-   count that changes draws where the last one was.
+   the surface under it. Its value is a size larger, in figures of one width, so a count that
+   changes draws where the last one was; a long value wraps, and is never cut.
    --------------------------------------------------------------------------------------------- */
 
 [data-scope="card"][data-part="totals"] {
@@ -126,9 +126,7 @@
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-strong);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 /* The line under it: what the value is of, in the quiet tier. */

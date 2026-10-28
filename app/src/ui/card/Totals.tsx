@@ -104,11 +104,15 @@ export function Tile({
     const shown = wordsOf(value);
     return named === null || shown === null ? null : `${named} ${shown}`;
   }, [said, label, value]);
+  // A change of words takes the tile's place in the sentence; only leaving takes it out, so the
+  // sentence keeps the tiles' order.
+  useEffect(() => {
+    if (report !== null) report(id, words);
+  }, [report, id, words]);
   useEffect(() => {
     if (report === null) return;
-    report(id, words);
     return () => report(id, null);
-  }, [report, id, words]);
+  }, [report, id]);
   return (
     <div data-scope="card" data-part="tile">
       <span data-scope="card" data-part="tile-label">

@@ -10,8 +10,8 @@
  * - **`Meter`**: a labelled value on a known range, a grade's score from 0 to 100. Its label at
  *   the start, its track, and its value in figures of one width at the end. Its `variant` says
  *   what it is in a comparison: `subject` (the skill with it, the accent), `baseline` (without it,
- *   the warning colour, hatched) and `previous` (its previous version, the muted tier).
- *   Each is told apart by its label and its fill's pattern as well as its colour (WCAG 1.4.1), and
+ *   the warning colour) and `previous` (its previous version, the muted tier).
+ *   Each is told apart by its label and its value beside it as well as its colour (WCAG 1.4.1), and
  *   each fill is held at 3:1 on its track by the theme engine, in every theme.
  * - **`MeterGroup`**: meters that compare, sharing one scale and one label column, so their
  *   lengths compare: the Grades tab's latest grade, with it, without it and its previous version.
@@ -201,7 +201,9 @@ export function ProgressBar({
           </>
         )}
       </AriaProgressBar>
-      <Said words={isIndeterminate ? "" : words} />
+      <Said
+        words={isIndeterminate ? "" : typeof label === "string" ? `${label} ${words}` : words}
+      />
     </>
   );
 }
