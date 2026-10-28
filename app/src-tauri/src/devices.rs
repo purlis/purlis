@@ -252,13 +252,8 @@ pub fn shown_safely(text: &str) -> String {
     let cut = text.chars().nth(MOST_SHOWN * 8).is_some();
     let one_line: String = start
         .chars()
-        .map(|ch| {
-            if matches!(ch, '\n' | '\r' | '\t') {
-                ' '
-            } else {
-                ch
-            }
-        })
+        // Every blank parts two words, as a space does.
+        .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
         .collect();
     let seen = purlis_unicode::unhidden(&one_line, purlis_unicode::Breaks::Marked);
     let hidden = without_userinfo(&seen);
@@ -298,22 +293,47 @@ fn without_userinfo(text: &str) -> String {
                 return format!("{}…{}", &word[..scheme + 3], &word[at..]);
             }
             let (before, after) = word.split_at(at);
+            let lower = after.to_ascii_lowercase();
             let digest = ["@sha256:", "@sha384:", "@sha512:"]
                 .iter()
-                .any(|algorithm| after.starts_with(algorithm));
-            // A word that names a path or a registry before its `@` is not a user's name; a name
-            // and a password (`name:…@`) is, whatever the password holds.
-            let named = before
-                .split_once(':')
-                .is_some_and(|(name, _)| !name.is_empty() && !name.contains('/'));
-            if digest || before.is_empty() || (before.contains('/') && !named) {
+                .any(|algorithm| lower.starts_with(algorithm));
+            // A name and a password (`name:…@`) is a user's, whatever the password holds: one at
+            // the word's start, or one after a path's last `/`. Anything else before its `@`
+            // names a path or a registry.
+            let whole = before.split_once(':').is_some_and(|(name, rest)| {
+                // `registry:5000/…` is a host and its port, not a name and a password.
+                let port = rest.split_once('/').is_some_and(|(port, _)| {
+                    !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit())
+                });
+                !name.is_empty() && !name.contains('/') && !port
+            });
+            let after_a_path = before.rsplit_once('/').filter(|(_, last)| {
+                last.split_once(':')
+                    .is_some_and(|(name, _)| !name.is_empty())
+            });
+            if !whole
+                && after_a_path.is_none()
+                && (digest || before.is_empty() || before.contains('/'))
+            {
                 return word.to_owned();
             }
-            // Keep what opens the word (a quote, a bracket): only the name itself goes.
-            let opens = before
-                .char_indices()
-                .find(|(_, ch)| ch.is_alphanumeric())
-                .map_or(before.len(), |(at, _)| at);
+            // Keep what opens the word (a quote, a bracket, a path): only the name itself goes.
+            let opens = if whole {
+                before
+                    .char_indices()
+                    .find(|(_, ch)| ch.is_alphanumeric())
+                    .map_or(before.len(), |(at, _)| at)
+            } else {
+                after_a_path.map_or_else(
+                    || {
+                        before
+                            .char_indices()
+                            .find(|(_, ch)| ch.is_alphanumeric())
+                            .map_or(before.len(), |(at, _)| at)
+                    },
+                    |(path, _)| path.len() + 1,
+                )
+            };
             format!("{}…{after}", &before[..opens])
         })
         .collect::<Vec<_>>()

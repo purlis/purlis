@@ -618,3 +618,48 @@ fn a_long_text_cut_part_way_through_an_address_shows_none_of_that_address() {
     assert!(!said.contains("someone"), "{said}");
     assert!(!said.contains("tcp:"), "{said}");
 }
+
+#[test]
+fn words_are_parted_by_every_kind_of_blank_before_an_address_is_read() {
+    for blank in ['\u{00A0}', '\u{000C}', '\u{2028}', '\u{0085}', '\u{000B}'] {
+        assert_eq!(
+            shown_safely(&format!("see path/x{blank}someone:hidden@build.example")),
+            "see path/x …@build.example",
+            "{blank:?}"
+        );
+    }
+}
+
+#[test]
+fn a_user_and_password_after_a_path_are_hidden() {
+    assert_eq!(
+        shown_safely("org/someone:hidden@build.example"),
+        "org/…@build.example"
+    );
+    assert_eq!(
+        shown_safely("/someone:hidden@build.example"),
+        "/…@build.example"
+    );
+    assert_eq!(
+        shown_safely("./someone:hidden@build.example"),
+        "./…@build.example"
+    );
+}
+
+#[test]
+fn a_user_and_password_are_hidden_whatever_host_follows_them() {
+    assert_eq!(shown_safely("someone:hidden@sha256:0123"), "…@sha256:0123");
+    assert_eq!(shown_safely("someone:hidden@SHA256:0123"), "…@SHA256:0123");
+}
+
+#[test]
+fn harmless_words_digests_and_image_names_still_show() {
+    for kept in [
+        "pulling ghcr.io/example/runner@sha256:0123 and runner@SHA256:0456",
+        "localhost:5000/example/runner@sha256:0789",
+        "see docs/guide@main, tcp://127.0.0.1:2375 and https://example.com/a/b",
+        "listening on 0.0.0.0:8080",
+    ] {
+        assert_eq!(shown_safely(kept), kept);
+    }
+}
