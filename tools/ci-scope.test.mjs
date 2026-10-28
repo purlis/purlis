@@ -150,6 +150,39 @@ test("a doc deleted or renamed runs everything: a root file a test holds may lin
   assert.deepEqual(of(["docs/platforms.md"]), docsOnly, "an edit stays narrow");
 });
 
+// #3520: `CONTRIBUTING.md` links `changes/README.md`, and `community.test.ts` fails on a dead link,
+// so a file deleted from any folder or file that runs the docs alone runs everything.
+test("a file deleted from changes/, site/ or an agent's steering runs everything", () => {
+  for (const path of [
+    "changes/README.md",
+    "changes/a-fix.md",
+    "site/astro.config.mjs",
+    "site/src/pages/index.astro",
+    "docs/platforms.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+  ]) {
+    const deleted = new Set([path]);
+    const scopes = scopesOf({
+      event: "pull_request",
+      paths: [path],
+      ciToolNames: CI_TOOLS,
+      deleted,
+    });
+    assert.deepEqual([...scopes.scopes].sort(), all, `${path} deleted`);
+    assert.deepEqual(scopes.why, [path], `${path} is named as why`);
+    assert.deepEqual(of([path]), docsOnly, `${path} edited stays narrow`);
+  }
+  // A rename is a deletion and an addition (`--no-renames`).
+  const renamed = scopesOf({
+    event: "pull_request",
+    paths: ["changes/README.md", "changes/index.md"],
+    ciToolNames: CI_TOOLS,
+    deleted: new Set(["changes/README.md"]),
+  }).scopes;
+  assert.deepEqual([...renamed].sort(), all);
+});
+
 test("an unknown path runs everything", () => {
   assert.deepEqual(of(["something-new/file.txt"]), all);
   assert.deepEqual(of(["LICENSE"]), all);
@@ -278,14 +311,60 @@ test("in this repository, the tools CI runs are found, and a hand-run tool is no
 });
 
 // A doc the code reads by a relative path: `include_str!("../../docs/x.md")`,
-// `join("..", "docs", "x.md")`, or a root Markdown file the same ways. A comment's link to a doc
-// reads nothing, so comment lines are left out.
+// `join("..", "docs", "x.md")`, or a root Markdown file the same ways. A climb into a folder of
+// the docs, with or without its trailing slash (`"../../docs"`, `"../../docs/adr/"`,
+// `join("..", "docs")`), is a folder the code may list and read every file of (#3520). A
+// comment's link to a doc reads nothing, so comment lines are left out.
+const DOCS_READ_SEARCH = String.raw`(\.\./)+(docs[/"']|[A-Z_]+\.md)|"\.\.", *"docs"`;
+function docsReadIn(lines) {
+  const read = new Set();
+  for (const line of lines) {
+    if (/^\s*(\/\/|\*|\/\*|#)/.test(line)) continue;
+    for (const [, path] of line.matchAll(/(?:\.\.\/)+((?:docs\/)?[A-Za-z0-9_./-]+\.[a-z]+)/g)) {
+      if (path.startsWith("docs/") || /^[A-Z_]+\.md$/.test(path)) read.add(path);
+    }
+    // A folder: no segment after `docs` holds a dot, and the literal ends there.
+    for (const [, path] of line.matchAll(/(?:\.\.\/)+(docs(?:\/[A-Za-z0-9_-]+)*)\/?["']/g)) {
+      read.add(`${path}/`);
+    }
+    for (const [, rest] of line.matchAll(/"\.\.", *"docs"((?:, *"[^"]+")*)/g)) {
+      const parts = [...rest.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+      const last = parts.at(-1) ?? "";
+      read.add(["docs", ...parts].join("/") + (last.includes(".") ? "" : "/"));
+    }
+  }
+  return read;
+}
+
+test("the docs search finds a file and a folder of the docs, with or without a slash", () => {
+  const found = docsReadIn([
+    'include_str!("../../../CHANGELOG.md")',
+    'include_str!("../../docs/plane-format.md")',
+    'let d = root.join("../../docs"); for e in std::fs::read_dir(d) {}',
+    "for e in std::fs::read_dir('../../docs/adr') {}",
+    'let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/schema/");',
+    'join("..", "docs", "design-system.md")',
+    'join("..", "docs")',
+    'join("..", "docs", "guides")',
+    '// include_str!("../../docs/a-comment.md")',
+  ]);
+  assert.deepEqual([...found].sort(), [
+    "CHANGELOG.md",
+    "docs/",
+    "docs/adr/",
+    "docs/design-system.md",
+    "docs/guides/",
+    "docs/plane-format.md",
+    "docs/schema/",
+  ]);
+});
+
 test("every doc the code reads by a relative path runs everything", () => {
   const lines = git(
     "grep",
     "-h",
     "-E",
-    String.raw`(\.\./)+(docs/|[A-Z_]+\.md)|"\.\.", *"docs"`,
+    DOCS_READ_SEARCH,
     "--",
     "crates",
     "app",
@@ -294,26 +373,25 @@ test("every doc the code reads by a relative path runs everything", () => {
     ":!*.md",
   );
   // Only a path that is a doc of this repository: `"../SKILL.md"` beside a test's fixture is not.
-  const tracked = new Set(git("ls-files", "--", "docs", "*.md"));
-  const read = new Set();
-  for (const line of lines) {
-    if (/^\s*(\/\/|\*|\/\*|#)/.test(line)) continue;
-    for (const [, path] of line.matchAll(/(?:\.\.\/)+((?:docs\/)?[A-Za-z0-9_./-]+\.[a-z]+)/g)) {
-      if (path.startsWith("docs/") || /^[A-Z_]+\.md$/.test(path)) read.add(path);
-    }
-    for (const [, rest] of line.matchAll(/"\.\.", *"docs", *((?:"[^"]+", *)*"[^"]+")/g)) {
-      read.add(`docs/${[...rest.matchAll(/"([^"]+)"/g)].map((m) => m[1]).join("/")}`);
-    }
-  }
+  const tracked = git("ls-files", "--", "docs", "*.md");
+  const trackedFiles = new Set(tracked);
+  const read = docsReadIn(lines);
   assert.ok(read.has("CHANGELOG.md"), 'the search finds include_str!("../../../CHANGELOG.md")');
   assert.ok(read.has("docs/design-system.md"), 'and join(.., "docs", ..)');
   for (const path of read) {
-    if (!tracked.has(path)) continue;
-    assert.deepEqual(
-      [...scopesOfPath(path, new Set())].sort(),
-      all,
-      `${path} is read by code: add it to READ_BY_CODE in tools/ci-scope.mjs`,
-    );
+    // A folder is read whole: every file in it is a file the code reads.
+    const files = path.endsWith("/")
+      ? tracked.filter((f) => f.startsWith(path))
+      : trackedFiles.has(path)
+        ? [path]
+        : [];
+    for (const file of files) {
+      assert.deepEqual(
+        [...scopesOfPath(file, new Set())].sort(),
+        all,
+        `${file} is read by code (${path}): add ${path} to READ_BY_CODE in tools/ci-scope.mjs`,
+      );
+    }
   }
   assert.ok(READ_BY_CODE.length > 0);
 });
@@ -322,7 +400,9 @@ test("every doc the code reads by a relative path runs everything", () => {
 // (`CARGO_MANIFEST_DIR`, `import.meta.url`, `process.cwd()`) and climbs from it to the root
 // itself, not into a folder below it: `"../.."` or `"../../"` (a `.join` on the next line, a
 // `resolve(…, "../..")`, a root held in a variable), `"..", ".."` with nothing after it,
-// `process.cwd(), ".."` from `app/`, or `import.meta.glob("../../*…")`.
+// `process.cwd(), ".."` from `app/`, or `import.meta.glob("../../*…")`. A climb into a folder of
+// the docs, `"../../docs"` with or without its slash and then a read of the folder, is not one:
+// the docs search above finds it, and holds every file in that folder to `READ_BY_CODE` (#3520).
 const ANCHORED = /CARGO_MANIFEST_DIR|import\.meta\.url|process\.cwd\(\)/;
 const CLIMBS = new RegExp(
   [

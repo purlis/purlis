@@ -708,8 +708,9 @@ jobs:
   # Two jobs, not one matrix, because a job's `if:` cannot see `matrix`, and a matrix `exclude`
   # computed per event is undone by `include`, which adds an excluded entry back.
   #
-  # `app builds (ubuntu-24.04)` is a required check, so the job always runs, and skips its steps
-  # when nothing the app is built from has changed (`changes`).
+  # Both legs, `app builds (ubuntu-24.04)` and `app builds (macos-latest)`, are required checks,
+  # so the job always runs, and skips its steps when nothing the app is built from has changed
+  # (`changes`).
   app:
     name: app builds (${{ matrix.os }}${{ matrix.evidence && ', evidence only' || '' }})
     needs: changes
