@@ -61,6 +61,7 @@ import {
   TextField as AriaTextField,
 } from "react-aria-components";
 import { submits } from "./submitKey";
+import { reveal } from "../reveal";
 import { Tooltip } from "../tooltip/Tooltip";
 
 /** The text input's sizes: 24, 28 and 32 px at the default text size and density (`field.css`). */
@@ -235,7 +236,8 @@ export type FormProps = Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit" | "
  * ⌘⏎ (Ctrl+Enter off macOS) sends from anywhere in it, a textarea included, as Enter in a box
  * does. Its primary action is its first submit button; while that is unavailable, or when it
  * is a grant or what cannot be undone, ⌘⏎ sends nothing: those are pressed. A field that is not right says why and the focus goes to the first such, and
- * `onSubmit` is not called.
+ * `onSubmit` is not called. A field in a folded disclosure is brought out of it first
+ * (`ui/reveal.ts`, #3675).
  */
 export function Form({ onSubmit, onKeyDown, children, ...rest }: FormProps) {
   const [checks] = useState(() => new Set<Check>());
@@ -247,6 +249,8 @@ export function Form({ onSubmit, onKeyDown, children, ...rest }: FormProps) {
       .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
     if (wrong.length > 0) {
       event.preventDefault();
+      // A field in a fold is brought out of it first, so the focus lands (#3675).
+      reveal(wrong[0]);
       wrong[0].focus();
       return;
     }
