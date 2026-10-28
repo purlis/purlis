@@ -598,6 +598,13 @@ pub enum Refusal {
          answers, so this call was not carried out: try it again in a moment"
     )]
     NotKeptOutYet,
+    /// DevTools were open on this browser, and what the person copied there may be what a paste
+    /// gets (#2028): the agent's pastes are withheld from then on.
+    #[error(
+        "pasting is not available in this browser since the person used DevTools in it, so this \
+         call was not carried out: type the text instead"
+    )]
+    PasteWithheld,
     #[error(
         "purlis is logging this browser in, so it takes no call from you until the login answers: wait for it, then take a new snapshot"
     )]

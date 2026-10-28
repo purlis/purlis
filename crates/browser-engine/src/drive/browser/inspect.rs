@@ -29,8 +29,9 @@
 //!   its sessions are detached and its context, with all it kept, thrown away; purlis's own
 //!   worlds in every page are made afresh. What they type into it, what it wrote into a page
 //!   (`written.rs`) and what every field of every page holds are kept out of every later answer
-//!   the agent gets, as what they type into a page is, however DevTools ended. What they copy
-//!   in DevTools stays in DevTools' own context, whose clipboard the agent's pastes never read.
+//!   the agent gets, as what they type into a page is, however DevTools ended. The engine's
+//!   clipboard is one for all its contexts, so once DevTools were open the agent's pastes are
+//!   withheld: what the person copied in DevTools is never pasted by the agent.
 //! - **Bounded.** At most [`MOST_QUEUED`] messages wait, and none larger than
 //!   [`MOST_RELAYED_BYTES`] is handed on; DevTools that fall further behind close, saying why.
 
@@ -550,8 +551,7 @@ impl Browser {
     }
 
     /// **For the tests: copies `text` as the person's copy in DevTools does** (#2028), in a page
-    /// of a browser context of DevTools' own, thrown away after: whether it was copied. What is
-    /// copied in a context other than the agent's is never what the agent's pastes get.
+    /// of a browser context of DevTools' own, thrown away after: whether it was copied.
     #[doc(hidden)]
     pub fn copy_in_a_context_of_devtools(&self, text: &str) -> bool {
         self.inner.copy_apart(text)
@@ -672,6 +672,9 @@ impl Browser {
             return;
         }
         self.inner.worlds.forget_all();
+        // What the person copied in DevTools shares the engine's clipboard with the agent's
+        // pastes: they are withheld from now on.
+        self.inner.paste_withheld.store(true, Ordering::SeqCst);
         let writes = std::mem::take(&mut *lock(&self.inner.devtools_writes));
         if !writes.is_empty() {
             let mut held = Kept::default();

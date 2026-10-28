@@ -239,6 +239,17 @@ pub(crate) const ACTIVE_ELEMENT: &str = r"(() => {
 /// the focus, or `null` (#2295). Run in purlis's own world, not by value.
 pub(crate) const FOCUSED_HERE: &str = "document.hasFocus() ? document.activeElement : null";
 
+/// Whether a key event pastes: it carries the paste command, or it is Shift+Insert (#2028).
+fn pastes(event: &Value) -> bool {
+    let commanded = event["commands"].as_array().is_some_and(|commands| {
+        commands
+            .iter()
+            .any(|c| c == "paste" || c == "pasteAndMatchStyle")
+    });
+    let insert = event["key"] == "Insert" && event["modifiers"].as_i64().unwrap_or(0) & 8 != 0;
+    commanded || insert
+}
+
 /// The first [`MOST_TITLE_CHARS`] of `title`.
 fn kept_title(title: &str) -> String {
     title.chars().take(MOST_TITLE_CHARS).collect()
@@ -899,6 +910,9 @@ pub(crate) struct Inner {
     inspection: Mutex<Option<Arc<inspect::Inspection>>>,
     /// Whether DevTools were open while the person drove, since they last handed it back.
     devtools_opened: AtomicBool,
+    /// Whether the agent's pastes are withheld: DevTools were open on this browser, and what
+    /// the person copied there may be what a paste gets.
+    paste_withheld: AtomicBool,
     /// What DevTools wrote into pages since then, kept out at the hand-back.
     devtools_writes: Mutex<Vec<String>>,
     /// The pages that could not be read at the hand-back after DevTools: the agent's calls
@@ -1040,6 +1054,7 @@ impl Browser {
             devtools,
             inspection: Mutex::new(None),
             devtools_opened: AtomicBool::new(false),
+            paste_withheld: AtomicBool::new(false),
             devtools_writes: Mutex::new(Vec::new()),
             devtools_unread: Mutex::new(HashSet::new()),
             state: Mutex::new(State::default()),
@@ -1609,6 +1624,10 @@ impl Browser {
                 let mut events = Vec::new();
                 for chord in &keys {
                     events.extend(key_events(chord).map_err(|e| Refusal::NotAKey(e.to_string()))?);
+                }
+                // What the person copied in DevTools may be what a paste gets (#2028).
+                if self.inner.paste_withheld.load(Ordering::SeqCst) && events.iter().any(pastes) {
+                    return Err(Refusal::PasteWithheld);
                 }
                 self.acting_on(&target, || {
                     for event in events {

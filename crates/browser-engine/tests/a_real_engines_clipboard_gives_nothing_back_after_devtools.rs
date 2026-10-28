@@ -1,11 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A real engine's clipboard and DevTools (#2028): what is copied in a browser context of
-//! DevTools' own, as the person's copy in DevTools is, is never what the agent's pastes get,
-//! before Done or after; the agent's own copy pastes as it did; and the clipboard of the machine
-//! the engine runs on, the person's own, is left as it was. Which clipboard the engine uses is
-//! said on CI, as a notice.
+//! A real engine's clipboard and DevTools (#2028): the engine's clipboard is one for all its
+//! browser contexts, apart from the machine's, so what is copied in DevTools' own context, as
+//! the person's copy in DevTools is, would be what the agent's paste gets: once DevTools were
+//! open, the agent's pastes are withheld, and the clipboard of the machine the engine runs on,
+//! the person's own, is left as it was. Which clipboard the engine uses is said on CI, as a
+//! notice.
 //!
 //! These need a real Chrome and the right to start it and to listen on a loopback port (the
 //! site's stand-in reach proxy), which a sandboxed agent does not have. They run where
@@ -155,28 +156,29 @@ fn what_is_copied_in_devtools_is_never_pasted_by_the_agent_and_the_machines_own_
         .expect("DevTools open for the person driving the browser");
     browser.hand_back();
 
-    // A paste after Done gets nothing of it.
+    // The engine's clipboard holds what was copied in DevTools: a paste after Done is withheld.
     let into = ref_on(&find(&browser, "Paste after"), "textbox \"Paste after\"");
     call(&browser, Call::Click { target: into });
-    call(
-        &browser,
+    let withheld = browser.call(
+        &purlis_browser_engine::drive::CallId::new("paste-after").unwrap(),
         Call::Press {
             page: None,
-            keys: vec!["Control+v".to_owned(), "Meta+v".to_owned()],
+            keys: vec!["Control+v".to_owned()],
         },
     );
     let after = pasted(&browser, "Paste after");
     notice(&format!(
-        "on {}: a paste after Done got {after:?}; pasting works here: {paste_works}",
-        std::env::consts::OS
+        "on {}: pasting works here: {paste_works}; a paste after Done answered {:?} and the field holds {after:?}",
+        std::env::consts::OS,
+        withheld.as_ref().err()
     ));
+    assert_eq!(
+        withheld.err(),
+        Some(purlis_browser_engine::drive::Refusal::PasteWithheld)
+    );
     assert!(
         !after.contains(theirs),
         "a paste after Done got what was copied in DevTools: {after}"
-    );
-    assert!(
-        after.contains(COPIED),
-        "the agent's own copy pastes as it did: {after}"
     );
     // The machine's own clipboard is the person's, and left as it was.
     if ours && !engine_is_the_systems {

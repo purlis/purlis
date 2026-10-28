@@ -907,3 +907,32 @@ fn a_session_made_for_devtools_that_answered_too_late_is_let_go_and_never_the_dr
             .any(|s| s.session.as_deref() == Some("S-LATE"))
     );
 }
+
+#[test]
+fn the_agents_paste_is_withheld_once_devtools_were_open_and_its_other_keys_go() {
+    let (browser, engine) = browser();
+    let _ends = inspected(&browser, &engine);
+    browser.hand_back();
+    for chord in ["Control+v", "Meta+v", "Control+Shift+v", "Shift+Insert"] {
+        assert_eq!(
+            browser.call(
+                &id(chord.len() as u32 + 40),
+                Call::Press {
+                    page: None,
+                    keys: vec!["Control+c".to_owned(), chord.to_owned()],
+                },
+            ),
+            Err(Refusal::PasteWithheld),
+            "{chord}"
+        );
+    }
+    browser
+        .call(
+            &id(60),
+            Call::Press {
+                page: None,
+                keys: vec!["Enter".to_owned()],
+            },
+        )
+        .expect("a key that pastes nothing goes");
+}
