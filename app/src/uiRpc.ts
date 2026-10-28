@@ -5279,12 +5279,21 @@ export type GradeEnded = "whole" | "stopped" | "chats-did-not-start" |
 /**  A fault in purlis ended it before it was scored (#3353): recorded as interrupted. */
 "failed";
 
-/**  What a grade's chats spent last time, worked out for this one. */
+/**
+ *  What a grade's chats spent before, worked out for this one (`grades::Estimate`): both
+ *  figures are `None` where that grade's chats did not say what they spent.
+ */
 export type GradeEstimate = {
 	tokens: number | null,
 	cost_usd: number | null,
-	/**  The chats of the grade it is worked out from. */
+	/**  The chats of the grade it is worked out from that ran. */
 	chats_then: number,
+	/**  That grade: when it ran, and the profile and the harness its chats ran on. */
+	ts: string,
+	profile: string | null,
+	harness: string | null,
+	/**  Whether it ran on the profile this grade runs on. */
+	same_profile: boolean,
 };
 
 /**
@@ -9827,6 +9836,8 @@ export type SkillGradePlan = {
 	outcome_evals: number,
 	outcomes_refused: string | null,
 	estimate: GradeEstimate | null,
+	/**  What the grade record left out as it was read: rows skipped, files not read. */
+	record_said: string | null,
 	/**  The grade of this skill running now, where one is. */
 	running: string | null,
 	/**  The tokens a grade may spend before it stops, and whether this machine set it. */

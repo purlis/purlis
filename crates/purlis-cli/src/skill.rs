@@ -919,14 +919,25 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         },
         SkillCommand::Grade { name, at, json } => {
             let level = at.level();
-            match purlis_core::skills::grades::planned(root, &level, &name) {
+            // The terminal knows no profile: the estimate is the newest grade's whose chats ran.
+            match purlis_core::skills::grades::planned(root, &level, &name, None) {
                 Ok(planned) => {
-                    let graded = purlis_core::skills::grades::grades_of(root, &name, Some(&level));
+                    let read = purlis_core::skills::grades::read(root, &name, Some(&level));
                     if json {
-                        println!("{}", json!({ "plan": planned, "grades": graded }));
+                        println!(
+                            "{}",
+                            json!({
+                                "plan": planned,
+                                "grades": read.grades,
+                                "left_out": read.said(),
+                            })
+                        );
                     } else {
                         let local_file = purlis_core::settings::Which::Local.file_at(root);
-                        print!("{}", grade_said(&planned, &graded, local_file));
+                        print!("{}", grade_said(&planned, &read.grades, local_file));
+                        if let Some(said) = read.said() {
+                            voice::warn(said);
+                        }
                     }
                     Ok(0)
                 }
@@ -1184,6 +1195,44 @@ fn versions_table(name: &str, history: &history::History) -> String {
     text
 }
 
+/// **What a grade should spend, from a grade before, in a line** (#3273): which grade it is
+/// worked out from, or that its cost is not known where that grade's chats did not say, or that
+/// there was none.
+fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> String {
+    let Some(estimate) = estimate else {
+        return "It has not been graded here before, so what a grade spends is not known yet.\n"
+            .to_owned();
+    };
+    let on = match (&estimate.profile, &estimate.harness) {
+        (Some(profile), Some(harness)) => format!(
+            " on {profile} ({})",
+            purlis_core::skilluse::harness_title(harness)
+        ),
+        (Some(profile), None) => format!(" on {profile}"),
+        (None, Some(harness)) => format!(" on {}", purlis_core::skilluse::harness_title(harness)),
+        (None, None) => String::new(),
+    };
+    let when = estimate.ts.get(..10).unwrap_or(&estimate.ts);
+    let mut parts = Vec::new();
+    if let Some(tokens) = estimate.tokens {
+        parts.push(format!("about {tokens} tokens"));
+    }
+    if let Some(cost) = estimate.cost_usd {
+        parts.push(format!("about ${cost:.2}"));
+    }
+    if parts.is_empty() {
+        return format!(
+            "Its last grade{on}, {when}, did not say what its chats spent, so what a grade spends \
+             is not known.\n"
+        );
+    }
+    format!(
+        "From its grade{on}, {when}, of {}, a grade spends {}.\n",
+        counted(estimate.chats_then, "chat", "chats"),
+        parts.join(", ")
+    )
+}
+
 /// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
 fn grade_said(
     planned: &purlis_core::skills::grades::Planned,
@@ -1209,25 +1258,7 @@ fn grade_said(
                 counted(u32::from(request.runs), "time", "times"),
                 counted(u32::from(request.runs), "time", "times"),
             ));
-            match planned.estimate {
-                Some(estimate) if estimate.tokens.is_some() || estimate.cost_usd.is_some() => {
-                    let mut parts = Vec::new();
-                    if let Some(tokens) = estimate.tokens {
-                        parts.push(format!("about {tokens} tokens"));
-                    }
-                    if let Some(cost) = estimate.cost_usd {
-                        parts.push(format!("about ${cost:.2}"));
-                    }
-                    text.push_str(&format!(
-                        "From its last grade, of {}, a grade spends {}.\n",
-                        counted(estimate.chats_then, "chat", "chats"),
-                        parts.join(", ")
-                    ));
-                }
-                _ => text.push_str(
-                    "It has not been graded here before, so what a grade spends is not known yet.\n",
-                ),
-            }
+            text.push_str(&estimate_said(planned.estimate.as_ref()));
             for (at, test) in request.triggers.iter().enumerate() {
                 text.push_str(&format!(
                     "  {}. {}  ({})\n",

@@ -325,7 +325,7 @@ fn read(path: &Path) -> Held {
         Held::Unsound
     } else if held.graded.v > super::VERSION {
         Held::Newer
-    } else if held.graded.sound() {
+    } else if held.graded.sound(chrono::Utc::now()) {
         Held::Sound(Box::new(held))
     } else {
         Held::Unsound

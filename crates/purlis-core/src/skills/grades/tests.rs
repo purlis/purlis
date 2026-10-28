@@ -94,11 +94,18 @@ fn report(passed_with: bool) -> GradeReport {
     }
 }
 
+/// A grade of `deploy` with [`report`]'s three chats, which spent what `spent` says.
 fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
     let level = Level::project();
     let SkillCopy {
         content, commit, ..
     } = copy_of(root, &level, "deploy").unwrap();
+    let spent = Spent { chats: 3, ..spent };
+    let report = GradeReport {
+        spent_tokens: spent.tokens,
+        spent_usd: spent.cost_usd,
+        ..report(true)
+    };
     Graded {
         v: VERSION,
         grade: id.to_owned(),
@@ -110,7 +117,7 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
         profile: Some("work".into()),
         ts: ts.to_owned(),
         runs: 3,
-        report: report(true),
+        report,
         spent,
         plugins_off: Some(vec!["figma@claude-plugins-official".to_owned()]),
     }
@@ -119,7 +126,7 @@ fn graded(root: &Path, id: &str, ts: &str, spent: Spent) -> Graded {
 #[test]
 fn the_plan_comes_before_anything_runs_and_says_what_waits() {
     let plane = plane();
-    let planned = planned(plane.path(), &Level::project(), "deploy").unwrap();
+    let planned = planned(plane.path(), &Level::project(), "deploy", None).unwrap();
     let plan = planned.plan.unwrap();
     assert_eq!(plan.chats, 12, "two tests, two arms, three runs");
     assert_eq!(plan.outcome_evals_waiting, 1);
@@ -249,20 +256,20 @@ fn the_estimate_is_the_last_grades_spend_per_chat_times_the_chats() {
             "g1",
             "2026-10-25T10:00:00+00:00",
             Spent {
-                chats: 6,
-                tokens: Some(60_000),
-                cost_usd: Some(0.6),
+                chats: 3,
+                tokens: Some(30_000),
+                cost_usd: Some(0.3),
             },
         ),
         "laptop",
     );
-    let estimate = planned(root, &Level::project(), "deploy")
+    let estimate = planned(root, &Level::project(), "deploy", None)
         .unwrap()
         .estimate
         .unwrap();
     assert_eq!(estimate.tokens, Some(120_000));
     assert!((estimate.cost_usd.unwrap() - 1.2).abs() < 1e-9);
-    assert_eq!(estimate.chats_then, 6);
+    assert_eq!(estimate.chats_then, 3);
 }
 
 #[test]
@@ -274,7 +281,7 @@ fn a_query_that_hides_characters_is_marked_in_the_plan() {
         "[{\"query\": \"ship it\u{202e}noitcudorp\", \"should_trigger\": true}]",
     )
     .unwrap();
-    let planned = planned(root, &Level::project(), "deploy").unwrap();
+    let planned = planned(root, &Level::project(), "deploy", None).unwrap();
     assert_eq!(planned.unseen, vec![0]);
 }
 
@@ -283,7 +290,7 @@ fn a_skill_with_no_trigger_tests_has_no_plan() {
     let plane = plane();
     let root = plane.path();
     std::fs::remove_file(root.join("skills/deploy/evals/triggers.json")).unwrap();
-    let planned = planned(root, &Level::project(), "deploy").unwrap();
+    let planned = planned(root, &Level::project(), "deploy", None).unwrap();
     assert_eq!(planned.plan, None);
     assert_eq!(planned.fixtures.triggers, grade::Read::Absent);
     assert!(planned.fixtures.outcomes.read().is_some());
@@ -320,7 +327,7 @@ fn a_query_no_chat_can_be_started_on_is_left_out_with_why() {
         r#"[{"query": "--help", "should_trigger": false}, {"query": "ship it", "should_trigger": true}]"#,
     )
     .unwrap();
-    let planned = planned(root, &Level::project(), "deploy").unwrap();
+    let planned = planned(root, &Level::project(), "deploy", None).unwrap();
     assert_eq!(planned.left_out.len(), 1);
     assert_eq!(planned.left_out[0].at, 0);
     let request = planned.request.unwrap();
@@ -381,7 +388,7 @@ fn a_query_a_chat_program_reads_as_its_own_command_is_left_out_and_named() {
         ]"##,
     )
     .unwrap();
-    let planned = planned(root, &Level::project(), "deploy").unwrap();
+    let planned = planned(root, &Level::project(), "deploy", None).unwrap();
     let left: Vec<usize> = planned.left_out.iter().map(|one| one.at).collect();
     assert_eq!(left, vec![0, 1, 2, 3]);
     assert!(
@@ -435,12 +442,12 @@ fn a_record_folder_with_too_many_names_is_read_no_further() {
 fn the_consent_a_plan_asks_for_changes_with_its_tests_and_with_the_skill() {
     let plane = plane();
     let root = plane.path();
-    let first = planned(root, &Level::project(), "deploy")
+    let first = planned(root, &Level::project(), "deploy", None)
         .unwrap()
         .consent
         .unwrap();
     assert_eq!(
-        planned(root, &Level::project(), "deploy")
+        planned(root, &Level::project(), "deploy", None)
             .unwrap()
             .consent
             .unwrap(),
@@ -452,7 +459,7 @@ fn the_consent_a_plan_asks_for_changes_with_its_tests_and_with_the_skill() {
         format!("{SKILL}Ship faster.\n"),
     )
     .unwrap();
-    let edited = planned(root, &Level::project(), "deploy")
+    let edited = planned(root, &Level::project(), "deploy", None)
         .unwrap()
         .consent
         .unwrap();
@@ -463,7 +470,7 @@ fn the_consent_a_plan_asks_for_changes_with_its_tests_and_with_the_skill() {
     )
     .unwrap();
     assert_ne!(
-        planned(root, &Level::project(), "deploy")
+        planned(root, &Level::project(), "deploy", None)
             .unwrap()
             .consent
             .unwrap(),
@@ -502,7 +509,11 @@ fn uncommitted_row() -> Graded {
         profile: Some("work".into()),
         ts: "2026-10-25T10:00:00+00:00".to_owned(),
         runs: 3,
-        report: report(true),
+        report: GradeReport {
+            spent_tokens: Some(1200),
+            spent_usd: Some(0.04),
+            ..report(true)
+        },
         spent: Spent {
             chats: 3,
             tokens: Some(1200),
@@ -516,7 +527,10 @@ fn uncommitted_row() -> Graded {
 /// purlis writes them, and the Grades panel and the terminal say them.
 #[test]
 fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
-    assert!(uncommitted_row().sound(), "a row purlis writes is kept");
+    assert!(
+        uncommitted_row().sound(chrono::Utc::now()),
+        "a row purlis writes is kept"
+    );
     type Breaks = fn(&mut Graded);
     let broken: [(&str, Breaks); 17] = [
         ("a cost below nothing", |row| {
@@ -585,7 +599,7 @@ fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
     for (what, breaks) in broken {
         let mut row = uncommitted_row();
         breaks(&mut row);
-        assert!(!row.sound(), "{what}: {row:?}");
+        assert!(!row.sound(chrono::Utc::now()), "{what}: {row:?}");
     }
 }
 
@@ -624,4 +638,184 @@ fn a_harness_that_cannot_grade_is_refused_with_its_own_reason() {
     let codex = reason(crate::harness::Harness::Codex);
     assert!(codex.contains("Claude Code"), "{codex}");
     assert!(!codex.contains("plugins"), "{codex}");
+}
+
+/// [`uncommitted_row`] as grade `id`, stamped `ts`, its chats on `profile`, having spent
+/// `tokens` (as its report says too), or nothing ran where `ran` is false.
+fn a_row(id: &str, ts: &str, profile: &str, tokens: Option<u64>, ran: bool) -> Graded {
+    let mut row = uncommitted_row();
+    row.grade = id.to_owned();
+    row.ts = ts.to_owned();
+    row.profile = Some(profile.to_owned());
+    row.spent = Spent {
+        chats: 3,
+        tokens,
+        cost_usd: None,
+    };
+    row.report.spent_tokens = tokens;
+    row.report.spent_usd = None;
+    if !ran {
+        row.spent.chats = 0;
+        row.report = underway::interrupted_report(200_000, None, None);
+    }
+    row
+}
+
+/// #3273: a copy whose last grade's chats said nothing of what they spent was graded: its
+/// estimate says which grade, and that the cost is not known, never that it was not graded.
+#[test]
+fn a_grade_whose_chats_said_no_spend_gives_an_estimate_whose_cost_is_not_known() {
+    let rows = [a_row("g1", "2026-10-25T10:00:00+00:00", "work", None, true)];
+    let estimate = estimate_of(&rows, 12, Some("work")).expect("it was graded");
+    assert_eq!((estimate.tokens, estimate.cost_usd), (None, None));
+    assert_eq!(estimate.ts, "2026-10-25T10:00:00+00:00");
+    assert_eq!(estimate.profile.as_deref(), Some("work"));
+    assert!(estimate.same_profile);
+    assert_eq!(estimate_of(&[], 12, Some("work")), None, "never graded");
+}
+
+/// #3273: the estimate comes from the closest grade, and says which: the newest on the profile
+/// this grade runs on, else the newest of any; a grade none of whose chats ran is passed over.
+#[test]
+fn the_estimate_is_the_closest_grades_and_names_it() {
+    let rows = [
+        a_row(
+            "interrupted",
+            "2026-10-27T10:00:00+00:00",
+            "work",
+            None,
+            false,
+        ),
+        a_row(
+            "other",
+            "2026-10-26T10:00:00+00:00",
+            "home",
+            Some(9_000),
+            true,
+        ),
+        a_row(
+            "work",
+            "2026-10-25T10:00:00+00:00",
+            "work",
+            Some(3_000),
+            true,
+        ),
+    ];
+
+    let on_work = estimate_of(&rows, 12, Some("work")).unwrap();
+    assert_eq!(on_work.tokens, Some(12_000));
+    assert_eq!(on_work.profile.as_deref(), Some("work"));
+    assert!(on_work.same_profile);
+
+    let on_new = estimate_of(&rows, 12, Some("new")).unwrap();
+    assert_eq!(on_new.tokens, Some(36_000), "the newest whose chats ran");
+    assert_eq!(on_new.profile.as_deref(), Some("home"));
+    assert!(!on_new.same_profile);
+
+    let only_interrupted = estimate_of(&rows[..1], 12, None).unwrap();
+    assert_eq!(only_interrupted.chats_then, 0);
+    assert_eq!(only_interrupted.tokens, None, "nothing ran: not known");
+}
+
+/// #3273: a row is checked against itself and bounded: its spend is what its report adds up,
+/// its arms' chats what its tests ran, every figure within bounds, its level a level's, and its
+/// stamp no later than this machine's clock allows.
+#[test]
+fn a_row_out_of_range_or_at_odds_with_itself_is_skipped() {
+    let now = chrono::DateTime::parse_from_rfc3339("2026-10-28T00:00:00+00:00")
+        .unwrap()
+        .to_utc();
+    assert!(uncommitted_row().sound(now), "a row purlis writes is kept");
+    type Breaks = fn(&mut Graded);
+    let broken: [(&str, Breaks); 13] = [
+        ("stamped a day ahead", |row| {
+            row.ts = "2026-10-29T00:00:00+00:00".into();
+        }),
+        ("a level no level spells", |row| {
+            row.level = Some("../skills".into());
+        }),
+        ("no runs", |row| row.runs = 0),
+        ("more runs than any grade", |row| row.runs = 200),
+        ("tokens past every cap", |row| {
+            row.spent.tokens = Some(u64::MAX);
+            row.report.spent_tokens = Some(u64::MAX);
+        }),
+        ("a cost past every limit", |row| {
+            row.spent.cost_usd = Some(1e12);
+            row.report.spent_usd = Some(1e12);
+        }),
+        ("a spend its report does not add up to", |row| {
+            row.spent.tokens = Some(1);
+        }),
+        ("a cost its report does not add up to", |row| {
+            row.spent.cost_usd = Some(0.01);
+        }),
+        ("more chats than its arms ran", |row| row.spent.chats = 30),
+        ("an arm that ran more than its tests", |row| {
+            row.report.arms[0].chats = 9;
+            row.spent.chats = 9;
+        }),
+        ("an arm that asked for chats its tests did not", |row| {
+            row.report.arms[0].not_run = 4;
+        }),
+        ("a test of an arm the report does not score", |row| {
+            row.report.triggers[0].arm = Arm::Without;
+        }),
+        ("a cap past the largest", |row| {
+            row.report.cap = Some(u64::MAX);
+        }),
+    ];
+    for (what, breaks) in broken {
+        let mut row = uncommitted_row();
+        breaks(&mut row);
+        assert!(!row.sound(now), "{what}: {row:?}");
+    }
+    let mut ahead = uncommitted_row();
+    ahead.ts = "2026-10-28T00:30:00+00:00".into();
+    assert!(ahead.sound(now), "a clock a little ahead is allowed");
+}
+
+/// #3273: what the record leaves out is said: a row skipped is counted, and a file too large to
+/// read is named, never dropped unseen.
+#[test]
+fn a_row_skipped_and_a_file_not_read_are_said() {
+    let plane = tempfile::tempdir().unwrap();
+    let root = plane.path();
+    let dir = root.join("personas").join(DIR_NAME);
+    std::fs::create_dir_all(&dir).unwrap();
+    let kept = uncommitted_row();
+    let mut forged = uncommitted_row();
+    forged.grade = "forged".into();
+    forged.spent.tokens = Some(1);
+    let mut ahead = uncommitted_row();
+    ahead.grade = "ahead".into();
+    ahead.ts = "2099-01-01T00:00:00+00:00".into();
+    std::fs::write(
+        dir.join("2026-10.desk.jsonl"),
+        format!(
+            "{}\n{}\n{}\n",
+            serde_json::to_string(&kept).unwrap(),
+            serde_json::to_string(&forged).unwrap(),
+            serde_json::to_string(&ahead).unwrap(),
+        ),
+    )
+    .unwrap();
+    let large = std::fs::File::create(dir.join("2026-09.laptop.jsonl")).unwrap();
+    large.set_len(MOST_FILE_BYTES + 1).unwrap();
+
+    let read = read(root, "deploy", None);
+
+    let ids: Vec<&str> = read.grades.iter().map(|one| one.grade.as_str()).collect();
+    assert_eq!(ids, ["g1"], "only the row that holds together is shown");
+    assert_eq!(read.skipped, 2);
+    let said = read.said().expect("it is said");
+    assert!(
+        said.starts_with("2 rows of the grade record were skipped"),
+        "{said}"
+    );
+    assert!(
+        said.contains("2026-09.laptop.jsonl is larger than 16 MiB"),
+        "{said}"
+    );
+    assert_eq!(Read::default().said(), None);
 }

@@ -51,16 +51,26 @@ export function endedSaid(step: SkillGradeStep): string {
   }
 }
 
-/** What a grade should spend, from the last one, in one sentence: never a figure that was not
- *  measured. */
+/** What a grade should spend, from a grade before, in one sentence: never a figure that was not
+ *  measured, and always which grade it is worked out from (#3273). A grade whose chats said
+ *  nothing of what they spent was a grade still: its cost is not known. */
 export function costSaid(plan: SkillGradePlan): string {
   const estimate = plan.estimate;
-  if (estimate === null || (estimate.tokens === null && estimate.cost_usd === null))
+  if (estimate === null)
     return "This skill has not been graded here before, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill starts.";
+  const on =
+    estimate.profile === null
+      ? ""
+      : estimate.same_profile
+        ? ` on ${estimate.profile}`
+        : ` on another profile, ${estimate.profile}`;
+  const ran = `${on}${estimate.harness === null ? "" : ` (${estimate.harness})`}, ${estimate.ts.slice(0, 10)}`;
+  if (estimate.tokens === null && estimate.cost_usd === null)
+    return `Its last grade${ran}, did not say what its chats spent, so purlis cannot say what this one spends. Each chat is one turn, and ends once the skill starts.`;
   const parts: string[] = [];
   if (estimate.tokens !== null) parts.push(`about ${tokensSaid(estimate.tokens)}`);
   if (estimate.cost_usd !== null) parts.push(`about $${estimate.cost_usd.toFixed(2)}`);
-  return `From its last grade, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
+  return `From its grade${ran}, of ${counted(estimate.chats_then, "chat", "chats")}, this one should spend ${parts.join(", ")}.`;
 }
 
 /** The dollar limit a grade is held to, and the price it was worked out at (#3469): the model's,
@@ -333,6 +343,11 @@ function GradePlan({
             own Allows and no tools but purlis's that only read, and its account pays for them as
             for any chat.
           </p>
+          {plan.record_said !== null && (
+            <p className="honest" role="note" data-testid="skill-grade-record">
+              {plan.record_said}
+            </p>
+          )}
           <ol aria-label={`Trigger tests of ${name}`}>
             {plan.tests.map((test, at) => (
               <li key={at} data-testid="skill-grade-test">
