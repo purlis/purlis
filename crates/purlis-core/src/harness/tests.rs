@@ -779,7 +779,19 @@ fn a_claude_code_chat_runs_its_browser_tools_on_its_browser_ask_not_the_harness_
         let tool = rule.strip_prefix("mcp__purlis__").expect("purlis's server");
         assert!(crate::browsertools::is_one(tool), "{tool}");
     }
-    assert_eq!(browser.len(), crate::browsertools::TOOLS.len());
+    // Every one but those that move a file across the chat's folder, which ask each time
+    // (#2020).
+    assert_eq!(
+        browser.len(),
+        crate::browsertools::TOOLS.len() - crate::browsertools::ASKED_EACH_TIME.len()
+    );
+    for asked in crate::browsertools::ASKED_EACH_TIME {
+        assert!(crate::browsertools::is_one(asked), "{asked}");
+        assert!(
+            !browser.contains(&format!("mcp__purlis__{asked}").as_str()),
+            "{asked}"
+        );
+    }
     // **Only where the chat may have a browser**: on the same arguments that hand the chat
     // purlis's server, whose browser tools reach the app's Ask. A chat handed no server is
     // handed no settings either.
