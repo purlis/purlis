@@ -1367,11 +1367,7 @@ fn grade_said(
             ),
         };
         // The version it compared with, where it compared one (SK-57).
-        let previous = one
-            .previous
-            .as_deref()
-            .filter(|_| one.report.arm(Arm::Previous).is_some())
-            .map(history::short);
+        let previous = one.compared_with().map(history::short);
         text.push_str(&format!(
             "  {}  {}  {passed} of {} passed  with {}  without {}{}{}{asked}  ({}){}\n",
             purlis_core::skills::review::escaped_line(&one.ts),

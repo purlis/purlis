@@ -395,8 +395,9 @@ struct Running {
     plane: PlaneId,
     skill: String,
     stop: Arc<AtomicBool>,
-    /// Whether a saved edit started it (SK-58): the next edit stops it.
-    after_edit: bool,
+    /// The copy a saved edit of which started it (SK-58), by its opt-in's key (level and
+    /// name): the next save of that copy stops it. `None` for a grade pressed by hand.
+    after_edit: Option<String>,
 }
 
 /// **The grades running in this app**, by id: one per project at a time.
@@ -557,204 +558,200 @@ pub(crate) fn begin(
         model,
         after_edit,
     } = begin;
+    let root = held.root().to_path_buf();
+    // The one read of the copy the consent was taken from: laid out and recorded as is.
+    let (Some(copy), Some(request)) = (planned.copy, planned.request) else {
+        return Err(format!(
+            "{skill} has no trigger tests to grade, so nothing was started."
+        ));
+    };
+    let On {
+        profile,
+        checked,
+        priced,
+        model,
+        ..
+    } = chats_on(&root, profile, model);
+    checked?;
+    let profile = profile.ok_or("The grade did not start: no profile was found.")?;
+    let id = purlis_core::reopen::mint();
+    let stop = Arc::new(AtomicBool::new(false));
     {
-        let root = held.root().to_path_buf();
-        // The one read of the copy the consent was taken from: laid out and recorded as is.
-        let (Some(copy), Some(request)) = (planned.copy, planned.request) else {
-            return Err(format!(
-                "{skill} has no trigger tests to grade, so nothing was started."
-            ));
-        };
-        let On {
-            profile,
-            checked,
-            priced,
-            model,
-            ..
-        } = chats_on(&root, profile, model);
-        checked?;
-        let profile = profile.ok_or("The grade did not start: no profile was found.")?;
-        let id = purlis_core::reopen::mint();
-        let stop = Arc::new(AtomicBool::new(false));
-        {
-            let mut all = running();
-            if all.values().any(|one| one.plane == plane) {
-                return Err(
-                    "A grade is running in this project already: stop it, or wait for it to \
-                     end."
-                        .to_owned(),
-                );
-            }
-            all.insert(
-                id.clone(),
-                Running {
-                    plane: plane.clone(),
-                    skill: skill.clone(),
-                    stop: Arc::clone(&stop),
-                    after_edit,
-                },
+        let mut all = running();
+        if all.values().any(|one| one.plane == plane) {
+            return Err(
+                "A grade is running in this project already: stop it, or wait for it to \
+                 end."
+                    .to_owned(),
             );
         }
-        let of = grading::plan(&request).chats;
-        // The cap the plan showed, read again as the grade starts: the one it is held to.
-        let cap = planned.cap.tokens;
-        let limits = grading::Limits {
-            tokens: cap,
-            cost_usd: Some(planned.cap.cost_usd(&priced)),
-            priced: Some(priced),
-            unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
-        };
-        let grade = id.clone();
-        // Held as under way while it runs (#3353): a crash, a fault or a quit before it ends
-        // leaves it to the project's next start to record as interrupted.
-        let under_way = Graded {
-            v: grades::VERSION,
-            grade: grade.clone(),
-            skill: skill.clone(),
-            level: grades::recorded_level(&level),
-            tree: copy.content.word().to_owned(),
-            commit: copy.commit.clone(),
-            harness: None,
-            profile: Some(profile.clone()),
-            ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
-            runs: request.runs,
-            spent: Spent::default(),
-            report: grades::underway::interrupted_report(
-                cap,
-                limits.cost_usd,
-                limits.priced.clone(),
-            ),
-            plugins_off: None,
-            model: None,
-            previous: copy
-                .previous
-                .as_ref()
-                .map(|previous| previous.commit.clone()),
-            after_edit,
-        };
-        // Its lock is held while the grade runs (#3466): what tells a start it runs.
-        let marker = match grades::underway::began(&root, &level, &under_way) {
-            Ok(marker) => Some(marker),
-            Err(why) => {
-                tracing::warn!(
-                    "purlis: grade {grade} is not held as under way ({why}): a crash before it \
-                     ends loses it"
-                );
-                None
-            }
-        };
-        let held_at = root.clone();
-        std::thread::Builder::new()
-            .name("purlis-grade".to_owned())
-            .spawn(move || {
-                let marker = std::cell::RefCell::new(marker);
-                let tell = |ran: u32,
-                            tokens: Option<u64>,
-                            asked: u32,
-                            ended: Option<GradeEnded>,
-                            said: Option<String>| {
-                    let _ = app.emit(
-                        EVENT,
-                        SkillGradeStep {
-                            plane: plane.clone(),
-                            skill: skill.clone(),
-                            grade: grade.clone(),
-                            ran,
-                            of,
-                            tokens: tokens.map(|tokens| tokens as f64),
-                            cap: cap as f64,
-                            asked,
-                            ended,
-                            said,
-                        },
-                    );
-                };
-                tell(0, None, 0, None, None);
-                let run = || {
-                    let mut chats = InChats {
-                        held: &held,
-                        snapshot: &copy.snapshot,
-                        previous: copy.previous.as_ref().map(|previous| &previous.snapshot),
-                        cost_left: limits.cost_usd,
-                        unpriced_at: limits.unpriced_usd_per_million,
-                        skill: &skill,
-                        profile: &profile,
-                        stop: &stop,
-                        spent: Spent::default(),
-                        tell: &|ran, tokens, asked| tell(ran, tokens, asked, None, None),
-                        grade: &grade,
-                        asked: 0,
-                        harness: None,
-                        plugins_off: None,
-                        model: model.as_deref(),
-                        reported: Vec::new(),
-                    };
-                    let report = grading::grade(&request, &mut chats, Some(limits.clone()));
-                    let harness = chats.harness.take();
-                    let plugins_off = chats.plugins_off.take();
-                    let reported = grades::reported_model(chats.reported.iter().map(String::as_str));
-                    let spent = chats.spent;
-                    let graded = Graded {
-                        harness,
-                        plugins_off,
-                        model: reported,
-                        ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
-                        spent,
-                        report,
-                        ..under_way.clone()
-                    };
-                    let recorded = grades::record(
-                        &root,
-                        &level,
-                        &graded,
-                        &purlis_core::machine::this_log_name(),
-                    );
-                    grades::underway::ended(&root, &grade);
-                    // The chats of the skill's older grades go: its newest keep theirs (SK-59).
-                    grades::kept::sweep(&root, &skill);
-                    drop(marker.borrow_mut().take());
-                    running().remove(&grade);
-                    let said = match (&graded.report.not_started, recorded) {
-                        (Some(why), _) => Some(why.clone()),
-                        (None, Some(_)) if graded.report.ended == GradeEnd::SpendNotReported => Some(
-                            "This profile's chats do not say what they spend, so a grade on it cannot \
-                             be held to its cap."
-                                .to_owned(),
-                        ),
-                        (None, None) => Some(
-                            "The grade ran, but this project could not be written, so it was not \
-                             recorded."
-                                .to_owned(),
-                        ),
-                        (None, Some(_)) => None,
-                    };
-                    tell(
-                        graded.spent.chats,
-                        graded.report.spent_tokens,
-                        graded.report.asked(),
-                        Some(graded.report.ended.into()),
-                        said,
-                    );
-                };
-                held_to_its_end(&grade, run, || {
-                    // Recorded as interrupted, unless the fault came once it was recorded whole.
-                    // Its lock let go of first: a start reads a held lock as a grade that runs.
-                    drop(marker.borrow_mut().take());
-                    let said = if record_interrupted(&root).contains(&grade) {
-                        FAILED
-                    } else {
-                        FAILED_ONCE_RECORDED
-                    };
-                    tell(0, None, 0, Some(GradeEnded::Failed), Some(said.to_owned()));
-                });
-            })
-            .map_err(|why| {
-                running().remove(&id);
-                grades::underway::ended(&held_at, &id);
-                format!("The grade could not start ({why}).")
-            })?;
-        Ok(id)
+        all.insert(
+            id.clone(),
+            Running {
+                plane: plane.clone(),
+                skill: skill.clone(),
+                stop: Arc::clone(&stop),
+                after_edit: after_edit
+                    .then(|| grades::after_edit::key(&level, &skill))
+                    .flatten(),
+            },
+        );
     }
+    let of = grading::plan(&request).chats;
+    // The cap the plan showed, read again as the grade starts: the one it is held to.
+    let cap = planned.cap.tokens;
+    let limits = grading::Limits {
+        tokens: cap,
+        cost_usd: Some(planned.cap.cost_usd(&priced)),
+        priced: Some(priced),
+        unpriced_usd_per_million: Some(grades::price::DEAREST_USD_PER_MILLION),
+    };
+    let grade = id.clone();
+    // Held as under way while it runs (#3353): a crash, a fault or a quit before it ends
+    // leaves it to the project's next start to record as interrupted.
+    let under_way = Graded {
+        v: grades::VERSION,
+        grade: grade.clone(),
+        skill: skill.clone(),
+        level: grades::recorded_level(&level),
+        tree: copy.content.word().to_owned(),
+        commit: copy.commit.clone(),
+        harness: None,
+        profile: Some(profile.clone()),
+        ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
+        runs: request.runs,
+        spent: Spent::default(),
+        report: grades::underway::interrupted_report(cap, limits.cost_usd, limits.priced.clone()),
+        plugins_off: None,
+        model: None,
+        previous: copy
+            .previous
+            .as_ref()
+            .map(|previous| previous.commit.clone()),
+        after_edit,
+    };
+    // Its lock is held while the grade runs (#3466): what tells a start it runs.
+    let marker = match grades::underway::began(&root, &level, &under_way) {
+        Ok(marker) => Some(marker),
+        Err(why) => {
+            tracing::warn!(
+                "purlis: grade {grade} is not held as under way ({why}): a crash before it \
+                 ends loses it"
+            );
+            None
+        }
+    };
+    let held_at = root.clone();
+    std::thread::Builder::new()
+        .name("purlis-grade".to_owned())
+        .spawn(move || {
+            let marker = std::cell::RefCell::new(marker);
+            let tell = |ran: u32,
+                        tokens: Option<u64>,
+                        asked: u32,
+                        ended: Option<GradeEnded>,
+                        said: Option<String>| {
+                let _ = app.emit(
+                    EVENT,
+                    SkillGradeStep {
+                        plane: plane.clone(),
+                        skill: skill.clone(),
+                        grade: grade.clone(),
+                        ran,
+                        of,
+                        tokens: tokens.map(|tokens| tokens as f64),
+                        cap: cap as f64,
+                        asked,
+                        ended,
+                        said,
+                    },
+                );
+            };
+            tell(0, None, 0, None, None);
+            let run = || {
+                let mut chats = InChats {
+                    held: &held,
+                    snapshot: &copy.snapshot,
+                    previous: copy.previous.as_ref().map(|previous| &previous.snapshot),
+                    cost_left: limits.cost_usd,
+                    unpriced_at: limits.unpriced_usd_per_million,
+                    skill: &skill,
+                    profile: &profile,
+                    stop: &stop,
+                    spent: Spent::default(),
+                    tell: &|ran, tokens, asked| tell(ran, tokens, asked, None, None),
+                    grade: &grade,
+                    asked: 0,
+                    harness: None,
+                    plugins_off: None,
+                    model: model.as_deref(),
+                    reported: Vec::new(),
+                };
+                let report = grading::grade(&request, &mut chats, Some(limits.clone()));
+                let harness = chats.harness.take();
+                let plugins_off = chats.plugins_off.take();
+                let reported = grades::reported_model(chats.reported.iter().map(String::as_str));
+                let spent = chats.spent;
+                let graded = Graded {
+                    harness,
+                    plugins_off,
+                    model: reported,
+                    ts: purlis_core::dispatch::stamp(chrono::Utc::now()),
+                    spent,
+                    report,
+                    ..under_way.clone()
+                };
+                let recorded = grades::record(
+                    &root,
+                    &level,
+                    &graded,
+                    &purlis_core::machine::this_log_name(),
+                );
+                grades::underway::ended(&root, &grade);
+                // The chats of the skill's older grades go: its newest keep theirs (SK-59).
+                grades::kept::sweep(&root, &skill);
+                drop(marker.borrow_mut().take());
+                running().remove(&grade);
+                let said = match (&graded.report.not_started, recorded) {
+                    (Some(why), _) => Some(why.clone()),
+                    (None, Some(_)) if graded.report.ended == GradeEnd::SpendNotReported => Some(
+                        "This profile's chats do not say what they spend, so a grade on it cannot \
+                         be held to its cap."
+                            .to_owned(),
+                    ),
+                    (None, None) => Some(
+                        "The grade ran, but this project could not be written, so it was not \
+                         recorded."
+                            .to_owned(),
+                    ),
+                    (None, Some(_)) => None,
+                };
+                tell(
+                    graded.spent.chats,
+                    graded.report.spent_tokens,
+                    graded.report.asked(),
+                    Some(graded.report.ended.into()),
+                    said,
+                );
+            };
+            held_to_its_end(&grade, run, || {
+                // Recorded as interrupted, unless the fault came once it was recorded whole.
+                // Its lock let go of first: a start reads a held lock as a grade that runs.
+                drop(marker.borrow_mut().take());
+                let said = if record_interrupted(&root).contains(&grade) {
+                    FAILED
+                } else {
+                    FAILED_ONCE_RECORDED
+                };
+                tell(0, None, 0, Some(GradeEnded::Failed), Some(said.to_owned()));
+            });
+        })
+        .map_err(|why| {
+            running().remove(&id);
+            grades::underway::ended(&held_at, &id);
+            format!("The grade could not start ({why}).")
+        })?;
+    Ok(id)
 }
 
 /// **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
@@ -928,9 +925,7 @@ impl GradeScorecard {
             ended: grades::ended_said(graded.report.ended).to_owned(),
             delta: graded.report.delta.map(|delta| (delta * 100.0).round()),
             against: graded
-                .previous
-                .as_deref()
-                .filter(|_| graded.report.arm(Arm::Previous).is_some())
+                .compared_with()
                 .map(|commit| purlis_core::skills::history::short(commit).to_owned()),
             delta_without: graded
                 .previous

@@ -7296,7 +7296,9 @@ rewritten.
   folder and its name (`skills/deploy`, `workspaces/ops/skills/deploy`), holding what they
   accepted on the plan they turned it on from: `profile` and `model` (null for the profile's own)
   the grades' chats run on; `chats`, the chats a grade ran then; `token_cap` and `limit_usd`, the
-  cap and the dollar limit it was held to; `at`, when it was turned on; `graded`, the consent
+  cap and the dollar limit it was held to (at most the largest cap at 1,000 dollars a million);
+  `tests`, the SHA-256 of the trigger tests it ran; `previous`, the commit it compared with
+  (absent for none); `at`, when it was turned on; `graded`, the consent
   digest of the copy an edit last graded (absent before the first), so a save that changed nothing
   since grades nothing; and `paused`, the sentence why it waits for the person (absent while it
   does not). Written `0600`, whole or not at all, through no link, by the window alone: turning it
@@ -7304,11 +7306,13 @@ rewritten.
   grade after an edit (`grades::after_edit`). Read at each save of the skill in the Skill studio's
   editor: a saved edit, once ten seconds pass with no other save of the skill, grades it on that
   profile and model, held to the cap and dollar limit of a grade pressed by hand, only while a
-  grade of it runs no more chats and may spend no more than was accepted; a grade that would
+  grade of it runs no more chats, may spend no more, and runs the same trigger tests against the
+  same version as was accepted; a grade that would not
   waits (`paused`), starts nothing, and the opt-in is turned on again from a plan that shows the
   cost. A second save while such a grade runs stops it, and the next starts after it. Nothing
   grades on a timer, and a save from the command line or a chat's change grades nothing. A file
-  that is a link, past 256 KiB, of another `v`, or holding more than 512 copies reads as off, and
+  that is a link, past 256 KiB, of another `v`, or holding more than 512 copies reads as off (each change holds the `flock` of
+  `skill-grade-after-edit.lock` beside it), and
   so does a copy whose entry does not hold together (a name that is no plain name, no chats, a cap
   out of its bounds, a limit that is no positive amount).
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.

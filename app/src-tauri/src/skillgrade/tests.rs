@@ -166,7 +166,7 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
                 plane: plane.clone(),
                 skill: "deploy".into(),
                 stop: Arc::new(AtomicBool::new(false)),
-                after_edit: false,
+                after_edit: None,
             },
         );
         let failed = std::cell::Cell::new(false);

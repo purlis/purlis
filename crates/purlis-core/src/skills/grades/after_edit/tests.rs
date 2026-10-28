@@ -13,6 +13,8 @@ fn accepted() -> Accepted {
         chats: 12,
         token_cap: 200_000,
         limit_usd: 3.0,
+        tests: TESTS.into(),
+        previous: None,
         at: "2026-10-28T10:00:00+00:00".into(),
         graded: None,
         paused: None,
@@ -20,13 +22,16 @@ fn accepted() -> Accepted {
 }
 
 const CONSENT: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const TESTS: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
 
-fn now(chats: u32, token_cap: u64, limit_usd: f64) -> Now<'static> {
+fn now(chats: u32, token_cap: u64, limit_usd: f64) -> Now {
     Now {
         chats,
         token_cap,
         limit_usd,
-        consent: CONSENT,
+        tests: TESTS.into(),
+        previous: None,
+        consent: CONSENT.into(),
     }
 }
 
@@ -154,4 +159,31 @@ fn what_an_edit_graded_and_why_it_waits_are_kept() {
     // An update of a copy that is off turns nothing on.
     update(root, &Level::project(), "ship", |one| one.paused = None).unwrap();
     assert_eq!(of(root, &Level::project(), "ship"), None);
+}
+
+#[test]
+fn other_trigger_tests_or_another_version_compared_with_wait_for_the_person() {
+    // The review of #3238: a chat can write a fixture or make a commit; neither runs unseen.
+    let tests = Now {
+        tests: CONSENT.into(),
+        ..now(12, 200_000, 3.0)
+    };
+    assert!(matches!(next(&accepted(), &tests), Next::Waits(why) if why.contains("trigger tests")));
+    let version = Now {
+        previous: Some("a".repeat(40)),
+        ..now(12, 200_000, 3.0)
+    };
+    assert!(
+        matches!(next(&accepted(), &version), Next::Waits(why) if why.contains("compares with"))
+    );
+}
+
+#[test]
+fn a_limit_past_any_grades_is_not_kept() {
+    let project = project();
+    let wild = Accepted {
+        limit_usd: 1.0e9,
+        ..accepted()
+    };
+    assert!(turn_on(project.path(), &Level::project(), "deploy", wild).is_err());
 }

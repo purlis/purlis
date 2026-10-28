@@ -147,6 +147,14 @@ pub struct Graded {
 }
 
 impl Graded {
+    /// **The version it was compared with, where it compared one** (SK-57): its commit, from a
+    /// row whose report has the `previous` arm.
+    pub fn compared_with(&self) -> Option<&str> {
+        self.previous
+            .as_deref()
+            .filter(|_| self.report.arm(Arm::Previous).is_some())
+    }
+
     /// What its copy's folder held.
     pub fn content(&self) -> Option<Content> {
         Content::parse(&self.tree)

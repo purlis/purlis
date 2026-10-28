@@ -437,11 +437,7 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
         .map(|graded| {
             let (passed, of) = graded.report.passed_with();
             // The version it compared with, where it compared one (SK-57).
-            let previous = graded
-                .previous
-                .as_deref()
-                .filter(|_| graded.report.arm(Arm::Previous).is_some())
-                .map(super::history::short);
+            let previous = graded.compared_with().map(super::history::short);
             TableRow {
                 key: graded.grade.clone(),
                 cells: vec![

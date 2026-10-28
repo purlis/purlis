@@ -53,6 +53,12 @@ pub struct Accepted {
     pub chats: u32,
     pub token_cap: u64,
     pub limit_usd: f64,
+    /// **The trigger tests the plan ran, by digest, and the version it compared with** (the
+    /// review of #3238): a grade after an edit runs only these tests against only this version,
+    /// so a test or a commit a chat could add changes nothing the person did not see.
+    pub tests: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous: Option<String>,
     /// When it was turned on.
     pub at: String,
     /// What the copy held when an edit last graded it, by its plan's consent: a save that
@@ -74,6 +80,13 @@ impl Accepted {
             && (cap::LEAST..=cap::MOST).contains(&self.token_cap)
             && self.limit_usd.is_finite()
             && self.limit_usd > 0.0
+            // No more than the largest cap at the dearest price a row may name.
+            && self.limit_usd
+                <= cap::MOST as f64 * super::price::MOST_READ_USD_PER_MILLION / 1_000_000.0
+            && hex64(&self.tests)
+            && self.previous.as_deref().is_none_or(|commit| {
+                matches!(commit.len(), 40 | 64) && commit.bytes().all(|b| b.is_ascii_hexdigit())
+            })
             && self
                 .graded
                 .as_deref()
@@ -83,6 +96,20 @@ impl Accepted {
                 .as_deref()
                 .is_none_or(|why| why.len() <= 1024 && !why.chars().any(char::is_control))
     }
+}
+
+/// Whether `word` is a SHA-256 digest in hex.
+fn hex64(word: &str) -> bool {
+    word.len() == 64 && word.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// **The digest of a grade's trigger tests**, as an opt-in pins them.
+pub fn tests_of(request: &purlis_skills::grade::GradeRequest) -> String {
+    use sha2::Digest as _;
+    sha2::Sha256::digest(serde_json::to_vec(&request.triggers).unwrap_or_default())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// The file, as it is written.
@@ -151,6 +178,32 @@ fn write(root: &Path, kept: &Kept) -> Result<(), String> {
         .map_err(|why| not_kept(&why.to_string()))
 }
 
+/// The lock file beside [`FILE`] whose `flock` each change holds while it reads, changes and
+/// writes the file: two changes at once (a grade after an edit keeping what it graded while the
+/// person turns the opt-in off) take turns, so neither writes back what the other took away.
+const LOCK: &str = "skill-grade-after-edit.lock";
+
+/// How long a change waits for another to let go of [`LOCK`].
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Takes [`LOCK`] for one change of the file of the project at `root`.
+fn held(root: &Path) -> Result<crate::filelock::Held, String> {
+    let dir = crate::plane::state_dir(root);
+    std::fs::create_dir_all(&dir).map_err(|why| not_kept(&why.to_string()))?;
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let file = crate::contain::nofollow(&mut options)
+        .open(dir.join(LOCK))
+        .map_err(|why| not_kept(&why.to_string()))?;
+    crate::filelock::lock_within(file, LOCK_WAIT, "grading after each edit")
+        .map_err(|why| not_kept(&why.to_string()))
+}
+
 /// What a write that failed says.
 fn not_kept(why: &str) -> String {
     format!(
@@ -178,6 +231,7 @@ pub fn turn_on(root: &Path, level: &Level, name: &str, accepted: Accepted) -> Re
              edit was not turned on."
         ));
     }
+    let _held = held(root)?;
     let mut kept = read(root);
     if !kept.skills.contains_key(&key) && kept.skills.len() >= MOST_SKILLS {
         return Err(format!(
@@ -196,6 +250,7 @@ pub fn turn_off(root: &Path, level: &Level, name: &str) -> Result<(), String> {
     let Some(key) = key(level, name) else {
         return Ok(());
     };
+    let _held = held(root)?;
     let mut kept = read(root);
     if kept.skills.remove(&key).is_none() {
         return Ok(());
@@ -215,6 +270,7 @@ pub fn update(
     let Some(key) = key(level, name) else {
         return Ok(());
     };
+    let _held = held(root)?;
     let mut kept = read(root);
     let Some(accepted) = kept.skills.get_mut(&key) else {
         return Ok(());
@@ -225,13 +281,32 @@ pub fn update(
 }
 
 /// **What a grade after an edit would run now**: the chats of the copy's plan, the cap and the
-/// dollar limit it would be held to, and its consent, the digest of what it would grade.
+/// dollar limit it would be held to, its trigger tests and the version it compares with, and its
+/// consent, the digest of what it would grade.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Now<'a> {
+pub struct Now {
     pub chats: u32,
     pub token_cap: u64,
     pub limit_usd: f64,
-    pub consent: &'a str,
+    pub tests: String,
+    pub previous: Option<String>,
+    pub consent: String,
+}
+
+impl Now {
+    /// What a grade of `planned` would run, held to `limit_usd` (the plan's cap at the price of
+    /// the model its chats run on): `None` where it has nothing to grade.
+    pub fn of(planned: &super::Planned, limit_usd: f64) -> Option<Now> {
+        let request = planned.request.as_ref()?;
+        Some(Now {
+            chats: planned.plan?.chats,
+            token_cap: planned.cap.tokens,
+            limit_usd,
+            tests: tests_of(request),
+            previous: planned.previous.as_ref().map(|one| one.commit.clone()),
+            consent: planned.consent.clone()?,
+        })
+    }
 }
 
 /// What a saved edit does under an opt-in.
@@ -250,12 +325,27 @@ pub enum Next {
 /// only while the grade runs no more chats, and is held to no larger a cap or dollar limit,
 /// than the person accepted; never twice for the same copy; and not while the opt-in waits for
 /// the person.
-pub fn next(accepted: &Accepted, now: &Now<'_>) -> Next {
+pub fn next(accepted: &Accepted, now: &Now) -> Next {
     if let Some(why) = &accepted.paused {
         return Next::Waits(why.clone());
     }
-    if accepted.graded.as_deref() == Some(now.consent) {
+    if accepted.graded.as_deref() == Some(now.consent.as_str()) {
         return Next::Same;
+    }
+    if now.tests != accepted.tests {
+        return Next::Waits(
+            "Its trigger tests changed since you turned grading after each edit on, so no grade \
+             was started after your edit: see the plan again and turn it on again."
+                .to_owned(),
+        );
+    }
+    if now.previous != accepted.previous {
+        return Next::Waits(
+            "The version a grade of it compares with changed since you turned grading after each \
+             edit on, so no grade was started after your edit: see the plan again and turn it on \
+             again."
+                .to_owned(),
+        );
     }
     if now.chats > accepted.chats {
         return Next::Waits(format!(
