@@ -1,0 +1,44 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# Which of CI's scopes this change needs (#3505): `tools/ci-scope.mjs` reads the change against
+# the commit it is measured by (`change-base`) and says, for each scope, `true` or `false`. A pull
+# request is scoped; any other event runs every scope.
+#
+# The job's checkout must have `fetch-depth: 2`. The runner's own Node runs the script: it reads
+# git and files, and needs no package.
+name: Change scope
+description: Says which of CI's scopes (rust, web, app, scenario, stories, tools, docs) a change needs.
+outputs:
+  rust:
+    description: The Rust suite, fmt and clippy, licences and advisories, the recorded behaviour.
+    value: ${{ steps.scope.outputs.rust }}
+  web:
+    description: The type check, lint, format check, npm licences and vitest.
+    value: ${{ steps.scope.outputs.web }}
+  app:
+    description: The app built as it ships, and the Linux cold start.
+    value: ${{ steps.scope.outputs.app }}
+  scenario:
+    description: The scenario specs on macOS and Linux.
+    value: ${{ steps.scope.outputs.scenario }}
+  stories:
+    description: Every component story (`stories.yml`).
+    value: ${{ steps.scope.outputs.stories }}
+  tools:
+    description: The tools' own tests.
+    value: ${{ steps.scope.outputs.tools }}
+  docs:
+    description: The docs site.
+    value: ${{ steps.scope.outputs.docs }}
+runs:
+  using: composite
+  steps:
+    - id: base
+      uses: ./.github/actions/change-base
+    - id: scope
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+        BASE: ${{ steps.base.outputs.sha }}
+      run: node tools/ci-scope.mjs "$EVENT" "$BASE"
