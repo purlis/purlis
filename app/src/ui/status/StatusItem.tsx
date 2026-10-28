@@ -161,7 +161,7 @@ export function StatusItem(props: StatusItemProps) {
         ref={ref}
         className={className}
         {...root({ variant, tone, strong, shrinks })}
-        render={renderPressed(native, tip, own, discloses(rest))}
+        render={renderPressed(native, tip, own, { disclosure: discloses(rest) })}
       >
         {parts({ icon, count, children }, false)}
       </AriaButton>

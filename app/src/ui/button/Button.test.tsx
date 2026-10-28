@@ -441,7 +441,7 @@ describe("a button made unavailable by hand, with aria-disabled (#3522)", () => 
     expect(allow).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("submits no form, and is a submit button again once it is available", async () => {
+  it("submits no form by a click, and stays its submit button", async () => {
     const submitted = vi.fn((event: Event) => event.preventDefault());
     const form = (off: boolean) => (
       <form onSubmit={(event) => submitted(event.nativeEvent)}>
@@ -451,12 +451,46 @@ describe("a button made unavailable by hand, with aria-disabled (#3522)", () => 
       </form>
     );
     const { rerender } = render(form(true));
+    // Still the form's submit button (#3636): its click, not its type, is refused.
+    expect(screen.getByRole("button", { name: "Go" })).toHaveAttribute("type", "submit");
     await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go" }), { detail: 0 });
     expect(submitted).not.toHaveBeenCalled();
     rerender(form(false));
     expect(screen.getByRole("button", { name: "Go" })).toHaveAttribute("type", "submit");
     await userEvent.click(screen.getByRole("button", { name: "Go" }));
     expect(submitted).toHaveBeenCalledTimes(1);
+  });
+
+  // #3636: an Inbox answer while busy, in its roving group, still moves on the arrows.
+  for (const [way, off] of [
+    ["by hand", { "aria-disabled": true }],
+    ["with a reason", { isDisabled: true, tooltip: "Answering…" }],
+  ] as const)
+    it(`hands every key but Enter and Space to its own handler, unavailable ${way}`, async () => {
+      const keys = vi.fn();
+      const pressed = vi.fn();
+      render(
+        <Button {...off} onKeyDown={(event) => keys(event.key)} onPress={pressed}>
+          Allow
+        </Button>,
+      );
+      screen.getByRole("button", { name: "Allow" }).focus();
+      await userEvent.keyboard("{ArrowRight}{ArrowLeft}{Enter} ");
+      expect(keys.mock.calls.map(([key]) => key)).toEqual(["ArrowRight", "ArrowLeft"]);
+      expect(pressed).not.toHaveBeenCalled();
+    });
+
+  it("hands a trigger's keys to nothing while it is unavailable: its arrows would open it", async () => {
+    const keys = vi.fn();
+    render(
+      <Button aria-disabled aria-haspopup="menu" aria-expanded={false} onKeyDown={keys}>
+        More
+      </Button>,
+    );
+    screen.getByRole("button", { name: "More" }).focus();
+    await userEvent.keyboard("{ArrowDown}{Enter}");
+    expect(keys).not.toHaveBeenCalled();
   });
 
   it("flips no toggle", async () => {
@@ -667,6 +701,56 @@ describe("a trigger whose menu or popover is open (#3524)", () => {
     expect(drawnWith(crumb, "background")).toBe("transparent");
     expect(drawnWith(crumb, "text-decoration")).toBe("underline");
     expect(drawnWith(crumb, "color")).toBe("var(--text-primary)");
+  });
+
+  it("is a disclosure when it says it opens no popup", () => {
+    render(
+      <Button aria-haspopup="false" aria-expanded>
+        Details
+      </Button>,
+    );
+    expect(screen.getByRole("button", { name: "Details" })).not.toHaveAttribute("data-open");
+  });
+
+  it("is never marked open as a status item, which has no open state", async () => {
+    render(
+      <MenuTrigger>
+        <StatusItem>main</StatusItem>
+        <Menu aria-label="Branches">
+          <MenuItem id="main" textValue="main">
+            <MenuWords said="main" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>,
+    );
+    const item = screen.getByRole("button", { name: "main" });
+    await userEvent.click(item);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(item).toHaveAttribute("aria-expanded", "true");
+    expect(item).not.toHaveAttribute("data-open");
+  });
+
+  it("keeps a data-open a wrapper hands it", () => {
+    render(<Button data-open="">Held</Button>);
+    expect(screen.getByRole("button", { name: "Held" })).toHaveAttribute("data-open", "");
+  });
+
+  it("is drawn as a toggle that is on under the pointer when it is on and open", () => {
+    render(
+      <>
+        <ToggleButton isSelected aria-haspopup="menu" aria-expanded>
+          Open on
+        </ToggleButton>
+        <ToggleButton isSelected>Rest on</ToggleButton>
+      </>,
+    );
+    const open = screen.getByRole("button", { name: "Open on" });
+    expect(open).toHaveAttribute("data-open", "");
+    expect(drawnWith(open, "background")).toBe("var(--tab-active)");
+    expect(drawnWith(open, "background")).toBe(
+      drawnWith(screen.getByRole("button", { name: "Rest on" }), "background", { hover: true }),
+    );
+    expect(drawnWith(open, "border-color")).toBe("var(--accent-base)");
   });
 
   it("is never drawn open while unavailable", () => {

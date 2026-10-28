@@ -38,7 +38,9 @@
  * - **Open** (#3524): a trigger whose menu or popover is open is drawn as it is under the
  *   pointer (`data-open`, a theme's `button.root.open`), whether the trigger hands it its
  *   `aria-expanded` or the call writes it beside its `aria-haspopup`. A disclosure's own
- *   `aria-expanded` (its region is out, nothing opens over the window) is not drawn open.
+ *   `aria-expanded` (its region is out, nothing opens over the window) is not drawn open. A
+ *   theme that sets only `button.root.hover` does not carry it to open: open keeps the family's
+ *   default, the hover tokens, until the theme names `button.root.open` too.
  * - **The key that presses it** (R33, #3377): `shortcut` draws the key after its words, in the
  *   `shortcut` part, a `kbd` small and mono. It is drawn by the stylesheet from its `data-key`
  *   and hidden from a screen reader, so the button's name and words stay its words alone; the
@@ -289,7 +291,7 @@ function useDrawn(
     "data-icon-only": iconOnly ? "" : undefined,
     "data-inline": inline ? "" : undefined,
     // #190, #1700, #2908: `ui/pressable.tsx`.
-    render: renderPressed(native, tip, own, discloses(rest)),
+    render: renderPressed(native, tip, own, { disclosure: discloses(rest), drawsOpen: true }),
     children: content,
   };
   return { drawn, surface: tip.surface, reason: tip.reason };

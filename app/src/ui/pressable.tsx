@@ -19,11 +19,16 @@
  *   disabled, never as under the pointer or pressed, and runs no press (#3522); every one is in
  *   WebKit's tab sequence (#190).
  */
-import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from "react";
+import type {
+  ButtonHTMLAttributes,
+  ComponentPropsWithRef,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+} from "react";
 import type { KeyboardEvent } from "react-aria-components";
 import { useId } from "react-aria";
 import { says, TooltipDetail, TooltipSurface, type Tip } from "./tooltip/Tooltip";
-import { refused, unavailable } from "./unavailable";
+import { refused, refusePressKeys, unavailable } from "./unavailable";
 
 /** The native attributes a pressable passes to its element as they are. */
 export type Native = Pick<
@@ -122,7 +127,8 @@ export function usePressTip(
  * native `disabled`, out of the tab sequence) but said unavailable (`aria-disabled`). Every
  * handler but the focus's and the pointer's is dropped as the element is drawn
  * ({@link renderPressed}), the call's own and a trigger's alike; here the call's are dropped too,
- * so React Aria is handed no press to hold.
+ * so React Aria is handed no press to hold. Its key handler stays: the element hands it every key
+ * but Enter and Space, unless it is a trigger (#3636).
  */
 export function pressable(props: Record<string, unknown>, tip?: PressTip) {
   const native: Record<string, unknown> = {};
@@ -135,7 +141,8 @@ export function pressable(props: Record<string, unknown>, tip?: PressTip) {
     aria = {
       ...Object.fromEntries(
         Object.entries(aria).filter(
-          ([key]) => !refused(key) && key !== "isDisabled" && key !== "disabled",
+          ([key]) =>
+            (key === "onKeyDown" || !refused(key)) && key !== "isDisabled" && key !== "disabled",
         ),
       ),
       "aria-disabled": true,
@@ -166,21 +173,25 @@ export function discloses(props: Record<string, unknown>): boolean {
 }
 
 /**
- * React Aria's `render` for a pressable: its `<button>`, with `native` handed on. `disclosure`:
- * the call's own `aria-expanded` is a disclosure's ({@link discloses}), never drawn open.
+ * React Aria's `render` for a pressable: its `<button>`, with `native` handed on.
+ * - `disclosure`: the call's own `aria-expanded` is a disclosure's ({@link discloses}): it is not
+ *   a trigger, so it is never drawn open and its keys are not refused as a trigger's.
+ * - `drawsOpen`: the family draws a trigger whose menu or popover is open (`data-open`, the
+ *   button family's `button.root.open`, #3524). The status item has no open state, so it says
+ *   nothing and is never marked open.
  */
 export function renderPressed(
   native: Record<string, unknown>,
   tip?: PressTip,
   own?: string,
-  disclosure = false,
+  { disclosure = false, drawsOpen = false }: { disclosure?: boolean; drawsOpen?: boolean } = {},
 ) {
   return (domProps: ComponentPropsWithRef<"button">) => {
     const off = String(domProps["aria-disabled"]) === "true";
     // **Open** (#3524): the menu or the popover it is the trigger of is open, which React Aria
     // says only as `aria-expanded`; the family draws it from `data-open`, as a theme's
-    // `<family>.root.open` reaches it. Never while it is unavailable.
-    const open = !off && !disclosure && String(domProps["aria-expanded"]) === "true";
+    // `button.root.open` reaches it. Never while it is unavailable.
+    const open = drawsOpen && !off && !disclosure && String(domProps["aria-expanded"]) === "true";
     const {
       "data-hovered": hovered,
       "data-pressed": pressed,
@@ -203,9 +214,28 @@ export function renderPressed(
     // a hint or by hand with `aria-disabled`: React Aria's press, and a menu's or a popover's
     // trigger around it (`PressResponder`), reach the element as handlers the call never wrote.
     // So the element itself keeps only the focus's and the pointer's (the tooltip's), as a raw
-    // unavailable button does (`ui/unavailable.ts`): it runs no press, submits no form and opens
-    // nothing.
-    const element = off ? unavailable(rest) : rest;
+    // unavailable button does (`ui/unavailable.ts`): it runs no press, its click submits no form
+    // (it stays its form's submit button, so ⌘⏎ finds it unavailable) and it opens nothing.
+    //
+    // **A key that presses nothing still goes to it** (#3636), unless it is a trigger: an arrow
+    // moves through the roving group it stands in (an Inbox answer while busy), and only Enter
+    // and Space are refused. A trigger refuses every handed key, since its arrows open its menu.
+    const popup = rest["aria-haspopup"];
+    const triggers =
+      (popup !== undefined && popup !== false && popup !== "false") ||
+      (rest["aria-expanded"] !== undefined && !disclosure);
+    const keys = rest.onKeyDown;
+    const element = !off
+      ? rest
+      : triggers || keys === undefined
+        ? unavailable(rest)
+        : {
+            ...unavailable(rest),
+            onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+              if (event.key === "Enter" || event.key === " ") refusePressKeys(event);
+              else keys(event);
+            },
+          };
     return (
       <button
         {...element}
@@ -213,7 +243,8 @@ export function renderPressed(
         data-hovered={off ? undefined : (hovered as string | undefined)}
         data-pressed={off ? undefined : (pressed as string | undefined)}
         data-disabled={off ? "true" : (rest["data-disabled"] as string | undefined)}
-        data-open={open ? "" : undefined}
+        // A `data-open` a wrapper hands it (a context menu's, while it is open) is kept.
+        data-open={open ? "" : (rest["data-open"] as string | undefined)}
         tabIndex={domProps.tabIndex ?? 0}
         {...native}
       />
