@@ -624,12 +624,16 @@ pub fn tidy_later(sets: PathBuf, wait: std::time::Duration) {
 /// **A host's event log that also tidies the sets' folders after each program ends** (SK-24
 /// follow-up, #2879): what `purlis serve` keeps its programs' ends with. A host with no window
 /// has no chat close to tidy after, so it tidies [`TIDY_AFTER_A_CLOSE`] after each end its host
-/// hears, as the window does after a chat closes. Everything else is `record`'s own.
+/// hears, as the window does after a chat closes, the ends a host that crashed left included.
+/// Ends that come together share one tidy: while one waits to run, another end asks for none.
+/// Everything else is `record`'s own.
 #[cfg(unix)]
 pub struct TidiesAfterEachEnd<R> {
     record: R,
     sets: Option<PathBuf>,
     wait: std::time::Duration,
+    /// A tidy waits to run.
+    waiting: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[cfg(unix)]
@@ -641,7 +645,35 @@ impl<R> TidiesAfterEachEnd<R> {
 
     /// `record`, tidying `sets` `wait` after each end; nothing where there are none.
     pub fn of(record: R, sets: Option<PathBuf>, wait: std::time::Duration) -> Self {
-        Self { record, sets, wait }
+        Self {
+            record,
+            sets,
+            wait,
+            waiting: std::sync::Arc::default(),
+        }
+    }
+
+    /// A tidy of the sets `wait` from now, unless one waits already.
+    fn tidy_soon(&self) {
+        use std::sync::atomic::Ordering;
+        let Some(sets) = self.sets.clone() else {
+            return;
+        };
+        if self.waiting.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let (waiting, wait) = (self.waiting.clone(), self.wait);
+        let spawned = std::thread::Builder::new()
+            .name("purlis-skill-sets-tidy".into())
+            .spawn(move || {
+                std::thread::sleep(wait);
+                // Cleared before the tidy reads, so an end heard while it runs is tidied after.
+                waiting.store(false, Ordering::Release);
+                said_in_the_log(&sets, tidy(&sets));
+            });
+        if spawned.is_err() {
+            self.waiting.store(false, Ordering::Release);
+        }
     }
 }
 
@@ -653,13 +685,12 @@ impl<R: purlis_host::Record> purlis_host::Record for TidiesAfterEachEnd<R> {
 
     fn ended(&self, ended: &purlis_host::Ended<'_>) {
         self.record.ended(ended);
-        if let Some(sets) = &self.sets {
-            tidy_later(sets.clone(), self.wait);
-        }
+        self.tidy_soon();
     }
 
     fn left_by_its_last_host(&self, left: &purlis_host::Started) {
         self.record.left_by_its_last_host(left);
+        self.tidy_soon();
     }
 
     fn log_end(&self) -> Result<(String, u64), String> {
