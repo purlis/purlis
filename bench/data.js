@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793207603244,
+  "lastUpdate": 1793209182699,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28518,6 +28518,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1428435,
             "unit": "ms",
             "extra": "median of 5 runs: 101.395, 101.895, 102.143, 102.249, 103.119 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3ff08c9ba2b1a508f19e11287922b75a182d1686",
+          "message": "Tools: gh and glab are general-purpose, and a declared run reads none of the chat's gh/glab config (#3715)\n\n* Tools: gh and glab are general-purpose, and a declared run reads none of the chat's gh/glab config\n\ngh and glab join the general-purpose list, so a persona tool whose program\nis either shows the general-purpose caution beside its Allow, as curl does.\n\nA regression test locks in that a declared gh or glab run reads none of the\nchat's own gh or glab settings: aliases, extensions and hosts written under\nthe chat's home and XDG folders are never where the run looks, the\nvariables naming another settings folder, host, pager or browser stay\nbehind, and what one run writes in its home is gone by the next.\n\nRefs #3421\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Changelog: gh and glab entry as a fragment, not a CHANGELOG.md edit\n\nRefs #3421\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T16:58:34Z",
+          "tree_id": "2602ae2eaaef47367d51afc1a32e0dadad7b98f4",
+          "url": "https://github.com/purlis/purlis/commit/3ff08c9ba2b1a508f19e11287922b75a182d1686"
+        },
+        "date": 1793209172535,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6774865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.649, 0.662, 0.677, 0.689, 0.691 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.496524,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.468, 16.486, 16.497, 16.531, 16.535 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6181945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.878, 101.325, 101.618, 102.006, 102.186 ms"
           }
         ]
       }
