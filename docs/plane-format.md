@@ -3819,7 +3819,8 @@ An end row, never a pass or a fail:
   a level no level spells, `runs` outside 1 to 16, tokens past ten times the largest cap or
   dollars past ten times its dearest limit, a stamp more than an hour ahead of this machine's
   clock, a `spent` that is not what the report adds up to (its chats the arms' runs, its tokens
-  `spent_tokens`, its cost `spent_usd` where the report has one), or an arm whose chats are not
+  `spent_tokens`, its cost `spent_usd` where the report has one; for an `interrupted` row with no
+  arms, its chats at most what its runs could have asked for, #3582), or an arm whose chats are not
   what its tests ran and asked for) is skipped. **What was left out is said** (#3273): the
   Grades panel, the plan and `purlis skill grade` say how many rows of the skill were skipped
   (a row of it no purlis parses among them) and name each file not read (a link, or one past
@@ -7288,8 +7289,14 @@ rewritten.
   runs it; `local`, whether its copy is this machine's alone; `locked`, whether the grade holds the
   file's lock (#3466, `false` where absent); and `graded`, its eval record row as
   it would be recorded were it interrupted now (`report.ended` `interrupted`, no chat scored,
-  nothing spent). Written `0600` through no link when a grade starts
-  (`grades::underway::began`) and removed when it ends (`grades::underway::ended`). The grade
+  and what its chats spent so far: nothing as it starts, then, as each chat ends, its chats that
+  ran, its tokens and its cost as the chats said them, in `spent` and in the report's
+  `spent_tokens` and `spent_usd`, #3582). Written `0600` through no link when a grade starts
+  (`grades::underway::began`), written again as each chat ends (`grades::underway::Marker::spent`),
+  and removed when it ends (`grades::underway::ended`). Each write goes to
+  `.<grade>.json.partial` beside it, locked, and is renamed over it, so a reader finds the whole
+  file or none; a spend no sound row could hold is never written. A leftover `.partial` whose lock
+  no other holds is removed at the next start. The grade
   holds the file's `flock` while it runs, taken before the file is in its place, so the lock goes
   with its process however that ends (#3466). At the project's next start, each file whose lock no
   other holds, of a grade that took it, is recorded as it is, interrupted, and removed (`grades::underway::interrupted`),

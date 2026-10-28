@@ -975,10 +975,7 @@ impl Chats for InChats<'_> {
         if self.spent != was {
             (self.on_spent)(self.spent);
         }
-        match (
-            ran.cost_usd.filter(|cost| cost.is_finite() && *cost >= 0.0),
-            ran.tokens,
-        ) {
+        match (said_cost(&ran), ran.tokens) {
             (Some(cost), _) => {
                 self.cost_left = self.cost_left.map(|left| left - cost);
             }
@@ -1002,13 +999,18 @@ impl Chats for InChats<'_> {
     }
 }
 
+/// What the chat `ran` cost, as its harness said it, where it is a cost a reader could hold: as
+/// the runner counts it, any other is no cost.
+fn said_cost(ran: &ChatRan) -> Option<f64> {
+    ran.cost_usd.filter(|cost| cost.is_finite() && *cost >= 0.0)
+}
+
 /// **What a grade's chats spent, `spent`, with the chat `ran` counted**: its tokens and its cost
 /// where it said them, whatever ended it, as every chat that started counts toward the caps; and
-/// the chat itself where it ran (a turn, or its time out), as the runner's arms count it. As the
-/// runner counts it, a cost no reader could hold is no cost, so nothing is counted past what the
-/// chats said.
+/// the chat itself where it ran (a turn, or its time out), as the runner's arms count it. A cost
+/// no reader could hold is none ([`said_cost`]), so nothing is counted past what the chats said.
 fn counted(spent: Spent, ran: &ChatRan) -> Spent {
-    let cost = ran.cost_usd.filter(|cost| cost.is_finite() && *cost >= 0.0);
+    let cost = said_cost(ran);
     Spent {
         chats: spent.chats + u32::from(matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut)),
         tokens: match ran.tokens {

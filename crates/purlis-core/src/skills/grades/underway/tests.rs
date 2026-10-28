@@ -290,3 +290,22 @@ fn a_spend_no_row_could_hold_leaves_the_marker_as_it_was_3582() {
     let read = super::super::grades_of(root, "deploy", Some(&level));
     assert_eq!(read[0].spent, first, "the last spend it could hold");
 }
+
+/// #3582: a write a crash cut short leaves its `.partial` beside the markers; the next start
+/// takes it away, and leaves one another process still writes, as its lock says.
+#[test]
+fn a_half_written_marker_a_crash_left_is_taken_away_at_the_next_start_3582() {
+    let (tmp, level) = project();
+    let root = tmp.path();
+    let marker = began(root, &level, &starting("g-cut", &level)).expect("held");
+    let folder = marker.parent().unwrap().to_path_buf();
+    let left = folder.join(".g-gone.json.partial");
+    std::fs::write(&left, "{ half").unwrap();
+    let writing = folder.join(".g-cut.json.partial");
+    let file = std::fs::File::create(&writing).unwrap();
+    file.lock().unwrap();
+    assert!(interrupted(root, laptop, |_| false).is_empty());
+    assert!(!left.exists(), "taken away");
+    assert!(writing.exists(), "one still being written is left");
+    assert!(marker.exists(), "and the marker with it");
+}

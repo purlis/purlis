@@ -267,6 +267,14 @@ pub fn interrupted(
     let mut out = Vec::new();
     for entry in reader.take(MOST_FILES).filter_map(Result::ok) {
         let path = entry.path();
+        // A write a crash cut short ([`put`]): taken away once no other holds its lock, as its
+        // writer holds it while it writes.
+        if is_partial(&path) {
+            if locked_by_another(&path) == Some(false) {
+                let _ = std::fs::remove_file(&path);
+            }
+            continue;
+        }
         if path.extension().is_none_or(|ext| ext != "json") {
             continue;
         }
@@ -300,6 +308,13 @@ pub fn interrupted(
         let _ = std::fs::remove_file(&path);
     }
     out
+}
+
+/// Whether `path` is a file [`put`] writes before it is renamed into its place.
+fn is_partial(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with('.') && name.ends_with(".json.partial"))
 }
 
 /// **Whether another holds the lock of the grade's file at `path`** ([`Marker`]), or `None` where
