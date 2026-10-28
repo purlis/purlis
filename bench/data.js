@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793164412646,
+  "lastUpdate": 1793166006193,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27720,6 +27720,48 @@ window.BENCHMARK_DATA = {
             "value": 105.3687355,
             "unit": "ms",
             "extra": "median of 5 runs: 104.658, 105.336, 105.369, 105.980, 106.221 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bc7d26c3fed920d6f37e990a84a2fb26700c0859",
+          "message": "Skills: router choice and extension routers within 100 ms, with a routing record (#3230) (#3580)\n\n* Skills: a workspace or persona chooses its router; an extension router answers within 100 ms, with a routing record (#3230)\n\nA chat whose workspace (settings.skills.router) or persona (skill-router:) chose an\nextension router asks it once at its start which skills to hide, each with its own line,\nwithin 100 ms counted from before its confined start. Past that, on an error, or on an\nanswer that hides a pin, names a skill it may not hide or leaves the list over the budget,\nthe chat is routed by the built-in router. The answer is kept with the start and applied\nwherever its set is routed again. skill.routed goes in the event log under the run, and\nevery skill.started names it. Use skill... and the studio show its timing and fallback.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a router answer keeps what still applies, a clear and a reattach keep the routing (#3230)\n\nReview fixes: Routed::apply drops entries pinned or gone since the start instead of\nfalling back whole; a /clear carries its run's routing to the next run; a reattached\nchat records the routing its start asked again; the routing map lets go of the oldest run,\nnever all; a start taken back writes no routing; the index says a router left skills out\nrather than that the list ran out of room. Adds the changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the routing amendment says what a reattach, a clear and a drifted answer do (#3230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: the router's fallback line in Use skill… is listed among the live regions; the studio's router line is none (#3230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a routing record keeps the router's id as chosen, never a shown copy (#3230)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T04:40:50Z",
+          "tree_id": "1fec831e60ae58cb49582a05caa59dd7c1ff9c6c",
+          "url": "https://github.com/purlis/purlis/commit/bc7d26c3fed920d6f37e990a84a2fb26700c0859"
+        },
+        "date": 1793166001453,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.518724,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.502, 0.515, 0.519, 0.528, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 17.009909,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.688, 16.777, 17.010, 17.046, 17.114 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 104.907758,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.870, 103.573, 104.908, 105.363, 106.937 ms"
           }
         ]
       }
