@@ -1187,13 +1187,16 @@ jobs:
   # The scenario specs on macOS in two parts on two runners (WebdriverIO's `--shard`): on one
   # runner the job took 15 minutes, 7 of them building on macOS's slow runner and 6 running the
   # specs one at a time, longer than any other job but `rust` (2026-10-10). Each part builds for
-  # itself, as `rust`'s do. Part 1 also runs the seven runs that each need an app of their own
-  # (`extras`); the app as it ships is `app`'s macOS leg (`app builds (macos-latest)`): part
-  # 2's half of the specs is the heavier, 13 to 16 minutes against part 1's 7 to 11 (2026-10-12).
+  # itself, as `rust`'s do. The seven runs that each need an app of their own (`extras`) are a
+  # third leg that runs no spec (`specs: false`): beside a part's specs they made those specs 4 to
+  # 5 minutes slower on the same runner as well as adding their own 7 (2026-10-28: part 1's specs
+  # took 955 s with them and 717 s without, part 2's 927 s with them and 622 s without), and the
+  # part that carried them took 31 to 32 minutes. The app as it ships is `app`'s macOS leg
+  # (`app builds (macos-latest)`).
   # `scenario-checks` carries the required check's name. Linux has the same steps, in
   # `scenario-linux`.
   scenario:
-    name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
+    name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || 'the single-app runs' }})
     strategy:
       fail-fast: false
       matrix:
@@ -1202,9 +1205,16 @@ jobs:
         shards: [2]
         include:
           - shard: 1
-            extras: true
+            extras: false
+            specs: true
           - shard: 2
             extras: false
+            specs: true
+          - os: macos-latest
+            shard: extras
+            shards: 2
+            extras: true
+            specs: false
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1303,16 +1313,16 @@ jobs:
           said=$(sccache --show-stats 2>&1 | head -30 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::notice title=sccache (macOS part ${{ matrix.shard }})::${said:-sccache said nothing}"
       - run: npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && matrix.specs
         working-directory: app
       - run: xvfb-run -a npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.specs
         working-directory: app
       # The slowest spec files and tests of the run above, as notices on the job: what makes the
       # specs slow, readable through the checks API without the log (`tools/e2e-timings.mjs`). A
       # report, so it never turns the job red.
       - name: Annotate the slowest scenario specs
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.specs }}
         continue-on-error: true
         run: node ../tools/e2e-timings.mjs logs/timings.jsonl "${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}"
         working-directory: app
@@ -1320,7 +1330,7 @@ jobs:
       # notice on the part of the job that ran them: a switch to a project of many chats apart
       # from one to a project of one (`tools/switch-notice.mjs`). A report, never a verdict.
       - name: Annotate the project switches
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.specs }}
         continue-on-error: true
         run: node ../tools/switch-notice.mjs logs/project-switch.jsonl "${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}"
         working-directory: app
@@ -1464,8 +1474,10 @@ jobs:
         include:
           - shard: 1
             extras: false
+            specs: true
           - shard: 2
             extras: true
+            specs: true
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
