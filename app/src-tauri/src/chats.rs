@@ -3919,6 +3919,8 @@ impl Chats {
                         .map(str::to_owned),
                     // The run this start begins, which its `run.started` is written under.
                     run: identity.run.clone(),
+                    // A grade's chat ends with this window (#3274): only it watches the chat.
+                    ends_with_its_window: chat.graded,
                 },
                 &announce,
             ),

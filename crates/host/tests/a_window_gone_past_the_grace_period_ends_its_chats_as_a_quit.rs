@@ -11,6 +11,9 @@
 //!   while a window that did not open it is there (#2262): its programs end as a quit would,
 //!   running or ended, with its hook channel and its board. A window back before then still
 //!   reads how each program ended.
+//! - **A program started to end with its window ends as soon as that window goes** without a
+//!   quit (1.42, #3274), as a quit would end it: a grade's chat, which only the window that
+//!   started it watches. Every other program waits out the grace period.
 //! - **A host with nothing a window could come back for stops at once** once its window has
 //!   gone; one whose window has not linked yet waits for it.
 //!
@@ -230,6 +233,19 @@ impl Window {
     }
 }
 
+impl Window {
+    async fn starts_ending_with_it(&self, project: &str, number: u32) -> String {
+        self.client
+            .start_program(StartProgram {
+                number: Some(number),
+                ends_with_its_window: true,
+                ..StartProgram::of(project, ProgramKind::Harness)
+            })
+            .await
+            .expect("it starts")
+    }
+}
+
 async fn until(what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + PATIENCE;
     while !done() {
@@ -408,6 +424,49 @@ async fn a_quit_stops_a_host_with_a_window_there() {
     tokio::time::timeout(PATIENCE, lives)
         .await
         .expect("the host stops")
+        .unwrap();
+    assert_eq!(host.ends.kept(), [(1, Some(Stopped::Quit))]);
+}
+
+#[tokio::test]
+async fn a_program_that_ends_with_its_window_ends_once_the_window_goes_and_the_rest_wait() {
+    let host = a_host();
+    let lives = host.lives();
+    {
+        let window = host.holding(PROJECT).await;
+        window.starts(PROJECT, 1).await;
+        window.starts_ending_with_it(PROJECT, 2).await;
+    }
+
+    until("the program that ends with its window is ended", || {
+        host.ends.kept() == [(2, Some(Stopped::Quit))]
+    })
+    .await;
+    tokio::time::sleep(GRACE / 4).await;
+    assert_eq!(
+        host.ends.kept(),
+        [(2, Some(Stopped::Quit))],
+        "the other waits for its window"
+    );
+
+    let back = host.holding(PROJECT).await;
+    let programs = back.client.programs_of(PROJECT).await.unwrap();
+    assert_eq!(programs.len(), 1, "a window back finds the other alone");
+    assert!(!lives.is_finished(), "a window is there");
+}
+
+#[tokio::test]
+async fn a_window_that_quits_ends_a_program_that_ends_with_it_as_a_quit() {
+    let host = a_host();
+    let lives = host.lives();
+    let window = host.holding(PROJECT).await;
+    window.starts_ending_with_it(PROJECT, 1).await;
+
+    window.client.quit().await.expect("it quits");
+
+    tokio::time::timeout(PATIENCE, lives)
+        .await
+        .expect("the host stops at the quit")
         .unwrap();
     assert_eq!(host.ends.kept(), [(1, Some(Stopped::Quit))]);
 }

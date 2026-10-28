@@ -833,6 +833,9 @@ struct Hosted {
     /// Who opened it, for a browser (#2050): this host's own window, or a link between hosts
     /// for the window it named, which alone may act on it from such a link.
     opened_by: OpenedBy,
+    /// The link it ends with, where its start said it does (1.42, #3274): once that link ends
+    /// without a quit, it is ended at once rather than kept for the grace period.
+    ends_with: Option<u64>,
 }
 
 /// **Who opened a hosted program** (#2050): a link of this host's own (its window), or a link
@@ -1947,6 +1950,7 @@ impl Hosting {
                 note: start.note.clone(),
                 logins: Arc::default(),
                 opened_by: OpenedBy::ThisHost,
+                ends_with: start.ends_with_its_window.then(|| link_of(peer)),
             },
         );
         // Written down before the start is answered, so a host killed from here on leaves it
@@ -2153,6 +2157,7 @@ impl Hosting {
                         .collect(),
                 )),
                 opened_by,
+                ends_with: start.ends_with_its_window.then(|| link_of(peer)),
             },
         );
         drop(state);
@@ -2569,6 +2574,51 @@ impl Hosting {
             drop(confinements);
         });
         Ok(Answer::Done)
+    }
+
+    /// **Ends every program that ends with the link `link`** (1.42, #3274), as a quit would end
+    /// it: forgotten at once, its confinements with it, and stopped off the runtime. What a
+    /// link's end does before anything of it is kept for the grace period.
+    fn end_what_ends_with(&self, link: u64) {
+        let (hosted, confinements) = {
+            let mut state = self.state();
+            let ids: Vec<String> = state
+                .programs
+                .iter()
+                .filter(|(_, hosted)| hosted.ends_with == Some(link))
+                .map(|(id, _)| id.clone())
+                .collect();
+            if ids.is_empty() {
+                return;
+            }
+            let hosted: Vec<Hosted> = ids
+                .iter()
+                .filter_map(|id| state.programs.remove(id))
+                .inspect(|hosted| stopping_by(&hosted.stopping, Stopped::Quit))
+                .collect();
+            let processes: Vec<u32> = hosted.iter().filter_map(|hosted| hosted.process).collect();
+            state.closed.extend(processes);
+            let confinements = take_confinements(
+                &mut state,
+                |owner| matches!(owner, Owner::Program(program) if ids.contains(program)),
+            );
+            (hosted, confinements)
+        };
+        for one in &hosted {
+            if let Some(channel) = self.channel(&one.at) {
+                channel.forget(one.number);
+            }
+        }
+        tokio::task::spawn_blocking(move || {
+            stop_together(
+                hosted
+                    .iter()
+                    .map(|hosted| Arc::clone(&hosted.running))
+                    .collect(),
+            );
+            drop(confinements);
+            drop(hosted);
+        });
     }
 
     /// Ends the confinements `program` runs in, off the runtime.
@@ -3421,6 +3471,8 @@ impl session::Host for Hosting {
 
     async fn link_ended(&self, peer: &Peer) {
         self.inner.unattended.ended(peer);
+        // What ends with this link ends first, so a project it alone kept is let go of with it.
+        self.end_what_ends_with(link_of(peer));
         self.let_go_of_the_links(peer);
         {
             let mut state = self.state();

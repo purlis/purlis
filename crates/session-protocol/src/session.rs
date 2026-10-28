@@ -269,9 +269,16 @@ use crate::view::{Limits, Views};
 /// which runners a desktop's stop stopped (`runners`), and that a stop found a host stopped
 /// already (`already`), so a runner stopped from its own command line is not re-armed by its
 /// desktop (#2051).
+///
+/// 1.42 added a program that ends with its window (#3274): a start may say so
+/// (`ends_with_its_window`), and the host then ends that program as soon as the link it was
+/// started on ends without a `quit`, rather than keeping it for the window to come back to. A
+/// grade's chat is started so (SK-16): it is watched by the window that started it, and by no
+/// other. A host before 1.42 ignores the word and keeps the program as any other, and the window
+/// ends it as it comes back, as nothing takes it back.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 41,
+    minor: 42,
 };
 
 /// The version that first pushes a host's own event log to a link that asks with a cursor for its
@@ -982,6 +989,11 @@ pub struct StartProgram {
     /// ([`crate::grants::Power::Reattach`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<ProgramNote>,
+    /// The program ends with the link it is started on (1.42, #3274): once that link ends
+    /// without a `quit`, the host ends it at once, rather than keeping it for the grace period
+    /// a window has to come back in. A grade's chat is started so (SK-16).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ends_with_its_window: bool,
 }
 
 impl StartProgram {
@@ -1008,6 +1020,7 @@ impl StartProgram {
             alone: Vec::new(),
             kept: None,
             note: None,
+            ends_with_its_window: false,
         }
     }
 }
