@@ -14,9 +14,12 @@
 //!   container runs.
 //! - **This week** is the ISO week in this machine's local time, from Monday 00:00
 //!   ([`week_began`]).
-//! - **Bounded** ([`pruned`]): each write drops the lines older than [`KEPT_FOR`], keeping each
-//!   runner's last line, then the oldest lines until the file is at most [`MOST_BYTES`], within
-//!   what a private file may be read at.
+//! - **Bounded** ([`pruned`]): each write drops the runs older than [`KEPT_FOR`], keeping each
+//!   runner's last line, then whole runs by when they ended, earliest first, until the file is
+//!   at most [`MOST_BYTES`], within what a private file may be read at. So a run that ended
+//!   before this week began, which counts nothing toward it, goes before any run that counts,
+//!   and a run still open goes last. A run is never split: its start and the stop that ends it
+//!   are kept or dropped together.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -237,7 +240,8 @@ pub fn this_week_began() -> u64 {
 }
 
 /// **`lines`, bounded** (#3492): those older than [`KEPT_FOR`] at `now` dropped, each runner's
-/// last line kept, then the oldest dropped until they are written in at most [`MOST_BYTES`].
+/// last line kept, then whole runs by when they ended, earliest first and a run still open last,
+/// until they are written in at most [`MOST_BYTES`] (#3723).
 ///
 /// **A run is never split**: a start and the stop that ends it are kept or dropped together, so a
 /// run longer than [`KEPT_FOR`] that has just stopped keeps its start, and its hours this week.
@@ -276,20 +280,29 @@ pub fn pruned(lines: Vec<Line>, now: u64) -> Vec<Line> {
         .filter(|(at, _)| kept_groups.contains(&group[*at]))
         .map(|(at, line)| (group[at], line))
         .collect();
-    // Then the oldest groups, whole, until the rest fit.
+    // Then whole groups, by when they ended, until the rest fit (#3723): a group's end is its
+    // stop's time, or the time of a line alone that is no start. A start alone is a run still
+    // open, and goes last. So a run that ended before this week began, which counts nothing
+    // toward it, goes before any that counts.
     let mut sizes: HashMap<usize, usize> = HashMap::new();
+    let mut ends: HashMap<usize, Option<u64>> = HashMap::new();
     for (of, line) in &kept {
         *sizes.entry(*of).or_default() += line.text().len() + 1;
+        let end = ends.entry(*of).or_insert(None);
+        if line.event == Event::Stop {
+            *end = Some(line.at);
+        }
     }
     let mut bytes: usize = sizes.values().sum();
+    let mut order: Vec<usize> = sizes.keys().copied().collect();
+    order.sort_by_key(|of| (ends[of].is_none(), ends[of], *of));
     let mut dropped = BTreeSet::new();
-    for (of, _) in &kept {
+    for of in order {
         if bytes <= MOST_BYTES {
             break;
         }
-        if dropped.insert(*of) {
-            bytes -= sizes[of];
-        }
+        dropped.insert(of);
+        bytes -= sizes[&of];
     }
     kept.into_iter()
         .filter(|(of, _)| !dropped.contains(of))

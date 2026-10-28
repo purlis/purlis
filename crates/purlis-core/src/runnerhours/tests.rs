@@ -247,6 +247,73 @@ fn the_record_is_held_to_its_most_bytes_by_dropping_the_oldest() {
     assert_eq!(kept.len() % 2, 0);
 }
 
+/// Over the cap, a run that ended before this week, and counts nothing toward it, goes before
+/// one that started earlier and counts toward this week (#3723).
+#[test]
+fn over_its_most_bytes_the_record_drops_a_run_that_counts_nothing_this_week_first() {
+    let now = MONDAY + 3 * 24 * HOUR;
+    let run = |runner: &str, from: u64, to: u64| {
+        vec![
+            Line::new(from, "builds", runner, Event::Start),
+            Line::new(to, "builds", runner, Event::Stop),
+        ]
+    };
+    // Counts toward this week: started first, stopped yesterday.
+    let counts = run("counts", now - 13 * 24 * HOUR, now - 24 * HOUR);
+    // Counts nothing this week: started later, stopped before Monday.
+    let old = run("old-00", now - 12 * 24 * HOUR, MONDAY - HOUR);
+    let mut lines: Vec<Line> = counts.iter().chain(&old).cloned().collect();
+    let bytes = |lines: &[Line]| -> usize { lines.iter().map(|line| line.text().len() + 1).sum() };
+    // Runs this week of other runners, the same size as `old`'s, until the record is over.
+    let mut n = 1;
+    while bytes(&lines) <= MOST_BYTES {
+        lines.extend(run(&format!("new-{n:02}"), now - 2 * HOUR, now - HOUR));
+        n += 1;
+    }
+    let kept = pruned(lines.clone(), now);
+    assert!(bytes(&kept) <= MOST_BYTES, "{}", bytes(&kept));
+    assert!(
+        kept.starts_with(&counts),
+        "the run that counts this week is kept whole"
+    );
+    assert!(
+        !kept.iter().any(|line| line.runner == "old-00"),
+        "the old run goes"
+    );
+    assert_eq!(kept.len(), lines.len() - 2, "nothing else goes");
+    assert_eq!(
+        ran_since(&kept, "builds", "counts", MONDAY, None),
+        2 * 24 * HOUR
+    );
+}
+
+/// Over the cap, runs go by when they ended, earliest first, and a run still open goes last,
+/// whatever order they started in (#3723).
+#[test]
+fn over_its_most_bytes_the_record_drops_runs_by_when_they_ended_and_an_open_one_last() {
+    let now = MONDAY + 3 * 24 * HOUR;
+    let line = |at, runner: &str, event| Line::new(at, "builds", runner, event);
+    let mut lines = vec![line(now - 13 * 24 * HOUR, "open", Event::Start)];
+    let bytes = |lines: &[Line]| -> usize { lines.iter().map(|line| line.text().len() + 1).sum() };
+    // Each run starts later and ends earlier than the one before it.
+    let mut n = 0;
+    while bytes(&lines) <= 2 * MOST_BYTES {
+        lines.push(line(
+            now - 12 * 24 * HOUR + n,
+            &format!("r{n}"),
+            Event::Start,
+        ));
+        lines.push(line(now - HOUR - n, &format!("r{n}"), Event::Stop));
+        n += 1;
+    }
+    let kept = pruned(lines.clone(), now);
+    assert!(bytes(&kept) <= MOST_BYTES);
+    assert_eq!(kept[0], lines[0], "the open run is kept");
+    // What is kept of the rest are the runs that ended last: those that started first.
+    let first_dropped = (kept.len() - 1) / 2;
+    assert_eq!(kept[1..], lines[1..1 + 2 * first_dropped]);
+}
+
 #[test]
 fn the_record_is_written_for_its_user_alone_and_read_back() {
     use std::os::unix::fs::PermissionsExt;
