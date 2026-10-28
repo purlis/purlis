@@ -487,17 +487,6 @@ mod hosted {
         held_to: Arc<Mutex<HashMap<String, LinkFrames>>>,
     }
 
-    /// **How pool `pool`'s runner's browsers are watched over the link** (#3297): its own
-    /// settings, as this machine keeps the pool; the defaults where it is not kept, or its file
-    /// cannot be read.
-    fn pools_link_frames(pool: &str) -> LinkFrames {
-        purlis_core::machine::config_root()
-            .and_then(|config| purlis_core::runners::pools(&config).ok())
-            .and_then(|pools| pools.into_iter().find(|it| it.name() == pool))
-            .map(|it| it.link_frames())
-            .unwrap_or_default()
-    }
-
     /// **What the window holds a runner browser's frames to**, where its pool's are `frames`
     /// (#3297): the more of each of those and the defaults. A runner before 1.47 holds its views
     /// to the defaults, and one since to the pool's, and the window does not know which it
@@ -994,7 +983,7 @@ mod hosted {
             crate::enginedownload::here().started(&named);
             // On a pool's runner, its views over the link are held to the pool's own frames
             // (#3297).
-            let link_frames = at.pool.as_deref().map(pools_link_frames);
+            let link_frames = at.pool.as_deref().map(purlis_core::runners::link_frames_of);
             let start = Command::StartProgram(Box::new(StartProgram {
                 program: Some(named.clone()),
                 reach,

@@ -739,6 +739,24 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
     })
 }
 
+/// **How pool `name`'s runner's browsers are watched over the link** (#3297), as this machine
+/// keeps the pool: the defaults where it is not kept, or the file cannot be read. A fenced
+/// (test) build reads no store outside its fence: there, the defaults.
+pub fn link_frames_of(name: &str) -> LinkFrames {
+    let Some(config) = crate::machine::config_root_unheld() else {
+        return LinkFrames::DEFAULT;
+    };
+    #[cfg(feature = "fenced")]
+    if !crate::fence::inside(&config, &crate::fence::fence()) {
+        return LinkFrames::DEFAULT;
+    }
+    pools(&config)
+        .ok()
+        .and_then(|pools| pools.into_iter().find(|pool| pool.name() == name))
+        .map(|pool| pool.link_frames())
+        .unwrap_or_default()
+}
+
 fn pool_to_row(pool: &Pool) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": pool.name(),
