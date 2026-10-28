@@ -504,7 +504,8 @@ fn a_codex_chat_is_handed_each_plugin_and_skill_the_project_turned_off_by_its_ow
 /// tool, so it adds none here.
 /// And the browser tools, on the chat's browser Ask (#2245).
 const THE_RECORD_TOOLS_ALLOW: usize =
-    1 + crate::chattools::DISPATCH_TOOLS.len() + crate::browsertools::TOOLS.len();
+    1 + crate::chattools::DISPATCH_TOOLS.len() + crate::browsertools::TOOLS.len()
+        - crate::browsertools::ASKED_EACH_TIME.len();
 
 #[test]
 fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_asking() {
@@ -585,6 +586,7 @@ fn a_claude_code_chat_may_run_charter_session_record_and_read_charter_without_as
             "mcp__purlis__browser_new",
             "mcp__purlis__browser_close",
             "mcp__purlis__browser_login",
+            "mcp__purlis__browser_downloads",
         ]})
     );
 }
@@ -769,6 +771,7 @@ fn a_claude_code_chat_runs_its_browser_tools_on_its_browser_ask_not_the_harness_
             "mcp__purlis__browser_new",
             "mcp__purlis__browser_close",
             "mcp__purlis__browser_login",
+            "mcp__purlis__browser_downloads",
         ]
     );
     // And each names a tool the server serves, so a renamed tool fails here, not quietly.
@@ -1112,6 +1115,7 @@ fn a_sandboxed_claude_code_chat_carries_its_sandbox_in_the_same_settings() {
             "mcp__purlis__browser_new",
             "mcp__purlis__browser_close",
             "mcp__purlis__browser_login",
+            "mcp__purlis__browser_downloads",
         ])
     );
     assert_eq!(

@@ -75,13 +75,22 @@ pub fn fresh_call_id() -> String {
 }
 
 /// **The browser tools a harness runs without its own prompt** (#2245, ruled 2026-10-16,
-/// amending ADR 0064): every one of [`TOOLS`], by name. The consent for them is the person's
+/// amending ADR 0064): every one of [`TOOLS`] but [`ASKED_EACH_TIME`], by name. The consent for them is the person's
 /// answer to the chat's browser Ask, which the app holds in front of every call, as the
 /// dispatch grant is for [`crate::chattools::DISPATCH_TOOLS`]; each harness's adapter turns
 /// these names into its own rule where it has one.
 pub fn run_on_the_browser_ask() -> impl Iterator<Item = &'static str> {
-    TOOLS.iter().map(|tool| tool.name)
+    TOOLS
+        .iter()
+        .map(|tool| tool.name)
+        .filter(|name| !ASKED_EACH_TIME.contains(name))
 }
+
+/// **The browser tools that move a file across the chat's folder** (#2020): an upload, which
+/// sends files of it to a page, and a save, which writes a download into it. The browser Ask
+/// does not cover them, so a harness asks the person at each call with its own prompt (which
+/// purlis lists in the Inbox), naming the files.
+pub const ASKED_EACH_TIME: [&str; 2] = ["browser_upload", "browser_save_download"];
 
 /// Whether `name` is one of the browser tools.
 pub fn is_one(name: &str) -> bool {
