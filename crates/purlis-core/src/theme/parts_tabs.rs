@@ -114,8 +114,8 @@ pub(super) const TABS: Family = Family {
     defaults: tabs_look_in,
     states: &[State::Hover, State::Selected],
     focused: "[data-focus-visible]",
-    // Its ×, a faint mark on the tab, and its count, secondary words on the sunken pill the
-    // counts button paints (`App.css`), which the count itself does not (#3099).
+    // Its ×, a faint mark on the tab, and its count, secondary words on the sunken pill of the
+    // tab's chip (`App.css`, #3264), which the count itself does not paint (#3099).
     words: &[("closer", "text.faint"), ("count", "text.secondary")],
     around: &["strip", "layout"],
     corner_most: None,
