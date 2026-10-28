@@ -6,7 +6,7 @@ the signed statement change to name the claim."* It amends the amendment of 2026
 cluster runner is vouched for by its operator and its own pairing), items 2 and 4, and D-2056-7
 and D-2056-8 of #2056's pull request (#3293), for runners of a cluster pool only. A Docker pool's
 runner is unchanged. *Ruled by the person 2026-10-28* (the names and the pairing); *decided in
-implementation* (D-2057-1 to D-2057-9 in its pull request).
+implementation* (D-2057-1 to D-2057-19 in its pull request).
 
 1. **A claim is kept or fresh.** A kept claim's runner has a volume of its own,
    `purlis-kept-<claim>`, and its home is on it (`HOME=/var/lib/purlis/home`), so its checkout,
@@ -28,6 +28,9 @@ implementation* (D-2057-1 to D-2057-9 in its pull request).
    another pod or key than the ones it paired with, as a changed key. A kept claim's pod is made
    again under the claim's name, with the key it keeps, so the statement says the same. A fresh
    claim's new pod makes a new key, which is refused as before. A `v1` statement is not read.
+   The statement also names when it stops holding (`until`, ten minutes after it is signed):
+   the operator signs it again in its last five minutes while it still vouches, and the
+   desktop refuses one past its time, or one that claims to hold more than an hour.
 4. **The operator still holds every pod to its template, now one per claim's kind.** A kept
    claim's pod must carry exactly its own volume, `purlis-kept-<claim>`, in the place of the
    template's folder, as upstream puts it there, and its sandbox must have the claim's name. Any

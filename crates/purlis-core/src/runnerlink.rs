@@ -96,8 +96,9 @@ pub fn make_at_start_in(
     home: &Path,
     image_home: Option<&Path>,
     config: &Path,
+    claim: &str,
 ) -> Result<(), String> {
-    seed_home(home, image_home)?;
+    seed_home(home, image_home, claim)?;
     match answering(config)? {
         Some((ours, _desktop)) => std::fs::write(published, hex_of(ours.key.public().as_bytes()))
             .map_err(|why| {
@@ -113,10 +114,37 @@ pub fn make_at_start_in(
 /// half home; with no image home, an empty folder this user's alone. A home already there is
 /// left exactly as it is: it is the runner's, kept from its earlier pods. One that is not a
 /// folder is refused.
-pub fn seed_home(home: &Path, image_home: Option<&Path>) -> Result<(), String> {
+///
+/// **A home is made for one claim** (#2057): `claim`, the uid of the upstream claim the pod is
+/// for, is written beside it ([`CLAIM_MARKER`]) before it is made, and a home already there is
+/// taken only where the mark names that claim. So a volume someone made ready before the claim
+/// was (whose uid they could not know) is refused rather than taken as the runner's. An image
+/// `HOME` that holds the runner's home (`/`, or the volume itself) is refused too: it would be
+/// copied into itself.
+pub fn seed_home(home: &Path, image_home: Option<&Path>, claim: &str) -> Result<(), String> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let marker = home.with_file_name(CLAIM_MARKER);
     match std::fs::symlink_metadata(home) {
-        Ok(found) if found.is_dir() => return Ok(()),
+        Ok(found) if found.is_dir() => {
+            let marked = match std::fs::read_to_string(&marker) {
+                Ok(marked) => Some(marked),
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => None,
+                Err(why) => {
+                    return Err(format!(
+                        "the runner's home's claim could not be read: {why}"
+                    ));
+                }
+            };
+            if marked.as_deref().map(str::trim) != Some(claim) {
+                return Err(format!(
+                    "the runner's home {} was not made for this claim, so the runner is not \
+                     started: its volume was made or filled elsewhere. Delete the claim and \
+                     make a new one",
+                    home.display()
+                ));
+            }
+            return Ok(());
+        }
         Ok(_) => {
             return Err(format!(
                 "the runner's home {} is not a folder, so the runner is not started",
@@ -143,7 +171,19 @@ pub fn seed_home(home: &Path, image_home: Option<&Path>) -> Result<(), String> {
         Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
         Err(why) => return Err(failed(why)),
     }
-    let source = image_home.filter(|source| source.is_dir() && *source != home);
+    if let Some(source) = image_home
+        && (source.parent().is_none() || home.starts_with(source))
+    {
+        return Err(format!(
+            "the image's HOME, {}, holds the runner's home {}, so it cannot be copied into it: \
+             the runner image contract wants HOME to be a folder of the image user's own \
+             (docs/runner-image.md)",
+            source.display(),
+            home.display()
+        ));
+    }
+    std::fs::write(&marker, format!("{claim}\n")).map_err(failed)?;
+    let source = image_home.filter(|source| source.is_dir());
     match source {
         Some(source) => {
             copy_tree(source, &making).map_err(failed)?;
@@ -157,6 +197,15 @@ pub fn seed_home(home: &Path, image_home: Option<&Path>) -> Result<(), String> {
     std::fs::set_permissions(&making, std::fs::Permissions::from_mode(0o700)).map_err(failed)?;
     std::fs::rename(&making, home).map_err(failed)
 }
+
+/// The variable a cluster runner's pod's first step reads the uid of its upstream claim from:
+/// the pod's own `agents.x-k8s.io/claim-uid` label, by the downward API (#2057). Empty for a
+/// runner made warm, before any claim, whose home is never kept.
+pub const CLAIM_VAR: &str = "PURLIS_CLAIM_UID";
+
+/// The file beside a cluster runner's home that names the claim it was made for
+/// ([`seed_home`]).
+pub const CLAIM_MARKER: &str = "claim";
 
 /// `from`, copied to `to` (which is not there yet): folders and files with their modes, links
 /// as links. Nothing else (a socket, a device) is copied.

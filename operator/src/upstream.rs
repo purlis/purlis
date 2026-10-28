@@ -14,9 +14,10 @@
 
 use crate::resources::{Claim, KeptVolume, Pool};
 use k8s_openapi::api::core::v1::{
-    Capabilities, Container, EmptyDirVolumeSource, EnvVar, PersistentVolumeClaimSpec,
-    PersistentVolumeClaimVolumeSource, PodSecurityContext, PodSpec, PodTemplateSpec,
-    SeccompProfile, SecurityContext, Volume, VolumeMount, VolumeResourceRequirements,
+    Capabilities, Container, EmptyDirVolumeSource, EnvVar, EnvVarSource, ObjectFieldSelector,
+    PersistentVolumeClaimSpec, PersistentVolumeClaimVolumeSource, PodSecurityContext, PodSpec,
+    PodTemplateSpec, SeccompProfile, SecurityContext, Volume, VolumeMount,
+    VolumeResourceRequirements,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, ObjectMeta, OwnerReference};
@@ -86,6 +87,9 @@ pub const RUNNER_HOME: &str = "/var/lib/purlis/home";
 /// volume's kind lets Kubernetes set its owner: so a runner image's user, whatever its number,
 /// can make its home on a volume made for root (`fsGroup`). purlis's own image's group.
 pub const VOLUME_GROUP: i64 = 10001;
+
+/// The variable [`KEY_STEP`] reads its upstream claim's uid from (`purlis_core::runnerlink::CLAIM_VAR`).
+pub const CLAIM_VAR: &str = "PURLIS_CLAIM_UID";
 
 /// What [`KEY_STEP`] runs, after the image's own entrypoint (`purlis`).
 pub fn key_step_args() -> Vec<String> {
@@ -402,6 +406,19 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
         name: KEY_STEP.to_owned(),
         image: Some(pool.spec.image.clone()),
         args: Some(key_step_args()),
+        // The upstream claim the pod is for, from the label upstream gives it: the home on the
+        // volume is made for it, and taken only for it (#2057).
+        env: Some(vec![EnvVar {
+            name: CLAIM_VAR.to_owned(),
+            value_from: Some(EnvVarSource {
+                field_ref: Some(ObjectFieldSelector {
+                    api_version: Some("v1".to_owned()),
+                    field_path: format!("metadata.labels['{}']", crate::vouch::CLAIM_UID_LABEL),
+                }),
+                ..EnvVarSource::default()
+            }),
+            ..EnvVar::default()
+        }]),
         volume_mounts: mounts(),
         termination_message_path: Some(TERMINATION_LOG.to_owned()),
         termination_message_policy: Some("File".to_owned()),
@@ -538,6 +555,18 @@ pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) 
                 name: name_for(&pool.name_any()),
             },
         },
+    }
+}
+
+/// `wanted`, with the volume claim templates of `held`, the upstream claim as the cluster holds
+/// it, once there is one: upstream makes a sandbox's volumes once, and its definitions refuse a
+/// change to them. So a Pool's `keptVolume` applies to the kept Claims made after it changes.
+pub fn keep_volumes_held(wanted: &mut SandboxClaim, held: Option<&SandboxClaim>) {
+    if let Some(held) = held {
+        wanted
+            .spec
+            .volume_claim_templates
+            .clone_from(&held.spec.volume_claim_templates);
     }
 }
 

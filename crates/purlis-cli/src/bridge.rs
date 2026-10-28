@@ -61,6 +61,8 @@ pub fn run(asked: Asked) -> Result<u8, String> {
                     .map(std::path::PathBuf::from)
                     .as_deref(),
                 &purlis_core::machine::config_root_under(home),
+                // The pod's upstream claim, from its own label (the downward API, #2057).
+                &std::env::var(purlis_core::runnerlink::CLAIM_VAR).unwrap_or_default(),
             )?,
             None => purlis_core::runnerlink::make_at_start(handoff, published)?,
         }

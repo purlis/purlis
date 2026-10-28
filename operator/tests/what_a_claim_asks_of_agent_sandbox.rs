@@ -438,6 +438,38 @@ mod stages {
         });
         let starting = pod(Some("True"), vec![started], vec![runner]);
         assert_eq!(stage::stage_of(Some(&starting)).0, stage::STARTING);
+        // Waiting for its volume to attach is not pulling (#2057).
+        let mut attaching = pod(
+            Some("True"),
+            vec![waiting(upstream::KEY_STEP, "PodInitializing", "")],
+            Vec::new(),
+        );
+        let ready_to_start = |status: &str| PodCondition {
+            type_: "PodReadyToStartContainers".into(),
+            status: status.into(),
+            ..PodCondition::default()
+        };
+        let conditions = attaching
+            .status
+            .as_mut()
+            .unwrap()
+            .conditions
+            .as_mut()
+            .unwrap();
+        conditions.push(ready_to_start("False"));
+        let (reason, message) = stage::stage_of(Some(&attaching));
+        assert_eq!(reason, stage::STARTING);
+        assert!(message.contains("volume"), "{message}");
+        let conditions = attaching
+            .status
+            .as_mut()
+            .unwrap()
+            .conditions
+            .as_mut()
+            .unwrap();
+        conditions.pop();
+        conditions.push(ready_to_start("True"));
+        assert_eq!(stage::stage_of(Some(&attaching)).0, stage::PULLING);
     }
 
     #[test]
@@ -458,4 +490,63 @@ mod stages {
             assert_eq!(staged.conditions[0].message, "upstream's words");
         }
     }
+}
+
+#[test]
+fn a_kept_claims_upstream_claim_keeps_the_volume_it_was_made_with_when_its_pool_changes() {
+    let mut kept = claim();
+    kept.spec.kept = true;
+    let made = upstream::sandbox_claim_for(&kept, &purlis_cluster_operator::KeptVolume::default());
+    let changed = purlis_cluster_operator::KeptVolume {
+        size: "50Gi".into(),
+        storage_class_name: Some("fast".into()),
+    };
+    let mut wanted = upstream::sandbox_claim_for(&kept, &changed);
+    assert_ne!(wanted.spec, made.spec);
+    upstream::keep_volumes_held(&mut wanted, Some(&made));
+    assert_eq!(
+        wanted.spec.volume_claim_templates, made.spec.volume_claim_templates,
+        "upstream refuses a change to them"
+    );
+    // A claim not made yet takes its pool's as it is now.
+    let mut new = upstream::sandbox_claim_for(&kept, &changed);
+    upstream::keep_volumes_held(&mut new, None);
+    assert_eq!(
+        json_of(&new)["spec"]["volumeClaimTemplates"][0]["spec"]["resources"]["requests"]["storage"],
+        "50Gi"
+    );
+}
+
+#[test]
+fn a_statement_goes_when_what_its_claim_asks_for_cannot_be_applied() {
+    use purlis_cluster_operator::{LinkKey, LinkKeyIs, status_patch, status_withdrawn};
+    let mut vouched = purlis_cluster_operator::status_of(None);
+    vouched.conditions.push(Condition {
+        type_: "KeyPublished".into(),
+        ..ready("True", "Vouched", "vouched")
+    });
+    vouched.link_key = Some(LinkKey {
+        statement: "a statement".into(),
+        signature: "a signature".into(),
+    });
+    let withdrawn = status_withdrawn(Some(&vouched), "upstream refused it");
+    assert_eq!(withdrawn.link_key, None);
+    let key = withdrawn
+        .conditions
+        .iter()
+        .find(|c| c.type_ == "KeyPublished")
+        .expect("KeyPublished");
+    assert_eq!(
+        (key.status.as_str(), key.reason.as_str()),
+        ("False", "NotVouched")
+    );
+    assert!(
+        key.message.contains("upstream refused it"),
+        "{}",
+        key.message
+    );
+    assert!(withdrawn.conditions.iter().any(|c| c.type_ == "Ready"));
+    assert_eq!(withdrawn.conditions.len(), 2);
+    let patch = status_patch(Some(&vouched), withdrawn, LinkKeyIs::Said).expect("a change");
+    assert_eq!(patch["status"]["linkKey"], Value::Null);
 }

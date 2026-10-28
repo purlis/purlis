@@ -76,10 +76,25 @@ pub struct Vouched {
     pub pod: String,
     pub key: PublicKey,
     pub requester: String,
+    /// When it stops holding, in seconds since the epoch (#2057): a desktop refuses it after,
+    /// and the operator signs it again well before, as long as it still vouches.
+    pub until: u64,
 }
 
 /// The names of a statement's lines, in their order.
-const LINES: [&str; 6] = ["namespace", "claim", "claim uid", "pod", "key", "requester"];
+const LINES: [&str; 7] = [
+    "namespace",
+    "claim",
+    "claim uid",
+    "pod",
+    "key",
+    "requester",
+    "until",
+];
+
+/// The furthest ahead a statement's `until` may be: an operator signs one for ten minutes, and
+/// purlis reads none that claims to hold past an hour from now, whatever signed it.
+pub const MOST_AHEAD: u64 = 3600;
 
 /// The longest value a statement's line holds.
 const MOST_VALUE: usize = 512;
@@ -88,6 +103,7 @@ impl Vouched {
     /// Its text, exactly as the operator signs it.
     pub fn text(&self) -> String {
         let key = hex_of(self.key.as_bytes());
+        let until = self.until.to_string();
         let values = [
             self.namespace.as_str(),
             &self.claim,
@@ -95,6 +111,7 @@ impl Vouched {
             &self.pod,
             &key,
             &self.requester,
+            &until,
         ];
         let mut text = format!("{STATEMENT_HEADER}\n");
         for (name, value) in LINES.iter().zip(values) {
@@ -109,6 +126,18 @@ impl Vouched {
         let bad = || {
             Refused::NotVouched("the cluster operator's statement is not one purlis reads".into())
         };
+        if let Some(version) = text
+            .lines()
+            .next()
+            .and_then(|first| first.strip_prefix("purlis runner link key "))
+            .filter(|version| text.lines().next() != Some(STATEMENT_HEADER) && plain(version))
+        {
+            return Err(Refused::NotVouched(format!(
+                "the cluster operator wrote a statement of version {version}, and this purlis \
+                 reads {}: update purlis or the cluster operator so both are of one release",
+                &STATEMENT_HEADER["purlis runner link key ".len()..]
+            )));
+        }
         let body = text
             .strip_prefix(STATEMENT_HEADER)
             .and_then(|rest| rest.strip_prefix('\n'))
@@ -128,8 +157,12 @@ impl Vouched {
             values.push(value.to_owned());
         }
         let key = bytes_of(&values[4]).ok_or_else(bad)?;
-        let [namespace, claim, claim_uid, pod, _key, requester]: [String; 6] =
+        let [namespace, claim, claim_uid, pod, _key, requester, until]: [String; 7] =
             values.try_into().map_err(|_| bad())?;
+        let until = Some(until)
+            .filter(|digits| digits.len() <= 20 && digits.bytes().all(|b| b.is_ascii_digit()))
+            .and_then(|digits| digits.parse::<u64>().ok())
+            .ok_or_else(bad)?;
         // Names and uids only as Kubernetes gives them: nothing that could read as a flag or
         // another kind of object where kubectl is handed the pod's name.
         let named = is_label(&namespace)
@@ -146,6 +179,7 @@ impl Vouched {
             pod,
             key: PublicKey::from_bytes(key),
             requester,
+            until,
         })
     }
 
@@ -594,14 +628,46 @@ pub fn vouched_for(
     checked(operator, claimed, &text, &signature).map(Some)
 }
 
-/// `text` signed as `signature`, verified with `operator` and held to `claimed`.
+/// `text` signed as `signature`, verified with `operator` and held to `claimed`, now.
 pub fn checked(
     operator: &OperatorKey,
     claimed: &Claimed,
     text: &str,
     signature: &str,
 ) -> Result<Vouched, Refused> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or_default();
+    checked_at(operator, claimed, text, signature, now)
+}
+
+/// [`checked`], at `now` (seconds since the epoch): a statement past its `until`, or one that
+/// claims to hold more than [`MOST_AHEAD`] from now, is refused.
+pub fn checked_at(
+    operator: &OperatorKey,
+    claimed: &Claimed,
+    text: &str,
+    signature: &str,
+    now: u64,
+) -> Result<Vouched, Refused> {
     let vouched = operator.verified(text, signature)?;
+    if vouched.until <= now {
+        return Err(Refused::NotVouched(format!(
+            "the cluster operator's statement about the runner of claim {}/{} no longer holds: \
+             it has not been signed again, so purlis refused it; is the cluster operator \
+             running?",
+            claimed.namespace, claimed.name
+        )));
+    }
+    if vouched.until > now.saturating_add(MOST_AHEAD) {
+        return Err(Refused::NotVouched(format!(
+            "the cluster operator's statement about the runner of claim {}/{} says it holds for \
+             more than an hour, which no statement does, so purlis refused it; check this \
+             machine's clock",
+            claimed.namespace, claimed.name
+        )));
+    }
     if !vouched.is_for(
         &claimed.namespace,
         &claimed.name,

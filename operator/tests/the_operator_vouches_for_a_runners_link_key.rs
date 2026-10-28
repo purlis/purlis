@@ -56,8 +56,12 @@ fn the_example() -> About<'static> {
         pod: "ada-1",
         key: KEY,
         requester: "ada@example.com",
+        until: 1798761600,
     }
 }
+
+/// Now, as the tests' operator signs: a statement it signs holds until ten minutes after.
+const NOW: u64 = 1_798_000_000;
 
 #[test]
 fn the_statement_and_its_signature_are_the_worked_example_the_desktop_reads() {
@@ -606,6 +610,7 @@ fn vouching(
     let claim = claim();
     vouch::vouch(
         &Held {
+            now: NOW,
             claim: &claim,
             upstream,
             template: held_template,
@@ -921,6 +926,7 @@ fn a_pools_template_is_held_to_the_operators_own_whatever_manager_changed_it() {
     let claim = claim();
     let vouching = vouch::vouch(
         &Held {
+            now: NOW,
             claim: &claim,
             upstream: &upstream,
             template: None,
@@ -998,6 +1004,7 @@ fn vouching_kept(sandbox_name: &str, pod: &Pod) -> Vouching {
     ));
     vouch::vouch(
         &Held {
+            now: NOW,
             claim: &claim,
             upstream: &upstream,
             template: None,
@@ -1114,7 +1121,8 @@ fn a_warm_runner_a_fresh_claim_took_keeps_the_labels_its_warm_pool_gave_it() {
         (vouch::CLAIM_UID_LABEL, UPSTREAM_UID),
         ("agents.x-k8s.io/sandbox-name-hash", "900bf6e9"),
         ("agents.x-k8s.io/sandbox-template-ref-hash", "85e22c3a"),
-        ("agents.x-k8s.io/warm-pool-sandbox", "4be1c2d3"),
+        // The warm pool `purlis-pool-team`'s name, as upstream hashes it.
+        ("agents.x-k8s.io/warm-pool-sandbox", "7c9f77a9"),
         ("agents.x-k8s.io/sandbox-pod-template-hash", "6c9d8e7f"),
         ("agents.x-k8s.io/sandbox-template-hash", "1a2b3c4d"),
     ];
@@ -1122,4 +1130,96 @@ fn a_warm_runner_a_fresh_claim_took_keeps_the_labels_its_warm_pool_gave_it() {
         vouching(&upstream, Some(&sandbox), Some(&labelled(&warm, &[])), None),
         Vouching::Vouched(_)
     ));
+    let mut another = warm;
+    another[3].1 = "4be1c2d3";
+    assert!(matches!(
+        vouching(
+            &upstream,
+            Some(&sandbox),
+            Some(&labelled(&another, &[])),
+            None
+        ),
+        Vouching::Refused(_)
+    ));
+    // FNV-1a, 32 bits, as Go's hash/fnv gives it.
+    assert_eq!(vouch::name_hash(""), "811c9dc5");
+    assert_eq!(vouch::name_hash("a"), "e40c292c");
+    assert_eq!(vouch::name_hash("purlis-pool-team"), "7c9f77a9");
+}
+
+#[test]
+fn the_pods_first_step_is_told_the_claim_its_home_is_made_for() {
+    let spec = template_for(&pool(), "ada", Vec::new())
+        .spec
+        .pod_template
+        .spec
+        .unwrap();
+    let step = &spec.init_containers.unwrap()[0];
+    let env = serde_json::to_value(step.env.as_ref().unwrap()).unwrap();
+    assert_eq!(
+        env,
+        serde_json::json!([{
+            "name": "PURLIS_CLAIM_UID",
+            "valueFrom": { "fieldRef": {
+                "apiVersion": "v1",
+                "fieldPath": "metadata.labels['agents.x-k8s.io/claim-uid']",
+            } },
+        }])
+    );
+    assert_eq!(upstream::CLAIM_VAR, "PURLIS_CLAIM_UID");
+}
+
+#[test]
+fn a_statement_holds_ten_minutes_and_is_signed_again_in_its_last_five() {
+    let upstream = upstream_claim("ada-1");
+    let sandbox = sandbox(UPSTREAM_UID);
+    let pod = runner_pod(the_sandboxes());
+    let at = |now: u64, claim: &Claim| {
+        vouch::vouch(
+            &Held {
+                now,
+                claim,
+                upstream: &upstream,
+                template: None,
+                template_spec: None,
+                sandbox: Some(&sandbox),
+                pod: Some(&pod),
+            },
+            &pod_template(),
+            &signing(),
+        )
+    };
+    let mut claim = claim();
+    let Vouching::Vouched(first) = at(NOW, &claim) else {
+        panic!("not vouched for");
+    };
+    assert!(
+        first
+            .statement
+            .ends_with(&format!("until: {}\n", NOW + 600))
+    );
+    assert_eq!(vouch::until_of(&first.statement), Some(NOW + 600));
+    claim.status = Some(ClaimStatus {
+        conditions: Vec::new(),
+        link_key: Some(first.clone()),
+    });
+    // Looked at again before its last five minutes: the same statement, nothing written.
+    assert_eq!(at(NOW + 290, &claim).link_key(), Some(first.clone()));
+    // In them: signed again, holding ten minutes from now.
+    let again = at(NOW + 310, &claim).link_key().expect("vouched");
+    assert_ne!(again, first);
+    assert_eq!(vouch::until_of(&again.statement), Some(NOW + 910));
+    // A statement on the status that is not the operator's own is never kept.
+    claim
+        .status
+        .as_mut()
+        .unwrap()
+        .link_key
+        .as_mut()
+        .unwrap()
+        .signature = "0".repeat(128);
+    assert_ne!(
+        at(NOW + 10, &claim).link_key(),
+        claim.status.as_ref().unwrap().link_key
+    );
 }

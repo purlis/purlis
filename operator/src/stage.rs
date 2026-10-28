@@ -3,8 +3,9 @@
 
 //! **Where a cold claim's runner is in starting** (spec #2041 story 48, #2057): while upstream
 //! says the runner is not ready yet, a Claim's `Ready` is `False` with the reason its pod gives,
-//! `Scheduling` until a node takes it, `Pulling` until its image is on that node, `Starting`
-//! after, so a wait is never a mystery. A reason upstream gives for a runner that will not be
+//! `Scheduling` until a node takes it, `Starting` while the node attaches its volumes and makes
+//! its sandbox, `Pulling` until its image is on that node, `Starting` after, so a wait is never a
+//! mystery. A reason upstream gives for a runner that will not be
 //! ready on its own (an error, a claim expired, a sandbox suspended) is left as upstream says it.
 
 use crate::resources::{ClaimStatus, READY};
@@ -82,6 +83,24 @@ pub fn stage_of(pod: Option<&Pod>) -> (&'static str, String) {
             format!("The runner's image is not pulled yet: {reason} {why}")
                 .trim_end()
                 .to_owned(),
+        );
+    }
+    // Before the pod is ready to start containers, its node is still attaching and mounting its
+    // volumes (a kept claim's own among them) and making its sandbox: no image is pulled yet, so
+    // it is starting, not pulling, however long an attach takes.
+    let ready_to_start = status
+        .and_then(|status| status.conditions.as_ref())
+        .and_then(|conditions| {
+            conditions
+                .iter()
+                .find(|c| c.type_ == "PodReadyToStartContainers")
+        });
+    if let Some(ready_to_start) = ready_to_start
+        && ready_to_start.status != "True"
+    {
+        return (
+            STARTING,
+            "The runner's node is attaching its volume and making its sandbox.".to_owned(),
         );
     }
     // Both containers run the pool's image: once the first step's is on the node, it is.

@@ -45,6 +45,28 @@ pub struct About<'a> {
     /// The public link key, 64 lower-case hex.
     pub key: &'a str,
     pub requester: &'a str,
+    /// When the statement stops holding, in seconds since the epoch: a desktop refuses it after
+    /// (#2057). The operator signs it again well before ([`VALID_FOR`], [`RENEW_WITHIN`]).
+    pub until: u64,
+}
+
+/// How long a statement holds once signed: ten minutes, so one an operator can no longer look
+/// at again (stopped, or unable to apply what its claim asks) stops vouching soon.
+pub const VALID_FOR: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// How near its end a statement is signed again: five minutes, so a desktop whose clock is up
+/// to five minutes ahead of the cluster's still reads it as holding. Every vouched claim is
+/// looked at again each [`RECHECK`], well within it.
+pub const RENEW_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// The `until` line of a statement's `text`, if it has one purlis reads.
+pub fn until_of(text: &str) -> Option<u64> {
+    text.lines()
+        .find_map(|line| line.strip_prefix("until: "))
+        .filter(|digits| {
+            !digits.is_empty() && digits.len() <= 20 && digits.bytes().all(|b| b.is_ascii_digit())
+        })
+        .and_then(|digits| digits.parse().ok())
 }
 
 /// The longest value a statement's line holds.
@@ -63,6 +85,9 @@ pub fn statement(about: &About<'_>) -> Option<String> {
         ("key", about.key),
         ("requester", about.requester),
     ];
+    let until = about.until.to_string();
+    let mut lines = lines.to_vec();
+    lines.push(("until", until.as_str()));
     let named = is_label(about.namespace)
         && is_subdomain(about.claim)
         && is_subdomain(about.pod)
@@ -322,6 +347,33 @@ pub fn labelled_as_ours(pod: &ObjectMeta, upstream_claim: &ObjectMeta) -> Result
     Ok(())
 }
 
+/// The label upstream's warm pool marks the runners it made with: the hash of its name.
+pub const WARM_POOL_LABEL: &str = "agents.x-k8s.io/warm-pool-sandbox";
+
+/// How upstream (agent-sandbox v1.0.6, `NameHash`) names a warm pool in [`WARM_POOL_LABEL`]: the
+/// 32-bit FNV-1a hash of its name, as 8 lower-case hex digits.
+pub fn name_hash(name: &str) -> String {
+    let hash = name.bytes().fold(0x811c_9dc5_u32, |hash, byte| {
+        (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193)
+    });
+    format!("{hash:08x}")
+}
+
+/// Why `pod`'s warm pool label is not the one of `warm_pool`, the claim's own, if it carries
+/// one: a runner made warm for another pool is not this claim's (#2057).
+pub fn warm_from(pod: &ObjectMeta, warm_pool: &str) -> Result<(), String> {
+    match pod
+        .labels
+        .as_ref()
+        .and_then(|labels| labels.get(WARM_POOL_LABEL))
+    {
+        Some(made_for) if *made_for != name_hash(warm_pool) => {
+            Err("it was made warm for another pool".into())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Whether `held`, the pod template of the pool's template as the cluster holds it after the
 /// operator's apply, is exactly the operator's `wanted` one: what any manager added, whatever
 /// name it gave itself, is a difference.
@@ -489,6 +541,8 @@ impl Vouching {
 
 /// What the cluster holds for one claim's runner, as the operator read it.
 pub struct Held<'a> {
+    /// Now, in seconds since the epoch: when the statement is signed, and from when it holds.
+    pub now: u64,
     pub claim: &'a Claim,
     /// The claim's upstream claim, the operator's own.
     pub upstream: &'a SandboxClaim,
@@ -560,6 +614,9 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &Signi
     if let Err(why) = labelled_as_ours(&pod.metadata, &held.upstream.metadata) {
         return Vouching::Refused(why);
     }
+    if let Err(why) = warm_from(&pod.metadata, &held.upstream.spec.warm_pool_ref.name) {
+        return Vouching::Refused(why);
+    }
     let key = match key_published(pod, template) {
         Ok(key) => key,
         Err(NotYet::Starting) => return not_yet("The runner's pod has not made its link key yet."),
@@ -576,7 +633,27 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &Signi
         pod: &pod_name,
         key: &key,
         requester: &claim.spec.requester,
+        until: held.now.saturating_add(VALID_FOR.as_secs()),
     };
+    // The statement on the claim already, while it says the same and is not near its end: it is
+    // signed again only then, so a claim's status is not written every pass.
+    if let Some(previous) = claim
+        .status
+        .as_ref()
+        .and_then(|status| status.link_key.as_ref())
+        && let Some(until) = until_of(&previous.statement)
+        && until > held.now.saturating_add(RENEW_WITHIN.as_secs())
+        && until <= about.until
+        && statement(&About {
+            until,
+            ..about.clone()
+        })
+        .as_deref()
+            == Some(previous.statement.as_str())
+        && previous.signature == signing.sign(&previous.statement)
+    {
+        return Vouching::Vouched(previous.clone());
+    }
     match statement(&about) {
         Some(text) => Vouching::Vouched(LinkKey {
             signature: signing.sign(&text),

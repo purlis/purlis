@@ -55,7 +55,15 @@ fn vouched(key: PublicKey) -> Vouched {
         pod: "ada-1".into(),
         key,
         requester: "ada@example.com".into(),
+        until: now() + 600,
     }
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 #[test]
@@ -67,6 +75,7 @@ fn the_operators_worked_example_is_verified_and_read() {
     assert_eq!(read.claim, "ada-1");
     assert_eq!(read.pod, "ada-1");
     assert_eq!(read.requester, "ada@example.com");
+    assert_eq!(read.until, 1_798_761_600);
     assert_eq!(
         hex_of(read.key.as_bytes()),
         "2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819"
@@ -373,5 +382,56 @@ fn a_kept_claim_says_so_and_a_fresh_one_reads_as_every_claim_did() {
     assert_eq!(
         fresh["metadata"],
         serde_json::json!({ "name": "ada-1", "namespace": "ada" })
+    );
+}
+
+#[test]
+fn a_statement_holds_only_until_the_time_it_names_and_never_past_an_hour() {
+    let operator = Operator::new();
+    let key = LinkKey::generate().unwrap().public();
+    let text = vouched(key).text();
+    let signature = operator.sign(&text);
+    let until = vouched(key).until;
+    let at = |now| checked_at(&operator.key(), &claimed(), &text, &signature, now);
+    assert!(at(until - 1).is_ok());
+    for now in [until, until + 1] {
+        let refused = at(now).unwrap_err();
+        assert!(
+            matches!(&refused, Refused::NotVouched(why) if why.contains("no longer holds")),
+            "{refused:?}"
+        );
+    }
+    let refused = at(until - MOST_AHEAD - 1).unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotVouched(why) if why.contains("more than an hour")),
+        "{refused:?}"
+    );
+    // The operator's worked example, long past.
+    let fixture_at = |now| {
+        checked_at(
+            &operator_key(),
+            &claimed(),
+            &fixture("statement.txt"),
+            fixture("signature.txt").trim(),
+            now,
+        )
+    };
+    assert!(fixture_at(1_798_761_000).is_ok());
+    assert!(fixture_at(1_798_761_600).is_err());
+}
+
+#[test]
+fn a_statement_of_another_version_says_both_are_to_be_of_one_release() {
+    let operator = Operator::new();
+    let text = vouched(LinkKey::generate().unwrap().public())
+        .text()
+        .replace(STATEMENT_HEADER, "purlis runner link key v1");
+    let refused = operator
+        .key()
+        .verified(&text, &operator.sign(&text))
+        .unwrap_err();
+    assert!(
+        matches!(&refused, Refused::NotVouched(why) if why.contains("version v1") && why.contains("one release")),
+        "{refused:?}"
     );
 }

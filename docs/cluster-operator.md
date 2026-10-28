@@ -229,14 +229,22 @@ spec:
   by digest (`<repository>@sha256:<digest>`); the cluster refuses an image named by tag, since
   a tag can move. Its `keptVolume` is what each kept Claim's runner gets of its own: `size`
   (`Mi`, `Gi` or `Ti`, 10Gi unless set) and `storageClassName` (the cluster's default class
-  unless set).
+  unless set). A change to it applies to kept Claims made after it: a kept Claim keeps the
+  volume it was made with. A change to it, as to `image`, also changes the pool's template, so
+  a fresh Claim's runner made before it, warm or running, is no longer vouched for; make its
+  Claim again.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other
   kind is another Claim.
   - **A kept Claim** (`kept: true`) gets a runner of its own, started cold, whose home is a
     volume of its own: one PersistentVolumeClaim, `purlis-kept-<claim>`, holding the runner's
     checkout, conversation, profile sign-in, kept browser logins and its pairing. When its pod
     is lost, upstream makes it again under the same name on that volume, and the runner is the
-    same runner, paired as it was (below). The volume goes when the Claim is deleted.
+    same runner, paired as it was (below). The volume goes when the Claim is deleted. Its
+    pod and sandbox take the Claim's name, so keep a kept Claim's name to 63 characters.
+  - **A kept Claim's home is made for it.** The first time its volume is used, the pod's first
+    step writes the uid of the Claim's upstream claim beside the home (`/var/lib/purlis/claim`),
+    and a later pod takes the home only when that uid is its own. A volume made or filled
+    before its Claim was is refused, and the Claim has to be made again.
   - **A fresh Claim** (the default) takes a runner the pool keeps warm, when there is one, and
     keeps nothing past its pod: its home is a folder of the node's, as big as a kept Claim's
     volume.
@@ -305,8 +313,8 @@ claimed. Two witnesses say which key that runner holds, and both must agree:
    to the template it made for the pool in full, every field but the few the cluster itself
    sets or defaults (a kept Claim's pod with its own volume in place of the template's folder,
    as upstream puts it there), and refuses a pool's template that someone else changed. Then
-   it signs a statement of the claim (its name and uid), the pod's name, the key and the
-   requester with its own Ed25519 key. The statement and its signature are the Claim's `status.linkKey`, and
+   it signs a statement of the claim (its name and uid), the pod's name, the key, the
+   requester and until when it holds (ten minutes on) with its own Ed25519 key. The statement and its signature are the Claim's `status.linkKey`, and
    its `KeyPublished` condition says `Vouched`, or why not yet. Every Pool's
    `status.signingKey` names the operator's key, which a desktop pins when it adds the pool.
 3. **The desktop pairs over its own `kubectl exec`** into the pod the statement names, as a
@@ -332,8 +340,19 @@ has a new key, which the desktop refuses as a changed key, and the claim is made
 
 **A kept Claim's volume holds its runner's link key.** Anyone who can read the volume, or make a
 pod that mounts it, in the Claim's namespace can take the runner's identity, as anyone who may
-exec into its pod can; so can whoever holds the node or the storage behind it. The namespace
-rule above holds for the volume too.
+exec into its pod can; so can whoever holds the node or the storage behind it, and so does any
+snapshot or backup of the volume (Velero and the like), which holds a working link key for as
+long as the Claim lives. The namespace rule above holds for the volume too. A statement holds
+for ten minutes once signed, and the operator signs it again while it still vouches, so one
+it can no longer look at again stops vouching within ten minutes.
+
+**The pod's group.** Every runner's pod is in group 10001 (`fsGroup`), which may write its
+volume. Where the volume's root ever loses that group or mode (a restore, a storage
+migration), the kubelet sets them again on every file, and the runner's key and peers file
+become readable by its group: purlis then refuses them, and a kept runner has to be claimed
+again. A cluster whose admission sets or changes a pod's security context (an OpenShift
+security context constraint, a policy engine's mutation) refuses the pool's pods, or the
+operator refuses to vouch for them, since they are no longer its template.
 
 **The operator acts only on Claims admitted under its policy, however it was installed.** It
 reads the policy's binding before it acts on any Claim. While no binding puts the policy in
