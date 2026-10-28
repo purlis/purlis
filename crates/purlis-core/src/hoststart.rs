@@ -210,7 +210,7 @@ pub struct ChatSkills {
     pub repo: Vec<crate::skills::OutsideSkill>,
     /// What its router extension made of its set at its start (SK-15b, [`Self::routed_by`]):
     /// `None` for a chat routed by the built-in router, which is asked nothing.
-    pub routed: Option<crate::skills::router::Routed>,
+    pub routed: Option<std::sync::Arc<crate::skills::router::Routed>>,
 }
 
 impl ChatSkills {
@@ -297,7 +297,10 @@ impl ChatSkills {
             asker,
             crate::extension::studio::ROUTER_DEADLINE,
         );
-        Self { routed, ..self }
+        Self {
+            routed: routed.map(std::sync::Arc::new),
+            ..self
+        }
     }
 }
 
@@ -1037,13 +1040,13 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     };
     let points = skills
         .routed
-        .as_ref()
+        .as_deref()
         .is_some_and(crate::skills::router::Routed::points);
     let at = on.then_some(crate::skills::PlaneSkills {
         plane: skills_root,
         workspace,
         repo: &skills.repo,
-        routed: skills.routed.as_ref(),
+        routed: skills.routed.as_deref(),
     });
     let linked = laid_out_on(at, skills.persona.as_deref(), kit, harness);
     let skills = at;

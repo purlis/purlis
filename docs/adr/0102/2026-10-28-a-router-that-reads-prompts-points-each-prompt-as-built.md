@@ -14,7 +14,7 @@ Such a chat is started with `PURLIS_PROMPT_ROUTER=1`. Its prompt hook hands the 
 
 ## Where the prompt goes
 
-**The hook hands the prompt to the app, over the chat's own authenticated hook line** (`Ask::Prompt`), and the app asks the router. Asking from the hook itself would start the router inside the chat's own sandbox, where the router's confinement cannot be applied a second time, so a sandboxed chat (the default) would never be routed. The app's executor asks it confined, as at the chat's start.
+**The hook hands the prompt to the app, over the chat's own authenticated hook line** (`Ask::Prompt`), cut to 16 KiB there, and the app asks the router. A chat a runner's host composed is routed there, never by this machine. Asking from the hook itself would start the router inside the chat's own sandbox, where the router's confinement cannot be applied a second time, so a sandboxed chat (the default) would never be routed. The app's executor asks it confined, as at the chat's start.
 
 The prompt goes no further than the router. The app writes it nowhere, a debug dump of the ask says nothing of it (`PromptAsk`, as SK-38's `PromptMarks`), and the routing record holds no word of it. **Nothing of the chat beyond the prompt goes with it**: no chat id, no prompt salt, no name or path. The prompt is cut to 16 KiB.
 
@@ -41,7 +41,9 @@ A skill loaded so is loaded with `skill_load`, so its run has an exact start.
 
 **The same 100 ms as at the chat's start**, counted from before the router's slot is held. The hook waits on the app at most 400 ms in all. Past the deadline, on an error, or on an answer purlis does not take, the prompt goes on with no pointer. Chatting never waits on a router.
 
-Each prompt routed is a `skill.routed` record under the chat's run, written before the prompt's own event. It has `prompt: true`, `pointed` (the names), and `fell_back` with `error` where it fell back. Every skill run the turn opens names it as `routing`.
+Each prompt routed is a `skill.routed` record under the chat's run, written before the prompt's own event. It has `prompt: true`, `pointed` (the names), and `fell_back` with `error` where it fell back. Every skill run the turn opens names it as `prompt_routing`, with `prompt_routing_fell_back` where it fell back, beside the start's `routing`. A slow prompt does not say the chat's list fell back: the start's routing is what the list was made by.
+
+**A router slow at a chat's start still routes its prompts**: what it is asked about is what the built-in router left out in its place. Whether it reads prompts is read once its start's question is over, so that read is never inside its 100 ms, and never again on a prompt; the executor still refuses a prompt to a router whose approval says it reads none.
 
 ## A harness without a prompt hook
 

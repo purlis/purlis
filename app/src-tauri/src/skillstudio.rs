@@ -1160,7 +1160,7 @@ pub(crate) async fn skill_studio(
                 .filter(|one| one.workspace == workspace && one.persona == persona)
                 .map(|one| StudioRouted {
                     session: one.session,
-                    routing: (&one.routed).into(),
+                    routing: one.routed.as_ref().into(),
                 })
                 .collect();
         }

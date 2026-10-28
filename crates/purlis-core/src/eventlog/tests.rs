@@ -3938,6 +3938,65 @@ fn a_routing_told_for_a_start_taken_back_is_never_written() {
 }
 
 #[test]
+fn a_prompt_s_routing_is_named_beside_the_start_s_and_never_in_its_place() {
+    use crate::state::Event::UserPromptSubmit;
+    use std::time::Instant;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = a_plane();
+    let mut host = recorder(dir.path());
+    host.begin(
+        plane.path(),
+        3,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes::default(),
+    )
+    .unwrap();
+    let start = crate::skills::router::Record {
+        routing: "01K6E8ZK6V4Q9T0N3M2B1C5D7R".to_owned(),
+        router: "relevance".to_owned(),
+        ms: 12,
+        fell_back: None,
+        error: None,
+        hidden: Vec::new(),
+        prompt: false,
+        pointed: Vec::new(),
+    };
+    let prompt = crate::skills::router::Record {
+        routing: "01K6E8ZK6V4Q9T0N3M2B1C5D7S".to_owned(),
+        fell_back: Some(crate::skills::router::FellBack::Slow),
+        prompt: true,
+        ..start.clone()
+    };
+    host.skill_routed(plane.path(), 3, &start).unwrap();
+    host.skill_routed(plane.path(), 3, &prompt).unwrap();
+    host.report(plane.path(), &report(3, UserPromptSubmit), Followed::No)
+        .unwrap();
+    host.tool(
+        plane.path(),
+        &starting(3, "posttooluse-skill", "toolu_a", "deploy"),
+        Instant::now(),
+    )
+    .unwrap();
+
+    let started = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .find(|event| event.kind == "skill.started")
+        .expect("a run started");
+    assert_eq!(started.body["routing"], start.routing.as_str());
+    assert!(
+        started.body.get("routing_fell_back").is_none(),
+        "its start was taken"
+    );
+    assert_eq!(started.body["prompt_routing"], prompt.routing.as_str());
+    assert_eq!(started.body["prompt_routing_fell_back"], true);
+}
+
+#[test]
 fn a_log_whose_newest_event_has_no_id_takes_no_id_a_window_names_for_a_run() {
     // Nothing the log held can be told apart by time from such a log (#3394), so every run a
     // clear begins is under an id the writer mints.

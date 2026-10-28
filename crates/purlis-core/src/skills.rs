@@ -877,7 +877,7 @@ impl Running<'_> {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
-            routed: start.and_then(|start| start.routed.as_ref()),
+            routed: start.and_then(|start| start.routed.as_deref()),
         });
         routed(
             self.built_in,
