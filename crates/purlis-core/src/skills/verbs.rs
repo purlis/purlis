@@ -291,14 +291,20 @@ impl Ctx<'_> {
     /// **Refused where `name` belongs to a built-in skill** ([`super::name_reserved`], spec
     /// #3679 S12), with [`super::NAME_RESERVED`]: so no skill of the plane stands in for a
     /// guarded built-in such as `secrets`. Every change that lands a skill under a name asks it
-    /// first: [`create`], [`rename`], [`move_to`], [`share`], [`restore`], a draft's accept,
-    /// each skill an install lands and each one an update brings along. Make my own copy asks it
-    /// of the copy's name (#3686).
+    /// first: [`create`], [`rename`], [`move_to`], [`share`] and a draft's accept, and Make my own
+    /// copy of the copy's name (#3686). [`restore`], an install and an update's skills brought
+    /// along ask [`Self::reserved`], and say it in their own words.
     pub fn not_built_in(&self, name: &str) -> Result<(), String> {
-        if super::name_reserved(self.built_in, name) {
+        if self.reserved(name) {
             return Err(super::NAME_RESERVED.to_owned());
         }
         Ok(())
+    }
+
+    /// Whether `name` belongs to a built-in skill ([`super::name_reserved`]): what a change that
+    /// cannot offer another name (a restore, an install) asks, and says in its own words.
+    pub fn reserved(&self, name: &str) -> bool {
+        super::name_reserved(self.built_in, name)
     }
 
     /// Says `line` as a warning.
@@ -1593,7 +1599,11 @@ pub fn restore(cx: &mut Ctx<'_>, deleted: &Deleted) -> Result<PathBuf, String> {
         ));
     }
     let name = &deleted.name;
-    cx.not_built_in(name)?;
+    if cx.reserved(name) {
+        return Err(format!(
+            "{name} cannot be restored under its name: it belongs to a built-in skill now"
+        ));
+    }
     let dir = level_is_there(plane, &deleted.level)?;
     let folder = dir.join(&deleted.folder);
     let folder_rel = rel(plane, &folder);

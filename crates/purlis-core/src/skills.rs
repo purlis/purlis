@@ -207,26 +207,47 @@ pub const SHIPPED: [&str; 11] = [
 pub const NAME_RESERVED: &str =
     "That name belongs to a built-in skill; pick another, or make a copy.";
 
-/// **Whether `name` belongs to a built-in skill**, so no skill of the plane may take it (spec
-/// #3679 S12, ADR 0099 §3): a skill purlis ships ([`SHIPPED`]) or the bundle's `skills/` in
-/// `built_in` holds, purlis's index skill ([`INDEX`]), or the name of its own a route gives one
-/// of those (`purlis-<name>`, [`Route::built_in_name`]). The one check every change that lands a
-/// skill under a name makes ([`verbs::Ctx::not_built_in`]), Make my own copy's too (#3686). A
-/// skill of such a name never reaches a chat beside the built-in one anyway; this keeps one from
-/// being made at all.
-pub fn name_reserved(built_in: Option<&Path>, name: &str) -> bool {
-    let bare = name.strip_prefix(BUILT_IN_OWN_PREFIX).unwrap_or(name);
-    let ours = |one: &str| one == INDEX || SHIPPED.contains(&one);
-    ours(name)
-        || ours(bare)
-        || built_in_names(built_in)
+/// **The names that belong to a built-in skill**, so no skill of the plane may take one (spec
+/// #3679 S12, ADR 0099 §3): each skill purlis ships ([`SHIPPED`]) or the bundle's `skills/`
+/// holds, and every name a chat knows purlis's own skills by on any route
+/// ([`Route::built_in_names`]: `purlis-<name>`, and the index skill's). Read once, then asked of
+/// as many names as need it. A skill of such a name never reaches a chat beside the built-in one
+/// anyway; this keeps one from being made at all.
+pub struct Reserved(std::collections::HashSet<String>);
+
+impl Reserved {
+    /// The names reserved with the built-in skills in `built_in`, the bundle's `skills/`, read
+    /// once: [`SHIPPED`]'s, and whatever it holds.
+    pub fn of(built_in: Option<&Path>) -> Reserved {
+        let bundled = built_in_names(built_in);
+        let bare: Vec<&str> = SHIPPED
             .iter()
-            .any(|one| one == name || one == bare)
+            .copied()
+            .chain(bundled.iter().map(String::as_str))
+            .chain([INDEX])
+            .collect();
+        let mut names = Route::Config.built_in_names(bare.iter().copied());
+        names.extend(bare.iter().map(|name| (*name).to_owned()));
+        Reserved(names)
+    }
+
+    /// Whether `name` belongs to a built-in skill.
+    pub fn holds(&self, name: &str) -> bool {
+        self.0.contains(name)
+    }
+}
+
+/// **Whether `name` belongs to a built-in skill** ([`Reserved`]) with the built-in skills in
+/// `built_in`: the one check every change that lands a skill under a name makes
+/// ([`verbs::Ctx::not_built_in`]), Make my own copy's too (#3686).
+pub fn name_reserved(built_in: Option<&Path>, name: &str) -> bool {
+    Reserved::of(built_in).holds(name)
 }
 
 /// **A skill of the plane named as a built-in skill** (spec #3679 S12): one made before its name
 /// was reserved, by a purlis older than the built-in, or written into the plane by hand. No chat
-/// gets it, since the built-in skill has its name; Needs you lists it as a clash to rename.
+/// gets it, since the built-in skill has its name; Needs you lists it as a clash to rename
+/// (#3689).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamedAsABuiltIn {
     pub name: String,
@@ -238,13 +259,14 @@ pub struct NamedAsABuiltIn {
 /// **Every skill of the plane at `plane` named as a built-in skill** ([`name_reserved`], with the
 /// built-in skills in `built_in`), at every level ([`verbs::Level::every`]), in that order.
 pub fn named_as_a_built_in(plane: &Path, built_in: Option<&Path>) -> Vec<NamedAsABuiltIn> {
+    let reserved = Reserved::of(built_in);
     let mut out = Vec::new();
     for level in verbs::Level::every(plane) {
         let Some(dir) = level.dir(plane) else {
             continue;
         };
         for skill in read(&dir) {
-            if name_reserved(built_in, &skill.name) {
+            if reserved.holds(&skill.name) {
                 out.push(NamedAsABuiltIn {
                     folder: verbs::rel(plane, skill.path.parent().unwrap_or(&skill.path)),
                     name: skill.name,
@@ -2389,9 +2411,6 @@ pub struct StudioList {
     /// The harnesses the project or this machine declares that take no skills at all (SK-30),
     /// each with its one line ([`not_supported`]).
     pub not_supported: Vec<NotSupported>,
-    /// The plane's skills, at every level, named as a built-in skill (spec #3679 S12,
-    /// [`named_as_a_built_in`]): Needs you's clashes to rename (#3689).
-    pub named_as_a_built_in: Vec<NamedAsABuiltIn>,
 }
 
 /// **A declared harness skills are not supported on** (SK-30, #2985; decision 18: nothing is
@@ -2520,7 +2539,6 @@ pub fn studio_list(
         rows,
         harnesses,
         not_supported: not_supported(&crate::harness_declaration::read(plane)),
-        named_as_a_built_in: named_as_a_built_in(plane, built_in),
     }
 }
 

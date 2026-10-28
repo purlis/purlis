@@ -1580,10 +1580,7 @@ fn no_skill_with_a_built_in_skills_name_lands_by_an_install_or_an_update() {
     .0;
     assert_eq!(
         refused.unwrap_err(),
-        format!(
-            "secrets cannot be installed: {}",
-            crate::skills::NAME_RESERVED
-        )
+        "secrets cannot be installed: its name belongs to a built-in skill"
     );
     assert!(!root.join("skills/secrets").exists());
 
@@ -1614,10 +1611,8 @@ fn no_skill_with_a_built_in_skills_name_lands_by_an_install_or_an_update() {
 
     assert_eq!(
         refused.unwrap_err(),
-        format!(
-            "secrets cannot be brought along: {}",
-            crate::skills::NAME_RESERVED
-        )
+        "this update brings along secrets, whose name belongs to a built-in skill, so nothing \
+         was updated"
     );
     assert!(!root.join("skills/secrets").exists());
     let notify = std::fs::read_to_string(root.join("skills/notify/SKILL.md")).unwrap();

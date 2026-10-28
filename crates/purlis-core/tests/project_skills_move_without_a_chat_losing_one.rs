@@ -322,7 +322,10 @@ fn a_skill_a_chat_would_lose_is_refused_before_anything_moves() {
         why.contains("the skill folder hand-off would be left out of every chat"),
         "{why}"
     );
-    assert!(why.contains("a built-in skill has this name"), "{why}");
+    assert!(
+        why.contains("this name belongs to a built-in skill"),
+        "{why}"
+    );
     assert_eq!(head(&f.plane), head_was);
     assert_eq!(f.status(&f.plane), "");
 }

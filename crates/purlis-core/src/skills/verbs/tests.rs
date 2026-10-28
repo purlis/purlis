@@ -1886,7 +1886,10 @@ fn a_deleted_skill_named_as_a_built_in_one_is_not_restored() {
 
     let refused = did(root, |cx| restore(cx, &listed[0]));
 
-    assert_eq!(refused.unwrap_err(), crate::skills::NAME_RESERVED);
+    assert_eq!(
+        refused.unwrap_err(),
+        "secrets cannot be restored under its name: it belongs to a built-in skill now"
+    );
     assert!(!root.join("skills/secrets").exists());
 }
 
