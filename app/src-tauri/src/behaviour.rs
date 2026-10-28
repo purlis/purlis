@@ -94,11 +94,21 @@ pub(crate) struct Target {
     pub kill_the_host: Option<Arc<dyn Fn() + Send + Sync>>,
     /// The runner's container, on a Docker pool's target: the machine its chats run on.
     pub runner: Option<OnTheRunner>,
+    /// The window's own host, where its sessions are another host's: what saves the project as
+    /// the window holds it, which a runner never does (#3312). `None` where the window's
+    /// sessions save it themselves.
+    pub saved_by: Option<Box<dyn SessionHost>>,
     /// What keeps the target running for as long as the test does.
     _keeps: Vec<Box<dyn std::any::Any>>,
 }
 
 impl Target {
+    /// What the window asks to save its project: the window's own host, wherever the project's
+    /// chats run (#3312).
+    fn saver(&self) -> &dyn SessionHost {
+        self.saved_by.as_deref().unwrap_or(self.sessions.as_ref())
+    }
+
     /// You let every chat of the project reach the service on `port` of the machine its chats
     /// run on, as that machine's own sandbox for the project gives it (#2445): on a pool's
     /// runner, in the project as the runner holds it, `<data>/projects/<id>`.
@@ -271,6 +281,7 @@ pub(crate) fn in_the_window() -> Target {
         host: None,
         kill_the_host: None,
         runner: None,
+        saved_by: None,
         _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
     }
 }
@@ -317,7 +328,32 @@ pub(crate) fn through_a_link() -> Target {
     });
     target._keeps.push(Box::new(folder));
     target._keeps.push(Box::new(data));
+    the_windows_own_host_saves(&mut target);
     target
+}
+
+/// **The window's own host saves the project as the window holds it**, wherever its chats run
+/// (#3312, spec #2041): never a runner, whose link may not ask a host to save (`Power::Save`),
+/// and whose work comes back as branches and proposals. Here the window's chats run on host B
+/// through host A, a relay alone; so the window's own host, which in the app is host A too, is
+/// one of its own on this machine, the window's own link to it a link of its own.
+fn the_windows_own_host_saves(target: &mut Target) {
+    let (folder, data) = (
+        tempfile::tempdir().expect("the window's host's folder"),
+        tempfile::tempdir().expect("its data home"),
+    );
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("a runtime");
+    let host = runtime.block_on(async { a_host(folder.path(), data.path()) });
+    let (connection, window) = crate::hostedsessions::tests::in_memory(host, &runtime);
+    target.saved_by = Some(Box::new(HostedSessions::new(connection, &target.root)));
+    target._keeps.insert(0, Box::new(window));
+    target._keeps.insert(1, Box::new(runtime));
+    target._keeps.push(Box::new(folder));
+    target._keeps.push(Box::new(data));
 }
 
 /// Where the window's chats of a target's project run, as its sessions are told.
@@ -923,6 +959,7 @@ fn a_window_over(
         host: Some(connection),
         kill_the_host: None,
         runner: None,
+        saved_by: None,
         _keeps: vec![Box::new(project), Box::new(config)],
     }
 }
@@ -1843,7 +1880,7 @@ const A_SAVE_WITHIN: Duration = Duration::from_secs(60);
 fn a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told(target: &Target) {
     a_plane_saved_after_a_second(&target.root);
     let (told, looks) = told_of_looks();
-    let _saving = target.sessions.keep_saving(&target.root, told);
+    let _saving = target.saver().keep_saving(&target.root, told);
 
     std::fs::write(target.root.join("note.md"), "a note\n").expect("written");
 
@@ -1879,7 +1916,7 @@ fn a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told
 fn exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped(target: &Target) {
     a_plane_saved_after_a_second(&target.root);
     let (told, looks) = told_of_looks();
-    let saving = target.sessions.keep_saving(&target.root, told);
+    let saving = target.saver().keep_saving(&target.root, told);
     std::fs::write(target.root.join("first.md"), "saved\n").expect("written");
 
     let deadline = Instant::now() + A_SAVE_WITHIN;
@@ -3351,6 +3388,8 @@ on_every_target!(
     a_chat_whose_turn_ends_needs_you_on_every_harness,
     a_permission_ask_is_answered_from_the_window_on_every_harness,
     the_event_log_has_one_writer_and_each_hook_line_is_written_once,
+    a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
+    exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped,
     a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
@@ -3360,7 +3399,4 @@ on_every_target!(
     not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
     while_stopped_the_operators_shell_opens;
-    not yet through a link ("where a project whose chats run on a runner is saved is not decided, #3312"):
-    a_write_in_the_project_is_saved_after_its_quiet_period_and_the_window_is_told,
-    exactly_one_saver_runs_for_the_project_and_none_once_it_is_stopped;
 );
