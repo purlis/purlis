@@ -907,7 +907,7 @@ describe("the router a studio's chats are routed by (SK-15b)", () => {
       />,
     );
     const line = screen.getByTestId("skill-studio-router");
-    expect(line.getAttribute("role")).toBe("status");
+    expect(line.className).toContain("use-skill-over");
     expect(line.textContent).toMatch(/routed by the built-in router/);
   });
 });

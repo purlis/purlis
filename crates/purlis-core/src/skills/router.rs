@@ -677,7 +677,9 @@ fn record_of(
 ) -> Record {
     Record {
         routing: ulid::Ulid::generate().to_string(),
-        router: crate::shown::readable(router, 128),
+        // An extension's id as `chosen` held it (`extension::an_id`), or none for a choice
+        // that names no router: never a string that needs escaping.
+        router: router.to_owned(),
         ms: u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX),
         fell_back,
         error: error.map(|why| clipped(&why)),

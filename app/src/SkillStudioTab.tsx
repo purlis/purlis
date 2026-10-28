@@ -1281,7 +1281,6 @@ export function StudioRouterLine({ router }: { router: StudioRouter }) {
   return (
     <div
       className={router.problem ? "honest use-skill-over" : "honest"}
-      role={router.problem ? "status" : undefined}
       data-testid="skill-studio-router"
     >
       <p>{router.said}</p>
