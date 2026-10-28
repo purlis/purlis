@@ -173,8 +173,11 @@ describe("a tab's chip", () => {
     act(() => void vi.advanceTimersByTime(REST_MS * 4));
     expect(menu()).toBeNull();
 
+    expect(counts()).not.toHaveAttribute("data-open");
     fireEvent.click(counts());
     expect(menu()).not.toBeNull();
+    // The family draws the counts open while their menu is (#3524).
+    expect(counts()).toHaveAttribute("data-open", "");
   });
 
   it("opens for a pointer the person moved onto it and then held still", () => {
@@ -438,7 +441,8 @@ describe("the chip's pill (#3264, D-3264-3)", () => {
     strip.className = "tabs";
     strip.innerHTML = `<div class="tab"><span class="tab-tasks"${open ? " data-open" : ""}>
       <span class="tab-tasks-mark"><button class="tab-tasks-hand"></button></span>
-      <span class="tab-tasks-pill"><button class="tab-tasks-counts"></button></span>
+      <span class="tab-tasks-pill"><button class="tab-tasks-counts" data-scope="button"
+        data-part="root" data-variant="quiet" data-size="sm"${open ? " data-open" : ""}></button></span>
     </span></div>`;
     document.body.append(strip);
     const [mark, pill] = ["tab-tasks-mark", "tab-tasks-pill"].map(
@@ -447,14 +451,19 @@ describe("the chip's pill (#3264, D-3264-3)", () => {
     return { strip, mark, pill };
   }
 
-  it("is the sunken ground at rest and the hover fill while its menu is open", () => {
+  it("is the sunken ground, and the counts draw their open menu from the family (#3524)", () => {
     const shut = chip(false);
     expect(drawnWith(shut.pill, "background")).toBe("var(--surface-sunken)");
     expect(drawnWith(shut.pill, "border-radius")).toBe("var(--radius-full)");
-    // It clips the quiet button's hover fill to its ends.
+    // It clips the quiet button's hover fill, and its open one, to its ends.
     expect(drawnWith(shut.pill, "overflow")).toBe("hidden");
+    const counts = (one: { pill: HTMLElement }) => one.pill.querySelector("button") as HTMLElement;
+    expect(drawnWith(counts(shut), "background")).toBe("transparent");
+    // Open, the pill is as it was, and the button family draws the counts as under the pointer.
     const open = chip(true);
-    expect(drawnWith(open.pill, "background")).toBe("var(--surface-hover)");
+    expect(drawnWith(open.pill, "background")).toBe("var(--surface-sunken)");
+    expect(drawnWith(counts(open), "background")).toBe("var(--surface-hover)");
+    expect(drawnWith(counts(open), "color")).toBe("var(--text-primary)");
     shut.strip.remove();
     open.strip.remove();
   });
