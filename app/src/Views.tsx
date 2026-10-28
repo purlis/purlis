@@ -1361,11 +1361,11 @@ export function AnsweredBlocks({
 /** A table block, as the wire carries it. */
 export type TableBlock = Extract<PanelBlock, { kind: "table" }>;
 
-/** **What each row of a table opens** (SK-59): its column's heading, the press's words for a
- *  row, and what the press opens, by the row's key. */
+/** **What each row of a table opens** (SK-59): its column's heading, the press's words, and
+ *  what the press opens, by the row's key. */
 export type RowOpens = {
   column: string;
-  said: (row: TableBlock["rows"][number]) => string;
+  label: string;
   onOpen: (key: string) => void;
 };
 
@@ -1447,13 +1447,8 @@ export function Table({
               ))}
               {rowAction !== undefined && (
                 <TableCell>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-label={rowAction.said(row)}
-                    onPress={() => rowAction.onOpen(row.key)}
-                  >
-                    Open
+                  <Button size="sm" variant="ghost" onPress={() => rowAction.onOpen(row.key)}>
+                    {rowAction.label}
                   </Button>
                 </TableCell>
               )}

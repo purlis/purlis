@@ -1298,8 +1298,9 @@ fn grade_said(
         let asked = match one.report.asked() {
             0 => String::new(),
             asked => format!(
-                "  {} asked you something and ended there",
-                counted(asked, "chat", "chats")
+                "  {} asked you something, and purlis ended {them} there without counting {them}",
+                counted(asked, "chat", "chats"),
+                them = if asked == 1 { "it" } else { "them" }
             ),
         };
         text.push_str(&format!(

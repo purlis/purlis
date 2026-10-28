@@ -77,7 +77,7 @@ export function runsSaid(runs: ScoredRuns, shouldTrigger: boolean): string {
   const asked =
     runs.asked === 0
       ? ""
-      : `; ${counted(runs.asked, "chat", "chats")} asked you something and ${runs.asked === 1 ? "was" : "were"} ended there, not counted`;
+      : `; ${counted(runs.asked, "chat", "chats")} asked you something, and purlis ended ${runs.asked === 1 ? "it" : "them"} there without counting ${runs.asked === 1 ? "it" : "them"}`;
   return `${started} (${shouldTrigger ? "should start it" : "should leave it alone"}), ${verdict}${asked}`;
 }
 
@@ -140,8 +140,8 @@ export function GradeScorecardTab({
       {card.asked > 0 && (
         <p className="honest" data-testid="grade-scorecard-asked">
           {counted(card.asked, "chat", "chats")} asked you something. A grade's chat waits on
-          nobody, so each was ended at its ask and is not counted: open it below to see what it
-          asked.
+          nobody, so purlis ended each at its ask and counts none of them: open its run below to
+          read what it asked.
         </p>
       )}
       <ol aria-label={`Trigger tests of ${skill}`}>
@@ -152,7 +152,7 @@ export function GradeScorecardTab({
               {test.arms.map((runs) => (
                 <li key={runs.arm} data-testid={`grade-scorecard-${runs.arm}`}>
                   {ARM_SAID[runs.arm]}: {runsSaid(runs, test.should_trigger)}.{" "}
-                  {runs.chats.map((chat, run) => (
+                  {runs.chats.map((chat) => (
                     <Button
                       key={chat.id}
                       size="sm"
@@ -161,16 +161,16 @@ export function GradeScorecardTab({
                       tooltip={
                         chat.kept
                           ? "Opens the chat as it showed when the grade ended it, read-only"
-                          : "purlis keeps a grade's chats on the machine that ran it, for the skill's three newest grades"
+                          : "Not kept on this machine: purlis keeps a grade's chats where the grade ran, for the skill's newest grades"
                       }
                       onPress={() =>
                         onOpenView?.(
                           gradeChatView(skill, grade, chat.id),
-                          gradeChatTitle(skill, run + 1),
+                          gradeChatTitle(skill, chat.run),
                         )
                       }
                     >
-                      {`Chat ${run + 1}`}
+                      {`Open run ${chat.run}`}
                     </Button>
                   ))}
                 </li>

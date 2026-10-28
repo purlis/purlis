@@ -273,17 +273,42 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
         [
             ScoredChat {
                 id: "01A".into(),
+                run: 1,
                 kept: true
             },
             ScoredChat {
                 id: "01B".into(),
+                run: 2,
                 kept: false
             },
             ScoredChat {
                 id: "01C".into(),
+                run: 3,
                 kept: true
             },
         ]
     );
     assert_eq!(test.arms[1].asked, 1);
+}
+
+/// The review of #3239: a host sends a view's snapshot in pieces, after a reset where the view is
+/// not its first, so the screen kept is every piece until the view is quiet.
+#[test]
+fn a_screen_sent_in_pieces_is_kept_whole() {
+    let (send, pieces) = std::sync::mpsc::channel();
+    for piece in ["", "\u{1b}c", "first half, ", "second half"] {
+        send.send(piece.to_owned()).unwrap();
+    }
+    assert_eq!(
+        gathered(&pieces, Instant::now()).as_deref(),
+        Some("\u{1b}cfirst half, second half")
+    );
+    let (send, nothing) = std::sync::mpsc::channel::<String>();
+    send.send(String::new()).unwrap();
+    drop(send);
+    assert_eq!(
+        gathered(&nothing, Instant::now()),
+        None,
+        "nothing was shown"
+    );
 }

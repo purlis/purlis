@@ -38,6 +38,10 @@ fn a_name_that_is_not_plain_is_never_kept_or_read() {
         ("deploy", "../g", "c"),
         ("deploy", "g", "c/../../x"),
         ("deploy", "", "c"),
+        ("..", "..", "c"),
+        (".", "g", "c"),
+        ("deploy", "..", "c"),
+        ("deploy", "g", ".."),
     ] {
         assert!(
             keep(root, skill, grade, chat, "x").is_err(),
@@ -94,5 +98,21 @@ fn a_skills_newest_grades_keep_their_chats_and_the_older_ones_go() {
         kept(root, "other", "01A", "c").as_deref(),
         Some("kept"),
         "another skill's grades are its own"
+    );
+}
+
+#[test]
+fn a_sweep_of_a_name_of_dots_takes_nothing() {
+    let plane = project();
+    let root = plane.path();
+    for grade in ["01A", "01B", "01C", "01D"] {
+        keep(root, "deploy", grade, "c", "x").unwrap();
+    }
+    for skill in [".", ".."] {
+        assert!(sweep(root, skill).is_empty(), "{skill}");
+    }
+    assert!(
+        kept(root, "deploy", "01A", "c").is_some(),
+        "another skill's chats stay"
     );
 }

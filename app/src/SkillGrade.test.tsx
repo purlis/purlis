@@ -185,7 +185,7 @@ describe("Grade, cost first", () => {
       said: null,
     };
     expect(endedSaid(step)).toBe(
-      "Graded in 10 chats. The scorecard is in Grades below. 2 chats asked you something and were ended there, not counted: its scorecard opens each.",
+      "Graded in 10 chats. The scorecard is in Grades below. 2 chats asked you something, and purlis ended them there without counting them: the grade's scorecard opens each.",
     );
     expect(endedSaid({ ...step, asked: 0 })).toBe(
       "Graded in 10 chats. The scorecard is in Grades below.",

@@ -198,9 +198,7 @@ describe("a skill's Grades panel (SK-59)", () => {
         onOpenView={(view, title) => opened.push({ view, title })}
       />,
     );
-    const open = await screen.findByRole("button", {
-      name: "Open the scorecard of the grade of 2026-10-28 10:00 UTC",
-    });
+    const open = await screen.findByRole("button", { name: "Open scorecard" });
     fireEvent.click(open);
     expect(opened).toEqual([
       {

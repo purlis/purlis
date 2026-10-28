@@ -52,9 +52,9 @@ const CARD: GradeScorecard = {
           pass: true,
           asked: 0,
           chats: [
-            { id: "01A", kept: true },
-            { id: "01B", kept: false },
-            { id: "01C", kept: true },
+            { id: "01A", run: 1, kept: true },
+            { id: "01B", run: 2, kept: false },
+            { id: "01C", run: 3, kept: true },
           ],
         },
         {
@@ -64,9 +64,9 @@ const CARD: GradeScorecard = {
           pass: false,
           asked: 1,
           chats: [
-            { id: "01D", kept: true },
-            { id: "01E", kept: true },
-            { id: "01F", kept: true },
+            { id: "01D", run: 1, kept: true },
+            { id: "01E", run: 2, kept: true },
+            { id: "01F", run: 3, kept: true },
           ],
         },
       ],
@@ -94,7 +94,7 @@ describe("A grade's scorecard (SK-59)", () => {
       "2 of 3 chats started it (should start it), passed",
     );
     expect(runsSaid(CARD.tests[0].arms[1], true)).toBe(
-      "0 of 2 chats started it (should start it), failed; 1 chat asked you something and was ended there, not counted",
+      "0 of 2 chats started it (should start it), failed; 1 chat asked you something, and purlis ended it there without counting it",
     );
   });
 

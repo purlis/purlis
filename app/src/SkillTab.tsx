@@ -233,7 +233,7 @@ export function SkillTab({
               panel.key.kind === SKILL_GRADES_PANEL && onOpenView !== undefined
                 ? {
                     column: "Scorecard",
-                    said: (row) => `Open the scorecard of the grade of ${row.cells[0] ?? name}`,
+                    label: "Open scorecard",
                     onOpen: (grade) => onOpenView(gradeView(name, grade), gradeTitle(name)),
                   }
                 : undefined

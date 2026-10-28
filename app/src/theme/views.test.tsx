@@ -1531,8 +1531,8 @@ const STATES: State[] = [
                 pass: true,
                 asked: 0,
                 chats: [
-                  { id: "01A", kept: true },
-                  { id: "01B", kept: false },
+                  { id: "01A", run: 1, kept: true },
+                  { id: "01B", run: 2, kept: false },
                 ],
               },
               {
@@ -1541,7 +1541,7 @@ const STATES: State[] = [
                 triggered: 0,
                 pass: false,
                 asked: 1,
-                chats: [{ id: "01C", kept: true }],
+                chats: [{ id: "01C", run: 1, kept: true }],
               },
             ],
           },

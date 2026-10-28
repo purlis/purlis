@@ -33,8 +33,8 @@ export function tokensSaid(tokens: number): string {
 export function endedSaid(step: SkillGradeStep): string {
   const said = endSaid(step);
   if (step.asked === 0 || step.ended === "failed") return said;
-  const were = step.asked === 1 ? "was" : "were";
-  return `${said} ${counted(step.asked, "chat", "chats")} asked you something and ${were} ended there, not counted: its scorecard opens each.`;
+  const them = step.asked === 1 ? "it" : "them";
+  return `${said} ${counted(step.asked, "chat", "chats")} asked you something, and purlis ended ${them} there without counting ${them}: the grade's scorecard opens each.`;
 }
 
 /** How a grade that ended is said, before what its chats asked. */
@@ -163,8 +163,8 @@ export function SkillGrade({
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane, name, onGraded]);
 
-  const read = (on: string | null, running: string | null) =>
-    void commands.skillGradePlan(plane, level, name, on, running).then((answer) => {
+  const read = (on: string | null, onModel: string | null) =>
+    void commands.skillGradePlan(plane, level, name, on, onModel).then((answer) => {
       if (answer.status === "ok") {
         setPlan(answer.data);
         setRefused(undefined);

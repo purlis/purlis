@@ -188,16 +188,21 @@ fn chats_on(root: &std::path::Path, profile: Option<String>, model: Option<Strin
         ..Default::default()
     };
     // The models are offered from the profile's own start, so a model that is refused leaves the
-    // others still on offer.
-    let models: Vec<String> = grades::ready_to_grade(&start, root)
+    // others still on offer; that start is the one asked again only where a model is picked.
+    let own = grades::ready_to_grade(&start, root);
+    let models: Vec<String> = own
+        .as_ref()
         .map(|ready| {
-            grades::models_for(&ready)
+            grades::models_for(ready)
                 .iter()
                 .map(|model| (*model).to_owned())
                 .collect()
         })
         .unwrap_or_default();
-    let ready = grades::ready_to_grade_on(&start, root, model.as_deref());
+    let ready = match model.as_deref() {
+        None => own,
+        Some(picked) => grades::ready_to_grade_on(&start, root, Some(picked)),
+    };
     let priced = ready
         .as_ref()
         .map_or_else(|_| grades::price::of_model(None), grades::priced);
@@ -709,6 +714,8 @@ pub(crate) async fn skill_grade_stop(plane: PlaneId, grade: String) -> Result<()
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct ScoredChat {
     pub id: String,
+    /// Which of its test's runs in its arm it was, from 1.
+    pub run: u32,
     pub kept: bool,
 }
 
@@ -790,10 +797,13 @@ impl GradeScorecard {
                 chats: score
                     .chats
                     .iter()
-                    .flatten()
-                    .map(|id| ScoredChat {
-                        id: id.clone(),
-                        kept: kept(id),
+                    .zip(1u32..)
+                    .filter_map(|(id, run)| {
+                        id.as_ref().map(|id| ScoredChat {
+                            id: id.clone(),
+                            run,
+                            kept: kept(id),
+                        })
                     })
                     .collect(),
             };
@@ -812,7 +822,7 @@ impl GradeScorecard {
         GradeScorecard {
             grade: graded.grade.clone(),
             skill: graded.skill.clone(),
-            graded: studio::graded_at_said(&graded.ts),
+            graded: studio::said_at(&graded.ts),
             version: studio::version_said(graded),
             ran_on: studio::ran_on_said(graded),
             ended: grades::ended_said(graded.report.ended).to_owned(),
@@ -851,9 +861,15 @@ pub(crate) async fn skill_grade_scorecard(
     .await
 }
 
-/// What a scorecard says of a chat this machine does not keep.
-pub const NOT_KEPT: &str = "purlis keeps a grade's chats on the machine that ran it, for the \
-     skill's three newest grades, and this one is not kept here.";
+/// What a scorecard says of a chat this machine does not keep: one a teammate's purlis ran, one
+/// past the skill's newest grades, or one whose screen could not be read as it ended.
+fn not_kept() -> String {
+    format!(
+        "This chat is not kept on this machine. purlis keeps a grade's chats where the grade ran, \
+         for the skill's {} newest grades, where their screen could be read as they ended.",
+        grades::kept::KEPT_GRADES
+    )
+}
 
 /// **What chat `chat` of `skill`'s grade `grade` showed as it ended** (SK-59, #3239): its screen
 /// and scrollback as the escape sequences that draw them, for a tab that shows it read-only.
@@ -869,7 +885,7 @@ pub(crate) async fn skill_grade_chat(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading a grade's chat", move || {
         flag_on()?;
-        grades::kept::kept(held.root(), &skill, &grade, &chat).ok_or_else(|| NOT_KEPT.to_owned())
+        grades::kept::kept(held.root(), &skill, &grade, &chat).ok_or_else(not_kept)
     })
     .await
 }
@@ -1115,11 +1131,17 @@ impl InChats<'_> {
 /// How long a grade's chat has to hand over its screen before it closes.
 const A_SCREEN_TAKES_AT_MOST: Duration = Duration::from_secs(2);
 
+/// How long a view of a grade's chat stays quiet before what it was sent is taken as the whole
+/// screen: a host sends a snapshot in pieces, after a reset where the view is not its first.
+const A_SCREEN_IS_WHOLE_AFTER: Duration = Duration::from_millis(300);
+
 /// **What session `session` shows now, its scrollback with it**, as the escape sequences that draw
-/// it into a blank terminal: the first thing a view of it is sent (`host::SessionHost::watch`).
-/// `None` where no view could be opened or nothing came in [`A_SCREEN_TAKES_AT_MOST`].
+/// it into a blank terminal: what a view of it is sent first (`host::SessionHost::watch`), which
+/// a host may send in pieces, so everything the view is sent until it is quiet for
+/// [`A_SCREEN_IS_WHOLE_AFTER`], at most [`A_SCREEN_TAKES_AT_MOST`] and
+/// `grades::kept::MOST_SCREEN_BYTES`. `None` where no view could be opened or nothing came.
 fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Option<String> {
-    let (send, screen) = std::sync::mpsc::channel();
+    let (send, pieces) = std::sync::mpsc::channel();
     let view = host
         .watch(
             session,
@@ -1128,9 +1150,36 @@ fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Option<String
             }),
         )
         .ok()?;
-    let shown = screen.recv_timeout(A_SCREEN_TAKES_AT_MOST).ok();
+    let shown = gathered(&pieces, Instant::now());
     let _ = host.unwatch(session, view.view);
     shown
+}
+
+/// Everything `pieces` holds until it is quiet for [`A_SCREEN_IS_WHOLE_AFTER`] once something
+/// was heard, at most [`A_SCREEN_TAKES_AT_MOST`] after `begun` and `grades::kept::MOST_SCREEN_BYTES`
+/// long. `None` where nothing but empty pieces came.
+fn gathered(pieces: &std::sync::mpsc::Receiver<String>, begun: Instant) -> Option<String> {
+    let mut shown = String::new();
+    let mut heard = false;
+    loop {
+        let left = A_SCREEN_TAKES_AT_MOST.saturating_sub(begun.elapsed());
+        if left.is_zero() || shown.len() > grades::kept::MOST_SCREEN_BYTES {
+            break;
+        }
+        let wait = if heard {
+            left.min(A_SCREEN_IS_WHOLE_AFTER)
+        } else {
+            left
+        };
+        match pieces.recv_timeout(wait) {
+            Ok(text) => {
+                heard |= !text.is_empty();
+                shown.push_str(&text);
+            }
+            Err(_) => break,
+        }
+    }
+    heard.then_some(shown)
 }
 
 #[cfg(test)]

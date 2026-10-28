@@ -9202,6 +9202,8 @@ export type ScoredArm = "with" | "without" | "previous";
  */
 export type ScoredChat = {
 	id: string,
+	/**  Which of its test's runs in its arm it was, from 1. */
+	run: number,
 	kept: boolean,
 };
 

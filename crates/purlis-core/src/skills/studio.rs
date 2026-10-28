@@ -409,11 +409,6 @@ pub fn ran_on_said(graded: &super::grades::Graded) -> String {
     }
 }
 
-/// A stamp as a grade's row says it ([`said_at`]).
-pub fn graded_at_said(stamp: &str) -> String {
-    said_at(stamp)
-}
-
 /// The Grades panel's blocks for `grades` of `skill`: a sentence on what a grade is, then the
 /// table, or the empty table's claim and its way on.
 fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
@@ -607,7 +602,7 @@ const NEW_CHAT: &str = "chat.new";
 
 /// A stamp as a row says it: `2026-10-20 10:00 UTC` for a stamp written in UTC, as every run's
 /// is; the stamp itself for one this cannot read.
-fn said_at(stamp: &str) -> String {
+pub fn said_at(stamp: &str) -> String {
     let bytes = stamp.as_bytes();
     let digits = |range: std::ops::Range<usize>| {
         bytes

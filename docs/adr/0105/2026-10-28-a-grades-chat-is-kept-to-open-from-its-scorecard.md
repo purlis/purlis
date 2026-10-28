@@ -9,7 +9,9 @@ as the grade ends the chat, before the close, and kept in this machine's state,
 `<state>/skill-grade-chats/<skill>/<grade>/<chat>.screen` (`docs/plane-format.md`). It is the
 terminal's, so it means the same on every harness, and it needs no harness's conversation file,
 which Claude Code keeps by the folder the chat ran in and which the piece's removal leaves behind
-under a folder that is gone.
+under a folder that is gone. It holds what the terminal keeps, its screen and up to its scrollback's
+lines, and at most 4 MiB: a grade's chat is one turn, ended once the skill starts, so that is the
+whole chat in practice, and a screen past it is not kept rather than cut.
 
 **Kept for each skill's three newest grades.** When a grade ends, the chats of the skill's older
 grades go. A grade's id is a ULID, so the newest are known by name. A teammate who pulls the eval
@@ -24,8 +26,8 @@ ran on a throwaway piece purlis has removed, with limits no ordinary chat has.
 **A grade's chat that asks the person something says so in the grade** (§3's "asks nobody"). It is
 still ended at its first ask, no run and never a test that did not trigger, and none of its asks is
 listed or notified. Each trigger test's score keeps how many of its chats did so (`asked`), the
-grade's end says how many in all, and the scorecard says it beside each test, with each such chat
-one click away to read what it asked.
+grade's end says how many in all, and the scorecard says it beside each test, whose runs are each
+one click away, so what a chat asked can be read.
 
 ## Rejected
 

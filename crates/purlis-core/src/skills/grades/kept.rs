@@ -22,7 +22,11 @@
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 
-use super::plain;
+/// **A name this module puts in a path**: a plain one ([`super::plain`]) that is more than dots,
+/// so `.` and `..` never name a folder of it.
+fn named(word: &str) -> bool {
+    super::plain(word) && !word.bytes().all(|b| b == b'.')
+}
 
 /// The folder of this machine's state the kept chats are in.
 pub const DIR_NAME: &str = "skill-grade-chats";
@@ -43,12 +47,12 @@ const SCREEN: &str = "screen";
 /// The folder of `skill`'s kept chats in the project at `root`, or `None` for a name that is not
 /// a plain one.
 fn skill_dir(root: &Path, skill: &str) -> Option<PathBuf> {
-    plain(skill).then(|| crate::plane::state_dir(root).join(DIR_NAME).join(skill))
+    named(skill).then(|| crate::plane::state_dir(root).join(DIR_NAME).join(skill))
 }
 
 /// The file of `chat`'s screen in `skill`'s grade `grade`, or `None` where a name is not plain.
 fn screen_path(root: &Path, skill: &str, grade: &str, chat: &str) -> Option<PathBuf> {
-    (plain(grade) && plain(chat))
+    (named(grade) && named(chat))
         .then(|| skill_dir(root, skill))
         .flatten()
         .map(|dir| dir.join(grade).join(format!("{chat}.{SCREEN}")))
@@ -83,16 +87,16 @@ pub fn keep(
     if screen.len() > MOST_SCREEN_BYTES {
         return Err(std::io::Error::other("the screen is too big to keep"));
     }
-    for dir in [
-        crate::plane::state_dir(root).join(DIR_NAME),
-        skill_dir(root, skill).unwrap_or_default(),
-    ] {
-        made_private(&dir)?;
-    }
-    let dir = path
+    // The record's folder, the skill's and the grade's, each made private and checked to be no
+    // link before the next is made inside it.
+    let grade_dir = path
         .parent()
         .ok_or_else(|| std::io::Error::other("the screen has no folder"))?;
-    made_private(dir)?;
+    let mut on_the_way: Vec<&Path> = grade_dir.ancestors().take(3).collect();
+    on_the_way.reverse();
+    for dir in on_the_way {
+        made_private(dir)?;
+    }
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -149,7 +153,7 @@ fn grades_kept(root: &Path, skill: &str) -> Vec<String> {
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| plain(name))
+        .filter(|name| named(name))
         .collect();
     if names.len() > MOST_GRADE_FOLDERS {
         return Vec::new();
