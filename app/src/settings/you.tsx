@@ -90,7 +90,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
     notificationsGroup(),
     thisMachineGroup(),
     browserLimitsGroup(),
-    poolsGroup(),
+    poolsGroup(plane),
     accountsGroup(),
     profilesGroup(plane),
     previewsGroup(),

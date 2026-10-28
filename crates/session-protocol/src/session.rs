@@ -277,9 +277,16 @@ use crate::view::{Limits, Views};
 /// the window's alone ([`crate::auth::Scope::LocalUi`]): a host takes it from no other link, so
 /// a relayed start keeps its program as any other. A host before 1.42 ignores the word and keeps
 /// the program as any other, and the window ends it as it comes back, as nothing takes it back.
+///
+/// 1.43 added a desktop's profiles on its runner (#2049, spec #2041): `keep_profile`, sent by
+/// the desktop on its own link to the runner, has the runner keep a profile of that name in a
+/// folder of its own ([`ProfileToKeep`]: its name, harness, sandbox-only mark and pinned
+/// version, and nothing of the desktop's folder), and answers `profile_kept` with whether its
+/// harness says it is signed in there. A host before 1.43 refuses it `unknown_command`, and its
+/// pool's chats run on the profiles the runner has of its own.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 42,
+    minor: 43,
 };
 
 /// The version that first pushes a host's own event log to a link that asks with a cursor for its
@@ -287,6 +294,12 @@ pub const VERSION: Version = Version {
 pub const KNOWS_EVENT_LOG: Version = Version {
     major: 1,
     minor: 41,
+};
+
+/// The version that first keeps a desktop's profile on a runner (#2049).
+pub const KNOWS_KEEP_PROFILE: Version = Version {
+    major: 1,
+    minor: 43,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -622,6 +635,13 @@ pub enum Command {
     /// paired with, carries it out; every other host refuses it [`NOT_ALLOWED`]
     /// ([`crate::grants::Power::Unpair`]).
     Unpair,
+    /// The desktop on this link has the runner keep its profile (1.43, #2049): the runner's
+    /// host keeps a profile of that name in a folder of its own, made where it has none, and
+    /// answers [`Answer::ProfileKept`] with whether its harness says it is signed in there.
+    /// Nothing of the desktop's profile folder, sign-in or settings is in it. Only a runner's
+    /// host, on the link between hosts from the desktop it is paired with, carries it out;
+    /// every other host refuses it [`NOT_ALLOWED`] ([`crate::grants::Power::KeepProfile`]).
+    KeepProfile(ProfileToKeep),
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -907,6 +927,36 @@ pub struct Start {
     pub harness: Option<String>,
 }
 
+/// **A desktop's profile, as its runner keeps it** (1.43, #2049): what [`Command::KeepProfile`]
+/// sends, and nothing else. No file, setting, sign-in or vault reference of the desktop's
+/// profile has a field here, so none can reach a runner through it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileToKeep {
+    /// The name the desktop's chats run on it by.
+    pub name: String,
+    /// Its harness, as a profile's kind names it: `claude`, `codex` or `opencode`.
+    pub harness: String,
+    /// Only a sandboxed chat starts on it (#2037).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sandbox_only: bool,
+    /// The harness version the desktop's profile is pinned to (#2038), where it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<String>,
+}
+
+/// **Whether a profile a runner keeps is signed in there**, as its harness says (1.43, #2049).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileStanding {
+    /// The harness says it is signed in.
+    SignedIn,
+    /// The harness says it is not: a chat on it does not start there until it is.
+    SignedOut,
+    /// The harness did not say, or has no way to; and a word a later minor adds.
+    #[serde(other)]
+    CannotTell,
+}
+
 /// What a [`Command::StartProgram`] asks for: the full start (1.2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartProgram {
@@ -1178,6 +1228,9 @@ pub enum Answer {
     /// The refs a transfer of code left (1.34): [`Command::TakeCode`] and
     /// [`Command::GiveCode`].
     Code { heads: Vec<CodeRef> },
+    /// Whether the profile a runner keeps is signed in there, as its harness says:
+    /// [`Command::KeepProfile`] (1.43).
+    ProfileKept { standing: ProfileStanding },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
     /// Where the host's own event log ends: [`Command::LogEnd`] (1.41).
@@ -1525,6 +1578,7 @@ wire_words!(Command {
     TakeBack => "take_back",
     NameWindow => "name_window",
     Unpair => "unpair",
+    KeepProfile => "keep_profile",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
@@ -1578,6 +1632,7 @@ impl Command {
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
+            Command::KeepProfile(_) => Power::KeepProfile,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. } | Command::GiveCode { .. } => Power::Code,
             Command::LogEnd => Power::EventLog,
@@ -1646,6 +1701,7 @@ wire_words!(Answer {
     Driving => "driving",
     TakenBack => "taken_back",
     Code => "code",
+    ProfileKept => "profile_kept",
     Subscribed => "subscribed",
     LogEnd => "log_end",
     Done => "done",
@@ -2076,6 +2132,7 @@ impl Lane {
             | Command::TakeBack { .. }
             | Command::NameWindow { .. }
             | Command::Unpair
+            | Command::KeepProfile(_)
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2695,6 +2752,16 @@ impl Client {
     /// is admitted. Refused by every host but a runner's, on its link from that desktop.
     pub async fn unpair(&self) -> Result<(), CallError> {
         self.done(Command::Unpair).await
+    }
+
+    /// Have the runner keep this link's desktop's profile `profile` (1.43, #2049): whether its
+    /// harness says it is signed in there. Refused by every host but a runner's, on its link
+    /// from that desktop.
+    pub async fn keep_profile(&self, profile: ProfileToKeep) -> Result<ProfileStanding, CallError> {
+        match self.call(Command::KeepProfile(profile)).await? {
+            Answer::ProfileKept { standing } => Ok(standing),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,

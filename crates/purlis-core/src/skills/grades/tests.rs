@@ -1018,3 +1018,78 @@ fn a_row_with_a_previous_arm_names_the_version_it_compared_with() {
     row.previous = Some("HEAD".into());
     assert!(!row.sound(now), "a version is a whole commit id");
 }
+
+/// #3582: a grade purlis stopped under says what its chats spent, though no chat was scored: its
+/// chats are held to what its tests could have asked for, and its spend to its report's.
+#[test]
+fn an_interrupted_row_says_what_its_chats_spent_and_no_more_than_it_could_3582() {
+    let now = chrono::Utc::now();
+    let interrupted = |spent: Spent| Graded {
+        report: GradeReport {
+            spent_tokens: spent.tokens,
+            spent_usd: spent.cost_usd,
+            ..underway::interrupted_report(50_000, Some(1.5), None)
+        },
+        spent,
+        ..uncommitted_row()
+    };
+    let spent = Spent {
+        chats: 4,
+        tokens: Some(9_000),
+        cost_usd: Some(0.09),
+    };
+    assert!(
+        interrupted(spent).sound(now),
+        "what its chats spent is kept"
+    );
+    let most = u32::from(uncommitted_row().runs)
+        * u32::try_from(purlis_skills::grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE).unwrap();
+    let past = Spent {
+        chats: most + 1,
+        ..spent
+    };
+    assert!(
+        !interrupted(past).sound(now),
+        "more chats than it could ask for"
+    );
+    let mut unlike = interrupted(spent);
+    unlike.spent.tokens = Some(9_001);
+    assert!(!unlike.sound(now), "a spend its report does not say");
+}
+
+/// #3584: the estimate shares what a grade spent over every chat that spent it: a chat ended at
+/// its ask spends as one that ran, so it is counted among the chats the plan names, and the
+/// figure per chat is not raised by it.
+#[test]
+fn the_estimate_shares_the_spend_over_the_chats_that_asked_too_3584() {
+    let mut row = uncommitted_row();
+    // One chat ran its turn and two were ended at their asks: all three spent.
+    row.report.triggers[0].runs = 1;
+    row.report.triggers[0].triggered = 1;
+    row.report.triggers[0].rate = Some(1.0);
+    row.report.triggers[0].asked = 2;
+    row.report.arms[0].chats = 1;
+    row.report.arms[0].not_run = 2;
+    row.report.spent_tokens = Some(3_000);
+    row.report.spent_usd = Some(0.03);
+    row.spent = Spent {
+        chats: 1,
+        tokens: Some(3_000),
+        cost_usd: Some(0.03),
+    };
+    assert!(row.sound(chrono::Utc::now()), "{row:?}");
+    let estimate = estimate_of(&[row], 12, Some("work")).unwrap();
+    assert_eq!(
+        estimate.chats_then, 3,
+        "every chat it asked for, the asked ones too"
+    );
+    assert_eq!(
+        estimate.tokens,
+        Some(12_000),
+        "a thousand a chat, not three"
+    );
+    assert!(
+        (estimate.cost_usd.unwrap() - 0.12).abs() < 1e-9,
+        "{estimate:?}"
+    );
+}

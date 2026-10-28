@@ -193,6 +193,9 @@ pub struct ChatForSkills {
     pub cwd: Option<PathBuf>,
     /// Whether the plane's skills reached it at its start ([`Running::plane_skills`], #3445).
     pub plane_skills: bool,
+    /// Why its chats get no skills, where its harness is a declared one skills are not
+    /// supported on (SK-30): [`purlis_core::skills::not_supported_on`].
+    pub not_supported: Option<String>,
 }
 
 /// One chat open here that its start routed by a router extension ([`Chats::routings`]).
@@ -226,9 +229,11 @@ const MOST_AT_ONCE: usize = 200;
 /// plane — and so a test can see exactly when a write would happen.
 pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 
-/// Told as each chat starts, BEFORE its program does: its number, the harness it runs and the
-/// conversation charter chose for it. Everything the board needs to judge a report about it.
-pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>) + Send + Sync>;
+/// Told as each chat starts, BEFORE its program does: its number, the harness it runs, the
+/// conversation charter chose for it, and whether it is a grade's chat, which the window draws
+/// nowhere and the board never queues (SK-16, #3583). Everything the board needs to judge a
+/// report about it.
+pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>, bool) + Send + Sync>;
 
 /// Told as each chat starts, BEFORE its program does, of the run the start begins: the chat's
 /// number, its id, the run's id, why it began and what it is (ADR 0066, #868), and whether its
@@ -684,6 +689,9 @@ pub struct Chats {
     /// This machine's config home, where the pools this machine keeps and which workspaces run
     /// their chats on one are (#2679); `None` where nothing is kept there, a test's.
     pools_in: Option<PathBuf>,
+    /// How a chat's profile is kept, and found signed in, on the pool's runner it starts on
+    /// (#2049); `None` where nothing is kept there, a test's.
+    profiles_on_pools: Option<Arc<dyn crate::poolprofiles::ProfilesOnPools>>,
     /// What each chat closed this launch was, by number, for a start in one's place: its ids,
     /// and where it stood in a lineage.
     let_go: Mutex<HashMap<u32, LetGo>>,
@@ -1196,6 +1204,7 @@ impl Chats {
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
             pools_in: None,
+            profiles_on_pools: None,
             let_go: Mutex::new(HashMap::new()),
             never_started: Mutex::new(None),
             shipped: crate::Shipped::default(),
@@ -1360,7 +1369,20 @@ impl Chats {
     /// Reads where each workspace runs its chats from this machine's config home `config`
     /// (#2679): a workspace whose chats run on a pool starts none here.
     pub fn keeping_pools_in(&mut self, config: Option<PathBuf>) {
+        self.profiles_on_pools = config.clone().map(|config| {
+            Arc::new(crate::poolprofiles::Linked::at(config))
+                as Arc<dyn crate::poolprofiles::ProfilesOnPools>
+        });
         self.pools_in = config;
+    }
+
+    /// Readies each chat's profile on the pool it starts on through `on_pools` (#2049).
+    #[cfg(test)]
+    pub fn readying_profiles_on_pools(
+        &mut self,
+        on_pools: Arc<dyn crate::poolprofiles::ProfilesOnPools>,
+    ) {
+        self.profiles_on_pools = Some(on_pools);
     }
 
     /// This machine's config home, where the pools it keeps are, where it keeps any (#2050).
@@ -3320,6 +3342,15 @@ impl Chats {
                     .to_owned(),
             );
         }
+        // **Its profile is kept, and signed in, on the pool's runner before it starts there**
+        // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
+        // starts nothing and waits as one Ask to sign it in on that pool.
+        if on_the_runner
+            && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
+            && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
+        {
+            on_pools.ready(&self.project, &pool, profile)?;
+        }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
         // Never a port given for a grant to serve on alone: a runner opens no door (#2019).
@@ -3863,14 +3894,14 @@ impl Chats {
             // host kept them (#2006).
             if reattaching {
                 if let Some(reattached) = lock(&self.reattached).as_ref() {
-                    reattached(session, harness, conversation.clone());
+                    reattached(session, harness, conversation.clone(), chat.graded);
                 }
                 return;
             }
             // A new program knows no model until its harness says (#1021).
             lock(&self.models).remove(&session);
             if let Some(starting) = lock(&self.starting).as_ref() {
-                starting(session, harness, conversation.clone());
+                starting(session, harness, conversation.clone(), chat.graded);
             }
             // A run on a runner is written there, where it runs, never here.
             if let Some(beginning) = lock(&self.beginning).as_ref().filter(|_| !on_the_runner)
@@ -4996,6 +5027,13 @@ impl Chats {
                 .as_deref()
                 .and_then(purlis_core::skillspan::PromptSalt::of_chat),
             cwd: running.chat.cwd.clone(),
+            // As its start read its declaration: what a running chat started with (decision 15).
+            not_supported: running
+                .declared
+                .as_ref()
+                .filter(|_| running.harness.is_none())
+                .and_then(purlis_core::skills::not_supported_on)
+                .map(|one| one.said),
         })
     }
 

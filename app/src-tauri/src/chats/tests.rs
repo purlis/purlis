@@ -696,7 +696,7 @@ fn a_chat_is_announced_before_its_program_starts() {
 
     let chats = Chats::new();
     let (tx, rx) = mpsc::channel();
-    chats.when_one_starts(Box::new(move |session, harness, conversation| {
+    chats.when_one_starts(Box::new(move |session, harness, conversation, _| {
         let _ = tx.send((session, harness, conversation));
     }));
 
@@ -757,7 +757,7 @@ fn a_chat_is_announced_before_its_program_could_have_run_a_single_byte() {
     chats.when_one_starts({
         let mark = mark.clone();
         let seen = Arc::clone(&seen);
-        Box::new(move |_, _, _| {
+        Box::new(move |_, _, _, _| {
             let deadline = std::time::Instant::now() + std::time::Duration::from_millis(750);
             while std::time::Instant::now() < deadline && !mark.exists() {
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -814,7 +814,7 @@ fn a_chat_that_was_announced_and_then_did_not_start_is_taken_back() {
     let taken_back = Arc::new(Mutex::new(Vec::new()));
     chats.when_one_starts({
         let announced = Arc::clone(&announced);
-        Box::new(move |session, _, _| announced.lock().expect("not poisoned").push(session))
+        Box::new(move |session, _, _, _| announced.lock().expect("not poisoned").push(session))
     });
     chats.when_one_does_not_start({
         let taken_back = Arc::clone(&taken_back);
@@ -860,8 +860,8 @@ fn a_chat_is_announced_with_the_harness_and_conversation_it_was_started_under() 
 
     let chats = Chats::new();
     let (tx, rx) = mpsc::channel();
-    chats.when_one_starts(Box::new(move |session, harness, conversation| {
-        let _ = tx.send((session, harness, conversation));
+    chats.when_one_starts(Box::new(move |session, harness, conversation, graded| {
+        let _ = tx.send((session, harness, conversation, graded));
     }));
 
     // A program named `claude` is what `Harness::of_command` reads, and it is the file
@@ -896,7 +896,7 @@ fn a_chat_is_announced_with_the_harness_and_conversation_it_was_started_under() 
         )
         .expect("the chat starts");
 
-    let (_, harness, conversation) = rx
+    let (_, harness, conversation, graded) = rx
         .recv_timeout(std::time::Duration::from_secs(5))
         .expect("the board was told");
     assert_eq!(harness, Some(Harness::ClaudeCode));
@@ -906,6 +906,10 @@ fn a_chat_is_announced_with_the_harness_and_conversation_it_was_started_under() 
         conversation.is_some(),
         "the chosen conversation was not passed on"
     );
+    // Not a grade's, so the board queues it as ever (#3583): a grade's chat, which starts only
+    // in a folder a grade laid out, is announced as one, and the board's own tests hold that
+    // such a chat is never queued.
+    assert!(!graded, "a chat of the person's is announced as no grade's");
 }
 use purlis_core::harness::SessionId;
 use purlis_core::reopen::Fresh;
@@ -6757,7 +6761,7 @@ fn the_board_is_told_the_harness_the_profile_declared_before_the_program_starts(
     let chats = Chats::new();
     {
         let told = std::sync::Arc::clone(&told);
-        chats.when_one_starts(Box::new(move |session, harness, conversation| {
+        chats.when_one_starts(Box::new(move |session, harness, conversation, _| {
             lock(&told).push((session, harness, conversation));
         }));
     }
@@ -7202,6 +7206,58 @@ fn a_harness_chat_on_a_runner_is_started_by_its_names_and_a_shell_by_the_window_
         .expect("a shell starts");
     assert_eq!(host.asked(), vec![(shell, "/bin/sh".to_owned())]);
     assert_eq!(host.named().len(), 1);
+}
+
+/// What a chat's start asked of its profile on a pool, and what it answers (#2049).
+#[derive(Default)]
+struct ProfilesOnAPool {
+    asked: Mutex<Vec<(PathBuf, String, String)>>,
+    refusing: Mutex<Option<String>>,
+}
+
+impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        lock(&self.asked).push((root.to_path_buf(), pool.to_owned(), profile.to_owned()));
+        match lock(&self.refusing).clone() {
+            Some(why) => Err(why),
+            None => Ok(()),
+        }
+    }
+}
+
+/// **A chat on a pool is started there only once its profile is ready on the pool's runner**
+/// (#2049): signed in, it starts with nobody asked, as a moved chat does; refused, nothing is
+/// sent to the runner and the start says why.
+#[test]
+fn a_runner_chat_starts_once_its_profile_is_ready_on_the_pool_and_nothing_starts_otherwise() {
+    let host = Pretend::default();
+    host.on_pool("builds");
+    let on_pools = Arc::new(ProfilesOnAPool::default());
+    let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+    chats.readying_profiles_on_pools(on_pools.clone());
+
+    chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert_eq!(
+        *lock(&on_pools.asked),
+        vec![(no_project(), "builds".to_owned(), "work".to_owned())]
+    );
+    assert_eq!(host.named().len(), 1);
+
+    *lock(&on_pools.refusing) = Some("the profile 'work' is not signed in on pool builds".into());
+    let refused = chats.start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE);
+    assert_eq!(
+        refused,
+        Err("the profile 'work' is not signed in on pool builds".to_owned())
+    );
+    assert_eq!(host.named().len(), 1, "nothing more was sent to the runner");
+
+    // A shell on the runner starts on no profile, and asks nothing of one.
+    chats
+        .start(&chat("/bin/sh", "shell", None), SIZE)
+        .expect("a shell starts");
+    assert_eq!(lock(&on_pools.asked).len(), 2);
 }
 
 /// #2692: a harness chat a runner composes by its names is judged by the runner host's record of

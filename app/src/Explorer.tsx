@@ -743,6 +743,9 @@ export function Explorer({
                   aria-label={`Files of ${OUTSIDE_TITLE}`}
                   data-testid="files"
                   size="sm"
+                  // Its rows never drag, but it is the same tree as a workspace's files once a
+                  // workspace is brought forward, which may (#3532).
+                  mayDrag
                   {...fileFolds}
                 >
                   <TopItems
@@ -800,6 +803,8 @@ export function Explorer({
   const fileTree = {
     ...fileFolds,
     draggable: plane !== undefined,
+    // The same tree before the plane is known as after (#3532).
+    mayDrag: true,
     choosesMany: onAddToChat !== undefined,
     onRowKey: onAddToChat === undefined ? undefined : picks.key,
   };

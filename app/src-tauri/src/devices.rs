@@ -249,22 +249,22 @@ pub const MOST_SHOWN: usize = 200;
 pub fn shown_safely(text: &str) -> String {
     // Read no further than a cap can use: a megabyte of text costs no more than its start.
     let start: String = text.chars().take(MOST_SHOWN * 8).collect();
+    let cut = text.chars().nth(MOST_SHOWN * 8).is_some();
     let one_line: String = start
         .chars()
-        .map(|ch| {
-            if matches!(ch, '\n' | '\r' | '\t') {
-                ' '
-            } else {
-                ch
-            }
-        })
+        // Every blank parts two words, as a space does.
+        .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
         .collect();
     let seen = purlis_unicode::unhidden(&one_line, purlis_unicode::Breaks::Marked);
+    let hidden = without_userinfo(&seen);
+    let mut words: Vec<&str> = hidden.split(' ').filter(|word| !word.is_empty()).collect();
+    // A word the cut ends part way through is not shown where it may be an address: what of it
+    // would be hidden may lie past the cut.
+    if cut && words.last().is_some_and(|word| word.contains(':')) {
+        words.pop();
+    }
     let mut out = String::new();
-    for word in without_userinfo(&seen)
-        .split(' ')
-        .filter(|word| !word.is_empty())
-    {
+    for word in words {
         if !out.is_empty() {
             out.push(' ');
         }
@@ -281,33 +281,75 @@ pub fn shown_safely(text: &str) -> String {
 /// `text` with the user and password before a host written `…`, word by word: in
 /// `scheme://user[:password]@host`, the whole of what stands between `://` and the word's last
 /// `@` (a password may hold a `/`), and in `user@host` without a scheme (as ssh writes it), what
-/// stands before the `@`. An image named by its digest (`name@sha256:…`) keeps its name.
+/// stands before the `@`, a password holding any character. An image named by its digest at its
+/// full length (`name[:tag]@sha256:…`) is kept whole ([`is_digest`]).
 fn without_userinfo(text: &str) -> String {
     text.split(' ')
         .map(|word| {
             let Some(at) = word.rfind('@') else {
                 return word.to_owned();
             };
+            // An image named by its digest (`name[:tag]@sha256:<64 hex>`) is kept whole: no host
+            // is spelled that way.
+            if is_digest(&word[at..]) {
+                return word.to_owned();
+            }
             if let Some(scheme) = word.find("://").filter(|scheme| scheme + 3 <= at) {
                 return format!("{}…{}", &word[..scheme + 3], &word[at..]);
             }
             let (before, after) = word.split_at(at);
-            let digest = ["@sha256:", "@sha384:", "@sha512:"]
-                .iter()
-                .any(|algorithm| after.starts_with(algorithm));
-            // A word that names a path or a registry before its `@` is not a user's name.
-            if digest || before.is_empty() || before.contains('/') {
+            // A name and a password (`name:…@`) is a user's, whatever the password holds: one at
+            // the word's start, or one after a path's last `/`. Anything else before its `@`
+            // names a path or a registry.
+            let whole = before
+                .split_once(':')
+                .is_some_and(|(name, _)| !name.is_empty() && !name.contains('/'));
+            let after_a_path = before.rsplit_once('/').filter(|(_, last)| {
+                last.split_once(':')
+                    .is_some_and(|(name, _)| !name.is_empty())
+            });
+            if !whole && after_a_path.is_none() && (before.is_empty() || before.contains('/')) {
                 return word.to_owned();
             }
-            // Keep what opens the word (a quote, a bracket): only the name itself goes.
-            let opens = before
-                .char_indices()
-                .find(|(_, ch)| ch.is_alphanumeric())
-                .map_or(before.len(), |(at, _)| at);
+            // Keep what opens the word (a quote, a bracket, a path): only the name itself goes.
+            let opens = if whole {
+                before
+                    .char_indices()
+                    .find(|(_, ch)| ch.is_alphanumeric())
+                    .map_or(before.len(), |(at, _)| at)
+            } else {
+                after_a_path.map_or_else(
+                    || {
+                        before
+                            .char_indices()
+                            .find(|(_, ch)| ch.is_alphanumeric())
+                            .map_or(before.len(), |(at, _)| at)
+                    },
+                    |(path, _)| path.len() + 1,
+                )
+            };
             format!("{}…{after}", &before[..opens])
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Whether `after`, a word from its `@` on, is a digest at its full length, in either case:
+/// `@sha256:` and 64 hex digits, `@sha384:` and 96, or `@sha512:` and 128, then at most the
+/// punctuation that ends a sentence or a quote.
+fn is_digest(after: &str) -> bool {
+    let lower = after.to_ascii_lowercase();
+    [("@sha256:", 64), ("@sha384:", 96), ("@sha512:", 128)]
+        .iter()
+        .any(|(algorithm, length)| {
+            lower.strip_prefix(algorithm).is_some_and(|rest| {
+                rest.len() >= *length
+                    && rest.as_bytes()[..*length].iter().all(u8::is_ascii_hexdigit)
+                    && rest.as_bytes()[*length..]
+                        .iter()
+                        .all(u8::is_ascii_punctuation)
+            })
+        })
 }
 
 /// **Why a runner did not list what it holds, in purlis's words** (#2052): a refusal says so,

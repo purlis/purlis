@@ -249,6 +249,14 @@ pub trait SessionHost: Send + Sync {
         self.composes_its_harness_chats()
     }
 
+    /// **The pool a chat started in `workspace` runs on** (#2049), where the window routes that
+    /// workspace's chats to a pool's runner: what the profile it starts on is kept on, and
+    /// signed in on, before it starts. None, where it starts on this machine.
+    fn pool_for(&self, workspace: Option<&str>) -> Option<String> {
+        let _ = workspace;
+        None
+    }
+
     /// **The pool chat `id` runs on**, where it runs on a pool's runner (#2046): what the window
     /// holds its writes to the project for the person by. None, where it runs on this machine.
     fn pool_of(&self, id: u32) -> Option<String> {
@@ -646,6 +654,8 @@ pub(crate) mod pretend {
         /// Whether it runs its chats on a runner, which composes each harness chat
         /// ([`Pretend::on_a_runner`], #2446).
         on_a_runner: std::sync::atomic::AtomicBool,
+        /// The pool that runner is of, where a test named one ([`Pretend::on_pool`], #2049).
+        pool: Mutex<Option<String>>,
         /// Each fetch back it was asked for, by workspace and pool, and how many ran at once
         /// at most (#2046).
         fetched: Mutex<Vec<(String, String)>>,
@@ -669,6 +679,12 @@ pub(crate) mod pretend {
         /// Runs its chats on a runner from now on, which composes each harness chat (#2446).
         pub fn on_a_runner(&self) {
             self.seen.on_a_runner.store(true, Ordering::SeqCst);
+        }
+
+        /// Runs its chats on a runner of the pool `pool` from now on (#2049).
+        pub fn on_pool(&self, pool: &str) {
+            self.on_a_runner();
+            *lock(&self.seen.pool) = Some(pool.to_owned());
         }
 
         /// Each fetch back it was asked for, by workspace and pool, in order.
@@ -936,6 +952,9 @@ pub(crate) mod pretend {
                 .iter()
                 .find(|(chat, _)| *chat == id)
                 .map(|(_, pool)| pool.clone())
+        }
+        fn pool_for(&self, _workspace: Option<&str>) -> Option<String> {
+            lock(&self.seen.pool).clone()
         }
         fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {
             self.here(id)?;

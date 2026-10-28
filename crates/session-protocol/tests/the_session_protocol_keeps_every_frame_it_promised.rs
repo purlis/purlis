@@ -25,8 +25,8 @@
 //! its browsers back with the note it keeps of each (#2025), 1.40's hook line recorded where
 //! its host holds the project, its reply naming no path (#3400), and 1.41's host's own event log
 //! read over a link (#3393; its frames are recorded under id 155, which a change landing
-//! before it with frames of its own renumbers at merge), and 1.42's program that ends with its
-//! window (#3274, id 157). 1.35 adds no frame of the
+//! before it with frames of its own renumbers at merge), 1.42's program that ends with its
+//! window (#3274, id 157), and 1.43's desktop keeping its profile on its runner (#2049, id 158). 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back
 //! as it was recorded, by this build and so by every later one, which is what lets a client and a host one version apart

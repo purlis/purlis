@@ -73,11 +73,12 @@ function caught<T>(sent: Promise<Said<T>>): Promise<Said<T>> {
 const inFlight = new Map<string, Promise<Said<RunnerAsked>>>();
 
 /**
- * How long the window waits on one ask of a runner, in milliseconds: longer than the core takes
- * to give up on its own (each Docker run is held to 20 seconds, a link to two times 20, a joined
- * ask to 60), so this is only for a core that answers nothing at all.
+ * How long the window waits on one ask of a runner, in milliseconds: longer than one ask takes
+ * at its slowest in the core (its Docker runs are each held to 20 seconds, its link to two times
+ * 20, and a whole ask comes to about 100 to 140 seconds), so this is only for a core that
+ * answers nothing at all.
  */
-let answerWithinMs = 90_000;
+let answerWithinMs = 150_000;
 
 /** For a test: how long an ask is waited on. */
 export function answerWithinForTests(ms: number) {

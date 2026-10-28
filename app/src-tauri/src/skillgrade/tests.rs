@@ -398,3 +398,41 @@ fn a_scorecard_against_the_previous_version_shows_three_arms_and_both_difference
         [ScoredArm::With, ScoredArm::Without, ScoredArm::Previous]
     );
 }
+
+/// #3582: what a grade's marker is told its chats spent is what they said, and no more: every
+/// chat that started counts its tokens and its cost, whatever ended it, and only a chat that ran
+/// counts as one.
+#[test]
+fn what_a_grades_chats_spent_is_counted_from_what_each_said_3582() {
+    let chat = |tokens: Option<u64>, cost_usd: Option<f64>, end: ChatEnd| ChatRan {
+        chat: None,
+        started: Vec::new(),
+        tokens,
+        cost_usd,
+        ms: 0,
+        end,
+    };
+    let mut spent = Spent::default();
+    spent = counted(spent, &chat(Some(4_000), Some(0.04), ChatEnd::Turn));
+    spent = counted(spent, &chat(Some(1_000), Some(0.01), ChatEnd::Asked));
+    spent = counted(spent, &chat(Some(500), None, ChatEnd::TimedOut));
+    spent = counted(spent, &chat(None, Some(f64::NAN), ChatEnd::Cancelled));
+    spent = counted(
+        spent,
+        &chat(None, None, ChatEnd::NotStarted { why: "no".into() }),
+    );
+    assert_eq!(spent.chats, 2, "the turn and the time out ran");
+    assert_eq!(spent.tokens, Some(5_500), "every chat that said its tokens");
+    assert!((spent.cost_usd.unwrap() - 0.05).abs() < 1e-9, "{spent:?}");
+    let past = counted(spent, &chat(Some(u64::MAX), Some(-1.0), ChatEnd::OverCap));
+    assert_eq!(past.tokens, Some(u64::MAX), "held at the most a count says");
+    assert_eq!(
+        past.cost_usd, spent.cost_usd,
+        "a cost no reader could hold is none"
+    );
+    assert_eq!(
+        counted(Spent::default(), &chat(None, None, ChatEnd::Asked)),
+        Spent::default(),
+        "a chat that said nothing adds nothing"
+    );
+}

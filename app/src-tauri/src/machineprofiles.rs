@@ -368,6 +368,12 @@ const WATCHED_FOR: std::time::Duration = std::time::Duration::from_secs(15 * 60)
 /// plane or the window reaches the shell through here. It is typed only into a shell at the
 /// project root, the one the window opened for it, never into a chat's pane. An adopted
 /// profile is refused: it is signed in by the person's own sign-in.
+///
+/// **With `pool`, it is signed in on that pool's runner** (#2049): the line is the runner's own
+/// `purlis profile sign-in`, run there through this machine's `docker`, in the runner's folder
+/// for the profile ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in
+/// goes there. The runner is asked again every few seconds until it says the profile is signed
+/// in there.
 #[tauri::command]
 #[specta::specta]
 pub fn type_profile_sign_in(
@@ -376,12 +382,19 @@ pub fn type_profile_sign_in(
     session: u32,
     name: String,
     provider: Option<String>,
+    pool: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
     if !held.chats().is_shell_at(session, held.root()) {
         return Err(
             "that tab is not a shell at the project root, so no sign-in was typed.".to_owned(),
         );
+    }
+    if let Some(pool) = pool {
+        let line = crate::poolprofiles::sign_in_line(&pool, &name, provider.as_deref())?;
+        held.operator_input(session, line.as_bytes())?;
+        crate::poolprofiles::watch(pool, name, held.hooks().asks_teller());
+        return Ok(());
     }
     let record = profilestore::list(store()?.config_root())?
         .into_iter()
@@ -415,9 +428,13 @@ pub fn dismiss_sign_in(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     profile: String,
+    pool: Option<String>,
 ) -> Result<(), String> {
     let held = planes.held(&plane)?;
-    sign_in::dismiss(held.root(), &profile);
+    match pool {
+        Some(pool) => profilestore::onrunner::let_go(Some(held.root()), &pool, &profile),
+        None => sign_in::dismiss(held.root(), &profile),
+    }
     held.hooks().asks_teller()();
     Ok(())
 }

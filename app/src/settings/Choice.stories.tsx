@@ -9,7 +9,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor } from "storybook/test";
-import { expectFocusInSight } from "../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { Choice } from "./components";
 
 const DENSITIES = [
@@ -54,7 +54,7 @@ export const Radios: StoryObj<typeof meta> = {
     expectFocusInSight();
 
     await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() => expect(compact).toHaveFocus());
+    await untilFocused(() => compact, "Down moves the keyboard to Compact");
     await waitFor(() => expect(compact).toBeChecked());
     expectFocusInSight();
 

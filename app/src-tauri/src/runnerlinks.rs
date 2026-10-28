@@ -368,6 +368,50 @@ pub fn unpair(to: &ToARunner) -> Result<(), String> {
     .map_err(|why| crate::devices::shown_safely(&why))
 }
 
+/// What a runner answered each profile it was asked to keep: whether it is signed in there, or
+/// why it was not kept.
+pub type ProfilesKept = Vec<Result<purlis_session_protocol::session::ProfileStanding, String>>;
+
+/// **Has the runner keep each of this desktop's `profiles` over one link of its own**
+/// (`keep_profile`, 1.43, #2049), in order: whether each is signed in there, or why the runner
+/// did not keep it, its own words marked as its and cut short. `None` for a runner of a purlis
+/// before 1.43, which is sent nothing and runs chats on profiles of its own.
+pub fn keep_profiles(
+    to: &ToARunner,
+    profiles: Vec<purlis_session_protocol::session::ProfileToKeep>,
+) -> Result<Option<ProfilesKept>, String> {
+    on_one_link(to, async |linked| match linked {
+        Ok(client) if !keeps_profiles(client.version()) => Ok(None),
+        Ok(client) => {
+            let mut said = Vec::with_capacity(profiles.len());
+            for profile in profiles {
+                said.push(
+                    client
+                        .keep_profile(profile)
+                        .await
+                        .map_err(|why| match why.refusal() {
+                            Some(refused) => said_by_the_runner(&refused.why),
+                            None => why.to_string(),
+                        }),
+                );
+            }
+            Ok(Some(said))
+        }
+        Err(down) => Err(down.why),
+    })
+}
+
+/// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.43).
+pub fn keeps_profiles(version: purlis_session_protocol::version::Version) -> bool {
+    version >= purlis_session_protocol::session::KNOWS_KEEP_PROFILE
+}
+
+/// A runner's own words refusing a profile, as the person reads them: marked as its, and cut
+/// short.
+pub fn said_by_the_runner(why: &str) -> String {
+    format!("the runner says: {}", purlis_core::shown::short(why))
+}
+
 /// **Where the runner stands, as one link to it says** (#2679): linked with the key pinned for
 /// it, refused for another key, or down and why.
 pub fn link_state(to: &ToARunner) -> Result<crate::dockerpools::PoolLink, String> {

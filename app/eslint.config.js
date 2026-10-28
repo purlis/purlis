@@ -5,6 +5,7 @@ import js from "@eslint/js";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
+import { purlisStories } from "./eslint.story-rules.js";
 import { purlisUi, rawButtons, stillOff } from "./eslint.ui-rules.js";
 
 /** The primitives library, which only its wrappers in `src/ui` import (#2904, ADR 0104). */
@@ -60,6 +61,15 @@ export default tseslint.config(
       // by its role or its class: each family's own (`rawButtons`), and the ones no family has.
       "purlis/button-family": ["error", { otherFamilies: rawButtons(UNFAMILIED) }],
     },
+  },
+  // The stories' own lint (#3535, `eslint.story-rules.js`): what a `play` function must not
+  // write, each rule an error.
+  {
+    files: ["**/*.stories.tsx"],
+    plugins: { "purlis-stories": purlisStories },
+    rules: Object.fromEntries(
+      Object.keys(purlisStories.rules).map((name) => [`purlis-stories/${name}`, "error"]),
+    ),
   },
   // **What each family's rule is still off in** (a family's `off`, in its `lint.js`), each
   // until the lane that moves it.

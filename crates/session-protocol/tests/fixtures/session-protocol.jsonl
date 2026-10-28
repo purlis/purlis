@@ -160,3 +160,5 @@
 {"call":{"id":156,"command":"stop_all"}}
 {"reply":{"re":156,"ok":{"kill_switch":{"stopped":true,"already":true,"runners":["qa/r1"]}}}}
 {"call":{"id":157,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":4,"ends_with_its_window":true}}
+{"call":{"id":158,"command":"keep_profile","name":"work","harness":"claude","sandbox_only":true,"pinned":"2.1.300"}}
+{"reply":{"re":158,"ok":{"profile_kept":{"standing":"signed_in"}}}}

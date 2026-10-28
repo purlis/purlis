@@ -445,6 +445,7 @@ macro_rules! app_commands {
                 dockerpools::remove_docker_pool,
                 dockerpools::docker_pool_link,
                 dockerpools::docker_pool_version,
+                poolprofiles::pool_profiles,
                 devices::devices,
                 devices::device_runner,
                 notheld::projects_not_held,

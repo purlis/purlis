@@ -500,6 +500,7 @@ import {
 } from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
+import { useWorkedHere } from "./workedHere";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -536,6 +537,8 @@ type Typed =
   | {
       signIn: string;
       provider?: string;
+      /** The pool whose runner it is signed in on (#2049), where it is not this machine. */
+      pool?: string;
       line?: undefined;
       installer?: undefined;
       sandboxInstall?: undefined;
@@ -2973,7 +2976,13 @@ export const PlaneView = memo(function PlaneView({
           // sign-in with the profile's folder set, and the person drives it in this tab.
           else if (typed?.signIn !== undefined)
             void commands
-              .typeProfileSignIn(plane, session, typed.signIn, typed.provider ?? null)
+              .typeProfileSignIn(
+                plane,
+                session,
+                typed.signIn,
+                typed.provider ?? null,
+                typed.pool ?? null,
+              )
               .then((said) => {
                 if (said.status === "error") refusedBy("shell", said.error);
               })
@@ -3190,15 +3199,15 @@ export const PlaneView = memo(function PlaneView({
    * core. The person drives the harness's flow there; purlis reads none of it.
    */
   const signIn = useCallback(
-    (profile: string, provider?: string) => {
-      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider });
+    (profile: string, provider?: string, pool?: string) => {
+      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider, pool });
     },
     [openShell, root],
   );
   useEffect(() => {
     const asked = (event: Event) => {
       const wanted = (event as CustomEvent<ProfileSignInAsk>).detail;
-      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider);
+      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider, wanted.pool);
     };
     window.addEventListener(PROFILE_SIGN_IN, asked);
     return () => window.removeEventListener(PROFILE_SIGN_IN, asked);
@@ -6604,15 +6613,9 @@ export const PlaneView = memo(function PlaneView({
       if (row.persona !== null) of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
     return of;
   }, [listRows]);
-  /** The personas each workspace's chats run as (#3483): the Personas view's In this
-   *  workspace, with the ones the workspace's session records name. */
-  const chatPersonasIn = useMemo(() => {
-    const of = new Map<string, Set<string>>();
-    for (const row of listRows)
-      if (row.persona !== null)
-        of.set(row.workspace, (of.get(row.workspace) ?? new Set()).add(row.persona));
-    return of;
-  }, [listRows]);
+  /** The personas each workspace's chats ran as (#3483), kept after a chat closes (#3566): the
+   *  Personas view's In this workspace, with the ones the workspace's session records name. */
+  const chatPersonasIn = useWorkedHere(plane, listRows);
   /**
    * **How long each chat has been in its state, as this window saw it** (`stateClock.ts`): one
    * clock for the project, held here so it runs whether or not the Chats list is drawn, and

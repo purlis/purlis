@@ -4,7 +4,8 @@
 import { useState } from "react";
 import type { PoolAdding, PoolLimitsShown } from "./bindings";
 import { Field, SettingRow } from "./settings/components";
-import { addPool, stopAddingAPool, usePools } from "./pools";
+import { addPool, doneWithTheAddedPool, stopAddingAPool, usePools } from "./pools";
+import { PoolProfiles } from "./settings/PoolProfiles";
 import { Dialog } from "./ui/dialog/Dialog";
 
 /**
@@ -14,14 +15,35 @@ import { Dialog } from "./ui/dialog/Dialog";
  * to those limits, and pairs it with this machine, which takes a moment; a refusal stays in the
  * dialog, in the core's words, with what was typed.
  *
+ * **Adding a pool ends with signing this machine's profiles in there** (#2049): once the pool
+ * is added, the dialog lists each profile as its runner keeps it, with Sign in for each not
+ * signed in there, from a shell tab in the project `plane`'s window. Done closes it.
+ *
  * Drawn wherever the window is, while the palette's row or the Pools group asked for it
  * ({@link AddDockerPoolHost}).
  */
-export function AddDockerPoolHost() {
+export function AddDockerPoolHost({ plane }: { plane?: string }) {
   const pools = usePools();
+  if (pools.added !== undefined && !pools.adding) {
+    return <SignInOnTheAddedPool pool={pools.added} plane={plane} />;
+  }
   if (!pools.adding) return null;
   const defaults = pools.read.state === "read" ? pools.read.shown.defaults : undefined;
   return <AddDockerPool defaults={defaults} />;
+}
+
+/** What adding pool `pool` ends with: this machine's profiles, to sign in there (#2049). */
+function SignInOnTheAddedPool({ pool, plane }: { pool: string; plane: string | undefined }) {
+  return (
+    <Dialog
+      onClose={doneWithTheAddedPool}
+      title={`Sign your profiles in on pool ${pool}`}
+      subtitle="each once, through its harness's own sign-in on the runner; the runner keeps it, and nothing of this machine's sign-in goes there"
+      main={{ children: "Done", onPress: doneWithTheAddedPool }}
+    >
+      <PoolProfiles pool={pool} plane={plane} />
+    </Dialog>
+  );
 }
 
 /** A count typed, or `null` for the default; `undefined` when it is not a count. */

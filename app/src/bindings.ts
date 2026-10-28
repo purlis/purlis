@@ -1583,13 +1583,19 @@ export const commands = {
 	 *  plane or the window reaches the shell through here. It is typed only into a shell at the
 	 *  project root, the one the window opened for it, never into a chat's pane. An adopted
 	 *  profile is refused: it is signed in by the person's own sign-in.
+	 * 
+	 *  **With `pool`, it is signed in on that pool's runner** (#2049): the line is the runner's own
+	 *  `purlis profile sign-in`, run there through this machine's `docker`, in the runner's folder
+	 *  for the profile ([`crate::poolprofiles::sign_in_line`]); nothing of this machine's sign-in
+	 *  goes there. The runner is asked again every few seconds until it says the profile is signed
+	 *  in there.
 	 */
-	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider })),
+	typeProfileSignIn: (plane: PlaneId, session: number, name: string, provider: string | null, pool: string | null) => typedError<null, string>(__TAURI_INVOKE("type_profile_sign_in", { plane, session, name, provider, pool })),
 	/**
 	 *  Puts away project `plane`'s Ask to sign the profile `profile` in (#2035): Dismiss. A chat's
 	 *  next start on it asks again while its harness says it is signed out.
 	 */
-	dismissSignIn: (plane: PlaneId, profile: string) => typedError<null, string>(__TAURI_INVOKE("dismiss_sign_in", { plane, profile })),
+	dismissSignIn: (plane: PlaneId, profile: string, pool: string | null) => typedError<null, string>(__TAURI_INVOKE("dismiss_sign_in", { plane, profile, pool })),
 	/**
 	 *  **Update the pin** (#2038): pins `name` to `version`, the one the page showed installed, so
 	 *  its chats run, and its conversations resume, on that version from now on.
@@ -2808,6 +2814,12 @@ export const commands = {
 	dockerPoolLink: (name: string) => typedError<PoolLink, string>(__TAURI_INVOKE("docker_pool_link", { name })),
 	/**  **Which version the pool `name`'s runner runs, against this desktop's** (#2749). */
 	dockerPoolVersion: (name: string) => typedError<PoolVersion, string>(__TAURI_INVOKE("docker_pool_version", { name })),
+	/**
+	 *  **Every profile of this machine's, kept on pool `pool`'s runner**, as the runner stands with
+	 *  each (#2049): what adding a pool ends with, and what Settings › Pools shows. Refused, with
+	 *  nothing sent, for a pool not shown to be the person's own.
+	 */
+	poolProfiles: (pool: string) => typedError<PoolProfileRow[], string>(__TAURI_INVOKE("pool_profiles", { pool })),
 	/**
 	 *  **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 	 *  with the chats and browsers the window has open there, and each pool's limits.
@@ -4319,8 +4331,10 @@ export type AnswerPath =
  *  Sign in sends nothing: it opens a shell tab where the core types the harness's own
  *  sign-in for `profile` (`type_profile_sign_in`), naming the provider an option names, and
  *  the Ask waits until the harness says it is signed in. Dismiss sends `dismiss_sign_in`.
+ *  With `pool`, it is signed in on that pool's runner (#2049): the line typed is the
+ *  runner's own sign-in, and both commands name the pool.
  */
-{ via: "sign-in"; profile: string } | 
+{ via: "sign-in"; profile: string; pool: string | null } | 
 /**
  *  Make one sends `make_sandbox_only_profile`, then opens a shell tab where the core types
  *  Codex's own sign-in for the profile it made (`type_profile_sign_in`). Dismiss sends
@@ -5057,7 +5071,7 @@ export type CertificateCheck = {
  *  What one changed path is part of, as the window's readers divide the plane
  *  ([`purlis_core::planechange::Kind`], which this mirrors for the bindings).
  */
-export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "git" | "chats";
+export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
 
 /**
  *  Where one change's member list is in a changes view, sent with its blocks
@@ -5381,6 +5395,11 @@ export type ChatSkills = {
 	 *  (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
 	 */
 	repos: string[],
+	/**
+	 *  Why the chat gets no skills, where its harness is a declared one skills are not supported
+	 *  on (SK-30): said in place of the words for a tool purlis does not know.
+	 */
+	not_supported: string | null,
 	/**
 	 *  How its router extension did at its start (SK-15b): null for a chat routed by the
 	 *  built-in router, which is asked nothing.
@@ -9562,6 +9581,24 @@ export type PoolLink =
  */
 { state: "suspended" };
 
+/**  One of this machine's profiles, as a pool's runner stands with it. */
+export type PoolProfileRow = {
+	name: string,
+	/**  The harness, as a profile's kind names it. */
+	kind: string,
+	/**  The harness as people call it: `Claude Code`. */
+	harness: string,
+	/**
+	 *  Whether its harness says it is signed in on the runner: `signed-in`, `signed-out` or
+	 *  `cannot-tell`. Null where it is not kept there.
+	 */
+	standing: string | null,
+	/**  Why it is not kept on the runner, in words, where it is not. */
+	not_kept: string | null,
+	/**  The plans Sign in offers there, where purlis names the provider. */
+	plans: PlanRow[],
+};
+
 /**  One pool's limits, which each of its runners that runs requests (#2052, story 55). */
 export type PoolRequests = {
 	pool: string,
@@ -12509,6 +12546,11 @@ export type Studio = {
 	 */
 	pins_refused: SkillPinsRefused | null,
 	/**
+	 *  The declared harnesses skills are not supported on (SK-30): each skill's badge names them,
+	 *  and the harnesses' list says why in one line.
+	 */
+	not_supported: StudioNotSupported[],
+	/**
 	 *  The router its chats are routed by, and how it did at each one's start (SK-15b). Null
 	 *  while the studio is off.
 	 */
@@ -12576,6 +12618,18 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
+};
+
+/**
+ *  **A declared harness skills are not supported on** (SK-30, #2985): the core's
+ *  `skills::NotSupported`.
+ */
+export type StudioNotSupported = {
+	/**  The word a profile's `kind` names it by. */
+	name: string,
+	title: string,
+	/**  Why its chats get no skills, in one line. */
+	said: string,
 };
 
 /**  One chat a router extension was asked about at its start. */

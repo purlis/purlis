@@ -26,7 +26,7 @@ import { useTabIds, StripTablist } from "../../StripTablist";
 import { Button } from "../button/Button";
 import { panelRoot } from "../panel/Panel";
 import { TabCell, tabPart, tabsPart } from "./Tabs";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 
 /** One warning the band can hold, as `ChatNotices` draws it. */
 type Warning =
@@ -459,9 +459,12 @@ export const PutAway: Story = {
     first.focus();
     await userEvent.keyboard("{Escape}");
     const next = await canvas.findByRole("button", { name: "Update the clone" });
-    await waitFor(() => expect(next).toHaveFocus());
+    await untilFocused(() => next, "Esc moves the keyboard to Update the clone");
     await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(canvas.getByLabelText("Terminal of steward 2")).toHaveFocus());
+    await untilFocused(
+      () => canvas.getByLabelText("Terminal of steward 2"),
+      "Esc gives the keyboard back to the terminal",
+    );
     expect(canvas.queryAllByRole("status")).toHaveLength(0);
     atRest();
   },
@@ -485,7 +488,7 @@ export const ConsentMoved: Story = {
     // The vault's card moved up into the first place, and the sandbox's came out from behind
     // "+1 more": both moved, and neither is a cause the guard lists by name for the vault.
     const vault = await canvas.findByRole("status", { name: "Vault" });
-    await waitFor(() => expect(vault).toHaveFocus());
+    await untilFocused(() => vault, "Esc lands on the vault's card");
 
     await userEvent.click(
       within(vault).getByRole("button", { name: "Allow steward to use this vault" }),

@@ -680,6 +680,16 @@ pub(crate) fn begin(
                     stop: &stop,
                     spent: Spent::default(),
                     tell: &|ran, tokens, asked| tell(ran, tokens, asked, None, None),
+                    on_spent: &|spent| {
+                        if let Some(marker) = marker.borrow_mut().as_mut()
+                            && let Err(why) = marker.spent(spent)
+                        {
+                            tracing::warn!(
+                                "purlis: grade {grade} under way does not say what it spent \
+                                 ({why})"
+                            );
+                        }
+                    },
                     grade: &grade,
                     asked: 0,
                     harness: None,
@@ -1025,6 +1035,9 @@ struct InChats<'a> {
     /// What the chats that ran so far spent, and who is told each, with how many asked.
     spent: Spent,
     tell: &'a dyn Fn(u32, Option<u64>, u32),
+    /// Who is told what the chats spent so far, each time a chat's end changes it: the grade's
+    /// marker (#3582).
+    on_spent: &'a dyn Fn(Spent),
     /// The grade's id: what each chat's screen is kept under (SK-59).
     grade: &'a str,
     /// The chats that asked the person something and were ended there (SK-59).
@@ -1048,17 +1061,16 @@ impl Chats for InChats<'_> {
 
     fn run(&mut self, chat: &RunChat, tokens_left: Option<u64>) -> ChatRan {
         let ran = self.run_one(chat, tokens_left);
-        // What every chat that started spent counts toward the cap, a chat ended at it too.
-        if let Some(tokens) = ran.tokens {
-            *self.spent.tokens.get_or_insert(0) += tokens;
+        let was = self.spent;
+        self.spent = counted(self.spent, &ran);
+        // Said in the grade's marker as each chat ends, so a grade purlis stops under is
+        // recorded with what its chats spent (#3582): written after the chat closed, never
+        // while one opens.
+        if self.spent != was {
+            (self.on_spent)(self.spent);
         }
-        // As the runner counts it: a cost no reader could hold is no cost.
-        match (
-            ran.cost_usd.filter(|cost| cost.is_finite() && *cost >= 0.0),
-            ran.tokens,
-        ) {
+        match (said_cost(&ran), ran.tokens) {
             (Some(cost), _) => {
-                *self.spent.cost_usd.get_or_insert(0.0) += cost;
                 self.cost_left = self.cost_left.map(|left| left - cost);
             }
             // Tokens said and no cost: counted at the dearest price, as the runner counts them.
@@ -1075,12 +1087,34 @@ impl Chats for InChats<'_> {
             self.asked += 1;
         }
         if matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked) {
-            if ran.end != ChatEnd::Asked {
-                self.spent.chats += 1;
-            }
             (self.tell)(self.spent.chats, self.spent.tokens, self.asked);
         }
         ran
+    }
+}
+
+/// What the chat `ran` cost, as its harness said it, where it is a cost a reader could hold: as
+/// the runner counts it, any other is no cost.
+fn said_cost(ran: &ChatRan) -> Option<f64> {
+    ran.cost_usd.filter(|cost| cost.is_finite() && *cost >= 0.0)
+}
+
+/// **What a grade's chats spent, `spent`, with the chat `ran` counted**: its tokens and its cost
+/// where it said them, whatever ended it, as every chat that started counts toward the caps; and
+/// the chat itself where it ran (a turn, or its time out), as the runner's arms count it. A cost
+/// no reader could hold is none ([`said_cost`]), so nothing is counted past what the chats said.
+fn counted(spent: Spent, ran: &ChatRan) -> Spent {
+    let cost = said_cost(ran);
+    Spent {
+        chats: spent.chats + u32::from(matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut)),
+        tokens: match ran.tokens {
+            Some(tokens) => Some(spent.tokens.unwrap_or(0).saturating_add(tokens)),
+            None => spent.tokens,
+        },
+        cost_usd: match cost {
+            Some(cost) => Some(spent.cost_usd.unwrap_or(0.0) + cost),
+            None => spent.cost_usd,
+        },
     }
 }
 

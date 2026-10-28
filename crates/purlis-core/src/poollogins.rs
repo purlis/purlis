@@ -80,13 +80,14 @@ impl Bound {
 /// **Whether a Docker pool's runner is shown to be the person's own** (#2050): its engine is a
 /// local socket on this machine, as `engine` says; named for the Ask as this machine's Docker.
 /// Refused, in words that say no vault value, a browser login's or a tool's (#2047), is ever
-/// sent there, otherwise.
+/// sent there, and no profile signed in there (#2049), otherwise.
 pub fn owned(engine: Result<std::path::PathBuf, String>) -> Result<String, String> {
     match engine {
         Ok(_) => Ok("this machine's Docker".to_owned()),
         Err(why) => Err(format!(
             "{why}, so its runners are not known to be yours, and purlis sends no vault value \
-             there, for a browser login or a tool, until a pool can be marked as yours"
+             there, for a browser login or a tool, and signs no profile in there, until a pool \
+             can be marked as yours"
         )),
     }
 }

@@ -5,6 +5,7 @@ import { Fragment, type ComponentProps, type ReactNode } from "react";
 import { ChatShownState } from "./ChatRows";
 import { ASKED_BY_YOU } from "./chatsTree";
 import type { Crumbs } from "./tabChats";
+import { Button } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
 
 /**
@@ -71,15 +72,17 @@ export function PaneCrumbs({
               ) : gone?.(chat.session) ? (
                 <span className={at === 0 ? "crumb own" : "crumb between"}>{chat.name}</span>
               ) : (
-                <button
-                  type="button"
+                // The quiet ghost as words in the line (#3264): in the tab sequence, said out
+                // loud, cut to an ellipsis where the line squeezes it.
+                <Button
+                  variant="quiet"
+                  size="sm"
+                  inline
                   className={at === 0 ? "crumb own" : "crumb between"}
-                  // In the tab sequence, said out loud (`docs/ui-primitives.md`).
-                  tabIndex={0}
-                  onClick={() => onShow(chat.session)}
+                  onPress={() => onShow(chat.session)}
                 >
                   {chat.name}
-                </button>
+                </Button>
               )}
               {at < last && (
                 <span className="crumb-sep" aria-hidden="true">
