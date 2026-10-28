@@ -1305,9 +1305,20 @@ struct Tracked {
     /// The chat's, not the report's: it is what decides which rule a report is judged by, and
     /// letting a report choose its own rulebook is how a nested `claude` took a Codex chat.
     reports_pid: bool,
+    /// Whether this chat is a grade's (SK-16, #3583), which the window draws nowhere: never in
+    /// the queue, whatever it asks, as the grade ends it at its first ask. `false` in a board
+    /// kept before #3583.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    kept_from_the_window: bool,
 }
 
 impl Tracked {
+    /// Whether it is in the queue: it needs the person, and it is not a grade's chat, which
+    /// the window draws nowhere (#3583).
+    fn queued(&self) -> bool {
+        !self.kept_from_the_window && self.chat.needs_you()
+    }
+
     /// Whether this report is this chat's harness speaking, adopting or following it if so.
     ///
     /// **Which rulebook applies is decided by the CHAT's harness, never by the report's own
@@ -1476,19 +1487,40 @@ impl Board {
         harness: Option<crate::harness::Harness>,
         conversation: Option<String>,
     ) {
+        self.opened_as(number, harness, conversation, false);
+    }
+
+    /// **[`Board::opened`], for a chat that is a grade's where `graded`** (SK-16, #3583): one the
+    /// window draws nowhere, so it is never in the queue ([`Board::needs_you`]) and never stands
+    /// there ([`Board::standing`]), whatever it asks before the grade ends it.
+    pub fn opened_as(
+        &mut self,
+        number: u32,
+        harness: Option<crate::harness::Harness>,
+        conversation: Option<String>,
+        graded: bool,
+    ) {
         self.opened_reporting(
             number,
             harness.is_some_and(crate::harness::Harness::reports_its_process),
             conversation,
+            graded,
         );
     }
 
     /// [`Board::opened`], by what decides how its reports are judged: whether its harness
-    /// reports its own process.
-    fn opened_reporting(&mut self, number: u32, reports_pid: bool, conversation: Option<String>) {
+    /// reports its own process; and whether it is a grade's, kept from the window.
+    fn opened_reporting(
+        &mut self,
+        number: u32,
+        reports_pid: bool,
+        conversation: Option<String>,
+        kept_from_the_window: bool,
+    ) {
         self.tell(number, || Move::Opened {
             reports_its_process: reports_pid,
             conversation: conversation.clone(),
+            kept_from_the_window,
         });
         let moved_at = self.moved();
         self.chats.insert(
@@ -1500,6 +1532,7 @@ impl Board {
                 pid: None,
                 adopted: false,
                 reports_pid,
+                kept_from_the_window,
             },
         );
     }
@@ -1659,7 +1692,7 @@ impl Board {
         self.chats
             .get(&number)
             .map_or(Standing::default(), |tracked| Standing {
-                queued: tracked.chat.needs_you(),
+                queued: tracked.queued(),
                 reasons: tracked.chat.reasons(),
             })
     }
@@ -2012,11 +2045,11 @@ impl Board {
     }
 
     /// Every chat waiting on the operator, in the order they were opened. Which chats those
-    /// are is [`Chat::needs_you`]'s rule.
+    /// are is [`Chat::needs_you`]'s rule, a grade's chat left out (#3583).
     pub fn needs_you(&self) -> Vec<u32> {
         self.chats
             .iter()
-            .filter(|(_, tracked)| tracked.chat.needs_you())
+            .filter(|(_, tracked)| tracked.queued())
             .map(|(number, _)| *number)
             .collect()
     }
@@ -2979,6 +3012,38 @@ mod tests {
 
         assert_eq!(board.state(7), State::Failed);
         assert!(board.needs_you().is_empty());
+    }
+
+    /// #3583: a grade's chat is drawn nowhere, so its ask never puts it in the queue, and the
+    /// board kept in the session host holds it so too.
+    #[test]
+    fn a_grades_chat_that_asks_is_never_in_the_queue_3583() {
+        let mut board = Board::new();
+        let moves = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        board.told_to({
+            let moves = std::sync::Arc::clone(&moves);
+            std::sync::Arc::new(move |number, moved: &Move| {
+                moves.lock().unwrap().push((number, moved.clone()));
+            })
+        });
+        claude_chat(&mut board, 7, Some(A));
+        board.opened_as(8, Some(Harness::ClaudeCode), Some(B.to_owned()), true);
+        for (chat, conversation) in [(7, A), (8, B)] {
+            board.reported(&report(chat, Event::UserPromptSubmit, Some(conversation)));
+            board.reported(&report(chat, Event::Notification, Some(conversation)));
+        }
+        assert_eq!(board.needs_you(), vec![7], "the grade's chat is left out");
+        assert!(!board.standing(8).queued);
+        assert!(board.standing(7).queued);
+
+        let mut host = Board::new();
+        for (number, moved) in moves.lock().unwrap().drain(..) {
+            host.make(number, moved);
+        }
+        assert_eq!(host.needs_you(), vec![7], "the host's board moves the same");
+        let mut taken = Board::new();
+        taken.keep(serde_json::from_value(serde_json::to_value(host.kept()).unwrap()).unwrap());
+        assert_eq!(taken.needs_you(), vec![7], "and a board taken whole too");
     }
 
     // ----- ignoring a chat that asked (charter-app#248) -----

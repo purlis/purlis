@@ -6,6 +6,7 @@ import {
   commands,
   type PoolAdding,
   type PoolLink,
+  type PoolProfileRow,
   type PoolVersion,
   type PoolsShown,
 } from "./bindings";
@@ -23,6 +24,9 @@ import {
  *
  * **Each pool's runner is asked its version too** ({@link askVersion}, #2749): a row whose
  * runner runs another version than this machine says so.
+ *
+ * **Each pool's runner keeps this machine's profiles** ({@link askProfiles}, #2049): adding a
+ * pool ends with them, each to sign in there, and the profile page says where each is signed in.
  */
 type Read =
   | { state: "reading" }
@@ -37,6 +41,11 @@ export type Held = {
   links: Readonly<Record<string, PoolLink | "asking">>;
   /** Which version each pool's runner runs, by the pool's name, once it said (#2749). */
   versions: Readonly<Record<string, PoolVersion>>;
+  /** This machine's profiles as each pool's runner keeps them, by the pool's name (#2049): the
+   *  rows, that they are being asked, or why they could not be. */
+  profiles: Readonly<Record<string, PoolProfiles>>;
+  /** The pool just added, whose profiles the dialog offers to sign in there, until Done. */
+  added: string | undefined;
   /** The pool being removed, while it is. */
   removing: string | undefined;
   /** Why the last removal was refused, or what it left, in the core's words. */
@@ -48,6 +57,8 @@ const START: Held = {
   adding: false,
   links: {},
   versions: {},
+  profiles: {},
+  added: undefined,
   removing: undefined,
   said: undefined,
 };
@@ -86,7 +97,7 @@ export async function rereadPools() {
 
 function subscribe(listener: () => void) {
   if (listeners.size === 0) {
-    held = { ...START, adding: held.adding };
+    held = { ...START, adding: held.adding, added: held.added };
     void rereadPools();
   }
   listeners.add(listener);
@@ -119,9 +130,32 @@ export function stopAddingAPool() {
 export async function addPool(adding: PoolAdding): Promise<string | undefined> {
   const said = await caught(commands.addDockerPool(adding));
   if (said.status === "error") return said.error;
-  set((was) => ({ ...was, adding: false, said: undefined }));
+  set((was) => ({ ...was, adding: false, added: adding.name, said: undefined }));
+  // Its profiles are asked by what it ends with ({@link askProfiles}, #2049).
   await rereadPools();
   return undefined;
+}
+
+/** What a pool's runner keeps of this machine's profiles, as last asked. */
+export type PoolProfiles = PoolProfileRow[] | "asking" | { trouble: string };
+
+/** Asks pool `name`'s runner to keep each of this machine's profiles, and where each stands
+ *  there (#2049). */
+export async function askProfiles(name: string) {
+  set((was) => ({ ...was, profiles: { ...was.profiles, [name]: "asking" } }));
+  const said = await caught(commands.poolProfiles(name));
+  const rows: PoolProfiles =
+    said.status === "error"
+      ? { trouble: said.error }
+      : Array.isArray(said.data)
+        ? said.data
+        : { trouble: "purlis did not say which profiles the runner keeps." };
+  set((was) => ({ ...was, profiles: { ...was.profiles, [name]: rows } }));
+}
+
+/** Closes what adding a pool ended with: its profiles to sign in there. */
+export function doneWithTheAddedPool() {
+  set((was) => ({ ...was, added: undefined }));
 }
 
 /** Asks pool `name`'s runner whether it answers with the key pinned for it. */
@@ -156,11 +190,14 @@ export async function removePool(name: string) {
     Reflect.deleteProperty(links, name);
     const versions = { ...was.versions };
     Reflect.deleteProperty(versions, name);
+    const profiles = { ...was.profiles };
+    Reflect.deleteProperty(profiles, name);
     return {
       ...was,
       removing: undefined,
       links,
       versions,
+      profiles,
       said: said.status === "error" ? said.error : (said.data ?? undefined),
     };
   });

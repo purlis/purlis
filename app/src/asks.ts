@@ -271,10 +271,17 @@ export async function answerTaken(
         // Sign in sends nothing (#2035): the project's window opens a shell tab where the core
         // types the harness's own sign-in, to the plan the option names where it names one. The
         // Ask waits until the harness says the profile is signed in. Dismiss puts it away.
-        if (option === "dismiss") return commands.dismissSignIn(plane, path.profile);
+        // With a pool (#2049), on that pool's runner: the line typed is the runner's own sign-in.
+        if (option === "dismiss")
+          return commands.dismissSignIn(plane, path.profile, path.pool ?? null);
         if (option === "sign-in" || option.startsWith("sign-in:")) {
           const provider = option.startsWith("sign-in:") ? option.slice("sign-in:".length) : "";
-          askProfileSignIn(plane, path.profile, provider === "" ? undefined : provider);
+          askProfileSignIn(
+            plane,
+            path.profile,
+            provider === "" ? undefined : provider,
+            path.pool ?? undefined,
+          );
           opened = true;
           return { status: "ok" };
         }

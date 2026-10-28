@@ -3260,8 +3260,13 @@ impl session::Host for Hosting {
                 transfer,
                 refs,
                 checkout,
+                moving,
             } => {
-                let way = crate::code::Way::In { refs, checkout };
+                let way = crate::code::Way::In {
+                    refs,
+                    checkout,
+                    moving,
+                };
                 self.move_code(&project, repo, transfer, way, peer).await
             }
             Command::GiveCode {
@@ -3269,15 +3274,43 @@ impl session::Host for Hosting {
                 repo,
                 transfer,
                 have,
+                with_work,
             } => {
-                self.move_code(
-                    &project,
-                    repo,
-                    transfer,
-                    crate::code::Way::Out { have },
-                    peer,
-                )
-                .await
+                let way = crate::code::Way::Out { have, with_work };
+                self.move_code(&project, repo, transfer, way, peer).await
+            }
+            Command::TakeConversation {
+                project,
+                transfer,
+                workspace,
+                profile,
+                conversation,
+                file,
+            } => {
+                let way = crate::code::Way::ConversationIn(crate::code::Carried {
+                    workspace,
+                    profile,
+                    conversation,
+                    file,
+                });
+                self.move_code(&project, String::new(), transfer, way, peer)
+                    .await
+            }
+            Command::GiveConversation {
+                project,
+                transfer,
+                workspace,
+                profile,
+                conversation,
+            } => {
+                let way = crate::code::Way::ConversationOut(crate::code::Carried {
+                    workspace,
+                    profile,
+                    conversation,
+                    file: String::new(),
+                });
+                self.move_code(&project, String::new(), transfer, way, peer)
+                    .await
             }
             Command::StartProgram(start) => match start.kind {
                 ProgramKind::Harness | ProgramKind::Shell => self.start(*start, peer).await,
@@ -3471,6 +3504,14 @@ impl session::Host for Hosting {
                 code: session::NOT_ALLOWED.into(),
                 why: "this host is paired with no desktop over this link, so there is nothing to \
                       unpair"
+                    .into(),
+            }),
+            // A runner's host keeps its desktop's profile on its link from that desktop
+            // (`serving`) before this host hears of it (1.43, #2049).
+            Command::KeepProfile(_) => Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "this host is paired with no desktop over this link, so it keeps no \
+                      desktop's profile"
                     .into(),
             }),
             // The desktop's host relays a window's link to a runner before this host hears of

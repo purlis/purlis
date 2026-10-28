@@ -290,6 +290,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Starts again.
     "restart_chat_without_sandbox",
     "restart_chat",
+    // A chat moved to or from a pool's runner (#2048): a new run where it moves.
+    "move_chat",
+    "move_chat_now",
     "start_chat_fresh",
     "ask_chat_restart",
     // Reads what a chat was sent or said to another.
@@ -650,6 +653,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // A grade's token cap (#2779): what this machine's grades may spend, in its own settings
     // file. The person's own press in their window.
     "skill_grade_set_cap",
+    // Grading after each edit turned on or off (SK-58, #3238): on, it spends the person's
+    // account at each edit they save, within what the plan showed. The person's own press in
+    // their window, never a link's.
+    "skill_grade_after_edit_on",
+    "skill_grade_after_edit_off",
     // Accepting a workspace or persona folder a chat could have made (SK-9): its skills then
     // reach chats, so only the person's own press in their window does it.
     "skill_level_accept",
@@ -694,6 +702,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // This machine's profiles on a pool's runner (#2049): keeping one there sends its name to a
+    // runner, so only the person's own look in their window does.
+    "pool_profiles",
     // The Devices view (#2052): it reads this machine's runners and links to each, so only the
     // person's own window asks it.
     "devices",
@@ -936,6 +947,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_in_front",
     // A chat whose program ended with its session host (#2007): what its pane says.
     "chat_lost_with_the_host",
+    "chat_moves",
     "chat_network",
     "chat_order",
     "chat_skill_runs",
@@ -1011,6 +1023,7 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "opened_chats",
     "owed_restarts",
     "pending_asks",
+    "put_away_chat_move",
     "persona_chats_of",
     "persona_create",
     "persona_edit",
@@ -1073,7 +1086,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "show_window_holding",
     "skill_details",
     "skill_diff",
-    // A grade's kept chat and its scorecard (SK-59, #3239): read only.
+    // A grade's kept chat and its scorecard (SK-59, #3239), and a skill's grading after each
+    // edit (SK-58, #3238): read only.
+    "skill_grade_after_edit",
     "skill_grade_chat",
     "skill_grade_plan",
     "skill_grade_scorecard",

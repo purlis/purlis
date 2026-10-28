@@ -235,8 +235,9 @@ export const OfHosts: Story = {
     // A row's menu from the keys, on its first row.
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     const menu = await screen.findByRole("menu", { name: "api.github.com" });
-    await waitFor(() =>
-      expect(within(menu).getByRole("menuitem", { name: "Confirm" })).toHaveFocus(),
+    await untilFocused(
+      () => within(menu).getByRole("menuitem", { name: "Confirm" }),
+      "The row's menu: the keyboard lands on Confirm",
     );
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });

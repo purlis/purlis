@@ -4,7 +4,7 @@
 /// <reference types="node" />
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { attentionPanels, Panels } from "./Panels";
@@ -1458,15 +1458,23 @@ describe("the Personas view's groups (#3483, the prototype's Q1 A)", () => {
     harness: null,
     resumable: false,
   });
-  const drawn = (bySession: Record<number, State>, workingHere = new Set<string>()) => (
+  const drawn = (
+    bySession: Record<number, State>,
+    workingHere = new Set<string>(),
+    { names, offers = new Map() }: { names?: string[]; offers?: Catalogued } = {},
+  ) => (
     <ChatsHere.Provider value={fixedChats({ ...nothingKnown, bySession, needsYou: [] })}>
       <Panels
         view="personas"
         workspace="alpha"
         state={state({
-          panels: { ...PANELS, sessions: [record("devops")], contributed: [personas] },
+          panels: {
+            ...PANELS,
+            sessions: [record("devops")],
+            contributed: [names === undefined ? personas : personasPanel(names, "steward")],
+          },
         })}
-        offers={new Map()}
+        offers={offers}
         onPress={() => {}}
         contributed={[]}
         shownRow={undefined}
@@ -1512,5 +1520,132 @@ describe("the Personas view's groups (#3483, the prototype's Q1 A)", () => {
 
     rerender(drawn({ 8: "done" }));
     expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+  });
+
+  describe("held still while the pointer is over the list or the keyboard is in it (#3566)", () => {
+    const list = () => screen.getByTestId("list-personas");
+    const rowOf = (name: string) =>
+      within(list()).getByRole("row", { name: new RegExp(`^${name}`) });
+
+    it("moves no row under the pointer, and moves it once the pointer has left", () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+
+      // release's chat starts while the pointer is over the list.
+      rerender(drawn({ 8: "running" }));
+      expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+      fireEvent.pointerLeave(list());
+      expect(groups()[0]).toEqual({ name: "Working now", count: "1", rows: ["release"] });
+    });
+
+    it("moves no row while the keyboard is in the list, and moves it once the keyboard has left", async () => {
+      const { rerender } = render(drawn({}));
+      act(() => rowOf("devops").focus());
+      await userEvent.keyboard("{ArrowDown}");
+
+      rerender(drawn({ 8: "running" }));
+      expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+      act(() => (document.activeElement as HTMLElement).blur());
+      expect(groups()[0]).toEqual({ name: "Working now", count: "1", rows: ["release"] });
+    });
+
+    it("waits for both the pointer and the keyboard to leave", async () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+      act(() => rowOf("devops").focus());
+      await userEvent.keyboard("{ArrowDown}");
+
+      rerender(drawn({ 8: "running" }));
+      fireEvent.pointerLeave(list());
+      expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+      act(() => (document.activeElement as HTMLElement).blur());
+      expect(groups()[0].name).toBe("Working now");
+    });
+
+    it("draws another workspace's groups at once, though the pointer is over the list", () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+      rerender(
+        <ChatsHere.Provider value={fixedChats({ ...nothingKnown, bySession: {}, needsYou: [] })}>
+          <Panels
+            view="personas"
+            workspace="beta"
+            state={state({ panels: { ...PANELS, sessions: [], contributed: [personas] } })}
+            offers={new Map()}
+            onPress={() => {}}
+            contributed={[]}
+            shownRow={undefined}
+            onShowRow={() => {}}
+            chatPersonasHere={new Set(["ops"])}
+          />
+        </ChatsHere.Provider>,
+      );
+      expect(groups()[0]).toEqual({ name: "In this workspace", count: "1", rows: ["ops"] });
+    });
+
+    it("is not held by the keyboard in its Filter box, which is drawn in the view's top", async () => {
+      const { rerender } = render(drawn({}));
+      const filter = screen.getByRole("searchbox", { name: "Filter Personas" });
+      await userEvent.click(filter);
+      await userEvent.keyboard("d{Backspace}");
+      expect(filter).toHaveFocus();
+
+      rerender(drawn({ 8: "running" }));
+      expect(groups()[0]).toEqual({ name: "Working now", count: "1", rows: ["release"] });
+    });
+
+    it("is held while the keyboard is in a row's menu", async () => {
+      const show: Offer = {
+        id: "persona.show:devops",
+        title: "Show devops",
+        available: true,
+        reason: "",
+        does: { verb: "openProject" },
+      };
+      const offers = new Map([[show.id, show]]);
+      const { rerender } = render(drawn({}, undefined, { offers }));
+      act(() => rowOf("devops").focus());
+      await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+      const menu = await screen.findByRole("menu");
+      await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+
+      rerender(drawn({ 8: "running" }, undefined, { offers }));
+      expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+      // The menu closed, and the keyboard is no longer in the list: the next draw moves the row.
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+      act(() => (document.activeElement as HTMLElement).blur());
+      rerender(drawn({ 8: "running" }, undefined, { offers }));
+      expect(groups()[0].name).toBe("Working now");
+    });
+
+    it("draws a persona added or removed under the hold at once, in the group it has now", () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+
+      rerender(drawn({}, new Set(["qa"]), { names: ["devops", "ops", "qa", "steward"] }));
+      expect(groups()).toEqual([
+        // qa came under the hold: drawn at once, in the group it has now.
+        { name: "In this workspace", count: "2", rows: ["devops", "qa"] },
+        { name: "On the plane", count: "2", rows: ["ops", "steward"] },
+      ]);
+      // release was removed, and is gone at once.
+      expect(within(list()).queryByRole("row", { name: /^release/ })).toBeNull();
+    });
+
+    it("lets go when the window is left, as a pointer parked over it sends no leave", () => {
+      const { rerender } = render(drawn({}));
+      fireEvent.pointerEnter(list());
+      rerender(drawn({ 8: "running" }));
+
+      act(() => {
+        window.dispatchEvent(new Event("blur"));
+      });
+      expect(groups()[0].name).toBe("Working now");
+    });
   });
 });

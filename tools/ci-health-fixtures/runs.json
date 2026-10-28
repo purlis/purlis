@@ -1,0 +1,77 @@
+{
+  "total_count": 488,
+  "workflow_runs": [
+    {
+      "id": 40604864782,
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "created_at": "2026-10-27T23:50:39Z",
+      "run_started_at": "2026-10-27T23:50:39Z",
+      "updated_at": "2026-10-28T00:31:23Z",
+      "head_branch": "main",
+      "check_suite_node_id": "CS_kwDOUewles8AAAAZoBf4Qw"
+    },
+    {
+      "id": 40595626640,
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 2,
+      "created_at": "2026-10-27T22:32:42Z",
+      "run_started_at": "2026-10-27T23:19:02Z",
+      "updated_at": "2026-10-27T23:43:11Z",
+      "head_branch": "graded-chat-plugins-alone",
+      "check_suite_node_id": "CS_kwDOUewles8AAAAZnqJeUA"
+    },
+    {
+      "id": 40600572133,
+      "event": "pull_request",
+      "status": "completed",
+      "conclusion": "failure",
+      "run_attempt": 1,
+      "created_at": "2026-10-27T23:13:05Z",
+      "run_started_at": "2026-10-27T23:13:05Z",
+      "updated_at": "2026-10-27T23:50:15Z",
+      "head_branch": "impl/2028-inspect",
+      "check_suite_node_id": "CS_kwDOUewles8AAAAZn2t_xg"
+    },
+    {
+      "id": 40604762110,
+      "event": "push",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "run_attempt": 1,
+      "created_at": "2026-10-27T23:49:45Z",
+      "run_started_at": "2026-10-27T23:49:45Z",
+      "updated_at": "2026-10-27T23:50:40Z",
+      "head_branch": "main",
+      "check_suite_node_id": "CS_kwDOUewles8AAAAZoBPa3w"
+    },
+    {
+      "id": 40604211635,
+      "event": "merge_group",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "created_at": "2026-10-27T23:44:49Z",
+      "run_started_at": "2026-10-27T23:44:49Z",
+      "updated_at": "2026-10-28T00:17:01Z",
+      "head_branch": "gh-readonly-queue/main/pr-3568-1b4c8d406b4e3ed9f7296601e9f4ed1d0207de9f",
+      "check_suite_node_id": "CS_kwDOUewles8AAAAZn_2jlg"
+    },
+    {
+      "id": 40602086001,
+      "event": "merge_group",
+      "status": "completed",
+      "conclusion": "success",
+      "run_attempt": 1,
+      "created_at": "2026-10-27T23:25:57Z",
+      "run_started_at": "2026-10-27T23:25:57Z",
+      "updated_at": "2026-10-27T23:50:11Z",
+      "head_branch": "gh-readonly-queue/main/pr-3572-dc3cdf8bfd003868908e161ef92d1d3d6c706bb2",
+      "check_suite_node_id": "CS_kwDOUewles8AAAAZn6fwVw"
+    }
+  ]
+}

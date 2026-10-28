@@ -323,6 +323,9 @@ export type Does =
    *  same chat, in a new run with no conversation resumed. */
   | { verb: "startFresh"; tab: number }
   | { verb: "restartChat"; tab: number }
+  /** Moves the tab's chat to pool `to`'s runner, or here for `null` (#2048): prepared now, it
+   *  moves at the chat's next pause. */
+  | { verb: "moveChat"; tab: number; to: string | null }
   /** Restart chat on a row of the Chats list, for a chat with no tab (#1462): by its number. */
   | { verb: "restartListed"; session: number }
   /** Opens the dialog that asks a persona for something from a chat's tab. It starts nothing
@@ -864,6 +867,9 @@ export type Now = {
   /** Whether a chat can be restarted on its conversation: it has a Restart chat row. A shell
    *  has no conversation, and no row. */
   restartable?: (session: number) => boolean;
+  /** Where a chat can move (#2048): each pool it may move to, or `null` for this machine, for a
+   *  chat on a pool's runner. Nothing for a chat that does not move. */
+  movesTo?: (session: number) => readonly (string | null)[];
   /** Why each chat's Smart close stopped without its record (SI-8f), for its needs-you rows. */
   stopped?: Readonly<Record<number, string>>;
   /**
@@ -948,6 +954,8 @@ export type Doing = {
   startFresh: (tab: number) => void;
   /** Restarts the tab's chat on its conversation, once its turn has ended. */
   restartChat: (tab: number) => void;
+  /** Asks for the tab's chat to move to pool `to`'s runner, or here (#2048). */
+  moveChat: (tab: number, to: string | null) => void;
   /** The same for a chat with no tab, from its row in the Chats list (#1462). */
   restartListed: (session: number) => void;
   /** Opens the dialog that asks `persona` for something from the tab's chat. */
@@ -1414,6 +1422,14 @@ export { SKILL_STUDIO_SHOW };
 function can(id: string, title: string, does: Does, name?: string): Offer {
   return { id, title, available: true, reason: "", does, name };
 }
+
+/** What Move to pool says it does (#2048). */
+export const MOVE_TO_RUNNER_NOTE =
+  "Its branch, uncommitted work and conversation go with it at its next pause. Its browsers start fresh there.";
+
+/** What Move here says it does (#2048). */
+export const MOVE_HERE_NOTE =
+  "Its branch, uncommitted work and conversation come back to this machine at its next pause.";
 
 /** What Restart chat keeps and what it changes. */
 const RESTART_KEEPS =
@@ -2113,6 +2129,26 @@ export function catalogue(now: Now): Offer[] {
       midTurn: { session: chat, title: `Restart chat ${name} when this turn ends` },
       noState: { session: chat, note: restartNoteNoState(name) },
     });
+  }
+
+  // **Move to runner and Move here** (#2048): one row per place the chat can move, under its
+  // restart. It ends nothing by itself: the move is prepared while the chat works, and happens
+  // at its next pause, which the row's note says.
+  for (const tab of now.tabs.order) {
+    const chat = chatOf(now.tabs, tab);
+    if (chat === undefined) continue;
+    const name = now.tabs.byId[tab].name;
+    for (const to of now.movesTo?.(chat) ?? []) {
+      offers.push({
+        ...can(
+          `tab.move:${tab}:${to ?? ""}`,
+          to === null ? `Move chat ${name} here` : `Move chat ${name} to pool ${to}`,
+          { verb: "moveChat", tab, to },
+          name,
+        ),
+        note: to === null ? MOVE_HERE_NOTE : MOVE_TO_RUNNER_NOTE,
+      });
+    }
   }
 
   // **A chat's work link** (V60, ADR 0088 §3): which work item it works on. Above the line: it
@@ -3308,6 +3344,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "restartChat":
       doing.restartChat(does.tab);
+      return DID;
+    case "moveChat":
+      doing.moveChat(does.tab, does.to);
       return DID;
     case "restartListed":
       doing.restartListed(does.session);

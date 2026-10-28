@@ -6,7 +6,7 @@
 //!
 //! **charter-app#134.** A built-in profile's command is a bare word out of the registry, and
 //! a bare word is resolved against a `PATH` — which for a Finder-launched `.app` is
-//! `/usr/bin:/bin:/usr/sbin:/sbin` and holds no harness at all. `crates/purlis-cli/tests/
+//! `/usr/bin:/bin:/usr/sbin:/sbin` and holds no harness at all. `crates/purlis-cli/tests/it/
 //! a_finder_launch_finds_the_harness.rs` is the launch that proves the search works, because
 //! only a child process can be given a `PATH` and a `HOME` of the test's choosing. What is
 //! here is the half that needs no environment: what charter SAYS when the search comes back

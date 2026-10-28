@@ -216,6 +216,8 @@ fn a_grade() -> super::super::grades::Graded {
         },
         plugins_off: None,
         model: None,
+        previous: None,
+        after_edit: false,
     }
 }
 
@@ -236,12 +238,63 @@ fn the_grades_panel_is_a_scorecard_of_each_grade_against_no_skill() {
             "1 of 1",
             "100%",
             "50% ± 12",
+            "",
             "+50 points",
             "6 chats",
             "Finished",
         ]
     );
     assert_eq!(table.columns.len(), table.rows[0].cells.len());
+}
+
+/// SK-57 (#3237): a grade against the previous version shows that arm, and its difference is
+/// against it.
+#[test]
+fn a_grade_against_the_previous_version_shows_its_arm_and_the_difference_against_it() {
+    let mut graded = a_grade();
+    graded.previous = Some("fedcba9876543210fedcba9876543210fedcba98".into());
+    use purlis_skills::grade::Arm;
+    let mut test = graded.report.triggers[0].clone();
+    test.arm = Arm::Previous;
+    graded.report.triggers.push(test);
+    let mut arm = graded.report.arms[0].clone();
+    arm.arm = Arm::Previous;
+    arm.pass_rate = arm.pass_rate.map(|stat| purlis_skills::grade::Stat {
+        mean: 0.75,
+        min: 0.75,
+        max: 0.75,
+        ..stat
+    });
+    graded.report.arms.push(arm);
+    graded.report.delta = Some(0.25);
+    graded.spent.chats = 9;
+    let blocks = grades_blocks(&[graded], "deploy");
+    let [Block::Note { text, .. }, Block::Table(table)] = blocks.as_slice() else {
+        panic!("{blocks:?}");
+    };
+    assert!(text.contains("previous version"), "{text}");
+    let column = |name: &str| table.columns.iter().position(|one| one == name).unwrap();
+    let cells = &table.rows[0].cells;
+    assert_eq!(cells[column("Previous version")], "75% · fedcba987654");
+    assert_eq!(
+        cells[column("Difference")],
+        "+25 points against fedcba987654"
+    );
+}
+
+/// SK-58 (#3238): a grade a saved edit started says so.
+#[test]
+fn a_grade_a_saved_edit_started_says_so() {
+    let mut graded = a_grade();
+    graded.after_edit = true;
+    let blocks = grades_blocks(&[graded], "deploy");
+    let [_, Block::Table(table)] = blocks.as_slice() else {
+        panic!("{blocks:?}");
+    };
+    assert_eq!(
+        table.rows[0].cells[0],
+        "2026-10-25 10:00 UTC · after an edit"
+    );
 }
 
 /// SK-60 (#3240): each grade says the model its chats ran on, beside the program.

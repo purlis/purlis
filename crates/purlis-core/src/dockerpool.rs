@@ -469,6 +469,30 @@ impl Made {
         self.exec(&["--version"])
     }
 
+    /// `docker`'s arguments that run the runner's own `purlis profile sign-in` of its profile
+    /// `name` (#2049), to `provider`'s plan where one is named, with a terminal the person drives:
+    /// the harness's own sign-in, run on the runner in the runner's folder for that profile.
+    pub fn sign_in_args(&self, name: &str, provider: Option<&str>) -> Vec<String> {
+        let mut args: Vec<String> = [
+            "exec",
+            "-it",
+            "--user",
+            &self.runner.user.spelled(),
+            self.container.as_str(),
+            PURLIS,
+            "profile",
+            "sign-in",
+            name,
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        if let Some(provider) = provider {
+            args.extend(["--provider".to_owned(), provider.to_owned()]);
+        }
+        args
+    }
+
     fn exec(&self, words: &[&str]) -> Vec<String> {
         let mut args: Vec<String> = [
             "exec",
@@ -1677,6 +1701,70 @@ impl Docker {
                  container {container} and the volume {volume} with docker"
             )),
         }
+    }
+
+    /// **The line a person's shell runs to sign the profile `name` in on `made`'s runner**
+    /// (#2049), on the engine whose local socket is `engine`, to `provider`'s plan where one is
+    /// named: the container checked as it was made first, as the connector checks it before
+    /// every link, then [`Docker::sign_in_login`] with settings of purlis's own
+    /// ([`settings::for_a_sign_in`]). Refused, with nothing to type, where either fails.
+    pub fn sign_in_line(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<String, String> {
+        self.check(made).map_err(|why| why.0)?;
+        let settings_in = match &self.settings_in {
+            Some(folder) => folder.clone(),
+            None => crate::datahome::root()
+                .ok_or_else(|| "purlis has no data folder to keep docker's settings in".to_owned())?
+                .join(settings::DIR),
+        };
+        let settings = settings::for_a_sign_in(&settings_in).map_err(|why| why.0)?;
+        self.sign_in_login(made, engine, &settings, name, provider)?
+            .line()
+    }
+
+    /// **What the line [`Docker::sign_in_line`] types runs**: this `docker`, named by its path,
+    /// with Docker's settings the folder `settings` (`--config` and `DOCKER_CONFIG`), its plugin
+    /// hooks off (`DOCKER_CLI_HOOKS=false`), no context (`DOCKER_CONTEXT` cleared), the engine
+    /// named on the line (`--host unix://<engine>`), and the container by its id: no setting of
+    /// the shell's, or of the person's Docker, decides what runs.
+    pub fn sign_in_login(
+        &self,
+        made: &Made,
+        engine: &std::path::Path,
+        settings: &std::path::Path,
+        name: &str,
+        provider: Option<&str>,
+    ) -> Result<crate::profilestore::sign_in::Login, String> {
+        let typed = |path: &std::path::Path, what: &str| {
+            path.to_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("{what} is not at a path purlis can type"))
+        };
+        let settings = typed(settings, "docker's settings for the sign-in")?;
+        let mut args = vec![
+            "--config".to_owned(),
+            settings.clone(),
+            "--host".to_owned(),
+            format!("unix://{}", typed(engine, "the Docker engine's socket")?),
+        ];
+        args.extend(made.sign_in_args(name, provider));
+        Ok(crate::profilestore::sign_in::Login {
+            program: typed(&self.program, "this machine's docker")?,
+            args,
+            env: vec![
+                ("DOCKER_CONFIG".to_owned(), settings),
+                ("DOCKER_CLI_HOOKS".to_owned(), "false".to_owned()),
+            ],
+            cleared: settings::CLEARED
+                .iter()
+                .map(|name| (*name).to_owned())
+                .collect(),
+        })
     }
 
     /// What Docker says of `made`'s container, its home volume and the daemon, held to

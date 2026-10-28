@@ -12,7 +12,7 @@ import { useState, type ReactNode } from "react";
 import { expect, waitFor } from "storybook/test";
 import { Bot, Code, SquareTerminal } from "lucide-react";
 import { cellInTest } from "../../../.storybook/matrix";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Checkbox, CheckboxGroup, RovingCheckbox } from "./Checkbox";
 import { OptionCard, OptionCards, Radio, RadioGroup, Segment, SegmentedControl } from "./Radio";
 import { Slider } from "./Slider";
@@ -145,7 +145,7 @@ export const ChipsOverAList: Story = {
     await userEvent.tab();
     await expect(needs).toHaveFocus();
     await userEvent.keyboard("{ArrowRight}");
-    await waitFor(() => expect(working).toHaveFocus());
+    await untilFocused(() => working, "Right moves the keyboard to working");
     expectFocusInSight();
     await userEvent.keyboard(" ");
     await waitFor(() => expect(working).not.toBeChecked());

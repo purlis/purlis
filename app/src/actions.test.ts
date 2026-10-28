@@ -55,6 +55,8 @@ import {
   type Offer,
   type Ran,
   RESTART_NOTE,
+  MOVE_HERE_NOTE,
+  MOVE_TO_RUNNER_NOTE,
   noteOf,
   restartNoteNoState,
   titleOf,
@@ -114,6 +116,7 @@ function doing(): Doing & { calls: string[] } {
     linkWorkItem: note("linkWorkItem"),
     startFresh: note("startFresh"),
     restartChat: note("restartChat"),
+    moveChat: note("moveChat"),
     restartListed: note("restartListed"),
     askPersona: note("askPersona"),
     useSkill: note("useSkill"),
@@ -3229,6 +3232,34 @@ describe("a branch's file and folder rows (FM-10)", () => {
     const own = fileRows({ on: "file", at: at(""), kind: "folder" });
 
     expect(verbs(own)).not.toContain("addToChat");
+  });
+});
+
+describe("Move to runner and Move here on a chat's tab (#2048)", () => {
+  const tabs = openTab(noTabs(), 7, "one");
+  const tab = tabs.order[0];
+
+  it("offers a row per pool a chat here can move to, and asks for the move it names", async () => {
+    const offers = catalogue(now({ tabs, movesTo: () => ["builds", "big"] }));
+    expect(catalogued(offers).get(`tab.move:${tab}:builds`)).toMatchObject({
+      title: "Move chat one to pool builds",
+      available: true,
+      note: MOVE_TO_RUNNER_NOTE,
+    });
+    expect(catalogued(offers).get(`tab.move:${tab}:big`)?.title).toBe("Move chat one to pool big");
+    const hands = doing();
+    await run(offers, `tab.move:${tab}:big`, hands);
+    expect(hands.calls).toEqual([`moveChat:${tab},big`]);
+  });
+
+  it("offers a chat on a runner Move here, and a chat that does not move nothing", async () => {
+    const offers = catalogue(now({ tabs, movesTo: () => [null] }));
+    expect(catalogued(offers).get(`tab.move:${tab}:`)).toMatchObject({
+      title: "Move chat one here",
+      note: MOVE_HERE_NOTE,
+    });
+    const none = catalogue(now({ tabs, movesTo: () => [] }));
+    expect([...catalogued(none).keys()].filter((id) => id.startsWith("tab.move:"))).toEqual([]);
   });
 });
 

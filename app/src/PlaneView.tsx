@@ -463,6 +463,18 @@ import {
   type FailedBelow,
   type State,
 } from "./chatState";
+import {
+  askMove,
+  chatMovesOf,
+  forgetMove,
+  heardMove,
+  moveOffers,
+  movesDue,
+  poolsToMoveTo,
+  useChatMoves,
+  useChatMovesHeard,
+} from "./chatMoves";
+import { usePools } from "./pools";
 import { fitting, LEAST, LEAST_CHIP, leastAt, useRoom } from "./fits";
 import { tabPanelOf, tabsPart } from "./ui/tabs/Tabs";
 import { panelRoot } from "./ui/panel/Panel";
@@ -506,6 +518,7 @@ import {
 } from "./ChatNotices";
 import { LayoutPanes } from "./LayoutPanes";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
+import { useWorkedHere } from "./workedHere";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -542,6 +555,8 @@ type Typed =
   | {
       signIn: string;
       provider?: string;
+      /** The pool whose runner it is signed in on (#2049), where it is not this machine. */
+      pool?: string;
       line?: undefined;
       installer?: undefined;
       sandboxInstall?: undefined;
@@ -2979,7 +2994,13 @@ export const PlaneView = memo(function PlaneView({
           // sign-in with the profile's folder set, and the person drives it in this tab.
           else if (typed?.signIn !== undefined)
             void commands
-              .typeProfileSignIn(plane, session, typed.signIn, typed.provider ?? null)
+              .typeProfileSignIn(
+                plane,
+                session,
+                typed.signIn,
+                typed.provider ?? null,
+                typed.pool ?? null,
+              )
               .then((said) => {
                 if (said.status === "error") refusedBy("shell", said.error);
               })
@@ -3196,15 +3217,15 @@ export const PlaneView = memo(function PlaneView({
    * core. The person drives the harness's flow there; purlis reads none of it.
    */
   const signIn = useCallback(
-    (profile: string, provider?: string) => {
-      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider });
+    (profile: string, provider?: string, pool?: string) => {
+      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider, pool });
     },
     [openShell, root],
   );
   useEffect(() => {
     const asked = (event: Event) => {
       const wanted = (event as CustomEvent<ProfileSignInAsk>).detail;
-      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider);
+      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider, wanted.pool);
     };
     window.addEventListener(PROFILE_SIGN_IN, asked);
     return () => window.removeEventListener(PROFILE_SIGN_IN, asked);
@@ -5798,6 +5819,74 @@ export const PlaneView = memo(function PlaneView({
   /** Whether a chat has a Restart chat row: not a shell, which has no conversation. */
   const restartable = useCallback((session: number) => !shells.has(session), [shells]);
   /**
+   * **Move to runner and Move here** (#2048): where each chat can move, by what the core said of
+   * it as it started (its harness, the pool it runs on) and the pools this machine keeps. A
+   * chat already moving is offered nothing until its move is over or put away.
+   */
+  useChatMovesHeard(plane);
+  const chatMoves = useChatMoves(plane);
+  const poolsHeld = usePools();
+  const poolNames = useMemo(
+    () => poolsToMoveTo(poolsHeld.read.state === "read" ? poolsHeld.read.shown : undefined),
+    [poolsHeld],
+  );
+  const movesTo = useCallback(
+    (session: number) => {
+      const moving = chatMoves[session];
+      if (moving !== undefined && moving.stage !== "failed") return [];
+      return moveOffers(
+        reopened.find((one) => one.session === session),
+        poolNames,
+      );
+    },
+    [chatMoves, poolNames, reopened],
+  );
+  const moveTab = useCallback(
+    (tab: number, to: string | null) => {
+      const session = chatOf(now.current, tab);
+      if (session !== undefined) void askMove(plane, session, to);
+    },
+    [plane],
+  );
+  /**
+   * **A prepared move switches at its chat's next pause** (#2048), as an owed restart does: the
+   * chat then runs where it moved, in its place. The core asks the board again, so a turn is
+   * never cut off; a switch that fails is said on the pane, and the chat runs where it was.
+   */
+  const movingNow = useRef(new Set<number>());
+  useEffect(() => {
+    const drive = () => {
+      const states = chats.store.statesFor(chats.plane);
+      for (const session of movesDue(chatMovesOf(plane), (one) => stateOf(states, one))) {
+        if (movingNow.current.has(session)) continue;
+        movingNow.current.add(session);
+        const to = chatMovesOf(plane)[session]?.to ?? null;
+        void commands
+          .moveChatNow(plane, session, STARTING_SIZE.columns, STARTING_SIZE.rows)
+          .then((done) => {
+            if (done.status === "error")
+              heardMove(plane, { session, to, stage: "failed", why: done.error });
+            else if (done.data.chat !== null) {
+              const chat = done.data.chat;
+              forgetMove(plane, session);
+              chatRestarted(session, chat);
+              // What came back that a tool here runs, said on its tab (the person's ruling of
+              // 2026-10-27). `?? []`, as a start's notices are read.
+              const notes = done.data.notices ?? [];
+              if (notes.length > 0)
+                setStartNotes((was) => ({ ...was, [chat.session]: { notes, agentsMd: [] } }));
+            }
+          })
+          .catch((err: unknown) =>
+            heardMove(plane, { session, to, stage: "failed", why: String(err) }),
+          )
+          .finally(() => movingNow.current.delete(session));
+      }
+    };
+    drive();
+    return chats.store.subscribe(drive);
+  }, [chatMoves, chats, plane, chatRestarted]);
+  /**
    * The chats open, as one word, for a read that follows it: those on the strip and those the
    * Chats list holds, so a task with no tab starting or ending moves it too (#1462), as it
    * moves the core's answer.
@@ -6392,6 +6481,7 @@ export const PlaneView = memo(function PlaneView({
       unlinkWorkItem,
       startFresh: askStartFresh,
       restartChat: restartTab,
+      moveChat: moveTab,
       restartListed,
       askPersona,
       useSkill,
@@ -6513,6 +6603,7 @@ export const PlaneView = memo(function PlaneView({
       toggleRegionSeen,
       moveSideView,
       restartTab,
+      moveTab,
       restartListed,
       linkWorkItem,
       unlinkWorkItem,
@@ -6673,15 +6764,9 @@ export const PlaneView = memo(function PlaneView({
       if (row.persona !== null) of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
     return of;
   }, [listRows]);
-  /** The personas each workspace's chats run as (#3483): the Personas view's In this
-   *  workspace, with the ones the workspace's session records name. */
-  const chatPersonasIn = useMemo(() => {
-    const of = new Map<string, Set<string>>();
-    for (const row of listRows)
-      if (row.persona !== null)
-        of.set(row.workspace, (of.get(row.workspace) ?? new Set()).add(row.persona));
-    return of;
-  }, [listRows]);
+  /** The personas each workspace's chats ran as (#3483), kept after a chat closes (#3566): the
+   *  Personas view's In this workspace, with the ones the workspace's session records name. */
+  const chatPersonasIn = useWorkedHere(plane, listRows);
   /**
    * **How long each chat has been in its state, as this window saw it** (`stateClock.ts`): one
    * clock for the project, held here so it runs whether or not the Chats list is drawn, and
@@ -7319,6 +7404,7 @@ export const PlaneView = memo(function PlaneView({
             linkable: (session) => filedIn(session) !== OUTSIDE,
             planeUpdated: planeUpdates,
             restartable,
+            movesTo,
             ask: askOffer,
             // Not from a shell: it is on no harness profile to start the persona's chat on.
             askable: (session) => !shells.has(session),
@@ -7384,6 +7470,7 @@ export const PlaneView = memo(function PlaneView({
       filedIn,
       planeUpdates,
       restartable,
+      movesTo,
       askOffer,
       shells,
       nearBranch,

@@ -84,7 +84,7 @@ pub use browsers::{
     NOT_DRIVING, NoBrowsers, NotActed, NotTaken, Screen, ScreenEnded, THUMBNAIL_EVERY,
 };
 #[cfg(unix)]
-pub use code::{Code, MovesNoCode, TRANSFER_WITHIN};
+pub use code::{Carried, Code, MovesNoCode, TRANSFER_WITHIN};
 #[cfg(unix)]
 pub use confining::{Askable, Confine, ConfinesNothing, Confining, Planned, Tell, ToConfine};
 #[cfg(unix)]
@@ -115,7 +115,7 @@ pub use relay::{Dial, Keep, Relay};
 pub use routing::{DrainsTo, RelaysTo, Routed};
 #[cfg(unix)]
 pub use serving::{
-    Answering, HostError, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,
+    Answering, HostError, Keeping, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,
 };
 #[cfg(unix)]
 pub use unattended::UNLINKED_FOR;

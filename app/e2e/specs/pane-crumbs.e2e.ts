@@ -99,7 +99,19 @@ async function draw(
         const last = index === path.length - 1;
         if (last) way.append(el("span", "crumb shown", name));
         else {
-          const button = el("button", index === 0 ? "crumb own" : "crumb between", name);
+          // A way to that chat: the button family's quiet ghost drawn inline (#3264), its
+          // words its `label` part.
+          const button = el("button", index === 0 ? "crumb own" : "crumb between");
+          Object.assign(button.dataset, {
+            scope: "button",
+            part: "root",
+            variant: "quiet",
+            size: "sm",
+            inline: "",
+          });
+          const label = el("span", "", name);
+          Object.assign(label.dataset, { scope: "button", part: "label" });
+          button.append(label);
           button.setAttribute("type", "button");
           button.tabIndex = 0;
           way.append(button, el("span", "crumb-sep", " › "));

@@ -1301,6 +1301,16 @@ impl session::Host for Relay {
                     .into(),
             });
         }
+        // A runner keeps a profile for the desktop it is paired with, on that desktop's own link
+        // to it (#2049): never sent on for a client.
+        if let Command::KeepProfile(_) = command {
+            return Err(Refusal {
+                code: session::NOT_ALLOWED.into(),
+                why: "a runner keeps a profile for its desktop on that desktop's own link, never \
+                      through a relaying host"
+                    .into(),
+            });
+        }
         // While this host is stopped nothing starts on the runner either (#2051): its stop is
         // carried first, and a start sent meanwhile is refused here, whatever the runner holds.
         if matches!(command, Command::StartProgram(_) | Command::Start(_))

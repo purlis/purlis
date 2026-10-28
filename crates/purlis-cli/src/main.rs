@@ -878,6 +878,25 @@ fn serve(suspends_unlinked: bool) -> ExitCode {
             let config = config.clone();
             std::sync::Arc::new(move |desktop| purlis_core::runnerlink::unpair(&config, desktop))
         },
+        // It keeps that desktop's profiles in its own store, each in a folder of its own with
+        // nothing of the desktop's in it, so its chats start on them there (#2049).
+        keeping: std::sync::Arc::new(|desktop, profile| {
+            use purlis_core::profilestore::{Homes, onrunner, sign_in};
+            let homes = Homes::here().ok_or_else(|| {
+                "this runner has no data home to keep a profile in, or it is inside a project"
+                    .to_owned()
+            })?;
+            let home = purlis_core::profiles::home()
+                .ok_or_else(|| "this runner has no home to keep a profile in".to_owned())?;
+            onrunner::kept_for_the_desktop(
+                &homes,
+                &home,
+                &desktop.device,
+                profile,
+                &sign_in::ThisMachine,
+                purlis_core::halt::now(),
+            )
+        }),
     };
     ExitCode::from(
         u8::try_from(purlis_host::serve_alone_answering(
@@ -1099,7 +1118,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Root => ReadOnly::Runs,
         // Each one is here because a test runs it on a lived-in read-only project, sees it
         // print what it read, and finds every file unchanged
-        // (`tests/a_project_charter_cannot_write_is_read_only.rs`, #833).
+        // (`tests/it/a_project_charter_cannot_write_is_read_only.rs`, #833).
         Command::Status { .. }
         | Command::Recall(_)
         | Command::Statusline { .. }
@@ -1119,7 +1138,7 @@ fn read_only_standing(command: &Command) -> ReadOnly {
             verb: None | Some(GuardCommand::List),
         }
         // Its read tools answer and every tool that writes is refused at the call (#1051):
-        // `tests/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
+        // `tests/it/the_mcp_server_on_a_read_only_project_changes_nothing.rs` calls every tool.
         | Command::Mcp { .. } => ReadOnly::RunsAndSays,
         _ => ReadOnly::Refused,
     }

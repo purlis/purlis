@@ -327,6 +327,10 @@ impl SessionHost for RoutedSessions {
         self.here.composes_its_harness_chats()
     }
 
+    fn pool_for(&self, workspace: Option<&str>) -> Option<String> {
+        self.route(workspace).ok().flatten()
+    }
+
     fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
         match self.route(workspace) {
             // A start whose pool is not kept is refused as it opens, in its own words.
@@ -563,6 +567,22 @@ impl SessionHost for RoutedSessions {
 
     fn hold_here(&self) {
         self.here.hold_here();
+    }
+
+    /// On the runner of `pool`: this machine's host keeps the board, so it holds the project
+    /// first.
+    fn move_ahead(&self, pool: &str, workspace: &str) -> Result<(), String> {
+        let host = self.pool(pool)?;
+        self.here.hold_here();
+        host.move_ahead(pool, workspace)
+    }
+
+    fn move_in(&self, pool: &str, chat: &crate::host::Moving) -> Result<(), String> {
+        self.pool(pool)?.move_in(pool, chat)
+    }
+
+    fn move_out(&self, pool: &str, chat: &crate::host::Moving) -> Result<Vec<String>, String> {
+        self.pool(pool)?.move_out(pool, chat)
     }
 
     fn pool_of(&self, id: u32) -> Option<String> {

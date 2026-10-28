@@ -6,7 +6,10 @@ import { listen } from "@tauri-apps/api/event";
 import {
   commands,
   SKILL_GRADE,
+  SKILL_GRADE_AFTER_EDIT,
   type ProfileRow,
+  type SkillGradeAfterEdit,
+  type SkillGradeAfterEditStep,
   type SkillGradePlan,
   type SkillGradeStep,
   type SkillLevel,
@@ -101,6 +104,13 @@ export function limitSaid(plan: SkillGradePlan): string {
   return `${limit}, its tokens at the dearest known price of ${price}, ${why}`;
 }
 
+/** What each edit graded under the opt-in runs and may spend, in one sentence (SK-58): the most
+ *  chats and the dollar limit the person accepted, on the profile and model they picked. */
+export function afterEditSaid(on: SkillGradeAfterEdit): string {
+  const model = on.model === null ? "" : `, ${on.model}`;
+  return `Each edit you save grades this skill on ${on.profile}${model}: up to ${counted(on.chats, "chat", "chats")}, and at most $${(on.limit_usd ?? 0).toFixed(2)} or ${tokensSaid(on.token_cap ?? 0)}, each time, paid by that profile's account.`;
+}
+
 /**
  * **Grade, on a copy of a skill** (SK-16, #2779; decisions 22 and 43): the cost first, then the
  * grade. The plan says what it runs (each trigger test, with the skill and without it, the
@@ -128,7 +138,9 @@ export function SkillGrade({
   // The model the chats run on (SK-60): the profile's own where none is picked.
   const [model, setModel] = useState(DEFAULT);
   const [step, setStep] = useState<SkillGradeStep>();
-  const [said, setSaid] = useState<{ tone: "news" | "trouble"; text: string }>();
+  const [said, setSaid] = useState<{ tone: "news" | "trouble"; text: string; label?: string }>();
+  // Grading after each edit (SK-58): what the person accepted, `null` while it is off.
+  const [afterEdit, setAfterEdit] = useState<SkillGradeAfterEdit | null>(null);
   const running = step !== undefined && step.ended === null;
   const picked = profile === DEFAULT ? null : profile;
   const pickedModel = model === DEFAULT ? null : model;
@@ -160,6 +172,31 @@ export function SkillGrade({
       live = false;
     };
   }, [plane, level, name]);
+
+  // The app's word on it, read as the tab is drawn and again whenever it may have changed.
+  const [afterEditAsked, setAfterEditAsked] = useState(0);
+  useEffect(() => {
+    let live = true;
+    void commands
+      .skillGradeAfterEdit(plane, level, name)
+      .then((answer) => {
+        if (live && answer.status === "ok") setAfterEdit(answer.data);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [plane, level, name, afterEditAsked]);
+
+  useEffect(() => {
+    const listening = listen<SkillGradeAfterEditStep>(SKILL_GRADE_AFTER_EDIT, (event) => {
+      const now = event.payload;
+      if (now.plane !== plane || now.skill !== name) return;
+      setSaid({ tone: "trouble", text: now.said, label: "Edit not graded" });
+      setAfterEditAsked((was) => was + 1);
+    }).catch(() => undefined);
+    return () => void listening.then((stop) => stop?.()).catch(() => undefined);
+  }, [plane, name]);
 
   useEffect(() => {
     const listening = listen<SkillGradeStep>(SKILL_GRADE, (event) => {
@@ -202,6 +239,31 @@ export function SkillGrade({
       .catch(() => undefined);
   };
 
+  const turnOnAfterEdit = () => {
+    void commands
+      .skillGradeAfterEditOn(plane, level, name, picked, pickedModel, plan?.consent ?? "")
+      .then((answer) => {
+        if (answer.status === "ok") {
+          setAfterEdit(answer.data);
+          setAsking(false);
+          setSaid({
+            tone: "news",
+            text: afterEditSaid(answer.data),
+            label: "Grading after each edit",
+          });
+        } else setSaid({ tone: "trouble", text: answer.error });
+      });
+  };
+
+  const turnOffAfterEdit = () => {
+    void commands.skillGradeAfterEditOff(plane, level, name).then((answer) => {
+      if (answer.status === "ok") {
+        setAfterEdit(null);
+        setSaid(undefined);
+      } else setSaid({ tone: "trouble", text: answer.error });
+    });
+  };
+
   const start = () => {
     void commands
       .skillGradeStart(plane, level, name, picked, pickedModel, plan?.consent ?? "")
@@ -232,7 +294,12 @@ export function SkillGrade({
           cause="skill-grade"
           tone={said.tone}
           label={
-            said.tone === "trouble" ? "Not graded" : step?.ended === "whole" ? "Graded" : "Stopped"
+            said.label ??
+            (said.tone === "trouble"
+              ? "Not graded"
+              : step?.ended === "whole"
+                ? "Graded"
+                : "Stopped")
           }
           onDismiss={() => setSaid(undefined)}
         >
@@ -257,15 +324,29 @@ export function SkillGrade({
           </Button>
         </ButtonRow>
       ) : !asking ? (
-        <ButtonRow>
-          <p className="honest">
-            A grade runs {name}'s trigger tests in chats with it and without it, and shows what it
-            costs before anything runs.
-          </p>
-          <Button size="sm" onPress={open}>
-            Grade…
-          </Button>
-        </ButtonRow>
+        <>
+          <ButtonRow>
+            <p className="honest">
+              A grade runs {name}'s trigger tests in chats with it and without it, and shows what it
+              costs before anything runs.
+            </p>
+            <Button size="sm" onPress={open}>
+              Grade…
+            </Button>
+          </ButtonRow>
+          {afterEdit !== null && (
+            <ButtonRow>
+              <p data-testid="skill-grade-after-edit">
+                {afterEdit.waits === null
+                  ? afterEditSaid(afterEdit)
+                  : `Grading after each edit waits for you: ${afterEdit.waits}`}
+              </p>
+              <Button size="sm" variant="ghost" onPress={turnOffAfterEdit}>
+                Stop grading after each edit
+              </Button>
+            </ButtonRow>
+          )}
+        </>
       ) : refused !== undefined ? (
         <EmptyState
           headline={`purlis could not plan a grade of ${name}`}
@@ -304,6 +385,8 @@ export function SkillGrade({
             read(picked, to === DEFAULT ? null : to);
           }}
           onStart={start}
+          afterEditOn={afterEdit !== null && afterEdit.waits === null}
+          onAfterEdit={turnOnAfterEdit}
           onCancel={() => setAsking(false)}
         />
       )}
@@ -322,6 +405,8 @@ function GradePlan({
   model,
   onModel,
   onStart,
+  afterEditOn,
+  onAfterEdit,
   onCancel,
 }: {
   name: string;
@@ -334,6 +419,9 @@ function GradePlan({
   model: string;
   onModel: (to: string) => void;
   onStart: () => void;
+  /** Whether grading after each edit is on and grading (SK-58): it is offered where it is not. */
+  afterEditOn: boolean;
+  onAfterEdit: () => void;
   onCancel: () => void;
 }) {
   const options = [
@@ -371,15 +459,23 @@ function GradePlan({
             Grading runs {counted(plan.chats, "chat", "chats")}, one turn each: each of the{" "}
             {counted(plan.tests.length, "trigger test", "trigger tests")}{" "}
             {counted(plan.runs, "time", "times")} with the skill and{" "}
-            {counted(plan.runs, "time", "times")} without it, up to{" "}
-            {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min. {costSaid(plan)} It
-            stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
+            {counted(plan.runs, "time", "times")} without it
+            {plan.previous === null
+              ? ""
+              : `, and ${counted(plan.runs, "time", "times")} with its previous version, ${plan.previous.commit} (${plan.previous.subject}), which it is compared with`}
+            , up to {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min.{" "}
+            {costSaid(plan)} It stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
             {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or cost{" "}
             {limitSaid(plan)}. The chats run on the profile and model you pick
             {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of your
             own Allows and no tools but purlis's that only read, and its account pays for them as
             for any chat.
           </p>
+          {plan.previous_refused !== null && (
+            <p className="honest" data-testid="skill-grade-previous-refused">
+              Its previous version is not compared: {plan.previous_refused}.
+            </p>
+          )}
           {plan.record_said !== null && (
             <p className="honest" role="note" data-testid="skill-grade-record">
               {plan.record_said}
@@ -396,6 +492,14 @@ function GradePlan({
               </li>
             ))}
           </ol>
+          {!afterEditOn && (
+            <p className="honest" data-testid="skill-grade-after-edit-offer">
+              Or grade after each edit you save: each edit then runs this grade again, up to{" "}
+              {counted(plan.chats, "chat", "chats")} and at most {limitSaid(plan)}, on the profile
+              and model you pick, paid by its account. It is off until you turn it on, and if an
+              edit makes a grade run more chats or spend more, it starts nothing and asks you again.
+            </p>
+          )}
           {plan.left_out.length > 0 && (
             <p className="honest" data-testid="skill-grade-left-out">
               Left out: {plan.left_out.map((left) => `Test ${left.at + 1}: ${left.why}`).join(" ")}
@@ -455,6 +559,15 @@ function GradePlan({
             >
               Grade
             </Button>
+            {!afterEditOn && (
+              <Button
+                size="sm"
+                isDisabled={plan.refused !== null || plan.consent === null}
+                onPress={onAfterEdit}
+              >
+                Grade after each edit
+              </Button>
+            )}
           </>
         )}
         <Button size="sm" variant="ghost" onPress={onCancel}>

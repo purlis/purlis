@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Explorer } from "./Explorer";
@@ -124,15 +124,32 @@ function draw({
   offers = new Map(),
   onPress = () => {},
   onFocus = () => {},
+  plane = PLANE,
 }: {
   offers?: Catalogued;
   onPress?: (offer: Offer) => void;
   onFocus?: (focus: Place | undefined) => void;
+  plane?: PlaneId;
 } = {}) {
-  render(
+  return render(cockpit({ offers, onPress, onFocus, plane }));
+}
+
+/** The cockpit as `draw` draws it, for drawing it again with other props. */
+function cockpit({
+  offers = new Map(),
+  onPress = () => {},
+  onFocus = () => {},
+  plane,
+}: {
+  offers?: Catalogued;
+  onPress?: (offer: Offer) => void;
+  onFocus?: (focus: Place | undefined) => void;
+  plane: PlaneId | undefined;
+}) {
+  return (
     <ChatsHere.Provider value={fixedChats(nothingKnown)}>
       <Explorer
-        plane={PLANE}
+        plane={plane}
         workspace="alpha"
         state={STATE}
         chats={[WORKING, ELSEWHERE]}
@@ -145,7 +162,7 @@ function draw({
         focus={FOCUS}
         onFocus={onFocus}
       />
-    </ChatsHere.Provider>,
+    </ChatsHere.Provider>
   );
 }
 
@@ -263,6 +280,29 @@ describe("the branch cockpit", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
     await userEvent.keyboard("{Escape}");
     expect(onFocus).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("keeps the keyboard on its row when the plane's read lands and its rows start dragging (#3532)", async () => {
+    core({ ahead: 0, behind: 0, base: "main" });
+    // Drawn before the window knows its plane: nothing is read, and no row is dragged yet.
+    const { rerender } = render(cockpit({ plane: undefined }));
+    const tree = screen.getByRole("treegrid", { name: "Files of fix/one" });
+    const filesRow = within(tree).getByRole("row", { name: /^Files/ });
+    act(() => filesRow.focus());
+    expect(filesRow).toHaveFocus();
+
+    // The plane arrives: the rows can be dragged onto a chat from now, and the tree is the same
+    // tree, so the row the keyboard is on is still on the page and still has it.
+    rerender(cockpit({ plane: PLANE }));
+    await screen.findByRole("row", { name: /README\.md/ });
+    expect(screen.getByRole("treegrid", { name: "Files of fix/one" })).toBe(tree);
+    expect(filesRow.isConnected).toBe(true);
+    expect(filesRow).toHaveFocus();
+    expect(
+      within(tree)
+        .getByRole("row", { name: /README\.md/ })
+        .getAttribute("draggable"),
+    ).toBe("true");
   });
 
   it("moves between its rows with the arrows", async () => {

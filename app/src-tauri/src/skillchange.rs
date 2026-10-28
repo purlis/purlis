@@ -403,6 +403,7 @@ pub(crate) async fn skill_text(
 #[tauri::command]
 #[specta::specta]
 pub(crate) async fn skill_save(
+    app: tauri::AppHandle,
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: crate::planes::PlaneId,
     level: SkillLevel,
@@ -413,9 +414,12 @@ pub(crate) async fn skill_save(
     let held = planes.held(&plane)?;
     crate::off_the_window("saving the skill", move || {
         flag_on()?;
-        heard(held.root(), |cx| {
-            verbs::edit(cx, &(&level).into(), &name, &was, &now)
-        })
+        let level: Level = (&level).into();
+        let changed = heard(held.root(), |cx| verbs::edit(cx, &level, &name, &was, &now))?;
+        // The person's own save in their editor is the one edit that may grade the skill, where
+        // they turned grading after each edit on for it (SK-58).
+        crate::skillgrade::after_edit::saved(app, held, plane, level, name);
+        Ok(changed)
     })
     .await
 }

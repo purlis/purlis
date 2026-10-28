@@ -93,6 +93,7 @@ import { TextField } from "./ui/field/Field";
 import { PanelSection as Section, PanelTitle } from "./ui/panel/Panel";
 import { Count } from "./ui/badge/Badge";
 import { Tooltip } from "./ui/tooltip/Tooltip";
+import { byKeyboard } from "./heldStill";
 
 /** What a chat's state is drawn from (`ChatShownState`): its row's and its card's alike. */
 type ShownFacts = {
@@ -182,19 +183,6 @@ function onMemoryWords(waiting: number): string {
 /** The whole sentence, on the line's hover: what they wait for, and where they are named. */
 const ON_MEMORY_SAID =
   "This machine is short on memory: they start by themselves once it frees, and the chat that asked is told when each starts or gives up. The Dispatches tab lists them under Not started.";
-
-/**
- * Whether the element that took the focus took it from the keyboard. A pointer's press focuses
- * a row too, on the WebViews that focus a button on a click, and a list held for that would
- * stay held after the pointer left. Where the engine cannot say, it is taken as the keyboard's.
- */
-function byKeyboard(target: Element): boolean {
-  try {
-    return target.matches(":focus-visible");
-  } catch {
-    return true;
-  }
-}
 
 /**
  * **The running chats of the focused workspace, in one tree** (#1447, #1655), in the left
