@@ -11,6 +11,8 @@
  * are Back and Forward in every browser and in VS Code on Windows and Linux. A bracket is read by
  * what the key types, and where a layout has no bracket without AltGr, by the key in its place.
  */
+import { sizeKey } from "../textSize";
+
 export type ViewHistoryKey = "back" | "forward";
 
 export function viewHistoryKeyOf(e: KeyboardEvent, mac: boolean): ViewHistoryKey | undefined {
@@ -18,7 +20,11 @@ export function viewHistoryKeyOf(e: KeyboardEvent, mac: boolean): ViewHistoryKey
     if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return undefined;
     if (e.key === "[") return "back";
     if (e.key === "]") return "forward";
-    if (/^[\p{L}\p{N}]$/u.test(e.key)) return undefined;
+    // The key in a bracket's place, never when it types a letter or a digit, and never when it
+    // is another of the window's keys: on Dvorak it types `=` and `/`, the text size's and the
+    // shortcuts' (as `taskKeys.ts` reads it).
+    if (/^[\p{L}\p{N}]$/u.test(e.key) || e.key === "/" || sizeKey(e, mac) !== undefined)
+      return undefined;
     if (e.code === "BracketLeft") return "back";
     if (e.code === "BracketRight") return "forward";
     return undefined;

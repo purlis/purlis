@@ -19,7 +19,7 @@
  * - **Drawn by its parts**: `data-scope="view-frame"` with `data-part` `bar`, `history`, `path`,
  *   `crumb` (where the person is) and `crumb-separator`.
  */
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ariaChord, keySaid, shortcut } from "../../keys/registry";
 import { onAMac } from "../../tabKeys";
@@ -46,19 +46,6 @@ function ariaKeys(id: string, mac: boolean): string {
 
 /** The view frame's root, which takes the keyboard when the crumb it was on goes. */
 const FRAME = '[data-scope="view-frame"][data-part="root"]';
-
-/**
- * **The keyboard stays in the view** after a crumb is pressed: the page it goes to is the path's
- * last name, which is no button, so the crumb with the keyboard goes. The frame takes it then, so
- * ⌘[ still answers and Tab goes on from the view.
- */
-function keepTheKeyboardIn(frame: HTMLElement | null): void {
-  if (frame === null) return;
-  requestAnimationFrame(() => {
-    const on = document.activeElement;
-    if (on === null || on === document.body || !on.isConnected) frame.focus();
-  });
-}
 
 /** **Back and forward**: two icon buttons, each unavailable with a reason at its end. */
 export function ViewHistoryButtons({ history }: { history: HistorySteps }) {
@@ -101,6 +88,18 @@ export function ViewCrumbs({
   onGo: (crumb: Crumb, at: number) => void;
 }) {
   const last = path.length - 1;
+  // **The keyboard stays in the view** after a crumb is pressed: the page it goes to is the
+  // path's last name, which is no button, so the crumb with the keyboard goes. Once the path is
+  // drawn again, the frame takes the keyboard if nothing has it, so ⌘[ still answers and Tab
+  // goes on from the view.
+  const pressedIn = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const frame = pressedIn.current;
+    pressedIn.current = null;
+    if (frame === null || !frame.isConnected) return;
+    const on = document.activeElement;
+    if (on === null || on === document.body || !on.isConnected) frame.focus();
+  }, [path]);
   const whole = path.map((one) => one.label).join(" › ");
   return (
     <Tooltip tip={whole}>
@@ -117,9 +116,10 @@ export function ViewCrumbs({
                 size="sm"
                 inline
                 onPress={(event) => {
-                  const frame = event.target.closest<HTMLElement>(FRAME);
+                  pressedIn.current = event.target.closest<HTMLElement>(FRAME);
                   onGo(one, at);
-                  keepTheKeyboardIn(frame);
+                  // A press that moved nothing leaves nothing to rescue later.
+                  setTimeout(() => (pressedIn.current = null), 0);
                 }}
               >
                 {one.label}

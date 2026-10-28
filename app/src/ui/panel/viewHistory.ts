@@ -27,7 +27,18 @@ export interface History<P> {
 /** How two places are told apart: by value, when the owner says nothing. */
 export type Same<P> = (a: P, b: P) => boolean;
 
-const byValue = <P>(a: P, b: P) => JSON.stringify(a) === JSON.stringify(b);
+/** **Two places are one** when they hold the same values, whatever order their keys were
+ *  written in. */
+function byValue<P>(a: P, b: P): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const one = Object.entries(a).filter(([, value]) => value !== undefined);
+  const other = Object.entries(b).filter(([, value]) => value !== undefined);
+  if (one.length !== other.length) return false;
+  const theirs = new Map(other);
+  return one.every(([key, value]) => theirs.has(key) && byValue(value, theirs.get(key)));
+}
 
 /** **A history that starts at `at`**: nothing to go back or forward to. */
 export function started<P>(at: P): History<P> {
@@ -86,7 +97,8 @@ export function openViewAt<P>(tab: string, at: P, same: Same<P> = byValue): void
   keep(tab, held === undefined ? started(at) : wentTo(held, at, same));
 }
 
-/** **The tab has closed**: its history goes with it. */
+/** **The tab has closed**: its history goes with it. Whoever closes a view tab that keeps a
+ *  history calls this with its id (the Skill studio's tab, #3681). */
 export function forgetViewHistory(tab: string): void {
   if (!kept.delete(tab)) return;
   for (const listener of listeners) listener();

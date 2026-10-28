@@ -116,6 +116,23 @@ describe("the keys", () => {
     expect(viewHistoryKeyOf(key({ key: "[", ctrlKey: true }), true)).toBe(undefined);
   });
 
+  it("never take another of the window's keys on a layout with the brackets elsewhere", () => {
+    // Dvorak: the keys in the brackets' places type `/` and `=`, the shortcuts' and the size's.
+    expect(viewHistoryKeyOf(key({ key: "/", code: "BracketLeft", metaKey: true }), true)).toBe(
+      undefined,
+    );
+    expect(viewHistoryKeyOf(key({ key: "=", code: "BracketRight", metaKey: true }), true)).toBe(
+      undefined,
+    );
+    // A layout whose `[` needs Option: the key in its place, typing something else.
+    expect(viewHistoryKeyOf(key({ key: "ü", code: "BracketLeft", metaKey: true }), true)).toBe(
+      undefined,
+    );
+    expect(viewHistoryKeyOf(key({ key: "*", code: "BracketRight", metaKey: true }), true)).toBe(
+      "forward",
+    );
+  });
+
   it("are Alt+← and Alt+→ off a Mac, never Ctrl+[, which is a terminal's Escape", () => {
     expect(viewHistoryKeyOf(key({ key: "ArrowLeft", altKey: true }), false)).toBe("back");
     expect(viewHistoryKeyOf(key({ key: "ArrowRight", altKey: true }), false)).toBe("forward");

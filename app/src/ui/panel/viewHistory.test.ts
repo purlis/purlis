@@ -51,6 +51,13 @@ describe("the steps", () => {
     expect(wentTo(history, "Library")).toBe(history);
   });
 
+  it("tell one place from another by its values, whatever order its keys were written in", () => {
+    const history = started({ page: "library", item: "deploy" });
+    expect(wentTo(history, { item: "deploy", page: "library" })).toBe(history);
+    expect(wentTo(history, { page: "library", item: "deploy", tab: undefined })).toBe(history);
+    expect(wentTo(history, { page: "library", item: "review-pr" }).back).toHaveLength(1);
+  });
+
   it("say again where the person is with no new step", () => {
     const history = wentTo(started({ page: "deploy", tab: "overview" }), {
       page: "deploy",

@@ -35,16 +35,16 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type FocusEvent,
   type KeyboardEvent,
-  type PointerEvent,
   type ReactNode,
 } from "react";
+import { mergeProps, useFocusRing, useHover, usePress } from "react-aria";
 import { ChevronLeft } from "lucide-react";
 import { Group, Panel } from "react-resizable-panels";
 import { Count } from "../badge/Badge";
 import { Button, ButtonRow } from "../button/Button";
 import { Select } from "../select/Select";
+import { aModalIsUp, inADialog, inAMenu } from "../../keys/contexts";
 import { pressed } from "../../keys/registry";
 import { Separator } from "./Separator";
 import type { HistorySteps } from "./viewHistory";
@@ -65,16 +65,6 @@ export interface ViewPage {
   countSaid?: string;
   /** A rule before it: it starts a group of its own (the studio's Harness skills, Routing). */
   startsGroup?: boolean;
-}
-
-/** Whether the browser draws `element`'s focus as the keyboard's (`:focus-visible`). An engine
- *  that does not know the selector draws it as any focus. */
-function focusVisible(element: Element): boolean {
-  try {
-    return element.matches(":focus-visible");
-  } catch {
-    return element.matches(":focus");
-  }
 }
 
 /** The keys that walk the navigation, and where each goes from `at` of `last + 1` pages. */
@@ -109,40 +99,24 @@ function ViewNavItem({
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
   refFor: (element: HTMLButtonElement | null) => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  const [keyboard, setKeyboard] = useState(false);
-  const hovers = (e: PointerEvent) => e.pointerType !== "touch";
+  // The pointer, a press and the keyboard's ring as React Aria marks them on every control.
+  const { hoverProps, isHovered } = useHover({});
+  const { pressProps, isPressed } = usePress({ onPress: onChoose });
+  const { focusProps, isFocusVisible } = useFocusRing();
   return (
     <button
       type="button"
+      {...mergeProps(hoverProps, pressProps, focusProps, { onKeyDown, onFocus: onFocusHere })}
       ref={refFor}
       tabIndex={stop ? 0 : -1}
       aria-current={current ? "page" : undefined}
       data-scope="view-nav"
       data-part="item"
       data-selected={current || undefined}
-      data-hovered={hovered || undefined}
-      data-pressed={pressed || undefined}
-      data-focus-visible={keyboard || undefined}
+      data-hovered={isHovered || undefined}
+      data-pressed={isPressed || undefined}
+      data-focus-visible={isFocusVisible || undefined}
       data-starts-group={page.startsGroup || undefined}
-      onClick={onChoose}
-      onKeyDown={onKeyDown}
-      onPointerEnter={(e) => {
-        if (hovers(e)) setHovered(true);
-      }}
-      onPointerLeave={() => {
-        setHovered(false);
-        setPressed(false);
-      }}
-      onPointerDown={() => setPressed(true)}
-      onPointerUp={() => setPressed(false)}
-      onPointerCancel={() => setPressed(false)}
-      onFocus={(e: FocusEvent<HTMLButtonElement>) => {
-        onFocusHere();
-        setKeyboard(focusVisible(e.currentTarget));
-      }}
-      onBlur={() => setKeyboard(false)}
     >
       <span data-scope="view-nav" data-part="label">
         {page.label}
@@ -233,19 +207,16 @@ function pickerLabel(one: ViewPage): string {
 export function ViewListHead({
   title,
   lead,
-  id,
   children,
 }: {
   title: ReactNode;
   lead?: ReactNode;
-  /** The heading's id, which names the list pane. */
-  id?: string;
   /** The page's own controls under the lead line. */
   children?: ReactNode;
 }) {
   return (
     <div data-scope="view-frame" data-part="head">
-      <h2 id={id} className="ui-text-body ui-text-strong">
+      <h2 className="ui-text-body ui-text-strong">
         {title}
       </h2>
       {lead !== undefined && (
@@ -382,15 +353,22 @@ export function ViewFrame({
   useLayoutEffect(() => {
     if (was.current === alone) return;
     was.current = alone;
+    // Only the keyboard that was in the frame (or on nothing) follows: a resize across the
+    // narrow width never takes it from a chat beside the view.
+    const on = document.activeElement;
+    if (on !== null && on !== document.body && root?.contains(on) !== true) return;
     if (alone) back.current?.focus();
     else listPane.current?.focus();
-  }, [alone]);
+  }, [alone, root]);
   const goBack = useCallback(() => onBack?.(), [onBack]);
 
   const listDrawn = (
     <section
       ref={listPane}
       tabIndex={-1}
+      // Narrow, while an item is drawn alone, the list stays drawn and hidden, so coming back
+      // finds it where it was.
+      hidden={alone || undefined}
       aria-label={current?.label}
       data-scope="view-frame"
       data-part="list"
@@ -410,7 +388,8 @@ export function ViewFrame({
             onValueChange={onPage}
           />
         </div>
-        {alone ? (
+        {listDrawn}
+        {alone && (
           <section data-scope="view-frame" data-part="item">
             <div data-scope="view-frame" data-part="back">
               <Button
@@ -425,28 +404,28 @@ export function ViewFrame({
             </div>
             {item}
           </section>
-        ) : (
-          listDrawn
         )}
       </div>
   ) : (
     <div data-scope="view-frame" data-part="body">
       <ViewNav label={label} pages={pages} page={page} onPage={onPage} />
-      {item === undefined ? (
-        listDrawn
-      ) : (
-        <Group orientation="horizontal" data-scope="view-frame" data-part="panes">
-          <Panel id={LIST_PANEL} defaultSize="42%" minSize="25%">
-            {listDrawn}
-          </Panel>
-          <Separator aria-label="Resize the list and the item beside it" />
-          <Panel id={ITEM_PANEL} minSize="30%">
-            <section data-scope="view-frame" data-part="item">
-              {item}
-            </section>
-          </Panel>
-        </Group>
-      )}
+      {/* The list is always the group's first panel, so choosing the first item, or the last
+          going, never draws the list again: its scroll, its field and its focus stay. */}
+      <Group orientation="horizontal" data-scope="view-frame" data-part="panes">
+        <Panel id={LIST_PANEL} defaultSize={item === undefined ? "100%" : "42%"} minSize="25%">
+          {listDrawn}
+        </Panel>
+        {item !== undefined && (
+          <>
+            <Separator aria-label="Resize the list and the item beside it" />
+            <Panel id={ITEM_PANEL} minSize="30%">
+              <section data-scope="view-frame" data-part="item">
+                {item}
+              </section>
+            </Panel>
+          </>
+        )}
+      </Group>
     </div>
   );
 
@@ -459,7 +438,8 @@ export function ViewFrame({
       data-part="root"
       data-narrow={narrow ? "" : undefined}
       onKeyDown={(event) => {
-        if (history === undefined) return;
+        // A key something inside already answered (a tab's arrows) is its own.
+        if (history === undefined || event.defaultPrevented) return;
         const act = pressed(event.nativeEvent, ["view.back", "view.forward"]);
         if (act === undefined) return;
         event.preventDefault();
@@ -469,6 +449,8 @@ export function ViewFrame({
       onMouseUp={(event) => {
         // The mouse's own back and forward buttons, anywhere in the view.
         if (history === undefined || (event.button !== 3 && event.button !== 4)) return;
+        // As the keys do, they leave a dialog or a menu opened from the view to itself.
+        if (aModalIsUp() || inADialog() || inAMenu(event.target)) return;
         event.preventDefault();
         if (event.button === 3) history.back();
         else history.forward();
