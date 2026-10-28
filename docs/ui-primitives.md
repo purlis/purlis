@@ -1153,8 +1153,20 @@ WAI-ARIA "Tabs" pattern:
   tables and trees) and the collapse into show-more (`fits.ts`, which counts the theme's gap
   between tabs).
 
+**A page's tabs are `PageTabs`** (#3668, `app/src/ui/tabs/PageTabs.tsx`, the skill page
+prototype's variant A): React Aria's `Tabs`, `TabList`, `Tab` and `TabPanel`, with automatic
+activation (one Tab stop on the row, ← and → choose the tab beside, Home and End the first and
+the last), each panel named by its tab. A count after a tab's words is its description, never
+part of its name, in room kept for three figures (past 99 it says 99+), so 9 to 10 widens
+nothing. The chosen tab is told by the indicator under it as well as by its words' colour, and no
+state changes a size. Narrow, the row scrolls along and never wraps. The chosen tab is the
+owner's (`selected`, `onSelect`), so a view's history brings it back. Its parts are the
+`page-tabs` family's: `tab`, `label`, `count`, `indicator`, `list` and `panel`. The segmented
+control is a radio group, never a page's tabs.
+
 `purlis/tabs-family` (an error) refuses a `tab`, `tablist` or `tabpanel` role written by hand,
-the old hand-made tablist (`StripTablist`) and `data-scope="tabs"` outside `src/ui`. The tablists
+a page's or a strip's alike, the old hand-made tablist (`StripTablist`) and `data-scope="tabs"`
+or `"page-tabs"` outside `src/ui`. The tablists
 still drawn by hand (the workspace strip, the activity bars, the project rail's) are turned off by
 file in `eslint.config.js` until their own tickets move them.
 

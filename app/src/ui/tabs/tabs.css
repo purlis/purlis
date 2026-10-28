@@ -338,3 +338,88 @@
 [data-scope="editor"][data-part="toolbar"] > code {
   color: var(--text-quiet);
 }
+
+/* ---------------------------------------------------------------------------------------------
+   **Page tabs** (#3668, the skill page prototype's variant A `.dtabs`): the tabs inside a page,
+   a row over a hairline, the chosen tab's words in the primary tier over its indicator. A state
+   changes a colour or paints the indicator, never a size, so choosing a tab moves none.
+   --------------------------------------------------------------------------------------------- */
+
+/* The row: the tabs side by side, scrolled along where the room is narrow, never wrapped. */
+[data-scope="page-tabs"][data-part="list"] {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-5);
+  box-sizing: border-box;
+  padding-inline: var(--space-6);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+/* **A tab**: its words, its count after them, and the indicator under it. */
+[data-scope="page-tabs"][data-part="tab"] {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-block-size: var(--size-control);
+  padding: 0 var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--font-size-md);
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+[data-scope="page-tabs"][data-part="tab"][data-hovered] {
+  color: var(--text-primary);
+}
+
+[data-scope="page-tabs"][data-part="tab"][data-selected] {
+  color: var(--text-primary);
+}
+
+[data-scope="page-tabs"][data-part="tab"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
+
+/* **A count**: 11px, in the quiet tier, its room kept for three figures in figures of one width,
+   so 9 to 10 widens nothing. */
+[data-scope="page-tabs"][data-part="count"] {
+  min-inline-size: 3ch;
+  color: var(--text-quiet);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+}
+
+/* **The indicator**: a 2px bar along the tab's foot, over the row's hairline, there in every
+   state and painted only under the chosen tab. */
+[data-scope="page-tabs"][data-part="indicator"] {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 2px;
+  border-radius: var(--radius-full);
+  background-color: transparent;
+  pointer-events: none;
+}
+
+[data-scope="page-tabs"][data-part="tab"][data-selected] > [data-part="indicator"] {
+  background-color: var(--accent-base);
+}
+
+/* **The chosen tab's panel**: what it holds, with the keyboard's ring inside it. */
+[data-scope="page-tabs"][data-part="panel"] {
+  outline: none;
+}
+
+[data-scope="page-tabs"][data-part="panel"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
+}
