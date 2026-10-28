@@ -592,10 +592,12 @@ fn a_user_named_without_a_scheme_is_hidden_and_an_image_digest_is_kept() {
         shown_safely("someone@build.example: Permission denied (publickey)."),
         "…@build.example: Permission denied (publickey)."
     );
-    assert_eq!(
-        shown_safely("pulling ghcr.io/example/runner@sha256:0123 and runner@sha256:0456"),
-        "pulling ghcr.io/example/runner@sha256:0123 and runner@sha256:0456"
+    let pulling = format!(
+        "pulling ghcr.io/example/runner@sha256:{} and runner@sha256:{}",
+        "0".repeat(64),
+        "a".repeat(64)
     );
+    assert_eq!(shown_safely(&pulling), pulling);
     assert_eq!(shown_safely("as 'someone@host'"), "as '…@host'");
 }
 
@@ -654,12 +656,44 @@ fn a_user_and_password_are_hidden_whatever_host_follows_them() {
 
 #[test]
 fn harmless_words_digests_and_image_names_still_show() {
+    let (sha256, sha384, sha512) = ("0".repeat(64), "B".repeat(96), "c".repeat(128));
     for kept in [
-        "pulling ghcr.io/example/runner@sha256:0123 and runner@SHA256:0456",
-        "localhost:5000/example/runner@sha256:0789",
-        "see docs/guide@main, tcp://127.0.0.1:2375 and https://example.com/a/b",
-        "listening on 0.0.0.0:8080",
+        // Each under the cap on what is shown.
+        format!("pulling ghcr.io/example/runner@sha256:{sha256}"),
+        format!("pulling runner@SHA384:{sha384}"),
+        format!("localhost:5000/example/runner@sha512:{sha512}"),
+        "see docs/guide@main, tcp://127.0.0.1:2375 and https://example.com/a/b".to_owned(),
+        "listening on 0.0.0.0:8080".to_owned(),
     ] {
-        assert_eq!(shown_safely(kept), kept);
+        assert_eq!(shown_safely(&kept), kept);
     }
+}
+
+#[test]
+fn an_image_named_by_a_tag_and_a_digest_is_kept_whole() {
+    let digest = "0123456789abcdef".repeat(4);
+    for kept in [
+        format!("example/runner:v1@sha256:{digest}"),
+        format!("runner:v1@sha256:{digest}"),
+        format!("registry.example:5000/team/runner:v1@sha256:{digest}"),
+        format!("pulled \"runner:v1@sha256:{digest}\"."),
+    ] {
+        assert_eq!(shown_safely(&kept), kept);
+    }
+}
+
+#[test]
+fn a_password_that_starts_with_digits_is_hidden() {
+    assert_eq!(
+        shown_safely("someone:5000/secret@build.example"),
+        "…@build.example"
+    );
+}
+
+#[test]
+fn a_user_and_password_joined_to_a_path_by_a_hidden_character_are_hidden() {
+    assert_eq!(
+        shown_safely("see path/x\u{200B}someone:hidden@build.example"),
+        "see path/…@build.example"
+    );
 }
