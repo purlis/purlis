@@ -267,7 +267,10 @@ export const AHeldCardsPoint: Story = {
     await expect(alpha).toBe(0);
     await expect(drawn.borderTopStyle).toBe("none");
     await expect(drawn.rotate).toBe("none");
-    // What it says is drawn whole beside its point.
-    await expect(within(card).getByText("Running in alpha, on claude.")).toBeVisible();
+    // What it says is drawn beside its point, once React Aria has placed it (it stays hidden
+    // until then).
+    await waitFor(() =>
+      expect(within(card).getByText("Running in alpha, on claude.")).toBeVisible(),
+    );
   },
 };
