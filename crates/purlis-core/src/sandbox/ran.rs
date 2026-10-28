@@ -46,20 +46,27 @@ pub fn applied_to(program: &OsStr, args: &[OsString], confined: bool, os: Os) ->
 
 /// Whether `args` start Claude Code with its own sandbox on: the settings after `--settings`
 /// turn it on, as JSON, or in the chat's own settings file purlis wrote where they were too long
-/// for one word (`hoststart::settings_in_a_file`).
+/// for one word (`hoststart::settings_in_a_file`). A file named as one purlis writes that no
+/// longer holds what was written is read as on: in doubt, sandboxed.
 fn claude_codes_own_is_on(args: &[OsString]) -> bool {
-    args.iter()
+    let Some(settings) = args
+        .iter()
         .position(|arg| arg == "--settings")
         .and_then(|flag| args.get(flag + 1))
         .and_then(|settings| settings.to_str())
-        .and_then(|settings| {
-            serde_json::from_str::<serde_json::Value>(settings)
-                .ok()
-                .or_else(|| {
-                    crate::hoststart::settings_from_its_file(std::path::Path::new(settings))
-                })
-        })
-        .is_some_and(|settings| settings.pointer("/sandbox/enabled") == Some(&true.into()))
+    else {
+        return false;
+    };
+    let on =
+        |settings: &serde_json::Value| settings.pointer("/sandbox/enabled") == Some(&true.into());
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(settings) {
+        return on(&json);
+    }
+    let path = std::path::Path::new(settings);
+    match crate::hoststart::settings_from_its_file(path) {
+        Some(read) => on(&read),
+        None => crate::hoststart::names_a_settings_file(path),
+    }
 }
 
 #[cfg(test)]
