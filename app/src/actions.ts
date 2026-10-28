@@ -121,6 +121,8 @@ import {
   sessionOf,
   SHORTCUTS_TITLE,
   SHORTCUTS_VIEW,
+  DEVICES_TITLE,
+  DEVICES_VIEW,
   viewKey,
   type AskedBy,
   type Direction,
@@ -1455,6 +1457,8 @@ export const TOGGLE_PANEL_ID = "view.toggle:panel";
 export const FOCUS_MODE_ID = "focus.toggle";
 /** The keyboard shortcuts' row (#2921). */
 export const SHORTCUTS_ID = "shortcuts.show";
+/** The Devices view's row (#2052). */
+export const DEVICES_ID = "devices.show";
 /** The right sidebar's own views, as the region's palette row names them: "Inbox, Personas and
  *  Vaults" (#1738). */
 const RIGHT_VIEWS_SAID = ((names: string[]) =>
@@ -2339,6 +2343,17 @@ export function catalogue(now: Now): Offer[] {
     ...can("pool.add", "Add a Docker pool…", { verb: "addDockerPool" }),
     note: "A runner on your Docker, held to the limits you set.",
   });
+  // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
+  // so nothing about runners shows before the first is added (spec #2041 story 6).
+  if (anyPoolKept())
+    offers.push({
+      ...can(DEVICES_ID, DEVICES_TITLE, {
+        verb: "openView",
+        view: DEVICES_VIEW,
+        title: DEVICES_TITLE,
+      }),
+      note: "This machine and each runner, with the chats and browsers on it and each pool's use.",
+    });
   offers.push(
     ...settingsGroupRows(
       now.plane,

@@ -7,11 +7,10 @@
 //! alone, never in the committed one. The plan says it before Grade is pressed, and a grade that
 //! reaches it stops its running chat, starts no more, and says what it spent.
 //!
-//! **A cost bound besides** ([`Cap::cost_usd`]): the cap's tokens at the dearest price any model
-//! a grade can run on charges for one ([`DEAREST_USD_PER_MILLION`]). Where the harness says what a
-//! chat cost, a grade stops at it too, so what a harness spends past the tokens it reports (a
-//! cache, a sub-agent) is still held. It never stops a grade before the token cap whose tokens
-//! were all reported.
+//! **A dollar limit besides** ([`Cap::cost_usd`]): the cap's tokens at the price of the model a
+//! grade's chats run on, or at the dearest known price where that is not known
+//! ([`super::price`], the operator's ruling G12 of 2026-10-27). A grade stops at it too, so what
+//! a harness spends past the tokens it reports (a cache, a sub-agent) is still held.
 
 use std::path::Path;
 
@@ -40,12 +39,6 @@ pub enum From {
     Yours,
 }
 
-/// The dearest price, in dollars a million tokens, that any model a grade's chats can run on
-/// charges for a token of any kind: Claude Opus 4 and 4.1's output. The cost bound is the cap's
-/// tokens at this price, so it is never the tighter of the two for a chat that reported its
-/// tokens.
-pub const DEAREST_USD_PER_MILLION: f64 = 75.0;
-
 /// The cap a grade is held to, and where it comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct Cap {
@@ -54,10 +47,10 @@ pub struct Cap {
 }
 
 impl Cap {
-    /// **The cost a grade held to this cap may reach**, where its harness says what its chats
-    /// cost: the cap's tokens at [`DEAREST_USD_PER_MILLION`].
-    pub fn cost_usd(&self) -> f64 {
-        self.tokens as f64 * DEAREST_USD_PER_MILLION / 1_000_000.0
+    /// **The dollar limit of a grade held to this cap**: its tokens at `priced`
+    /// ([`super::price::of_model`]).
+    pub fn cost_usd(&self, priced: &purlis_skills::grade::Priced) -> f64 {
+        super::price::limit_usd(self.tokens, priced)
     }
 }
 

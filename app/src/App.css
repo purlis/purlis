@@ -3578,17 +3578,29 @@ body {
   color: var(--needs-you-base);
 }
 
-/* A workspace's name over its sessions, where the list is grouped by workspace: a label over a
-   group, so the one section label (`ui-text-label`, #1920), as the section's own title is. */
+/* A workspace's name over its sessions, where the list is grouped by workspace: **the frame's
+   group head** (#3484), drawn by the panel family's rule for it (`ui/panel/panel.css`) on the
+   tree family's `header` part, so a theme that restyles a view's group heads restyles these too.
+   What is the Chats list's own: where its name starts, the room above it, and a long name cut.
+   Not a row of the tree, which stays flat (#1672): each row says its own workspace. */
 .chats-section li.chats-group {
   margin-block-start: var(--space-2);
-  padding-inline-start: var(--chats-name-at);
-  /* Held under the view's top while its chats are in sight (#3342), on the panel's fill; the
-     next workspace's name comes over it. */
-  position: sticky;
-  inset-block-start: var(--panel-section-top-size);
-  z-index: 1;
-  background-color: var(--panel-fill);
+  padding-inline: var(--chats-name-at) var(--space-4);
+}
+
+.chats-section li.chats-group > .chats-group-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A chat row's time at its end (#3484, the prototype's `.rm`): short and quiet, in figures of one
+   width, and never what gives way: the name does (#1675). */
+.chats-section .chat-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* **Every tree in the window is the shared tree** (#1672, DS-12): `.ui-tree` and its
@@ -5376,6 +5388,25 @@ body {
 .shortcuts-list {
   min-height: 0;
   overflow-y: auto;
+}
+
+/* **Devices** (#2052, `DevicesView.tsx`): no heading of its own (#3147). Refresh is its first
+   row, keeping the room the pane's actions take at its end; the devices and the use scroll under
+   it. */
+.devices-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+}
+
+/* Whatever its first row is: Refresh, the line that says it is reading, or the Notice of a
+   read that failed (#3147). */
+.pane-frame.pane-viewed .devices-view > :first-child {
+  margin-inline-end: calc(var(--pane-actions-room) - var(--space-5));
 }
 
 /* The light editor (RC-5): a piece's files beside the file picked, or one file filling its
@@ -7730,7 +7761,8 @@ nav.piece-files-head {
 }
 
 /* The Skills view (#3266): a sidebar view, its header's two ways in, the switch to the chat in
-   front, then the list, which takes the rest and scrolls. The list's look is the list family's. */
+   front, then the tree, which takes the rest and scrolls. The tree's look is the tree family's
+   (#3281). */
 .skills-view {
   display: flex;
   flex-direction: column;

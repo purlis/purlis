@@ -101,7 +101,6 @@ const READ_BY_HAND: readonly string[] = [
   // fill, the hover's or the chosen row's (`--chat-badge-ground`). Its mark is a state token the
   // engine holds at 3:1 on each of those grounds in `PAIRS`.
   ".chats-section .chat-persona > .shown-state .shape | background-color: var(--chat-badge-ground)",
-  ".chats-section li.chats-group | background-color: var(--panel-fill)",
   '[data-scope="panel-section"][data-part="top"] | background-color: var(--panel-fill)',
   '[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] | background-color: var(--panel-fill)',
 ];

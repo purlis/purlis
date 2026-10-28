@@ -1192,3 +1192,131 @@ fn a_tunnel_carried_during_a_question_ends_with_it_and_when_its_proxy_closes() {
         drop(proxy);
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// A skill router (SK-15b, #3230; ADR 0102 §5, §6)
+// ---------------------------------------------------------------------------------------
+
+#[test]
+fn a_router_declares_its_title_and_whether_it_reads_prompts() {
+    let reads = |router: serde_json::Value| {
+        let text = manifest(
+            &["skill-router"],
+            serde_json::json!({}),
+            serde_json::json!({ "skill-router": router }),
+        );
+        read(&text, true).map(|manifest| manifest.studio.and_then(|studio| studio.router))
+    };
+    assert_eq!(
+        reads(serde_json::json!({ "title": "Relevance" })),
+        Ok(Some(DeclaredRouter {
+            title: "Relevance".to_owned(),
+            reads_prompts: false,
+        }))
+    );
+    assert_eq!(
+        reads(serde_json::json!({ "title": "Relevance", "reads-prompts": true }))
+            .map(|router| router.map(|it| it.reads_prompts)),
+        Ok(Some(true))
+    );
+    for bad in [
+        serde_json::json!({ "title": "R", "reads-prompts": "yes" }),
+        serde_json::json!({ "title": "R", "prompts": true }),
+        serde_json::json!("R"),
+    ] {
+        assert!(reads(bad.clone()).is_err(), "{bad} was taken");
+    }
+}
+
+#[test]
+fn the_approval_says_a_router_that_reads_prompts_reads_every_prompt() {
+    let said = |reads_prompts: bool| {
+        declares(&Declared {
+            router: Some(DeclaredRouter {
+                title: "Relevance".to_owned(),
+                reads_prompts,
+            }),
+            ..Declared::default()
+        })
+        .join("\n")
+    };
+    let reading = said(true);
+    assert!(
+        reading.contains("“Relevance”") && reading.contains("reads every prompt"),
+        "{reading}"
+    );
+    assert!(reading.contains("100 ms"), "{reading}");
+    let not = said(false);
+    assert!(not.contains("never reads a prompt"), "{not}");
+}
+
+#[test]
+fn a_router_is_asked_the_skills_it_may_hide_the_budget_and_nothing_of_the_chat() {
+    let skills = [RouteSkill {
+        name: "deploy".to_owned(),
+        description: "Deploys.".to_owned(),
+        pinned: false,
+    }];
+    let ask = Ask::Route {
+        skills: &skills,
+        budget: RouteBudget {
+            skills: 10,
+            chars: 2000,
+        },
+        besides: RouteBudget {
+            skills: 1,
+            chars: 40,
+        },
+    };
+    assert_eq!(ask.capability(), Capability::SkillRouter);
+    assert_eq!(
+        ask.line(),
+        serde_json::json!({
+            "ask": "route",
+            "skills": [{ "name": "deploy", "description": "Deploys.", "pinned": false }],
+            "budget": { "skills": 10, "chars": 2000 },
+            "besides": { "skills": 1, "chars": 40 },
+        })
+    );
+}
+
+#[test]
+fn a_routers_answer_is_read_failing_closed() {
+    assert_eq!(
+        routed_of(
+            "r",
+            2,
+            &doc(serde_json::json!({ "hidden": [{ "skill": "deploy", "why": " rarely used " }] }))
+        ),
+        Ok(vec![(
+            "deploy".to_owned(),
+            purlis_skills::Line::new("rarely used").expect("a line")
+        )])
+    );
+    assert_eq!(
+        routed_of("r", 2, &doc(serde_json::json!({ "hidden": [] }))),
+        Ok(Vec::new())
+    );
+    for bad in [
+        serde_json::json!({}),
+        serde_json::json!({ "hidden": [{ "skill": "deploy" }] }),
+        serde_json::json!({ "hidden": [{ "skill": "deploy", "why": "x", "more": 1 }] }),
+        serde_json::json!({ "hidden": [{ "skill": "Not A Name", "why": "x" }] }),
+        serde_json::json!({ "hidden": [{ "skill": "deploy", "why": "two\nlines" }] }),
+        serde_json::json!({ "hidden": [{ "skill": "deploy", "why": "" }] }),
+        serde_json::json!({ "hidden": [], "shown": [] }),
+    ] {
+        assert!(
+            routed_of("r", 2, &doc(bad.clone())).is_err(),
+            "{bad} was taken"
+        );
+    }
+    let too_many = serde_json::json!({ "hidden": [
+        { "skill": "a", "why": "x" }, { "skill": "b", "why": "x" }, { "skill": "c", "why": "x" }
+    ] });
+    let refused = routed_of("r", 2, &doc(too_many)).expect_err("more than it was asked");
+    assert!(
+        refused.contains("more skills than it was asked about"),
+        "{refused}"
+    );
+}

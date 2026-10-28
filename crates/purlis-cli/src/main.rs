@@ -856,6 +856,9 @@ fn serve(suspends_unlinked: bool) -> ExitCode {
     // The host keeps its credentials in the config home: it stays where it is while the host
     // runs (`renamelocal::busy::LOCK`, D-RN5-11).
     let _holds = purlis_core::renamelocal::busy::hold_shared(&config);
+    // The skills folders a last host laid out and no running program uses, tidied as it
+    // starts, as the window tidies them as it starts (#2879).
+    purlis_core::skills::tidy_here_later(std::time::Duration::ZERO);
     let place = purlis_host::Place::at(
         purlis_core::hostsocket::here(),
         purlis_core::machine::charterd(&config),
@@ -892,8 +895,10 @@ fn serve(suspends_unlinked: bool) -> ExitCode {
                         purlis_core::hookchannel::HookChannels::keeping(log.clone()),
                         Confines,
                     )
-                    // What a chat's end leaves, kept as the window's own host keeps it (#2494).
-                    .recording_with(log)
+                    // What a chat's end leaves, kept as the window's own host keeps it (#2494),
+                    // and the skills folders no running program uses tidied after each end, as
+                    // the window tidies them after a chat closes (#2879).
+                    .recording_with(purlis_core::skills::TidiesAfterEachEnd::here(log))
                     // `purlis stop --all` is heard with no window there (#2190).
                     .heeding(purlis_core::halt::OnDisk(config.clone()))
                     // The projects it holds for its desktop, each in `<data>/projects/<id>`,
@@ -954,6 +959,13 @@ impl purlis_host::Compose for Composes {
             &(
                 |plan: &purlis_host::protocol::session::ConfinePlan| beside.confine(plan),
                 |entry| beside.record(entry),
+                // A chat's router extension, asked at its start with this program's own
+                // executor (SK-15b).
+                std::sync::Arc::new(
+                    purlis_core::skills::router::OnThisMachine::with_this_programs(
+                        starting.project_path,
+                    ),
+                ) as std::sync::Arc<dyn purlis_core::skills::router::AskRouter>,
             ),
         )
     }

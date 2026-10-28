@@ -14,14 +14,18 @@ struct Project {
     at: PathBuf,
 }
 
+/// One grade as purlis writes it: each arm ran the one test it holds three times, and the spend
+/// is what its report adds up (#3273: a row at odds with itself is skipped).
 const GRADE: &str = concat!(
     "{\"commit\": null, \"grade\": \"01JBGRADE00000000000000001\", \"harness\": \"claude\", ",
     "\"level\": \"skills\", \"profile\": \"work\", \"report\": {\"arms\": [",
-    "{\"arm\": \"with\", \"chats\": 6, \"not_run\": 0, \"pass_rate\": {\"max\": 1.0, \"mean\": 1.0, \"min\": 1.0, \"stddev\": 0.0}, \"seconds\": null, \"tokens\": null},",
-    "{\"arm\": \"without\", \"chats\": 6, \"not_run\": 0, \"pass_rate\": {\"max\": 0.5, \"mean\": 0.5, \"min\": 0.5, \"stddev\": 0.0}, \"seconds\": null, \"tokens\": null}",
-    "], \"delta\": 0.5, \"ended\": \"whole\", \"grader\": \"purlis\", \"not_started\": null, \"triggers\": [",
-    "{\"arm\": \"with\", \"chats\": [], \"pass\": true, \"query\": \"ship it\", \"rate\": 1.0, \"runs\": 3, \"should_trigger\": true, \"triggered\": 3}",
-    "]}, \"runs\": 3, \"skill\": \"deploy\", \"spent\": {\"chats\": 12, \"cost_usd\": 0.6, \"tokens\": 60000}, ",
+    "{\"arm\": \"with\", \"chats\": 3, \"not_run\": 0, \"pass_rate\": {\"max\": 1.0, \"mean\": 1.0, \"min\": 1.0, \"stddev\": 0.0}, \"seconds\": null, \"tokens\": null},",
+    "{\"arm\": \"without\", \"chats\": 3, \"not_run\": 0, \"pass_rate\": {\"max\": 0.5, \"mean\": 0.5, \"min\": 0.5, \"stddev\": 0.0}, \"seconds\": null, \"tokens\": null}",
+    "], \"delta\": 0.5, \"ended\": \"whole\", \"grader\": \"purlis\", \"not_started\": null, ",
+    "\"spent_tokens\": 30000, \"spent_usd\": 0.3, \"triggers\": [",
+    "{\"arm\": \"with\", \"chats\": [null, null, null], \"pass\": true, \"query\": \"ship it\", \"rate\": 1.0, \"runs\": 3, \"should_trigger\": true, \"triggered\": 3},",
+    "{\"arm\": \"without\", \"chats\": [null, null, null], \"pass\": false, \"query\": \"ship it\", \"rate\": 0.0, \"runs\": 3, \"should_trigger\": true, \"triggered\": 0}",
+    "]}, \"runs\": 3, \"skill\": \"deploy\", \"spent\": {\"chats\": 6, \"cost_usd\": 0.3, \"tokens\": 30000}, ",
     "\"tree\": \"uncommitted\", \"ts\": \"2026-10-25T10:00:00+00:00\", \"v\": 1}\n"
 );
 
@@ -85,7 +89,8 @@ fn skill_grade_says_what_a_grade_runs_and_spends_then_each_grade() {
     );
     assert!(
         text.contains(
-            "From its last grade, of 12 chats, a grade spends about 60000 tokens, about $0.60."
+            "From its grade on work (Claude Code), 2026-10-25, of 6 chats, a grade spends about \
+             60000 tokens, about $0.60."
         ),
         "{text}"
     );
@@ -94,7 +99,10 @@ fn skill_grade_says_what_a_grade_runs_and_spends_then_each_grade() {
         text.contains("A grade stops once its chats have spent 200000 tokens (the default;"),
         "{text}"
     );
-    assert!(text.contains("or once they cost $15.00"), "{text}");
+    assert!(
+        text.contains("or once they cost $15.00, its tokens at the dearest known price of $75.00"),
+        "{text}"
+    );
     assert!(
         text.contains("1 of 1 test passed  with 100%  without 50%  difference +50 points"),
         "{text}"
@@ -108,4 +116,26 @@ fn skill_grade_answers_as_json_for_a_script() {
     let doc: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(doc["plan"]["plan"]["chats"], 12);
     assert_eq!(doc["grades"][0]["report"]["delta"], 0.5);
+}
+
+/// #3273: a row of the record skipped is said, and never shown as a grade.
+#[test]
+fn skill_grade_says_a_row_it_skipped_and_shows_no_grade_of_it() {
+    let p = Project::new();
+    let root = p.at.join("plane");
+    let forged = GRADE.replace("\"tokens\": 30000}", "\"tokens\": 1}");
+    std::fs::write(root.join("personas/_grades/2026-10.laptop.jsonl"), forged).unwrap();
+    let out = p.run(&["skill", "grade", "deploy"]);
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let said = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "{said}");
+    assert!(
+        said.contains("A row of the grade record was skipped"),
+        "{said}"
+    );
+    assert!(!text.contains("1 of 1 test passed"), "{text}");
+    assert!(
+        text.contains("It has not been graded here before"),
+        "{text}"
+    );
 }

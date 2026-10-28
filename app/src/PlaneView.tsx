@@ -6673,6 +6673,15 @@ export const PlaneView = memo(function PlaneView({
       if (row.persona !== null) of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
     return of;
   }, [listRows]);
+  /** The personas each workspace's chats run as (#3483): the Personas view's In this
+   *  workspace, with the ones the workspace's session records name. */
+  const chatPersonasIn = useMemo(() => {
+    const of = new Map<string, Set<string>>();
+    for (const row of listRows)
+      if (row.persona !== null)
+        of.set(row.workspace, (of.get(row.workspace) ?? new Set()).add(row.persona));
+    return of;
+  }, [listRows]);
   /**
    * **How long each chat has been in its state, as this window saw it** (`stateClock.ts`): one
    * clock for the project, held here so it runs whether or not the Chats list is drawn, and
@@ -9101,6 +9110,9 @@ export const PlaneView = memo(function PlaneView({
                       atRoot={focused === OUTSIDE}
                       rootPanels={rootPanels?.contributed}
                       personaChats={personaChats}
+                      chatPersonasHere={
+                        ofWorkspace === undefined ? undefined : chatPersonasIn.get(ofWorkspace)
+                      }
                     />
                   )}
                 />,

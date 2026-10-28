@@ -158,6 +158,9 @@ const AT_WORK = new Map([
   ["designer", [2]],
 ]);
 
+/** Who works in the workspace (#3483): two personas whose chats there are at rest. */
+const HERE = new Set(["security", "reviewer"]);
+
 /** What the board says of them: steward's at work, designer's asking for you. */
 const WORKING = fixedChats({
   ...nothingKnown,
@@ -268,6 +271,7 @@ function View({
                 onAddTodo={async () => undefined}
                 vaults={{ vaults: VAULTS.slice(0, count), reload: () => {} }}
                 personaChats={atWork ? AT_WORK : undefined}
+                chatPersonasHere={atWork ? HERE : undefined}
               />
             </HeadActions.Provider>
           </ChatsHere.Provider>
@@ -430,7 +434,8 @@ export const Personas: Story = {
 };
 
 /** Personas at work (#3341): a persona's row ends with its chats' state, as its own mark — the
- *  ring of one at work, the hand of one asking for you; one at rest shows none. */
+ *  ring of one at work, the hand of one asking for you; one at rest shows none. And the rows
+ *  under Working now, In this workspace and On the plane, each with its count (#3483). */
 export const PersonasAtWork: Story = {
   args: { view: "personas", count: 7, atWork: true },
   play: async ({ canvas }) => {
@@ -441,6 +446,8 @@ export const PersonasAtWork: Story = {
     await expect(mark("steward")).toHaveAttribute("data-state", "working");
     await expect(mark("designer")).toHaveAttribute("data-state", "needs-you");
     await expect(mark("release")).toBeNull();
+    const groups = canvas.getAllByRole("rowheader").map((head) => head.textContent);
+    await expect(groups).toEqual(["Working now2", "In this workspace2", "On the plane3"]);
   },
 };
 

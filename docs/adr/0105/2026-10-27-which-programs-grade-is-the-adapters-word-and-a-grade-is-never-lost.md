@@ -8,7 +8,8 @@ Code profile alone" stays the operator's ruling, as only there can purlis hold a
 purlis's MCP server and read what it spent. The neutral core no longer names the program: each
 adapter says `can_grade`, with no default, and a grade's chat on one that says no is refused with a
 sentence that names the programs that can. Claude Code says yes; Codex and opencode say no until
-#3272. What keeps one program's chat from ever asking (its settings and its flags) is that
+#3272. (As amended 2026-10-28, #3468: `can_grade` answers with the reason where it cannot, and
+opencode never grades, as it cannot turn its plugins off for one chat.) What keeps one program's chat from ever asking (its settings and its flags) is that
 adapter's to read (`grade_refused`), so the core asks it and names no file and no flag.
 
 **A grade's chat starts in a mode that asks, or not at all** (§3, #3352). A grade's session settings

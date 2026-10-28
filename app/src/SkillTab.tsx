@@ -13,12 +13,17 @@ import {
   type StatsGroup,
   type StatsRow,
 } from "./bindings";
+import type { ViewRef } from "./tabs";
+import { gradeTitle, gradeView } from "./GradeScorecard";
 import type { Offer } from "./actions";
 import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import { SkillDetailsPanel } from "./SkillDetails";
-import { AnsweredBlocks } from "./Views";
+import { AnsweredBlocks, type RowOpens } from "./Views";
+
+/** The key of purlis's Grades panel on a skill's tab (SK-16): its rows open a grade's scorecard. */
+const SKILL_GRADES_PANEL = "grades";
 
 /** A run's time, as a person reads it: `850 ms`, `12 s`, `3 min 4 s`. */
 export function timeSaid(ms: number | null): string {
@@ -154,6 +159,7 @@ export function SkillTab({
   changed,
   offerFor,
   onPress,
+  onOpenView,
 }: {
   plane: string;
   name: string;
@@ -163,6 +169,8 @@ export function SkillTab({
   /** The catalogue, for the ways out purlis's own panels offer. */
   offerFor?: (id: string) => Offer | undefined;
   onPress?: (offer: Offer) => void;
+  /** Opens a tab: a grade's scorecard, from its row in the Grades panel (SK-59). */
+  onOpenView?: (view: ViewRef, title: string) => void;
 }) {
   const [panels, setPanels] = useState<SkillPanel[]>();
   const [refused, setRefused] = useState<string>();
@@ -221,6 +229,15 @@ export function SkillTab({
             current={wanted}
             offerFor={panel.key.kind === SKILL_RUNS_PANEL ? offerFor : undefined}
             onPress={panel.key.kind === SKILL_RUNS_PANEL ? onPress : undefined}
+            rowAction={
+              panel.key.kind === SKILL_GRADES_PANEL && onOpenView !== undefined
+                ? {
+                    column: "Scorecard",
+                    label: "Open scorecard",
+                    onOpen: (grade) => onOpenView(gradeView(name, grade), gradeTitle(name)),
+                  }
+                : undefined
+            }
           />
         ))
       )}
@@ -241,12 +258,14 @@ function StudioPanelSection({
   current,
   offerFor,
   onPress,
+  rowAction,
 }: {
   panel: SkillPanel;
   name: string;
   current?: string;
   offerFor?: (id: string) => Offer | undefined;
   onPress?: (offer: Offer) => void;
+  rowAction?: RowOpens;
 }) {
   const heading = useId();
   return (
@@ -274,6 +293,7 @@ function StudioPanelSection({
           current={current}
           offerFor={offerFor}
           onPress={onPress}
+          rowAction={rowAction}
         />
       )}
     </section>

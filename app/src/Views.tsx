@@ -32,12 +32,14 @@ import {
   LayoutGrid,
   ListChecks,
   LoaderCircle,
+  MonitorSmartphone,
   Puzzle,
   RefreshCw,
   Save,
   Send,
   Sparkles,
   Settings2,
+  SquareTerminal,
   UserRound,
 } from "lucide-react";
 import { PersonaMark } from "./PersonaMark";
@@ -85,6 +87,7 @@ import { HeadingOffer } from "./PanelSection";
 import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
 import { ShortcutsView } from "./keys/ShortcutsView";
+import { DevicesView } from "./DevicesView";
 import { BrowserView } from "./BrowserView";
 import { BrowserTimeline } from "./BrowserTimeline";
 import { isBrowserTimeline } from "./browserTimelines";
@@ -112,11 +115,20 @@ import { DISPATCHES_VIEW, isDispatches } from "./dispatches";
 import { SKILL_STUDIO_VIEW, isSkillStudio, scopeOf } from "./skillStudio";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { SKILL_VIEW, isSkillTab, skillOfView } from "./skillRuns";
+import {
+  GRADE_CHAT_VIEW,
+  GRADE_VIEW,
+  GradeChatTab,
+  GradeScorecardTab,
+  gradeChatOfView,
+  gradeOfView,
+} from "./GradeScorecard";
 import { SkillTab } from "./SkillTab";
 import {
   SAVING_VIEW,
   LICENCES_VIEW,
   SHORTCUTS_VIEW,
+  DEVICES_VIEW,
   SETTINGS_TAB_TITLE,
   settingsLevelOf,
   settingsView,
@@ -301,6 +313,10 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [SKILL_STUDIO_VIEW.view]: Sparkles,
   /** One skill's tab, with its runs (SK-3). */
   [SKILL_VIEW]: Sparkles,
+  /** A grade's scorecard (SK-59). */
+  [GRADE_VIEW]: ListChecks,
+  /** One of a grade's chats, read-only (SK-59). */
+  [GRADE_CHAT_VIEW]: SquareTerminal,
   /** One chat's Activity (#1495). */
   [ACTIVITY_VIEW]: Activity,
   /** One chat's Network (#1662). */
@@ -332,6 +348,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [BROWSER_VIEW]: Globe,
   /** Every browser in scope, live (#2027, `browsersGrid.ts`). */
   [BROWSERS_GRID_VIEW.view]: LayoutGrid,
+  /** This machine and its runners (#2052, `DevicesView.tsx`). */
+  [DEVICES_VIEW.view]: MonitorSmartphone,
 };
 
 /** The glyph a view's tab carries: a person for a persona, a piece of a puzzle for a view an
@@ -483,6 +501,14 @@ export function ViewPane({
       </section>
     );
   }
+  // **Devices** (#2052): this machine and its runners, with no title of its own (#3147).
+  if (view.from === null && view.view === DEVICES_VIEW.view) {
+    return (
+      <section className="view-pane view-alone" data-testid="view-pane-devices" aria-label={title}>
+        <DevicesView />
+      </section>
+    );
+  }
   const about = aboutOf(view, offered);
   const beside = offered.filter(
     (one) =>
@@ -498,6 +524,8 @@ export function ViewPane({
   const piece = pieceOf(view);
   const pieceDiff = pieceDiffOf(view);
   const taskChanges = taskChangesOf(view);
+  const gradeShown = gradeOfView(view);
+  const gradeChatShown = gradeChatOfView(view);
   /** Whether the view draws its own first row, with nothing above it (#3147). */
   const ownFirstRow =
     !holding &&
@@ -674,7 +702,19 @@ export function ViewPane({
             changed={changed + onDisk}
             offerFor={offerFor}
             onPress={onPress}
+            onOpenView={onOpenView}
           />
+        ) : gradeShown !== undefined ? (
+          /* A grade's scorecard (SK-59): each trigger test in each arm, each chat a tab away. */
+          <GradeScorecardTab
+            key={`${plane}\u0000${view.key}`}
+            plane={plane}
+            {...gradeShown}
+            onOpenView={onOpenView}
+          />
+        ) : gradeChatShown !== undefined ? (
+          /* One of a grade's chats, read-only, as it showed when the grade ended it (SK-59). */
+          <GradeChatTab key={`${plane}\u0000${view.key}`} plane={plane} {...gradeChatShown} />
         ) : isDispatches(view) ? (
           /* The project's dispatches (#1452), read from the app's own records. A row opens its
              chat through the catalogue's verb, or its session record as any record opens. It
@@ -1224,9 +1264,12 @@ export function AnsweredBlocks({
   listHead,
   besideRow,
   current,
+  rowAction,
 }: {
   blocks: readonly PanelBlock[];
   label: string;
+  /** What each row of a table opens, where it opens anything: a grade's scorecard (SK-59). */
+  rowAction?: RowOpens;
   /** The row a table marks as the one the tab was opened on, by its key: a skill run's. */
   current?: string;
   /** What a list is headed by, from its rows: a change's Push (#474). */
@@ -1277,6 +1320,7 @@ export function AnsweredBlocks({
             current={current}
             offerFor={onPress === undefined ? undefined : lookUp}
             onPress={onPress}
+            rowAction={rowAction}
           />
         ) : (
           <Fragment key={at}>
@@ -1325,6 +1369,14 @@ export function AnsweredBlocks({
 /** A table block, as the wire carries it. */
 export type TableBlock = Extract<PanelBlock, { kind: "table" }>;
 
+/** **What each row of a table opens** (SK-59): its column's heading, the press's words, and
+ *  what the press opens, by the row's key. */
+export type RowOpens = {
+  column: string;
+  label: string;
+  onOpen: (key: string) => void;
+};
+
 /**
  * **Rows of words under named columns** — `purlis_core::panel::Block::Table`: a skill's Runs
  * panel, and a studio panel's. The table family's data table (`ui/table`), so a screen reader reads each
@@ -1336,9 +1388,12 @@ export function Table({
   current,
   offerFor,
   onPress,
+  rowAction,
 }: {
   table: TableBlock;
   current?: string;
+  /** What each row opens, in a column of its own after the table's. */
+  rowAction?: RowOpens;
   /** The catalogue, for purlis's own tables: the empty state's way out is one of its rows. */
   offerFor?: (id: string) => Offer | undefined;
   onPress?: (offer: Offer) => void;
@@ -1381,6 +1436,7 @@ export function Table({
             {column}
           </TableColumn>
         ))}
+        {rowAction !== undefined && <TableColumn id="column-opens">{rowAction.column}</TableColumn>}
       </TableHeader>
       <TableBody>
         {table.rows.map((row) => {
@@ -1397,6 +1453,13 @@ export function Table({
               {row.cells.map((cell, at) => (
                 <TableCell key={at}>{cell}</TableCell>
               ))}
+              {rowAction !== undefined && (
+                <TableCell>
+                  <Button size="sm" variant="ghost" onPress={() => rowAction.onOpen(row.key)}>
+                    {rowAction.label}
+                  </Button>
+                </TableCell>
+              )}
             </TableRow>
           );
         })}

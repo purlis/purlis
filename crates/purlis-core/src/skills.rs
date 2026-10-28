@@ -51,6 +51,7 @@ use crate::harness::{Harness, Kit};
 pub mod levels;
 mod on_machine;
 pub mod persona;
+pub mod router;
 mod routing;
 
 pub use routing::{
@@ -88,6 +89,9 @@ pub struct PlaneSkills<'a> {
     /// harness is handed, the narrower repo copy wins and the plane's is left out (SK-6, decision
     /// 51). Empty for a chat in no clone.
     pub repo: &'a [OutsideSkill],
+    /// What the chat's router extension answered at its start (SK-15b), which every routing of
+    /// its set applies again: `None` for a chat routed by the built-in router.
+    pub routed: Option<&'a router::Routed>,
 }
 
 /// The skill set of a chat on `harness` armed with `kit`, asked of [`purlis_skills::skill_set`].
@@ -194,29 +198,22 @@ pub fn linked<'a>(set: &SkillSet, kit: Kit<'a>) -> Option<&'a Path> {
 }
 
 /// **The host's part of arming a chat with the skills its set's folder holds**: the folder of
-/// links for the set of a chat in `plane`, at its root or in `workspace`, running as `persona`,
-/// with the built-in skills in `built_in`, laid out under `sets`. `plane` is `None` where the
-/// plane's skills do not reach chats: the set is then the built-in skills alone, laid out only
-/// on a route that names them their own ([`Route::names_built_ins_its_own`]). `None` where the
-/// set holds nothing the folder holds ([`SkillSet::in_the_folder`]), or the folder could not be
-/// laid out (said in the log). The set is the one [`for_chat`] works out for that chat on
-/// `harness`, with `repo` the repo skills of the clone it works in: a plane skill a narrower
-/// repo copy hides is not laid out (SK-6). Each skill is handed as `harness` reads it
-/// ([`crate::harness::Harness::skill_frontmatter`], SK-8).
+/// links for the set of a chat whose plane skills come from `at` (its plane, its workspace or
+/// none, the repo skills of its clone and its router's answer), running as `persona`, with the
+/// built-in skills in `built_in`, laid out under `sets`. `at` is `None` where the plane's skills
+/// do not reach chats: the set is then the built-in skills alone, laid out only on a route that
+/// names them their own ([`Route::names_built_ins_its_own`]). `None` where the set holds nothing
+/// the folder holds ([`SkillSet::in_the_folder`]), or the folder could not be laid out (said in
+/// the log). The set is the one [`for_chat`] works out for that chat on `harness`: a plane skill
+/// a narrower repo copy hides is not laid out (SK-6), nor one its router hid (SK-15b). Each skill
+/// is handed as `harness` reads it ([`crate::harness::Harness::skill_frontmatter`], SK-8).
 pub fn lay_out_for_chat(
-    plane: Option<&Path>,
-    workspace: Option<&str>,
+    at: Option<PlaneSkills<'_>>,
     persona: Option<&str>,
     built_in: Option<&Path>,
     sets: &Path,
     harness: Harness,
-    repo: &[OutsideSkill],
 ) -> Option<PathBuf> {
-    let at = plane.map(|plane| PlaneSkills {
-        plane,
-        workspace,
-        repo,
-    });
     let set = routed(built_in, at, persona, harness);
     match lay_out(&set, sets, &harness.skill_frontmatter()) {
         Ok(folder) => folder,
@@ -598,17 +595,108 @@ fn started_at(pid: u32) -> Option<std::time::SystemTime> {
 /// A fenced test build tidies nothing outside its fence, as it reads no store there
 /// ([`studio_on_here`]).
 pub fn tidy_here_later(wait: std::time::Duration) {
-    let Some(sets) = crate::hoststart::skill_sets_here()
+    if let Some(sets) = sets_here() {
+        tidy_later(sets, wait);
+    }
+}
+
+/// This user's sets' folder ([`crate::hoststart::skill_sets_here`]), or `None` where there is
+/// none, or where a fenced test build would reach outside its fence.
+fn sets_here() -> Option<PathBuf> {
+    crate::hoststart::skill_sets_here()
         .filter(|sets| !crate::fence::FENCED || crate::fence::inside(sets, &crate::fence::fence()))
-    else {
-        return;
-    };
+}
+
+/// **[`tidy`] of `sets`, said in the log**, on a thread of its own after `wait`, so nothing
+/// waits on it.
+pub fn tidy_later(sets: PathBuf, wait: std::time::Duration) {
     let _ = std::thread::Builder::new()
         .name("purlis-skill-sets-tidy".into())
         .spawn(move || {
             std::thread::sleep(wait);
             said_in_the_log(&sets, tidy(&sets));
         });
+}
+
+/// **A host's event log that also tidies the sets' folders after each program ends** (SK-24
+/// follow-up, #2879): what `purlis serve` keeps its programs' ends with. A host with no window
+/// has no chat close to tidy after, so it tidies [`TIDY_AFTER_A_CLOSE`] after each end its host
+/// hears, as the window does after a chat closes, the ends a host that crashed left included.
+/// Ends that come together share one tidy: while one waits to run, another end asks for none.
+/// Everything else is `record`'s own.
+#[cfg(unix)]
+pub struct TidiesAfterEachEnd<R> {
+    record: R,
+    sets: Option<PathBuf>,
+    wait: std::time::Duration,
+    /// A tidy waits to run.
+    waiting: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[cfg(unix)]
+impl<R> TidiesAfterEachEnd<R> {
+    /// `record`, tidying this user's sets' folders, as [`tidy_here_later`] does.
+    pub fn here(record: R) -> Self {
+        Self::of(record, sets_here(), TIDY_AFTER_A_CLOSE)
+    }
+
+    /// `record`, tidying `sets` `wait` after each end; nothing where there are none.
+    pub fn of(record: R, sets: Option<PathBuf>, wait: std::time::Duration) -> Self {
+        Self {
+            record,
+            sets,
+            wait,
+            waiting: std::sync::Arc::default(),
+        }
+    }
+
+    /// A tidy of the sets `wait` from now, unless one waits already.
+    fn tidy_soon(&self) {
+        use std::sync::atomic::Ordering;
+        let Some(sets) = self.sets.clone() else {
+            return;
+        };
+        if self.waiting.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let (waiting, wait) = (self.waiting.clone(), self.wait);
+        let spawned = std::thread::Builder::new()
+            .name("purlis-skill-sets-tidy".into())
+            .spawn(move || {
+                std::thread::sleep(wait);
+                // Cleared before the tidy reads, so an end heard while it runs is tidied after.
+                waiting.store(false, Ordering::Release);
+                said_in_the_log(&sets, tidy(&sets));
+            });
+        if spawned.is_err() {
+            self.waiting.store(false, Ordering::Release);
+        }
+    }
+}
+
+#[cfg(unix)]
+impl<R: purlis_host::Record> purlis_host::Record for TidiesAfterEachEnd<R> {
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        self.record.record(entry)
+    }
+
+    fn ended(&self, ended: &purlis_host::Ended<'_>) {
+        self.record.ended(ended);
+        self.tidy_soon();
+    }
+
+    fn left_by_its_last_host(&self, left: &purlis_host::Started) {
+        self.record.left_by_its_last_host(left);
+        self.tidy_soon();
+    }
+
+    fn log_end(&self) -> Result<(String, u64), String> {
+        self.record.log_end()
+    }
+
+    fn read_log(&self, after: u64) -> Result<Box<dyn purlis_host::ReadsLog>, String> {
+        self.record.read_log(after)
+    }
 }
 
 /// How long after a chat closes its sets are tidied ([`tidy_here_later`]): time for its program
@@ -758,6 +846,7 @@ pub fn briefed(
             plane: root,
             workspace,
             repo: &repo,
+            routed: None,
         }),
         persona.as_deref(),
         Route::Briefing,
@@ -872,6 +961,7 @@ impl Running<'_> {
             plane: start.map_or(self.plane, |start| start.root.as_path()),
             workspace: self.workspace.filter(|_| !tried),
             repo: start.map_or(&[], |start| start.repo.as_slice()),
+            routed: start.and_then(|start| start.routed.as_ref()),
         });
         routed(
             self.built_in,
@@ -1094,6 +1184,19 @@ fn routed(
     )
 }
 
+/// **The set of a chat on `harness` before it is routed, and its pins** (SK-15b): what its
+/// router extension is asked about at its start ([`router::at_start`]), from the same skills
+/// [`routed`] routes.
+pub(crate) fn unrouted(
+    built_in: Option<&Path>,
+    at: PlaneSkills<'_>,
+    persona: Option<&str>,
+    harness: Harness,
+) -> (SkillSet, Vec<String>) {
+    let set = ask(built_in, Some(at), persona, harness.skills(), None, None);
+    (set, pins_or_none(at.plane, at.workspace, persona))
+}
+
 /// One ask of purlis-skills, from a directory of built-in skills, the plane with the workspace
 /// the chat works in (where the plane's skills are let in), the persona a chat runs as (whose
 /// `skills:` list is read where the plane's skills are let in), the chat's route, the harness
@@ -1148,7 +1251,10 @@ fn ask(
             let pins = plane
                 .map(|at| pins_or_none(at.plane, at.workspace, persona))
                 .unwrap_or_default();
-            set.routed(budget, &pins)
+            match plane.and_then(|at| at.routed) {
+                Some(routed) => routed.apply(set, budget, &pins),
+                None => set.routed(budget, &pins),
+            }
         }
         None => set,
     }
@@ -1259,6 +1365,7 @@ pub fn not_here_beside(
         plane,
         workspace,
         repo,
+        routed: None,
     };
     let set = ask(
         built_in,
@@ -1540,6 +1647,7 @@ fn in_the_studio_on(
         plane,
         workspace,
         repo: &[],
+        routed: None,
     };
     let here = persona.map(|_| {
         let env = crate::harness_plugin::Env::of(&[]);
@@ -1679,6 +1787,7 @@ pub fn of_a_chat(
         plane,
         workspace,
         repo: &[],
+        routed: None,
     };
     // The harness's own installed skills are the harness's to hand over, never these tools'.
     // Not routed: a skill a router hides is the chat's all the same (ADR 0102 §7).
@@ -1703,6 +1812,26 @@ pub struct HarnessInTheStudio {
     /// in that clone, each with why ([`purlis_skills::SkillSet::left_out_by_a_repo`], SK-53):
     /// the plane's own rows are a chat's in no clone, so this is where the loss is said.
     pub repo_left_out: Vec<StudioRow>,
+}
+
+impl HarnessInTheStudio {
+    /// **The clashes of a row this harness's chats in a repo start without**
+    /// ([`Self::repo_left_out`], #3461): the repo's copy that took the plane copy's name. What
+    /// `purlis skill list --json` and `show --json` put on that row, as they put each clash on
+    /// the row of the copy purlis hands ([`StudioList::clashes_of`]), so a reader of either has
+    /// whose copy won without reading the row's left-out line. None for a row left out because
+    /// a clone could not be read whole.
+    pub fn clashes_of_left_out<'a>(
+        &'a self,
+        row: &'a StudioRow,
+    ) -> impl Iterator<Item = &'a Clash> + 'a {
+        self.set.clashes.iter().filter(move |clash| {
+            clash.outcome == Outcome::RepoWins
+                && clash.name == row.name
+                && clash.plane.origin == row.origin
+                && clash.plane.local == row.local
+        })
+    }
 }
 
 /// **Every harness in the Skill studio** (SK-6, #2769), for a chat in the plane at `plane`, at
@@ -1763,20 +1892,32 @@ fn harnesses_in_the_studio(
 }
 
 /// **The repo skills the harness of a chat started in `cwd` reads** (SK-6, #2769): those of the
-/// clone `cwd` is in, in `workspace` of the plane at `plane`, each turned off where the project's
-/// choices say so. Nothing for a chat in no clone. The host's half: it reads the clone, and an
-/// adapter is handed the answer ([`PlaneSkills::repo`]).
+/// clone `cwd` is in ([`clones_of_chat`]), in `workspace` of the plane at `plane`, each turned off
+/// where the project's choices say so. Nothing for a chat in no clone. The host's half: it reads
+/// the clone, and an adapter is handed the answer ([`PlaneSkills::repo`]).
 pub fn repo_skills_of_chat(
     harness: Harness,
     plane: &Path,
     workspace: &str,
     cwd: &Path,
 ) -> Vec<OutsideSkill> {
+    let mine = clones_of_chat(plane, workspace, cwd);
+    if mine.is_empty() {
+        return Vec::new();
+    }
+    let choices = crate::harness_plugin::Choices::read_in(plane, Some(workspace));
+    crate::harness_plugin::repo_skills(harness.adapter().plugins(), &choices, &mine)
+}
+
+/// **The clones of `workspace` in the plane at `plane` a chat started in `cwd` works in**: each
+/// whose folder `cwd` is in, whose repo skills its harness reads ([`repo_skills_of_chat`]), and
+/// what the Skills view narrows a chat's repo skills to (#3462). None for a chat in no clone.
+pub fn clones_of_chat(plane: &Path, workspace: &str, cwd: &Path) -> Vec<crate::repos::Repo> {
     let Ok(clones) = crate::repos::clones(plane, workspace) else {
         return Vec::new();
     };
     let here = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
-    let mine: Vec<crate::repos::Repo> = clones
+    clones
         .repos
         .into_iter()
         .filter(|repo| {
@@ -1786,9 +1927,7 @@ pub fn repo_skills_of_chat(
                 .unwrap_or_else(|_| repo.path.clone());
             here.starts_with(at)
         })
-        .collect();
-    let choices = crate::harness_plugin::Choices::read_in(plane, Some(workspace));
-    crate::harness_plugin::repo_skills(harness.adapter().plugins(), &choices, &mine)
+        .collect()
 }
 
 /// One skill as the Skill studio and `purlis skill list` and `show` show it: every copy of a name,
@@ -2256,16 +2395,32 @@ pub fn studio_list(
     StudioList { rows, harnesses }
 }
 
-/// **Each persona's own skills, for a chat in `workspace` or at the root** (#3266, the Skills
-/// view): the rows of the plane's personas that have a folder of their own, in
-/// [`verbs::Level::every`]'s order, each with the rows of its own level only. One read for every
-/// persona, without the harnesses' listing [`studio_list`] adds, which the view does not draw
-/// for a persona.
-pub fn persona_rows(
+/// **One persona's own skills, as the Skills view lists them** (#3266, #3462): the rows of its
+/// own level, as a chat as it gets them in any workspace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonaRows {
+    pub persona: String,
+    pub rows: Vec<StudioRow>,
+}
+
+/// **Each persona's own skills** (#3266, the Skills view): the plane's personas that have a
+/// folder of their own, in [`verbs::Level::every`]'s order, each with the rows of its own level
+/// only. A persona's levels are the narrowest, read before any wider one, so no workspace changes
+/// them: each is read alone ([`purlis_skills::persona_set`], #3462), without the project's or a
+/// workspace's folders or git's word on their local skills, and without the harnesses' listing
+/// [`studio_list`] adds, which the view does not draw for a persona.
+pub fn persona_rows(built_in: Option<&Path>, plane: &Path) -> Vec<PersonaRows> {
+    persona_rows_with(built_in, plane, &|folder| {
+        crate::profiles::kept_local(plane, folder)
+    })
+}
+
+/// [`persona_rows`], asking `kept` whether git keeps a local skill on this machine.
+fn persona_rows_with(
     built_in: Option<&Path>,
     plane: &Path,
-    workspace: Option<&str>,
-) -> Vec<(String, Vec<StudioRow>)> {
+    kept: &purlis_skills::KeptLocal<'_>,
+) -> Vec<PersonaRows> {
     let mut personas: Vec<String> = Vec::new();
     for level in verbs::Level::every(plane) {
         if let purlis_skills::Whose::Persona(name) = level.at
@@ -2274,27 +2429,24 @@ pub fn persona_rows(
             personas.push(name);
         }
     }
+    // A persona folder a running sandboxed chat could have made (SK-9), asked once for them all.
+    let made = levels::made_since(plane);
+    let machine = Machine {
+        built_in,
+        kept_local: Some(kept),
+        harness: None,
+        made_since: Some(&*made as &purlis_skills::MadeSince<'_>),
+    };
     personas
         .into_iter()
         .map(|persona| {
-            let set = ask(
-                built_in,
-                Some(PlaneSkills {
-                    plane,
-                    workspace,
-                    repo: &[],
-                }),
-                Some(&persona),
-                Route::Plugin,
-                None,
-                None,
-            );
+            let set = purlis_skills::persona_set(plane, &machine, &persona, Route::Plugin);
             let names = names_of(plane, &persona);
             let rows = studio_rows(&set, plane, &names)
                 .into_iter()
                 .filter(|row| row.origin == Origin::Persona)
                 .collect();
-            (persona, rows)
+            PersonaRows { persona, rows }
         })
         .collect()
 }

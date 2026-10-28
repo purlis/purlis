@@ -123,3 +123,32 @@ fn a_workspace_is_set_to_run_its_chats_only_on_a_pool_this_machine_keeps() {
         None
     );
 }
+
+#[test]
+fn a_runners_version_that_could_not_be_read_says_why_safely() {
+    let (runner, why) = version_read(Err(
+        "docker exec failed:\n\u{202E}tcp://someone:hidden@engine".to_owned(),
+    ));
+    assert_eq!(runner, None);
+    assert_eq!(why.as_deref(), Some("docker exec failed: tcp://…@engine"));
+    assert_eq!(
+        version_read(Ok("0.9.0".to_owned())),
+        (Some("0.9.0".to_owned()), None)
+    );
+}
+
+#[test]
+fn what_a_removal_left_and_why_a_pool_was_refused_are_said_safely() {
+    assert_eq!(
+        left_said(Some(
+            "container: docker rm failed:\nbusy\u{200B}".to_owned()
+        ))
+        .as_deref(),
+        Some("container: docker rm failed: busy")
+    );
+    assert_eq!(left_said(None), None);
+    assert_eq!(
+        refused_said("docker create failed: ssh://someone:hidden@host\u{202E} said no"),
+        "docker create failed: ssh://…@host said no"
+    );
+}

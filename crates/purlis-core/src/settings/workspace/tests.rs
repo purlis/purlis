@@ -870,8 +870,27 @@ fn a_workspaces_skill_turn_off_list_is_read_and_any_other_shape_is_refused() {
         refusals(r#"{"settings": {"skills": true}}"#, "alpha"),
         [
             "settings.skills in workspaces/alpha/workspace.json is not an object — a workspace's \
-          skills are {\"off\": [\"<skill>\", …], \"pinned\": [\"<skill>\", …]}"
+          skills are {\"off\": [\"<skill>\", …], \"pinned\": [\"<skill>\", …], \"router\": \
+          \"<router>\"}"
         ]
+    );
+    // Its router is one name (SK-15b), never a list.
+    assert!(
+        refusals(
+            r#"{"settings": {"skills": {"router": "relevance"}}}"#,
+            "alpha"
+        )
+        .is_empty()
+    );
+    let said = refusals(
+        r#"{"settings": {"skills": {"router": ["relevance"]}}}"#,
+        "alpha",
+    );
+    assert!(
+        said.iter().any(|why| why.starts_with(
+            "settings.skills.router in workspaces/alpha/workspace.json is not a router's name"
+        )),
+        "{said:?}"
     );
     // SK-15: `settings.skills.pinned`, a list of names, beside it.
     let pinned = r#"{"settings": {"skills": {"off": ["deploy"], "pinned": ["lint"]}}}"#;

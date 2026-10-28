@@ -64,6 +64,17 @@ describe("a checkbox", () => {
     expect(box).toHaveAttribute("tabindex", "0");
   });
 
+  it("draws a chip's count after its words, said once and never part of its name (#3484)", () => {
+    render(
+      <Checkbox variant="chip" count={2}>
+        needs you
+      </Checkbox>,
+    );
+    const box = screen.getByRole("checkbox", { name: "needs you" });
+    expect(rootOf(box).querySelector('[data-part="count"]')).toHaveTextContent("2");
+    expect(box).toHaveAccessibleDescription("2");
+  });
+
   it("is described by its line, which is not part of its name", () => {
     render(<Checkbox description="Save on its own after a quiet spell.">Auto-save</Checkbox>);
     const box = screen.getByRole("checkbox", { name: "Auto-save" });

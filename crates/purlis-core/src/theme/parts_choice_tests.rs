@@ -35,7 +35,7 @@ fn sheet_of(parts: Value) -> String {
 const CHOICES: &[(&str, &[&str], &[&str])] = &[
     (
         "checkbox",
-        &["root", "box", "label", "description"],
+        &["root", "box", "label", "count", "description"],
         &["box", "chip"],
     ),
     ("radio", &["root", "mark", "label", "description"], &[]),

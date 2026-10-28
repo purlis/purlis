@@ -33,6 +33,7 @@ import { DEFAULT_TEXT } from "../textDefaults";
 import { drawnFont, xtermTheme, type Theme } from "../theme/theme";
 import { CHAT_LINES, EDITOR_FILE, EDITOR_TEXT, TERMINAL_LINES } from "./fixture";
 import { Button } from "../ui/button/Button";
+import { submitKeySaid } from "../ui/field/submitKey";
 import { DialogInPlace } from "../ui/dialog/Dialog";
 
 /** What a control is handed to do: nothing, the specimen never changes. */
@@ -220,7 +221,8 @@ function SpecimenSettings() {
           onCheckedChange={still}
         />
         <SettingActions>
-          <Button variant="primary" onPress={still}>
+          {/* With the key that sends it, so a theme's `button.shortcut` is seen (#3510). */}
+          <Button variant="primary" shortcut={submitKeySaid()} onPress={still}>
             Save
           </Button>
           <Button onPress={still}>Cancel</Button>

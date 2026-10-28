@@ -19,6 +19,12 @@ filter = "package(fake-harness) & binary(unread_answers)"
 test-group = "floods"
 
 [profile.ci]
+# A failed test is run once more before it counts. From 2026-10-22 to 10-27, 26 to 57 runs a day
+# went green only on a rerun of the whole run (about 35 minutes each), most of them one test that
+# failed once. Retried here, such a test costs seconds; it is still named, as a warning on the
+# run with what its failed attempt said (`tools/slowest-tests.mjs`), so a flake stays visible
+# and is filed, never silently absorbed. A test that fails both times fails the job as before.
+retries = 1
 # A test that failed prints its output again at the end of the run, where the job log ends.
 final-status-level = "fail"
 failure-output = "immediate-final"
@@ -34,6 +40,9 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 [[profile.ci.overrides]]
 filter = "package(purlis-core) & binary(every_guard_reads_a_hostile_command_in_linear_time)"
 slow-timeout = { period = "60s", terminate-after = 15 }
+# Not retried: its bounds are a verdict on speed, and a retry of a hang would hold the job for
+# thirty minutes of its forty-five.
+retries = 0
 
 # The run's report, at `target/nextest/ci/junit.xml`: `tools/slowest-tests.mjs` reads each
 # test's time from it and annotates the run with the slowest tests and binaries.

@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
+import { SkillStudioTab, StudioRouterLine } from "./SkillStudioTab";
 import {
   AT_THE_ROOT,
   asPersona,
@@ -842,5 +842,72 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     within(clash).getByRole("button", { name: "Rename the project's copy" }).click();
     const form = await screen.findByRole("form", { name: "Rename review" });
     expect(within(form).getByLabelText("New name")).toBeInTheDocument();
+  });
+});
+
+describe("the router a studio's chats are routed by (SK-15b)", () => {
+  afterEach(cleanup);
+
+  it("says nothing of the built-in router, and names an extension's with each chat's timing", () => {
+    const { container } = render(
+      <StudioRouterLine
+        router={{ said: "built-in", problem: false, extension: null, chats: [] }}
+      />,
+    );
+    expect(container.textContent).toBe("");
+    cleanup();
+    render(
+      <StudioRouterLine
+        router={{
+          said: "Chats here are routed by the router relevance.",
+          problem: false,
+          extension: "relevance",
+          chats: [
+            {
+              session: 3,
+              routing: {
+                router: "relevance",
+                ms: 34,
+                fell_back: false,
+                said: "Routed by the router relevance in 34 ms.",
+              },
+            },
+            {
+              session: 4,
+              routing: {
+                router: "relevance",
+                ms: 100,
+                fell_back: true,
+                said: "The router relevance did not answer within 100 ms, so this chat lists what the built-in router shows.",
+              },
+            },
+          ],
+        }}
+      />,
+    );
+    const line = screen.getByTestId("skill-studio-router");
+    expect(line.textContent).toMatch(/routed by the router relevance/);
+    const chats = within(line).getAllByRole("listitem");
+    expect(chats.map((one) => one.textContent)).toEqual([
+      "Chat 3: Routed by the router relevance in 34 ms.",
+      "Chat 4: The router relevance did not answer within 100 ms, so this chat lists what the built-in router shows.",
+    ]);
+    expect(chats[1].getAttribute("data-fell-back")).toBe("true");
+  });
+
+  it("says why a choice that names no router is the built-in one", () => {
+    render(
+      <StudioRouterLine
+        router={{
+          said: 'the workspace ops chooses "x/y" as its router, which is neither built-in nor an extension\'s id, so its chats are routed by the built-in router.',
+          problem: true,
+          extension: null,
+          chats: [],
+        }}
+      />,
+    );
+    const line = screen.getByTestId("skill-studio-router");
+    expect(line.className).toContain("use-skill-over");
+    expect(line.textContent).toMatch(/routed by the built-in router/);
   });
 });

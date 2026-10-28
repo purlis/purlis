@@ -61,6 +61,10 @@ pub const SKILLS_PINNED: &str = "pinned";
 /// The keys a workspace's [`SKILLS`] holds, each a list of skill names.
 const SKILLS_KEYS: [&str; 2] = [SKILLS_OFF, SKILLS_PINNED];
 
+/// The key in [`SKILLS`] that names the router the workspace's chats are routed by (SK-15b, ADR
+/// 0102 §5): `built-in` or an extension's id, one string.
+pub const SKILLS_ROUTER: &str = "router";
+
 /// The table that holds what a workspace's sends to a pool's runner leave out besides what a
 /// save to the forge refuses (#2046, the operator's ruling of 2026-10-25):
 /// `settings.runners.leave_out`, a list of files and folders, each relative to the top of the
@@ -340,7 +344,7 @@ pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
     };
     let shape = format!(
         "a workspace's {SKILLS} are {{\"{SKILLS_OFF}\": [\"<skill>\", …], \"{SKILLS_PINNED}\": \
-         [\"<skill>\", …]}}"
+         [\"<skill>\", …], \"{SKILLS_ROUTER}\": \"<router>\"}}"
     );
     let Some(table) = table.as_table() else {
         return vec![Refusal::at(
@@ -351,7 +355,15 @@ pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
     table
         .iter()
         .filter_map(|(key, value)| {
-            let why = if !SKILLS_KEYS.contains(&key.as_str()) {
+            let why = if key == SKILLS_ROUTER {
+                if value.is_str() {
+                    return None;
+                }
+                format!(
+                    "{KEY}.{SKILLS}.{key} in {file} is not a router's name, so its chats are \
+                     routed by the built-in router — {shape}"
+                )
+            } else if !SKILLS_KEYS.contains(&key.as_str()) {
                 format!("{KEY}.{SKILLS}.{key} in {file} is not read — {shape}")
             } else if !value
                 .as_array()
@@ -627,6 +639,30 @@ pub fn save(
             crate::shown::short(&e.to_string())
         )]
     })
+}
+
+/// **The manifest whose text is `text`, with `settings.<table>` taken out, as a form's save
+/// writes it** ([`save`]) in the plane at `root`: every other key kept in its place, a `settings`
+/// left empty taken out with it, and the manifest stamped again where purlis wrote it and left
+/// unstamped where a hand did, so it stays whose it was. What purlis's own proposed change to a
+/// manifest shows (#3486); [`save_text`] then writes exactly it. Refused where `text` is not a
+/// JSON object whose `settings` is one.
+pub fn saved_without(root: &Path, text: &str, table: &str) -> Result<String, String> {
+    let not_one = || format!("the manifest is not a JSON object whose {KEY} are one");
+    let Ok(Json::Object(mut doc)) = serde_json::from_str::<Json>(text) else {
+        return Err(not_one());
+    };
+    let Some(Json::Object(settings)) = doc.get_mut(KEY) else {
+        return Err(not_one());
+    };
+    settings.shift_remove(table);
+    if settings.is_empty() {
+        doc.shift_remove(KEY);
+    }
+    let stamped = crate::manifest::ownership(Some(text)) != Ownership::Operator;
+    let mut doc = Json::Object(doc);
+    crate::manifest::stamp(&mut doc, stamped, crate::manifest::key_for(root));
+    Ok(crate::pyjson::dumps_indent2(&doc))
 }
 
 /// **Write `text` as the whole manifest of `workspace`** (Edit as JSON, NO-7 #1232) — or say

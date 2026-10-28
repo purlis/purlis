@@ -42,6 +42,12 @@ fn the_runners_words_are_kept_as_plain_text_and_cut_short() {
     let why = of(&root, None).unwrap().why;
     assert_eq!(why.chars().count(), MOST_SAID);
     assert!(why.ends_with('…'), "{why}");
+
+    not_held(&root, "cannot reach ssh://someone:hidden@build.example");
+    assert_eq!(
+        of(&root, None).unwrap().why,
+        "cannot reach ssh://…@build.example"
+    );
     held(&root);
 }
 

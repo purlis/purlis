@@ -694,6 +694,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "remove_docker_pool",
     "docker_pool_link",
     "docker_pool_version",
+    // The Devices view (#2052): it reads this machine's runners and links to each, so only the
+    // person's own window asks it.
+    "devices",
+    "device_runner",
     // The projects a runner would not hold again (#2846): what this window was refused.
     "projects_not_held",
     // Where a workspace's chats run on this machine (#2046): a pool's runner gets the
@@ -1069,7 +1073,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "show_window_holding",
     "skill_details",
     "skill_diff",
+    // A grade's kept chat and its scorecard (SK-59, #3239): read only.
+    "skill_grade_chat",
     "skill_grade_plan",
+    "skill_grade_scorecard",
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",

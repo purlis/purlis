@@ -294,9 +294,15 @@ impl HarnessAdapter for Codex {
     }
 
     /// No grade runs here until purlis can hold its chats to the grade's limits and read their
-    /// spend on this harness (#3272).
-    fn can_grade(&self) -> bool {
-        false
+    /// spend on this harness (#3272). Its plugins could be turned off for one chat (`-c
+    /// plugins."<id>".enabled=false`), so that is not the reason.
+    fn can_grade(&self) -> Result<(), String> {
+        Err("purlis cannot hold a Codex chat to a grade's limits or read what it spent yet".into())
+    }
+
+    /// `--model <model>`, as `codex --help` names it (`-m, --model`).
+    fn model_words(&self, model: &str) -> Vec<String> {
+        vec!["--model".to_owned(), model.to_owned()]
     }
 
     /// The wrap's program first, with the profile written for where the chat opens, then the
