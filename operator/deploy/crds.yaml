@@ -41,6 +41,24 @@ spec:
                   image that keeps purlis's runner image contract (docs/runner-image.md).
                 pattern: ^[^\s@]+@sha256:[0-9a-f]{64}$
                 type: string
+              keptVolume:
+                default:
+                  size: 10Gi
+                description: |-
+                  The volume each kept Claim's runner gets of its own (#2057): its home, holding its
+                  checkout, conversation, profile sign-in, kept browser logins and its pairing, kept when
+                  its pod is lost. A fresh Claim's runner keeps nothing.
+                properties:
+                  size:
+                    default: 10Gi
+                    description: How much it holds, in Mi, Gi or Ti. 10Gi unless the pool says otherwise.
+                    pattern: ^[1-9][0-9]*(Mi|Gi|Ti)$
+                    type: string
+                  storageClassName:
+                    description: 'The storage class it is made in: the cluster''s default class unless the pool names one.'
+                    nullable: true
+                    type: string
+                type: object
             required:
             - image
             type: object
@@ -98,6 +116,17 @@ spec:
           spec:
             description: One person's request for a runner from a pool, and the runner it is given.
             properties:
+              kept:
+                default: false
+                description: |-
+                  Whether the runner is kept (#2057): started cold with a volume of its own, its home,
+                  which holds its work and its pairing through the loss of its pod. A fresh runner, the
+                  default, comes warm from the pool where one is waiting and keeps nothing. It never
+                  changes: the other kind is another claim.
+                type: boolean
+                x-kubernetes-validations:
+                - message: Whether a claim is kept cannot change. Make a new claim for the other kind.
+                  rule: self == oldSelf
               pool:
                 description: |-
                   The name of the Pool the runner comes from. It never changes: another pool is another

@@ -17,6 +17,7 @@ fn pool() -> Pool {
         "team",
         PoolSpec {
             image: IMAGE.into(),
+            kept_volume: Default::default(),
         },
     );
     pool.metadata.uid = Some("pool-uid".into());
@@ -34,6 +35,7 @@ fn claim() -> Claim {
         spec: ClaimSpec {
             pool: "team".into(),
             requester: "ada@example.com".into(),
+            kept: false,
         },
         status: None,
     }
@@ -74,7 +76,7 @@ fn an_object_whose_controller_is_its_owner_is_the_operators_by_its_uid() {
             uid: "held-uid".into()
         }
     );
-    let upstream_claim = upstream::sandbox_claim_for(&claim());
+    let upstream_claim = upstream::sandbox_claim_for(&claim(), &Default::default());
     let made = held(
         "claimed-uid",
         upstream_claim.metadata.owner_references.clone(),

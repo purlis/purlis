@@ -52,6 +52,10 @@
 //!   go through, and hands the browser back. What it filled is kept out of every answer about
 //!   every page of the browser for as long as the browser lives, and each field it filled is
 //!   blanked before the value goes in.
+//! - **Inspect is the person's** (#2028). [`Browser::inspect`] opens the engine's own DevTools
+//!   for the page the browser shows, only while the person drives: a front end the driver never
+//!   lists as a page, watched as frames and spoken to through a tapped session over the one
+//!   pipe, reaching that page alone. Handing the browser back closes it.
 
 mod blank;
 mod browser;
@@ -70,7 +74,10 @@ use std::fmt;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-pub use browser::{Browser, LOGIN_WAIT, LoginEnded, origin_of};
+pub use browser::{
+    Browser, FRONT_END, INSPECTOR_PAGE, InspectEnded, LOGIN_WAIT, LoginEnded, MOST_QUEUED,
+    origin_of,
+};
 pub use screencast::QUALITY;
 
 use crate::WebAddress;
@@ -583,6 +590,22 @@ pub enum Refusal {
     HandedBack(Ref),
     #[error("the person is not driving this browser: take it over first")]
     NotDriving,
+    /// A page DevTools were open on could not be read as the browser was handed back, so what
+    /// they wrote into it is not yet known to be kept out (#2028): nothing is answered until it
+    /// is.
+    #[error(
+        "purlis could not read a page the person had DevTools open on, to keep what they did \
+         there out of your answers, so this call was not carried out: go back, or go to another \
+         address in that page, or ask the person to take the browser over and hand it back"
+    )]
+    NotKeptOutYet,
+    /// DevTools were open on this browser, and what the person copied there may be what a paste
+    /// gets (#2028): the agent's pastes are withheld from then on.
+    #[error(
+        "pasting is not available in this browser since the person used DevTools in it, so this \
+         call was not carried out: type the text instead"
+    )]
+    PasteWithheld,
     #[error(
         "purlis is logging this browser in, so it takes no call from you until the login answers: wait for it, then take a new snapshot"
     )]

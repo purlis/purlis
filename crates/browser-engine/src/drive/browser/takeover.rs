@@ -63,6 +63,9 @@ use crate::drive::{
 pub(crate) struct Lease {
     pub(super) epoch: u64,
     pub(super) driver: Driver,
+    /// Whether a hand-back is under way (#2028): from its first step until the lease changes
+    /// hands, no Inspect opens.
+    pub(super) handing_back: bool,
 }
 
 impl Default for Lease {
@@ -70,6 +73,7 @@ impl Default for Lease {
         Self {
             epoch: 0,
             driver: Driver::Agent,
+            handing_back: false,
         }
     }
 }
@@ -78,13 +82,13 @@ impl Default for Lease {
 #[derive(Default)]
 pub(crate) struct Typing {
     /// The pages (by target) the person typed into since each was last read.
-    dirty: HashSet<String>,
+    pub(super) dirty: HashSet<String>,
     /// The runs of characters the person typed on each page (by target), the last one still
     /// growing: a key that types no character, or a press of the mouse, ends a run.
     runs: HashMap<String, Vec<String>>,
     /// Every field the person typed into (its page's target and its element), read again at a
     /// press of the mouse and at the hand-back.
-    touched: HashSet<(String, NodeKey)>,
+    pub(super) touched: HashSet<(String, NodeKey)>,
     /// What each field the person typed into held when last read from the field itself.
     latest: HashMap<NodeKey, String>,
     /// The fields the person typed into, in the order they first typed into each.
@@ -174,6 +178,14 @@ pub(super) fn metrics(width: u16, height: u16) -> Value {
 /// The smallest and largest page a size may give, in CSS pixels.
 const SIZES: std::ops::RangeInclusive<u16> = 200..=4096;
 
+/// `width` by `height`, each held to [`SIZES`].
+pub(super) fn sized(width: u16, height: u16) -> (u16, u16) {
+    (
+        width.clamp(*SIZES.start(), *SIZES.end()),
+        height.clamp(*SIZES.start(), *SIZES.end()),
+    )
+}
+
 impl Browser {
     /// The epoch of the lease now held.
     pub fn epoch(&self) -> u64 {
@@ -230,6 +242,17 @@ impl Browser {
         if self.driver() != Driver::Person {
             return self.epoch();
         }
+        // An Inspect under way never finishes opening from here on, nor does one begun before
+        // the lease changes hands (#2028).
+        {
+            let mut lease = lock(&self.lease);
+            lease.handing_back = true;
+            self.inspect_cut.fetch_add(1, Ordering::SeqCst);
+        }
+        // DevTools are the person's while they drive (#2028): nothing set in them outlives the
+        // lease, and what they wrote, and every field, is kept out as typing is.
+        self.after_devtools();
+        lock(&self.typing).end_run(super::inspect::INSPECTOR_PAGE);
         self.keep_typing_out();
         {
             let mut typing = lock(&self.typing);
@@ -242,13 +265,20 @@ impl Browser {
         // What a login the person cut had filled is emptied before the agent has the page.
         self.clear_cut_logins();
         let mut lease = lock(&self.lease);
+        self.inspect_cut.fetch_add(1, Ordering::SeqCst);
+        lease.handing_back = false;
         if lease.driver == Driver::Person {
             lease.epoch += 1;
             lease.driver = Driver::Agent;
             self.inner.person_drives.store(false, Ordering::SeqCst);
             lock(&self.inner.state).refs.void();
         }
-        lease.epoch
+        let epoch = lease.epoch;
+        drop(lease);
+        // One that opened all the same is closed before the agent has the page.
+        self.inner
+            .stop_inspecting(super::inspect::InspectEnded::Closed);
+        epoch
     }
 
     /// Whether the agent holds the lease of `epoch` now.
@@ -267,6 +297,8 @@ impl Browser {
     pub(super) fn run_at(&self, epoch: u64, call: Call) -> Result<super::Answer, Refusal> {
         self.acting_epoch.store(epoch, Ordering::SeqCst);
         let _carrying = Carrying::under(Driver::Agent, epoch);
+        // What DevTools wrote into a page not read at the hand-back is kept out first (#2028).
+        self.devtools_read_again(&call)?;
         let answer = self.run(call);
         if self.cut() {
             return Err(Refusal::Interrupted);
@@ -321,8 +353,7 @@ impl Browser {
         if self.driver() != Driver::Person {
             return Err(Refusal::NotDriving);
         }
-        let width = width.clamp(*SIZES.start(), *SIZES.end());
-        let height = height.clamp(*SIZES.start(), *SIZES.end());
+        let (width, height) = sized(width, height);
         let sessions: Vec<String> = {
             let mut state = lock(&self.inner.state);
             state.size = Some((width, height));
@@ -626,7 +657,7 @@ impl Browser {
     /// (#3277): where a field's read does not come it keeps what it was last read to hold, and
     /// where a page's does not, the groups of boxes on it are found in the read the last field
     /// the person typed into on it was blanked from, and the log says so.
-    fn keep_typing_out(&self) {
+    pub(super) fn keep_typing_out(&self) {
         let by = Instant::now() + self.inner.limits.key_reads_within;
         let (dirty, runs, touched) = {
             let mut typing = lock(&self.typing);
@@ -1180,7 +1211,7 @@ impl Typing {
     }
 
     /// The person pressed `key` on `target`'s page, typing `text`, if it types any.
-    fn typed(&mut self, target: &str, key: &str, text: Option<&str>) {
+    pub(super) fn typed(&mut self, target: &str, key: &str, text: Option<&str>) {
         let runs = self.runs.entry(target.to_owned()).or_default();
         match text {
             Some(text) if text != "\r" => match runs.last_mut() {
@@ -1197,7 +1228,7 @@ impl Typing {
     }
 
     /// The run of characters being typed on `target`'s page ends here.
-    fn end_run(&mut self, target: &str) {
+    pub(super) fn end_run(&mut self, target: &str) {
         let runs = self.runs.entry(target.to_owned()).or_default();
         if runs.last().is_some_and(|run| !run.is_empty()) {
             runs.push(String::new());
@@ -1238,7 +1269,7 @@ fn commands(modifiers: Modifiers) -> bool {
 
 /// The text a key types, if it types any: a key named by one character, or Enter, held with no
 /// chord ([`commands`]): with Alt or AltGr, the character the key named (`@`, `€`).
-fn typed(key: &str, modifiers: Modifiers) -> Option<String> {
+pub(super) fn typed(key: &str, modifiers: Modifiers) -> Option<String> {
     if commands(modifiers) {
         return None;
     }
@@ -1263,7 +1294,7 @@ fn edits(key: &str, modifiers: Modifiers) -> bool {
 }
 
 /// The engine's key event for one key of the person's.
-fn key_event(
+pub(super) fn key_event(
     down: bool,
     key: &str,
     code: &str,
@@ -1297,7 +1328,7 @@ fn key_event(
 }
 
 /// The engine's mouse event of `kind` at (`x`, `y`) for `button`, with `buttons` held.
-fn mouse_event(
+pub(super) fn mouse_event(
     kind: MouseKind,
     x: f64,
     y: f64,
@@ -1326,7 +1357,7 @@ fn mouse_event(
 }
 
 /// The engine's bit for a held mouse button.
-fn button_bit(button: MouseButton) -> i64 {
+pub(super) fn button_bit(button: MouseButton) -> i64 {
     match button {
         MouseButton::None => 0,
         MouseButton::Left => 1,

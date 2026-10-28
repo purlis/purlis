@@ -88,3 +88,46 @@ fn a_run_with_no_confinement_and_nothing_wrapping_it_is_off() {
         );
     }
 }
+
+/// A Claude Code line whose settings went through a file purlis wrote is read from that file,
+/// and only while it holds what was written: one that holds anything else is read as sandboxed,
+/// in doubt, whatever it now says.
+#[test]
+fn a_claude_code_line_whose_settings_file_changed_is_read_as_sandboxed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let long = |enabled: bool| {
+        format!(
+            r#"{{"sandbox":{{"enabled":{enabled}}},"deny":["{}"]}}"#,
+            "x".repeat(crate::hoststart::SETTINGS_IN_A_WORD * 2)
+        )
+    };
+    let start = |settings: &str| {
+        crate::hoststart::settings_in_a_file(
+            root,
+            "01J0000000000000000000000A",
+            vec!["--settings".to_owned(), settings.to_owned()],
+        )
+        .unwrap()
+    };
+    let ran = |args: &[String]| {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        applied_to(
+            "/usr/local/bin/claude".as_ref(),
+            &words(&args),
+            false,
+            Os::MacOs,
+        )
+    };
+
+    let off = start(&long(false));
+    assert_eq!(ran(&off), RunSandbox::Off);
+    // The same file, holding what purlis did not write there.
+    std::fs::write(&off[1], long(true).replacen("x", "y", 1)).unwrap();
+    assert_eq!(ran(&off), by("seatbelt"));
+
+    let on = start(&long(true));
+    assert_eq!(ran(&on), by("seatbelt"));
+    std::fs::write(&on[1], long(false)).unwrap();
+    assert_eq!(ran(&on), by("seatbelt"), "never read as off");
+}

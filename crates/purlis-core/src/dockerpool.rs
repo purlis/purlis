@@ -288,8 +288,35 @@ impl Limits {
     }
 }
 
-/// One runner of the pool, as it is made: its name, its image, its user, its home and its
-/// pool's limits.
+/// **How long a pool's runner is left without a link from its desktop before it suspends
+/// itself, by default** (#2051): a day, as the host's own `UNLINKED_FOR`. A pool sets its own
+/// (`suspendAfter`, #3471) within [`LEAST_SUSPEND_AFTER`] and [`MOST_SUSPEND_AFTER`].
+pub const SUSPEND_AFTER: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// The shortest a pool's runner may be left without a link before it suspends: a minute, so a
+/// link that drops and comes back does not suspend it.
+pub const LEAST_SUSPEND_AFTER: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The longest a pool's runner may be left without a link before it suspends: 30 days.
+pub const MOST_SUSPEND_AFTER: std::time::Duration =
+    std::time::Duration::from_secs(30 * 24 * 60 * 60);
+
+/// `duration`, where it is a time a pool's runner may be left without a link before it
+/// suspends: whole seconds, [`LEAST_SUSPEND_AFTER`] to [`MOST_SUSPEND_AFTER`].
+pub fn suspend_after(duration: std::time::Duration) -> Result<std::time::Duration, Refused> {
+    if duration.subsec_nanos() == 0
+        && (LEAST_SUSPEND_AFTER..=MOST_SUSPEND_AFTER).contains(&duration)
+    {
+        Ok(duration)
+    } else {
+        Err(refused(
+            "a pool's runner suspends after at least a minute and at most 30 days without a link",
+        ))
+    }
+}
+
+/// One runner of the pool, as it is made: its name, its image, its user, its home, its
+/// pool's limits, and how long it is left without a link before it suspends itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Runner {
     name: String,
@@ -297,6 +324,7 @@ pub struct Runner {
     user: User,
     home: String,
     limits: Limits,
+    suspends_after: std::time::Duration,
 }
 
 impl Runner {
@@ -338,6 +366,7 @@ impl Runner {
             user,
             home: home.to_owned(),
             limits: Limits::default(),
+            suspends_after: SUSPEND_AFTER,
         })
     }
 
@@ -348,6 +377,20 @@ impl Runner {
 
     pub fn limits(&self) -> Limits {
         self.limits
+    }
+
+    /// This runner, suspending itself after `after` without a link from its desktop, its
+    /// pool's `suspendAfter` (#3471), in place of [`SUSPEND_AFTER`].
+    pub fn suspending_after(self, after: std::time::Duration) -> Runner {
+        Runner {
+            suspends_after: after,
+            ..self
+        }
+    }
+
+    /// How long it is left without a link from its desktop before it suspends itself.
+    pub fn suspends_after(&self) -> std::time::Duration {
+        self.suspends_after
     }
 
     pub fn name(&self) -> &str {
@@ -417,9 +460,19 @@ impl Runner {
         let mut all = vec!["run".to_owned(), "--detach".to_owned()];
         all.extend(args);
         all.push(self.image.as_str().to_owned());
-        // It suspends itself a day without a link from its desktop, keeping its home (#2051).
+        // It suspends itself after its pool's time without a link from its desktop, keeping its
+        // home (#2051, #3471). The bare flag is the default, a day, so a runner image of a
+        // purlis before #3471 starts as it did for a pool that keeps it.
         all.push("serve".to_owned());
-        all.push("--suspends-unlinked".to_owned());
+        all.push(
+            match crate::spelledtime::spelled(self.suspends_after, crate::spelledtime::UP_TO_HOURS)
+            {
+                Some(after) if self.suspends_after != SUSPEND_AFTER => {
+                    format!("--suspends-unlinked={after}")
+                }
+                _ => "--suspends-unlinked".to_owned(),
+            },
+        );
         all
     }
 }

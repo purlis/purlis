@@ -19,6 +19,7 @@ fn pool() -> Pool {
         "team",
         PoolSpec {
             image: format!("ghcr.io/purlis/purlis-runner@sha256:{}", "1".repeat(64)),
+            kept_volume: Default::default(),
         },
     );
     pool.metadata.uid = Some("pool-uid".into());
@@ -36,6 +37,7 @@ fn claim(name: &str, uid: &str, pool: &str) -> Claim {
         spec: ClaimSpec {
             pool: pool.into(),
             requester: "ada@example.com".into(),
+            kept: false,
         },
         status: None,
     }

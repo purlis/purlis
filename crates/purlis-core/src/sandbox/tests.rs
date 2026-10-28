@@ -333,6 +333,8 @@ fn a_chat_never_writes_charters_integrity_state() {
                 .path()
                 .join(".purlis/harness-declarations-approved.json"),
             plane.path().join(".purlis/mcp-approved.json"),
+            // Every chat's settings file (SK-9).
+            plane.path().join(".purlis/chat-settings"),
             plane.path().join(".charter/app"),
             plane.path().join(".charter/theme-drafts"),
             // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
@@ -343,6 +345,7 @@ fn a_chat_never_writes_charters_integrity_state() {
                 .path()
                 .join(".charter/harness-declarations-approved.json"),
             plane.path().join(".charter/mcp-approved.json"),
+            plane.path().join(".charter/chat-settings"),
             // Neither folder is there yet, so neither is the chat's to make (D-RN2a-7).
             plane.path().join(".purlis"),
             plane.path().join(".charter"),
@@ -374,6 +377,13 @@ fn the_persona_mcp_approvals_are_held_where_purlis_home_puts_them() {
     assert!(
         paths(&denied, Class::Integrity, Access::Write)
             .contains(&std::path::PathBuf::from("/srv/purlis-state/theme-drafts")),
+        "{:?}",
+        denied.paths
+    );
+    // And every chat's settings file a start writes there (SK-9).
+    assert!(
+        paths(&denied, Class::Integrity, Access::Write)
+            .contains(&std::path::PathBuf::from("/srv/purlis-state/chat-settings")),
         "{:?}",
         denied.paths
     );
@@ -885,6 +895,8 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
                 crate::profiletrust::RECORD,
                 crate::harness_declaration::APPROVED,
                 crate::personaverbs::mcp::APPROVED_FILE,
+                // And every chat's settings file, which its harness starts on (SK-9).
+                crate::hoststart::SETTINGS_DIR,
             ]
             .map(|record| plane.path().join(state).join(record))
         })
