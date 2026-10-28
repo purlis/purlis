@@ -73,6 +73,7 @@ fn report(passed_with: bool) -> GradeReport {
             rate: Some(if passed_with { 1.0 } else { 0.0 }),
             pass: Some(passed_with),
             chats: vec![Some("01A".into()), Some("01B".into()), Some("01C".into())],
+            asked: 0,
         }],
         arms: vec![ArmScore {
             arm: Arm::With,
@@ -522,7 +523,10 @@ fn uncommitted_row() -> Graded {
 fn a_row_whose_spend_or_report_does_not_hold_together_is_skipped() {
     assert!(uncommitted_row().sound(), "a row purlis writes is kept");
     type Breaks = fn(&mut Graded);
-    let broken: [(&str, Breaks); 17] = [
+    let broken: [(&str, Breaks); 18] = [
+        ("more chats asked and run than the grade had", |row| {
+            row.report.triggers[0].asked = 1;
+        }),
         ("a cost below nothing", |row| {
             row.spent.cost_usd = Some(-1.0)
         }),

@@ -27,8 +27,18 @@ export function tokensSaid(tokens: number): string {
   return counted(whole, "token", "tokens", whole.toLocaleString("en-US"));
 }
 
-/** How a grade that ended is said, in one line. */
+/** How a grade that ended is said, in one line, with the chats that asked you something
+ *  (SK-59): a grade's chat waits on nobody, so the grade says it, not a notice on a chat nobody
+ *  can see. */
 export function endedSaid(step: SkillGradeStep): string {
+  const said = endSaid(step);
+  if (step.asked === 0 || step.ended === "failed") return said;
+  const were = step.asked === 1 ? "was" : "were";
+  return `${said} ${counted(step.asked, "chat", "chats")} asked you something and ${were} ended there, not counted: its scorecard opens each.`;
+}
+
+/** How a grade that ended is said, before what its chats asked. */
+function endSaid(step: SkillGradeStep): string {
   const chats = counted(step.ran, "chat", "chats");
   const spent = step.tokens === null ? "" : `, having spent ${tokensSaid(step.tokens)}`;
   switch (step.ended) {
@@ -126,6 +136,7 @@ export function SkillGrade({
             of: answer.data.chats,
             tokens: null,
             cap: answer.data.token_cap,
+            asked: 0,
             ended: null,
             said: null,
           },
@@ -191,6 +202,7 @@ export function SkillGrade({
             of: plan?.chats ?? 0,
             tokens: null,
             cap: plan?.token_cap ?? 0,
+            asked: 0,
             ended: null,
             said: null,
           });

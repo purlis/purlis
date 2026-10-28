@@ -339,6 +339,9 @@ pub struct SkillGradeStep {
     /// What its chats have spent so far, where they said, and the cap it is held to.
     pub tokens: Option<f64>,
     pub cap: f64,
+    /// How many of its chats asked the person something and were ended there (SK-59, #3239):
+    /// said in the grade, as none of them is a run.
+    pub asked: u32,
     /// How it ended, once it has.
     pub ended: Option<GradeEnded>,
     /// What the window says of its end: why its chats did not start, or that it was not
@@ -550,6 +553,7 @@ pub(crate) async fn skill_grade_start(
                 let marker = std::cell::RefCell::new(marker);
                 let tell = |ran: u32,
                             tokens: Option<u64>,
+                            asked: u32,
                             ended: Option<GradeEnded>,
                             said: Option<String>| {
                     let _ = app.emit(
@@ -562,12 +566,13 @@ pub(crate) async fn skill_grade_start(
                             of,
                             tokens: tokens.map(|tokens| tokens as f64),
                             cap: cap as f64,
+                            asked,
                             ended,
                             said,
                         },
                     );
                 };
-                tell(0, None, None, None);
+                tell(0, None, 0, None, None);
                 let run = || {
                     let mut chats = InChats {
                         held: &held,
@@ -578,7 +583,9 @@ pub(crate) async fn skill_grade_start(
                         profile: &profile,
                         stop: &stop,
                         spent: Spent::default(),
-                        tell: &|ran, tokens| tell(ran, tokens, None, None),
+                        tell: &|ran, tokens, asked| tell(ran, tokens, asked, None, None),
+                        grade: &grade,
+                        asked: 0,
                         harness: None,
                         plugins_off: None,
                         model: model.as_deref(),
@@ -605,6 +612,8 @@ pub(crate) async fn skill_grade_start(
                         &purlis_core::machine::this_log_name(),
                     );
                     grades::underway::ended(&root, &grade);
+                    // The chats of the skill's older grades go: its newest keep theirs (SK-59).
+                    grades::kept::sweep(&root, &skill);
                     drop(marker.borrow_mut().take());
                     running().remove(&grade);
                     let said = match (&graded.report.not_started, recorded) {
@@ -624,6 +633,7 @@ pub(crate) async fn skill_grade_start(
                     tell(
                         graded.spent.chats,
                         graded.report.spent_tokens,
+                        graded.report.asked(),
                         Some(graded.report.ended.into()),
                         said,
                     );
@@ -637,7 +647,7 @@ pub(crate) async fn skill_grade_start(
                     } else {
                         FAILED_ONCE_RECORDED
                     };
-                    tell(0, None, Some(GradeEnded::Failed), Some(said.to_owned()));
+                    tell(0, None, 0, Some(GradeEnded::Failed), Some(said.to_owned()));
                 });
             })
             .map_err(|why| {
@@ -694,6 +704,176 @@ pub(crate) async fn skill_grade_stop(plane: PlaneId, grade: String) -> Result<()
     }
 }
 
+/// **One chat of a grade's trigger test**, as its scorecard offers it (SK-59, #3239): its id, and
+/// whether this machine kept what it showed, which is what opens it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ScoredChat {
+    pub id: String,
+    pub kept: bool,
+}
+
+/// **A grade's arm, as its scorecard says it.**
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScoredArm {
+    With,
+    Without,
+    Previous,
+}
+
+impl From<Arm> for ScoredArm {
+    fn from(arm: Arm) -> ScoredArm {
+        match arm {
+            Arm::With => ScoredArm::With,
+            Arm::Without => ScoredArm::Without,
+            Arm::Previous => ScoredArm::Previous,
+        }
+    }
+}
+
+/// **One trigger test in one arm of a grade**, as its scorecard shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ScoredRuns {
+    pub arm: ScoredArm,
+    /// The runs that ran, and of those the ones that started the skill.
+    pub runs: u32,
+    pub triggered: u32,
+    /// Whether it passed there, where anything ran.
+    pub pass: Option<bool>,
+    /// Its chats that asked the person something and were ended there: no run.
+    pub asked: u32,
+    /// Each chat it ran, in run order, where one started.
+    pub chats: Vec<ScoredChat>,
+}
+
+/// **One trigger test of a grade**, in each arm.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct ScoredTest {
+    /// The query as its chats read it, each character no reader would see marked.
+    pub query: String,
+    pub should_trigger: bool,
+    pub arms: Vec<ScoredRuns>,
+}
+
+/// **A grade's scorecard** (SK-59, #3239; spec #2762 decision 43): the grade as its row in the
+/// Grades panel says it, then each trigger test in each arm, with each of its chats one click
+/// away where this machine kept it.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct GradeScorecard {
+    pub grade: String,
+    pub skill: String,
+    /// When it ran, the version it graded, what its chats ran on and how it ended, as its row
+    /// says each.
+    pub graded: String,
+    pub version: String,
+    pub ran_on: String,
+    pub ended: String,
+    /// The difference the skill made, in points, where both arms ran.
+    pub delta: Option<f64>,
+    /// How many of its chats asked the person something and were ended there.
+    pub asked: u32,
+    pub tests: Vec<ScoredTest>,
+}
+
+impl GradeScorecard {
+    /// `graded`'s scorecard, each chat `kept` says whether this machine kept.
+    fn of(graded: &Graded, kept: impl Fn(&str) -> bool) -> GradeScorecard {
+        use purlis_core::skills::studio;
+        let mut tests: Vec<ScoredTest> = Vec::new();
+        for score in &graded.report.triggers {
+            let runs = ScoredRuns {
+                arm: score.arm.into(),
+                runs: score.runs,
+                triggered: score.triggered,
+                pass: score.pass,
+                asked: score.asked,
+                chats: score
+                    .chats
+                    .iter()
+                    .flatten()
+                    .map(|id| ScoredChat {
+                        id: id.clone(),
+                        kept: kept(id),
+                    })
+                    .collect(),
+            };
+            match tests
+                .iter_mut()
+                .find(|test| test_is(test, &score.query, score.should_trigger))
+            {
+                Some(test) => test.arms.push(runs),
+                None => tests.push(ScoredTest {
+                    query: purlis_unicode::marked(&score.query, purlis_unicode::Breaks::Marked),
+                    should_trigger: score.should_trigger,
+                    arms: vec![runs],
+                }),
+            }
+        }
+        GradeScorecard {
+            grade: graded.grade.clone(),
+            skill: graded.skill.clone(),
+            graded: studio::graded_at_said(&graded.ts),
+            version: studio::version_said(graded),
+            ran_on: studio::ran_on_said(graded),
+            ended: grades::ended_said(graded.report.ended).to_owned(),
+            delta: graded.report.delta.map(|delta| (delta * 100.0).round()),
+            asked: graded.report.asked(),
+            tests,
+        }
+    }
+}
+
+/// Whether `test` is the trigger test of `query` that should or should not trigger.
+fn test_is(test: &ScoredTest, query: &str, should_trigger: bool) -> bool {
+    test.should_trigger == should_trigger
+        && test.query == purlis_unicode::marked(query, purlis_unicode::Breaks::Marked)
+}
+
+/// **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_grade_scorecard(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    skill: String,
+    grade: String,
+) -> Result<GradeScorecard, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading a grade's scorecard", move || {
+        flag_on()?;
+        let root = held.root();
+        let graded = grades::grade_of(root, &skill, &grade)
+            .ok_or_else(|| format!("That grade of {skill} is not in the record any more."))?;
+        Ok(GradeScorecard::of(&graded, |chat| {
+            grades::kept::kept(root, &skill, &grade, chat).is_some()
+        }))
+    })
+    .await
+}
+
+/// What a scorecard says of a chat this machine does not keep.
+pub const NOT_KEPT: &str = "purlis keeps a grade's chats on the machine that ran it, for the \
+     skill's three newest grades, and this one is not kept here.";
+
+/// **What chat `chat` of `skill`'s grade `grade` showed as it ended** (SK-59, #3239): its screen
+/// and scrollback as the escape sequences that draw them, for a tab that shows it read-only.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn skill_grade_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    skill: String,
+    grade: String,
+    chat: String,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading a grade's chat", move || {
+        flag_on()?;
+        grades::kept::kept(held.root(), &skill, &grade, &chat).ok_or_else(|| NOT_KEPT.to_owned())
+    })
+    .await
+}
+
 /// **This app's host for the built-in runner**: each chat a grade asks for runs in the project,
 /// as a grade's chat (`curation::start_graded`), one at a time.
 struct InChats<'a> {
@@ -709,9 +889,13 @@ struct InChats<'a> {
     skill: &'a str,
     profile: &'a str,
     stop: &'a AtomicBool,
-    /// What the chats that ran so far spent, and who is told each.
+    /// What the chats that ran so far spent, and who is told each, with how many asked.
     spent: Spent,
-    tell: &'a dyn Fn(u32, Option<u64>),
+    tell: &'a dyn Fn(u32, Option<u64>, u32),
+    /// The grade's id: what each chat's screen is kept under (SK-59).
+    grade: &'a str,
+    /// The chats that asked the person something and were ended there (SK-59).
+    asked: u32,
     /// The harness the chats ran on, as the first that started said.
     harness: Option<String>,
     /// The plugins its chats were handed off (#3468): every one any chat that started was handed
@@ -754,9 +938,14 @@ impl Chats for InChats<'_> {
             }
             (None, None) => {}
         }
-        if matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut) {
-            self.spent.chats += 1;
-            (self.tell)(self.spent.chats, self.spent.tokens);
+        if ran.end == ChatEnd::Asked {
+            self.asked += 1;
+        }
+        if matches!(ran.end, ChatEnd::Turn | ChatEnd::TimedOut | ChatEnd::Asked) {
+            if ran.end != ChatEnd::Asked {
+                self.spent.chats += 1;
+            }
+            (self.tell)(self.spent.chats, self.spent.tokens, self.asked);
         }
         ran
     }
@@ -890,6 +1079,19 @@ impl InChats<'_> {
         if let Some(model) = self.held.chats().model_of(session) {
             self.reported.push(model);
         }
+        // What its terminal showed as it ended, kept to open from the scorecard (SK-59).
+        if let Some(chat) = id.as_deref() {
+            match screen_of(self.held.chats().sessions(), session) {
+                Some(screen) => {
+                    if let Err(why) =
+                        grades::kept::keep(&root, self.skill, self.grade, chat, &screen)
+                    {
+                        tracing::warn!("purlis: a grade's chat {session} was not kept ({why})");
+                    }
+                }
+                None => tracing::warn!("purlis: a grade's chat {session} showed nothing to keep"),
+            }
+        }
         watching.unwatch(session);
         if let Err(why) = self.held.chats().close(session) {
             tracing::warn!("purlis: a grade's chat {session} did not close ({why})");
@@ -908,6 +1110,27 @@ impl InChats<'_> {
             end,
         }
     }
+}
+
+/// How long a grade's chat has to hand over its screen before it closes.
+const A_SCREEN_TAKES_AT_MOST: Duration = Duration::from_secs(2);
+
+/// **What session `session` shows now, its scrollback with it**, as the escape sequences that draw
+/// it into a blank terminal: the first thing a view of it is sent (`host::SessionHost::watch`).
+/// `None` where no view could be opened or nothing came in [`A_SCREEN_TAKES_AT_MOST`].
+fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Option<String> {
+    let (send, screen) = std::sync::mpsc::channel();
+    let view = host
+        .watch(
+            session,
+            Box::new(move |text| {
+                let _ = send.send(text);
+            }),
+        )
+        .ok()?;
+    let shown = screen.recv_timeout(A_SCREEN_TAKES_AT_MOST).ok();
+    let _ = host.unwatch(session, view.view);
+    shown
 }
 
 #[cfg(test)]

@@ -417,7 +417,7 @@ pub fn graded_at_said(stamp: &str) -> String {
 /// The Grades panel's blocks for `grades` of `skill`: a sentence on what a grade is, then the
 /// table, or the empty table's claim and its way on.
 fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
-    use purlis_skills::grade::{Arm, GradeEnd};
+    use purlis_skills::grade::Arm;
     let mut out = Vec::new();
     if !grades.is_empty() {
         out.push(Block::Note {
@@ -448,16 +448,7 @@ fn grades_blocks(grades: &[super::grades::Graded], skill: &str) -> Vec<Block> {
                         .map(|delta| format!("{:+.0} points", delta * 100.0))
                         .unwrap_or_default(),
                     crate::counts::counted(u64::from(graded.spent.chats), "chat", "chats"),
-                    match graded.report.ended {
-                        GradeEnd::Whole => "Finished",
-                        GradeEnd::Cancelled => "Stopped",
-                        GradeEnd::ChatsDidNotStart => "Chats did not start",
-                        GradeEnd::OverCap => "Stopped at its token cap",
-                        GradeEnd::OverLimit => "Stopped at its dollar limit",
-                        GradeEnd::SpendNotReported => "Stopped: spend not reported",
-                        GradeEnd::Interrupted => "Interrupted: not scored",
-                    }
-                    .to_owned(),
+                    super::grades::ended_said(graded.report.ended).to_owned(),
                 ],
             }
         })

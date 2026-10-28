@@ -1294,8 +1294,16 @@ fn grade_said(
                 )
         };
         let (passed, of) = one.report.passed_with();
+        // The chats that asked the person something (SK-59): ended there, and said here.
+        let asked = match one.report.asked() {
+            0 => String::new(),
+            asked => format!(
+                "  {} asked you something and ended there",
+                counted(asked, "chat", "chats")
+            ),
+        };
         text.push_str(&format!(
-            "  {}  {}  {passed} of {} passed  with {}  without {}{}  ({})\n",
+            "  {}  {}  {passed} of {} passed  with {}  without {}{}{asked}  ({})\n",
             purlis_core::skills::review::escaped_line(&one.ts),
             one.commit.as_deref().map_or("uncommitted", history::short),
             counted(of, "test", "tests"),

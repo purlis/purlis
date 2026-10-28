@@ -230,6 +230,7 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
             && rate
             && test.pass.is_some() == test.rate.is_some()
             && test.chats.len() <= usize::from(runs)
+            && u64::from(test.runs) + u64::from(test.asked) <= u64::from(runs)
             && test.chats.iter().flatten().all(|chat| plain(chat))
     });
     let mut arms = std::collections::HashSet::new();
@@ -389,6 +390,28 @@ pub fn grades_of(root: &Path, name: &str, level: Option<&Level>) -> Vec<Graded> 
     out.sort_by(|a, b| b.ts.cmp(&a.ts));
     out.truncate(MOST_GRADES);
     out
+}
+
+/// **How a grade ended, as its row and its scorecard say it.**
+pub fn ended_said(end: grade::GradeEnd) -> &'static str {
+    use grade::GradeEnd;
+    match end {
+        GradeEnd::Whole => "Finished",
+        GradeEnd::Cancelled => "Stopped",
+        GradeEnd::ChatsDidNotStart => "Chats did not start",
+        GradeEnd::OverCap => "Stopped at its token cap",
+        GradeEnd::OverLimit => "Stopped at its dollar limit",
+        GradeEnd::SpendNotReported => "Stopped: spend not reported",
+        GradeEnd::Interrupted => "Interrupted: not scored",
+    }
+}
+
+/// **The grade `grade` of the skill `name`** in the project at `root`, as the eval record holds
+/// it (SK-59, #3239): what its scorecard is drawn from. `None` where no row of it is read.
+pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
+    grades_of(root, name, None)
+        .into_iter()
+        .find(|one| one.grade == grade)
 }
 
 /// What a grade of a copy would cost, from what the copy's last grade spent per chat.
@@ -815,6 +838,7 @@ fn commit_of(root: &Path, level: &Level, name: &str, content: &Content) -> Optio
 }
 
 pub mod cap;
+pub mod kept;
 pub mod price;
 pub mod underway;
 

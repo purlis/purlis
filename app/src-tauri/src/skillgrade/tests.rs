@@ -198,3 +198,92 @@ fn the_plan_offers_the_models_the_profiles_harness_can_run() {
     assert_eq!(plan.model.as_deref(), Some("sonnet"));
     assert_eq!(plan.priced.model.as_deref(), Some("sonnet"));
 }
+
+/// SK-59 (#3239): a grade's scorecard has each trigger test once, with each arm's runs and each
+/// of its chats, the ones this machine kept marked so the window opens them, and the asks said.
+#[test]
+fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
+    use purlis_core::skills::grade::{ArmScore, GradeEnd, GradeReport, TriggerScore};
+    let score = |arm: Arm, chats: &[&str], asked: u32| TriggerScore {
+        query: "ship it\u{202e}".into(),
+        should_trigger: true,
+        arm,
+        runs: 3 - asked,
+        triggered: 1,
+        rate: Some(1.0 / f64::from(3 - asked)),
+        pass: Some(false),
+        chats: chats.iter().map(|chat| Some((*chat).to_owned())).collect(),
+        asked,
+    };
+    let graded = Graded {
+        v: grades::VERSION,
+        grade: "01GRADE".into(),
+        skill: "deploy".into(),
+        level: Some("skills".into()),
+        tree: "uncommitted".into(),
+        commit: None,
+        harness: Some("claude".into()),
+        profile: Some("work".into()),
+        ts: "2026-10-28T10:00:00+00:00".into(),
+        runs: 3,
+        report: GradeReport {
+            grader: grading::BUILT_IN.into(),
+            triggers: vec![
+                score(Arm::With, &["01A", "01B", "01C"], 0),
+                score(Arm::Without, &["01D", "01E", "01F"], 1),
+            ],
+            arms: vec![ArmScore {
+                arm: Arm::With,
+                pass_rate: None,
+                tokens: None,
+                seconds: None,
+                chats: 3,
+                not_run: 0,
+            }],
+            delta: Some(0.333),
+            ended: GradeEnd::Whole,
+            not_started: None,
+            cap: None,
+            spent_tokens: None,
+            cost_cap_usd: None,
+            spent_usd: None,
+            counted_usd: None,
+            priced: None,
+        },
+        spent: Spent::default(),
+        plugins_off: None,
+        model: Some("claude-sonnet-4-5".into()),
+    };
+    let card = GradeScorecard::of(&graded, |chat| chat != "01B");
+    assert_eq!(card.ran_on, "Claude Code · claude-sonnet-4-5");
+    assert_eq!(card.version, "Changes not saved");
+    assert_eq!(card.ended, "Finished");
+    assert_eq!(card.delta, Some(33.0));
+    assert_eq!(card.asked, 1);
+    let [test] = card.tests.as_slice() else {
+        panic!("{:?}", card.tests);
+    };
+    assert_eq!(test.query, "ship it⟦U+202E⟧");
+    assert_eq!(
+        test.arms.iter().map(|arm| arm.arm).collect::<Vec<_>>(),
+        [ScoredArm::With, ScoredArm::Without]
+    );
+    assert_eq!(
+        test.arms[0].chats,
+        [
+            ScoredChat {
+                id: "01A".into(),
+                kept: true
+            },
+            ScoredChat {
+                id: "01B".into(),
+                kept: false
+            },
+            ScoredChat {
+                id: "01C".into(),
+                kept: true
+            },
+        ]
+    );
+    assert_eq!(test.arms[1].asked, 1);
+}

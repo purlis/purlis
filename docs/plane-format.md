@@ -3785,7 +3785,9 @@ An end row, never a pass or a fail:
   said its tokens and not its cost (its tokens at the dearest price; absent otherwise), both
   since #3469 and absent in older rows; `report.ended` `over-limit` where it stopped at that
   limit before its tokens' cap (ADR 0105 as amended 2026-10-27, the dollar limit); `spent`,
-  `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not; and
+  `{chats, tokens, cost_usd}` as the chats' harness reported them, null where it did not; each
+  trigger test's `asked` in `report.triggers`, its chats that asked the person something and were
+  ended there (no run; SK-59, #3239), absent where none did and in a row written before; and
   `plugins_off`, the ids of the harness's own plugins its chats were handed off (every one it had
   installed, purlis's own left out; #3468, ADR 0105 as amended 2026-10-28), absent in a row
   written before, one whose grade started no chat, and one recorded as interrupted; and `model`,
@@ -3799,7 +3801,8 @@ An end row, never a pass or a fail:
   is no whole hex id, a harness, profile or id that is no plain name, a stamp that is no time)
   or whose spend and report do not hold together (a cost below nothing; a grader that is no plain
   name; a test triggered more often than it ran, run more often than the grade's `runs`, with a
-  rate that is not the two's share or a pass where nothing ran, or a chat that is no plain id; an
+  rate that is not the two's share or a pass where nothing ran, more chats asked and run than the
+  grade's `runs` (#3239), or a chat that is no plain id; an
   arm twice, a pass rate that is no share, a spread out of order; a difference past a whole; a
   reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
   1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469;
@@ -7274,6 +7277,20 @@ rewritten.
   record at once take turns, so a stale grade is recorded once.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state, transient — a lock that holds nothing and is never read; losing it loses nothing.
+- **Git:** gitignored, under the state directory.
+
+### `<state>/skill-grade-chats/<skill>/<grade>/<chat>.screen`
+- **Format:** what one chat of a grade showed as the grade ended it (SK-59, #3239; ADR 0105 as
+  amended 2026-10-28): its screen and scrollback as the escape sequences that draw them into a
+  blank terminal (the session's snapshot, `purlis_core::engine`), at most 4 MiB, so a row of the
+  grade's scorecard opens the chat read-only in a tab. `<skill>`, `<grade>` (the grade's id, a
+  ULID) and `<chat>` (the chat's id, as the eval record's `report.triggers[].chats` names it) are
+  plain names. Each folder `0700` and never a link, each file `0600`, written and read through no
+  link (`grades::kept`). When a grade ends, the chats of every grade of its skill but the three
+  newest are removed (`grades::kept::sweep`).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state, device-bound — what this machine's chats showed. A teammate who pulls the
+  eval record sees the grade and not its chats, and its scorecard says they are kept where it ran.
 - **Git:** gitignored, under the state directory.
 
 ### `skill-tries/<id>/`

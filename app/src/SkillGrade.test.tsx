@@ -106,6 +106,7 @@ describe("Grade, cost first", () => {
       of: 12,
       tokens: 8000,
       cap: 200000,
+      asked: 0,
       ended: "stopped",
       said: null,
     });
@@ -170,6 +171,27 @@ describe("Grade, cost first", () => {
     expect(screen.queryByRole("button", { name: /Model deploy's grade runs on/ })).toBeNull();
   });
 
+  it("says in the grade the chats that asked you something (SK-59)", () => {
+    const step = {
+      plane: "p",
+      skill: "deploy",
+      grade: "g",
+      ran: 10,
+      of: 12,
+      tokens: null,
+      cap: 200000,
+      asked: 2,
+      ended: "whole" as const,
+      said: null,
+    };
+    expect(endedSaid(step)).toBe(
+      "Graded in 10 chats. The scorecard is in Grades below. 2 chats asked you something and were ended there, not counted: its scorecard opens each.",
+    );
+    expect(endedSaid({ ...step, asked: 0 })).toBe(
+      "Graded in 10 chats. The scorecard is in Grades below.",
+    );
+  });
+
   it("says a skill with no trigger tests has none, and starts nothing", async () => {
     mockIPC((cmd) => {
       if (cmd === "skill_grade_plan") return plan({ tests: [], chats: 0, outcome_evals: 0 });
@@ -198,6 +220,7 @@ describe("Grade, cost first", () => {
         of: 12,
         tokens: null,
         cap: 200000,
+        asked: 0,
         ended: "chats-did-not-start",
         said: "The default profile is signed out.",
       }),
@@ -242,6 +265,7 @@ describe("a grade's token cap", () => {
         of: 12,
         tokens: 201345,
         cap: 200000,
+        asked: 0,
         ended: "over-cap",
         said: null,
       }),
@@ -279,6 +303,7 @@ describe("a grade's dollar limit (#3469)", () => {
         of: 12,
         tokens: 30000,
         cap: 200000,
+        asked: 0,
         ended: "over-limit",
         said: null,
       }),
@@ -315,6 +340,7 @@ describe("a grade a fault ended", () => {
         of: 12,
         tokens: null,
         cap: 200000,
+        asked: 0,
         ended: "failed",
         said: "A fault in purlis ended the grade before it was scored.",
       }),

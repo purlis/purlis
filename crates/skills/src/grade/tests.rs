@@ -379,6 +379,12 @@ fn a_chat_that_asked_the_person_is_no_run_and_the_grade_goes_on() {
         "an ask is never a test that did not trigger: {report:?}"
     );
     assert_eq!(report.arm(Arm::With).unwrap().not_run, 6);
+    // SK-59 (#3239): the grade says so, in each test and in all.
+    assert!(
+        report.triggers.iter().all(|score| score.asked == 3),
+        "{report:?}"
+    );
+    assert_eq!(report.asked(), 12);
 }
 
 /// A host whose every chat started, ended as `end`, and said nothing of what it spent.

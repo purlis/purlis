@@ -230,6 +230,16 @@ pub struct TriggerScore {
     pub pass: Option<bool>,
     /// Each run's chat, where it started, in run order.
     pub chats: Vec<Option<String>>,
+    /// Of its chats, the ones that asked the person something and were ended there (SK-59,
+    /// #3239): no run, never a "did not trigger", and said in the grade rather than as a notice
+    /// on a chat nobody can see. Absent where none did, and in a row written before.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub asked: u32,
+}
+
+/// Whether `n` is nothing: an `asked` that is not written.
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// **One arm over the whole grade.**
@@ -346,6 +356,13 @@ impl GradeReport {
     /// The arm `arm`'s score, where it was graded.
     pub fn arm(&self, arm: Arm) -> Option<&ArmScore> {
         self.arms.iter().find(|one| one.arm == arm)
+    }
+
+    /// How many of its chats asked the person something and were ended there (SK-59, #3239).
+    pub fn asked(&self) -> u32 {
+        self.triggers
+            .iter()
+            .fold(0u32, |all, score| all.saturating_add(score.asked))
     }
 
     /// How many trigger tests passed with the skill, of those that ran: the grade a skill's
@@ -486,6 +503,10 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                 .filter(|one| one.ran() && one.started(skill))
                 .count();
             let rate = (runs > 0).then(|| triggered as f64 / runs as f64);
+            let asked = results
+                .iter()
+                .filter(|one| one.end == ChatEnd::Asked)
+                .count();
             triggers.push(TriggerScore {
                 query: test.query.clone(),
                 should_trigger: test.should_trigger,
@@ -495,6 +516,7 @@ pub fn grade(request: &GradeRequest, chats: &mut dyn Chats, limits: Option<Limit
                 rate,
                 pass: rate.map(|rate| (rate >= TRIGGER_THRESHOLD) == test.should_trigger),
                 chats: results.iter().map(|one| one.chat.clone()).collect(),
+                asked: u32::try_from(asked).unwrap_or(u32::MAX),
             });
         }
     }

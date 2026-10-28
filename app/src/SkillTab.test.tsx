@@ -162,6 +162,59 @@ describe("a skill's Runs panel", () => {
   });
 });
 
+describe("a skill's Grades panel (SK-59)", () => {
+  it("opens each grade's scorecard from its row, in one click", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan") return { running: null };
+      if (cmd === "skill_details") return EMPTY_PAGE;
+      if (cmd === "skill_stats") return NO_TOTALS;
+      if (cmd === "skill_panels")
+        return [
+          {
+            key: { kind: "grades" },
+            title: "Grades",
+            by: null,
+            refused: null,
+            blocks: [
+              {
+                kind: "table",
+                caption: "Grades of deploy",
+                columns: ["Graded", "Version"],
+                rows: [{ key: "01GRADE", cells: ["2026-10-28 10:00 UTC", "0123456789ab"] }],
+                empty: { headline: "No grades of deploy yet", body: null, offer: null },
+              },
+            ],
+          },
+          runsPanel([]),
+        ];
+      throw new Error(`unexpected ${cmd}`);
+    });
+    const opened: Array<{ view: unknown; title: string }> = [];
+    render(
+      <SkillTab
+        plane="p"
+        name="deploy"
+        changed={0}
+        onOpenView={(view, title) => opened.push({ view, title })}
+      />,
+    );
+    const open = await screen.findByRole("button", {
+      name: "Open the scorecard of the grade of 2026-10-28 10:00 UTC",
+    });
+    fireEvent.click(open);
+    expect(opened).toEqual([
+      {
+        view: { from: null, view: "skill-grade", key: "deploy@01GRADE" },
+        title: "Grade · deploy",
+      },
+    ]);
+    // The Runs panel's rows open nothing of the kind.
+    expect(
+      within(screen.getByTestId("skill-runs")).queryByRole("columnheader", { name: "Scorecard" }),
+    ).toBeNull();
+  });
+});
+
 describe("a panel an extension adds to a skill's tab", () => {
   it("is drawn after purlis's own, under its title and the extension's name", async () => {
     mockIPC((cmd) => {

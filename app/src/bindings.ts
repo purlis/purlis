@@ -1997,6 +1997,13 @@ export const commands = {
 	 *  scored and recorded.
 	 */
 	skillGradeStop: (plane: PlaneId, grade: string) => typedError<null, string>(__TAURI_INVOKE("skill_grade_stop", { plane, grade })),
+	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
+	skillGradeScorecard: (plane: PlaneId, skill: string, grade: string) => typedError<GradeScorecard, string>(__TAURI_INVOKE("skill_grade_scorecard", { plane, skill, grade })),
+	/**
+	 *  **What chat `chat` of `skill`'s grade `grade` showed as it ended** (SK-59, #3239): its screen
+	 *  and scrollback as the escape sequences that draw them, for a tab that shows it read-only.
+	 */
+	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
 	/**
 	 *  **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
 	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
@@ -7221,6 +7228,29 @@ export type GradeQuery = {
 	hides: boolean,
 };
 
+/**
+ *  **A grade's scorecard** (SK-59, #3239; spec #2762 decision 43): the grade as its row in the
+ *  Grades panel says it, then each trigger test in each arm, with each of its chats one click
+ *  away where this machine kept it.
+ */
+export type GradeScorecard = {
+	grade: string,
+	skill: string,
+	/**
+	 *  When it ran, the version it graded, what its chats ran on and how it ended, as its row
+	 *  says each.
+	 */
+	graded: string,
+	version: string,
+	ran_on: string,
+	ended: string,
+	/**  The difference the skill made, in points, where both arms ran. */
+	delta: number | null,
+	/**  How many of its chats asked the person something and were ended there. */
+	asked: number,
+	tests: ScoredTest[],
+};
+
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
 export type GrantLevel = 
 /**  This chat's next run alone (D-sock-3): a socket or a service only. */
@@ -11069,6 +11099,40 @@ export type Scope =
 /**  A tab's menu: every line's figure, each task's time, and the total. */
 "menu";
 
+/**  **A grade's arm, as its scorecard says it.** */
+export type ScoredArm = "with" | "without" | "previous";
+
+/**
+ *  **One chat of a grade's trigger test**, as its scorecard offers it (SK-59, #3239): its id, and
+ *  whether this machine kept what it showed, which is what opens it.
+ */
+export type ScoredChat = {
+	id: string,
+	kept: boolean,
+};
+
+/**  **One trigger test in one arm of a grade**, as its scorecard shows it. */
+export type ScoredRuns = {
+	arm: ScoredArm,
+	/**  The runs that ran, and of those the ones that started the skill. */
+	runs: number,
+	triggered: number,
+	/**  Whether it passed there, where anything ran. */
+	pass: boolean | null,
+	/**  Its chats that asked the person something and were ended there: no run. */
+	asked: number,
+	/**  Each chat it ran, in run order, where one started. */
+	chats: ScoredChat[],
+};
+
+/**  **One trigger test of a grade**, in each arm. */
+export type ScoredTest = {
+	/**  The query as its chats read it, each character no reader would see marked. */
+	query: string,
+	should_trigger: boolean,
+	arms: ScoredRuns[],
+};
+
 /**  Why a page of a search ended. */
 export type SearchEnd = 
 /**  The whole scope is searched. */
@@ -11779,6 +11843,11 @@ export type SkillGradeStep = {
 	/**  What its chats have spent so far, where they said, and the cap it is held to. */
 	tokens: number | null,
 	cap: number | null,
+	/**
+	 *  How many of its chats asked the person something and were ended there (SK-59, #3239):
+	 *  said in the grade, as none of them is a run.
+	 */
+	asked: number,
 	/**  How it ended, once it has. */
 	ended: GradeEnded | null,
 	/**

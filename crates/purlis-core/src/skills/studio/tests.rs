@@ -174,6 +174,7 @@ fn a_grade() -> super::super::grades::Graded {
         rate: Some(if pass { 1.0 } else { 0.0 }),
         pass: Some(pass),
         chats: Vec::new(),
+        asked: 0,
     };
     let arm = |arm: Arm, mean: f64, stddev: f64| ArmScore {
         arm,
