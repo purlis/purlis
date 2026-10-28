@@ -123,7 +123,7 @@ empty state and error copy follow it.
   and the window draws it in code font (#1156).
 - **Counts are digits, and plurals agree:** *1 secret*, *2 secrets* (`counted` in
   `Vaults.tsx`; in Rust, `purlis_core::counts::counted`, and `plural` for the verb that
-  follows). Never *2 secret(s)*: `crates/purlis-core/tests/no_count_says_thing_s.rs` fails on
+  follows). Never *2 secret(s)*: `crates/purlis-core/tests/it/no_count_says_thing_s.rs` fails on
   one in shipped Rust.
 - **An `aria-label` says what the visible label says**, and an icon-only control's label is the
   verb it would have had as text: *Close find*, *Next match*.

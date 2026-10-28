@@ -6,7 +6,7 @@
 //! Every forge operation charter's core performs is a method here, with a GitHub body in
 //! [`super::github`] and a GitLab body in [`super::gitlab`]. Nothing outside those two
 //! matches on the forge to build a request. `crates/purlis-core/docs/forges.md` holds the
-//! parity table, and the contract suite (`tests/forge_contract.rs`) runs every method on both
+//! parity table, and the contract suite (`tests/it/forge_contract.rs`) runs every method on both
 //! forges; its parity test fails when a method here has no contract case.
 //!
 //! No method has a default body, so a method added to an area does not compile until both

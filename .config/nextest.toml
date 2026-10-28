@@ -38,7 +38,7 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 # shape added and has taken from 150 s to 275 s on a runner, so it is given fifteen minutes
 # before it is called hung. The bound on each verdict is the test's own and is not this.
 [[profile.ci.overrides]]
-filter = "package(purlis-core) & binary(every_guard_reads_a_hostile_command_in_linear_time)"
+filter = "package(purlis-core) & binary(it) & test(/^every_guard_reads_a_hostile_command_in_linear_time::/)"
 slow-timeout = { period = "60s", terminate-after = 15 }
 # Not retried: its bounds are a verdict on speed, and a retry of a hang would hold the job for
 # thirty minutes of its forty-five.
