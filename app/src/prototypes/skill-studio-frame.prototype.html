@@ -1,0 +1,286 @@
+<title>Skill studio frame</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the purlis window (activity bar, sidebar Skills view, tab strip) around one Skill studio tab.
+   PROTOTYPE for "Prototype: the studio's frame and Library page" (purlis#3629): throwaway, fake data. */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b4232c; --bad-soft:#fbe5e6;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --shadow:0 10px 30px rgba(20,24,40,.14);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 72px;box-sizing:border-box}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+.note{max-width:1400px;margin:0 auto 10px;color:var(--muted);font-size:12px}
+.note b{color:var(--fg)}
+.win{max-width:1400px;margin:0 auto;height:calc(100% - 30px);min-height:560px;display:grid;grid-template-columns:44px 250px minmax(0,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.win.narrow{grid-template-columns:44px 250px minmax(0,620px)}
+.rail{background:var(--panel2);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:10px}
+.rail i{width:24px;height:24px;border-radius:6px;display:block;background:var(--tag)}
+.rail i.on{background:var(--accent)}
+.side{border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0;background:var(--panel)}
+.side h3{margin:0;padding:12px 12px 4px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.whose{padding:2px 12px 8px;font-weight:600}
+.whose small{font-weight:400;color:var(--muted)}
+.sidebtns{display:flex;gap:6px;padding:0 12px 10px}
+.btn{border:1px solid var(--line);border-radius:6px;padding:4px 9px;background:var(--panel);white-space:nowrap}
+.btn:hover{background:var(--panel2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.ghost{border-color:transparent}
+.grp{padding:6px 12px 2px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+.srow{display:flex;flex-direction:column;padding:4px 12px;border-radius:5px;margin:0 6px;cursor:pointer}
+.srow:hover{background:var(--panel2)}
+.srow .l1{display:flex;gap:6px;align-items:center;min-width:0}
+.srow .nm{font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .why{color:var(--muted);font-size:11.5px;padding-left:2px}
+.srow .why.bad{color:var(--bad)}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted);white-space:nowrap}
+.mark{font-size:10.5px;padding:0 6px;border-radius:9px;white-space:nowrap}
+.mark.warn{background:var(--warn-soft);color:var(--warn)}.mark.bad{background:var(--bad-soft);color:var(--bad)}.mark.ok{background:var(--ok-soft);color:var(--ok)}.mark.acc{background:var(--accent-soft);color:var(--accent)}
+.quiet{color:var(--muted);font-size:12px;padding:6px 12px}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tabs span{padding:6px 12px;border-radius:7px 7px 0 0;color:var(--muted)}
+.tabs span.on{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.bar .crumb{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .crumb b{color:var(--fg);font-weight:500}
+.bar select{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
+.nav2{display:flex;gap:2px}
+.nav2 button{width:26px;height:24px;border-radius:5px;border:1px solid var(--line)}
+.nav2 button:disabled{opacity:.35;cursor:default}
+.studio{flex:1;display:grid;min-height:0}
+.snav{border-right:1px solid var(--line);padding:8px 6px;display:flex;flex-direction:column;gap:1px;overflow:auto;background:var(--panel)}
+.snav button{text-align:left;padding:5px 9px;border-radius:6px;display:flex;justify-content:space-between;gap:6px}
+.snav button:hover{background:var(--panel2)}
+.snav button.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.snav .sep{height:1px;background:var(--line);margin:8px 4px}
+.snav .cnt{font-size:11px;color:var(--muted)}
+.snav .cnt.warn{color:var(--warn)}
+.facet{padding:8px 9px 2px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.chk{display:flex;gap:6px;align-items:center;padding:2px 9px;font-size:12.5px;cursor:pointer}
+.chk span{margin-left:auto;color:var(--muted);font-size:11px}
+.list{overflow:auto;min-width:0;border-right:1px solid var(--line)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:1}
+.filters input{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 8px;min-width:0;flex:1 1 160px}
+.chip{border:1px solid var(--line);border-radius:12px;padding:2px 9px;font-size:12px;color:var(--muted)}
+.chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.lrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.lrow:hover{background:var(--panel2)}
+.lrow.on{background:var(--accent-soft)}
+.lrow .nm{font-family:var(--mono);font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .ds{grid-column:1/-1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .rt{display:flex;gap:5px;align-items:center}
+.lrow.compact{grid-template-columns:minmax(0,1fr) auto;padding:5px 12px}
+.lhead{padding:10px 12px 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--panel);position:sticky;top:0}
+.detail{overflow:auto;min-width:0;background:var(--panel)}
+.dh{padding:16px 20px 10px;border-bottom:1px solid var(--line)}
+.dh h1{margin:0;font-family:var(--mono);font-size:18px;font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dh p{margin:6px 0 10px;color:var(--muted);max-width:68ch}
+.acts{display:flex;gap:6px;flex-wrap:wrap;position:relative}
+.menu{position:absolute;top:30px;right:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:4px;min-width:200px;z-index:5}
+.menu button{display:block;width:100%;text-align:left;padding:6px 10px;border-radius:5px}
+.menu button:hover{background:var(--panel2)}
+.menu button.danger{color:var(--bad)}
+.dtabs{display:flex;gap:4px;padding:0 20px;border-bottom:1px solid var(--line)}
+.dtabs button{padding:8px 4px;margin-right:10px;color:var(--muted);border-bottom:2px solid transparent}
+.dtabs button.on{color:var(--fg);border-bottom-color:var(--accent)}
+.dbody{padding:16px 20px;display:grid;gap:16px;max-width:820px}
+.kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:6px 16px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0}
+.hz{display:flex;gap:8px;flex-wrap:wrap}
+.hz div{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:150px}
+.hz div b{display:block;font-weight:500}
+pre{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;margin:0;white-space:pre-wrap}
+table{border-collapse:collapse;width:100%}
+td,th{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:400}
+th{color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+td.num{font-variant-numeric:tabular-nums}
+.empty{padding:40px 24px;color:var(--muted);text-align:center}
+.drawer{position:absolute;top:0;right:0;bottom:0;width:min(560px,92%);box-shadow:var(--shadow);border-left:1px solid var(--line);background:var(--panel);overflow:auto;z-index:3}
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.18);z-index:2}
+.dialogwrap{position:fixed;inset:0;background:rgba(10,12,20,.35);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);width:min(440px,100%);padding:18px}
+.dialog h2{margin:0 0 6px;font-size:15px}
+.dialog p{margin:0 0 14px;color:var(--muted)}
+.dialog .row{display:flex;gap:8px;justify-content:flex-end}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));background:#11131a;color:#f2f3f7;border-radius:24px;padding:6px 8px;display:flex;align-items:center;gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:30;font-size:12.5px;max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+.switcher button{color:#f2f3f7;border-radius:16px;padding:4px 10px}
+.switcher button:hover{background:#2a2e3a}
+.switcher .lbl{padding:0 6px;font-weight:600}
+.switcher .st{color:#aab0c0;padding:0 6px;font-size:11.5px}
+.switcher .tg.on{background:#5b4fd6}
+@media (max-width:900px){.win{grid-template-columns:44px minmax(0,1fr)}.side{display:none}}
+@media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}}}
+</style>
+
+<div class="note"><b>Prototype, fake data.</b> Three variants of the Skill studio's frame and Library page (purlis "Prototype: the studio's frame and Library page"). Flip variants with the bar at the bottom or ← →; "Narrow tab" shows how each one behaves in a split pane. Click skills in the left Skills view or in the studio. Nothing is saved.</div>
+<div id="app"></div>
+
+<script>
+const SKILLS=[
+ {n:"deploy",lv:"project",d:"Deploys a service to staging or production with the checks the team agreed on: tests green, changelog entry, a tag.",st:"on",src:null,works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"+18 pts vs no skill",runs:41,owner:"platform team",path:"skills/deploy/SKILL.md"},
+ {n:"review-pr",lv:"project",d:"Reviews a pull request against REVIEW.md: correctness first, then the standards, then the spec.",st:"on",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"+11 pts",runs:63,owner:"reviewer persona",path:"skills/review-pr/SKILL.md"},
+ {n:"brainstorming",lv:"project",d:"Turns a loose idea into a short design before any code is written.",st:"on",src:"Superpowers",upd:true,works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"not graded",runs:9,owner:"installed from Superpowers @ 3f2a1c9",path:"skills/brainstorming/SKILL.md"},
+ {n:"lint-rs",lv:"workspace",ws:"smart-ide",d:"Runs clippy with the workspace's flags and explains each warning in one line.",st:"off",why:"Off in smart-ide",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"+6 pts",runs:12,owner:"smart-ide",path:"workspaces/smart-ide/skills/lint-rs/SKILL.md"},
+ {n:"release-notes",lv:"workspace",ws:"smart-ide",d:"Writes the release notes for a dev or stable cut from the merged PRs since the last tag.",st:"on",works:{"Claude Code":"full",Codex:"full",opencode:"partial"},grade:"+9 pts",runs:7,owner:"smart-ide",path:"workspaces/smart-ide/skills/release-notes/SKILL.md"},
+ {n:"grilling",lv:"persona",ps:"steward",d:"Interviews the person about a plan until every branch of the design tree is settled.",st:"review",why:"Needs review: changed by a chat",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"+14 pts",runs:22,owner:"steward",path:"personas/steward/skills/grilling/SKILL.md"},
+ {n:"lint-ts",lv:"repo",d:"Runs eslint and prettier the way this repo's CI does.",st:"out",why:"A repo skill of the same name wins",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"not graded",runs:0,owner:"repo svc",path:"workspaces/smart-ide/svc/.claude/skills/lint-ts/SKILL.md"},
+ {n:"figma-handoff",lv:"project",d:"Checks a Figma frame against the built page and lists every gap.",st:"out",why:"Hidden by the router",works:{"Claude Code":"full",Codex:"none",opencode:"none"},grade:"+4 pts",runs:3,owner:"design",path:"skills/figma-handoff/SKILL.md"},
+ {n:"gpu-profile",lv:"local",d:"Profiles a frame with the local GPU tools on this machine.",st:"out",why:"Claude Code can't take it",works:{"Claude Code":"none",Codex:"full",opencode:"none"},grade:"not graded",runs:1,owner:"this machine",path:".purlis/local/skills/gpu-profile/SKILL.md"},
+ {n:"browser",lv:"built-in",d:"Drives a real browser for a task that needs one, with credentials pulled from a vault.",st:"on",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"built-in",runs:88,owner:"purlis",path:"(ships with purlis)"},
+ {n:"handoff",lv:"built-in",d:"Moves the person's work out of this chat into a new chat they will read themselves.",st:"on",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"built-in",runs:30,owner:"purlis",path:"(ships with purlis)"},
+ {n:"secrets",lv:"built-in",d:"Uses a credential held in a vault without its value entering the conversation.",st:"on",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"built-in",runs:52,owner:"purlis",path:"(ships with purlis)"},
+ {n:"compact",lv:"built-in",d:"Compacts a workspace's or persona's memory: duplicates and stale entries, pruned only with a yes.",st:"on",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"built-in",runs:14,owner:"purlis",path:"(ships with purlis)"},
+ {n:"smart-close",lv:"built-in",d:"Closes this chat by writing its session record and folding what lasts into workspace.md.",st:"on",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"built-in",runs:19,owner:"purlis",path:"(ships with purlis)"},
+ {n:"update",lv:"built-in",d:"Updates purlis and says what each new version brings.",st:"on",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:"built-in",runs:4,owner:"purlis",path:"(ships with purlis)"},
+];
+const NAV=[["library","Library"],["needs","Needs you",2],["drafts","Drafts",1],["sources","Sources"],["deleted","Deleted"],["sep"],["harness","Harness skills"],["routing","Routing"]];
+const OTHER={needs:"Needs you",drafts:"Drafts",sources:"Sources",deleted:"Deleted",harness:"Harness skills",routing:"Routing"};
+const VARIANTS={a:"A · Three panes",b:"B · Facets and a drawer",c:"C · Names and a document"};
+const S={variant:(location.hash||"#a").slice(1),narrow:false,page:"library",sel:"deploy",tab:"overview",scope:"smart-ide · steward",q:"",chip:"all",menu:false,dialog:null,back:[],fwd:[],facet:{}};
+if(!VARIANTS[S.variant])S.variant="a";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const markOf=k=>k.st==="off"?["Off","warn"]:k.st==="out"?["Left out","bad"]:k.st==="review"?["Needs review","warn"]:k.upd?["Update available","acc"]:null;
+const lvTag=k=>k.lv==="workspace"?"workspace "+k.ws:k.lv==="persona"?"persona "+k.ps:k.lv;
+function go(page,sel){S.back.push([S.page,S.sel,S.tab]);S.fwd=[];S.page=page;if(sel!==undefined){S.sel=sel;S.tab="overview"}S.menu=false;render()}
+function back(){if(!S.back.length)return;S.fwd.push([S.page,S.sel,S.tab]);[S.page,S.sel,S.tab]=S.back.pop();render()}
+function fwd(){if(!S.fwd.length)return;S.back.push([S.page,S.sel,S.tab]);[S.page,S.sel,S.tab]=S.fwd.pop();render()}
+function filtered(){return SKILLS.filter(k=>{
+  if(S.q&&!(k.n+k.d).toLowerCase().includes(S.q.toLowerCase()))return false;
+  if(S.chip==="on"&&k.st!=="on")return false; if(S.chip==="out"&&!(k.st==="out"||k.st==="off"))return false;
+  if(S.chip==="review"&&k.st!=="review")return false; if(S.chip==="builtin"&&k.lv!=="built-in")return false; if(S.chip==="mine"&&k.lv==="built-in")return false;
+  const f=Object.keys(S.facet).filter(x=>S.facet[x]); if(f.length&&!f.includes(k.lv))return false; return true})}
+
+function sidebar(){
+  const chat=SKILLS.filter(k=>k.st==="on"||k.st==="review"), out=SKILLS.filter(k=>k.st==="off"||k.st==="out"), needs=SKILLS.filter(k=>k.st==="review");
+  const row=(k,showWhy)=>`<div class="srow" data-open="${k.n}" tabindex="0"><div class="l1"><span class="nm">${esc(k.n)}</span><span class="tag">${esc(lvTag(k))}</span></div>${showWhy&&k.why?`<div class="why ${k.st==="out"?"bad":""}">${esc(k.why)}</div>`:""}</div>`;
+  return `<div class="side"><h3>Skills</h3><div class="whose">steward 5 <small>· ${chat.length} skills</small></div>
+  <div class="sidebtns"><button class="btn" data-act="studio">Open Skill studio</button><button class="btn ghost" data-act="new">New skill…</button></div>
+  <div style="overflow:auto;flex:1">
+  ${needs.length?`<div class="grp"><span>Needs you</span><span>${needs.length}</span></div>${needs.map(k=>row(k,true)).join("")}`:""}
+  <div class="grp"><span>In this chat</span><span>${chat.length}</span></div>${chat.filter(k=>k.st!=="review").map(k=>row(k,false)).join("")}
+  <div class="grp"><span>Left out</span><span>${out.length}</span></div>${out.map(k=>row(k,true)).join("")}
+  </div></div>`}
+
+function navCol(withFacets){
+  let h=`<div class="snav">`+NAV.map(([id,label,c])=>id==="sep"?`<div class="sep"></div>`:`<button class="${S.page===id?"on":""}" data-page="${id}"><span>${label}</span>${c?`<span class="cnt ${id==="needs"?"warn":""}">${c}</span>`:""}</button>`).join("");
+  if(withFacets&&S.page==="library"){const lv=["project","workspace","persona","repo","local","built-in"];
+    h+=`<div class="facet">Skill level</div>`+lv.map(l=>`<label class="chk"><input type="checkbox" data-facet="${l}" ${S.facet[l]?"checked":""}> ${l}<span>${SKILLS.filter(k=>k.lv===l).length}</span></label>`).join("");
+    h+=`<div class="facet">Harness</div>`+["Claude Code","Codex","opencode"].map(x=>`<label class="chk"><input type="checkbox" disabled> ${x}</label>`).join("");
+    h+=`<div class="facet">Source</div><label class="chk"><input type="checkbox" disabled> Superpowers<span>1</span></label>`}
+  return h+`</div>`}
+
+function filterBar(){const chips=[["all","All"],["mine","The project's own"],["builtin","Built-in"],["on","On"],["out","Off or left out"],["review","Needs review"]];
+  return `<div class="filters"><input id="q" placeholder="Find a skill" value="${esc(S.q)}">${chips.map(([id,l])=>`<button class="chip ${S.chip===id?"on":""}" data-chip="${id}">${l}</button>`).join("")}</div>`}
+
+function listRich(){const rows=filtered();if(!rows.length)return `<div class="empty">No skill matches “${esc(S.q)}”.</div>`;
+  return rows.map(k=>{const m=markOf(k);return `<div class="lrow ${S.sel===k.n&&!S.narrow?"on":""}" data-sel="${k.n}" tabindex="0"><span class="nm">${esc(k.n)}</span><span class="rt"><span class="tag">${esc(lvTag(k))}</span>${m?`<span class="mark ${m[1]}">${m[0]}</span>`:""}</span><span class="ds">${esc(k.d)}</span></div>`}).join("")}
+
+function listGrouped(){const rows=filtered();const by={};rows.forEach(k=>(by[k.lv]=by[k.lv]||[]).push(k));
+  const order=["project","workspace","persona","repo","local","built-in"];
+  return order.filter(l=>by[l]).map(l=>`<div class="lhead">${l} · ${by[l].length}</div>`+by[l].map(k=>{const m=markOf(k);return `<div class="lrow ${S.sel===k.n?"on":""}" data-sel="${k.n}" tabindex="0"><span class="nm">${esc(k.n)}</span><span class="rt">${m?`<span class="mark ${m[1]}">${m[0]}</span>`:""}</span><span class="ds">${esc(k.d)}</span></div>`}).join("")).join("")||`<div class="empty">No skill matches.</div>`}
+
+function listCompact(){const rows=filtered();
+  return rows.map(k=>{const m=markOf(k);return `<div class="lrow compact ${S.sel===k.n&&!S.narrow?"on":""}" data-sel="${k.n}" tabindex="0" title="${esc(k.d)}"><span class="nm">${esc(k.n)}</span><span class="rt">${m?`<span class="mark ${m[1]}" title="${m[0]}">●</span>`:`<span class="tag">${esc(k.lv)}</span>`}</span></div>`}).join("")||`<div class="empty">No skill matches.</div>`}
+
+function detail(){const k=SKILLS.find(x=>x.n===S.sel);if(!k)return `<div class="empty">Pick a skill to see what it does and who gets it.</div>`;
+  const m=markOf(k);
+  const tabs=[["overview","Overview"],["text","Text"],["history","History"],["grades","Grades"],["runs","Runs"]];
+  let body="";
+  if(S.tab==="overview")body=`<dl class="kv"><dt>Who gets it</dt><dd>${k.st==="on"?"Every chat in "+esc(S.scope.split(" · ")[0])+", including steward 5.":esc(k.why||"")+(k.st==="off"?". <button class='btn' style='margin-left:6px'>Turn on in smart-ide</button>":"")}</dd>
+   <dt>Where it lives</dt><dd><code>${esc(k.path)}</code></dd><dt>Owner</dt><dd>${esc(k.owner)}</dd><dt>Grade</dt><dd>${esc(k.grade)}</dd><dt>Runs</dt><dd>${k.runs} in the last 30 days</dd></dl>
+   <div><div style="color:var(--muted);margin-bottom:6px">Works on</div><div class="hz">${Object.entries(k.works).map(([h,v])=>`<div><b>${h}</b>${v==="full"?"Full":v==="partial"?"Partly: arguments are not passed":"Not supported"}</div>`).join("")}</div></div>`;
+  if(S.tab==="text")body=`<pre>---\nname: ${esc(k.n)}\ndescription: ${esc(k.d)}\n---\n\n# ${esc(k.n)}\n\n1. Read the request and the project's conventions.\n2. …\n</pre>`;
+  if(S.tab==="history")body=`<table><tr><th>Saved</th><th>By</th><th>Change</th><th>Grade</th><th></th></tr><tr><td>28 Oct</td><td>steward 3</td><td>Tighter steps for rollbacks</td><td>${esc(k.grade)}</td><td><button class="btn">Diff</button></td></tr><tr><td>21 Oct</td><td>you</td><td>First version</td><td>—</td><td><button class="btn">Revert to this</button></td></tr></table>`;
+  if(S.tab==="grades")body=`<table><tr><th>When</th><th>Model</th><th>With</th><th>Without</th><th>Spent</th></tr><tr><td>28 Oct</td><td>sonnet</td><td class="num">86%</td><td class="num">68%</td><td class="num">$1.92</td></tr><tr><td>22 Oct</td><td>sonnet</td><td class="num">80%</td><td class="num">69%</td><td class="num">$1.71</td></tr></table><div style="color:var(--muted)">Each row opens its scorecard as a page under Grades (prototyped in "Prototype: grading pages").</div>`;
+  if(S.tab==="runs")body=`<table><tr><th>Chat</th><th>When</th><th>Ended</th></tr><tr><td>steward 5</td><td>today 14:02</td><td>done</td></tr><tr><td>reviewer 2</td><td>yesterday</td><td>done</td></tr></table>`;
+  return `<div class="dh"><h1>${esc(k.n)} <span class="tag">${esc(lvTag(k))}</span>${m?`<span class="mark ${m[1]}">${m[0]}</span>`:""}</h1><p>${esc(k.d)}</p>
+   <div class="acts">${k.st!=="out"&&k.st!=="off"?`<button class="btn primary">Use in this chat</button>`:""}${k.lv!=="built-in"?`<button class="btn">Edit</button><button class="btn">Grade</button><button class="btn" data-act="menu" aria-haspopup="menu">…</button>`:`<span style="color:var(--muted);align-self:center">Ships with purlis; it can't be edited or turned off.</span>`}
+   ${S.menu?`<div class="menu" role="menu"><button data-dlg="Rename">Rename…</button><button data-dlg="Move to another level">Move to another level…</button><button data-dlg="Deprecate">Deprecate…</button><button data-dlg="Archive">Archive…</button><button class="danger" data-dlg="Delete">Delete…</button></div>`:""}</div></div>
+   <div class="dtabs">${tabs.map(([id,l])=>`<button class="${S.tab===id?"on":""}" data-tab="${id}">${l}</button>`).join("")}</div><div class="dbody">${body}</div>`}
+
+function otherPage(){return `<div class="empty"><b style="color:var(--fg)">${OTHER[S.page]}</b><br>This page is drawn in its own prototype. Here it only shows where it sits in the frame.</div>`}
+
+function crumb(){if(S.page!=="library")return `<span class="crumb"><b>${OTHER[S.page]}</b></span>`;
+  return `<span class="crumb">Library${S.sel&&(S.narrow||S.variant==="b"&&S.drawer)?` › <b>${esc(S.sel)}</b>`:""}</span>`}
+
+function studio(){
+  const v=S.variant, lib=S.page==="library";
+  let cols,inner;
+  if(S.narrow){ // page-and-back in every variant
+    const showDetail=lib&&S.narrowDetail;
+    cols="minmax(0,1fr)";
+    inner= lib?(showDetail?`<div class="detail">${detail()}</div>`:`<div class="list">${filterBar()}${v==="b"?listGrouped():v==="c"?listCompact():listRich()}</div>`):`<div class="detail">${otherPage()}</div>`;
+    const nav=`<div class="filters" style="position:static"><select id="pg">${NAV.filter(x=>x[0]!=="sep").map(([id,l,c])=>`<option value="${id}" ${S.page===id?"selected":""}>${l}${c?" ("+c+")":""}</option>`).join("")}</select></div>`;
+    return `<div class="studio" style="grid-template-columns:${cols};grid-template-rows:auto 1fr">${nav}${inner}</div>`}
+  if(v==="a"){cols="170px minmax(260px,0.9fr) minmax(0,1.3fr)";
+    inner=navCol(false)+(lib?`<div class="list">${filterBar()}${listRich()}</div><div class="detail">${detail()}</div>`:`<div class="detail" style="grid-column:span 2">${otherPage()}</div>`)}
+  if(v==="b"){cols="210px minmax(0,1fr)";
+    inner=navCol(true)+(lib?`<div class="list" style="position:relative">${filterBar()}${listGrouped()}${S.drawer?`<div class="scrim" data-act="close"></div><div class="drawer">${detail()}</div>`:""}</div>`:`<div class="detail">${otherPage()}</div>`)}
+  if(v==="c"){cols="170px 220px minmax(0,1fr)";
+    inner=navCol(false)+(lib?`<div class="list">${filterBar().replace('class="filters"','class="filters" style="flex-direction:column;align-items:stretch"').replace(/<button class="chip[^]*?<\/button>/g,"")}${listCompact()}</div><div class="detail">${detail()}</div>`:`<div class="detail" style="grid-column:span 2">${otherPage()}</div>`)}
+  return `<div class="studio" style="grid-template-columns:${cols}">${inner}</div>`}
+
+function render(){
+  const app=document.getElementById("app");
+  const where=S.page==="library"?(S.sel?`Library › ${S.sel}`:"Library"):OTHER[S.page];
+  app.innerHTML=`<div class="win ${S.narrow?"narrow":""}"><div class="rail"><i></i><i></i><i></i><i class="on"></i></div>${sidebar()}
+  <div class="main"><div class="tabs"><span>steward 5</span><span class="on">Skill studio</span></div>
+  <div class="bar"><div class="nav2"><button aria-label="Back" data-act="back" ${S.back.length?"":"disabled"}>‹</button><button aria-label="Forward" data-act="fwd" ${S.fwd.length?"":"disabled"}>›</button></div>
+  <label>Whose chats <select id="scope">${["The project's root","smart-ide","smart-ide · steward","git-ci-cd"].map(x=>`<option ${S.scope===x?"selected":""}>${x}</option>`).join("")}</select></label>
+  ${crumb()}<span style="flex:1"></span><button class="btn" data-act="new">New skill…</button></div>
+  ${studio()}</div></div>
+  ${S.dialog?`<div class="dialogwrap" data-act="cancel"><div class="dialog" role="dialog" aria-modal="true"><h2>${S.dialog} ${esc(S.sel)}?</h2><p>${S.dialog==="Delete"?"It is moved to Deleted for 30 days, where you can bring it back. Chats started after this don't get it.":S.dialog==="New skill"?"Blank, with a chat, or from a source. Each then opens its own page.":"One short choice, then the skill's page shows the result."}</p><div class="row"><button class="btn" data-act="cancel">Cancel</button><button class="btn ${S.dialog==="Delete"?"":"primary"}" style="${S.dialog==="Delete"?"color:var(--bad);border-color:var(--bad)":""}" data-act="cancel">${S.dialog==="New skill"?"Continue":S.dialog}</button></div></div></div>`:""}
+  <div class="switcher" role="toolbar" aria-label="Prototype switcher"><button data-act="prev" aria-label="Previous variant">←</button><span class="lbl">${VARIANTS[S.variant]}</span><button data-act="next" aria-label="Next variant">→</button>
+  <button class="tg ${S.narrow?"on":""}" data-act="narrow">${S.narrow?"Narrow tab":"Wide tab"}</button><span class="st">${esc(where)}${S.tab!=="overview"&&S.page==="library"?" · "+S.tab:""}</span></div>`;
+  const q=document.getElementById("q");if(q){q.oninput=e=>{S.q=e.target.value;const pos=e.target.selectionStart;render();const n=document.getElementById("q");n.focus();n.setSelectionRange(pos,pos)}}
+  const sc=document.getElementById("scope");if(sc)sc.onchange=e=>{S.scope=e.target.value;render()};
+  const pg=document.getElementById("pg");if(pg)pg.onchange=e=>{S.narrowDetail=false;go(e.target.value)};
+}
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-act],[data-page],[data-sel],[data-open],[data-tab],[data-chip],[data-dlg],[data-facet]");if(!t)return;
+  const a=t.dataset;
+  if(a.facet!==undefined){S.facet[a.facet]=t.checked;render();return}
+  if(a.page){S.narrowDetail=false;S.drawer=false;go(a.page);return}
+  if(a.sel){if(S.variant==="b")S.drawer=true;if(S.narrow)S.narrowDetail=true;go("library",a.sel);return}
+  if(a.open){S.narrowDetail=S.narrow;S.drawer=S.variant==="b";go("library",a.open);return}
+  if(a.tab){S.tab=a.tab;render();return}
+  if(a.chip){S.chip=a.chip;render();return}
+  if(a.dlg){S.dialog=a.dlg;S.menu=false;render();return}
+  const act=a.act;
+  if(act==="back"){if(S.narrow&&S.narrowDetail){S.narrowDetail=false;render();return}back()}
+  else if(act==="fwd")fwd();
+  else if(act==="menu"){S.menu=!S.menu;render()}
+  else if(act==="studio"){S.narrowDetail=false;S.drawer=false;go("library")}
+  else if(act==="new"){S.dialog="New skill";render()}
+  else if(act==="cancel"){if(e.target===t||t.tagName==="BUTTON"){S.dialog=null;render()}}
+  else if(act==="close"){S.drawer=false;render()}
+  else if(act==="prev"||act==="next"){const ks=Object.keys(VARIANTS);S.variant=ks[(ks.indexOf(S.variant)+(act==="next"?1:ks.length-1))%ks.length];S.drawer=false;try{history.replaceState(null,"","#"+S.variant)}catch(_){}render()}
+  else if(act==="narrow"){S.narrow=!S.narrow;S.narrowDetail=false;render()}
+});
+document.addEventListener("keydown",e=>{
+  const typing=e.target.closest&&e.target.closest("input,textarea,select,[contenteditable]");
+  if((e.metaKey||e.ctrlKey)&&e.key==="["){e.preventDefault();back();return}
+  if((e.metaKey||e.ctrlKey)&&e.key==="]"){e.preventDefault();fwd();return}
+  if(e.key==="Escape"){S.dialog=null;S.menu=false;S.drawer=false;render();return}
+  if(typing)return;
+  if(e.key==="ArrowLeft"||e.key==="ArrowRight"){const ks=Object.keys(VARIANTS);S.variant=ks[(ks.indexOf(S.variant)+(e.key==="ArrowRight"?1:ks.length-1))%ks.length];S.drawer=false;try{history.replaceState(null,"","#"+S.variant)}catch(_){}render()}
+  if(e.key==="Enter"&&e.target.dataset&&(e.target.dataset.sel||e.target.dataset.open))e.target.click();
+});
+render();
+</script>
