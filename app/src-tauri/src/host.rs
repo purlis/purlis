@@ -81,6 +81,10 @@ pub struct Opening {
     /// `run.started` under. The session host is handed it with the start, so its list and the
     /// program's end name it (#2172).
     pub run: Option<String>,
+    /// Whether it ends with this window (#3274): a grade's chat (SK-16), which only the window
+    /// that started it watches. A session host ends it as soon as this window's link to it ends
+    /// without a quit, rather than keeping it for the window to come back to (1.42).
+    pub ends_with_its_window: bool,
 }
 
 /// A shell with nothing set, for fixtures (#2453): no program, the smallest terminal, nothing
@@ -106,6 +110,7 @@ impl Default for Opening {
             handed: purlis_core::profilesignin::Handed::default(),
             confinement: None,
             run: None,
+            ends_with_its_window: false,
         }
     }
 }

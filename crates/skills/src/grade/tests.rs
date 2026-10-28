@@ -546,3 +546,40 @@ fn a_limit_on_no_cost_never_counts_what_a_chat_said() {
     assert_eq!(report.ended, GradeEnd::Whole);
     assert_eq!(report.counted_usd, None);
 }
+
+/// #3273: what a chat the person stopped spent is counted, though it is no run.
+#[test]
+fn a_stopped_chats_spend_is_counted_though_it_is_no_run() {
+    struct StoppedSecond(usize);
+    impl Chats for StoppedSecond {
+        fn run(&mut self, _: &RunChat, _: Option<u64>) -> ChatRan {
+            self.0 += 1;
+            ChatRan {
+                chat: Some(format!("chat-{}", self.0)),
+                started: Vec::new(),
+                tokens: Some(700),
+                cost_usd: Some(0.07),
+                ms: 1000,
+                end: if self.0 == 2 {
+                    ChatEnd::Cancelled
+                } else {
+                    ChatEnd::Turn
+                },
+            }
+        }
+        fn cancelled(&self) -> bool {
+            false
+        }
+    }
+    let mut host = StoppedSecond(0);
+    let report = grade(
+        &request(),
+        &mut host,
+        Some(limited(200_000, 50.0, None, 75.0)),
+    );
+    assert_eq!(report.ended, GradeEnd::Cancelled);
+    assert_eq!(report.spent_tokens, Some(1400), "both chats' tokens");
+    assert!((report.spent_usd.unwrap() - 0.14).abs() < 1e-9);
+    let runs: u32 = report.arms.iter().map(|arm| arm.chats).sum();
+    assert_eq!(runs, 1, "the stopped chat is no run");
+}

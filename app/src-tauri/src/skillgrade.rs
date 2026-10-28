@@ -75,13 +75,22 @@ pub struct GradeLeftOut {
     pub why: String,
 }
 
-/// What a grade's chats spent last time, worked out for this one.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Type)]
+/// What a grade's chats spent before, worked out for this one (`grades::Estimate`): both
+/// figures are `None` where that grade's chats did not say what they spent.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct GradeEstimate {
     pub tokens: Option<f64>,
     pub cost_usd: Option<f64>,
-    /// The chats of the grade it is worked out from.
+    /// The chats the grade it is worked out from asked for: none where none ran.
     pub chats_then: u32,
+    /// That grade: when it ran, and the profile and the harness its chats ran on.
+    pub ts: String,
+    pub profile: Option<String>,
+    pub harness: Option<String>,
+    /// The model its chats reported (SK-60): a grade on another model spends otherwise.
+    pub model: Option<String>,
+    /// Whether it ran on the profile this grade runs on, or `None` where that is not known.
+    pub same_profile: Option<bool>,
 }
 
 /// **The price a grade's dollar limit is worked out at** (`grades::price`), as the plan says it.
@@ -121,6 +130,8 @@ pub struct SkillGradePlan {
     pub outcome_evals: u32,
     pub outcomes_refused: Option<String>,
     pub estimate: Option<GradeEstimate>,
+    /// What the grade record left out as it was read: rows skipped, files not read.
+    pub record_said: Option<String>,
     /// The grade of this skill running now, where one is.
     pub running: Option<String>,
     /// The tokens a grade may spend before it stops, and whether this machine set it.
@@ -279,11 +290,20 @@ impl SkillGradePlan {
                 .outcomes
                 .refused()
                 .map(purlis_core::skills::grade::Refused::in_window),
-            estimate: planned.estimate.map(|estimate| GradeEstimate {
+            estimate: planned.estimate.as_ref().map(|estimate| GradeEstimate {
                 tokens: estimate.tokens.map(|tokens| tokens as f64),
                 cost_usd: estimate.cost_usd,
                 chats_then: estimate.chats_then,
+                ts: estimate.ts.clone(),
+                profile: estimate.profile.clone(),
+                harness: estimate
+                    .harness
+                    .as_deref()
+                    .map(purlis_core::skilluse::harness_title),
+                model: estimate.model.clone(),
+                same_profile: estimate.same_profile,
             }),
+            record_said: planned.record_said.clone(),
             running,
             token_cap: planned.cap.tokens as f64,
             cost_cap_usd: planned.cap.cost_usd(&priced),
@@ -434,8 +454,9 @@ pub(crate) async fn skill_grade_plan(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading what a grade runs", move || {
         flag_on()?;
-        let planned = grades::planned(held.root(), &(&level).into(), &skill)?;
         let on = chats_on(held.root(), profile, model);
+        let planned =
+            grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await
@@ -464,7 +485,8 @@ pub(crate) async fn skill_grade_start(
         flag_on()?;
         let level: Level = (&level).into();
         let root = held.root().to_path_buf();
-        let planned = grades::planned(&root, &level, &skill)?;
+        // The estimate is the plan's to show: a start needs none of it.
+        let planned = grades::planned(&root, &level, &skill, None)?;
         // What runs is what the plan showed (the review of #3229): the tests, the skill's files
         // and what its folder holds, read once here and laid out from this one copy.
         if planned.consent.as_deref() != Some(consent.as_str()) {
@@ -688,8 +710,9 @@ pub(crate) async fn skill_grade_set_cap(
             );
         }
         grades::cap::set_token_cap(held.root(), tokens as u64)?;
-        let planned = grades::planned(held.root(), &(&level).into(), &skill)?;
         let on = chats_on(held.root(), profile, model);
+        let planned =
+            grades::planned(held.root(), &(&level).into(), &skill, on.profile.as_deref())?;
         Ok(SkillGradePlan::of(&planned, running_of(&plane, &skill), on))
     })
     .await

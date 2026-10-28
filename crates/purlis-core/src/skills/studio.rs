@@ -361,10 +361,16 @@ impl StudioPanel for GradesPanel<'_> {
         let Some(level) = self.level.or(first.as_ref()) else {
             return Ok(grades_blocks(&[], skill));
         };
-        Ok(grades_blocks(
-            &super::grades::grades_of(self.plane, skill, Some(level)),
-            skill,
-        ))
+        let read = super::grades::read(self.plane, skill, Some(level));
+        let mut blocks = grades_blocks(&read.grades, skill);
+        // What the record left out is said, never dropped unseen (#3273).
+        if let Some(said) = read.said() {
+            blocks.push(Block::Note {
+                text: said,
+                tone: Tone::Trouble,
+            });
+        }
+        Ok(blocks)
     }
 }
 

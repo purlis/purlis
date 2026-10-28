@@ -27,6 +27,7 @@ function plan(over: Partial<SkillGradePlan> = {}): SkillGradePlan {
     outcome_evals: 1,
     outcomes_refused: null,
     estimate: null,
+    record_said: null,
     running: null,
     token_cap: 200000,
     cost_cap_usd: 15,
@@ -205,12 +206,57 @@ describe("Grade, cost first", () => {
   });
 
   it("says what the last grade spent per chat, and never a figure it did not measure", () => {
-    expect(costSaid(plan({ estimate: { tokens: 120000, cost_usd: 1.2, chats_then: 6 } }))).toBe(
-      "From its last grade, of 6 chats, this one should spend about 120,000 tokens, about $1.20.",
+    const from = {
+      ts: "2026-10-25T10:00:00+00:00",
+      profile: "work",
+      harness: "Claude Code",
+      model: null as string | null,
+      same_profile: true as boolean | null,
+    };
+    expect(
+      costSaid(plan({ estimate: { tokens: 120000, cost_usd: 1.2, chats_then: 6, ...from } })),
+    ).toBe(
+      "From its grade on work (Claude Code), 2026-10-25, of 6 chats, this one should spend about 120,000 tokens, about $1.20.",
     );
-    expect(costSaid(plan({ estimate: { tokens: null, cost_usd: null, chats_then: 6 } }))).toContain(
-      "cannot say yet",
+    expect(
+      costSaid(
+        plan({
+          estimate: { tokens: 6000, cost_usd: null, chats_then: 3, ...from, same_profile: false },
+        }),
+      ),
+    ).toContain("From its grade on another profile, work (Claude Code)");
+    // SK-60: the model its chats reported is named, as another model spends otherwise.
+    expect(
+      costSaid(
+        plan({
+          estimate: {
+            tokens: 6000,
+            cost_usd: null,
+            chats_then: 3,
+            ...from,
+            model: "claude-haiku-4-5",
+          },
+        }),
+      ),
+    ).toContain("From its grade on work (Claude Code, claude-haiku-4-5)");
+    // #3273: graded, and its chats said nothing of what they spent: the cost is not known.
+    const unknown = costSaid(
+      plan({ estimate: { tokens: null, cost_usd: null, chats_then: 6, ...from } }),
     );
+    expect(unknown).toContain("did not say what its chats spent");
+    expect(unknown).not.toContain("not been graded");
+    expect(costSaid(plan())).toContain("has not been graded here before");
+    expect(
+      costSaid(
+        plan({
+          estimate: { tokens: null, cost_usd: null, chats_then: 6, ...from, same_profile: null },
+        }),
+      ),
+    ).toContain("Its last grade on work (Claude Code)");
+    // A grade purlis stopped under before any chat ran: graded, and no chat to go by.
+    expect(
+      costSaid(plan({ estimate: { tokens: null, cost_usd: null, chats_then: 0, ...from } })),
+    ).toContain("ran no chat");
     expect(
       endedSaid({
         plane: "p",
@@ -253,6 +299,20 @@ describe("a grade's token cap", () => {
       tokens: 50000,
     });
     expect(asked.some((one) => one.cmd === "skill_grade_start")).toBe(false);
+  });
+
+  it("says what the grade record left out, beside the plan (#3273)", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "skill_grade_plan")
+        return plan({ record_said: "A row of the grade record was skipped." });
+      if (cmd === "start_options") return { profiles: [] };
+      return null;
+    });
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    expect((await screen.findByTestId("skill-grade-record")).textContent).toBe(
+      "A row of the grade record was skipped.",
+    );
   });
 
   it("says a grade stopped at its cap, and what it spent", () => {
