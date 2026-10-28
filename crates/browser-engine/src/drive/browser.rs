@@ -904,8 +904,6 @@ pub(crate) struct Inner {
     /// The pages that could not be read at the hand-back after DevTools: the agent's calls
     /// wait until each can be.
     devtools_unread: Mutex<HashSet<String>>,
-    /// Whether the engine's clipboard was emptied at the last hand-back after DevTools.
-    clipboard_emptied: Mutex<Option<bool>>,
     state: Mutex<State>,
     changed: Condvar,
     limits: Limits,
@@ -1044,7 +1042,6 @@ impl Browser {
             devtools_opened: AtomicBool::new(false),
             devtools_writes: Mutex::new(Vec::new()),
             devtools_unread: Mutex::new(HashSet::new()),
-            clipboard_emptied: Mutex::new(None),
             state: Mutex::new(State::default()),
             changed: Condvar::new(),
             limits: limits.clone(),

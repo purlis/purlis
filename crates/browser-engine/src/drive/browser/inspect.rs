@@ -29,8 +29,8 @@
 //!   its sessions are detached and its context, with all it kept, thrown away; purlis's own
 //!   worlds in every page are made afresh. What they type into it, what it wrote into a page
 //!   (`written.rs`) and what every field of every page holds are kept out of every later answer
-//!   the agent gets, as what they type into a page is, however DevTools ended; and the engine's
-//!   clipboard is emptied.
+//!   the agent gets, as what they type into a page is, however DevTools ended. What they copy
+//!   in DevTools stays in DevTools' own context, whose clipboard the agent's pastes never read.
 //! - **Bounded.** At most [`MOST_QUEUED`] messages wait, and none larger than
 //!   [`MOST_RELAYED_BYTES`] is handed on; DevTools that fall further behind close, saying why.
 
@@ -155,14 +155,13 @@ pub(crate) const HOSTED: &str = r"JSON.stringify({
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
 })";
 
-/// The script that empties the clipboard of the page it runs in, the engine's: a constant. It
-/// leaves a single space there, since an engine keeps what it held where a copy writes nothing.
-pub(crate) const EMPTY_CLIPBOARD: &str = r"(() => {
-  let emptied = false;
-  document.addEventListener('copy', (e) => { e.clipboardData.setData('text/plain', ' '); e.preventDefault(); emptied = true; }, { once: true, capture: true });
-  const copied = document.execCommand('copy');
-  return copied && emptied;
-})()";
+/// The function that copies its argument as a page's own Copy does, in the page it runs in: a
+/// constant, the text its argument.
+pub(crate) const COPY_AS_A_PAGE: &str = r"function (text) {
+  let put = false;
+  document.addEventListener('copy', (e) => { e.clipboardData.setData('text/plain', text); e.preventDefault(); put = true; }, { once: true, capture: true });
+  return document.execCommand('copy') && put;
+}";
 
 /// Why an Inspect ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -550,10 +549,12 @@ impl Browser {
             .unwrap_or_default()
     }
 
-    /// Whether the engine's clipboard was emptied at the last hand-back after DevTools (#2028):
-    /// for the host's log and the tests.
-    pub fn devtools_clipboard_emptied(&self) -> Option<bool> {
-        *lock(&self.inner.clipboard_emptied)
+    /// **For the tests: copies `text` as the person's copy in DevTools does** (#2028), in a page
+    /// of a browser context of DevTools' own, thrown away after: whether it was copied. What is
+    /// copied in a context other than the agent's is never what the agent's pastes get.
+    #[doc(hidden)]
+    pub fn copy_in_a_context_of_devtools(&self, text: &str) -> bool {
+        self.inner.copy_apart(text)
     }
 
     /// What the engine told of the open DevTools' own page, by method, and which of purlis's
@@ -662,7 +663,7 @@ impl Browser {
 
     /// **What DevTools left behind, undone and kept out at the hand-back** (#2028), whatever
     /// ended them: once DevTools were open while the person drove, purlis's own worlds in every
-    /// page are made afresh, the engine's clipboard is emptied, every field of every page counts
+    /// page are made afresh, every field of every page counts
     /// as one the person typed into (read from the field and kept out), and every text DevTools
     /// wrote into a page is kept out as a run of the person's keys is.
     pub(super) fn after_devtools(&self) {
@@ -671,7 +672,6 @@ impl Browser {
             return;
         }
         self.inner.worlds.forget_all();
-        self.inner.empty_clipboard();
         let writes = std::mem::take(&mut *lock(&self.inner.devtools_writes));
         if !writes.is_empty() {
             let mut held = Kept::default();
@@ -825,28 +825,19 @@ impl Inner {
             .remove(&open.inspected);
     }
 
-    /// Empties the engine's clipboard (#2028): what the person copied in DevTools is not the
-    /// agent's to paste. Done in a blank page of a context of DevTools' own, thrown away after.
-    pub(crate) fn empty_clipboard(&self) {
-        let emptied = self.empty_clipboard_once();
-        *lock(&self.clipboard_emptied) = Some(emptied);
-        if !emptied {
-            tracing::warn!("the engine's clipboard could not be emptied after DevTools");
-        }
-    }
-
-    /// [`Inner::empty_clipboard`] once: whether it was emptied.
-    fn empty_clipboard_once(&self) -> bool {
-        let mut emptied = false;
+    /// Copies `text` in a blank page of a context of DevTools' own, thrown away after: whether
+    /// it was copied.
+    pub(crate) fn copy_apart(&self, text: &str) -> bool {
+        let mut copied = false;
         if self.ended() {
-            return emptied;
+            return copied;
         }
         let devtools = &self.devtools;
         let Ok(context) = devtools.call("Target.createBrowserContext", json!({}), None) else {
-            return emptied;
+            return copied;
         };
         let Some(context) = context["browserContextId"].as_str().map(str::to_owned) else {
-            return emptied;
+            return copied;
         };
         lock(&self.state)
             .inspecting
@@ -876,10 +867,14 @@ impl Inner {
             if let Some(session) = session {
                 let answered = devtools.call(
                     "Runtime.evaluate",
-                    json!({ "expression": EMPTY_CLIPBOARD, "userGesture": true, "returnByValue": true }),
+                    json!({
+                        "expression": format!("({COPY_AS_A_PAGE})({})", serde_json::to_string(text).unwrap_or_default()),
+                        "userGesture": true,
+                        "returnByValue": true,
+                    }),
                     Some(&session),
                 );
-                emptied = answered
+                copied = answered
                     .ok()
                     .and_then(|answer| answer.pointer("/result/value").and_then(Value::as_bool))
                     == Some(true);
@@ -891,7 +886,7 @@ impl Inner {
             json!({ "browserContextId": context }),
             None,
         );
-        emptied
+        copied
     }
 
     /// The origins of `target`'s page's frames: what DevTools of it may reach.

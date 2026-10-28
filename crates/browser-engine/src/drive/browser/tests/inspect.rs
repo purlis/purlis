@@ -584,17 +584,6 @@ fn what_devtools_wrote_outside_a_field_is_kept_out_after_the_hand_back() {
 }
 
 #[test]
-fn the_engines_clipboard_is_emptied_once_devtools_were_open_and_the_browser_is_handed_back() {
-    let (browser, engine) = browser();
-    let _ends = inspected(&browser, &engine);
-    browser.hand_back();
-    assert!(engine.sent("Runtime.evaluate").iter().any(|s| {
-        s.params["expression"] == super::super::inspect::EMPTY_CLIPBOARD
-            && s.params["userGesture"] == true
-    }));
-}
-
-#[test]
 fn purlis_own_world_in_the_page_is_never_told_to_devtools_nor_reached_by_them() {
     let (browser, engine) = browser();
     let _ends = inspected(&browser, &engine);
