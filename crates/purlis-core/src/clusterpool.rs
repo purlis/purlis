@@ -656,7 +656,7 @@ pub fn checked_at(
         return Err(Refused::NotVouched(format!(
             "the cluster operator's statement about the runner of claim {}/{} no longer holds: \
              it has not been signed again, so purlis refused it; is the cluster operator \
-             running?",
+             running, or is this machine's clock ahead?",
             claimed.namespace, claimed.name
         )));
     }
