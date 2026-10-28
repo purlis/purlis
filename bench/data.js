@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793172737588,
+  "lastUpdate": 1793174269567,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27888,6 +27888,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0966785,
             "unit": "ms",
             "extra": "median of 5 runs: 101.751, 101.897, 102.097, 102.306, 102.409 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3a02bbdd98fae19c5c1a0f155a7fc7fe863d76c3",
+          "message": "tools/land: early stop on never-posting checks, paginated rules, merge-conflict drops (#3559) (#3590)\n\n* tools/land: give up early on a required check nothing will post; read every page of the rules (#3559)\n\nA required name that will never post (a job renamed while main still\nrequires its old name, or a run that went action_required after the\nrerun step) made `--watch` wait the full 120 minutes in silence. Now,\nonce the only checks left are required ones not posted yet and no run of\nthe head is still going, three polls running, it refuses and names them.\nEach change in what has not posted is printed while it waits.\n\nThe rules read now pages (`--paginate --slurp`), so a\nrequired_status_checks rule past the first 30 is not missed. A test pins\nthat a failed rules or protection read stops the tool with nothing\nenqueued (D-3539-3), and the requiredNames JSDoc reads \"from ... and\nfrom ...\".\n\nCloses #3559\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* tools/land: a merge-conflict drop says so and prints no older queue run's checks\n\nA drop for merge_conflict builds no merge group, so the newest group of\nthe pull request was one from an earlier time in the queue, and\n`--watch` printed that run's failing checks as if they were the cause.\nNow a conflict drop says it conflicts with main or an entry ahead of it,\nreads no queue run, and still exits 3. For every other drop, only a\ngroup created since this enqueue is read. The landing-a-pr skill says\nwhat to do on a conflict.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* tools/land: early refusal names a moved head, waits 5 minutes, and reads approval runs as completed\n\nReview follow-ups on #3590:\n- Before the early refusal, re-read the head. A push off the reviewed\n  sha (the baselines bot's) leaves the new head with nothing posted,\n  so the refusal now says the head moved and asks for it to be reviewed.\n- The early stop needs 5 minutes of wall time as well as three polls,\n  and says running it again is safe.\n- A run waiting on approval is completed with the conclusion\n  action_required; drop the dead status arm and fix the fixture.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T07:24:52Z",
+          "tree_id": "3fc29e31faa560c4407a5765b19af87d63061e7e",
+          "url": "https://github.com/purlis/purlis/commit/3a02bbdd98fae19c5c1a0f155a7fc7fe863d76c3"
+        },
+        "date": 1793174265142,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6701615000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.641, 0.649, 0.670, 0.684, 0.687 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.483945499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.407, 16.461, 16.484, 16.607, 16.670 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.063019,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.496, 101.783, 102.063, 102.618, 102.862 ms"
           }
         ]
       }
