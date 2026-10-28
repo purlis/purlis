@@ -552,9 +552,18 @@ fn a_router_s_answer_hides_what_it_names_each_with_its_own_line() {
         hidden.to_string(),
         "hidden by the router relevance: not relevant to this workspace"
     );
-    // Hidden, never left out, and named in the index.
+    // Hidden, never left out, and named in the index, which says why they are not listed.
     assert_eq!(set.effective.len(), 4);
-    assert!(set.index().expect("an index").text.contains("- `release`"));
+    let index = set.index().expect("an index").text;
+    assert!(index.contains("- `release`"), "{index}");
+    assert!(
+        index.contains("This chat's router left these skills out of its list."),
+        "{index}"
+    );
+    assert!(
+        !index.contains("more skills than its list holds"),
+        "{index}"
+    );
 }
 
 #[test]

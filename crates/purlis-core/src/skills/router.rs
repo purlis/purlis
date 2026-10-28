@@ -231,27 +231,43 @@ impl Routed {
         }
     }
 
-    /// The router's answer, applied to `set` within `budget` with `pins`, where it was taken and
-    /// still applies; else `set` routed by the built-in router.
+    /// **The router's answer, applied to `set`** within `budget` with `pins`, where it was taken:
+    /// each skill it hid that `set` still has for a router to hide, so one pinned or gone since
+    /// the chat's start is listed or gone as the set says, and the rest stay hidden. Else, or
+    /// where what is left of it leaves the list over the budget, `set` routed by the built-in
+    /// router.
     pub(crate) fn apply(&self, set: SkillSet, budget: Budget, pins: &[String]) -> SkillSet {
-        match &self.answer {
-            Some(hidden) => set
-                .clone()
-                .routed_by(
-                    Router::Extension(self.record.router.clone()),
-                    budget,
-                    pins,
-                    hidden,
-                )
-                .unwrap_or_else(|why| {
-                    tracing::warn!(
-                        "purlis: this chat's router's answer no longer fits its skills ({why}); \
-                         the built-in router's list is used"
-                    );
-                    set.routed(budget, pins)
-                }),
-            None => set.routed(budget, pins),
-        }
+        let Some(hidden) = &self.answer else {
+            return set.routed(budget, pins);
+        };
+        let still: std::collections::HashSet<String> = set
+            .candidates(budget, pins)
+            .skills
+            .into_iter()
+            .filter(|one| !one.pinned)
+            .map(|one| one.name)
+            .collect();
+        let hidden: Vec<(String, Line)> = hidden
+            .iter()
+            .filter(|(name, _)| still.contains(name))
+            .cloned()
+            .collect();
+        // Kept to fall back on: what is left of an answer can still leave the list over the
+        // budget where the set grew since the chat's start.
+        let fallback = set.clone();
+        set.routed_by(
+            Router::Extension(self.record.router.clone()),
+            budget,
+            pins,
+            &hidden,
+        )
+        .unwrap_or_else(|why| {
+            tracing::warn!(
+                "purlis: this chat's router's answer no longer fits its skills ({why}); the \
+                 built-in router's list is used"
+            );
+            fallback.routed(budget, pins)
+        })
     }
 }
 

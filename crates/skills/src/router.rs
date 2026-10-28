@@ -353,11 +353,18 @@ impl SkillSet {
             .iter()
             .find(|e| e.route != Route::Own)
             .map_or_else(|| INDEX.to_owned(), |e| e.route.built_in_name(INDEX));
+        // Why they are not in the list: the budget, or the router a chat chose (SK-15b).
+        let why = match &routing.router {
+            Router::BuiltIn => {
+                "This chat has more skills than its list holds, so these are not in it."
+            }
+            Router::Extension(_) => "This chat's router left these skills out of its list.",
+        };
         let mut text = format!(
             "---\nname: {name}\ndescription: {INDEX_DESCRIPTION}\n---\n\n# This chat's other \
-             skills\n\nThis chat has more skills than its list holds, so these are not in it. \
-             When a request matches one, load it with purlis's `skill_load` tool by its name, \
-             then follow what it says. `skill_find` finds one by what it does.\n\n"
+             skills\n\n{why} When a request matches one, load it with purlis's `skill_load` \
+             tool by its name, then follow what it says. `skill_find` finds one by what it \
+             does.\n\n"
         );
         for e in hidden {
             text.push_str(&format!(

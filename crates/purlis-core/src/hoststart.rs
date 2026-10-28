@@ -694,10 +694,6 @@ fn persona_of(env: &[(String, String)], root: &Path) -> Option<String> {
         .or_else(|| crate::start::persona_for_a_new_chat(root))
 }
 
-/// **Writes the run `starting` begins** in the host's event log, as the window writes a run of
-/// its own: under the start's chat and run, with what the start decided, and who started it.
-/// A run that is not written is said in the host's log, as the window says one, and the chat
-/// still starts.
 /// Writes chat `starting`'s routing `record` in the host's event log (SK-15b), after its run's
 /// `run.started`.
 fn routed_recorded(
@@ -715,6 +711,10 @@ fn routed_recorded(
         .and_then(|entry| beside.record(entry))
 }
 
+/// **Writes the run `starting` begins** in the host's event log, as the window writes a run of
+/// its own: under the start's chat and run, with what the start decided, and who started it.
+/// A run that is not written is said in the host's log, as the window says one, and the chat
+/// still starts.
 fn begun(
     starting: &Starting<'_>,
     ready: &crate::start::Ready,

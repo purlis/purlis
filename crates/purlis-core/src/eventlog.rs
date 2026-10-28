@@ -1611,7 +1611,8 @@ pub struct Recorder {
     prompted: HashMap<(PathBuf, u32), crate::skillspan::Prompted>,
     /// The routing record of each chat run whose start asked a router extension, by the run: its
     /// id, and whether it fell back, which every skill run the chat opens names
-    /// ([`Recorder::skill_routed`], SK-15b). Held up to [`PROMPTED_HELD`] runs.
+    /// ([`Recorder::skill_routed`], SK-15b), a clear's run carrying its cleared run's. Held up to
+    /// [`ROUTINGS_HELD`] runs, the oldest let go of first.
     routings: HashMap<String, (String, bool)>,
     /// Every run this writer began in the log, ended or not, up to [`RUNS_HELD`]: an id no run
     /// a clear begins may take (#3394).
@@ -1636,6 +1637,10 @@ const PROMPTED_HELD: usize = 256;
 
 /// The kind of a chat's routing record (SK-15b).
 pub const ROUTED: &str = "skill.routed";
+
+/// The most chat runs whose routing record a writer holds for their skill runs to name: more
+/// chats than one machine runs at once, so only a run long over is ever let go of.
+const ROUTINGS_HELD: usize = 1024;
 
 /// One end of a tool call, heard and waiting for the other.
 #[derive(Debug, Clone, Copy)]
@@ -2593,8 +2598,9 @@ impl Recorder {
     }
 
     /// **Chat `number` of `plane` was routed at its start by a router extension** (SK-15b, ADR
-    /// 0102 §6): its routing record, `skill.routed`, under the chat's run, which every skill run
-    /// it opens names from now on.
+    /// 0102 §6), or again as it was reattached: its routing record, `skill.routed`, under the
+    /// chat's run, which every skill run it opens names from now on. Held with a held run, and
+    /// dropped for a start taken back.
     pub fn skill_routed(
         &mut self,
         plane: &Path,
@@ -2608,11 +2614,26 @@ impl Recorder {
             who.held_routed = Some(record.clone());
             return Ok(None);
         }
+        // A start put aside before its record came ran no chat: it has no routing.
+        if self.was_taken_back(plane, number) {
+            return Ok(None);
+        }
         let Some(who) = self.identity(plane, number)? else {
-            let body = serde_json::to_value(record).map_err(io::Error::other)?;
-            return self.of_no_run(number, ROUTED, body).map(Some);
+            return Ok(None);
         };
         self.routed_under(&who, record).map(Some)
+    }
+
+    /// Holds that every skill run of chat run `run` names `routing` from now on, letting go of
+    /// the oldest run held where [`ROUTINGS_HELD`] are (by its id's time): never every one.
+    fn keep_routing(&mut self, run: &str, routing: (String, bool)) {
+        if self.routings.len() >= ROUTINGS_HELD
+            && !self.routings.contains_key(run)
+            && let Some(oldest) = self.routings.keys().min().cloned()
+        {
+            self.routings.remove(&oldest);
+        }
+        self.routings.insert(run.to_owned(), routing);
     }
 
     /// Writes `record` under `who`'s run, which every skill run it opens names from now on.
@@ -2622,11 +2643,8 @@ impl Recorder {
         record: &crate::skills::router::Record,
     ) -> io::Result<Event> {
         let body = serde_json::to_value(record).map_err(io::Error::other)?;
-        if self.routings.len() >= PROMPTED_HELD {
-            self.routings.clear();
-        }
-        self.routings.insert(
-            who.run.clone(),
+        self.keep_routing(
+            &who.run,
             (record.routing.clone(), record.fell_back.is_some()),
         );
         self.write(Some(&who.chat), Some(&who.run), None, ROUTED, body)
@@ -2957,6 +2975,11 @@ impl Recorder {
                 parent: None,
             }) {
                 self.close_skills(plane, &cleared, purlis_skills::runs::Ended::Session)?;
+                // A clear keeps the chat's listing, so the run it begins is routed as the
+                // cleared one was (SK-15b).
+                if let Some(routing) = self.routings.get(&cleared.run).cloned() {
+                    self.keep_routing(&who.run, routing);
+                }
             }
         }
         let body = who.attributes.body(cause, &self.log.device);

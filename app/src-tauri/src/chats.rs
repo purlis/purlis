@@ -1296,7 +1296,8 @@ impl Chats {
     }
 
     /// Calls `tell` with each chat's routing record as its run begins, where its start asked a
-    /// router extension (SK-15b): after the run's own `run.started` is told.
+    /// router extension (SK-15b): after the run's own `run.started` is told; and again for a
+    /// chat reattached, whose router its start asked again.
     pub fn when_a_chat_is_routed(&self, tell: Routed) {
         *lock(&self.routed) = Some(tell);
     }
@@ -4053,9 +4054,10 @@ impl Chats {
                 plane_skills,
             },
         );
-        // Its routing record, after its run began (SK-15b): a chat reattached began none here.
-        if !reattaching
-            && !on_the_runner
+        // Its routing record, after its run began (SK-15b). A chat reattached began no run here,
+        // and its router was asked again as its start was read again (#3578): that answer is
+        // what its skills are routed by from now on, so it is recorded under the run it is in.
+        if !on_the_runner
             && let Some(routed) = skills.routed.as_ref()
             && let Some(tell) = lock(&self.routed).as_ref()
         {

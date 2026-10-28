@@ -508,3 +508,28 @@ fn a_record_holds_skill_names_and_lines_and_nothing_of_a_description() {
         ["error", "fell_back", "hidden", "ms", "router", "routing"]
     );
 }
+
+#[test]
+fn a_skill_pinned_since_the_chat_s_start_is_listed_and_the_rest_of_the_answer_stays() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "relevance" }));
+    let fake = Fake::hiding(&["skill-01", "skill-02"]);
+    let skills = started(root, &bundle, None, &as_asker(&fake));
+
+    workspace_skills(
+        root,
+        serde_json::json!({ "router": "relevance", "pinned": ["skill-01"] }),
+    );
+
+    let hidden: Vec<String> = hidden_in_use_skill(&running(root, &bundle, None, &skills))
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(
+        hidden,
+        ["skill-02"],
+        "a pin is never hidden, and the router's other hide holds"
+    );
+    assert_eq!(fake.asked().len(), 1, "the router is not asked again");
+}
