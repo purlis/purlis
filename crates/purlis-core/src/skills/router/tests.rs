@@ -667,3 +667,65 @@ fn nothing_kept_is_applied_where_the_plane_s_skills_do_not_reach_the_reattached_
     .routed_as(kept, None);
     assert_eq!(unknown.routed, None);
 }
+
+/// The arm of a router's grade (SK-15e) holding `skills` of the plane at `root`, routed by
+/// `router` or by the built-in router, and the skills of its chat as its start reads them.
+fn arm(root: &Path, bundle: &Path, router: Option<&str>, asker: &Arc<dyn AskRouter>) -> ChatSkills {
+    let level = crate::skills::verbs::Level::project();
+    let skills: Vec<_> = ["skill-00", "skill-01", "skill-02"]
+        .into_iter()
+        .map(|name| crate::skills::verbs::drafts::snapshot(root, &level, name).unwrap())
+        .collect();
+    let laid =
+        crate::skills::verbs::drafts::lay_out_library_arm(root, &skills, router, &[]).unwrap();
+    ChatSkills::read(
+        true,
+        root,
+        Some(Harness::ClaudeCode),
+        Some(&laid.piece),
+        None,
+    )
+    .routed_by(Some(bundle), Some(Harness::ClaudeCode), Some(asker))
+}
+
+#[test]
+fn a_router_s_grade_s_arm_is_routed_by_the_router_it_grades_3233() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    // Whatever the plane chooses, the arm is routed by the router under grade.
+    workspace_skills(root, serde_json::json!({ "router": "another" }));
+    let fake = Fake::hiding(&["skill-02"]);
+
+    let graded = arm(root, &bundle, Some("relevance"), &as_asker(&fake));
+
+    assert!(graded.tried);
+    assert_eq!(graded.arm_router.as_deref(), Some("relevance"));
+    let routed = graded.routed.as_ref().expect("asked");
+    assert_eq!(routed.record.router, "relevance");
+    assert_eq!(routed.record.hidden.len(), 1);
+    assert_eq!(fake.asked().len(), 1);
+    assert_eq!(fake.asked()[0].0, "relevance");
+    // The router is asked about the library the arm holds, and nothing of the chat.
+    let asked = &fake.asked()[0].1;
+    let names: Vec<&str> = asked["skills"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|one| one["name"].as_str())
+        .collect();
+    assert_eq!(names, ["skill-00", "skill-01", "skill-02"]);
+}
+
+#[test]
+fn the_built_in_router_s_arm_asks_nothing_3233() {
+    let (tmp, bundle) = a_plane_of(3);
+    let root = tmp.path();
+    let fake = Fake::hiding(&["skill-02"]);
+
+    let baseline = arm(root, &bundle, None, &as_asker(&fake));
+
+    assert!(baseline.tried);
+    assert_eq!(baseline.arm_router, None);
+    assert_eq!(baseline.routed, None);
+    assert!(fake.asked().is_empty());
+}

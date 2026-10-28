@@ -211,6 +211,10 @@ pub struct ChatSkills {
     /// What its router extension made of its set at its start (SK-15b, [`Self::routed_by`]):
     /// `None` for a chat routed by the built-in router, which is asked nothing.
     pub routed: Option<crate::skills::router::Routed>,
+    /// The router a router's grade's arm is routed by (SK-15e,
+    /// [`crate::skills::verbs::drafts::arm_router`]): what a Try it's scratch chat of that arm is
+    /// routed by in place of a workspace's or persona's choice. `None` for every other chat.
+    pub arm_router: Option<String>,
 }
 
 impl ChatSkills {
@@ -243,6 +247,10 @@ impl ChatSkills {
             }
             _ => Vec::new(),
         };
+        // A router's grade's arm is routed by the router it grades (SK-15e).
+        let arm_router = cwd
+            .filter(|_| scope.tried)
+            .and_then(|cwd| crate::skills::verbs::drafts::arm_router(root, cwd));
         ChatSkills {
             on,
             root: scope.root,
@@ -251,6 +259,7 @@ impl ChatSkills {
             persona,
             repo,
             routed: None,
+            arm_router,
         }
     }
 
@@ -259,7 +268,8 @@ impl ChatSkills {
     /// [`crate::extension::studio::ROUTER_DEADLINE`], which of the set's skills to hide, and the
     /// answer or the built-in router's fallback is kept as [`Self::routed`], what every later
     /// routing of the chat's set applies. Nothing is asked where the plane's skills do not reach
-    /// the chat, for a Try it's scratch chat, or where the built-in router is the one chosen.
+    /// the chat, for a Try it's scratch chat, or where the built-in router is the one chosen. A
+    /// router's grade's arm is routed by the router it grades ([`Self::arm_router`]).
     #[must_use]
     pub fn routed_by(
         self,
@@ -267,14 +277,19 @@ impl ChatSkills {
         harness: Option<Harness>,
         asker: Option<&std::sync::Arc<dyn crate::skills::router::AskRouter>>,
     ) -> Self {
-        let Some(harness) = harness.filter(|_| self.on && !self.tried) else {
+        let Some(harness) =
+            harness.filter(|_| self.on && (!self.tried || self.arm_router.is_some()))
+        else {
             return self;
         };
-        let chosen = crate::skills::router::chosen(
-            &self.root,
-            self.workspace.as_deref(),
-            self.persona.as_deref(),
-        );
+        let chosen = match &self.arm_router {
+            Some(id) => Ok(crate::skills::router::Chosen::Extension(id.clone())),
+            None => crate::skills::router::chosen(
+                &self.root,
+                self.workspace.as_deref(),
+                self.persona.as_deref(),
+            ),
+        };
         if chosen == Ok(crate::skills::router::Chosen::BuiltIn) {
             return self;
         }

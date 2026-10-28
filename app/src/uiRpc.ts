@@ -1041,6 +1041,12 @@ export const commands = {
 	 */
 	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
 	skillGradeSetCap: __WINDOW_ONLY_RESULT,
+	/**
+	 *  **What grading the router the studio's workspace or persona chose would run**, before
+	 *  anything runs.
+	 */
+	routerGradePlan: (plane: PlaneId, workspace: string | null, persona: string | null) => typedError<RouterGradePlan, string>(__TAURI_INVOKE("router_grade_plan", { plane, workspace, persona })),
+	routerGradeStart: __WINDOW_ONLY_RESULT,
 	/**  **The opt-in of the copy of `skill` at `level`**, where it is on. */
 	skillGradeAfterEdit: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<{
 	profile: string,
@@ -2099,6 +2105,8 @@ export const ENGINE_DOWNLOAD = "engine-download" as const;
 export const ENGINE_SANDBOX_NEEDED = "engine-sandbox-needed" as const;
 
 export const PERSONA_SCOPE_KEY = "persona/" as const;
+
+export const ROUTER_GRADE = "router-grade" as const;
 
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
@@ -8796,6 +8804,58 @@ export type RiskMark = {
 	said: string,
 };
 
+/**  **What grading a router would run, before anything runs** (decision 22). */
+export type RouterGradePlan = {
+	router: string,
+	/**  The skills each chat is handed: the library a chat of this workspace or persona gets. */
+	library: number,
+	skills: RouterGradeSkill[],
+	/**  The chats it runs in all, each one turn, and how many times each test runs in each arm. */
+	chats: number,
+	runs: number,
+	chat_minutes: number,
+	/**  The commit the library is, where every copy is committed: what the grade is recorded on. */
+	commit: string | null,
+	token_cap: number | null,
+	cap_set_here: boolean,
+	cost_cap_usd: number | null,
+	priced: GradePrice,
+	/**
+	 *  The profile its chats run on (the project's default), the sandbox they run in there, or
+	 *  why no grade can run on it.
+	 */
+	profile: string | null,
+	sandbox: string | null,
+	refused: string | null,
+	/**  A grade running in this project now, where one is: a skill's or a router's. */
+	running: string | null,
+	consent: string | null,
+};
+
+/**  **One skill of the library a router's grade grades**, as its plan shows it. */
+export type RouterGradeSkill = {
+	skill: string,
+	/**  Its trigger tests that run. */
+	tests: number,
+	left_out: GradeLeftOut[],
+	/**  Why its trigger tests could not be read, where they were not. */
+	refused: string | null,
+};
+
+/**  **One step of a router's grade**, as the window is told it. */
+export type RouterGradeStep = {
+	plane: PlaneId,
+	router: string,
+	grade: string,
+	ran: number,
+	of: number,
+	tokens: number | null,
+	cap: number | null,
+	ended: GradeEnded | null,
+	/**  What the window says of its end, where it says more than how it ended. */
+	said: string | null,
+};
+
 /**  One action an extension's row offers, as the window draws its button (charter-app#341). */
 export type RowAction = {
 	id: string,
@@ -9331,7 +9391,11 @@ export type Scope =
 "menu";
 
 /**  **A grade's arm, as its scorecard says it.** */
-export type ScoredArm = "with" | "without" | "previous";
+export type ScoredArm = "with" | "without" | "previous" | 
+/**  The library, routed by the router under grade (SK-15e). */
+"router" | 
+/**  The library, routed by the built-in router: a router's grade's baseline. */
+"built-in-router";
 
 /**
  *  **One chat of a grade's trigger test**, as its scorecard offers it (SK-59, #3239): its id, and
@@ -10785,6 +10849,12 @@ export type StudioRouter = {
 	 *  that went: its timing, and whether it fell back on the built-in router.
 	 */
 	chats: StudioRouted[],
+	/**
+	 *  **The router's newest grade** (SK-15e, #3233), in a sentence: how many of the library's
+	 *  trigger tests pass with it and with the built-in router, and the library's commit it was
+	 *  graded on. Null where it has none, and for the built-in router.
+	 */
+	grade: string | null,
 };
 
 /**

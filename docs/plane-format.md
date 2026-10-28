@@ -253,6 +253,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`personas/_dispatch/<YYYY-MM>.<host>.backfill.jsonl`](#personas_dispatchyyyy-mmhostbackfilljsonl)
   - [`personas/_skills/<YYYY-MM>.<device>.jsonl`](#personas_skillsyyyy-mmdevicejsonl)
   - [`personas/_grades/<YYYY-MM>.<device>.jsonl`](#personas_gradesyyyy-mmdevicejsonl)
+  - [`personas/_grades/routers/<YYYY-MM>.<device>.jsonl`](#personas_gradesroutersyyyy-mmdevicejsonl)
   - [`.claude/agents/<name>.md` (generated sub-agent)](#claudeagentsnamemd-generated-sub-agent)
   - [`.charter/persona-state/ephemeral/<session>/<name|_shared>/<slug>.md`](#charterpersona-stateephemeralsessionname_sharedslugmd)
   - [`.charter/persona-state/trace/<session>.jsonl`](#charterpersona-statetracesessionjsonl)
@@ -343,6 +344,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`<state>/skill-grades/<YYYY-MM>.jsonl`](#stateskill-gradesyyyy-mmjsonl)
+  - [`<state>/skill-grades/routers/<YYYY-MM>.jsonl`](#stateskill-gradesroutersyyyy-mmjsonl)
   - [`<state>/skill-grade-after-edit.json`](#stateskill-grade-after-editjson)
   - [`<state>/grades-under-way/<grade>.json`](#stategrades-under-waygradejson)
   - [`<state>/grades-under-way.lock`](#stategrades-under-waylock)
@@ -3839,6 +3841,38 @@ An end row, never a pass or a fail:
 - **Git:** committed. Nothing commits it by itself: the next save does.
 - **Encoding details:** path `personas/_grades/{%Y-%m}.{device}.jsonl`, `<device>` named as the
   skill log's is; keys sorted, `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`).
+
+### `personas/_grades/routers/<YYYY-MM>.<device>.jsonl`
+
+- **Format:** JSON Lines, append-only, one row per **router's grade** (SK-15e, #3233, ADR 0102
+  §8, as amended 2026-10-28): the trigger tests of a library, run with the router in place and
+  with the built-in router.
+- **Status:** **experimental**, behind the `skill-studio` flag; written by the app when a
+  router's grade ends, whole or stopped (`grades::routers::record`), and read by the Skill
+  studio's router line, which says the newest grade of the router chosen there, in that scope
+  (`grades::routers::grades_of`).
+- **Tier:** Plane — committed, beside the skills' eval record, so a teammate sees how the router
+  their workspace chose did on the library they pulled.
+- **What a row holds:** `v` (1); `grade`, the grade's id; `router`, the extension's id;
+  `workspace` and `persona`, the scope that chose it (null for none); `commit`, the library's
+  commit: the plane's `HEAD` where every copy of the library was committed there when the grade
+  was planned, else null; `library`, every copy each chat was handed, `{skill, level, tree,
+  commit}` as a skill's grade records its copy; `harness`, `profile`, `ts`, `runs` and `spent`,
+  as a skill's grade's; `model` where a chat said one; and `report`, `{grader, router, skills,
+  ended, not_started, cap, spent_tokens, cost_cap_usd, spent_usd, priced}`, where `skills` is each
+  graded skill's `{skill, report}`, its report a skill's grade report (ADR 0105 §1) with the arms
+  `router` and `built-in-router`, in the order they ran, and absent for a skill the grade never
+  reached.
+- **Read:** as the skills' eval record is (a folder of its own holding at most 600 names, each
+  file through no link, at most 16 MiB, each line at most 1 MiB), the newest 50 grades of the
+  router; a row is skipped where it says more than purlis writes: a router that is not an
+  extension's id, or not the report's; a name that is not plain; a commit that is no whole hex
+  id; a tree that is neither one nor `uncommitted`; more than 200 copies or skills; or a skill's
+  report that does not hold together as a skill's grade's must.
+- **Git:** committed. Nothing commits it by itself: the next save does.
+- **Encoding details:** path `personas/_grades/routers/{%Y-%m}.{device}.jsonl`; keys sorted,
+  `\n`, `O_APPEND` through no link, `0o644` (`dispatch::append`). The skills' eval record never
+  reads this folder.
 ---
 
 ### `.claude/agents/<name>.md` (generated sub-agent)
@@ -7307,6 +7341,13 @@ rewritten.
 - **Tier:** Clone state — this machine's own; nothing rebuilds it.
 - **Git:** gitignored, under the state directory.
 
+### `<state>/skill-grades/routers/<YYYY-MM>.jsonl`
+- **Format:** JSON Lines, append-only: the rows of
+  [`personas/_grades/routers/`](#personas_gradesroutersyyyy-mmdevicejsonl) for a router's grade
+  whose library held a copy that is this machine's alone (SK-15e, #3233). Written `0600` through
+  no link (`grades::routers::record`), read beside the committed record, held to the same limits.
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state — this machine's own; nothing rebuilds it.
 ### `<state>/skill-grade-after-edit.json`
 - **Format:** one JSON object (SK-58, #3238; ADR 0105 as amended 2026-10-28): `v` (1) and
   `skills`, each copy the person turned **grading after each edit** on for, keyed by its level's
@@ -7402,6 +7443,13 @@ rewritten.
   without its `evals/` folder, or, for the arm without the skill, no `skills/` at all; and an
   empty file `graded` beside `piece`, which arms the chat started there as a grade's chat
   (`--strict-mcp-config`, purlis's server with `--graded`, ADR 0105 §3).
+  And `drafts::lay_out_library_arm`, for each chat of a router's grade (SK-15e, #3233): every
+  skill of the library as the grade read it once, each without its `evals/` folder, `graded`, and,
+  for the router's arm, a file `router` holding the router's extension id, which the chat's start
+  routes its set by in place of a workspace's or persona's choice (`drafts::arm_router`). The arm
+  of the built-in router has no `router`. Both arms hold `pins`, the pins of the workspace or persona that chose
+  the router, one name a line (absent for none), which the chat's set is routed with
+  (`drafts::pins_of_arm`).
 - **Removed by:** with its [throwaway piece](#workspacesthrowawaypurlis-try-id), the same way and
   at the same moments. What is left is the skill run the chat recorded, under the skill's name.
 - **Git:** gitignored, under the state directory; the piece is ignored and never staged.

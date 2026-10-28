@@ -224,3 +224,25 @@ fn a_grade_watching_a_chat_is_told_when_it_asks_the_person() {
         vec![Watched::Asked, Watched::Asked],
     );
 }
+
+/// SK-15e (#3233): a skill the chat loaded from the index through purlis's `skill_load` is a
+/// skill started, as one its harness's own Skill tool started is, so a grade's trigger test
+/// counts it as triggered.
+#[test]
+fn a_grade_watching_a_chat_is_told_of_a_skill_loaded_through_skill_load() {
+    let (runs, _told) = listening();
+    let watched = runs.watch(4);
+    let mut load = call(4, "toolu_1", Some("deploy"));
+    load.tool_hook = purlis_core::hookwire::SKILL_LOAD.to_owned();
+    load.tool = Some(purlis_core::skilltools::SKILL_LOAD.to_owned());
+    if let Some(started) = load.skill.as_mut() {
+        started.started_by = purlis_core::skills::runs::StartedBy::McpLoad;
+    }
+
+    runs.heard(&load);
+
+    assert_eq!(
+        watched.try_iter().collect::<Vec<_>>(),
+        vec![Watched::Started("deploy".to_owned())],
+    );
+}
