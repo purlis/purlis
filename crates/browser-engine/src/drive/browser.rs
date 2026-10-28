@@ -32,6 +32,7 @@ use crate::cdp::{CALL_TIMEOUT, CallError, Closed, Connection, Event, Tap, TapSin
 use crate::ending::{EndedBy, Ending, EngineExit};
 
 mod changes;
+mod downloads;
 mod drawing;
 mod inspect;
 mod login;
@@ -475,6 +476,8 @@ struct State {
     /// Where a drag of the agent's ended without the engine's word that its own drag started,
     /// by session (#2839): a word that comes later is answered by cancelling that drag there.
     cancels_late: Option<(String, (f64, f64))>,
+    /// Every download the browser began, and which are still to be told (#2020).
+    downloads: downloads::Downloads,
     /// What the driver leaves to an Inspect (#2028).
     inspecting: Inspecting,
 }
@@ -895,6 +898,9 @@ enum FollowUp {
         at: (f64, f64),
         data: Value,
     },
+    /// A download past the browser's limits, cancelled where it still downloads and its file
+    /// removed (#2020).
+    DiscardDownload(downloads::Discard),
     /// A request of DevTools' front end, which never goes (#2028).
     Refuse(String),
     /// A request held until the judge says whether it goes (#2018).
@@ -951,6 +957,8 @@ pub(crate) struct Inner {
     following: Mutex<Option<std::sync::mpsc::Sender<FollowUp>>>,
     /// purlis's own world in each frame its scripts run in, as the engine told of each (#2138).
     worlds: Worlds,
+    /// The folder its downloads are held in, once it was given one (#2020).
+    held_in: Mutex<Option<std::path::PathBuf>>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -1073,6 +1081,7 @@ impl Browser {
             judging: Mutex::new(None),
             following: Mutex::new(None),
             worlds: Worlds::default(),
+            held_in: Mutex::new(None),
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
@@ -1223,9 +1232,14 @@ impl Browser {
         // is kept by id.
         if call.only_reads() {
             let _one = lock(&self.acting);
-            return self
-                .run_at(epoch, call)
-                .map(|answer| self.with_asked(answer));
+            let every = matches!(call, Call::Downloads);
+            return self.run_at(epoch, call).map(|answer| {
+                let mut answer = self.with_asked(answer);
+                if every {
+                    answer.downloads = lock(&self.inner.state).downloads.all();
+                }
+                answer
+            });
         }
         match self.ledger.begin(id, &call) {
             Begin::Fresh(ticket) => {
@@ -1250,9 +1264,53 @@ impl Browser {
     }
 
     /// `answer`, with the sites the judge asked about since the last answer (#2018).
+    /// And the downloads that began or moved on since (#2020).
     fn with_asked(&self, mut answer: Answer) -> Answer {
-        answer.asked = std::mem::take(&mut lock(&self.inner.state).asked);
+        let mut state = lock(&self.inner.state);
+        answer.asked = std::mem::take(&mut state.asked);
+        answer.downloads = state.downloads.untold();
+        if let Some(refused) = state.downloads.refused_since() {
+            let said = format!(
+                "purlis cancelled {refused} more {} the page began: a browser makes at most {} \
+                 downloads",
+                if refused == 1 {
+                    "download"
+                } else {
+                    "downloads"
+                },
+                self.inner.limits.most_downloads
+            );
+            answer.note = Some(match answer.note.take() {
+                Some(note) => format!("{note}; {said}"),
+                None => said,
+            });
+        }
         answer
+    }
+
+    /// Every download the browser began, as it is now (#2020): told to nobody by this.
+    pub fn downloads(&self) -> Vec<super::DownloadInfo> {
+        lock(&self.inner.state).downloads.all()
+    }
+
+    /// **Holds every download of the browser's in `folder`** (#2020), each under the engine's
+    /// own name for it, and has the engine tell of each as it goes. Browser-wide: every page's,
+    /// one opened later included. Refused where the engine will not, so a browser never runs
+    /// downloading where it was not told to.
+    pub fn hold_downloads_in(&self, folder: &std::path::Path) -> Result<(), Refusal> {
+        *lock(&self.inner.held_in) = Some(folder.to_path_buf());
+        self.devtools()
+            .call(
+                "Browser.setDownloadBehavior",
+                json!({
+                    "behavior": "allowAndName",
+                    "downloadPath": folder.to_string_lossy(),
+                    "eventsEnabled": true,
+                }),
+                None,
+            )
+            .map(drop)
+            .map_err(refusal)
     }
 
     /// **Where the agent is about to type, keys or choices into the documents at `addresses`
@@ -1667,6 +1725,7 @@ impl Browser {
                         note: None,
                         repeated: false,
                         asked: Vec::new(),
+                        downloads: Vec::new(),
                     },
                 };
                 answer.content = Content::Pages(pages);
@@ -1685,6 +1744,24 @@ impl Browser {
                 Ok(self.answer_now(&target, Content::Nothing))
             }
             Call::Screenshot { page } => self.screenshot(page.as_ref()),
+            Call::Downloads => {
+                let mut answer = match self.target(None) {
+                    Ok(target) => self.answer_now(&target, Content::Nothing),
+                    Err(_) => Answer {
+                        page: None,
+                        settled: Settled::Yes,
+                        opened: Vec::new(),
+                        content: Content::Nothing,
+                        note: None,
+                        repeated: false,
+                        asked: Vec::new(),
+                        downloads: Vec::new(),
+                    },
+                };
+                answer.content = Content::Nothing;
+                Ok(answer)
+            }
+            Call::Upload { target, files } => self.upload(&target, &files),
         }
     }
 
@@ -1911,6 +1988,7 @@ impl Browser {
             note,
             repeated: false,
             asked: Vec::new(),
+            downloads: Vec::new(),
         }
     }
 
@@ -2777,6 +2855,49 @@ impl Browser {
                     options: words(said.get("options").and_then(Value::as_array)),
                 });
             }
+            Ok(None)
+        })
+    }
+
+    /// **Puts `files` into the file input `target`** (#2020): refused, putting nothing, for an
+    /// element that is not one. The files go to the page's site as anything typed there does,
+    /// so a page on a site new to the project waits on the person first.
+    fn upload(&self, target: &Ref, files: &[std::path::PathBuf]) -> Result<Answer, Refusal> {
+        let at = self.locate(target)?;
+        let page = at.target.clone();
+        if let Some(held) = self.typing_held(&page, &self.addresses_of(target)?) {
+            return Ok(held);
+        }
+        let described = self
+            .devtools()
+            .call(
+                "DOM.describeNode",
+                json!({ "backendNodeId": at.backend }),
+                Some(&at.node_session),
+            )
+            .map_err(|why| match why {
+                CallError::Engine { .. } => Refusal::NotShown(target.clone()),
+                other => refusal(other),
+            })?;
+        if !is_file_input(&described["node"]) {
+            return Err(Refusal::NotAFileInput(target.clone()));
+        }
+        let files: Vec<String> = files
+            .iter()
+            .map(|file| file.to_string_lossy().into_owned())
+            .collect();
+        self.acting_on(&page, || {
+            self.gated(|| {
+                self.devtools().call(
+                    "DOM.setFileInputFiles",
+                    json!({ "files": files, "backendNodeId": at.backend }),
+                    Some(&at.node_session),
+                )
+            })?
+            .map_err(|why| match why {
+                CallError::Engine { .. } => Refusal::NotAFileInput(target.clone()),
+                other => refusal(other),
+            })?;
             Ok(None)
         })
     }
@@ -3736,6 +3857,45 @@ impl Inner {
                     .map(str::to_owned)
             };
             match event.method.as_str() {
+                "Browser.downloadWillBegin" => {
+                    let frame = text("/frameId").unwrap_or_default();
+                    let page_address = state
+                        .pages
+                        .iter()
+                        .find_map(|page| page.frames.get(&frame))
+                        .map(|frame| frame.url.clone());
+                    if let Some(guid) = text("/guid")
+                        && let Some(cancel) = state.downloads.began(
+                            &guid,
+                            &text("/url").unwrap_or_default(),
+                            &text("/suggestedFilename").unwrap_or_default(),
+                            page_address.as_deref(),
+                            &self.limits,
+                        )
+                    {
+                        follow.push(FollowUp::DiscardDownload(cancel));
+                    }
+                }
+                "Browser.downloadProgress" => {
+                    let bytes = |key: &str| {
+                        params
+                            .get(key)
+                            .and_then(Value::as_f64)
+                            .filter(|n| n.is_finite() && *n >= 0.0)
+                            .map_or(0, |n| n as u64)
+                    };
+                    if let Some(guid) = text("/guid")
+                        && let Some(cancel) = state.downloads.moved(
+                            &guid,
+                            bytes("receivedBytes"),
+                            bytes("totalBytes"),
+                            &text("/state").unwrap_or_default(),
+                            &self.limits,
+                        )
+                    {
+                        follow.push(FollowUp::DiscardDownload(cancel));
+                    }
+                }
                 "Target.targetCreated" | "Target.targetInfoChanged"
                     if state.inspecting.owns(&params["targetInfo"]) =>
                 {
@@ -4111,6 +4271,28 @@ impl Inner {
                     None,
                 );
             }
+            FollowUp::DiscardDownload(discard) => {
+                if discard.going {
+                    let _ = devtools.call(
+                        "Browser.cancelDownload",
+                        json!({ "guid": discard.guid }),
+                        None,
+                    );
+                }
+                // The engine names each file by its guid, so the guid is one plain name.
+                let held = lock(&self.held_in).clone();
+                if let Some(folder) = held
+                    && !discard.guid.is_empty()
+                    && !discard.guid.contains(['/', '\\', '\0'])
+                    && discard.guid != ".."
+                    && discard.guid != "."
+                {
+                    let file = folder.join(&discard.guid);
+                    if std::fs::symlink_metadata(&file).is_ok_and(|there| there.is_file()) {
+                        let _ = std::fs::remove_file(file);
+                    }
+                }
+            }
             FollowUp::Close(target) => {
                 let _ = devtools.call("Target.closeTarget", json!({ "targetId": target }), None);
             }
@@ -4350,6 +4532,21 @@ fn read_began(began: Duration) -> String {
         "the page is slow to read, so this is the page as a read that began {} s ago found it",
         began.as_secs()
     )
+}
+
+/// Whether a described node is an `<input type=file>`.
+fn is_file_input(node: &Value) -> bool {
+    let local = node["localName"].as_str().unwrap_or_default();
+    let attributes: Vec<&str> = node["attributes"]
+        .as_array()
+        .map(|all| all.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    local.eq_ignore_ascii_case("input")
+        && attributes.chunks(2).any(|pair| {
+            pair.len() == 2
+                && pair[0].eq_ignore_ascii_case("type")
+                && pair[1].trim().eq_ignore_ascii_case("file")
+        })
 }
 
 fn stale(written: &Ref) -> Refusal {

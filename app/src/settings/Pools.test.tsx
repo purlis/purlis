@@ -240,6 +240,38 @@ describe("You › This machine › Pools", () => {
     ).toBeInTheDocument();
   });
 
+  it("says a runner made before purlis suspended runners never suspends (#3717)", async () => {
+    pools = [a_pool("builds")];
+    version = { ...version, suspends: { made: "never" } };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "Never suspends: its runner was made before purlis suspended runners",
+      ),
+    ).toBeInTheDocument();
+    expect(within(group).queryByText(/^Suspends after/)).toBeNull();
+  });
+
+  it("says the time a runner was made with where it is not the pool's (#3717)", async () => {
+    pools = [a_pool("nightly", "12h")];
+    version = { ...version, suspends: { made: "after", after: "24h" } };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText(
+        "Suspends after 24h without a link from this machine, as its runner was made (the pool says 12h)",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(group).queryByText("Suspends after 12h without a link from this machine"),
+    ).toBeNull();
+  });
+
   it("says a runner whose key changed in a Notice, whose Remove removes the pool", async () => {
     pools = [a_pool("builds")];
     link = { state: "key_changed" };

@@ -1,0 +1,513 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! Every handoff spelling `docs/handoff.md` records as having run with NO PROMPT, answered here
+//! the way the frozen Python answers it — with no Python present.
+//!
+//! The answers are not written by hand, and they no longer change on their own. The retired
+//! `shellseg.py` differential harness ran each command line through the Python charter pinned at
+//! 50d31dc and recorded what it said, once, on 2026-09-23: the curated rows
+//! (`fixtures/corpora/shellseg-oracle.jsonl`) and a coverage-selected subset of its 200,000 seeded
+//! cases (`shellseg-generated.jsonl.gz`). Since then the recording IS this app's contract, and
+//! no Python is needed or consulted. To change an answer deliberately, edit the row and say why
+//! in the pull request (`fixtures/corpora/README.md`). Where this file says "the harness" it
+//! means that script; the names it cites are the script's, kept so a row can be traced to what
+//! produced it.
+//!
+//! This replays the stage-6 half of that recording — A7 and the seven readers under it.
+//!
+//! # Where the recording stopped being the Python's (#1444)
+//!
+//! A handoff became a dispatch, and its consent the dispatch grant, so A7 no longer protects
+//! the harness's permission prompt. The readers' rows (`atsr`, `da`, `dh`, `ih`, `ssh7`,
+//! `a7seg`, `hs7`, `hl7`) are the Python's still. The verdict's rows (`hr`, `hrd`) were moved
+//! on purpose on the rows that hold a handoff, as `fixtures/corpora/README.md` records: the
+//! unattended arm is gone, a spelling this guard reads word for word is no longer refused for
+//! being one the host's rule did not match, and every sentence that named the prompt was
+//! rewritten. `a7tbl` is left as it was recorded and is read in part: its tables are the
+//! guard's still, and the count and the sentences it also holds were the Python's, which the
+//! guard no longer says. The sentences are pinned by `hrd`, on every row that refuses.
+//!
+//! # This one needs nothing on disk
+//!
+//! Unlike the golden rule's replay, which needs a `charter.toml` for the forge list, and unlike
+//! the leak guard's, which needs a plane to walk. A7 asks no filesystem question at all: it
+//! judges a SOURCE SPELLING and two fields of a payload. That is the same fact the module
+//! header states as its reason for existing, and it is why this file can be a plain replay.
+
+use crate::oracle_corpus;
+
+use purlis_core::handoffguard::{self, Caller};
+use purlis_core::{heredoc, shellseg, shellwrap};
+use serde_json::{Value, json};
+
+/// `PROBE_DISGUISES` in the harness.
+const PROBE_DISGUISES: [&str; 47] = [
+    "charter",
+    "handoff",
+    "$'handoff'",
+    "ha$''ndoff",
+    "${x:-handoff}",
+    "{handoff,}",
+    "hando?f",
+    "handof[f]",
+    "$h",
+    "'charter'",
+    "\"charter\"",
+    "\\charter",
+    "chart*",
+    "[c]harter",
+    "ch[a-z]rter",
+    "handoff*",
+    "*handoff*",
+    "HANDOFF",
+    "handoffx",
+    "xhandoff",
+    "$'\\x68andoff'",
+    "{hand,}off",
+    "\"handoff\"",
+    "h?ndoff",
+    "[!x]andoff",
+    "$charter",
+    "c'h'arter",
+    "",
+    "*",
+    "?",
+    "[",
+    "[]",
+    "[!]",
+    "\\",
+    "$",
+    "{}",
+    "{",
+    "}",
+    "handoff\n",
+    "hand\\off",
+    "hand$off",
+    "ha*ff",
+    "?",
+    "**",
+    "[a-",
+    "charter*handoff",
+    "İandoff",
+];
+
+/// `PROBE_DISGUISE_N` in the harness.
+const PROBE_DISGUISE_N: usize = 4;
+
+/// `PROBE_CALLERS` in the harness: `(agent_id, $CHARTER_HARNESS, permission_mode)`.
+const PROBE_CALLERS: [(Option<&str>, Option<&str>, Option<&str>); 6] = [
+    (None, Some("claude-code"), Some("default")),
+    (None, Some("claude-code"), Some("bypassPermissions")),
+    (Some("sub-1"), Some("claude-code"), Some("default")),
+    (Some("sub-1"), Some("opencode"), Some("default")),
+    (Some("sub-1"), None, Some("bypassPermissions")),
+    (Some(""), Some("claude-code"), Some("default")),
+];
+
+/// `rotation` in the harness.
+fn rotation<T: Clone>(cmd: &str, table: &[T], count: usize) -> Vec<T> {
+    let n = cmd.chars().count();
+    (0..count)
+        .map(|k| table[(n + k) % table.len()].clone())
+        .collect()
+}
+
+/// The curated rows alone — the command lines a docstring names. The wide replay below reads
+/// the frozen fuzz subset as well (`oracle_corpus::shellseg`).
+fn corpus() -> Vec<Value> {
+    oracle_corpus::jsonl("shellseg-oracle.jsonl")
+        .into_iter()
+        .map(|r| r.row)
+        .collect()
+}
+
+fn refusal(
+    cmd: &str,
+    caller: (Option<&str>, Option<&str>, Option<&str>),
+) -> Option<(&'static str, String)> {
+    let (agent_id, harness, permission_mode) = caller;
+    handoffguard::handoff_refusal(
+        cmd,
+        Caller {
+            agent_id,
+            harness,
+            permission_mode,
+        },
+    )
+}
+
+/// The tables in the `a7tbl` answer, built from the module's own constants rather than from a
+/// copy: the marks that make a word one the shell rewrites, the shells a string is run by, the
+/// redirections that read, and the harnesses whose `agent_id` was measured. The two entries in
+/// front of them in a recorded row, a count of the Python's sentences and two of them, are not
+/// read ([`TABLES_FROM`]).
+fn tables() -> Value {
+    let mut marks: Vec<char> = handoffguard::SPELLING_MARKS.chars().collect();
+    marks.sort_unstable();
+    let mut shells: Vec<&str> = shellwrap::STRING_SHELLS.to_vec();
+    shells.sort_unstable();
+    let mut reads: Vec<&str> = handoffguard::REDIRECT_READS.to_vec();
+    reads.sort_unstable();
+    let mut measured: Vec<&str> = handoffguard::MEASURED_SUBAGENT_HARNESSES.to_vec();
+    measured.sort_unstable();
+    json!([marks.iter().collect::<String>(), shells, reads, measured,])
+}
+
+/// Where the tables start in a recorded `a7tbl`: after the sentence count and the sentences.
+const TABLES_FROM: usize = 2;
+
+#[test]
+fn the_recorded_python_answer_is_the_answer_this_guard_gives() {
+    purlis_core::unsteered!();
+    let (ats, rows): (Vec<String>, Vec<Value>) = oracle_corpus::shellseg()
+        .into_iter()
+        .map(|r| (r.at, r.row))
+        .unzip();
+    assert!(
+        rows.len() >= 500,
+        "the corpus is the evidence; {} rows is not it",
+        rows.len()
+    );
+    let mut wrong: Vec<String> = Vec::new();
+    for (at, row) in ats.iter().zip(&rows) {
+        let cmd = row["cmd"].as_str().expect("every row names its command");
+        let mut check = |what: &str, want: &Value, got: Value| {
+            if want != &got {
+                wrong.push(format!(
+                    "{at} {cmd:?}\n    {what} python={want}\n    {what}   rust={got}"
+                ));
+            }
+        };
+        let recorded_tables = row["a7tbl"]
+            .as_array()
+            .map(|all| Value::Array(all.iter().skip(TABLES_FROM).cloned().collect()))
+            .unwrap_or(Value::Null);
+        check("a7tbl", &recorded_tables, tables());
+        check(
+            "atsr",
+            &row["atsr"],
+            json!(handoffguard::as_the_shell_reads(cmd)),
+        );
+        let raws = rotation(cmd, &PROBE_DISGUISES, PROBE_DISGUISE_N);
+        check(
+            "da",
+            &row["da"],
+            json!(
+                raws.iter()
+                    .flat_map(
+                        |raw| ["charter", "handoff"].into_iter().map(move |w| json!([
+                            raw,
+                            w,
+                            handoffguard::disguised_as(raw, w)
+                        ]))
+                    )
+                    .collect::<Vec<_>>()
+            ),
+        );
+        check(
+            "dh",
+            &row["dh"],
+            json!(handoffguard::handoff_in_another_spelling(cmd)),
+        );
+        check("ih", &row["ih"], json!(handoffguard::is_handoff(cmd)));
+        check(
+            "ssh7",
+            &row["ssh7"],
+            json!(handoffguard::shell_string_handoff(cmd)),
+        );
+        let (a7seg, hs7) = match shellseg::lex(cmd) {
+            Err(_) => (Value::Null, Value::Null),
+            Ok(toks) => {
+                let split = shellseg::split_punctuation(toks);
+                let per: Vec<Value> = heredoc::segments_of(&split)
+                    .into_iter()
+                    .map(|(seg, _before)| {
+                        let texts: Vec<String> = seg.iter().map(|t| t.text.clone()).collect();
+                        let (prog, _env, argv) = shellwrap::split_env(&texts);
+                        json!([
+                            handoffguard::runs_handoff(&prog, &argv),
+                            handoffguard::shell_string(&seg),
+                        ])
+                    })
+                    .collect();
+                let (seg, piped) = handoffguard::handoff_segment(&split);
+                let shown = match seg {
+                    None => Value::Null,
+                    Some(seg) => json!(
+                        seg.iter()
+                            .map(|t| json!([t.text, t.bare, t.start, t.end]))
+                            .collect::<Vec<_>>()
+                    ),
+                };
+                (Value::Array(per), json!([shown, piped]))
+            }
+        };
+        check("a7seg", &row["a7seg"], a7seg);
+        check("hs7", &row["hs7"], hs7);
+        check(
+            "hl7",
+            &row["hl7"],
+            match handoffguard::handoff_line(cmd) {
+                None => Value::Null,
+                Some((line, in_body)) => json!([line, in_body]),
+            },
+        );
+        check(
+            "hr",
+            &row["hr"],
+            json!(
+                PROBE_CALLERS
+                    .iter()
+                    .map(|c| refusal(cmd, *c).map(|(reason, _)| reason))
+                    .collect::<Vec<_>>()
+            ),
+        );
+        check(
+            "hrd",
+            &row["hrd"],
+            match refusal(cmd, PROBE_CALLERS[0]) {
+                None => Value::Null,
+                Some((reason, denial)) => json!([reason, denial]),
+            },
+        );
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} of {} recorded cases are answered differently here:\n{}",
+        wrong.len(),
+        rows.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The second half, and the one that goes stale silently: **does the recording still COVER the
+/// rules?**
+///
+/// A recording can fail in one direction the replay above cannot see — if the rows stop covering
+/// the rules, it passes while proving nothing. So each spelling `docs/handoff.md` records as
+/// having run with no prompt is asserted BY NAME, the way stages 1 to 4 did it.
+/// What the frozen Python answers a handoff that is fed no heredoc at all, whatever else its
+/// line says: it has no help arm.
+const PYTHON_REFUSES_A_HANDOFF_WITH_NO_BRIEF: Option<&str> = Some("handoff-brief-source");
+
+/// **The one place this guard answers differently from the Python on purpose since the
+/// recording: asking for the command's help** (#1515).
+///
+/// The recording holds no handoff with a help flag (asserted below, so the wide replay cannot
+/// be what covers the arm), and a corpus row cannot be written by hand: it carries the
+/// answer of every reader, with the recorder's own probes, and the recorder is retired
+/// (`fixtures/corpora/README.md`). So the divergence is held here, row for row, in the form
+/// that README asks a changed answer to be said in: the command, what the Python answers,
+/// what this guard answers, and why.
+///
+/// The Python's answer is known without it: its brief-source arm refuses every handoff it
+/// reads that no quoted heredoc feeds, and none of these has one.
+#[test]
+fn asking_for_help_is_the_one_answer_that_moved_from_the_pythons_and_only_where_it_is_help() {
+    purlis_core::unsteered!();
+    let caller = PROBE_CALLERS[0];
+    assert_eq!(caller, (None, Some("claude-code"), Some("default")));
+    let recorded = oracle_corpus::shellseg();
+    let reads_as_help = |cmd: &str| {
+        cmd.split_whitespace()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|pair| pair[0].ends_with("handoff") && (pair[1] == "--help" || pair[1] == "-h"))
+    };
+    assert!(
+        !recorded
+            .iter()
+            .any(|r| reads_as_help(r.row["cmd"].as_str().unwrap_or_default())),
+        "the recording now holds a help ask: it is a row to answer, not a table to keep"
+    );
+
+    // Moved, on purpose: the program prints its help and reads no brief, so there is no
+    // brief whose source could be wrong. The Python refused each for lacking a heredoc.
+    for cmd in [
+        "charter handoff --help",
+        "charter handoff -h",
+        "purlis handoff --help",
+        "/usr/local/bin/charter handoff --help",
+        "python3 -m charter handoff -h",
+        "charter handoff --help | head -40",
+        "cd /tmp && charter handoff --help",
+    ] {
+        assert_eq!(
+            refusal(cmd, caller).map(|(reason, _)| reason),
+            None,
+            "{cmd:?}: python={PYTHON_REFUSES_A_HANDOFF_WITH_NO_BRIEF:?}"
+        );
+    }
+
+    // Not moved: every shape that only looks like a help ask is answered as the Python
+    // answers it. A flag the program does not receive as its help flag (a redirection's
+    // operand, a word behind `--`, a word further along), and a help ask with another handoff
+    // in the same call.
+    for cmd in [
+        "charter handoff beta > -h",
+        "charter handoff beta 2> --help",
+        "{ charter handoff beta > -h; } < brief.txt",
+        "exec < brief.txt; charter handoff beta 2> -h",
+        "cat brief.txt | { :; charter handoff beta > -h; }",
+        "charter handoff -- --help",
+        "charter handoff '--' --help",
+        "charter handoff \\-- --help",
+        "charter handoff beta --help",
+        "charter handoff --name x --help",
+        "charter handoff '--help'",
+        "charter handoff --help; charter handoff beta < brief.txt",
+        "charter handoff -h && charter handoff beta <<BRIEF\n$HOME\nBRIEF",
+        "charter handoff --help\ncat brief.txt | charter handoff beta",
+        "charter handoff --help\ncharter handoff beta <<'BRIEF'\nx\nBRIEF",
+        "charter handoff --help; charter ${x:-handoff} beta < brief.txt",
+        "charter handoff --help < brief.txt",
+        "cat brief.txt | charter handoff --help",
+        "charter handoff --help \"$(cat name)\"",
+    ] {
+        assert_eq!(
+            refusal(cmd, caller).map(|(reason, _)| reason),
+            PYTHON_REFUSES_A_HANDOFF_WITH_NO_BRIEF,
+            "{cmd:?}"
+        );
+    }
+
+    // And a help ask moves nothing for a caller the Python refused first: a sub-agent.
+    let helper = PROBE_CALLERS
+        .iter()
+        .find(|c| c.0 == Some("sub-1") && c.1 == Some("claude-code"))
+        .expect("a measured sub-agent among the probes");
+    assert_eq!(
+        refusal("charter handoff --help", *helper).map(|(reason, _)| reason),
+        Some("handoff-subagent")
+    );
+}
+
+#[test]
+fn the_recording_still_covers_the_rules() {
+    purlis_core::unsteered!();
+    let rows = corpus();
+    let recorded: Vec<String> = rows
+        .iter()
+        .map(|row| row["cmd"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    let has = |cmd: &str| {
+        assert!(
+            recorded.iter().any(|r| r == cmd),
+            "{cmd:?} is not in the recording, so the wide test above is not running it",
+        );
+    };
+
+    // **The one shape that must still go THROUGH.** A guard that refused every handoff would
+    // pass every other assertion in this file, so this is the first one.
+    has("charter handoff beta <<'BRIEF'\nship it\nBRIEF");
+    let allowed: Vec<&str> = rows
+        .iter()
+        .filter(|r| r["hrd"].is_null() && !r["hl7"].is_null())
+        .filter_map(|r| r["cmd"].as_str())
+        .collect();
+    assert!(
+        allowed.len() >= 4,
+        "only {} recorded handoffs are ALLOWED; the guard's pass is what nothing else covers",
+        allowed.len()
+    );
+
+    // The four spellings the host's retired `Bash(charter handoff *)` rule did not match. Each
+    // is a handoff this guard reads word for word, so since #1444 each goes through to the
+    // app, which decides it as it decides any dispatch.
+    for cmd in [
+        "python3 -m charter handoff beta <<'BRIEF'\nx\nBRIEF",
+        "/usr/local/bin/charter handoff beta <<'BRIEF'\nx\nBRIEF",
+        "charter 'handoff' beta <<'BRIEF'\nx\nBRIEF",
+        "charter $'handoff' beta <<'BRIEF'\nx\nBRIEF",
+    ] {
+        has(cmd);
+        assert_eq!(refusal(cmd, PROBE_CALLERS[0]), None, "{cmd:?}");
+    }
+
+    // ...against one it recognises and cannot read as a command of its own: a blank between
+    // the two words that is not one to the shell. (The frozen fuzz subset holds the globs and
+    // the expansions, which the wide test above replays.)
+    let no_break = "charter\u{a0}handoff beta <<'BRIEF'\nx\nBRIEF";
+    has(no_break);
+    assert_eq!(
+        refusal(no_break, PROBE_CALLERS[0]).map(|(r, _)| r),
+        Some(handoffguard::REASON_SPELLING),
+    );
+
+    // A string a shell runs, and a heredoc body it runs — the two halves of the same fact, and
+    // the second is the one whose default used to be the OPPOSITE of the leak guard's.
+    for cmd in [
+        "eval 'charter handoff beta'",
+        "bash -c 'charter handoff beta'",
+        "sh -lc 'charter handoff beta'",
+        "bash <<'EOF'\ncharter handoff beta <<'BRIEF'\nx\nBRIEF\nEOF",
+    ] {
+        has(cmd);
+        assert_eq!(
+            refusal(cmd, PROBE_CALLERS[0]).map(|(r, _)| r),
+            Some(handoffguard::REASON_SHELL_STRING),
+            "{cmd:?}",
+        );
+    }
+
+    // ...against the bodies a READER swallows, which are data. Both directions, so the plan the
+    // leak guard and this guard share cannot drift in either.
+    for cmd in [
+        "git commit -F - <<'MSG'\ncharter handoff beta\nMSG",
+        "cat <<'DOC'\ncharter handoff beta\nDOC",
+    ] {
+        has(cmd);
+        assert_eq!(refusal(cmd, PROBE_CALLERS[0]), None, "{cmd:?}");
+    }
+
+    // Every sentence `HANDOFF_SOURCE` can be filled with is really recorded, which is what makes
+    // `handoff_source` a `pub` item with evidence rather than one with a `COVERED_ELSEWHERE` row
+    // and nothing behind it.
+    let sources: Vec<&str> = rows
+        .iter()
+        .filter(|r| r["hrd"][0] == json!(handoffguard::REASON_BRIEF_SOURCE))
+        .filter_map(|r| r["hrd"][1].as_str())
+        .collect();
+    for what in [
+        "a here-string (<<<)",
+        "a file (<), whose text this call does not show",
+        "a pipe",
+        "no heredoc at all",
+        "more than one heredoc, and the shell sends purlis only the last",
+        "an unquoted heredoc, which expands $… and `…` in the brief",
+        "a live command substitution",
+        "a quote or an escape left open on its line, so no heredoc can be seen feeding it",
+    ] {
+        assert!(
+            sources.iter().any(|d| d.contains(what)),
+            "no recorded brief-source denial says {what:?}, so nothing compares that sentence",
+        );
+    }
+
+    // Who is asking. `hr`'s six callers are what make it visible: the same command, six
+    // payloads, six answers. Only a sub-agent on a measured harness is refused; a run with
+    // its prompts off is answered as any other, because the app is what weighs that now.
+    let canonical = rows
+        .iter()
+        .find(|r| r["cmd"] == json!("charter handoff beta <<'BRIEF'\nship it\nBRIEF"))
+        .expect("the canonical row");
+    assert_eq!(
+        canonical["hr"],
+        json!([
+            // attended, main conversation: through.
+            Value::Null,
+            // unattended: through too. The app answers a chat nobody is at.
+            Value::Null,
+            // a sub-agent on a MEASURED harness: refused.
+            handoffguard::REASON_SUBAGENT,
+            // ...and on one nobody measured, an `agent_id` means nothing.
+            Value::Null,
+            // no harness word at all: the same.
+            Value::Null,
+            // an EMPTY `agent_id` is the main conversation, not a sub-agent.
+            Value::Null,
+        ]),
+        "who A7 refuses is not what the recording holds",
+    );
+}
