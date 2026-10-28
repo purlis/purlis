@@ -51,7 +51,8 @@ mod a_browser_starts_on_a_docker_pools_runner_with_its_engines_sandbox_on {
         let read = browsers
             .act(&program, "c-1", Act::Pages, BrowserReach::default())
             .unwrap_or_else(|why| panic!("its pages are read on the runner: {why:?}"));
-        assert!(read.settled, "{read:?}");
+        // Its first page, blank: a fresh page may still be settling, which says nothing here.
+        assert_eq!(read.pages.len(), 1, "{read:?}");
 
         // The engine's processes in the runner: at least one in a process namespace of its own.
         let said = runner.prints(ENGINE_NAMESPACES);

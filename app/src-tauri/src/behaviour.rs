@@ -3365,13 +3365,8 @@ fn a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host(targe
         )
         .unwrap_or_else(|why| panic!("a browser starts on the runner: {why:?}"));
 
-    let config = format!(
-        "\"$HOME\"/.config/{}",
-        purlis_core::machine::dir(Path::new("")).display()
-    );
     let found = runner.prints(&format!(
         r#"set -e
-folder=$(ls -d "$HOME"/.local/share/purlis/{browsers}/*/ | head -n 1)
 engine=; host=
 for status in /proc/[0-9]*/status; do
   pid=${{status#/proc/}}; pid=${{pid%/status}}
@@ -3381,16 +3376,19 @@ for status in /proc/[0-9]*/status; do
     purlis) tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null | grep -q ' serve' && host=$pid || true ;;
   esac
 done
+folder=$(tr '\0' '\n' < /proc/$engine/cmdline | sed -n 's/^--user-data-dir=//p' | head -n 1)
 pipe=$(ls -l /proc/$host/fd | sed -n 's/.* \([0-9][0-9]*\) -> pipe:.*/\1/p' | head -n 1)
 socket=$(ls -d /tmp/purlis-$(id -u) | head -n 1)
-key={config}/{daemon}/{key}
-[ -f "$key" ]
+key=$(ls -d "$HOME"/.config/*/{daemon}/{key} "$HOME"/.config/*/{daemon_before}/{key} 2>/dev/null | head -n 1)
 printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "$engine" "$host" "$pipe" "$socket" "$key"
 "#,
-        browsers = purlis_core::datahome::BROWSERS,
         daemon = purlis_core::names::DAEMON_DIR
             .spellings()
             .next()
+            .expect("its name"),
+        daemon_before = purlis_core::names::DAEMON_DIR
+            .spellings()
+            .last()
             .expect("its name"),
         key = purlis_core::runnerlink::KEY_FILE,
     ));

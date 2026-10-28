@@ -1272,7 +1272,20 @@ fn checked_on_its_engine(host: &str, inspected: &serde_json::Value) -> Result<Se
 
 #[test]
 fn a_container_made_the_pools_way_passes_on_docker_with_apparmor_and_on_podman() {
-    for host in ["docker-apparmor", "podman-rootful", "podman-rootless"] {
+    // Measured on 2026-10-27, with the runner's earlier profile: Docker keeps the profile it
+    // was given, so it is known as that one (#3298); Podman keeps its path alone.
+    assert_eq!(
+        checked_on_its_engine("docker-apparmor", &recorded("docker-apparmor", "made")),
+        Ok(Seccomp::RunnersEarlier)
+    );
+    let mut now = recorded("docker-apparmor", "made");
+    now[0]["HostConfig"]["SecurityOpt"] =
+        serde_json::json!(["no-new-privileges", runners_seccomp()]);
+    assert_eq!(
+        checked_on_its_engine("docker-apparmor", &now),
+        Ok(Seccomp::Runners)
+    );
+    for host in ["podman-rootful", "podman-rootless"] {
         assert_eq!(
             checked_on_its_engine(host, &recorded(host, "made")),
             Ok(Seccomp::Runners),
