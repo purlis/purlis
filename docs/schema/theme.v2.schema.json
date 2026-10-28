@@ -4721,6 +4721,18 @@
         "list.summary.card.disabled.text": {
           "$ref": "#/$defs/part-text"
         },
+        "list.count.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.count.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "list.run.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "list.run.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "list.actions.gap": {
           "$ref": "#/$defs/part-gap"
         },

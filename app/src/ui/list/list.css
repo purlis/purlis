@@ -20,6 +20,12 @@
    inside the list's own room, so it never touches the panel the list is joined to.
    --------------------------------------------------------------------------------------------- */
 
+/* What holds a list's keys (`useFoldKeys`, #3670) draws nothing: the list is placed as if it
+   were not there. */
+[data-scope="list"][data-part="keys"] {
+  display: contents;
+}
+
 [data-scope="list"][data-part="body"] {
   display: flex;
   flex-direction: column;
@@ -70,6 +76,88 @@
   font-weight: var(--font-weight-regular);
   text-transform: none;
   letter-spacing: normal;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   What folds (#3670, `Fold.tsx`): a group's name that folds its rows, and a run of rows folded
+   to one quiet line. Each is a row the keyboard reaches, with the tree's own twist
+   (`TwistMark`), which turns down while it is open. **A state never changes its size**: the
+   pointer's pill and the keyboard's ring inside it.
+   --------------------------------------------------------------------------------------------- */
+
+/* A group's name that folds: the name's look, laid out as a row, its count at its end. */
+[data-scope="list"][data-part="header"][data-fold] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-block-size: var(--size-chrome);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  cursor: default;
+  outline: none;
+}
+
+/* A group of what needs the person (Needs you): its name in the waiting colour. Drawn on its
+   words, so a theme's colour for the name never takes the tone away. */
+[data-scope="list"][data-part="header"][data-tone="waiting"] > [data-part="title"] {
+  color: var(--state-waiting);
+}
+
+[data-scope="list"][data-part="header"] > [data-part="title"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A group's count, at the end of its name, in figures of one width. */
+[data-scope="list"][data-part="count"] {
+  flex: none;
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* **A run folded to one quiet line**, and its closing line once it is unfolded: in the quiet
+   tier, its mark leading, its twist after its words. */
+[data-scope="list"][data-part="run"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-block-size: var(--size-chrome);
+  padding-block: var(--space-1);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-control);
+  color: var(--text-quiet);
+  font-size: var(--font-size-sm);
+  cursor: default;
+  outline: none;
+}
+
+[data-scope="list"][data-part="run"] > [data-part="label"] {
+  flex: 0 1 auto;
+}
+
+/* The closing line's words wrap: it is a sentence, not a name. */
+[data-scope="list"][data-part="run"][data-end] > [data-part="label"] {
+  white-space: normal;
+}
+
+:is([data-scope="list"][data-part="header"][data-fold], [data-scope="list"][data-part="run"])[
+    data-hovered
+  ] {
+  background-color: var(--surface-hover);
+}
+
+:is([data-scope="list"][data-part="header"][data-fold], [data-scope="list"][data-part="run"])[
+    data-focus-visible
+  ] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* ---------------------------------------------------------------------------------------------

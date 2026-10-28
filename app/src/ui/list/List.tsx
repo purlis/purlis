@@ -42,7 +42,9 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useState,
   type CSSProperties,
+  type KeyboardEvent,
   type ReactNode,
   type Ref,
 } from "react";
@@ -63,7 +65,7 @@ import {
   type ListBoxProps as AriaListBoxProps,
   type Selection,
 } from "react-aria-components";
-import { mergeProps, mergeRefs } from "react-aria";
+import { mergeProps, mergeRefs, useLocale } from "react-aria";
 import {
   askForAMenu,
   asksForAMenu,
@@ -78,7 +80,53 @@ export type { Key, Selection };
 export { Collection };
 
 /** The size every row of a list takes, which the list hands them. */
-const ListSize = createContext<RowSize>("md");
+export const ListSize = createContext<RowSize>("md");
+
+/**
+ * **The rows of a list that fold what is under them** (#3670, `Fold.tsx`), by key: each one's
+ * toggle, which → and ← on it run, or none for a row that runs nothing of the list's (a run's
+ * closing line). The list's own `onAction` never runs for one of them.
+ */
+export const ListFolds = createContext<Map<string, ((open: boolean) => void) | undefined>>(
+  new Map(),
+);
+
+/** **An attribute React Aria does not hand a row, written on its element** (`aria-expanded` on a
+ *  row that folds, #3670). */
+export function useSaidOnRow(name: string, value: string) {
+  return useCallback(
+    (element: HTMLElement | null) => {
+      element?.setAttribute(name, value);
+    },
+    [name, value],
+  );
+}
+
+/**
+ * **Space, → and ← on a row that folds** (#3670): Space folds or unfolds it, → unfolds it and ←
+ * folds it, where React Aria's grid would walk into the row's controls, of which it has none. Heard before React Aria's own row
+ * hears them (a capture handler on an element around the list runs first). Any other key, and a
+ * key on anything inside a row, is React Aria's.
+ */
+function useFoldKeys(folds: Map<string, ((open: boolean) => void) | undefined>) {
+  const { direction } = useLocale();
+  return (event: KeyboardEvent<HTMLElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const row = event.target;
+    if (!(row instanceof HTMLElement) || row.getAttribute("role") !== "row") return;
+    const toggle = folds.get(row.getAttribute("data-fold") ?? "");
+    if (toggle === undefined) return;
+    const open = row.getAttribute("aria-expanded") === "true";
+    const into = direction === "rtl" ? "ArrowLeft" : "ArrowRight";
+    const out = direction === "rtl" ? "ArrowRight" : "ArrowLeft";
+    // Space as well as Enter: React Aria's row runs its action on Enter alone.
+    if (event.key === " " || (event.key === into && !open) || (event.key === out && open)) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggle(!open);
+    }
+  };
+}
 
 /** What both kinds of list take beside React Aria's own props. */
 interface Drawn {
@@ -331,23 +379,40 @@ export function List<T extends object>({
   empty,
   "aria-keyshortcuts": keys,
   ref,
+  onAction,
   ...rest
 }: ListProps<T>) {
   const own = useCollectionElement(keys, ref);
+  const [folds] = useState(() => new Map<string, ((open: boolean) => void) | undefined>());
+  const onKeyDownCapture = useFoldKeys(folds);
   return (
-    <RowScope.Provider value="list">
-      <ListSize.Provider value={size}>
-        <AriaGridList
-          {...rest}
-          ref={own}
-          className={className}
-          data-scope="list"
-          data-part="body"
-          data-size={size}
-          renderEmptyState={empty === undefined ? undefined : () => empty}
-        />
-      </ListSize.Provider>
-    </RowScope.Provider>
+    // An element around the list that draws nothing, so → and ← on a row that folds are heard
+    // before React Aria's row hears them (`useFoldKeys`).
+    <div data-scope="list" data-part="keys" onKeyDownCapture={onKeyDownCapture}>
+      <ListFolds.Provider value={folds}>
+        <RowScope.Provider value="list">
+          <ListSize.Provider value={size}>
+            <AriaGridList
+              {...rest}
+              // A row that folds runs only its fold (`Fold.tsx`).
+              onAction={
+                onAction === undefined
+                  ? undefined
+                  : (key) => {
+                      if (!folds.has(String(key))) onAction(key);
+                    }
+              }
+              ref={own}
+              className={className}
+              data-scope="list"
+              data-part="body"
+              data-size={size}
+              renderEmptyState={empty === undefined ? undefined : () => empty}
+            />
+          </ListSize.Provider>
+        </RowScope.Provider>
+      </ListFolds.Provider>
+    </div>
   );
 }
 
@@ -437,7 +502,7 @@ export function ListRowSection<T extends object>({
           ) : (
             <>
               <span>{title}</span>
-              <span data-count="" aria-hidden="true">
+              <span data-scope="list" data-part="count" data-count="" aria-hidden="true">
                 {count}
               </span>
             </>

@@ -80,6 +80,19 @@ pub(super) const LIST: Family = Family {
             properties: &[Prop::Text, Prop::FontSize],
         },
         Part {
+            name: "count",
+            since: super::NEXT,
+            description: "How many rows a group holds, at the end of its name (#3670).",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
+        Part {
+            name: "run",
+            since: super::NEXT,
+            description: "A run of rows folded to one quiet line, and its closing line once it is \
+                          unfolded: \"6 built-in skills\" (#3670).",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
+        Part {
             name: "actions",
             since: super::NEXT,
             description: "A card row's action line, under its summary: its one fix (#3669).",
@@ -144,10 +157,13 @@ pub(super) const LIST: Family = Family {
         ("header", "text.quiet"),
         ("shortcut", "text.quiet"),
         ("summary", "text.muted"),
+        ("count", "text.quiet"),
+        ("run", "text.quiet"),
     ],
     corner_most: None,
     // The list that holds the rows, and a group's name over them, stand around a row.
-    around: &["body", "header"],
+    // A group's count, and a run's quiet line, a row of its own (#3670).
+    around: &["body", "header", "count", "run"],
     fills: &[],
     under: &[],
 };
