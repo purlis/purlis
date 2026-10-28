@@ -697,18 +697,20 @@ impl OnTheRunner {
         out.status.success()
     }
 
-    /// The runner has a profile of its own named `name`, of Claude Code, signed in with no
-    /// key, its `claude` the program `program` is on this machine.
-    fn signs_in(&self, name: &str, program: &Path) {
+    /// The runner has a profile of its own named `name`, of `harness` (`claude` or `codex`,
+    /// whose stand-in the parity image runs, `tests/parity/runner.Dockerfile`), signed in with
+    /// no key, its harness the program `program` is on this machine. A Codex profile is signed
+    /// in by the file Codex keeps its sign-in in.
+    fn signs_in_as(&self, harness: &str, name: &str, program: &Path) {
         use purlis_core::profilestore::{Folders, MachineProfile};
         let config = tempfile::tempdir().expect("a config home to write it in");
         purlis_core::profilestore::update(config.path(), |store| {
             store.profiles.push(MachineProfile {
                 name: name.to_owned(),
-                harness: "claude".to_owned(),
+                harness: harness.to_owned(),
                 title: name.to_owned(),
                 folders: Folders {
-                    config: PathBuf::from(format!("/home/purlis/.claude-{name}")),
+                    config: PathBuf::from(format!("/home/purlis/.{harness}-{name}")),
                     data: None,
                 },
                 adopted: None,
@@ -730,15 +732,24 @@ impl OnTheRunner {
         self.runs(
             false,
             &format!(
-                "mkdir -p {at} \"$HOME\"/.claude-{name} && umask 077 && cat > {at}/{}",
+                "mkdir -p {at} \"$HOME\"/.{harness}-{name} && umask 077 && cat > {at}/{}",
                 purlis_core::profilestore::FILE
             ),
             &store,
         );
-        // The parity image's `claude` runs what is here (`tests/parity/runner.Dockerfile`).
+        if harness == "codex" {
+            self.runs(
+                false,
+                &format!("printf '{{\"parity\":true}}' > \"$HOME\"/.codex-{name}/auth.json"),
+                b"",
+            );
+        }
+        // The parity image's harness runs what is here (`tests/parity/runner.Dockerfile`).
         self.runs(
             false,
-            "mkdir -p \"$HOME\"/.parity && cat > \"$HOME\"/.parity/claude && chmod 0755 \"$HOME\"/.parity/claude",
+            &format!(
+                "mkdir -p \"$HOME\"/.parity && cat > \"$HOME\"/.parity/{harness} && chmod 0755 \"$HOME\"/.parity/{harness}"
+            ),
             &std::fs::read(program).expect("the program reads"),
         );
     }
@@ -1473,6 +1484,11 @@ fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
 /// the runner's own, which the window's project settings never reach (they are this machine's
 /// alone, #2046), its `claude` being `program`.
 fn a_profile(target: &Target, name: &str, program: &Path) {
+    a_profile_of(target, "claude", name, program);
+}
+
+/// [`a_profile`], of `harness` (`claude` or `codex`).
+fn a_profile_of(target: &Target, harness: &str, name: &str, program: &Path) {
     let root = &target.root;
     let persona = root.join("personas").join("steward");
     std::fs::create_dir_all(&persona).expect("its persona");
@@ -1480,7 +1496,7 @@ fn a_profile(target: &Target, name: &str, program: &Path) {
     std::fs::write(
         root.join(purlis_core::profiles::LOCAL_FILE),
         format!(
-            "[harness.{name}]\nkind = \"claude\"\ncommand = [{:?}]\n",
+            "[harness.{name}]\nkind = \"{harness}\"\ncommand = [{:?}]\n",
             program.display().to_string()
         ),
     )
@@ -1493,7 +1509,7 @@ fn a_profile(target: &Target, name: &str, program: &Path) {
     )
     .expect("approved");
     if let Some(runner) = &target.runner {
-        runner.signs_in(name, program);
+        runner.signs_in_as(harness, name, program);
     }
 }
 
@@ -3320,3 +3336,137 @@ on_every_target!(
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
     an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
 );
+
+/// **A sandboxed runner chat reaches neither its runner's browser engine nor its host** (#3338,
+/// spec #2041): on a Docker pool's runner, the chat, the session host and the browser engine
+/// share one container. A Codex chat the runner's own host composes, under purlis's Linux
+/// sandbox as every sandboxed runner chat is, tries what would reach past it from in there, with
+/// a browser of its project running beside it: the engine's data folder (the cookies and
+/// storage of every site it opened), the engine's memory, the pipe the host drives the engine
+/// over, the runner's link key in the host's own folder, and the host's socket's folder. Each is
+/// refused; reading its project is not.
+///
+/// The paths and process ids it tries are found first, as the runner's own user, outside the
+/// sandbox, and each must be found, so no try passes by naming nothing.
+fn a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host(target: &Target) {
+    use crate::chatbrowsers::Driver as _;
+    let Some(runner) = &target.runner else {
+        return;
+    };
+    let browsers = crate::browsers::WindowBrowsers::new(Arc::clone(
+        target.host.as_ref().expect("the window's link to its host"),
+    ));
+    let browser = browsers
+        .start(
+            &target.root,
+            Some(&runner.pool),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .unwrap_or_else(|why| panic!("a browser starts on the runner: {why:?}"));
+
+    let config = format!(
+        "\"$HOME\"/.config/{}",
+        purlis_core::machine::dir(Path::new("")).display()
+    );
+    let found = runner.prints(&format!(
+        r#"set -e
+folder=$(ls -d "$HOME"/.local/share/purlis/{browsers}/*/ | head -n 1)
+engine=; host=
+for status in /proc/[0-9]*/status; do
+  pid=${{status#/proc/}}; pid=${{pid%/status}}
+  name=$(sed -n 's/^Name:[[:space:]]*//p' "$status" 2>/dev/null || true)
+  case "$name" in
+    chrome) [ -n "$engine" ] || engine=$pid ;;
+    purlis) tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null | grep -q ' serve' && host=$pid || true ;;
+  esac
+done
+pipe=$(ls -l /proc/$host/fd | sed -n 's/.* \([0-9][0-9]*\) -> pipe:.*/\1/p' | head -n 1)
+socket=$(ls -d /tmp/purlis-$(id -u) | head -n 1)
+key={config}/{daemon}/{key}
+[ -f "$key" ]
+printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "$engine" "$host" "$pipe" "$socket" "$key"
+"#,
+        browsers = purlis_core::datahome::BROWSERS,
+        daemon = purlis_core::names::DAEMON_DIR
+            .spellings()
+            .next()
+            .expect("its name"),
+        key = purlis_core::runnerlink::KEY_FILE,
+    ));
+    let value = |name: &str| {
+        let value = found
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name}=")))
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        assert!(!value.is_empty(), "the runner has no {name}: {found}");
+        value
+    };
+    let (folder, engine, host, pipe, socket, key) = (
+        value("folder"),
+        value("engine"),
+        value("host"),
+        value("pipe"),
+        value("socket"),
+        value("key"),
+    );
+
+    // The chat: Codex as the runner composes it, its program a stand-in that tries each in a
+    // shell of its own and says what came of it.
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::program(
+        bin.path(),
+        "codex",
+        &format!(
+            "#!/bin/sh\n\
+             for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo 'codex-cli 0.147.0'; exit 0; }}; done\n\
+             try() {{ if ( eval \"$2\" ) >/dev/null 2>&1; then printf '%s yes.\\n' \"$1\"; else printf '%s no.\\n' \"$1\"; fi; }}\n\
+             try PROJECT 'ls .'\n\
+             try ENGINE-FOLDER 'ls {folder}'\n\
+             try ENGINE-MEMORY 'exec 3< /proc/{engine}/mem'\n\
+             try HOST-PIPE 'exec 3< /proc/{host}/fd/{pipe}'\n\
+             try HOST-KEY 'cat {key}'\n\
+             try HOST-SOCKET 'ls {socket}'\n\
+             printf 'TRIED.\\n'\n\
+             read line\n"
+        ),
+    );
+    a_profile_of(target, "codex", "work", &program);
+    let id = target
+        .sessions
+        .open_named(
+            None,
+            &named("try", false),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("the sandboxed chat starts on the runner")
+        .number;
+    let pane = Pane::on(target, id);
+    pane.shows("TRIED.");
+    for said in [
+        "PROJECT yes.",
+        "ENGINE-FOLDER no.",
+        "ENGINE-MEMORY no.",
+        "HOST-PIPE no.",
+        "HOST-KEY no.",
+        "HOST-SOCKET no.",
+    ] {
+        pane.shows(said);
+    }
+    target.sessions.close(id).expect("it closes");
+    browsers.close(&browser).expect("the browser ends");
+}
+
+mod a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host {
+    /// Run by the parity job, which names a runner image; elsewhere it runs nothing: on this
+    /// machine the chat, the host and the engine are not in one container.
+    #[test]
+    fn in_a_docker_pool() {
+        if let Some(target) = super::in_a_docker_pool() {
+            super::a_sandboxed_runner_chat_reaches_neither_its_browser_engine_nor_its_host(&target);
+        }
+    }
+}

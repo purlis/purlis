@@ -28,4 +28,12 @@ RUN printf '%s\n' '#!/bin/sh' \
       '[ -x "$stand_in" ] || { echo "parity: no stand-in claude at $stand_in: a behaviour writes one before it starts a chat on its profile" >&2; exit 127; }' \
       'exec "$stand_in" "$@"' > /usr/local/bin/claude \
  && chmod 0755 /usr/local/bin/claude
+# The runner's `codex`, the same way (#3338): a Codex chat the runner composes runs under
+# purlis's own Linux sandbox, so a behaviour sees from inside it what a sandboxed runner chat
+# can reach. It runs the stand-in a behaviour writes at `/home/purlis/.parity/codex`.
+RUN printf '%s\n' '#!/bin/sh' \
+      'stand_in=/home/purlis/.parity/codex' \
+      '[ -x "$stand_in" ] || { echo "parity: no stand-in codex at $stand_in: a behaviour writes one before it starts a chat on its profile" >&2; exit 127; }' \
+      'exec "$stand_in" "$@"' > /usr/local/bin/codex \
+ && chmod 0755 /usr/local/bin/codex
 USER 10001:10001
