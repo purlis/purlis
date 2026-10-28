@@ -7,7 +7,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { PinnedStrip, TitleBarSlash, WorkspaceChip } from "./TitleBarWorkspaces";
+import {
+  ChipSlot,
+  NoticeDot,
+  PinnedStrip,
+  TitleBarSlash,
+  WorkspaceChip,
+} from "./TitleBarWorkspaces";
 
 afterEach(cleanup);
 
@@ -47,6 +53,38 @@ describe("a workspace's chip", () => {
     const chip = screen.getByRole("button", { name: "alpha" });
     await userEvent.hover(chip);
     expect(chip).toHaveAttribute("data-hovered");
+  });
+});
+
+describe("a chip's notice dot (#3648)", () => {
+  it("is a button named for what it shows, its glyph a shape no one hears", async () => {
+    let pressed = 0;
+    render(<NoticeDot workspace="gamma" count={1} kind="info" onPress={() => (pressed += 1)} />);
+    const dot = screen.getByRole("button", { name: "Show the notice on gamma" });
+    expect(dot).toHaveAttribute("data-scope", "titlebar");
+    expect(dot).toHaveAttribute("data-part", "dot");
+    expect(dot).toHaveAttribute("data-kind", "info");
+    // A shape, not a colour alone (WCAG 1.4.1): ● for news.
+    expect(dot).toHaveTextContent("●");
+    // A stop the strip's arrows walk, never a Tab stop of its own (charter-app#189).
+    expect(dot).toHaveAttribute("tabindex", "-1");
+    await userEvent.click(dot);
+    expect(pressed).toBe(1);
+  });
+
+  it("says how many it shows", () => {
+    render(<NoticeDot workspace="gamma" count={3} kind="info" onPress={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Show the 3 notices on gamma" })).toBeInTheDocument();
+  });
+
+  it("leaves the chip's name its words, and adds what it shows to its description", () => {
+    render(
+      <ChipSlot>
+        <WorkspaceChip name="gamma" waiting={2} notices={{ count: 1, kind: "info" }} />
+      </ChipSlot>,
+    );
+    const chip = screen.getByRole("button", { name: "gamma" });
+    expect(chip).toHaveAccessibleDescription("2 waiting, 1 notice");
   });
 });
 

@@ -30,8 +30,11 @@ import {
   SwitcherMark,
   SwitcherRow,
 } from "./ui/titlebar/Switcher";
+import { ChipCard, mostUrgent, type ChipNotices } from "./ChipNotices";
 import {
   AllWorkspaces,
+  ChipSlot,
+  NoticeDot,
   PinnedStrip,
   ProjectCrumb,
   TitleBarProject,
@@ -125,7 +128,11 @@ export function TitleBarSwitch({
   held,
   does,
   menuOf,
+  notices,
 }: {
+  /** The notices hung from the chips of the project in front (#3648): each chip's dot, and the
+   *  card that is up. */
+  notices?: ChipNotices;
   projects: readonly SwitchProject[];
   inFront: string;
   /** The rail is shown, so the bar names the project in words; hidden, the name switches. */
@@ -146,6 +153,21 @@ export function TitleBarSwitch({
   const all = useRef<HTMLButtonElement>(null);
   const strip = useRef<HTMLDivElement>(null);
   const tintOf = useProjectTints();
+  // **The chip a card hangs from** (#3648): found in the strip as it is drawn, so a chip drawn
+  // again, or scrolled, is still the one the card points at.
+  const cardOn = notices?.open;
+  const anchor = useMemo(
+    () => ({
+      get current(): Element | null {
+        return (
+          [...(strip.current?.querySelectorAll<HTMLElement>('[data-part="workspace"]') ?? [])].find(
+            (one) => one.dataset.chipOf === cardOn,
+          ) ?? null
+        );
+      },
+    }),
+    [cardOn],
+  );
   /** Where the keyboard was when a switcher opened, to give it back as the switcher closes. */
   const openedFrom = useRef<Element | null>(null);
   // **The keyboard back where it was** once a switcher has closed, by Escape or by a switch:
@@ -287,6 +309,29 @@ export function TitleBarSwitch({
   /** The strip's one Tab stop: the chip of the workspace in front, else the first pin, else the
    *  ⌄ (charter-app#189). */
   const stop = unpinned ?? (focused !== undefined && pins.includes(focused) ? focused : pins[0]);
+  /** What a chip's dot and description say of the notices hung from it (#3648). */
+  const noticesOn = (workspace: string) => {
+    const on = notices?.on.get(workspace);
+    if (on === undefined || on.length === 0) return undefined;
+    return { count: on.length, kind: mostUrgent(on) };
+  };
+  /** A chip in its slot, with the dot of its notices while their card is not up (#3648). */
+  const slotted = (workspace: string, drawn: ReactNode) => {
+    const shows = noticesOn(workspace);
+    return (
+      <ChipSlot>
+        {shows !== undefined && notices !== undefined && notices.open !== workspace && (
+          <NoticeDot
+            workspace={workspace}
+            count={shows.count}
+            kind={shows.kind}
+            onPress={() => notices.show(workspace)}
+          />
+        )}
+        {withMenu(workspace, drawn)}
+      </ChipSlot>
+    );
+  };
   const chip = (workspace: string, at: number) => {
     const drawn = (
       <WorkspaceChip
@@ -295,12 +340,15 @@ export function TitleBarSwitch({
         current={workspace === focused}
         tabIndex={workspace === stop ? 0 : -1}
         waiting={workspaces?.waiting[workspace] ?? 0}
+        notices={noticesOn(workspace)}
         tooltip={at < 9 ? `${workspace} · ${pinKeySaid(at + 1, mac)}` : workspace}
         onClick={() => goTo(workspace)}
+        data-chip-of={workspace}
       />
     );
-    return <Fragment key={workspace}>{withMenu(workspace, drawn)}</Fragment>;
+    return <Fragment key={workspace}>{slotted(workspace, drawn)}</Fragment>;
   };
+  const card = cardOn === undefined ? undefined : notices?.on.get(cardOn);
 
   return (
     <>
@@ -322,7 +370,7 @@ export function TitleBarSwitch({
           {pins.map(chip)}
           {unpinned !== undefined && (
             <Fragment key={`${unpinned}+`}>
-              {withMenu(
+              {slotted(
                 unpinned,
                 <WorkspaceChip
                   name={unpinned}
@@ -330,8 +378,10 @@ export function TitleBarSwitch({
                   current
                   tabIndex={0}
                   waiting={workspaces?.waiting[unpinned] ?? 0}
+                  notices={noticesOn(unpinned)}
                   tooltip={`Pin ${unpinned}`}
                   onClick={() => does.pin(inFront, unpinned, true)}
+                  data-chip-of={unpinned}
                 />,
               )}
             </Fragment>
@@ -345,6 +395,13 @@ export function TitleBarSwitch({
           />
         </PinnedStrip>
       )}
+      {/* The card of the notices hung from a chip (#3648), over the window: it pushes nothing. */}
+      {workspaces !== undefined &&
+        cardOn !== undefined &&
+        card !== undefined &&
+        notices !== undefined && (
+          <ChipCard workspace={cardOn} notices={card} anchor={anchor} does={notices} />
+        )}
       {open === "workspaces" && (
         <HeldPopover
           triggerRef={all}

@@ -52,14 +52,15 @@ export const EDGE = 8;
 /** How far a popover stands off what opened it, in px. */
 export const OFFSET = 4;
 
-/** Where a popover stands beside what opened it: under it, and which of its edges it lines up. */
-export type Align = "start" | "end";
+/** Where a popover stands beside what opened it: under it, and which of its edges it lines up,
+ *  or `center`, centred on it (a card hung from what it is about, #3648). */
+export type Align = "start" | "end" | "center";
 
 export type Side = "bottom" | "top" | "left" | "right";
 
 /** React Aria's placement for a side and an alignment. */
 export function placementOf(side: Side, align: Align): AriaPopoverProps["placement"] {
-  return `${side} ${align}` as AriaPopoverProps["placement"];
+  return (align === "center" ? side : `${side} ${align}`) as AriaPopoverProps["placement"];
 }
 
 /** What a member of the family that draws the surface takes. */
@@ -197,7 +198,7 @@ export function Surface({
   children,
   ...rest
 }: SurfaceProps & {
-  kind?: "popover" | "menu";
+  kind?: "popover" | "menu" | "notice";
   /** Whether this sets its own placement, or leaves it to the trigger (a submenu's). */
   placed?: boolean;
   triggerRef?: RefObject<Element | null>;
@@ -390,6 +391,58 @@ export function HeldPopover({
       >
         {children}
       </AriaDialog>
+    </Surface>
+  );
+}
+
+/**
+ * **A notice hung from what it is about** (#3648, spec #3647): a title-bar chip's card, the
+ * family's `notice` surface, centred under what it hangs from with its point in the middle, and
+ * shifted inward only at the window's edge, the point still on what it hangs from (React Aria's
+ * placement keeps it 8px in, `EDGE`).
+ *
+ * - **It takes no keyboard**, as it comes or ever: it is no dialog, and what it says carries its
+ *   own role inside it (a region the F6 cycle stops at, a polite status). A press inside it, or
+ *   F6, is how the keyboard reaches it.
+ * - **A press anywhere else hides it**, the thing it hangs from too, and the press still reaches
+ *   what it was on: `onHide`, which hides and dismisses nothing. Escape is its owner's, from
+ *   inside it: a card's Esc dismisses what it says, and Esc anywhere else is not the card's (a
+ *   terminal's Esc is the chat's).
+ * - **No timer** takes it down (WCAG 2.2.1).
+ */
+export function HungPopover({
+  triggerRef,
+  isOpen,
+  onHide,
+  side = "bottom",
+  offset = 10,
+  children,
+  ...surface
+}: Omit<SurfaceProps, "align" | "isNonModal"> & {
+  triggerRef: RefObject<Element | null>;
+  isOpen: boolean;
+  onHide: () => void;
+  children: ReactNode;
+}) {
+  useClosedFromOutside({ isOpen, close: onHide, triggerRef, opener: "none", escape: false });
+  return (
+    <Surface
+      {...surface}
+      side={side}
+      align="center"
+      offset={offset}
+      isNonModal
+      kind="notice"
+      triggerRef={triggerRef}
+      isOpen={isOpen}
+      onOpenChange={(next) => !next && onHide()}
+    >
+      {/* Its point: a box of the surface's own ground and edge, turned and half shown, which a
+          theme reaches as the `arrow` part; React Aria keeps it on what the card hangs from. */}
+      <OverlayArrow data-scope="popover" data-of="notice">
+        <span data-scope="popover" data-part="arrow" />
+      </OverlayArrow>
+      {children}
     </Surface>
   );
 }

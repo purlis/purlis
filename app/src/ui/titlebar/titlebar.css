@@ -50,9 +50,11 @@
   min-inline-size: 0;
   /* 62% of the title bar, which is the window's width (R103). */
   max-inline-size: 62vw;
-  margin-block: calc(var(--space-2) * -1);
+  /* 6px above and below: room for a chip's ring and its notice dot over its corner (#3648),
+     the bar's own 40px, given back by the margin. */
+  margin-block: calc(var(--space-3) * -1);
   margin-inline: calc(var(--space-2) * -1);
-  padding-block: var(--space-2);
+  padding-block: var(--space-3);
   padding-inline: var(--space-2);
   overflow-x: auto;
   overflow-y: hidden;
@@ -165,6 +167,47 @@
   font-weight: var(--font-weight-strong);
   font-variant-numeric: tabular-nums;
   line-height: 1;
+}
+
+/* ---------------------------------------------------------------------------------------------
+   A chip's slot and its notice dot (#3648, spec #3647): a hidden notice about the workspace, not
+   dismissed, as a 16px shape over the chip's leading corner, opposite its count. It is ringed in
+   the bar's own ground, so its colour is read on that ground whatever the chip's fill, at rest,
+   under the pointer or chosen (as the count's wash is, D-3345-3). The slot is the chip's box:
+   the dot coming or going moves nothing.
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="slot"][data-scope="titlebar"] {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+[data-part="dot"][data-scope="titlebar"] {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: -5px;
+  inset-inline-start: -5px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: 16px;
+  block-size: 16px;
+  padding: 0;
+  border: 2px solid var(--surface-deep);
+  border-radius: var(--radius-full);
+  color: var(--surface-base);
+  background-color: var(--accent-base);
+  font: inherit;
+  font-size: 7px;
+  line-height: 1;
+  cursor: default;
+  appearance: none;
+}
+
+[data-part="dot"][data-scope="titlebar"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 /* ---------------------------------------------------------------------------------------------

@@ -17,6 +17,10 @@
  * - **A plain `<button>` underneath**, as the rail's is: a chip is also a context menu's trigger,
  *   which hands it its handlers and its ref (`asChild`). The hover and the keyboard's focus are
  *   React Aria's own hooks.
+ * - **A chip's notice dot** (#3648, spec #3647): a hidden notice about the workspace that is not
+ *   dismissed leaves a `dot` part on the chip's leading corner, opposite its count, which brings
+ *   the notice's card back. Each chip stands in a `slot` the dot is placed in, so the dot coming
+ *   and going moves nothing.
  * - **The strip is a toolbar**, one Tab stop whose arrows walk its chips. It is at most 62% of the bar and scrolls sideways with its scrollbar hidden
  *   (R103, R167); the slash before it is a part of its own, in the faint tier (R92, R156).
  */
@@ -30,6 +34,16 @@ import type {
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
 import { ChevronDown } from "lucide-react";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
+
+/** **What a notice is**, which its dot's shape says (spec #3647): `info`, ●. The warning and
+ *  needs-you kinds come with the notices that are them (#3649, #3652). */
+export type NoticeKind = "info";
+
+/** Each kind's shape on a dot: a shape, never a colour alone (WCAG 1.4.1). */
+const GLYPH: Record<NoticeKind, string> = { info: "●" };
+
+/** How many notices a chip's dot shows, as its description says it. */
+const noticesSaid = (count: number) => (count === 1 ? "1 notice" : `${count} notices`);
 
 /** The family's variants, in the order the manifest names them. */
 export const TITLEBAR_VARIANTS = ["pinned", "unpinned"] as const;
@@ -51,6 +65,8 @@ export interface WorkspaceChipProps extends Native {
   waiting?: number;
   /** Its tooltip: `‹name› · ⌘N` for the first nine pins (R102), `Pin ‹name›` on the dashed one. */
   tooltip?: Tip;
+  /** The notices about it its dot shows (#3648), said in its description; none says nothing. */
+  notices?: { count: number; kind: NoticeKind };
   ref?: Ref<HTMLButtonElement>;
   /** A place for it, never a look. */
   style?: CSSProperties;
@@ -69,6 +85,7 @@ export function WorkspaceChip({
   current = false,
   waiting = 0,
   tooltip,
+  notices,
   ref,
   style,
   ...handed
@@ -86,7 +103,7 @@ export function WorkspaceChip({
   const describedBy =
     [
       (handed as { "aria-describedby"?: string })["aria-describedby"],
-      waiting > 0 ? said : undefined,
+      waiting > 0 || (notices?.count ?? 0) > 0 ? said : undefined,
     ]
       .filter(Boolean)
       .join(" ") || undefined;
@@ -121,11 +138,16 @@ export function WorkspaceChip({
       )}
     </button>
   );
-  // What waits in it, beside it and not in it, so its words are only what it draws.
+  // What waits in it and what its dot shows, beside it and not in it, so its words are only
+  // what it draws.
+  const describes = [
+    waiting > 0 ? `${waiting} waiting` : undefined,
+    notices !== undefined && notices.count > 0 ? noticesSaid(notices.count) : undefined,
+  ].filter((one) => one !== undefined);
   const description =
-    waiting > 0 ? (
+    describes.length > 0 ? (
       <span id={said} hidden>
-        {`${waiting} waiting`}
+        {describes.join(", ")}
       </span>
     ) : null;
   return (
@@ -133,6 +155,57 @@ export function WorkspaceChip({
       {tooltip === undefined ? chip : <Tooltip tip={tooltip}>{chip}</Tooltip>}
       {description}
     </>
+  );
+}
+
+/**
+ * **Where a chip stands in the strip** (#3648): the chip, and the dot of the notices about it,
+ * placed over the chip's leading corner. Its own box is the chip's, so a dot coming or going
+ * moves nothing (R153).
+ */
+export function ChipSlot({ children }: { children: ReactNode }) {
+  return (
+    <span data-scope="titlebar" data-part="slot">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * **A chip's notice dot** (#3648, spec #3647): a hidden notice about the workspace, not yet
+ * dismissed, as a shape on the chip's leading corner, opposite its waiting count. A press
+ * brings the notice's card back. It is one of the stops the strip's arrows walk, never a Tab
+ * stop of its own, as every chip but one is (charter-app#189). Its glyph is the kind's shape
+ * (WCAG 1.4.1); its name says what a press shows, and the chip's description says it too.
+ */
+export function NoticeDot({
+  workspace,
+  count,
+  kind,
+  onPress,
+}: {
+  workspace: string;
+  count: number;
+  kind: NoticeKind;
+  onPress: () => void;
+}) {
+  const marked = useMarked({ onClick: onPress }, false);
+  return (
+    <button
+      type="button"
+      {...marked}
+      tabIndex={-1}
+      aria-label={
+        count === 1
+          ? `Show the notice on ${workspace}`
+          : `Show the ${count} notices on ${workspace}`
+      }
+      data-scope="titlebar"
+      data-part="dot"
+      data-kind={kind}
+    >
+      <span aria-hidden="true">{GLYPH[kind]}</span>
+    </button>
   );
 }
 
@@ -160,7 +233,7 @@ export function PinnedStrip({
   const walk = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const items = [
       ...event.currentTarget.querySelectorAll<HTMLElement>(
-        '[data-part="workspace"][data-scope="titlebar"], [data-titlebar-all]',
+        '[data-part="workspace"][data-scope="titlebar"], [data-part="dot"][data-scope="titlebar"], [data-titlebar-all]',
       ),
     ];
     const at = items.findIndex((one) => one === document.activeElement);

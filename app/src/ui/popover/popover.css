@@ -214,3 +214,51 @@
   display: block;
   fill: var(--surface-overlay);
 }
+
+/* ---------------------------------------------------------------------------------------------
+   A notice hung from what it is about (#3648, spec #3647): a title-bar chip's card. Its notices
+   pad themselves, and its point is a box of its ground and edge, turned, half shown over its
+   edge: the upper half under a card that hangs below, the lower above one that opens upward.
+   --------------------------------------------------------------------------------------------- */
+
+[data-scope="popover"][data-part="root"][data-variant="notice"] {
+  padding: 0;
+}
+
+/* What holds the point, which React Aria places on what the card hangs from: as wide as the
+   turned box, half as tall, and over the card's edge by its width, so the edge is not drawn
+   across the point's foot. */
+[data-scope="popover"][data-of="notice"] {
+  inline-size: 16px;
+  block-size: 9px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+[data-scope="popover"][data-of="notice"][data-placement="bottom"] {
+  margin-block-end: -1px;
+}
+
+[data-scope="popover"][data-of="notice"][data-placement="top"] {
+  margin-block-start: -1px;
+}
+
+[data-scope="popover"][data-part="arrow"] {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 11px;
+  block-size: 11px;
+  margin-inline: auto;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--surface-overlay);
+  rotate: 45deg;
+}
+
+/* Its centre on the card's edge: the half that points at what it hangs from is shown. */
+[data-scope="popover"][data-of="notice"][data-placement="bottom"] > [data-part="arrow"] {
+  margin-block-start: 3.5px;
+}
+
+[data-scope="popover"][data-of="notice"][data-placement="top"] > [data-part="arrow"] {
+  margin-block-start: -5.5px;
+}

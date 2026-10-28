@@ -5540,6 +5540,24 @@
         "popover.root.menu.shadow": {
           "$ref": "#/$defs/part-shadow"
         },
+        "popover.root.notice.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.root.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.root.notice.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "popover.root.notice.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "popover.root.notice.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "popover.root.notice.shadow": {
+          "$ref": "#/$defs/part-shadow"
+        },
         "popover.filter.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -5558,6 +5576,12 @@
         "popover.filter.menu.padding": {
           "$ref": "#/$defs/part-padding"
         },
+        "popover.filter.notice.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.filter.notice.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
         "popover.rule.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -5565,6 +5589,9 @@
           "$ref": "#/$defs/part-fill"
         },
         "popover.rule.menu.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.rule.notice.fill": {
           "$ref": "#/$defs/part-fill"
         },
         "popover.list.padding": {
@@ -5583,6 +5610,12 @@
           "$ref": "#/$defs/part-padding"
         },
         "popover.list.menu.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "popover.list.notice.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "popover.list.notice.gap": {
           "$ref": "#/$defs/part-gap"
         },
         "popover.header.text": {
@@ -5610,6 +5643,15 @@
           "$ref": "#/$defs/part-font-size"
         },
         "popover.header.menu.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "popover.header.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.header.notice.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "popover.header.notice.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
         "popover.footer.fill": {
@@ -5648,6 +5690,18 @@
         "popover.footer.menu.font-size": {
           "$ref": "#/$defs/part-font-size"
         },
+        "popover.footer.notice.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.footer.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.footer.notice.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "popover.footer.notice.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
         "popover.key.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -5674,6 +5728,39 @@
         },
         "popover.key.menu.corner-radius": {
           "$ref": "#/$defs/part-corner-radius"
+        },
+        "popover.key.notice.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.key.notice.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "popover.key.notice.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "popover.arrow.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.arrow.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "popover.arrow.popover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.arrow.popover.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "popover.arrow.menu.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.arrow.menu.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "popover.arrow.notice.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "popover.arrow.notice.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
         },
         "radio.root.text": {
           "$ref": "#/$defs/part-text"
@@ -8565,6 +8652,78 @@
           "$ref": "#/$defs/part-fill"
         },
         "titlebar.row.unpinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.pinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.pinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.pinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.pinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.pinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.pinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.pinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.pinned.focused.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.unpinned.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.unpinned.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.unpinned.hover.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.unpinned.hover.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.unpinned.selected.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.unpinned.selected.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "titlebar.dot.unpinned.focused.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "titlebar.dot.unpinned.focused.text": {
           "$ref": "#/$defs/part-text"
         },
         "tooltip.root.fill": {

@@ -13,7 +13,7 @@ use super::{ALL, Consent, Family, Length, Look, Part, Prop, State, TRANSPARENT, 
 pub(super) const POPOVER: Family = Family {
     name: "popover",
     description: "A popover, and the surface a menu stands on: a card beside a row, a refusal \
-                  under a field, a list with its filter, a menu.",
+                  under a field, a list with its filter, a menu, a chip's card of notices.",
     since: 6,
     parts: &[
         Part {
@@ -65,6 +65,13 @@ pub(super) const POPOVER: Family = Family {
             description: "A key the footer names, in its cap.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
+        Part {
+            name: "arrow",
+            since: super::NEXT,
+            description: "The point a notice's card takes from what it hangs from: its ground \
+                          and its edge.",
+            properties: &[Prop::Fill, Prop::BorderColour],
+        },
     ],
     variants: &[
         Variant {
@@ -77,6 +84,13 @@ pub(super) const POPOVER: Family = Family {
             name: "menu",
             since: 6,
             description: "The surface a menu stands on.",
+            consent: None,
+        },
+        Variant {
+            name: "notice",
+            since: super::NEXT,
+            description: "A card of notices hung from what they are about, a title-bar chip, \
+                          centred under it with its point.",
             consent: None,
         },
     ],

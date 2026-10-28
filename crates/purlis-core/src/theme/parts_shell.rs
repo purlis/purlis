@@ -506,6 +506,13 @@ pub(super) const TITLEBAR: Family = Family {
             description: "A switcher's row: a workspace or a project to go to.",
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
+        Part {
+            name: "dot",
+            since: super::NEXT,
+            description: "The dot a notice about the workspace leaves on its chip's corner while \
+                          its card is hidden: its shape and its fill, ringed in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
     ],
     variants: &[
         Variant {
@@ -541,11 +548,13 @@ pub(super) const TITLEBAR: Family = Family {
         ("all", "text.quiet"),
         ("pin", "text.faint"),
         ("row", "text.secondary"),
+        // A notice's dot (#3648): its shape, a mark, in the window's ground on the accent.
+        ("dot", "surface.base"),
     ],
     corner_most: None,
     around: &[],
     // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
-    fills: &[("count", "wash.warning")],
+    fills: &[("count", "wash.warning"), ("dot", "accent.base")],
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
     // the switcher is drawn on, which their words are read on (#3099).
     under: &[("row", "surface.overlay"), ("pin", "surface.overlay")],
