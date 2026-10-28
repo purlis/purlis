@@ -213,8 +213,9 @@ export function SkillsView({
       onOpenView(skillStudioAt(scope, "sources"), SKILL_STUDIO_TITLE);
       return;
     }
-    askStudioStart("", "new");
+    // The studio goes to its Library first, and the start opens there.
     openStudio();
+    askStudioStart("", "new");
   };
   const act = (row: ListedSkill, what: SkillAct) => {
     if (what === "use") {

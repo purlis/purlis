@@ -139,15 +139,34 @@ export interface StudioPlace {
 /** Where a studio tab starts when nothing opened it anywhere: Library, at the project's root. */
 export const STUDIO_START: StudioPlace = { page: "library", scope: AT_THE_ROOT };
 
-/** **One row of the Library**, as a place names it: a skill's level, its folder and its name,
- *  which no other row shares (an installed skill has no folder in the project). */
+/** **One row of the Library**, as a place names it: a skill's level, its folder, whose it is
+ *  and its name, which no other row shares (an installed skill has no folder in the project, and
+ *  two programs' own may share a name). */
 export function skillRowId(skill: {
   level: string;
   local: boolean;
   folder: string;
   name: string;
+  owner?: { kind: string; name?: string } | null;
 }): string {
-  return `${skill.level}${skill.local ? "+local" : ""}:${skill.folder}#${skill.name}`;
+  const whose = skill.owner == null ? "" : `${skill.owner.kind}${skill.owner.name ?? ""}`;
+  return `${skill.level}${skill.local ? "+local" : ""}:${skill.folder}:${whose}#${skill.name}`;
+}
+
+/** The name a row's id ends with. */
+export function skillOfRowId(id: string): string {
+  return id.slice(id.lastIndexOf("#") + 1);
+}
+
+/** **A row named only by its skill's name**: where a change left the skill with a new row
+ *  (renamed, shared, moved), the place goes on to the row of that name. */
+export function skillRowNamed(name: string): string {
+  return `#${name}`;
+}
+
+/** Two places are one: the same page, scope and skill chosen. */
+export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
+  return one.page === other.page && sameScope(one.scope, other.scope) && one.skill === other.skill;
 }
 
 /** A target's key starts with this: it names a place to open the studio at, never a tab. */

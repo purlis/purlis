@@ -62,7 +62,10 @@ import {
   scopeChat,
   scopeKey,
   scopeOfKey,
+  samePlace,
+  skillOfRowId,
   skillRowId,
+  skillRowNamed,
   studioHistoryOf,
   useStudioStart,
   whoseChats,
@@ -240,7 +243,18 @@ export function SkillStudioTab({
   const [asked, setAsked] = useState(0);
   const [said, setSaid] = useState<Said>();
   const [done, setDone] = useState(0);
-  const [doing, setDoing] = useState<Doing>();
+  // **A change in progress belongs to the place it was started at**: back, forward or an entry
+  // point leaves it behind, so it never stands under another skill's name. One started now binds
+  // to the place the tab is drawn at next, which a step taken with it has already reached.
+  const [inHand, setInHand] = useState<{ doing: Doing; at: StudioPlace | "next" }>();
+  const setDoing = (next: Doing | undefined) =>
+    setInHand(next === undefined ? undefined : { doing: next, at: "next" });
+  // Bound as it is drawn (React's state adjusted while rendering, not in an effect).
+  if (inHand?.at === "next") setInHand({ doing: inHand.doing, at });
+  const doing =
+    inHand !== undefined && (inHand.at === "next" || samePlace(inHand.at, at))
+      ? inHand.doing
+      : undefined;
   const [busy, setBusy] = useState(false);
   const [deleted, setDeleted] = useState<readonly DeletedSkill[]>([]);
   const [switched, setSwitched] = useState(0);
@@ -253,12 +267,12 @@ export function SkillStudioTab({
   const studio = read?.key === key ? read.studio : undefined;
   const refused = read?.key === key ? read.refused : undefined;
   const on = studio?.on === true;
+  // Read once the studio has said it is on: a scope picked later reads its skills, not these.
+  const [opened, setOpened] = useState(false);
+  if (on && !opened) setOpened(true);
   const drafts = useSkillDrafts(plane, changed + done);
   // A start the Skills view asked this studio to open on (#3266): the New skill form.
-  useStudioStart(tab, on, () => {
-    setDoing({ what: "new" });
-    history.go({ page: "library", scope });
-  });
+  useStudioStart(tab, on, () => setDoing({ what: "new" }));
   useEffect(() => {
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
@@ -274,7 +288,7 @@ export function SkillStudioTab({
   // said in one line each, and the lists read again.
   useEffect(() => {
     let live = true;
-    if (!on) return;
+    if (!opened) return;
     void commands
       .skillDeletesCutShort(plane)
       .then((answer) => {
@@ -297,10 +311,10 @@ export function SkillStudioTab({
     return () => {
       live = false;
     };
-  }, [plane, on]);
+  }, [plane, opened]);
   useEffect(() => {
     let live = true;
-    if (!on) return;
+    if (!opened) return;
     void commands
       .skillsDeleted(plane)
       .then((answer) => {
@@ -310,7 +324,7 @@ export function SkillStudioTab({
     return () => {
       live = false;
     };
-  }, [plane, on, changed, done]);
+  }, [plane, opened, changed, done]);
 
   if (studio !== undefined && !studio.on)
     return (
@@ -480,7 +494,9 @@ export function SkillStudioTab({
   const skills = studio?.skills ?? [];
   const chosen =
     page === "library" && at.skill !== undefined
-      ? skills.find((skill) => skillRowId(skill) === at.skill)
+      ? (skills.find((skill) => skillRowId(skill) === at.skill) ??
+        // A skill renamed, shared or moved has a new row: the one of its name is it.
+        skills.find((skill) => skill.name === skillOfRowId(at.skill ?? "")))
       : undefined;
   // The project's, each workspace's and the persona's this studio shows (SK-32).
   const levels = studio === undefined ? [] : levelsFor(studio.levels, scope);
@@ -494,7 +510,11 @@ export function SkillStudioTab({
       options={[
         AT_THE_ROOT,
         ...(studio?.workspaces ?? []).map(inWorkspace),
-        ...(persona === null ? [] : [scope]),
+        // The scope shown is always among them, while its skills are still being read too.
+        ...(scope.at === "persona" ||
+        (scope.at === "workspace" && !(studio?.workspaces ?? []).includes(scope.name))
+          ? [scope]
+          : []),
       ].map((one) => ({ value: scopeKey(one), label: scopeChat(one) }))}
       onValueChange={(to) => {
         const next = scopeOfKey(to);
@@ -678,7 +698,7 @@ export function SkillStudioTab({
                   )
                 }
               />
-            ) : skills.length === 0 && !starts ? (
+            ) : skills.length === 0 && starts !== null ? null : skills.length === 0 ? (
               <EmptyState
                 headline="No skill reaches these chats yet"
                 body="Every skill these chats can get is listed here, with why any other is left out."
@@ -745,6 +765,7 @@ export function SkillStudioTab({
             onCancel={() => setDoing(undefined)}
             change={change}
             restoreOffered={restoreOffered}
+            onRenamed={(to) => history.replace({ ...at, skill: skillRowNamed(to) })}
           />
         </div>
       ) : chosen !== undefined && studio !== undefined ? (
@@ -1215,6 +1236,7 @@ function ChangePanel({
   onCancel,
   change,
   restoreOffered,
+  onRenamed,
 }: {
   plane: string;
   scope: StudioScope;
@@ -1225,6 +1247,8 @@ function ChangePanel({
   onCancel: () => void;
   change: Change;
   restoreOffered: (name: string, level: SkillLevel) => Promise<Said | undefined>;
+  /** The skill was renamed `to`: the place follows it. */
+  onRenamed?: (to: string) => void;
 }) {
   switch (doing.what) {
     case "new":
@@ -1273,8 +1297,13 @@ function ChangePanel({
           busy={busy}
           onCancel={onCancel}
           onRename={(to) =>
-            change("The skill was not renamed", () =>
-              commands.skillRename(plane, doing.level, doing.skill.name, to),
+            change(
+              "The skill was not renamed",
+              () => commands.skillRename(plane, doing.level, doing.skill.name, to),
+              () => {
+                onRenamed?.(to);
+                return Promise.resolve(undefined);
+              },
             )
           }
         />

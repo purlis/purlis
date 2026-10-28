@@ -1505,7 +1505,12 @@ export const PlaneView = memo(function PlaneView({
             ),
           );
         }
-        setPinnedViews(back.filter((view) => view.pinned).map((view) => viewKey(refOf(view))));
+        // A studio tab an older launch kept per scope is pinned as the one studio tab (#3681).
+        setPinnedViews(
+          back
+            .filter((view) => view.pinned)
+            .map((view) => viewKey(studioOpening(refOf(view), () => true).tab)),
+        );
         const focusedBack = focusAnswer?.status === "ok" ? focusAnswer.data : null;
         if (focusedBack !== null && focusedBack !== undefined)
           setFocusedBranch({
@@ -1534,7 +1539,7 @@ export const PlaneView = memo(function PlaneView({
               putViewBack(
                 tabs,
                 studioPutBack(plane, refOf(view)),
-                view.title,
+                isSkillStudio(refOf(view)) ? SKILL_STUDIO_TITLE : view.title,
                 view.workspace ?? OUTSIDE,
                 view.at,
                 view.split ?? undefined,

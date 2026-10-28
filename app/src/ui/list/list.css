@@ -310,6 +310,10 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
+  /* Overflow clips at the padding box: the room under the lines is a margin, so no part of a
+     third line shows in it. */
+  padding-block-end: 0;
+  margin-block-end: var(--space-1);
 }
 
 /* An icon in a slot is one line's height. */

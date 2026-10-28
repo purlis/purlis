@@ -534,6 +534,8 @@ describe("the Skill studio's changes", () => {
       }),
     );
 
+    // The faked core keeps its old name, which a real rename would not: chosen again.
+    await openSkill("skill-lint", user);
     await pickIn(await screen.findByLabelText("Move lint to"), /^project$/, user);
     const prompt = await screen.findByRole("region", { name: "Move lint to the project skills" });
     expect(within(prompt).getByTestId("persona-keeps")).toHaveTextContent(
