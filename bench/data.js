@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793157262823,
+  "lastUpdate": 1793158806579,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27636,6 +27636,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1181885,
             "unit": "ms",
             "extra": "median of 5 runs: 101.689, 101.890, 102.118, 102.232, 102.577 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e9f35bfef09e6878b2691f59af964a6b0c0e238b",
+          "message": "Skills: a grade's cost and record are stated and read truthfully (#3273) (#3581)\n\n* A grade's cost and record are stated and read truthfully (#3273)\n\nThe plan's estimate names the grade it comes from (profile, program,\nday), prefers one on the profile picked, passes over a grade none of\nwhose chats ran, and says the cost is not known where that grade's\nchats said nothing of it, rather than that it was never graded.\n\nA row read back is bounded and checked against itself: its level, its\nruns, its tokens and dollars, a stamp no more than an hour ahead, its\nspend what its report adds up to, and each arm's chats what its tests\nran. What the record leaves out (rows skipped, files not read) is said\nby the Grades panel, the plan and purlis skill grade. A stopped chat's\nspend is counted, now under test.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grade record truth: review fixes (#3273)\n\nThe estimate shares a grade's spend over every chat it asked for, as a\nstopped chat's spend is counted, and says when its grade ran no chat;\nsame_profile is unknown where this grade's profile is. A row of the\nskill no purlis parses is counted as skipped, and a byte that is not\ntext spoils only its row. This machine's own under-way marker is never\nheld to the clock-ahead check. The plan reads the record once, and a\nstart reads its profile only after its consent holds.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T03:05:53Z",
+          "tree_id": "b5b21e6cf384f9a463c5a8d2ccb3e74d25ee25b5",
+          "url": "https://github.com/purlis/purlis/commit/e9f35bfef09e6878b2691f59af964a6b0c0e238b"
+        },
+        "date": 1793158802039,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.334484,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.326, 0.328, 0.334, 0.335, 0.358 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.486463999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.345, 16.390, 16.486, 16.519, 16.609 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2341755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.138, 101.150, 101.234, 101.731, 101.913 ms"
           }
         ]
       }
