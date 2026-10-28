@@ -9666,6 +9666,11 @@ export type PoolRequests = {
 	 *  what it answers ([`RunnerAsked::ran_this_week`]).
 	 */
 	removed_ran_this_week: number,
+	/**
+	 *  What one hour of one of its runners costs, where it declares a price (#3491): only then
+	 *  is money shown for it.
+	 */
+	price: PricePerHour | null,
 };
 
 /**  One pool, as its row draws it. */
@@ -9729,6 +9734,15 @@ export type PresetsChanged = {
 	widens: string[],
 	/**  The whole set now, by the committed file's words: what the Notice sends back once read. */
 	now: string[],
+};
+
+/**
+ *  **A pool's price per hour, as it declares it** (#3491): its amount the decimal it was
+ *  written as, and its currency's ISO 4217 code. Money is shown in it, never converted.
+ */
+export type PricePerHour = {
+	amount: string,
+	currency: string,
 };
 
 /**

@@ -1170,6 +1170,7 @@ const DEVICES_SHOWN = {
       limits: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
       millicpus: 2000,
       removed_ran_this_week: 0,
+      price: null,
     },
   ],
 };

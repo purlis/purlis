@@ -9,6 +9,7 @@ import {
   type DevicesShown,
   type PlaneId,
   type PoolRequests,
+  type PricePerHour,
   type RunnerAsked,
   type RunnerOnTheList,
 } from "./bindings";
@@ -328,6 +329,8 @@ export type PoolUse = {
   ranThisWeek: number;
   /** How many of its runners' hours this week are not known yet: not answered, or not in time. */
   hoursNotKnown: number;
+  /** Its price per hour, where it declares one (#3491): only then is money shown for it. */
+  price: PricePerHour | null;
 };
 
 /**
@@ -335,8 +338,9 @@ export type PoolUse = {
  * and the CPUs and memory those that run request (a runner requests its pool's limits). A Docker
  * pool on this machine's own engine is the person's (`owned`, D-2050-4), so its one row is
  * "You"; one on an engine elsewhere is not known to be anyone's in particular. Its hours this
- * week are its runners' as each answers, and its runners' no longer kept (#3492). Money is never
- * shown: no pool declares a price per hour yet, and a cost is never guessed.
+ * week are its runners' as each answers, and its runners' no longer kept (#3492). Money is shown
+ * only for a pool that declares a price per hour (#3491): its hours this week times that price,
+ * in its currency. A cost is never guessed.
  */
 export function usageOf(
   pools: readonly PoolRequests[],
@@ -365,6 +369,7 @@ export function usageOf(
       asking: standing.filter((one) => one === "asking").length,
       ranThisWeek: ran.reduce<number>((sum, one) => sum + (one ?? 0), pool.removed_ran_this_week),
       hoursNotKnown: ran.filter((one) => one === null).length,
+      price: pool.price,
     };
   });
 }
@@ -382,6 +387,50 @@ export function hoursSaid(use: Pick<PoolUse, "ranThisWeek" | "hoursNotKnown">): 
   const tenths = Math.round(use.ranThisWeek / 360);
   const hours = `${Math.floor(tenths / 10)}.${tenths % 10}`;
   return use.hoursNotKnown === 0 ? hours : `${hours}, ${use.hoursNotKnown} not answered yet`;
+}
+
+/**
+ * What a use row's Money this week cell says (#3491): nothing for a pool that declares no price;
+ * else its hours this week times its price, in its currency, and the runners whose hours are not
+ * known yet apart, as its hours say them.
+ */
+export function moneySaid(
+  use: Pick<PoolUse, "ranThisWeek" | "hoursNotKnown" | "price">,
+): string | undefined {
+  if (use.price === null) return undefined;
+  const money = moneyOf(use.ranThisWeek, use.price);
+  return use.hoursNotKnown === 0 ? money : `${money}, ${use.hoursNotKnown} not answered yet`;
+}
+
+/**
+ * **`seconds` at `price` per hour**, in its currency's minor unit, half up: `"0.25 EUR"`.
+ * Worked in whole numbers (`BigInt`) from the decimal the pool declared, never in binary floats,
+ * and shown with its ISO 4217 code, never converted.
+ */
+export function moneyOf(seconds: number, price: PricePerHour): string {
+  const [whole, part = ""] = price.amount.split(".");
+  const digits = minorDigits(price.currency);
+  // seconds × amount / 3600, in minor units: (seconds × whole-and-part × 10^digits) over
+  // (3600 × 10^part's length), rounded half up.
+  const over = 3600n * 10n ** BigInt(part.length);
+  const times =
+    BigInt(Math.max(0, Math.trunc(seconds))) * BigInt(whole + part) * 10n ** BigInt(digits);
+  const minor = (times * 2n + over) / (over * 2n);
+  const text = minor.toString().padStart(digits + 1, "0");
+  const amount = digits === 0 ? text : `${text.slice(0, -digits)}.${text.slice(-digits)}`;
+  return `${amount} ${price.currency}`;
+}
+
+/** How many digits `currency` has after its point, as the runtime's ISO 4217 data says: else 2. */
+function minorDigits(currency: string): number {
+  try {
+    return (
+      new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions()
+        .maximumFractionDigits ?? 2
+    );
+  } catch {
+    return 2;
+  }
 }
 
 /** `millicpus`, as a number of CPUs to the thousandth: `2`, `1.5`. */

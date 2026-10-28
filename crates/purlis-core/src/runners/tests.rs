@@ -441,6 +441,23 @@ fn a_file_of_an_unknown_shape_is_refused_whole_and_never_replaced() {
         with(&|row| row["memory"] = 1.5.into()),
         with(&|row| row["processes"] = 8.into()),
         with(&|row| row["tmp"] = 999_999.into()),
+        // A price is a decimal in a string and an ISO 4217 code, and nothing else (#3491).
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": 0.12, "currency": "EUR"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "-1", "currency": "EUR"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1e3", "currency": "EUR"})),
+        with(&|row| {
+            row["pricePerHour"] = serde_json::json!({"amount": "0.1234567", "currency": "EUR"})
+        }),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "012", "currency": "EUR"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1.", "currency": "EUR"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1", "currency": "eur"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1", "currency": "EURO"})),
+        with(&|row| row["pricePerHour"] = serde_json::json!({"amount": "1"})),
+        with(&|row| {
+            row["pricePerHour"] =
+                serde_json::json!({"amount": "1", "currency": "EUR", "per": "hour"});
+        }),
+        with(&|row| row["pricePerHour"] = "1 EUR".into()),
         with(&|row| {
             row.as_object_mut().unwrap().remove("kind");
         }),
@@ -696,4 +713,66 @@ fn write_private(path: &Path, text: &serde_json::Value) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::write(path, text.to_string()).unwrap();
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+/// A pool declares its price per hour in the file, and purlis keeps it as it was written
+/// through every write (#3491): its amount the decimal it was, never a float.
+#[test]
+fn a_pools_price_per_hour_is_read_and_kept_as_it_was_declared() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let mut text = the_file(config.path());
+    text["pools"][0]["pricePerHour"] = serde_json::json!({"amount": "0.10", "currency": "EUR"});
+    purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path()))
+        .unwrap()
+        .replace_file(crate::machine::RUNNERS_FILE, text.to_string().as_bytes())
+        .unwrap();
+    let read = pools(config.path()).unwrap();
+    let price = read[0].price().expect("a price");
+    assert_eq!((price.amount(), price.currency()), ("0.10", "EUR"));
+    // Another write of the file keeps it, as declared.
+    record_pool(config.path(), &pool("tests", Set::default())).unwrap();
+    assert_eq!(
+        the_file(config.path())["pools"][0]["pricePerHour"],
+        serde_json::json!({"amount": "0.10", "currency": "EUR"})
+    );
+    assert!(
+        the_file(config.path())["pools"][1]
+            .get("pricePerHour")
+            .is_none(),
+        "a pool that declares none is written with none"
+    );
+}
+
+/// A price is not how a pool is defined: declaring one leaves its definition's digest, which
+/// its logins are held to, as it was (#3491).
+#[test]
+fn a_pools_price_leaves_its_definition_digest_as_it_was() {
+    let plain = pool("builds", Set::default());
+    let priced = plain.clone().priced(Some(Price::new("3", "USD").unwrap()));
+    assert_eq!(plain.definition_digest(), priced.definition_digest());
+}
+
+#[test]
+fn a_price_is_a_plain_decimal_and_an_iso_4217_code() {
+    for amount in ["0", "0.5", "12", "123456789.123456", "0.000001"] {
+        assert!(Price::new(amount, "JPY").is_ok(), "{amount}");
+    }
+    for amount in [
+        "",
+        ".5",
+        "1.",
+        "01",
+        "+1",
+        "-1",
+        "1e2",
+        "1,5",
+        "1234567890",
+        "0.1234567",
+    ] {
+        assert!(Price::new(amount, "EUR").is_err(), "{amount}");
+    }
+    for currency in ["eur", "EU", "EURO", "E1R", ""] {
+        assert!(Price::new("1", currency).is_err(), "{currency}");
+    }
 }

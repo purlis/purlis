@@ -157,6 +157,17 @@ pub struct PoolRequests {
     /// The seconds its runners no longer kept ran this week (#3492): a runner's own are in
     /// what it answers ([`RunnerAsked::ran_this_week`]).
     pub removed_ran_this_week: u32,
+    /// What one hour of one of its runners costs, where it declares a price (#3491): only then
+    /// is money shown for it.
+    pub price: Option<PricePerHour>,
+}
+
+/// **A pool's price per hour, as it declares it** (#3491): its amount the decimal it was
+/// written as, and its currency's ISO 4217 code. Money is shown in it, never converted.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PricePerHour {
+    pub amount: String,
+    pub currency: String,
 }
 
 /// **What the Devices view draws first** (#2052): this machine's version, where everything the
@@ -867,6 +878,10 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
             limits: crate::dockerpools::shown(pool.limits()),
             millicpus: pool.limits().millicpus(),
             removed_ran_this_week: removed_ran(&hours, pool.name(), &kept, week),
+            price: pool.price().map(|price| PricePerHour {
+                amount: price.amount().to_owned(),
+                currency: price.currency().to_owned(),
+            }),
         })
         .collect();
     // As the pool logins decide it (D-2050-4): a local socket on this machine.

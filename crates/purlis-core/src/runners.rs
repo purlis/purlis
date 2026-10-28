@@ -79,6 +79,56 @@ pub struct Pool {
     image: Image,
     set: Set,
     limits: Limits,
+    price: Option<Price>,
+}
+
+/// **What one hour of a pool's runner costs, as the pool declares it** (#3491, the person's
+/// ruling of 2026-10-28): `pricePerHour {amount, currency}`. The amount is kept as the decimal
+/// it was written as, never as a binary float, and the currency is its ISO 4217 code; money is
+/// shown in it and never converted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Price {
+    amount: String,
+    currency: String,
+}
+
+impl Price {
+    /// A price of `amount` (digits, then at most six after a point, with no leading zero but
+    /// for `0` itself) in `currency` (three upper-case letters).
+    pub fn new(amount: &str, currency: &str) -> Result<Price, Refused> {
+        let digits = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
+        let (whole, part) = match amount.split_once('.') {
+            Some((whole, part)) => (whole, Some(part)),
+            None => (amount, None),
+        };
+        let whole_ok =
+            digits(whole) && whole.len() <= 9 && (whole == "0" || !whole.starts_with('0'));
+        let part_ok = part.is_none_or(|part| digits(part) && part.len() <= 6);
+        if !whole_ok || !part_ok {
+            return Err(Refused::Other(format!(
+                "\"{amount}\" is not a price per hour: write it as a decimal in a string, such as \
+                 \"0.12\", with at most six digits after the point"
+            )));
+        }
+        if currency.len() != 3 || !currency.bytes().all(|b| b.is_ascii_uppercase()) {
+            return Err(Refused::Other(format!(
+                "\"{currency}\" is not a currency: write its ISO 4217 code, such as \"EUR\""
+            )));
+        }
+        Ok(Price {
+            amount: amount.to_owned(),
+            currency: currency.to_owned(),
+        })
+    }
+
+    /// The amount, exactly as it was declared.
+    pub fn amount(&self) -> &str {
+        &self.amount
+    }
+
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
 }
 
 impl Pool {
@@ -100,7 +150,18 @@ impl Pool {
             image,
             set,
             limits,
+            price: None,
         })
+    }
+
+    /// This pool, declaring `price` per hour of its runner, or none (#3491).
+    pub fn priced(self, price: Option<Price>) -> Pool {
+        Pool { price, ..self }
+    }
+
+    /// The price per hour it declares, if any (#3491): only then is money shown for it.
+    pub fn price(&self) -> Option<&Price> {
+        self.price.as_ref()
     }
 
     pub fn name(&self) -> &str {
@@ -123,10 +184,14 @@ impl Pool {
 
     /// **What defines this pool, as a digest** (#2050): SHA-256, in hex, of its row as this file
     /// keeps it (its name, kind, image and the limits the person set), so any change to how it is
-    /// defined changes it.
+    /// defined changes it. Its price is not how it is defined, and is left out (#3491).
     pub fn definition_digest(&self) -> String {
         use sha2::Digest as _;
-        let row = pool_to_row(self).to_string();
+        let mut row = pool_to_row(self);
+        if let Some(fields) = row.as_object_mut() {
+            fields.remove("pricePerHour");
+        }
+        let row = row.to_string();
         crate::runnerlink::hex_of(&sha2::Sha256::digest(row.as_bytes()))
     }
 
@@ -760,12 +825,19 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
     if let Some(tmp) = set.tmp_mib {
         row["tmp"] = tmp.into();
     }
+    if let Some(price) = pool.price() {
+        row["pricePerHour"] = serde_json::json!({
+            "amount": price.amount(),
+            "currency": price.currency(),
+        });
+    }
     row
 }
 
 /// A pool's row: its name, kind `docker` and image, and each limit the person set, as
 /// [`pool_to_row`] writes them: `cpus` a number of CPUs to the thousandth, `memory` and `tmp`
-/// in MiB, `processes` a count. Any other key, or a value of another shape, is refused.
+/// in MiB, `processes` a count, and `pricePerHour` where the pool declares one (#3491). Any
+/// other key, or a value of another shape, is refused.
 fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
     let fields = row.as_object()?;
     let known = [
@@ -776,6 +848,7 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "memory",
         "processes",
         "tmp",
+        "pricePerHour",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -813,7 +886,20 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         processes: count(fields.get("processes"))?,
         tmp_mib: count(fields.get("tmp"))?,
     };
-    Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
+    let price = match fields.get("pricePerHour") {
+        None => None,
+        Some(price) => {
+            let price = price.as_object()?;
+            if price.len() != 2 {
+                return None;
+            }
+            let said = |key: &str| price.get(key).and_then(serde_json::Value::as_str);
+            Some(Price::new(said("amount")?, said("currency")?).ok()?)
+        }
+    };
+    Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set)
+        .ok()
+        .map(|pool| pool.priced(price))
 }
 
 /// A runner's hours not written are said, and change nothing else (#3492).

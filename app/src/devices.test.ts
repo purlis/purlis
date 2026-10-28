@@ -15,6 +15,8 @@ import {
   contactSaid,
   healthSaid,
   hoursSaid,
+  moneyOf,
+  moneySaid,
   runningSaid,
   usageOf,
   versionSaid,
@@ -65,11 +67,12 @@ const answered = (
 });
 
 const LIMITS = { cpus: "1.5", memory_mib: 2048, processes: 512, tmp_mib: 512 };
-const pool = (name: string, removedRan = 0): PoolRequests => ({
+const pool = (name: string, removedRan = 0, price: PoolRequests["price"] = null): PoolRequests => ({
   pool: name,
   limits: LIMITS,
   millicpus: 1500,
   removed_ran_this_week: removedRan,
+  price,
 });
 
 const shownWith = (placement: Partial<DevicesShown["placement"]>): DevicesShown => ({
@@ -264,6 +267,7 @@ describe("usageOf", () => {
         asking: 0,
         ranThisWeek: 0,
         hoursNotKnown: 0,
+        price: null,
       },
       {
         pool: "qa",
@@ -275,6 +279,7 @@ describe("usageOf", () => {
         asking: 0,
         ranThisWeek: 0,
         hoursNotKnown: 0,
+        price: null,
       },
     ]);
   });
@@ -334,5 +339,41 @@ describe("usageOf", () => {
     expect(hoursSaid(use[0])).toBe("1.3, 2 not answered yet");
     expect(hoursSaid({ ranThisWeek: 0, hoursNotKnown: 0 })).toBe("0.0");
     expect(hoursSaid({ ranThisWeek: 100 * 3600 - 1, hoursNotKnown: 0 })).toBe("100.0");
+  });
+
+  it("shows money only for a pool that declares a price: its hours this week times that price", () => {
+    const use = usageOf(
+      [pool("builds", 0, { amount: "0.10", currency: "EUR" }), pool("qa")],
+      [runner("builds", "builds"), runner("qa", "qa")],
+      {
+        "builds/builds": answered("running", [], [], 2700),
+        "qa/qa": answered("running", [], [], 3600),
+      },
+      true,
+    );
+    // Three quarters of an hour at 0.10 EUR is 0.075 EUR, to the cent half up.
+    expect(moneySaid(use[0])).toBe("0.08 EUR");
+    expect(moneySaid(use[1])).toBeUndefined();
+  });
+
+  it("says money with the runners whose hours are not known yet apart", () => {
+    expect(
+      moneySaid({ ranThisWeek: 3600, hoursNotKnown: 1, price: { amount: "2", currency: "USD" } }),
+    ).toBe("2.00 USD, 1 not answered yet");
+  });
+});
+
+describe("moneyOf", () => {
+  it("works exactly from the declared decimal, where binary floats would not", () => {
+    // Three hours at 0.1 EUR: 3 × 0.1 in binary floats is 0.30000000000000004.
+    expect(moneyOf(3 * 3600, { amount: "0.1", currency: "EUR" })).toBe("0.30 EUR");
+    expect(moneyOf(1, { amount: "123456789.123456", currency: "USD" })).toBe("34293.55 USD");
+    expect(moneyOf(0, { amount: "5", currency: "USD" })).toBe("0.00 USD");
+  });
+
+  it("rounds to the currency's own minor unit and never converts it", () => {
+    expect(moneyOf(5400, { amount: "15", currency: "JPY" })).toBe("23 JPY");
+    expect(moneyOf(3600, { amount: "1.2345", currency: "KWD" })).toBe("1.235 KWD");
+    expect(moneyOf(1800, { amount: "0.01", currency: "GBP" })).toBe("0.01 GBP");
   });
 });

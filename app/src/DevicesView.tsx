@@ -17,8 +17,9 @@
  *   facts, isolated (`<bdi>`), as said elsewhere. The core has already put it on one line, capped
  *   and with nothing a reader does not see.
  * - **The table family** for the use: one row per pool and person, with its hours this week (the
- *   ISO week in local time, #3492). No money: a pool declares no price per hour yet, and a cost
- *   is never guessed.
+ *   ISO week in local time, #3492), and its money this week only where it declares a price per
+ *   hour (#3491). With no pool priced there is no money column; a pool that declares none has an
+ *   empty money cell. A cost is never guessed.
  * - **Refresh** reads every device again, as the view's coming on screen does. A runner still
  *   being asked is not asked twice: Refresh waits on that ask for it, and asks every other one.
  */
@@ -35,6 +36,7 @@ import {
   contactSaid,
   healthSaid,
   hoursSaid,
+  moneySaid,
   rereadDevices,
   runningSaid,
   usageOf,
@@ -209,6 +211,8 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
   const shown = read.shown;
   const rows = arranged(shown, asked);
   const use = usageOf(shown.pools, shown.placement.runners, asked, shown.owned);
+  // Money only where a pool declares a price per hour (#3491): with none, no column for it.
+  const priced = use.some((one) => one.price !== null);
   return (
     <div className="devices-view" data-testid="devices-view">
       <div className="devices-bar">
@@ -238,6 +242,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
             <TableColumn>CPUs requested</TableColumn>
             <TableColumn>Memory requested</TableColumn>
             <TableColumn>Hours this week</TableColumn>
+            {priced && <TableColumn>Money this week</TableColumn>}
           </TableHeader>
           <TableBody>
             {use.map((one) => (
@@ -249,6 +254,7 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
                 <TableCell>{one.cpus}</TableCell>
                 <TableCell>{`${one.memoryMib} MiB`}</TableCell>
                 <TableCell>{hoursSaid(one)}</TableCell>
+                {priced && <TableCell>{moneySaid(one) ?? ""}</TableCell>}
               </TableRow>
             ))}
           </TableBody>
