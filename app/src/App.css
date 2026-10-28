@@ -7613,8 +7613,59 @@ nav.piece-files-head {
   text-decoration: line-through;
 }
 
-/* The Skill studio's changes (SK-7, #2770): the panel a change opens under the toolbar, the
-   levels a row is dropped on to move it, the editor's lint and the deleted skills. */
+/* **The Skill studio** (#3681): one view tab per project, laid out by the view frame
+   (`ui/panel/ViewFrame.tsx`), which takes the whole tab. Each of its panes scrolls on its own, so
+   nothing scrolls as one long page. */
+.view-body:has(> .skill-studio) {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.skill-studio {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+
+/* The Library's search box and chips, under its lead line, wrapping where the list is narrow. */
+.skill-library-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-3);
+}
+
+/* What a page other than Library holds, and the skill chosen beside the Library: the frame's
+   pane gives the room, these the padding. */
+.skill-studio-page,
+.skill-studio-item > :not(header) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+}
+
+/* Rows held while the skills are read (S11): the list's own height, so nothing jumps when they
+   are. */
+.skill-studio-placeholders {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+}
+
+.skill-studio-placeholder {
+  block-size: calc(var(--size-control) * 1.5);
+  border-radius: var(--radius-control);
+  background-color: var(--surface-hover);
+}
+
+/* The Skill studio's changes (SK-7, #2770): the panel a change opens in the item pane, the
+   editor's lint and the deleted skills. */
 .skill-change,
 .skill-editor {
   display: flex;
@@ -7628,20 +7679,6 @@ nav.piece-files-head {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  font-size: var(--font-size-sm);
-}
-
-.skill-levels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-3);
-}
-
-.skill-level-target {
-  padding: var(--space-1) var(--space-3);
-  border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
 }
 

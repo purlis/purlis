@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { lazy, Suspense, useEffect, useRef, useState, type DragEvent } from "react";
-import { MessageSquarePlus, Plus, Sparkles } from "lucide-react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { MessageSquarePlus, Plus, RotateCw, Search, Sparkles } from "lucide-react";
 import {
   commands,
   type DeletedSkill,
@@ -21,30 +21,29 @@ import { counted } from "./dispatches";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { SkillStudioHarnesses } from "./SkillStudioHarnesses";
 import { Button, ButtonRow } from "./ui/button/Button";
+import { Badge, type BadgeVariant } from "./ui/badge/Badge";
+import { Fact, Facts } from "./ui/card/Facts";
+import { TextField } from "./ui/field/Field";
+import { List, ListRow, type Selection } from "./ui/list/List";
+import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
+import { ViewFrame, ViewListHead, ViewPageHeader, type ViewPage } from "./ui/panel/ViewFrame";
+import { ViewBar, type Crumb } from "./ui/panel/ViewBar";
+import { useViewHistory } from "./ui/panel/viewHistory";
 import { SkillPinSwitch, SkillPinsRefusedLine } from "./SkillPins";
 import { RouterGrade } from "./RouterGrade";
 import { Notice } from "./Notice";
 import { SkillCompatBadges } from "./SkillCompatBadges";
-import { SkillRowActions } from "./SkillRowActions";
 import { SkillDrafts } from "./SkillDrafts";
-import {
-  DRAFT_WITH_A_CHAT,
-  NEW_SKILL,
-  SkillStarts,
-  SkillsNotRead,
-  SkillsReading,
-  type SkillStart,
-} from "./SkillStarts";
+import { DRAFT_WITH_A_CHAT, NEW_SKILL, SkillStarts, type SkillStart } from "./SkillStarts";
 import { askDraft, useSkillDrafts } from "./skillDraftAsks";
 import { SkillSources } from "./SkillSources";
 import { Select } from "./ui/select/Select";
-import { Field, SettingRow } from "./settings/components";
+import { Choice, Field, SettingRow } from "./settings/components";
 import {
   grantChoices,
   grantLabel,
   labelOf,
   levelFrom,
-  levelKey,
   levelOf,
   levelsFor,
   picking,
@@ -54,29 +53,27 @@ import {
 } from "./skillChanges";
 import {
   AT_THE_ROOT,
+  SKILL_STUDIO_VIEW,
+  STUDIO_PAGE_NAMES,
+  STUDIO_START,
   inWorkspace,
   pinnerOf,
+  sameScope,
   scopeChat,
   scopeKey,
   scopeOfKey,
-  skillStudioTitle,
-  skillStudioView,
+  skillRowId,
+  studioHistoryOf,
   useStudioStart,
   whoseChats,
+  type StudioPage,
+  type StudioPlace,
   type StudioScope,
 } from "./skillStudio";
-import { skillView } from "./skillRuns";
 import { BUILT_IN_STAYS, PINNABLE, turnOf } from "./skillsListing";
-import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
+import { skillView } from "./skillRuns";
 import type { ViewRef } from "./tabs";
-import {
-  ControlBody,
-  ControlCell,
-  ControlColumn,
-  ControlHead,
-  ControlRow,
-  ControlTable,
-} from "./ui/table/ControlTable";
+import { PersonaSkillAdd, changePersonaSkill } from "./personaSkills";
 
 /** The light editor, its own chunk (`tools/main-chunk-has-no-codemirror.mjs`). */
 const SkillEditor = lazy(() => import("./SkillEditor"));
@@ -94,13 +91,22 @@ type Change = (
   then?: () => Promise<Said | undefined>,
 ) => void;
 
-/** A change in progress on one skill: which panel is open under the toolbar. */
+/** A change in progress: New skill, or one on the skill chosen, drawn in the item pane. */
 type Doing =
   | { what: "new" }
   | { what: "edit"; skill: StudioSkill; level: SkillLevel; was: string }
   | { what: "rename"; skill: StudioSkill; level: SkillLevel }
   | { what: "move"; skill: StudioSkill; from: SkillLevel; to: SkillLevel }
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; users: SkillUsers };
+
+/** What a change in progress is called in the path. */
+const DOING_NAMES: Record<Doing["what"], string> = {
+  new: NEW_SKILL,
+  edit: "Edit",
+  rename: "Rename",
+  move: "Move",
+  delete: "Delete",
+};
 
 /**
  * **The row of each name that carries its Pin switch** (SK-15d): of its rows at one of the
@@ -117,40 +123,121 @@ function pinRowsOf(skills: readonly StudioSkill[]): Map<string, StudioSkill> {
   return rows;
 }
 
-/** The type a dragged row carries, so a drop from elsewhere is not read as a skill. */
-const DRAGGED = "application/x-purlis-skill";
+// --- The Library's list ------------------------------------------------------------------------
+
+/** **The Library's filter chips** (S2): each narrows the list, and none ticked shows all. */
+const CHIPS = [
+  { value: "own", label: "The project's own" },
+  { value: "built-in", label: "Built-in" },
+  { value: "on", label: "On" },
+  { value: "out", label: "Off or left out" },
+] as const;
+type Chip = (typeof CHIPS)[number]["value"];
+
+/** Whether `skill` is one a chip asks for. Chips of a kind (own, built-in) widen each other, as
+ *  chips of a state (on, off or left out) do; a kind and a state both have to hold. */
+function chipsKeep(skill: StudioSkill, chips: ReadonlySet<Chip>): boolean {
+  const kinds = (["own", "built-in"] as const).filter((one) => chips.has(one));
+  const states = (["on", "out"] as const).filter((one) => chips.has(one));
+  const kind =
+    kinds.length === 0 ||
+    kinds.some((one) => (one === "own" ? PINNABLE.has(skill.level) : skill.level === "built-in"));
+  const state = states.length === 0 || states.some((one) => (one === "on") === skill.on);
+  return kind && state;
+}
+
+/** Whether `skill` matches what is typed in the search box: its name or its description. */
+function searchKeeps(skill: StudioSkill, query: string): boolean {
+  const typed = query.trim().toLowerCase();
+  if (typed === "") return true;
+  return `${skill.name}\n${skill.description}`.toLowerCase().includes(typed);
+}
 
 /**
- * **The Skill studio's tab** (SK-2, #2765; SK-4, #2767; SK-7, #2770): one chat's skill set, at
- * the project's root or in one workspace. Every skill the chat gets, with its level, and every one
- * it does not get with the one line that says why. Each skill a person owns can be edited in the
- * light editor, renamed, moved to another level (by dragging its row onto a level, or with Move
- * to), deleted after the studio says who uses it, and restored. New skill starts one from a
- * template at the level the person came from. A project skill's grant, and in a workspace its
- * turn-off, are set on its row. Each change is one commit (the core's `skills::verbs`).
+ * **A row's one mark** (S2): what most needs saying of it, or nothing for a skill a chat simply
+ * gets. Off where the workspace turned it off, left out where a chat does not get it, hidden
+ * where a router left it off a chat's list, pinned where a pin keeps it on that list.
+ */
+function markOf(skill: StudioSkill): { said: string; variant: BadgeVariant } | undefined {
+  if (skill.turned_off) return { said: "Off", variant: "waiting" };
+  if (!skill.on) return { said: "Left out", variant: "waiting" };
+  if (skill.hidden.length > 0) return { said: "Hidden by the router", variant: "neutral" };
+  if (skill.pinned) return { said: "Pinned", variant: "accent" };
+  return undefined;
+}
+
+/** The row's line under its name: what it does, or why it is left out where it says nothing. */
+function lineOf(skill: StudioSkill): string {
+  if (skill.description !== "") return skill.description;
+  return skill.left_out === null
+    ? "It says nothing of what it does."
+    : `Left out: ${skill.left_out}`;
+}
+
+/** **Rows held while the skills are read** (S11): the layout stays, and after about a second a
+ *  line says what is happening. */
+function Placeholders() {
+  const [late, setLate] = useState(false);
+  useEffect(() => {
+    const after = window.setTimeout(() => setLate(true), 1000);
+    return () => window.clearTimeout(after);
+  }, []);
+  return (
+    <div className="skill-studio-placeholders" aria-busy="true" data-testid="skill-studio-reading">
+      {[0, 1, 2, 3, 4].map((at) => (
+        <div key={at} className="skill-studio-placeholder" aria-hidden="true" />
+      ))}
+      <p role="status" className="honest">
+        {late ? "Reading the project's skills…" : ""}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * **The Skill studio's tab** (SK-2, #2765; spec #3679, the amendment's S2): one view tab per
+ * project, laid out by the view frame (`ui/panel/ViewFrame.tsx`) as pages in a left navigation,
+ * with its own back and forward and a path (`ViewBar.tsx`), and a scope picker for whose chats it
+ * covers. Each place it goes to is a step of the tab's own history (`useViewHistory`), which an
+ * entry point opens it at (`skillStudioAt`, `studioOpening`).
  *
- * **What it offers when it opens** (SK-22, #2785; decision 42) is the core's
- * (`skills::first_open`): while the project has no skill of its own, three starts above the
- * skills it lists (a chat's draft, browse sources, a new skill from the blank template); the
- * offered skill sources in its sources section; and, where the project's skills are still where
- * only some chat programs read them, the move into the studio, which is the doctor's `project-skills` fix (SK-21).
+ * - **Library**: every skill the scope's chats can get, a row each (its name, its skill level,
+ *   one mark, and its one-line description under them), with a search box and filter chips. The
+ *   skill chosen opens beside the list, or alone with a way back where the tab is narrow. Its
+ *   page is the next ticket's (#3682); until then it holds the controls each row of the old
+ *   table had (SK-4, SK-7, SK-15d).
+ * - **Needs you** and **Drafts** are in the navigation only while they hold something.
+ * - **Sources**, **Deleted**, **Harness skills** and **Routing** hold what the old page's
+ *   sections held, each scrolling on its own, until their own tickets build them.
+ *
+ * Each change is one commit (the core's `skills::verbs`). **What it offers when it opens**
+ * (SK-22, #2785; decision 42) is the core's (`skills::first_open`).
  */
 export function SkillStudioTab({
   plane,
-  scope,
+  tab = "",
   changed,
+  narrow,
   onOpenView,
 }: {
   plane: string;
-  /** Whose chats it shows: a chat at the project's root, or in one workspace. */
-  scope: StudioScope;
+  /** The studio tab's own key: `""` for the project's studio, `#2` for one opened beside it. */
+  tab?: string;
   changed: number;
-  /** Opens the studio on another workspace's chats, or a skill's own tab with its runs
-   *  (SK-3), each in its own tab. */
+  /** Opens a skill's own tab, with its history and runs (SK-3), until its page in the studio
+   *  takes them (#3682). */
   onOpenView?: (view: ViewRef, title: string) => void;
+  /** Narrow or wide whatever the width: for a story or a test. Measured when left out. */
+  narrow?: boolean;
 }) {
-  const [studio, setStudio] = useState<Studio>();
-  const [refused, setRefused] = useState<string>();
+  const history = useViewHistory<StudioPlace>(
+    studioHistoryOf(plane, { ...SKILL_STUDIO_VIEW, key: tab }),
+    STUDIO_START,
+  );
+  const at = history.at;
+  const scope = at.scope;
+  const [read, setRead] = useState<{ key: string; studio?: Studio; refused?: string }>();
+  const [asked, setAsked] = useState(0);
   const [said, setSaid] = useState<Said>();
   const [done, setDone] = useState(0);
   const [doing, setDoing] = useState<Doing>();
@@ -158,29 +245,31 @@ export function SkillStudioTab({
   const [deleted, setDeleted] = useState<readonly DeletedSkill[]>([]);
   const [switched, setSwitched] = useState(0);
   const [moveLater, setMoveLater] = useState(false);
-  const sourcesHeading = useRef<HTMLHeadingElement>(null);
+  const [query, setQuery] = useState("");
+  const [chips, setChips] = useState<ReadonlySet<Chip>>(new Set());
   const { workspace, persona } = whoseChats(scope);
+  const key = scopeKey(scope);
+  // What was read for another scope is not this one's: placeholders until this one's is.
+  const studio = read?.key === key ? read.studio : undefined;
+  const refused = read?.key === key ? read.refused : undefined;
   const on = studio?.on === true;
   const drafts = useSkillDrafts(plane, changed + done);
-  // A start the Skills view asked this studio to open on (#3266), taken once it is drawn: the
-  // New skill form, or its skill sources.
-  useStudioStart(scope, on, (start) => {
-    if (start === "new") setDoing({ what: "new" });
-    else showSources(sourcesHeading.current);
+  // A start the Skills view asked this studio to open on (#3266): the New skill form.
+  useStudioStart(tab, on, () => {
+    setDoing({ what: "new" });
+    history.go({ page: "library", scope });
   });
   useEffect(() => {
     let live = true;
     void commands.skillStudio(plane, workspace, persona).then((answer) => {
       if (!live) return;
-      if (answer.status === "ok") {
-        setStudio(answer.data);
-        setRefused(undefined);
-      } else setRefused(answer.error);
+      if (answer.status === "ok") setRead({ key, studio: answer.data });
+      else setRead({ key, refused: answer.error });
     });
     return () => {
       live = false;
     };
-  }, [plane, workspace, persona, changed, done, switched]);
+  }, [plane, key, workspace, persona, changed, done, switched, asked]);
   // A delete a crash or a quit cut short is finished or undone as the studio opens (SK-35),
   // said in one line each, and the lists read again.
   useEffect(() => {
@@ -223,10 +312,7 @@ export function SkillStudioTab({
     };
   }, [plane, on, changed, done]);
 
-  if (refused !== undefined)
-    return <SkillsNotRead refused={refused} testid="skill-studio-refused" />;
-  if (studio === undefined) return <SkillsReading />;
-  if (!studio.on)
+  if (studio !== undefined && !studio.on)
     return (
       <EmptyState
         headline="The Skill studio is not on yet"
@@ -235,6 +321,12 @@ export function SkillStudioTab({
         testid="skill-studio-off"
       />
     );
+
+  /** Goes to `place`, a step of the tab's history; a change in progress is left. */
+  const go = (place: StudioPlace) => {
+    setDoing(undefined);
+    history.go(place);
+  };
 
   const change: Change = (label, run, then) => {
     setBusy(true);
@@ -342,74 +434,103 @@ export function SkillStudioTab({
         setDone((n) => n + 1);
       });
   };
-  const unmoved = studio.first.unmoved;
-  const move = unmoved !== null && !moveLater && (
-    <Notice
-      cause="skill-move"
-      tone="news"
-      label="Skills to move"
-      fixes={[{ label: "Move them", busy, onPress: () => moveSkills(unmoved.fix) }]}
-      onDismiss={() => setMoveLater(true)}
-    >
-      <span data-testid="skill-studio-unmoved">
-        {`This project keeps ${counted(unmoved.skills, "skill", "skills")} where only some chat programs read them. Moving them gives every chat each one, whichever program it runs on, in one commit that can be undone. The commit reaches everyone who works in the project, and a teammate on an older purlis opens the project read-only until they update.`}
-      </span>
-    </Notice>
-  );
-  /** One of the three starts (decision 42), from the empty studio's buttons. */
-  const startWith = (start: SkillStart) => {
-    if (start === "draft") askDraft(plane, scope, studio.levels);
-    else if (start === "sources") showSources(sourcesHeading.current);
-    else setDoing({ what: "new" });
-  };
-  /** The three starts of a project with no skill of its own (decision 42). */
-  const starts = studio.first.starts && doing === undefined && (
-    <SkillStarts busy={busy} onStart={startWith} />
-  );
+
+  // --- What each page holds ----------------------------------------------------------------
+
+  const unmoved = studio?.first.unmoved ?? null;
+  const moving = unmoved !== null && !moveLater;
+  const pinner = pinnerOf(scope);
+  const refusedPins = pinner === null ? null : (studio?.pins_refused ?? null);
+  const needing = (moving ? 1 : 0) + (refusedPins === null ? 0 : 1);
+  const pages: ViewPage[] = [
+    { id: "library", label: STUDIO_PAGE_NAMES.library },
+    ...(needing > 0
+      ? [
+          {
+            id: "needs",
+            label: STUDIO_PAGE_NAMES.needs,
+            count: needing,
+            waiting: true,
+            countSaid: `${needing} need you`,
+          },
+        ]
+      : []),
+    ...(drafts.length > 0
+      ? [
+          {
+            id: "drafts",
+            label: STUDIO_PAGE_NAMES.drafts,
+            count: drafts.length,
+            countSaid: counted(drafts.length, "draft", "drafts"),
+          },
+        ]
+      : []),
+    { id: "sources", label: STUDIO_PAGE_NAMES.sources },
+    {
+      id: "deleted",
+      label: STUDIO_PAGE_NAMES.deleted,
+      count: deleted.length,
+      countSaid: counted(deleted.length, "deleted skill", "deleted skills"),
+    },
+    { id: "harness", label: STUDIO_PAGE_NAMES.harness, startsGroup: true },
+    { id: "routing", label: STUDIO_PAGE_NAMES.routing },
+  ];
+  // A page that holds nothing now (Needs you, Drafts) is not in the navigation: Library instead.
+  const page: StudioPage = pages.some((one) => one.id === at.page) ? at.page : "library";
+  const skills = studio?.skills ?? [];
+  const chosen =
+    page === "library" && at.skill !== undefined
+      ? skills.find((skill) => skillRowId(skill) === at.skill)
+      : undefined;
+  // The project's, each workspace's and the persona's this studio shows (SK-32).
+  const levels = studio === undefined ? [] : levelsFor(studio.levels, scope);
+  const start = levelFrom(scope, levels);
+
   const picker = (
-    <div className="vault-tools">
-      <Select
-        className="search-scope"
-        aria-label="Whose chats"
-        value={scopeKey(scope)}
-        options={[
-          AT_THE_ROOT,
-          ...studio.workspaces.map(inWorkspace),
-          ...(persona === null ? [] : [scope]),
-        ].map((one) => ({ value: scopeKey(one), label: scopeChat(one) }))}
-        onValueChange={(to) => {
-          const next = scopeOfKey(to);
-          onOpenView?.(skillStudioView(next), skillStudioTitle(next));
-        }}
-      />
-      {persona !== null && (
-        /* The persona's own skills list (#2768): every skill choice is the studio's. A name the
-           studio lists has Add on its row; this takes one it does not. */
-        <PersonaSkillAdd
-          plane={plane}
-          persona={persona}
-          known={studio.skills.filter((skill) => !skill.named).map((skill) => skill.written)}
-          onChanged={() => setDone((n) => n + 1)}
-        />
-      )}
+    <Select
+      size="sm"
+      aria-label="Whose chats"
+      value={key}
+      options={[
+        AT_THE_ROOT,
+        ...(studio?.workspaces ?? []).map(inWorkspace),
+        ...(persona === null ? [] : [scope]),
+      ].map((one) => ({ value: scopeKey(one), label: scopeChat(one) }))}
+      onValueChange={(to) => {
+        const next = scopeOfKey(to);
+        if (!sameScope(next, scope)) go({ page, scope: next });
+      }}
+    />
+  );
+  const controls = (
+    <>
+      {picker}
       <Button
+        size="sm"
         icon={<Plus aria-hidden="true" />}
-        onPress={() => setDoing({ what: "new" })}
-        isDisabled={doing?.what === "new"}
+        isDisabled={studio === undefined || doing?.what === "new"}
+        onPress={() => {
+          if (page !== "library" || at.skill !== undefined) history.go({ page: "library", scope });
+          setDoing({ what: "new" });
+        }}
       >
-        {NEW_SKILL}
+        {`${NEW_SKILL}…`}
       </Button>
       <Button
+        size="sm"
         icon={<MessageSquarePlus aria-hidden="true" />}
-        onPress={() => askDraft(plane, scope, studio.levels)}
+        isDisabled={studio === undefined}
+        onPress={() => studio !== undefined && askDraft(plane, scope, studio.levels)}
       >
         {DRAFT_WITH_A_CHAT}
       </Button>
-    </div>
+    </>
   );
-  // The project's, each workspace's and the persona's this studio shows (SK-32).
-  const levels = levelsFor(studio.levels, scope);
-  const start = levelFrom(scope, levels);
+  const path: Crumb[] = [
+    { id: page, label: STUDIO_PAGE_NAMES[page] },
+    ...(chosen === undefined ? [] : [{ id: "skill", label: chosen.name }]),
+    ...(doing === undefined ? [] : [{ id: "doing", label: DOING_NAMES[doing.what] }]),
+  ];
   const restoring = said?.restore;
   const notice = said !== undefined && (
     <Notice
@@ -426,417 +547,658 @@ export function SkillStudioTab({
       {said.text}
     </Notice>
   );
-  const panel = doing !== undefined && (
-    <ChangePanel
-      plane={plane}
-      scope={scope}
-      doing={doing}
-      busy={busy}
-      workspaces={studio.workspaces}
-      levels={levels}
-      onCancel={() => setDoing(undefined)}
-      change={change}
-      restoreOffered={restoreOffered}
-    />
+  const bar = (
+    <>
+      <ViewBar
+        history={history}
+        path={path}
+        onGo={(crumb, step) => {
+          if (step === 0) go({ page, scope });
+          else if (crumb.id === "skill") setDoing(undefined);
+        }}
+      >
+        {controls}
+      </ViewBar>
+      {notice}
+    </>
   );
-  /** A chat's drafts (SK-9, #2772): Accept is one commit, Reject deletes the draft. */
-  const drafted = (
-    <SkillDrafts
-      plane={plane}
-      drafts={drafts}
-      levels={studio.levels}
-      busy={busy}
-      onAccept={(draft) =>
-        change("The draft was not accepted", () => commands.skillDraftAccept(plane, draft.id))
+
+  /** The list pane of a page that is not Library: its heading, its lead line, what it holds. */
+  const pageList = (lead: string, body: ReactNode) => (
+    <>
+      <ViewListHead title={STUDIO_PAGE_NAMES[page]} lead={lead} />
+      <div className="skill-studio-page">{body}</div>
+    </>
+  );
+  const reading = studio === undefined && refused === undefined;
+  const notRead = refused !== undefined && (
+    <EmptyState
+      headline="purlis could not read this project's skills"
+      body={refused}
+      testid="skill-studio-refused"
+      action={
+        <Button icon={<RotateCw aria-hidden="true" />} onPress={() => setAsked((n) => n + 1)}>
+          Try again
+        </Button>
       }
-      onReject={(draft) =>
-        change("The draft was not rejected", () =>
-          commands
-            .skillDraftReject(plane, draft.id)
-            .then((answer): Answer =>
-              answer.status === "ok" ? { status: "ok", data: { notes: [] } } : answer,
-            ),
-        )
-      }
     />
   );
-  const restorable = deleted.length > 0 && (
-    <section className="skill-deleted" aria-label="Deleted skills">
-      <h2>Deleted skills</h2>
-      <ul>
-        {deleted.map((one) => (
-          <li key={one.id} data-testid={`deleted-${one.name}`}>
-            <code>{one.name}</code> · {one.label} · {one.stays}{" "}
-            <Button
-              size="sm"
-              aria-label={`Restore ${one.name}`}
-              isDisabled={busy}
-              onPress={() => restore(one.id)}
-            >
-              Restore
-            </Button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-  /* Skill sources (SK-10): install from a git repository, and each newer commit's review. */
-  const sourcesSection = (
-    <SkillSources
-      plane={plane}
-      levels={levels}
-      start={start}
-      busy={busy}
-      change={change}
-      changed={changed + done}
-      headingRef={sourcesHeading}
-    />
-  );
-  // The first row of a name is the copy the chat gets, or its only copy; each row after it is a
-  // copy that one hides.
-  const seen = new Map<string, number>();
-  const testid = (name: string) => {
-    const before = seen.get(name) ?? 0;
-    seen.set(name, before + 1);
-    return before === 0 ? `skill-${name}` : `skill-${name}-hidden-${before}`;
-  };
-  // The Pin switch (SK-15d): for the workspace's or the persona's chats the studio shows, on the
-  // first row of a name a chat could have pinned (one of the project's levels), where the chat
-  // gets it or a pin of it is still written, so a pin can always be undone.
-  const pinner = pinnerOf(scope);
-  const pinRows = pinRowsOf(studio.skills);
-  const refusedPins = pinner === null ? null : (studio.pins_refused ?? null);
-  // Which router its chats are routed by (SK-15b): an answer from before it says none.
-  const router = studio.router ?? null;
-  const pinOf = (skill: StudioSkill) => {
-    if (pinner === null || pinRows.get(skill.name) !== skill) return null;
-    const pinned = skill.pinned_by.some((by) => by.at === pinner.at && by.name === pinner.name);
-    return skill.on || pinned ? pinned : null;
-  };
-  const pinSwitch = (skill: StudioSkill) => {
-    const pinned = pinOf(skill);
-    if (pinner === null || pinned === null) return null;
-    return (
-      <>
-        {" "}
-        <SkillPinSwitch
-          name={skill.name}
-          by={pinner}
-          pinned={pinned}
-          refused={refusedPins}
+  const held = (body: () => ReactNode) => notRead || (reading ? <Placeholders /> : body());
+
+  let list: ReactNode;
+  let item: ReactNode;
+  if (page === "library") {
+    const shown = skills.filter((skill) => chipsKeep(skill, chips) && searchKeeps(skill, query));
+    const starts =
+      studio?.first.starts === true && doing === undefined ? (
+        <SkillStarts
           busy={busy}
-          onPin={(on) =>
-            change(on ? "The skill was not pinned" : "The skill was not unpinned", () =>
-              commands.skillPin(plane, pinner, skill.name, on),
+          onStart={(how: SkillStart) => {
+            if (how === "draft") {
+              if (studio !== undefined) askDraft(plane, scope, studio.levels);
+            } else if (how === "sources") go({ page: "sources", scope });
+            else setDoing({ what: "new" });
+          }}
+        />
+      ) : null;
+    // The first row of a name is the copy the chat gets, or its only copy; each row after it is
+    // a copy that one hides.
+    const seen = new Map<string, number>();
+    const testid = (name: string) => {
+      const before = seen.get(name) ?? 0;
+      seen.set(name, before + 1);
+      return before === 0 ? `skill-${name}` : `skill-${name}-hidden-${before}`;
+    };
+    const filtering = query.trim() !== "" || chips.size > 0;
+    list = (
+      <>
+        <ViewListHead
+          title={STUDIO_PAGE_NAMES.library}
+          lead={`Every skill ${lowerFirst(scopeChat(scope))} can get, and why any other is left out.${persona === null ? "" : " A persona brings its skills into every workspace."}`}
+        >
+          <div className="skill-library-tools">
+            <TextField
+              type="search"
+              size="sm"
+              icon={<Search aria-hidden="true" />}
+              aria-label="Search skills"
+              placeholder="Search skills"
+              keepsFocus="skill-library-search"
+              value={query}
+              onChange={setQuery}
+            />
+            <Choice
+              ids={{ id: `skill-library-chips-${tab}`, label: "Show only" }}
+              kind="chips"
+              options={CHIPS}
+              checked={chips}
+              onCheckedChange={(value, ticked) =>
+                setChips((was) => {
+                  const next = new Set(was);
+                  if (ticked) next.add(value as Chip);
+                  else next.delete(value as Chip);
+                  return next;
+                })
+              }
+            />
+            {persona !== null && studio !== undefined && (
+              /* The persona's own skills list (#2768): every skill choice is the studio's. A name
+                 the studio lists has Add on its page; this takes one it does not. */
+              <PersonaSkillAdd
+                plane={plane}
+                persona={persona}
+                known={studio.skills.filter((skill) => !skill.named).map((skill) => skill.written)}
+                onChanged={() => setDone((n) => n + 1)}
+              />
+            )}
+          </div>
+        </ViewListHead>
+        {held(() => (
+          <>
+            {starts}
+            {shown.length === 0 && skills.length > 0 ? (
+              <EmptyState
+                headline={
+                  query.trim() === ""
+                    ? "No skill is left by these filters"
+                    : `No skill matches “${query.trim()}”`
+                }
+                body="Skills that match what is typed and the chips ticked are listed here."
+                testid="skill-library-none"
+                action={
+                  filtering && (
+                    <Button
+                      onPress={() => {
+                        setQuery("");
+                        setChips(new Set());
+                      }}
+                    >
+                      Show every skill
+                    </Button>
+                  )
+                }
+              />
+            ) : skills.length === 0 && !starts ? (
+              <EmptyState
+                headline="No skill reaches these chats yet"
+                body="Every skill these chats can get is listed here, with why any other is left out."
+                testid="skill-library-empty"
+                action={
+                  <Button onPress={() => setDoing({ what: "new" })}>{`${NEW_SKILL}…`}</Button>
+                }
+              />
+            ) : (
+              <List
+                aria-label="Skills"
+                className="skill-library"
+                selectionMode="single"
+                disallowEmptySelection
+                selectedKeys={chosen === undefined ? new Set() : new Set([skillRowId(chosen)])}
+                onSelectionChange={(keys: Selection) => {
+                  const [first] = keys === "all" ? [] : [...keys];
+                  if (first === undefined) return;
+                  go({ page: "library", scope, skill: String(first) });
+                }}
+              >
+                {shown.map((skill) => {
+                  const mark = markOf(skill);
+                  return (
+                    <ListRow
+                      key={skillRowId(skill)}
+                      id={skillRowId(skill)}
+                      textValue={skill.name}
+                      data-testid={testid(skill.name)}
+                      data-row={skillRowId(skill)}
+                    >
+                      <RowLabel>{skill.name}</RowLabel>
+                      <RowTrail>
+                        <Badge>{skill.label}</Badge>
+                        {mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
+                      </RowTrail>
+                      <RowBelow clamp={1}>{lineOf(skill)}</RowBelow>
+                    </ListRow>
+                  );
+                })}
+              </List>
+            )}
+          </>
+        ))}
+      </>
+    );
+    item =
+      doing !== undefined && studio !== undefined ? (
+        <div className="skill-studio-item" data-testid="skill-studio-doing">
+          {chosen !== undefined && doing.what !== "new" && (
+            <ViewPageHeader
+              name={chosen.name}
+              tag={<Badge>{chosen.label}</Badge>}
+              description={chosen.description}
+            />
+          )}
+          <ChangePanel
+            plane={plane}
+            scope={scope}
+            doing={doing}
+            busy={busy}
+            workspaces={studio.workspaces}
+            levels={levels}
+            onCancel={() => setDoing(undefined)}
+            change={change}
+            restoreOffered={restoreOffered}
+          />
+        </div>
+      ) : chosen !== undefined && studio !== undefined ? (
+        <SkillItem
+          plane={plane}
+          studio={studio}
+          skill={chosen}
+          scope={scope}
+          levels={levels}
+          busy={busy}
+          change={change}
+          onShare={share}
+          onEdit={open}
+          onRename={(skill, level) => setDoing({ what: "rename", skill, level })}
+          onDelete={askDelete}
+          onMove={moveTo}
+          onPersona={personaSkill}
+          onOpenTab={
+            onOpenView === undefined
+              ? undefined
+              : (skill) => onOpenView(skillView(skill.name), skill.name)
+          }
+        />
+      ) : (
+        <EmptyState
+          headline="Pick a skill"
+          body="What it does, who gets it and what can be changed open here."
+          testid="skill-studio-unpicked"
+        />
+      );
+  } else if (page === "needs") {
+    list = pageList(
+      "What needs a decision of yours before chats get what they should.",
+      held(() => (
+        <>
+          {moving && unmoved !== null && (
+            <Notice
+              cause="skill-move"
+              tone="news"
+              label="Skills to move"
+              fixes={[{ label: "Move them", busy, onPress: () => moveSkills(unmoved.fix) }]}
+              onDismiss={() => setMoveLater(true)}
+            >
+              <span data-testid="skill-studio-unmoved">
+                {`This project keeps ${counted(unmoved.skills, "skill", "skills")} where only some chat programs read them. Moving them gives every chat each one, whichever program it runs on, in one commit that can be undone. The commit reaches everyone who works in the project, and a teammate on an older purlis opens the project read-only until they update.`}
+              </span>
+            </Notice>
+          )}
+          {refusedPins !== null && (
+            <p>
+              <SkillPinsRefusedLine
+                refused={refusedPins}
+                busy={busy}
+                onRemove={(bad) =>
+                  change("The pin was not removed", () =>
+                    commands.skillPin(plane, refusedPins.by, bad, false),
+                  )
+                }
+              />
+            </p>
+          )}
+        </>
+      )),
+    );
+  } else if (page === "drafts") {
+    list = pageList(
+      "Skills a chat drafted, waiting for you to try, accept or reject.",
+      held(() => (
+        /* A chat's drafts (SK-9, #2772): Accept is one commit, Reject deletes the draft. */
+        <SkillDrafts
+          plane={plane}
+          drafts={drafts}
+          levels={studio?.levels ?? []}
+          busy={busy}
+          onAccept={(draft) =>
+            change("The draft was not accepted", () => commands.skillDraftAccept(plane, draft.id))
+          }
+          onReject={(draft) =>
+            change("The draft was not rejected", () =>
+              commands
+                .skillDraftReject(plane, draft.id)
+                .then((answer): Answer =>
+                  answer.status === "ok" ? { status: "ok", data: { notes: [] } } : answer,
+                ),
             )
           }
         />
-      </>
+      )),
     );
-  };
-  const dropOn = (to: SkillLevel) => (event: DragEvent) => {
-    const raw = event.dataTransfer.getData(DRAGGED);
-    if (raw === "") return;
-    event.preventDefault();
-    const { name, from } = JSON.parse(raw) as { name: string; from: SkillLevel };
-    const skill = studio.skills.find((one) => {
-      const at = levelOf(one, scope);
-      return one.name === name && at !== null && sameLevel(at, from);
-    });
-    if (skill !== undefined) moveTo(skill, from, to);
-  };
+  } else if (page === "sources") {
+    list = pageList(
+      "Where skills are installed from: a git repository, reviewed before anything lands.",
+      held(() => (
+        /* Skill sources (SK-10): install from a git repository, and each newer commit's review. */
+        <SkillSources
+          plane={plane}
+          levels={levels}
+          start={start}
+          busy={busy}
+          change={change}
+          changed={changed + done}
+        />
+      )),
+    );
+  } else if (page === "deleted") {
+    list = pageList(
+      "Skills deleted from this project, each of which can be restored.",
+      held(() =>
+        deleted.length === 0 ? (
+          <EmptyState
+            headline="No skill is deleted"
+            body="A skill you delete waits here, and can be restored from here."
+            testid="skill-deleted-none"
+            action={<Button onPress={() => go({ page: "library", scope })}>Go to Library</Button>}
+          />
+        ) : (
+          <ul className="skill-deleted" aria-label="Deleted skills">
+            {deleted.map((one) => (
+              <li key={one.id} data-testid={`deleted-${one.name}`}>
+                <code>{one.name}</code> · {one.label} · {one.stays}{" "}
+                <Button
+                  size="sm"
+                  aria-label={`Restore ${one.name}`}
+                  isDisabled={busy}
+                  onPress={() => restore(one.id)}
+                >
+                  Restore
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ),
+      ),
+    );
+  } else if (page === "harness") {
+    list = pageList(
+      "The skills each chat program brings on its own, which purlis lists and never edits.",
+      held(() =>
+        studio === undefined ? null : (
+          <SkillStudioHarnesses
+            plane={plane}
+            workspace={workspace}
+            harnesses={studio.harnesses}
+            notSupported={studio.not_supported}
+            onSwitched={() => setSwitched((n) => n + 1)}
+          />
+        ),
+      ),
+    );
+  } else {
+    const router = studio?.router ?? null;
+    list = pageList(
+      "Which router picks the skills a chat is shown, and how it did at each chat's start.",
+      held(() =>
+        router === null || (router.extension === null && !router.problem) ? (
+          <EmptyState
+            headline="These chats use purlis's own router"
+            body="An extension's router chosen for a workspace or a persona is shown here, with how it did at each chat's start."
+            testid="skill-routing-built-in"
+          />
+        ) : (
+          <StudioRouterLine
+            router={router}
+            grading={{ plane, workspace, persona, onGraded: () => setDone((was) => was + 1) }}
+          />
+        ),
+      ),
+    );
+  }
+
   return (
     <div className="skill-studio" data-testid="skill-studio">
-      {picker}
-      <p className="honest">
-        {`Every skill ${lowerFirst(scopeChat(scope))} gets, and why any other is left out.`}
-        {persona !== null && " A persona brings its skills into every workspace."}
-      </p>
-      {notice}
-      {move}
-      {panel}
-      {drafted}
-      {starts}
-      {refusedPins !== null && (
-        <p>
-          <SkillPinsRefusedLine
-            refused={refusedPins}
-            busy={busy}
-            onRemove={(bad) =>
-              change("The pin was not removed", () =>
-                commands.skillPin(plane, refusedPins.by, bad, false),
-              )
-            }
-          />
-        </p>
-      )}
-      {router !== null && (
-        <StudioRouterLine
-          router={router}
-          grading={{ plane, workspace, persona, onGraded: () => setDone((was) => was + 1) }}
-        />
-      )}
-      <div
-        className="skill-levels"
-        role="group"
-        aria-label="Drop a skill on a level to move it there"
-      >
-        {levels.map(({ level, label }) => (
-          <span
-            key={label}
-            className="skill-level-target"
-            data-testid={`level-${levelKey(level)}`}
-            onDragOver={(event) => {
-              if (event.dataTransfer.types.includes(DRAGGED)) event.preventDefault();
-            }}
-            onDrop={dropOn(level)}
-          >
-            {label}
-          </span>
-        ))}
-      </div>
-      {studio.skills.length > 0 && (
-        // A table of controls: its rows hold pickers (where a skill reaches, where it moves) and are
-        // dragged onto a level, so each control keeps its own keys (#2911).
-        <ControlTable aria-label="Skills">
-          <ControlHead>
-            <ControlColumn>Skill</ControlColumn>
-            <ControlColumn>Level</ControlColumn>
-            <ControlColumn>Granted to</ControlColumn>
-            <ControlColumn>In a chat</ControlColumn>
-            <ControlColumn>What it does</ControlColumn>
-            <ControlColumn>Works on</ControlColumn>
-            <ControlColumn>Change</ControlColumn>
-          </ControlHead>
-          <ControlBody>
-            {studio.skills.map((skill) => {
-              const level = levelOf(skill, scope);
-              return (
-                <ControlRow
-                  key={`${skill.level}\u0000${skill.folder}`}
-                  data-testid={testid(skill.name)}
-                  draggable={level !== null}
-                  onDragStart={(event) => {
-                    if (level === null) return;
-                    event.dataTransfer.setData(
-                      DRAGGED,
-                      JSON.stringify({ name: skill.name, from: level }),
-                    );
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                >
-                  <ControlCell>
-                    {onOpenView === undefined ? (
-                      <code>{skill.name}</code>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label={`Open ${skill.name}`}
-                        onPress={() => onOpenView(skillView(skill.name), skill.name)}
-                      >
-                        <code>{skill.name}</code>
-                      </Button>
-                    )}
-                  </ControlCell>
-                  <ControlCell>
-                    {skill.label}
-                    {skill.local && level !== null && (
-                      <>
-                        {" "}
-                        <Button
-                          onPress={() => share(skill, level)}
-                          tooltip="Give it to the team: it is committed with the project"
-                        >
-                          Share
-                        </Button>
-                      </>
-                    )}
-                  </ControlCell>
-                  <ControlCell>
-                    {!skill.granted ? (
-                      ""
-                    ) : (
-                      <GrantPicker
-                        label={`Where ${skill.name} reaches`}
-                        workspaces={studio.workspaces}
-                        now={skill.granted}
-                        disabled={busy}
-                        onPick={(grant) =>
-                          change("The grant was not changed", () =>
-                            commands.skillGrant(plane, skill.name, grant),
-                          )
-                        }
-                      />
-                    )}
-                  </ControlCell>
-                  <ControlCell>
-                    {skill.on
-                      ? (skill.unchecked ??
-                        (skill.hidden.length > 0
-                          ? `On, ${skill.hidden[0].hidden.said} (on ${skill.hidden.map((one) => one.title).join(", ")})`
-                          : skill.pinned
-                            ? "On, pinned"
-                            : "On"))
-                      : `Left out: ${skill.left_out ?? ""}`}
-                    {pinSwitch(skill)}
-                    {skill.on && skill.level === "built-in" && (
-                      <span className="honest"> {BUILT_IN_STAYS}</span>
-                    )}
-                    {studio.clashes
-                      .filter(
-                        (clash) =>
-                          skill.on &&
-                          clash.name === skill.name &&
-                          clash.level === skill.level &&
-                          clash.local === skill.local,
-                      )
-                      .map((clash) => (
-                        <span
-                          key={`${clash.harness}\u0000${clash.outcome}`}
-                          className="honest"
-                          data-testid={`clash-${skill.name}`}
-                        >
-                          {` Also: ${clash.said}. `}
-                          {level !== null && (
-                            <Button
-                              size="sm"
-                              isDisabled={busy}
-                              onPress={() => setDoing({ what: "rename", skill, level })}
-                            >
-                              Rename the project's copy
-                            </Button>
-                          )}
-                        </span>
-                      ))}
-                    {typeof skill.accept === "string" && (
-                      <>
-                        {" "}
-                        <Button
-                          size="sm"
-                          isDisabled={busy}
-                          onPress={() => {
-                            const folder = skill.accept;
-                            if (typeof folder === "string")
-                              change("The folder was not accepted", () =>
-                                commands.skillLevelAccept(plane, folder),
-                              );
-                          }}
-                        >
-                          Accept its folder
-                        </Button>
-                      </>
-                    )}
-                    {skill.not_granted !== null && (
-                      <span className="honest" data-testid={`not-granted-${skill.name}`}>
-                        {" "}
-                        {skill.not_granted}
-                      </span>
-                    )}
-                    {workspace !== null && (
-                      <TurnSwitch
-                        skill={skill}
-                        workspace={workspace}
-                        busy={busy}
-                        onTurn={(turn) =>
-                          change(turn.refused, () =>
-                            commands.skillTurn(plane, workspace, skill.name, turn.on),
-                          )
-                        }
-                      />
-                    )}
-                  </ControlCell>
-                  <ControlCell>{skill.description}</ControlCell>
-                  <ControlCell>
-                    <SkillCompatBadges
-                      name={skill.name}
-                      compat={skill.compat}
-                      lint={skill.lint}
-                      notSupported={studio.not_supported}
-                    />
-                  </ControlCell>
-                  <ControlCell>
-                    <SkillRowActions
-                      actions={[
-                        ...(level === null
-                          ? []
-                          : [
-                              {
-                                id: "edit",
-                                label: "Edit",
-                                name: `Edit ${skill.name}`,
-                                disabled: busy,
-                                onPress: () => open(skill, level),
-                              },
-                              {
-                                id: "rename",
-                                label: "Rename",
-                                name: `Rename ${skill.name}`,
-                                disabled: busy,
-                                onPress: () => setDoing({ what: "rename", skill, level }),
-                              },
-                            ]),
-                        // A persona's own list (SK-5, #2768), one more pair of the row's actions. A
-                        // persona's own skill is in its skills already, and needs no name (SK-32).
-                        ...(persona === null || skill.level === "persona"
-                          ? []
-                          : [
-                              skill.named
-                                ? {
-                                    id: "persona-remove",
-                                    label: "Remove",
-                                    name: `Remove ${skill.written} from ${persona}`,
-                                    disabled: busy,
-                                    onPress: () => personaSkill(persona, skill.written, "remove"),
-                                  }
-                                : {
-                                    id: "persona-add",
-                                    label: `Add to ${persona}`,
-                                    name: `Add ${skill.written} to ${persona}`,
-                                    disabled: busy,
-                                    onPress: () => personaSkill(persona, skill.written, "add"),
-                                  },
-                            ]),
-                        ...(level === null
-                          ? []
-                          : [
-                              {
-                                id: "delete",
-                                label: "Delete",
-                                name: `Delete ${skill.name}`,
-                                disabled: busy,
-                                danger: true,
-                                onPress: () => askDelete(skill, level),
-                              },
-                            ]),
-                      ]}
-                      extra={
-                        level === null ? undefined : (
-                          <LevelPicker
-                            label={`Move ${skill.name} to`}
-                            levels={levels.filter((to) => !sameLevel(to.level, level))}
-                            disabled={busy}
-                            onPick={(to) => moveTo(skill, level, to)}
-                          />
-                        )
-                      }
-                    />
-                  </ControlCell>
-                </ControlRow>
-              );
-            })}
-          </ControlBody>
-        </ControlTable>
-      )}
-      <SkillStudioHarnesses
-        plane={plane}
-        workspace={workspace}
-        harnesses={studio.harnesses}
-        notSupported={studio.not_supported}
-        onSwitched={() => setSwitched((n) => n + 1)}
+      <ViewFrame
+        label="Skill studio pages"
+        pages={pages}
+        page={page}
+        onPage={(id) => go({ page: id as StudioPage, scope })}
+        list={list}
+        item={item}
+        opened={chosen !== undefined || doing !== undefined}
+        onBack={() => go({ page, scope })}
+        narrow={narrow}
+        bar={bar}
+        history={history}
       />
-      {sourcesSection}
-      {restorable}
+    </div>
+  );
+}
+
+/**
+ * **The skill chosen in the Library**, beside the list: its name, its skill level and its mark,
+ * then the controls its row of the old table had, as facts, until its page (#3682) takes them.
+ */
+function SkillItem({
+  plane,
+  studio,
+  skill,
+  scope,
+  levels,
+  busy,
+  change,
+  onShare,
+  onEdit,
+  onRename,
+  onDelete,
+  onMove,
+  onPersona,
+  onOpenTab,
+}: {
+  plane: string;
+  studio: Studio;
+  skill: StudioSkill;
+  scope: StudioScope;
+  levels: readonly StudioLevel[];
+  busy: boolean;
+  change: Change;
+  onShare: (skill: StudioSkill, level: SkillLevel) => void;
+  onEdit: (skill: StudioSkill, level: SkillLevel) => void;
+  onRename: (skill: StudioSkill, level: SkillLevel) => void;
+  onDelete: (skill: StudioSkill, level: SkillLevel) => void;
+  onMove: (skill: StudioSkill, from: SkillLevel, to: SkillLevel) => void;
+  onPersona: (who: string, written: string, how: "add" | "remove") => void;
+  /** Its own tab, with its history and runs. */
+  onOpenTab?: (skill: StudioSkill) => void;
+}) {
+  const level = levelOf(skill, scope);
+  const { workspace, persona } = whoseChats(scope);
+  const mark = markOf(skill);
+  // The Pin switch (SK-15d): for the workspace's or the persona's chats the studio shows, on the
+  // copy of a name a chat could have pinned (one of the project's levels), where the chat gets it
+  // or a pin of it is still written, so a pin can always be undone.
+  const pinner = pinnerOf(scope);
+  const refusedPins = pinner === null ? null : (studio.pins_refused ?? null);
+  const pinned =
+    pinner === null || pinRowsOf(studio.skills).get(skill.name) !== skill
+      ? null
+      : skill.pinned_by.some((by) => by.at === pinner.at && by.name === pinner.name);
+  const pinShown = pinner !== null && pinned !== null && (skill.on || pinned);
+  const clashes = studio.clashes.filter(
+    (clash) =>
+      skill.on &&
+      clash.name === skill.name &&
+      clash.level === skill.level &&
+      clash.local === skill.local,
+  );
+  const personaAct =
+    persona === null || skill.level === "persona"
+      ? null
+      : skill.named
+        ? {
+            label: "Remove",
+            name: `Remove ${skill.written} from ${persona}`,
+            how: "remove" as const,
+          }
+        : {
+            label: `Add to ${persona}`,
+            name: `Add ${skill.written} to ${persona}`,
+            how: "add" as const,
+          };
+  return (
+    <div
+      className="skill-studio-item"
+      data-testid="skill-studio-skill"
+      data-row={skillRowId(skill)}
+    >
+      <ViewPageHeader
+        name={skill.name}
+        tag={<Badge>{skill.label}</Badge>}
+        mark={mark !== undefined && <Badge variant={mark.variant}>{mark.said}</Badge>}
+        description={skill.description}
+        actions={
+          level === null && personaAct === null && onOpenTab === undefined ? undefined : (
+            <>
+              {level !== null && (
+                <>
+                  <Button
+                    aria-label={`Edit ${skill.name}`}
+                    isDisabled={busy}
+                    onPress={() => onEdit(skill, level)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    aria-label={`Rename ${skill.name}`}
+                    isDisabled={busy}
+                    onPress={() => onRename(skill, level)}
+                  >
+                    Rename
+                  </Button>
+                </>
+              )}
+              {/* A persona's own list (SK-5, #2768). A persona's own skill is in its skills
+                  already, and needs no name (SK-32). */}
+              {personaAct !== null && persona !== null && (
+                <Button
+                  aria-label={personaAct.name}
+                  isDisabled={busy}
+                  onPress={() => onPersona(persona, skill.written, personaAct.how)}
+                >
+                  {personaAct.label}
+                </Button>
+              )}
+              {onOpenTab !== undefined && (
+                <Button isDisabled={busy} onPress={() => onOpenTab(skill)}>
+                  History and runs
+                </Button>
+              )}
+              {level !== null && (
+                <Button
+                  variant="danger"
+                  aria-label={`Delete ${skill.name}`}
+                  isDisabled={busy}
+                  onPress={() => onDelete(skill, level)}
+                >
+                  Delete
+                </Button>
+              )}
+            </>
+          )
+        }
+      />
+      <Facts aria-label={`About ${skill.name}`} className="skill-studio-facts">
+        <Fact label="In a chat">
+          <span data-testid="skill-in-a-chat">
+            {skill.on
+              ? (skill.unchecked ??
+                (skill.hidden.length > 0
+                  ? `On, ${skill.hidden[0].hidden.said} (on ${skill.hidden.map((one) => one.title).join(", ")})`
+                  : skill.pinned
+                    ? "On, pinned"
+                    : "On"))
+              : `Left out: ${skill.left_out ?? ""}`}
+          </span>
+          {pinShown && pinner !== null && (
+            <>
+              {" "}
+              <SkillPinSwitch
+                name={skill.name}
+                by={pinner}
+                pinned={pinned === true}
+                refused={refusedPins}
+                busy={busy}
+                onPin={(to) =>
+                  change(to ? "The skill was not pinned" : "The skill was not unpinned", () =>
+                    commands.skillPin(plane, pinner, skill.name, to),
+                  )
+                }
+              />
+            </>
+          )}
+          {skill.on && skill.level === "built-in" && (
+            <span className="honest"> {BUILT_IN_STAYS}</span>
+          )}
+          {clashes.map((clash) => (
+            <span
+              key={`${clash.harness}\u0000${clash.outcome}`}
+              className="honest"
+              data-testid={`clash-${skill.name}`}
+            >
+              {` Also: ${clash.said}. `}
+              {level !== null && (
+                <Button size="sm" isDisabled={busy} onPress={() => onRename(skill, level)}>
+                  Rename the project's copy
+                </Button>
+              )}
+            </span>
+          ))}
+          {typeof skill.accept === "string" && (
+            <>
+              {" "}
+              <Button
+                size="sm"
+                isDisabled={busy}
+                onPress={() => {
+                  const folder = skill.accept;
+                  if (typeof folder === "string")
+                    change("The folder was not accepted", () =>
+                      commands.skillLevelAccept(plane, folder),
+                    );
+                }}
+              >
+                Accept its folder
+              </Button>
+            </>
+          )}
+          {skill.not_granted !== null && (
+            <span className="honest" data-testid={`not-granted-${skill.name}`}>
+              {" "}
+              {skill.not_granted}
+            </span>
+          )}
+          {workspace !== null && (
+            <TurnSwitch
+              skill={skill}
+              workspace={workspace}
+              busy={busy}
+              onTurn={(turn) =>
+                change(turn.refused, () =>
+                  commands.skillTurn(plane, workspace, skill.name, turn.on),
+                )
+              }
+            />
+          )}
+        </Fact>
+        <Fact label="Skill level">
+          {skill.label}
+          {skill.local && level !== null && (
+            <>
+              {" "}
+              <Button
+                size="sm"
+                onPress={() => onShare(skill, level)}
+                tooltip="Give it to the team: it is committed with the project"
+              >
+                Share
+              </Button>
+            </>
+          )}
+          {level !== null && (
+            <>
+              {" "}
+              <LevelPicker
+                label={`Move ${skill.name} to`}
+                levels={levels.filter((to) => !sameLevel(to.level, level))}
+                disabled={busy}
+                onPick={(to) => onMove(skill, level, to)}
+              />
+            </>
+          )}
+        </Fact>
+        {skill.granted && (
+          <Fact label="Granted to">
+            <GrantPicker
+              label={`Where ${skill.name} reaches`}
+              workspaces={studio.workspaces}
+              now={skill.granted}
+              disabled={busy}
+              onPick={(grant) =>
+                change("The grant was not changed", () =>
+                  commands.skillGrant(plane, skill.name, grant),
+                )
+              }
+            />
+          </Fact>
+        )}
+        <Fact label="Works on">
+          <SkillCompatBadges
+            name={skill.name}
+            compat={skill.compat}
+            lint={skill.lint}
+            notSupported={studio.not_supported}
+          />
+        </Fact>
+      </Facts>
     </div>
   );
 }
@@ -1266,15 +1628,6 @@ function TurnSwitch({
       </Button>
     </>
   );
-}
-
-/** **Browse sources**: the studio's skill sources brought into view with the keyboard on their
- *  heading, after the press is done with focus (WebKit hands it back to a pressed button). */
-function showSources(heading: HTMLHeadingElement | null): void {
-  window.setTimeout(() => {
-    heading?.scrollIntoView?.({ block: "start" });
-    heading?.focus();
-  }, 0);
 }
 
 /** `text` with its first letter lower-cased, to go inside a sentence. */

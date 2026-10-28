@@ -17,10 +17,10 @@ import { askDraft } from "./skillDraftAsks";
 import { SkillsNotRead, SkillsReading, type SkillStart } from "./SkillStarts";
 import {
   AT_THE_ROOT,
+  SKILL_STUDIO_TITLE,
   askStudioStart,
   inWorkspace,
-  skillStudioTitle,
-  skillStudioView,
+  skillStudioAt,
   type StudioScope,
 } from "./skillStudio";
 import { SkillMenu, SkillsList } from "./SkillsList";
@@ -200,14 +200,20 @@ export function SkillsView({
     return <SkillsNotRead refused={read.refused} testid="skills-view-refused" />;
 
   const scope: StudioScope = workspace === undefined ? AT_THE_ROOT : inWorkspace(workspace);
-  const openStudio = () => onOpenView(skillStudioView(scope), skillStudioTitle(scope));
+  /** The studio on this view's scope, at its Library (#3681); a tab of its own on ⌘-click. */
+  const openStudio = (newTab = false) =>
+    onOpenView(skillStudioAt(scope, "library", { newTab }), SKILL_STUDIO_TITLE);
   /** One of the studio's three starts (SK-22): a chat's draft here, the others in the studio. */
   const startWith = (start: SkillStart) => {
     if (start === "draft") {
       askDraft(plane, scope, read.levels);
       return;
     }
-    askStudioStart(scope, start === "blank" ? "new" : "sources");
+    if (start === "sources") {
+      onOpenView(skillStudioAt(scope, "sources"), SKILL_STUDIO_TITLE);
+      return;
+    }
+    askStudioStart("", "new");
     openStudio();
   };
   const act = (row: ListedSkill, what: SkillAct) => {

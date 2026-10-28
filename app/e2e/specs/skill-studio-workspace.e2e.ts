@@ -11,6 +11,7 @@ import {
   runFromThePalette,
   tabNames,
 } from "../reach.js";
+import { studioSkill } from "../studio.js";
 
 /**
  * **A workspace's skills in the Skill studio** (SK-4, #2767), in the built app against the real
@@ -19,8 +20,8 @@ import {
  * The spec writes three skills as a person would: a project skill granted to `alpha` in its
  * `<name>.toml`, a project skill granted to no workspace, and a skill of `alpha`'s own. It opens
  * `alpha`'s Settings at its Skills group, whose summary counts what `alpha`'s chats get, and
- * follows Open in Skill studio: the studio opens filtered to `alpha`, with the granted skill and
- * the workspace's own on, and the other left out with its one line.
+ * follows Open Skill studio: the studio's Library opens on `alpha`'s chats (#3681), with the
+ * granted skill and the workspace's own on, and the other marked left out, with why beside it.
  *
  * **It leaves the window and the project as it found them.**
  */
@@ -72,20 +73,24 @@ describe("a workspace's skills in the Skill studio", function () {
       timeoutMsg: "the Skills summary never counted the skill left out",
     });
 
-    const open = await $("button=Open in Skill studio");
+    const open = await $("button=Open Skill studio");
     await open.waitForClickable({ timeout: 10_000 });
     await open.click();
 
     const granted = await $(`[data-testid="skill-${GRANTED}"]`);
     await granted.waitForExist({ timeout: 20_000 });
     await expect(granted).toHaveText(/project/);
-    await expect(granted).toHaveText(/alpha/);
-    await expect(granted).toHaveText(/On/);
+    await expect(granted).not.toHaveText(/Left out/);
+    const grantedItem = await studioSkill(GRANTED);
+    await expect(grantedItem).toHaveText(/alpha/);
+    await expect(grantedItem.$('[data-testid="skill-in-a-chat"]')).toHaveText(/^On/);
     const own = await $(`[data-testid="skill-${OWN}"]`);
     await expect(own).toHaveText(/workspace/);
-    await expect(own).toHaveText(/On/);
+    await expect(own).not.toHaveText(/Left out/);
     const kept = await $(`[data-testid="skill-${KEPT}"]`);
-    await expect(kept).toHaveText(/Left out: not granted to this workspace/);
-    expect(await tabNames()).toContain("Skill studio · alpha");
+    await expect(kept).toHaveText(/Left out/);
+    const keptItem = await studioSkill(KEPT);
+    await expect(keptItem).toHaveText(/Left out: not granted to this workspace/);
+    expect(await tabNames()).toContain("Skill studio");
   });
 });

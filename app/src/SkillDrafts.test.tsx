@@ -11,7 +11,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SkillStudioTab } from "./SkillStudioTab";
+import { forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
 import { DraftReadyNotice } from "./DraftReadyNotice";
 import { AT_THE_ROOT, inWorkspace } from "./skillStudio";
 import { SKILL_CHAT, draftReadySays, type SkillChatAsk } from "./skillDraftAsks";
@@ -19,6 +19,7 @@ import { SKILL_CHAT, draftReadySays, type SkillChatAsk } from "./skillDraftAsks"
 afterEach(() => {
   cleanup();
   clearMocks();
+  forgetStudio();
 });
 
 const draft = (name: string, over: Record<string, unknown> = {}) => ({
@@ -74,7 +75,7 @@ describe("draft skills in the Skill studio", () => {
   it("lists a chat's draft, and asks the core to accept and to reject one", async () => {
     const asked = core([draft("triage"), draft("deploy", { new: false })]);
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio(AT_THE_ROOT, "drafts");
 
     const row = await screen.findByTestId("draft-triage");
     expect(row).toHaveTextContent("a new skill");
@@ -98,7 +99,7 @@ describe("draft skills in the Skill studio", () => {
 
   it("says a stale draft cannot be accepted, and offers no Accept", async () => {
     core([draft("triage", { stale: true })]);
-    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    renderStudio(AT_THE_ROOT, "drafts");
     expect(await screen.findByTestId("draft-stale-triage")).toHaveTextContent(
       "changed since the chat drafted it",
     );
@@ -109,7 +110,7 @@ describe("draft skills in the Skill studio", () => {
     core([draft("triage")]);
     const { asks, stop } = windowAsks();
     const user = userEvent.setup();
-    render(<SkillStudioTab plane="p" scope={inWorkspace("ops")} changed={0} />);
+    renderStudio(inWorkspace("ops"), "drafts");
 
     await user.click(await screen.findByRole("button", { name: "Try triage" }));
     await user.click(screen.getByRole("button", { name: "Ask a chat to draft a skill" }));
@@ -126,7 +127,7 @@ describe("the chat's tab", () => {
     core([draft("triage"), draft("other", { chat: 9 })]);
     render(<DraftReadyNotice plane="p" session={4} />);
     expect(await screen.findByText(draftReadySays(["triage"], false))).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open in Skill studio" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Skill studio" })).toBeInTheDocument();
   });
 
   it("says nothing for a chat that drafted nothing", async () => {

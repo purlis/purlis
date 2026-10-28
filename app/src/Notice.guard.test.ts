@@ -443,6 +443,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". Also a save's own output, line by line: what the last press answered, not a standing line",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "SkillStudioTab.tsx": {
+    count: 1,
+    why: "the Library's reading line (#3681): rows held in place while the skills are read, said after a second",
+  },
   "SessionPane.tsx": {
     count: 1,
     why:
