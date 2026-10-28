@@ -15,7 +15,7 @@ fn running(started: u64) -> Ran {
     }
 }
 
-fn stopped(started: u64, finished: u64) -> Ran {
+fn ended(started: u64, finished: u64) -> Ran {
     Ran {
         running: false,
         started: Some(started),
@@ -44,8 +44,8 @@ fn a_run_is_recorded_at_dockers_times_and_reading_it_again_adds_nothing() {
     let lines = after(&[
         (running(start), start + 60),
         (running(start), start + 120),
-        (stopped(start, end), end + 600),
-        (stopped(start, end), end + 900),
+        (ended(start, end), end + 600),
+        (ended(start, end), end + 900),
     ]);
     assert_eq!(events(&lines), [(start, Event::Start), (end, Event::Stop)]);
     assert_eq!(
@@ -62,7 +62,7 @@ fn a_runner_that_suspended_itself_between_two_reads_is_stopped_when_it_stopped()
     let again = MONDAY + 5 * HOUR;
     let lines = after(&[
         (running(first), first + 10),
-        (stopped(first, suspended), again - 1),
+        (ended(first, suspended), again - 1),
         (running(again), again + 10),
     ]);
     assert_eq!(
@@ -111,7 +111,7 @@ fn a_container_started_again_outside_purlis_ends_the_run_kept_at_its_last_finish
 fn a_whole_run_between_two_reads_is_recorded() {
     let start = MONDAY + HOUR;
     let end = MONDAY + 2 * HOUR;
-    let lines = after(&[(stopped(start, end), end + 10)]);
+    let lines = after(&[(ended(start, end), end + 10)]);
     assert_eq!(events(&lines), [(start, Event::Start), (end, Event::Stop)]);
 }
 
