@@ -30,8 +30,10 @@ RUN printf '%s\n' '#!/bin/sh' \
  && chmod 0755 /usr/local/bin/claude
 # The runner's `codex`, the same way (#3338): a Codex chat the runner composes runs under
 # purlis's own Linux sandbox, so a behaviour sees from inside it what a sandboxed runner chat
-# can reach. It runs the stand-in a behaviour writes at `/home/purlis/.parity/codex`.
+# can reach. Asked `login status`, it exits 0, as Codex's own says a profile is signed in.
+# Anything else runs the stand-in a behaviour writes at `/home/purlis/.parity/codex`.
 RUN printf '%s\n' '#!/bin/sh' \
+      '[ "$1" = login ] && [ "$2" = status ] && exit 0' \
       'stand_in=/home/purlis/.parity/codex' \
       '[ -x "$stand_in" ] || { echo "parity: no stand-in codex at $stand_in: a behaviour writes one before it starts a chat on its profile" >&2; exit 127; }' \
       'exec "$stand_in" "$@"' > /usr/local/bin/codex \

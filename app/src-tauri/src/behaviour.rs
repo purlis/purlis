@@ -3427,6 +3427,7 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
         "codex",
         &format!(
             "#!/bin/sh\n\
+             [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
              for word in \"$@\"; do [ \"$word\" = --version ] && {{ echo 'codex-cli 0.147.0'; exit 0; }}; done\n\
              try() {{ if ( eval \"$2\" ) >/dev/null 2>&1; then printf '%s yes.\\n' \"$1\"; else printf '%s no.\\n' \"$1\"; fi; }}\n\
              try PROJECT 'ls .'\n\
