@@ -63,7 +63,7 @@ be confirmed**, and carries the number its D-line has in the pull request.
    driver as a binding's call from the front end's own main world, and the page's answers are
    handed back as a value. Everything travels over the browser's one inherited pipe, and the
    one way in is the window's own `local-ui` link.
-8. **Session protocol 1.44, a minor** (D-2028-8). `inspect` (answered `done`, refused
+8. **Session protocol 1.45, a minor** (D-2028-8). `inspect` (answered `done`, refused
    `not_driving`; sent again while open, it sizes them), `inspector_input` (refused
    `not_driving` or `input_missed`), the view kind `inspector`, and a view frame format,
    `closed` (`0x04`), the last frame of a view of DevTools, saying why they closed in one of

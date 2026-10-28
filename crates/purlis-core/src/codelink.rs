@@ -34,6 +34,12 @@ use std::path::{Path, PathBuf};
 
 use crate::worktree::git;
 
+mod moving;
+
+pub use moving::{
+    MOVED, Work, bundle_work, give_work, receive_over, sent, take_over, take_work_back, work_of,
+};
+
 /// Where a branch's snapshot of uncommitted work is kept, in a repository either end holds.
 pub const SNAPSHOTS: &str = "refs/purlis/snapshots/";
 
@@ -240,6 +246,49 @@ pub fn snapshot_leaving(
     leave_out: &[String],
     left: &mut Vec<String>,
 ) -> Result<Option<String>, Refused> {
+    let Some(written) = work_tree(tree, scratch, leave_out, left)? else {
+        return Ok(None);
+    };
+    let committed = run(tree, &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"])?;
+    if committed.ok() && committed.line() == written {
+        return Ok(None);
+    }
+    commit_work(tree, &written).map(Some)
+}
+
+/// A commit of the tree `written` on top of what `tree` has checked out: a snapshot.
+fn commit_work(tree: &Path, written: &str) -> Result<String, Refused> {
+    let commit = run(
+        tree,
+        &[
+            "-c",
+            "user.name=purlis",
+            "-c",
+            "user.email=purlis@localhost",
+            "-c",
+            "commit.gpgSign=false",
+            "commit-tree",
+            "-p",
+            "HEAD",
+            "-m",
+            "purlis: uncommitted work",
+            written,
+        ],
+    )?;
+    if !commit.ok() {
+        return Err(git_failed("keep the uncommitted work", &commit));
+    }
+    Ok(commit.line().to_owned())
+}
+
+/// **The tree `tree`'s work tree is**, as a snapshot stages it ([`snapshot_leaving`]), or `None`
+/// where nothing is uncommitted.
+fn work_tree(
+    tree: &Path,
+    scratch: &Path,
+    leave_out: &[String],
+    left: &mut Vec<String>,
+) -> Result<Option<String>, Refused> {
     let status = run(tree, &["status", "--porcelain", "--untracked-files=all"])?;
     if !status.ok() {
         return Err(git_failed("read the work tree", &status));
@@ -298,31 +347,7 @@ pub fn snapshot_leaving(
     if !written.ok() {
         return Err(git_failed("write the uncommitted work", &written));
     }
-    let committed = run(tree, &["rev-parse", "--verify", "--quiet", "HEAD^{tree}"])?;
-    if committed.ok() && committed.line() == written.line() {
-        return Ok(None);
-    }
-    let commit = run(
-        tree,
-        &[
-            "-c",
-            "user.name=purlis",
-            "-c",
-            "user.email=purlis@localhost",
-            "-c",
-            "commit.gpgSign=false",
-            "commit-tree",
-            "-p",
-            "HEAD",
-            "-m",
-            "purlis: uncommitted work",
-            written.line(),
-        ],
-    )?;
-    if !commit.ok() {
-        return Err(git_failed("keep the uncommitted work", &commit));
-    }
-    Ok(Some(commit.line().to_owned()))
+    Ok(Some(written.line().to_owned()))
 }
 
 /// Whether the repository at `tree` ignores case in its names (`core.ignorecase`), as git sets
@@ -1135,6 +1160,112 @@ impl purlis_host::Code for Moves {
         let (heads, bundled) = give(&at, have, into).map_err(code_refused)?;
         Ok((wire_refs(heads), bundled == Bundled::Wrote))
     }
+
+    fn take_work(
+        &self,
+        project: &Path,
+        repo: &str,
+        bundle: Option<&Path>,
+        refs: &[purlis_host::protocol::session::CodeRef],
+        checkout: &str,
+    ) -> Result<Vec<purlis_host::protocol::session::CodeRef>, purlis_host::protocol::session::Refusal>
+    {
+        let at = repo_in(project, repo).map_err(code_refused)?;
+        let scratch = moves_scratch()?;
+        let refs: Vec<Ref> = refs
+            .iter()
+            .map(|one| Ref {
+                name: one.name.clone(),
+                oid: one.oid.clone(),
+            })
+            .collect();
+        receive_over(&at, scratch.path(), bundle, &refs, checkout)
+            .map(wire_refs)
+            .map_err(code_refused)
+    }
+
+    fn give_work(
+        &self,
+        project: &Path,
+        repo: &str,
+        have: &[String],
+        into: &Path,
+    ) -> Result<
+        (Vec<purlis_host::protocol::session::CodeRef>, bool),
+        purlis_host::protocol::session::Refusal,
+    > {
+        let at = repo_in(project, repo).map_err(code_refused)?;
+        let scratch = moves_scratch()?;
+        let (heads, bundled) = give_work(&at, scratch.path(), have, into).map_err(code_refused)?;
+        Ok((wire_refs(heads), bundled == Bundled::Wrote))
+    }
+
+    fn take_conversation(
+        &self,
+        project: &Path,
+        carried: &purlis_host::Carried,
+        from: &Path,
+    ) -> Result<(), purlis_host::protocol::session::Refusal> {
+        of_a_chat(project, carried)
+            .keep(&carried.file, from)
+            .map_err(conversation_refused)
+    }
+
+    fn give_conversation(
+        &self,
+        project: &Path,
+        carried: &purlis_host::Carried,
+        into: &Path,
+    ) -> Result<String, purlis_host::protocol::session::Refusal> {
+        let found = of_a_chat(project, carried)
+            .find()
+            .map_err(conversation_refused)?;
+        std::fs::copy(&found.path, into).map_err(|why| {
+            conversation_refused(crate::conversationmove::Refused::Io(format!(
+                "the conversation could not be read: {why}"
+            )))
+        })?;
+        Ok(found.shape)
+    }
+}
+
+#[cfg(unix)]
+fn of_a_chat<'a>(
+    project: &'a Path,
+    carried: &'a purlis_host::Carried,
+) -> crate::conversationmove::OfAChat<'a> {
+    crate::conversationmove::OfAChat {
+        root: project,
+        workspace: &carried.workspace,
+        profile: &carried.profile,
+        conversation: &carried.conversation,
+    }
+}
+
+#[cfg(unix)]
+fn conversation_refused(
+    why: crate::conversationmove::Refused,
+) -> purlis_host::protocol::session::Refusal {
+    use purlis_host::protocol::session;
+    let code = match &why {
+        crate::conversationmove::Refused::NotAllowed(_) => session::NOT_ALLOWED,
+        _ => session::NOT_STARTED,
+    };
+    session::Refusal {
+        code: code.into(),
+        why: why.to_string(),
+    }
+}
+
+#[cfg(unix)]
+fn moves_scratch() -> Result<tempfile::TempDir, purlis_host::protocol::session::Refusal> {
+    tempfile::Builder::new()
+        .prefix("purlis-move-")
+        .tempdir()
+        .map_err(|why| purlis_host::protocol::session::Refusal {
+            code: purlis_host::protocol::session::NOT_STARTED.into(),
+            why: format!("there is no room to move the work: {why}"),
+        })
 }
 
 fn run(dir: &Path, args: &[&str]) -> Result<git::Run, Refused> {

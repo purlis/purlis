@@ -20,7 +20,7 @@
 //! in a view's snapshot, cut from the engine's own record of the page
 //! ([`crate::browsing::origin_of`]): never a path, a query, a fragment, a user or a title.
 //!
-//! **A closed frame** (1.44, #2028, [`CLOSED`]) is the last of a view of a browser's DevTools:
+//! **A closed frame** (1.45, #2028, [`CLOSED`]) is the last of a view of a browser's DevTools:
 //! why they closed, as one of [`CLOSED_WHY`]'s words, which the window says in its own.
 //!
 //! A frame's image is opaque to the host and to this crate: the window decodes it on a canvas.
@@ -40,7 +40,7 @@ pub const AIMED_JPEG: u8 = 0x02;
 /// The origin of the page a browser shows (1.35): [`origin`].
 pub const ORIGIN: u8 = 0x03;
 
-/// Why a browser's DevTools closed, the last frame of their view (1.44): [`closed`].
+/// Why a browser's DevTools closed, the last frame of their view (1.45): [`closed`].
 pub const CLOSED: u8 = 0x04;
 
 /// The words a [`CLOSED`] frame says: the person handed the browser back, the page went,

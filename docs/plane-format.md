@@ -343,6 +343,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`skills-deleting/<stamp>-<folder>`](#skills-deletingstamp-folder)
   - [`skill-drafts/<id>/`](#skill-draftsid)
   - [`<state>/skill-grades/<YYYY-MM>.jsonl`](#stateskill-gradesyyyy-mmjsonl)
+  - [`<state>/skill-grade-after-edit.json`](#stateskill-grade-after-editjson)
   - [`<state>/grades-under-way/<grade>.json`](#stategrades-under-waygradejson)
   - [`<state>/grades-under-way.lock`](#stategrades-under-waylock)
   - [`skill-tries/<id>/`](#skill-triesid)
@@ -3801,7 +3802,12 @@ An end row, never a pass or a fail:
   written before, one whose grade started no chat, and one recorded as interrupted; and `model`,
   the model its chats ran on as their harness reported it (the first that said one, by the
   harness's own id; SK-60, #3240, ADR 0087 §6), absent in a row written before and where no chat
-  said.
+  said; `previous`, the commit of the version its `previous` arm was laid out from, which is then
+  the baseline its `report.delta` is against (the newest version of the skill whose folder held
+  another tree, read from git's tree of that commit; SK-57, #3237, ADR 0105 as amended
+  2026-10-28), absent in a row written before and for a skill with no other version; and
+  `after_edit`, `true` for a grade a saved edit started under the person's opt-in (SK-58, #3238,
+  [`<state>/skill-grade-after-edit.json`](#stateskill-grade-after-editjson)), absent otherwise.
 - **Read:** the folder only where it is a folder of its own (no link) holding at most 600 names,
   newest month first, stopping once 200 grades are held; each file following no link and at most
   16 MiB, each line at most 1 MiB; a line that
@@ -3815,7 +3821,8 @@ An end row, never a pass or a fail:
   reason that holds a control character or passes 2 KiB, #3353; a price below nothing or past
   1,000 dollars a million, a model that is no plain id, or an `over-limit` end with no limit, #3469;
   a `plugins_off` that is no list of at most 256 ids a plugin could have, #3468; a `model` that is
-  no plain id, #3240; and since #3273
+  no plain id, #3240; a `previous` that is no whole hex id, or a `previous` arm in a row that
+  names no `previous`, #3237; and since #3273
   a level no level spells, `runs` outside 1 to 16, tokens past ten times the largest cap or
   dollars past ten times its dearest limit, a stamp more than an hour ahead of this machine's
   clock, a `spent` that is not what the report adds up to (its chats the arms' runs, its tokens
@@ -7299,6 +7306,36 @@ rewritten.
 - **Tier:** Clone state — this machine's own; nothing rebuilds it.
 - **Git:** gitignored, under the state directory.
 
+### `<state>/skill-grade-after-edit.json`
+- **Format:** one JSON object (SK-58, #3238; ADR 0105 as amended 2026-10-28): `v` (1) and
+  `skills`, each copy the person turned **grading after each edit** on for, keyed by its level's
+  folder and its name (`skills/deploy`, `workspaces/ops/skills/deploy`), holding what they
+  accepted on the plan they turned it on from: `profile` and `model` (null for the profile's own)
+  the grades' chats run on; `chats`, the chats a grade ran then; `token_cap` and `limit_usd`, the
+  cap and the dollar limit it was held to (at most the largest cap at 1,000 dollars a million);
+  `tests`, the SHA-256 of the trigger tests it ran; `previous`, the commit it compared with
+  (absent for none); `at`, when it was turned on; `graded`, the consent
+  digest of the copy an edit last graded (absent before the first), so a save that changed nothing
+  since grades nothing; and `paused`, the sentence why it waits for the person (absent while it
+  does not). Written `0600`, whole or not at all, through no link, by the window alone: turning it
+  on (`skill_grade_after_edit_on`, from a plan whose consent it checks), turning it off, and a
+  grade after an edit (`grades::after_edit`). Read at each save of the skill in the Skill studio's
+  editor: a saved edit, once ten seconds pass with no other save of the skill, grades it on that
+  profile and model, held to the cap and dollar limit of a grade pressed by hand, only while a
+  grade of it runs no more chats, may spend no more, and runs the same trigger tests against the
+  same version as was accepted; a grade that would not
+  waits (`paused`), starts nothing, and the opt-in is turned on again from a plan that shows the
+  cost. A second save while such a grade runs stops it, and the next starts after it. Nothing
+  grades on a timer, and a save from the command line or a chat's change grades nothing. A file
+  that is a link, past 256 KiB, of another `v`, or holding more than 512 copies reads as off (each change holds the `flock` of
+  `skill-grade-after-edit.lock` beside it), and
+  so does a copy whose entry does not hold together (a name that is no plain name, no chats, a cap
+  out of its bounds, a limit that is no positive amount).
+- **Status:** **internal**, **experimental** behind the `skill-studio` flag.
+- **Tier:** Clone state — this machine's own: the person who pays turns it on, on this machine;
+  a teammate's push never does. Losing it turns grading after each edit off.
+- **Git:** gitignored, under the state directory.
+
 ### `<state>/grades-under-way/<grade>.json`
 - **Format:** one JSON object per grade running on this machine (#3353): `pid`, the process that
   runs it; `local`, whether its copy is this machine's alone; `locked`, whether the grade holds the
@@ -7769,7 +7806,8 @@ refuses a `<data>` under a project or inside any git work tree.
 | `<config>/peers.json` | Machine, device-bound | Written since #2044 (ADR 0078 §3 and §8, as ruled 2026-10-15 and 2026-10-17). On a runner: the one desktop paired with it, `{"version": 1, "peers": [{"device", "key", "paired"}]}`, its device id (letters and digits, at most 64), its public link key as 64 lower-case hex, and when it was paired, in seconds since the epoch. `0600`, made only where no file of that name is, at the runner's one pairing, never rewritten, and removed when the desktop it names unpairs the runner as it removes it (`unpair`, session protocol 1.25, #2525), after which the runner links nobody and is not paired again; read only when it is a regular file this user owns that nobody else may read or write. The runner's host reads it as each link arrives and refuses a link from any other key; a file of another version or shape, or with more or fewer than one peer, links nobody, and a home that already holds one is not paired. Chats are denied it, reading and writing | `purlis bridge --pair`, run by the desktop through the connector (#2044, ruled 2026-10-17); `purlis runner peers` (RR-1) |
 | `<config>/purlisd/link-key` | Machine, device-bound | Written since #2044 (ADR 0078 §3, amended for runners only, ruled 2026-10-17), on a runner, as `<config>/charterd/link-key` before rename-local has moved the folder. The runner's own link key: its private half as 64 lower-case hex, `0600` and owned by the runner's user, in the session host's `0700` folder, made from the operating system's generator at the runner's one pairing, only where no file of that name is, and never replaced, so each runner (each container of a Docker pool) has a key of its own. Read only when it is a regular file this user owns that nobody else may read or write; one that is not one key links nobody, and a home that already holds one is not paired. A runner's form of the keyring item for the link key below. Not backed up: a runner made again is paired again. Chats are denied the directory | `purlis bridge --pair` (#2044, ruled 2026-10-17) |
 | `<config>/server/<ver>/` | Machine, device-bound, rebuildable | **decided, not yet written** (ADR 0068, ADR 0078). On a runner: the verified `purlis` binary of each host version, side by side while an old one drains. Denied to chats | the desktop's bootstrap, through the connector (RR-14) |
-| `<data>/projects/<project id>/` | Machine, device-bound, rebuildable | Written since #2046 (ADR 0078 §7 and §8, as amended 2026-10-20). On a runner, in purlis's data home: each project its desktop holds there, in a folder named by the project's id (a ULID, nothing else), made as the desktop first holds it with no place named (session protocol 1.34). Its repositories are where they are on the desktop: the project's own, and `workspaces/<workspace>/<repo>`. Each is a git repository made with no hooks, checked out once on the branch the desktop names, with that branch's uncommitted work, holding the branches the desktop sent and their snapshots of uncommitted work (`refs/purlis/snapshots/<branch>`), and the commits a runner chat makes. A branch a runner chat has checked out is its own, and a later send leaves it as it is. No snapshot carries the desktop's state folder or local settings file. The desktop's clone is the truth, and a send rebuilds it. A bundle crossing the link is kept in `<data>/projects/.code-<random>/` while it moves, and removed with it. Never committed; nothing in it is a forge credential | the runner's `purlisd` (`purlis_core::codelink`, #2046) |
+| `<data>/projects/<project id>/` | Machine, device-bound, rebuildable | Written since #2046 (ADR 0078 §7 and §8, as amended 2026-10-20). On a runner, in purlis's data home: each project its desktop holds there, in a folder named by the project's id (a ULID, nothing else), made as the desktop first holds it with no place named (session protocol 1.34). Its repositories are where they are on the desktop: the project's own, and `workspaces/<workspace>/<repo>`. Each is a git repository made with no hooks, checked out once on the branch the desktop names, with that branch's uncommitted work, holding the branches the desktop sent and their snapshots of uncommitted work (`refs/purlis/snapshots/<branch>`), and the commits a runner chat makes. A branch a runner chat has checked out is its own, and a later send leaves it as it is; only a chat's move takes its work tree over (session protocol 1.44, #2048), where it is still what the two ends last agreed (`refs/purlis/moved/<branch>`, the row below). No snapshot carries the desktop's state folder or local settings file. The desktop's clone is the truth, and a send rebuilds it. A bundle crossing the link is kept in `<data>/projects/.code-<random>/` while it moves, and removed with it. Never committed; nothing in it is a forge credential | the runner's `purlisd` (`purlis_core::codelink`, #2046) |
+| `refs/purlis/moved/<branch>` in a workspace's clone, and in a runner's repository of it | Clone state, rebuildable | Written since #2048 (ADR 0078, amended 2026-10-27; an internal ref name, accepted by the dispatcher on 2026-10-27). The last state of the work tree on `<branch>` that the desktop and a runner agreed as a chat moved between them: a snapshot commit of the work tree as one end sent it and the other took it, whose parent is the branch's commit then. A chat's work tree is taken over by a move only where it is still exactly that, or has nothing uncommitted and no commit the move lacks, so work done since on either device is never written over. Moved by each move, the old branch's forgotten where the work tree changes branch. `refs/purlis/incoming/…` holds a move's refs while it is taken, and is removed with it. Removing either only makes the next move ask for a clean work tree | the window and the runner's `purlisd` (`purlis_core::codelink::moving`, #2048) |
 | keyring `purlis/@link-key/<device>` (account `key`), `<device>` = this device's id | Keyring | Written since #2679 (ADR 0078 §3 and §8; its name decided in implementation, to be confirmed). A desktop's static X25519 key for the Noise `XX` handshake of a runner link, apart from the device key: its private half as 64 lower-case hex, made from the operating system's generator on first use (a pool's first runner), under `link-key.lock` beside the machine store, and read back before any runner pins its public half. An item that does not read as one key is refused and never replaced. Losing it unpairs every runner (ADR 0066, amended). A runner keeps its own link key in `<config>/purlisd/link-key` instead (above; ADR 0078 as amended 2026-10-17). Written by purlis's own binary; denied to chats | `purlis_core::linkkey`, as a pool is added and as the desktop's host links to a runner (#2679) |
 | `<config>/link-key.lock` | Machine, device-bound, transient | the `flock` under which this desktop's link key is made once, so a window and its session host asking at once make one key between them | `purlis_core::linkkey` (#2679) |
 | `<data>/runners/<runner-id>.json` | Machine, device-bound | **decided, not yet written** (ADR 0089). One short-lived runner's record, made by a provider for a human or a chat: its id, role label, tags, provider and the provider's handle for the machine, its owner (a chat and run for an agent-started runner, or the workspace for one a human started or pinned), workspace and source ref, its pinned device id and public link key, its forwarded ports and public URLs with their expiries, its state, and its runner-hours and spend so far. Read at every start of `purlisd` to stop or destroy orphans. Denied to chats. Backed up by FR-10, so a restore onto a replacing machine can stop what still runs or bills | the desktop's `purlisd`, its only writer (RR-29) |

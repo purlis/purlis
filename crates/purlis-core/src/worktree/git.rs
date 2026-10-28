@@ -1706,6 +1706,23 @@ pub fn run(dir: &Path, args: &[&str], timeout: Duration) -> Result<Run, GitUnava
     })
 }
 
+/// [`run`], its output as git wrote it ([`RawRun`]): for a caller that must tell a file that is
+/// not text from one that is, which [`Run`]'s lossy strings cannot (a skill's files at an
+/// earlier commit, SK-57).
+pub(crate) fn run_raw(
+    dir: &Path,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<RawRun, GitUnavailable> {
+    let extra = match held(dir, args, Extra::default())? {
+        Ok(extra) => extra,
+        Err(answer) => return Ok(answer),
+    };
+    counted(dir, args, || {
+        Ok(wait_raw(spawn_with(dir, args, &extra)?, timeout)?)
+    })
+}
+
 /// [`run`]'s hardening for a git the caller feeds and reads itself, a request at a time
 /// (`cat-file --batch`): the child, with its three streams piped, or the sentence that refuses
 /// the call. **The caller owns the deadline**: it stops the child with [`stop`] and waits for

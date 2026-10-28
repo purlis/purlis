@@ -56,7 +56,7 @@ const PIECE: &str = "piece";
 pub const MOST_FILES: usize = 32;
 
 /// How many folders deep a draft's file, or a skill's file Try it lays out, may be.
-const DEEPEST: usize = 8;
+pub const DEEPEST: usize = 8;
 
 /// **What a chat whose write became a draft is told** (decision 38), by its refused tool and by
 /// `purlis propose`: the person has it in the Skill studio, and nothing was written.

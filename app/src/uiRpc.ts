@@ -667,6 +667,15 @@ export const commands = {
 	chats: OnOlderSandbox[],
 } | null, string>(__TAURI_INVOKE("chats_on_older_sandbox", { plane })),
 	restartChatWithoutSandbox: __WINDOW_ONLY_RESULT,
+	moveChat: __WINDOW_ONLY_RESULT,
+	moveChatNow: __WINDOW_ONLY_RESULT,
+	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
+	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
+	/**
+	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten, and a failed
+	 *  one's reason is dismissed.
+	 */
+	putAwayChatMove: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_move", { plane, session })),
 	/**
 	 *  What "Ask <persona>…" offers on this project's chats: its finished personas, or why it
 	 *  offers none, and the asks policy takes off one chat's tab.
@@ -1032,6 +1041,20 @@ export const commands = {
 	 */
 	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
 	skillGradeSetCap: __WINDOW_ONLY_RESULT,
+	/**  **The opt-in of the copy of `skill` at `level`**, where it is on. */
+	skillGradeAfterEdit: (plane: PlaneId, level: SkillLevel, skill: string) => typedError<{
+	profile: string,
+	/**  The model picked, or `None` for the profile's own. */
+	model: string | null,
+	/**  The most chats each grade runs, and the cap and dollar limit each is held to. */
+	chats: number,
+	token_cap: number | null,
+	limit_usd: number | null,
+	/**  Why a saved edit does not grade it now: what a grade would run is past what was accepted. */
+	waits: string | null,
+} | null, string>(__TAURI_INVOKE("skill_grade_after_edit", { plane, level, skill })),
+	skillGradeAfterEditOn: __WINDOW_ONLY_RESULT,
+	skillGradeAfterEditOff: __WINDOW_ONLY_RESULT,
 	skillSources: __WINDOW_ONLY_RESULT,
 	skillSourcesOffered: __WINDOW_ONLY_RESULT,
 	skillSourceAdd: __WINDOW_ONLY_RESULT,
@@ -2080,6 +2103,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 export const SESSION_BUS_ANSWERS = "session-bus://answers" as const;
 
 export const SKILL_GRADE = "skill-grade" as const;
+
+export const SKILL_GRADE_AFTER_EDIT = "skill-grade-after-edit" as const;
 
 export const SKILL_RUNS_PANEL = "runs" as const;
 
@@ -3347,6 +3372,20 @@ export type ChatDoing = {
 export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
+};
+
+/**
+ *  **A chat's move as the window draws it** (#2048): what `chat-move` tells, and each row of
+ *  `chat_moves`.
+ */
+export type ChatMove = {
+	session: number,
+	/**  The pool it moves to, or `null` for this machine. */
+	to: string | null,
+	/**  `preparing`, `ready` or `failed`. */
+	stage: string,
+	/**  Why it failed, in a sentence: where it is `failed`. */
+	why: string | null,
 };
 
 /**  **A chat's Network view** (#1662): what it can reach now and what it was refused. */
@@ -5340,6 +5379,12 @@ export type GradeLeftOut = {
 	why: string,
 };
 
+/**  **The version a grade compares with, as its plan says it** (SK-57). */
+export type GradePrevious = {
+	commit: string,
+	subject: string,
+};
+
 /**  **The price a grade's dollar limit is worked out at** (`grades::price`), as the plan says it. */
 export type GradePrice = {
 	/**  Dollars a million tokens. */
@@ -5375,8 +5420,19 @@ export type GradeScorecard = {
 	version: string,
 	ran_on: string,
 	ended: string,
-	/**  The difference the skill made, in points, where both arms ran. */
+	/**
+	 *  The difference the skill made, in points, where both arms ran: against its previous
+	 *  version where the grade compared one (SK-57), else against no skill.
+	 */
 	delta: number | null,
+	/**
+	 *  **The version it compared with** (SK-57, #3237), its commit shortened, where it compared
+	 *  one; and the difference against no skill then, in points, where both arms ran.
+	 */
+	against: string | null,
+	delta_without: number | null,
+	/**  Whether a saved edit started it (SK-58, #3238), rather than a press of Grade. */
+	after_edit: boolean,
 	/**  How many of its chats asked the person something and were ended there. */
 	asked: number,
 	tests: ScoredTest[],
@@ -6215,6 +6271,22 @@ export type MouseAct = "moved" | "pressed" | "released" | "wheel";
 /**  A mouse button (#2014). */
 export type MouseButton = "none" | "left" | "middle" | "right";
 
+/**  What the window is told of a move it asked for to switch now. */
+export type MoveNow = {
+	/**  The chat moved, as the window draws it in its place; `null` where it did not move now. */
+	chat: OpenChat | null,
+	/**  Why it did not move yet, in a sentence: it moves at a later pause. */
+	not_yet: string | null,
+	/**  What its tab says after the move: what came back that the person is to look at. */
+	notices: string[],
+};
+
+/**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
+export type MoveTold = {
+	plane: PlaneId,
+	moving: ChatMove,
+};
+
 /**
  *  The event the window listens for. One chat, its state, whether it is asking for you.
  * 
@@ -6648,6 +6720,11 @@ export type OpenChat = {
 	untaken?: string | null,
 	/**  The harness profile it started on, where it started on one. */
 	profile: string | null,
+	/**
+	 *  The pool whose runner it runs on (#2048), or `null` for this machine: its tab offers
+	 *  Move here, and a chat here Move to runner.
+	 */
+	pool?: string | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -7700,6 +7777,11 @@ export type PoolVersion = {
 export type PoolsShown = {
 	pools: PoolRow[],
 	defaults: PoolLimitsShown,
+	/**
+	 *  Whether this machine's pools' runners are shown to be the person's own (D-2050-4): their
+	 *  engine is a local socket on this machine. A chat moves only to such a pool (#2048).
+	 */
+	yours?: boolean | null,
 };
 
 /**
@@ -9933,6 +10015,29 @@ export type SkillGrade = {
 	fixtures: number,
 };
 
+/**
+ *  **A skill's opt-in, as its tab says it**: what the person accepted, and why it waits where it
+ *  does.
+ */
+export type SkillGradeAfterEdit = {
+	profile: string,
+	/**  The model picked, or `None` for the profile's own. */
+	model: string | null,
+	/**  The most chats each grade runs, and the cap and dollar limit each is held to. */
+	chats: number,
+	token_cap: number | null,
+	limit_usd: number | null,
+	/**  Why a saved edit does not grade it now: what a grade would run is past what was accepted. */
+	waits: string | null,
+};
+
+/**  **What a saved edit did not grade, and why**, as [`EVENT`] tells the window. */
+export type SkillGradeAfterEditStep = {
+	plane: PlaneId,
+	skill: string,
+	said: string,
+};
+
 /**  **What grading a copy would run, before anything runs** (decision 22). */
 export type SkillGradePlan = {
 	/**  The trigger tests it runs, in the file's order. */
@@ -9981,6 +10086,12 @@ export type SkillGradePlan = {
 	 *  is refused.
 	 */
 	consent: string | null,
+	/**
+	 *  **The version it compares with too** (SK-57, #3237), where the skill has one: its commit
+	 *  shortened and its subject; and why one is not compared, where it did not read.
+	 */
+	previous: GradePrevious | null,
+	previous_refused: string | null,
 };
 
 /**

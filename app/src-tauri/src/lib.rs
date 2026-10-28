@@ -38,6 +38,7 @@ mod browserproof;
 mod browsers;
 mod changes;
 mod chatbrowsers;
+mod chatmoves;
 mod chats;
 mod clipath;
 mod createproject;
@@ -775,6 +776,10 @@ struct OpenChat {
     untaken: Option<String>,
     /// The harness profile it started on, where it started on one.
     profile: Option<String>,
+    /// The pool whose runner it runs on (#2048), or `null` for this machine: its tab offers
+    /// Move here, and a chat here Move to runner.
+    #[specta(optional)]
+    pool: Option<String>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -881,9 +886,11 @@ impl HandedFromNote {
 fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let id = held.chats().chat_at(open.session).and_then(|at| at.id);
     let browser_sites = browser_sites_of(held, open.session);
+    let pool = held.chats().pool_of(open.session);
     OpenChat {
         id,
         browser_sites,
+        pool,
         ..OpenChat::from(open)
     }
 }
@@ -2257,6 +2264,78 @@ async fn restart_chat(
     .map_err(|err| format!("purlis could not restart the chat: {err}"))?
 }
 
+/// **Moves chat `session` to the runner of pool `to`, or here where `to` is `null`** (#2048):
+/// checked now, and prepared in the background while the chat keeps working; the window then
+/// asks [`move_chat_now`] at its next pause. Refused, in a sentence, for a chat that does not
+/// move.
+#[tauri::command]
+#[specta::specta]
+async fn move_chat(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    to: Option<String>,
+) -> Result<(), String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || held.move_chat(session, to))
+        .await
+        .map_err(|err| format!("purlis could not move the chat: {err}"))?
+}
+
+/// **Switches chat `session`'s prepared move now** (#2048), which the window asks at the chat's
+/// pause between turns: the chat in its new place as the window draws it, or why it does not
+/// move yet. A move whose switch fails is refused with why, and the chat stays where it ran.
+#[tauri::command]
+#[specta::specta]
+async fn move_chat_now(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+    columns: u16,
+    rows: u16,
+) -> Result<chatmoves::MoveNow, String> {
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        match held.move_chat_now(session, Size { columns, rows })? {
+            Some(started) => Ok(chatmoves::MoveNow {
+                chat: Some(drawn(&held, started)?),
+                not_yet: None,
+                notices: held.chats().start_notes(started),
+            }),
+            None => Ok(chatmoves::MoveNow {
+                chat: None,
+                not_yet: Some(chatmoves::NOT_AT_A_PAUSE.to_owned()),
+                notices: Vec::new(),
+            }),
+        }
+    })
+    .await
+    .map_err(|err| format!("purlis could not move the chat: {err}"))?
+}
+
+/// **This project's chat moves** (#2048), as the window draws them when it is drawn anew.
+#[tauri::command]
+#[specta::specta]
+fn chat_moves(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<chatmoves::ChatMove>, String> {
+    Ok(planes.held(&plane)?.moves().shown())
+}
+
+/// **Puts chat `session`'s move away** (#2048): one still prepared is forgotten, and a failed
+/// one's reason is dismissed.
+#[tauri::command]
+#[specta::specta]
+fn put_away_chat_move(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<(), String> {
+    planes.held(&plane)?.moves().put_away(session);
+    Ok(())
+}
+
 /// **The chats this project has open that run under a sandbox other than the one the
 /// project's settings decide for them now** (#1428), or none. The window asks when the
 /// project's settings change, when its chats do, and after each of its own sandbox commands
@@ -2655,6 +2734,7 @@ impl From<chats::Open> for OpenChat {
                 .or_else(|| open.harness.map(purlis_core::harness_card::built_in_card))
                 .map(|card| HarnessGlance::from(&card)),
             profile: open.profile,
+            pool: None,
             persona: open.persona,
             in_front: open.in_front,
             shows: open.shows,
@@ -2907,6 +2987,8 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<hooks::RefusedMore>()
         // What `chat-project-settings-changed` carries (ADR 0067 as amended 2026-10-16).
         .typ::<projectsettings::Rescreened>()
+        // What `chat-move` carries (#2048).
+        .typ::<chatmoves::MoveTold>()
         .typ::<chatbrowsers::BrowsersEnded>()
         .typ::<chatbrowsers::BrowsersListed>()
         .typ::<chatbrowsers::TimelineMoved>()
@@ -2944,6 +3026,9 @@ fn commands() -> Builder<tauri::Wry> {
         // What `skill-grade` carries, and the event's name (SK-16, #2779).
         .typ::<skillgrade::SkillGradeStep>()
         .constant("SKILL_GRADE", skillgrade::EVENT)
+        // What `skill-grade-after-edit` carries, and its name (SK-58, #3238).
+        .typ::<skillgrade::after_edit::SkillGradeAfterEditStep>()
+        .constant("SKILL_GRADE_AFTER_EDIT", skillgrade::after_edit::EVENT)
         .constant("PERSONA_SCOPE_KEY", skillstudio::PERSONA_SCOPE_KEY)
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
@@ -3994,6 +4079,17 @@ pub fn run() {
                 // A sandboxed Claude Code chat whose project settings changed so that it no
                 // longer loads them: the window restarts it at once (ADR 0067 as amended
                 // 2026-10-16).
+                // Each chat move's stage (#2048): the window drives the switch at its pause.
+                .telling_moves({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |plane: PlaneId, told: chatmoves::ChatMove| {
+                        let told = chatmoves::MoveTold {
+                            plane: plane.clone(),
+                            moving: told,
+                        };
+                        windows::emit_for_plane(&window, &plane, chatmoves::EVENT, &told);
+                    })
+                })
                 .telling_project_settings({
                     let window = app.handle().clone();
                     std::sync::Arc::new(move |told: projectsettings::Rescreened| {

@@ -48,9 +48,10 @@
 //! | `name_window`, the window naming itself on a link to its own host (1.31) | yes | | | | | |
 //! | `relay_to`, the window's link relayed by its host to a runner it keeps (1.33) | yes | | | | | |
 //! | `take_code`, `give_code`, a repository's history moved over the link as a git bundle (1.34) | yes | | | | | relayed |
+//! | `take_conversation`, `give_conversation`, a moving chat's conversation carried over the link (1.44) | yes | | | | | relayed |
 //! | `cancel_engine_download`, and the pushed `engine_download`: a browser engine's first download (1.37) | yes | | | | | |
 //! | `log_end`, and the host's own event log pushed from a cursor for its device (1.41) | yes | | | | | relayed |
-//! | `inspect`, `inspector_input`, `attach_view` of kind `inspector`: the person's DevTools of a browser they drive (1.44) | yes | | | | | |
+//! | `inspect`, `inspector_input`, `attach_view` of kind `inspector`: the person's DevTools of a browser they drive (1.45) | yes | | | | | |
 //! | the UI RPC: vault values, settings writes, the app's own commands | yes | | | | | |
 //!
 //! **Why each row is what it is.**
@@ -214,7 +215,10 @@
 //!   decides moves between the desktop and a runner, as holding the project is. A relaying host
 //!   sends them on for a `local-ui` client alone, so `remote-link` is granted them only as the
 //!   desktop's host relaying its window, never as any other client of it.
-//! - **DevTools are the window's alone, on its own host** (1.44, #2028). What DevTools reach is
+//! - **`take_conversation` and `give_conversation` are the window's, relayed for it** (1.44,
+//!   #2048), for the same reason: they carry the conversation of a chat the window moves, into
+//!   and out of the harness folder of a profile the host holds it on.
+//! - **DevTools are the window's alone, on its own host** (1.45, #2028). What DevTools reach is
 //!   the whole of the inspected page: its scripts, its storage, what it typed and was filled
 //!   with. Only the person, driving the browser in their own window, opens them, so `inspect`,
 //!   `inspector_input` and a view of DevTools are `local-ui`'s, never relayed to a runner's
@@ -305,9 +309,10 @@ pub enum Power {
     /// `relay_to` (1.33, #2679): the window's link relayed by its own host to a runner it keeps.
     RelayTo,
     /// `take_code` and `give_code` (1.34, #2046): a repository's history moved between the
-    /// desktop and a runner as a git bundle.
+    /// desktop and a runner as a git bundle; and `take_conversation` and `give_conversation`
+    /// (1.44, #2048): a moving chat's conversation carried with it.
     Code,
-    /// `inspect`, `inspector_input` and `attach_view` of the kind `inspector` (1.44, #2028): the
+    /// `inspect`, `inspector_input` and `attach_view` of the kind `inspector` (1.45, #2028): the
     /// real DevTools of a page the person drives. The window's alone, on its own host: never
     /// relayed, since what DevTools reach is the whole of the page, and never any other scope's.
     Inspect,

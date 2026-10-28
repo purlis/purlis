@@ -1441,6 +1441,7 @@ function App() {
       linkWorkItem: () => undefined,
       startFresh: () => undefined,
       restartChat: () => undefined,
+      moveChat: () => undefined,
       restartListed: () => undefined,
       askPersona: () => undefined,
       useSkill: () => undefined,

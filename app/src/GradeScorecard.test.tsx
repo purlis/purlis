@@ -7,6 +7,7 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   GradeChatTab,
   GradeScorecardTab,
+  differenceSaid,
   gradeChatOfView,
   gradeChatView,
   gradeOfView,
@@ -39,6 +40,9 @@ const CARD: GradeScorecard = {
   ran_on: "Claude Code · claude-sonnet-4-5",
   ended: "Finished",
   delta: 33,
+  against: null,
+  delta_without: null,
+  after_edit: false,
   asked: 1,
   tests: [
     {
@@ -124,6 +128,39 @@ describe("A grade's scorecard (SK-59)", () => {
     expect(opened).toEqual([
       { view: gradeChatView("deploy", "01GRADE", "01C"), title: "Grade chat 3 · deploy" },
     ]);
+  });
+
+  it("says the difference against the previous version, and against no skill (SK-57)", () => {
+    expect(differenceSaid(CARD)).toBe(", the skill made a difference of +33 points.");
+    expect(differenceSaid({ ...CARD, against: "fedcba987654", delta: 25, delta_without: 75 })).toBe(
+      ", this version made a difference of +25 points against its previous version fedcba987654, and the skill +75 against no skill.",
+    );
+    expect(differenceSaid({ ...CARD, delta: null })).toBe(".");
+  });
+
+  it("shows the previous version's arm, and says a grade a saved edit started (SK-57, SK-58)", async () => {
+    const previous = {
+      ...CARD.tests[0].arms[0],
+      arm: "previous" as const,
+      chats: [],
+    };
+    mockIPC((cmd) =>
+      cmd === "skill_grade_scorecard"
+        ? {
+            ...CARD,
+            against: "fedcba987654",
+            after_edit: true,
+            tests: [{ ...CARD.tests[0], arms: [...CARD.tests[0].arms, previous] }],
+          }
+        : null,
+    );
+    render(<GradeScorecardTab plane="p" skill="deploy" grade="01GRADE" />);
+    const about = await screen.findByTestId("grade-scorecard-about");
+    expect(about.textContent).toContain("after an edit you saved");
+    expect(about.textContent).toContain("against its previous version fedcba987654");
+    expect(screen.getByTestId("grade-scorecard-previous").textContent).toContain(
+      "Its previous version: 2 of 3 chats started it",
+    );
   });
 
   it("says why a grade it cannot read is not shown", async () => {

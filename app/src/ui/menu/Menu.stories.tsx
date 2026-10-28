@@ -12,7 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { Ellipsis } from "lucide-react";
-import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { expectFocusInSight, untilFocusWithin, untilFocused } from "../../stories.testkit";
 import { Button, IconButton } from "../button/Button";
 import { ContextMenu } from "./ContextMenu";
 import {
@@ -347,7 +347,7 @@ export const ASubmenuPressedAtOnce: Story = {
     const sub = await waitFor(() => screen.getByRole("menu", { name: "Ask" }));
     // The keyboard is in the submenu (React Aria hands a submenu a press like this opened to the
     // submenu itself), and the submenu stays.
-    await waitFor(() => expect(sub).toContainElement(document.activeElement as HTMLElement));
+    await untilFocusWithin(() => sub, "Menu: the submenu its row's press opened has the keyboard");
     await expect(sub).toBeInTheDocument();
     await userEvent.click(within(sub).getByRole("menuitem", { name: /devops/ }));
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Asked devops"));

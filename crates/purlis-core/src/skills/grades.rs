@@ -41,8 +41,13 @@ const MOST_LINE_BYTES: usize = 1024 * 1024;
 /// The most grades of one skill answered, newest first.
 const MOST_GRADES: usize = 200;
 
-/// The arms the built-in runner compares now: the skill against no skill.
+/// The arms the built-in runner compares a skill with no other version in: the skill against no
+/// skill.
 pub const ARMS: [Arm; 2] = [Arm::With, Arm::Without];
+
+/// The arms it compares a skill that has a previous version in (SK-57, #3237): the skill, no
+/// skill, and the skill as its previous version had it, which is then the baseline.
+pub const ARMS_WITH_PREVIOUS: [Arm; 3] = [Arm::With, Arm::Without, Arm::Previous];
 
 /// The longest one grade's chat runs before purlis ends it: what the plan's "up to" says.
 pub const CHAT_TIME: std::time::Duration = std::time::Duration::from_secs(5 * 60);
@@ -130,9 +135,26 @@ pub struct Graded {
     /// written before #3240, and where no chat said ([`reported_model`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// **The version it was compared with** (SK-57, #3237): the commit whose tree its previous
+    /// version's arm was laid out from, where it had one. `None` in a row written before #3237,
+    /// and for a skill with no other version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous: Option<String>,
+    /// **Whether a saved edit started it** (SK-58, #3238), under the opt-in, rather than a press
+    /// of Grade. `false` in a row written before #3238.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub after_edit: bool,
 }
 
 impl Graded {
+    /// **The version it was compared with, where it compared one** (SK-57): its commit, from a
+    /// row whose report has the `previous` arm.
+    pub fn compared_with(&self) -> Option<&str> {
+        self.previous
+            .as_deref()
+            .filter(|_| self.report.arm(Arm::Previous).is_some())
+    }
+
     /// What its copy's folder held.
     pub fn content(&self) -> Option<Content> {
         Content::parse(&self.tree)
@@ -152,6 +174,9 @@ impl Graded {
         };
         self.content().is_some()
             && self.commit.as_deref().is_none_or(hex)
+            && self.previous.as_deref().is_none_or(hex)
+            // A previous version's arm is of a version the row names.
+            && (self.previous.is_some() || self.report.arm(Arm::Previous).is_none())
             && self.harness.as_deref().is_none_or(plain)
             && self.profile.as_deref().is_none_or(plain)
             && self.level.as_deref().is_none_or(level_word)
@@ -711,10 +736,22 @@ pub struct Planned {
     /// What the person consents to by pressing Grade on this plan ([`consent_of`]): a grade
     /// started on another is refused.
     pub consent: Option<String>,
+    /// **The version it compares with** (SK-57, #3237), where the skill has one: the plan says
+    /// it. And why a previous version is not compared, where it has one that did not read.
+    pub previous: Option<ComparedWith>,
+    pub previous_refused: Option<String>,
     /// The copy the consent is a digest of, read once: what a grade started on this plan lays
     /// out every arm from, and records its version as. Never shown, so never sent.
     #[serde(skip)]
     pub copy: Option<SkillCopy>,
+}
+
+/// **The version a grade compares with, as its plan says it** (SK-57): its commit, and its
+/// subject as one line with nothing invisible in it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ComparedWith {
+    pub commit: String,
+    pub subject: String,
 }
 
 /// **A trigger test a grade leaves out**: its place in the file, from 0, and why
@@ -734,11 +771,27 @@ pub struct SkillCopy {
     pub snapshot: Snapshot,
     pub content: Content,
     pub commit: Option<String>,
+    /// **Its previous version** (SK-57, #3237), read from git's tree of that commit, where the
+    /// skill has one and it reads; else why not, where it has one that does not read.
+    pub previous: Option<Previous>,
+    pub previous_refused: Option<String>,
+}
+
+/// **A skill's previous version, as a grade compares with it** (SK-57, #3237): the commit, what
+/// its folder held there, its subject as one line, and its files as git's tree of that commit
+/// holds them ([`super::history::files_of_version`]), never as a folder a chat could write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Previous {
+    pub commit: String,
+    pub tree: String,
+    pub subject: String,
+    pub snapshot: Snapshot,
 }
 
 /// **The copy of `name` at `level`, read once** ([`SkillCopy`]). Its content is what git says the
 /// folder holds both before and after its files are read: a folder that changed while they were
-/// read is `uncommitted`, so a recorded tree is never one the files laid out are not.
+/// read is `uncommitted`, so a recorded tree is never one the files laid out are not. Its
+/// history is read once too, for the commit its content is and the version before it.
 fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> {
     let folder = find(root, level, name)?;
     let content_now = || crate::skilluse::content_at(root, &folder).unwrap_or(Content::Uncommitted);
@@ -749,11 +802,47 @@ fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> 
     } else {
         Content::Uncommitted
     };
-    let commit = commit_of(root, level, name, &content);
+    let history = super::history::history(root, level, name).ok();
+    let tree = match &content {
+        Content::Tree(tree) => Some(tree.as_str()),
+        Content::Uncommitted => None,
+    };
+    let commit = tree.and_then(|tree| {
+        history.as_ref().and_then(|history| {
+            history
+                .versions
+                .iter()
+                .find(|version| version.tree == tree)
+                .map(|version| version.commit.clone())
+        })
+    });
+    let (previous, previous_refused) = match history
+        .as_ref()
+        .and_then(|history| super::history::previous_of(history, tree))
+    {
+        None => (None, None),
+        Some(version) => {
+            match super::history::files_of_version(root, &rel(root, &folder), name, &version.commit)
+            {
+                Ok(files) => (
+                    Some(Previous {
+                        commit: version.commit.clone(),
+                        tree: version.tree.clone(),
+                        subject: version.subject.clone(),
+                        snapshot: files,
+                    }),
+                    None,
+                ),
+                Err(why) => (None, Some(why)),
+            }
+        }
+    };
     Ok(SkillCopy {
         snapshot,
         content,
         commit,
+        previous,
+        previous_refused,
     })
 }
 
@@ -786,11 +875,21 @@ pub fn planned(
                 .collect()
         })
         .unwrap_or_default();
+    let copy = if sendable.is_empty() {
+        None
+    } else {
+        Some(copy_of(root, level, name)?)
+    };
+    // A skill with a previous version is compared with it too, and it is the baseline (SK-57).
+    let arms = match copy.as_ref().and_then(|copy| copy.previous.as_ref()) {
+        Some(_) => ARMS_WITH_PREVIOUS.to_vec(),
+        None => ARMS.to_vec(),
+    };
     let request = (!sendable.is_empty()).then(|| GradeRequest {
         skill: name.to_owned(),
         triggers: sendable,
         outcomes: fixtures.outcomes.read().cloned().unwrap_or_default(),
-        arms: ARMS.to_vec(),
+        arms,
         runs: RUNS,
     });
     let plan = request.as_ref().map(grade::plan);
@@ -811,14 +910,18 @@ pub fn planned(
                 .collect()
         })
         .unwrap_or_default();
-    let copy = match &request {
-        Some(_) => Some(copy_of(root, level, name)?),
-        None => None,
-    };
     let consent = request
         .as_ref()
         .zip(copy.as_ref())
-        .map(|(request, copy)| consent_of(request, &copy.content, &copy.snapshot));
+        .map(|(request, copy)| consent_of(request, copy));
+    let previous = copy
+        .as_ref()
+        .and_then(|copy| copy.previous.as_ref())
+        .map(|previous| ComparedWith {
+            commit: previous.commit.clone(),
+            subject: previous.subject.clone(),
+        });
+    let previous_refused = copy.as_ref().and_then(|copy| copy.previous_refused.clone());
     Ok(Planned {
         skill: name.to_owned(),
         fixtures,
@@ -831,6 +934,8 @@ pub fn planned(
         left_out,
         cap: cap::token_cap(root),
         consent,
+        previous,
+        previous_refused,
         copy,
     })
 }
@@ -855,20 +960,31 @@ pub fn left_out_why(query: &str) -> Option<String> {
     crate::handoff::bad_message(query).map(|bad| bad.say())
 }
 
-/// **What the person consented to**: one digest of the trigger tests the plan showed, what the
-/// copy's folder held by content, and the copy's files as they are now. A grade started on a
-/// plan that no longer holds is refused, so what runs is what was shown.
-pub fn consent_of(request: &GradeRequest, content: &Content, snapshot: &Snapshot) -> String {
+/// **What the person consented to**: one digest of the trigger tests the plan showed, the arms
+/// it runs, what the copy's folder held by content, the copy's files as they are now, and the
+/// previous version it compares with and its files (SK-57). A grade started on a plan that no
+/// longer holds is refused, so what runs is what was shown.
+pub fn consent_of(request: &GradeRequest, copy: &SkillCopy) -> String {
     use sha2::Digest as _;
     let mut digest = sha2::Sha256::new();
     digest.update(serde_json::to_vec(&request.triggers).unwrap_or_default());
     digest.update(b"\0");
-    digest.update(content.word().as_bytes());
-    for (path, text) in &snapshot.files {
-        digest.update(b"\0");
-        digest.update(path.as_bytes());
-        digest.update(b"\0");
-        digest.update(text.as_bytes());
+    digest.update(serde_json::to_vec(&request.arms).unwrap_or_default());
+    digest.update(b"\0");
+    digest.update(copy.content.word().as_bytes());
+    let files = |digest: &mut sha2::Sha256, snapshot: &Snapshot| {
+        for (path, text) in &snapshot.files {
+            digest.update(b"\0");
+            digest.update(path.as_bytes());
+            digest.update(b"\0");
+            digest.update(text.as_bytes());
+        }
+    };
+    files(&mut digest, &copy.snapshot);
+    if let Some(previous) = &copy.previous {
+        digest.update(b"\0previous\0");
+        digest.update(previous.commit.as_bytes());
+        files(&mut digest, &previous.snapshot);
     }
     digest
         .finalize()
@@ -1083,25 +1199,7 @@ fn not_on_this_harness() -> String {
     )
 }
 
-/// **The commit whose version of the copy of `name` at `level` is `content`**: what a grade is
-/// recorded against beside the tree. A copy with changes not committed has none.
-fn commit_of(root: &Path, level: &Level, name: &str, content: &Content) -> Option<String> {
-    match content {
-        Content::Uncommitted => None,
-        Content::Tree(tree) => {
-            super::history::history(root, level, name)
-                .ok()
-                .and_then(|history| {
-                    history
-                        .versions
-                        .into_iter()
-                        .find(|version| &version.tree == tree)
-                        .map(|version| version.commit)
-                })
-        }
-    }
-}
-
+pub mod after_edit;
 pub mod cap;
 pub mod kept;
 pub mod price;
