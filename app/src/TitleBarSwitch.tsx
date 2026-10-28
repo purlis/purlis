@@ -147,11 +147,13 @@ export function TitleBarSwitch({
   const crumb = useRef<HTMLButtonElement>(null);
   const all = useRef<HTMLButtonElement>(null);
   const strip = useRef<HTMLDivElement>(null);
+  const house = useRef<HTMLButtonElement>(null);
   const tintOf = useProjectTints();
   /** Where the keyboard was when a switcher opened, to give it back as the switcher closes. */
   const openedFrom = useRef<Element | null>(null);
   // **The keyboard back where it was** once a switcher has closed, by Escape or by a switch:
-  // where it was, while that is still drawn, else the chip of the workspace in front.
+  // where it was, while that is still drawn, else the chip of the workspace in front: the
+  // plane root's house while the root is (#3654), which stands outside the strip.
   const wasOpen = useRef(open);
   useEffect(() => {
     const before = wasOpen.current;
@@ -166,9 +168,11 @@ export function TitleBarSwitch({
         from.focus({ preventScroll: true });
         return;
       }
-      strip.current
-        ?.querySelector<HTMLElement>('[data-part="workspace"][data-selected], [data-titlebar-all]')
-        ?.focus({ preventScroll: true });
+      const chosen =
+        strip.current?.querySelector<HTMLElement>('[data-part="workspace"][data-selected]') ??
+        (house.current?.hasAttribute("data-selected") ? house.current : null) ??
+        strip.current?.querySelector<HTMLElement>("[data-titlebar-all]");
+      chosen?.focus({ preventScroll: true });
     });
   }, [open]);
 
@@ -324,6 +328,7 @@ export function TitleBarSwitch({
         {withMenu(
           OUTSIDE,
           <RootChip
+            ref={house}
             name={OUTSIDE_TITLE}
             current={focused === OUTSIDE}
             onPress={() => goTo(OUTSIDE)}
