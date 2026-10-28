@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793212456406,
+  "lastUpdate": 1793213834353,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28644,6 +28644,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5985575,
             "unit": "ms",
             "extra": "median of 5 runs: 100.497, 101.158, 101.599, 102.068, 102.116 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3363b511bb95898f124f43382733d8f783b45e70",
+          "message": "CI: macOS scenarios in four parts cut by time, sandbox checks apart (#3615) (#3722)\n\nThe macOS spec halves took 24 min at the median (up to 31) on 14 runs of\n2026-10-28: 15.5 of it specs and 8 building, the build being the runner's\nspeed. Four parts cut by measured time (e2e/parts.ts) instead of\nWebdriverIO's equal-count --shard, which would have left one part at 10.8\nmin of specs. Every part is still a run of neighbours in name order, and\nthe Skill studio specs keep the predecessors they need (#3562).\n\nmacOS's own sandbox checks move off the single-app leg to a leg that\nbuilds no app, so that leg is not the next ceiling.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T18:15:21Z",
+          "tree_id": "83e255bc6b0ea1044064e8f36e023a5b2c94e92b",
+          "url": "https://github.com/purlis/purlis/commit/3363b511bb95898f124f43382733d8f783b45e70"
+        },
+        "date": 1793213824973,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35551049999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.320, 0.352, 0.356, 0.365, 0.369 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5790425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.283, 16.552, 16.579, 16.652, 16.823 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.08131650000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.232, 101.651, 102.081, 102.439, 102.745 ms"
           }
         ]
       }
