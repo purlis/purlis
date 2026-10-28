@@ -213,6 +213,15 @@ describe("You › This machine › Pools", () => {
         },
       ]),
     );
+    const signIn = await screen.findByRole("dialog", {
+      name: "Sign your profiles in on pool fast",
+    });
+    await userEvent.click(within(signIn).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Sign your profiles in on pool fast" }),
+      ).toBeNull(),
+    );
   });
 
   it("says a runner whose key changed in a Notice, whose Remove removes the pool", async () => {
