@@ -881,7 +881,6 @@ fn download_said(download: drive::DownloadInfo) -> wire::DownloadSaid {
             drive::DownloadState::Done => wire::DownloadState::Done,
             drive::DownloadState::Cancelled => wire::DownloadState::Cancelled,
             drive::DownloadState::TooLarge => wire::DownloadState::TooLarge,
-            drive::DownloadState::TooMany => wire::DownloadState::TooMany,
         },
         file: download.file,
     }
@@ -1318,16 +1317,20 @@ impl EngineScreen {
         target: &str,
         files: &[String],
         from: Option<&str>,
+        project: &Path,
     ) -> Result<drive::Call, NotActed> {
         let from = from.ok_or_else(|| {
             NotActed::Refused("an upload names the chat's folder it reads from".into())
         })?;
+        // What purlis keeps from the project's chats, by what each file is (#2020): the host's
+        // own reading, whatever the window judged by spelling.
+        let kept = crate::browserfiles::Kept::of(project).map_err(NotActed::Refused)?;
         let n = self
             .uploads
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let into = self.data.join(UPLOADS).join(n.to_string());
-        let copies =
-            crate::browserfiles::stage(Path::new(from), files, &into).map_err(NotActed::Refused)?;
+        let copies = crate::browserfiles::stage(Path::new(from), files, &into, &kept)
+            .map_err(NotActed::Refused)?;
         Ok(drive::Call::Upload {
             target: Ref::new(target),
             files: copies,
@@ -1343,10 +1346,18 @@ impl EngineScreen {
         download: &str,
         to: &str,
         into: Option<&str>,
+        project: &Path,
     ) -> Result<Browsed, NotActed> {
         let into = into.ok_or_else(|| {
             NotActed::Refused("bringing a download in names the chat's folder".into())
         })?;
+        // Never where a chat may not write, however it is spelled (#2020): judged here too,
+        // on the spelling a folding disk reads, and by what each folder on the way is.
+        let names = crate::browserfiles::relative(to).map_err(NotActed::Refused)?;
+        let mut target = PathBuf::from(into);
+        target.extend(names.iter().map(|name| crate::browserfiles::folded(name)));
+        crate::brokered::guard(project, &target, None).map_err(NotActed::Refused)?;
+        let kept = crate::browserfiles::Kept::of(project).map_err(NotActed::Refused)?;
         let browser = self.with(Arc::clone).ok_or(NotActed::Ended)?;
         let one = browser
             .downloads()
@@ -1364,8 +1375,8 @@ impl EngineScreen {
             )));
         }
         let from = self.data.join(DOWNLOADS).join(&one.file);
-        let bytes =
-            crate::browserfiles::bring(&from, Path::new(into), to).map_err(NotActed::Refused)?;
+        let bytes = crate::browserfiles::bring(&from, Path::new(into), to, &kept)
+            .map_err(NotActed::Refused)?;
         let id = CallId::new(format!("kept:{download}"))
             .map_err(|why| NotActed::Refused(why.to_string()))?;
         let listed = browser
@@ -1388,9 +1399,6 @@ fn state_said(state: drive::DownloadState) -> &'static str {
         drive::DownloadState::Done => "done",
         drive::DownloadState::Cancelled => "cancelled",
         drive::DownloadState::TooLarge => "cancelled by purlis: larger than a download may be",
-        drive::DownloadState::TooMany => {
-            "cancelled by purlis: the browser had as many downloads as it may"
-        }
     }
 }
 
@@ -1448,7 +1456,13 @@ impl Screen for EngineScreen {
         }
     }
 
-    fn act(&self, call_id: &str, act: Act, epoch: u64) -> Result<Browsed, NotActed> {
+    fn act(
+        &self,
+        call_id: &str,
+        act: Act,
+        epoch: u64,
+        project: &Path,
+    ) -> Result<Browsed, NotActed> {
         self.browsed();
         let id = CallId::new(call_id).map_err(|why| NotActed::Refused(why.to_string()))?;
         let call = match act {
@@ -1456,9 +1470,9 @@ impl Screen for EngineScreen {
                 target,
                 files,
                 from,
-            } => self.staged(&target, &files, from.as_deref())?,
+            } => self.staged(&target, &files, from.as_deref(), project)?,
             Act::SaveDownload { download, to, into } => {
-                return self.save_download(epoch, &download, &to, into.as_deref());
+                return self.save_download(epoch, &download, &to, into.as_deref(), project);
             }
             act => call_of(act).map_err(NotActed::Refused)?,
         };

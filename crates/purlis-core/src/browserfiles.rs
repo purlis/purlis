@@ -16,6 +16,11 @@
 //!   is read is copied into the browser's own folder, which no chat reads or writes, and the
 //!   engine is handed that copy: what it uploads is what was checked, whatever the chat does
 //!   after.
+//! - **What purlis keeps from every chat is judged by what a file is, not how it is spelled**
+//!   ([`Kept`]): each folder on the way and the file opened are compared, by device and inode,
+//!   with every path [`crate::sandbox::kept_from_reading`] names, and with every folder above
+//!   the chat's folder, on the very descriptor that is read. A disk that folds names opens one
+//!   file by many spellings; its identity is one.
 //! - **A download is brought in as a new file** ([`bring`]): written under the chat's folder at
 //!   a relative path, its folders walked the same way, never over a file or a link that is
 //!   there, and never anywhere the caller's own rules refuse (the window checks the chat's read
@@ -33,6 +38,77 @@ pub const MOST_UPLOAD_FILES: usize = 20;
 
 /// The most bytes one upload may hold, every file's together.
 pub const MOST_UPLOAD_TOTAL: u64 = 100 << 20;
+
+/// **What purlis keeps from every chat, as the files and folders they are** (#2020): the
+/// device and inode of each path [`crate::sandbox::kept_from_reading`] names that is there.
+#[derive(Debug, Clone, Default)]
+pub struct Kept {
+    ids: std::collections::HashSet<(u64, u64)>,
+}
+
+impl Kept {
+    /// What purlis keeps from the chats of the project at `project`, on this machine. Refused
+    /// where that list cannot be told whole: nothing crosses then.
+    pub fn of(project: &Path) -> Result<Kept, String> {
+        let paths = crate::sandbox::kept_from_reading(project, &crate::sandbox::Machine::this())
+            .map_err(|why| {
+                format!(
+                    "purlis could not tell what it keeps from chats ({why}), so no file crosses"
+                )
+            })?;
+        Ok(Kept::of_paths(&paths))
+    }
+
+    /// The files and folders at `paths` that are there.
+    pub fn of_paths(paths: &[PathBuf]) -> Kept {
+        Kept {
+            ids: paths.iter().filter_map(|path| id_of_path(path)).collect(),
+        }
+    }
+
+    fn holds(&self, id: (u64, u64)) -> bool {
+        self.ids.contains(&id)
+    }
+
+    /// Refused where `root`, or any folder above it, is one purlis keeps.
+    fn refuses_above(&self, root: &Path) -> Result<(), String> {
+        let real = root
+            .canonicalize()
+            .map_err(|why| format!("the chat's folder could not be opened: {why}"))?;
+        if real
+            .ancestors()
+            .filter_map(id_of_path)
+            .any(|id| self.holds(id))
+        {
+            return Err(KEPT.to_owned());
+        }
+        Ok(())
+    }
+}
+
+/// What a file or folder purlis keeps from chats is refused with (#2020).
+const KEPT: &str = "it is a file or folder purlis keeps from every chat, so it does not cross";
+
+#[cfg(unix)]
+fn id_of_path(path: &Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt as _;
+    std::fs::metadata(path)
+        .ok()
+        .map(|meta| (meta.dev(), meta.ino()))
+}
+
+#[cfg(not(unix))]
+fn id_of_path(_path: &Path) -> Option<(u64, u64)> {
+    None
+}
+
+/// **`written` as one spelling to judge by** (#2020): compatibility-composed and lower-cased, so
+/// spellings a disk may open as one name read as one. For an early refusal by spelling, before
+/// a file is opened; the check by what a file is ([`Kept`]) is the one that holds.
+pub fn folded(written: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    written.nfkc().collect::<String>().to_lowercase()
+}
 
 /// **`written`, a path relative to a chat's folder, as its names**, or why it is not one: no
 /// absolute path, no `..`, no empty name and no NUL. `.` names are dropped.
@@ -69,7 +145,12 @@ pub fn relative(written: &str) -> Result<Vec<String>, String> {
 /// and answers the copies, in order, each under its own name in a folder of its own. Refused,
 /// copying nothing it can avoid, where any file is not one [`stage`] reads: outside `root`,
 /// through a link, not a plain file, with more than one name, or past the limits.
-pub fn stage(root: &Path, files: &[String], into: &Path) -> Result<Vec<PathBuf>, String> {
+pub fn stage(
+    root: &Path,
+    files: &[String],
+    into: &Path,
+    kept: &Kept,
+) -> Result<Vec<PathBuf>, String> {
     if files.is_empty() {
         return Err("give `files`, at least one path in the chat's folder".into());
     }
@@ -79,11 +160,13 @@ pub fn stage(root: &Path, files: &[String], into: &Path) -> Result<Vec<PathBuf>,
             files.len()
         ));
     }
+    kept.refuses_above(root)?;
     let mut opened = Vec::new();
     let mut total: u64 = 0;
     for written in files {
         let names = relative(written)?;
-        let (file, size) = open_beneath(root, &names).map_err(|why| format!("{written}: {why}"))?;
+        let (file, size) =
+            open_beneath(root, &names, kept).map_err(|why| format!("{written}: {why}"))?;
         if size > MOST_UPLOAD_BYTES {
             return Err(format!(
                 "{written} is {}, past the {} a file may be to upload",
@@ -122,15 +205,16 @@ pub fn stage(root: &Path, files: &[String], into: &Path) -> Result<Vec<PathBuf>,
 /// **Writes `from`, a download in the browser's folder, under `root` at `to`** (relative to it),
 /// as a new file: its folders must be there, and none of them, nor the file, may be a link.
 /// Answers the bytes written. Never over a file that is there.
-pub fn bring(from: &Path, root: &Path, to: &str) -> Result<u64, String> {
+pub fn bring(from: &Path, root: &Path, to: &str, kept: &Kept) -> Result<u64, String> {
     let names = relative(to)?;
+    kept.refuses_above(root)?;
     let source =
         File::open(from).map_err(|why| format!("the download could not be read: {why}"))?;
     let size = source
         .metadata()
         .map_err(|why| format!("the download could not be read: {why}"))?
         .len();
-    let mut out = create_beneath(root, &names).map_err(|why| format!("{to}: {why}"))?;
+    let mut out = create_beneath(root, &names, kept).map_err(|why| format!("{to}: {why}"))?;
     copied(source, &mut out, size)?;
     Ok(size)
 }
@@ -169,11 +253,11 @@ fn private_folder(folder: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
-fn open_beneath(root: &Path, names: &[String]) -> Result<(File, u64), String> {
+fn open_beneath(root: &Path, names: &[String], kept: &Kept) -> Result<(File, u64), String> {
     use rustix::fs::{FileType, Mode, OFlags};
 
     let (last, folders) = names.split_last().ok_or("it names no file")?;
-    let folder = walk(root, folders)?;
+    let folder = walk(root, folders, kept)?;
     let fd = rustix::fs::openat(
         &folder,
         last.as_str(),
@@ -182,6 +266,9 @@ fn open_beneath(root: &Path, names: &[String]) -> Result<(File, u64), String> {
     )
     .map_err(|why| opened_said(why, "the file"))?;
     let stat = rustix::fs::fstat(&fd).map_err(|why| format!("it could not be read: {why}"))?;
+    if kept.holds(stat_id(&stat)) {
+        return Err(KEPT.into());
+    }
     if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile {
         return Err("it is not a plain file".into());
     }
@@ -197,11 +284,11 @@ fn open_beneath(root: &Path, names: &[String]) -> Result<(File, u64), String> {
 }
 
 #[cfg(unix)]
-fn create_beneath(root: &Path, names: &[String]) -> Result<File, String> {
+fn create_beneath(root: &Path, names: &[String], kept: &Kept) -> Result<File, String> {
     use rustix::fs::{Mode, OFlags};
 
     let (last, folders) = names.split_last().ok_or("it names no file")?;
-    let folder = walk(root, folders)?;
+    let folder = walk(root, folders, kept)?;
     let fd = rustix::fs::openat(
         &folder,
         last.as_str(),
@@ -215,19 +302,36 @@ fn create_beneath(root: &Path, names: &[String]) -> Result<File, String> {
     Ok(File::from(fd))
 }
 
-/// `root` opened, then each of `folders` from it, following no link.
+/// `root` opened, then each of `folders` from it, following no link, each refused where it is
+/// a folder purlis keeps, as the descriptor opened says.
 #[cfg(unix)]
-fn walk(root: &Path, folders: &[String]) -> Result<rustix::fd::OwnedFd, String> {
+fn walk(root: &Path, folders: &[String], kept: &Kept) -> Result<rustix::fd::OwnedFd, String> {
     use rustix::fs::{Mode, OFlags};
 
     let dir = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
     let mut at = rustix::fs::open(root, dir, Mode::empty())
         .map_err(|why| format!("the chat's folder could not be opened: {why}"))?;
+    let refuse_kept = |fd: &rustix::fd::OwnedFd| -> Result<(), String> {
+        let stat = rustix::fs::fstat(fd).map_err(|why| format!("it could not be read: {why}"))?;
+        if kept.holds(stat_id(&stat)) {
+            return Err(KEPT.to_owned());
+        }
+        Ok(())
+    };
+    refuse_kept(&at)?;
     for name in folders {
         at = rustix::fs::openat(&at, name.as_str(), dir | OFlags::NOFOLLOW, Mode::empty())
             .map_err(|why| opened_said(why, name))?;
+        refuse_kept(&at)?;
     }
     Ok(at)
+}
+
+/// A file's device and inode, as `fstat` said them.
+#[cfg(unix)]
+#[allow(clippy::unnecessary_cast, clippy::useless_conversion)]
+fn stat_id(stat: &rustix::fs::Stat) -> (u64, u64) {
+    (stat.st_dev as u64, stat.st_ino as u64)
 }
 
 #[cfg(unix)]
@@ -243,12 +347,12 @@ fn opened_said(why: rustix::io::Errno, what: &str) -> String {
 }
 
 #[cfg(not(unix))]
-fn open_beneath(_root: &Path, _names: &[String]) -> Result<(File, u64), String> {
+fn open_beneath(_root: &Path, _names: &[String], _kept: &Kept) -> Result<(File, u64), String> {
     Err("uploads from a chat's folder are not made on this system".into())
 }
 
 #[cfg(not(unix))]
-fn create_beneath(_root: &Path, _names: &[String]) -> Result<File, String> {
+fn create_beneath(_root: &Path, _names: &[String], _kept: &Kept) -> Result<File, String> {
     Err("downloads are not brought into a chat's folder on this system".into())
 }
 

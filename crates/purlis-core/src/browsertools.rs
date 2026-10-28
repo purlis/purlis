@@ -372,9 +372,6 @@ pub fn download_line(download: &DownloadSaid) -> String {
         DownloadState::Done => "done: browser_save_download brings it into your folder",
         DownloadState::Cancelled => "cancelled",
         DownloadState::TooLarge => "cancelled by purlis: larger than a download may be",
-        DownloadState::TooMany => {
-            "cancelled by purlis: this browser has made as many downloads as it may"
-        }
     };
     let from = download
         .origin

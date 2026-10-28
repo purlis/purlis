@@ -222,7 +222,12 @@ fn writable(at: &ChatFolder, written: &str) -> Result<(), String> {
             "{written} is where purlis keeps what no chat reads, so nothing is saved there"
         ));
     }
-    purlis_core::brokered::guard(&at.root, &path, None)
+    let folded: PathBuf = names
+        .iter()
+        .map(|name| purlis_core::browserfiles::folded(name))
+        .fold(at.folder.clone(), |path, name| path.join(name));
+    purlis_core::brokered::guard(&at.root, &path, None)?;
+    purlis_core::brokered::guard(&at.root, &folded, None)
 }
 
 fn joined(folder: &Path, names: &[String]) -> PathBuf {
@@ -231,10 +236,11 @@ fn joined(folder: &Path, names: &[String]) -> PathBuf {
     path
 }
 
-/// Whether `path` is at or below one of `kept`, compared without regard to case: a disk that
-/// folds names opens either spelling.
+/// Whether `path` is at or below one of `kept`, compared as a disk that folds names reads them
+/// ([`purlis_core::browserfiles::folded`]): the early, worded refusal. The host judges again by
+/// what each file is.
 fn kept(path: &Path, kept: &[PathBuf]) -> bool {
-    let folded = |path: &Path| path.to_string_lossy().to_lowercase();
+    let folded = |path: &Path| purlis_core::browserfiles::folded(&path.to_string_lossy());
     let path = folded(path);
     kept.iter().any(|one| {
         let one = folded(one);
@@ -250,7 +256,7 @@ pub fn chat_folder(held: &crate::planes::Held, session: u32) -> Result<ChatFolde
     let folder = held
         .chats()
         .folder_of(session)
-        .unwrap_or_else(|| root.clone());
+        .ok_or_else(|| "purlis could not find this chat's folder, so no file crosses".to_owned())?;
     let real = |path: &Path| {
         path.canonicalize()
             .map_err(|_| "purlis could not find this chat's folder, so no file crosses".to_owned())

@@ -171,25 +171,97 @@ fn a_download_that_does_not_say_its_size_is_cancelled_once_it_passes_the_most() 
 }
 
 #[test]
-fn a_download_past_the_most_a_browser_makes_is_cancelled_as_it_begins() {
+fn downloads_past_the_most_a_browser_makes_are_cancelled_listed_nowhere_and_counted_once() {
     let (browser, engine) = browser_with(Limits {
         most_downloads: 1,
         ..limits()
     });
     began(&engine, "GUID-6", "https://example.com/1", "one");
-    began(&engine, "GUID-7", "https://example.com/2", "two");
-    let listed = listed_once(&browser, |all| all.len() == 2);
-    assert_eq!(listed[0].state, DownloadState::Going);
-    assert_eq!(listed[1].state, DownloadState::TooMany);
+    for n in 7..50 {
+        began(
+            &engine,
+            &format!("GUID-{n}"),
+            "https://example.com/2",
+            "two",
+        );
+    }
     let start = Instant::now();
-    while engine.sent("Browser.cancelDownload").is_empty()
+    while engine.sent("Browser.cancelDownload").len() < 43
         && start.elapsed() < Duration::from_secs(5)
     {
         std::thread::sleep(Duration::from_millis(5));
     }
+    assert_eq!(engine.sent("Browser.cancelDownload").len(), 43);
     assert_eq!(
         engine.sent("Browser.cancelDownload")[0].params["guid"],
         "GUID-7"
+    );
+    // Only the one within the most is listed: a page that begins downloads in a loop grows
+    // nothing but a count.
+    let answer = browser.call(&id(1), Call::Pages).unwrap();
+    assert_eq!(answer.downloads.len(), 1, "{answer:?}");
+    let note = answer.note.unwrap_or_default();
+    assert!(note.contains("cancelled 43 more downloads"), "{note}");
+    assert_eq!(
+        browser
+            .call(&id(2), Call::Downloads)
+            .unwrap()
+            .downloads
+            .len(),
+        1
+    );
+    assert_eq!(
+        browser.call(&id(3), Call::Pages).unwrap().note,
+        None,
+        "told once"
+    );
+}
+
+#[test]
+fn a_download_past_the_most_bytes_has_its_file_removed_even_once_it_is_done() {
+    let held = tempfile::tempdir().unwrap();
+    let (browser, engine) = browser_with(Limits {
+        most_download_bytes: 1000,
+        ..limits()
+    });
+    browser.hold_downloads_in(held.path()).unwrap();
+    std::fs::write(held.path().join("GUID-11"), vec![0u8; 2000]).unwrap();
+    std::fs::write(held.path().join("GUID-12"), b"small").unwrap();
+    began(&engine, "GUID-11", "https://example.com/big", "big");
+    progress(&engine, "GUID-11", 2000, 2000, "completed");
+    began(&engine, "GUID-12", "https://example.com/small", "small");
+    progress(&engine, "GUID-12", 5, 5, "completed");
+    let start = Instant::now();
+    while held.path().join("GUID-11").exists() && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !held.path().join("GUID-11").exists(),
+        "the file past the most went"
+    );
+    assert!(
+        held.path().join("GUID-12").exists(),
+        "the one within it stays"
+    );
+    // Done already: nothing to cancel.
+    assert!(engine.sent("Browser.cancelDownload").is_empty());
+}
+
+#[test]
+fn a_browser_whose_engine_refuses_its_downloads_folder_is_refused_too() {
+    let (browser, engine) = browser();
+    engine.on(|sent, _| {
+        (sent.method == "Browser.setDownloadBehavior").then(|| {
+            Err(crate::cdp::CallError::Engine {
+                code: -32000,
+                message: "Browser context management is not supported.".into(),
+            })
+        })
+    });
+    assert!(
+        browser
+            .hold_downloads_in(&PathBuf::from("/data/browsers/b-1/downloads"))
+            .is_err()
     );
 }
 
@@ -211,6 +283,10 @@ fn a_plain_name_keeps_no_path_control_or_direction_mark_and_is_never_empty() {
     assert_eq!(plain_file_name("a/b\\c:d"), "a_b_c_d");
     assert_eq!(plain_file_name("in\u{7}voice\n.pdf"), "invoice.pdf");
     assert_eq!(plain_file_name("photo\u{202e}gpj.exe"), "photogpj.exe");
+    assert_eq!(
+        plain_file_name("a\u{2028}b\u{2029}c\u{200b}d\u{feff}e\u{e0041}f.txt"),
+        "abcdef.txt"
+    );
     assert_eq!(plain_file_name("...hidden"), "hidden");
     assert_eq!(plain_file_name("  "), "download");
     assert_eq!(plain_file_name(&"x".repeat(500)).chars().count(), 120);

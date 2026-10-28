@@ -308,15 +308,10 @@ use crate::view::{Limits, Views};
 /// browser's own folder, following no link) and `save_download` (a download brought into the
 /// chat's folder as a new file); and `browsed` says the downloads that began or moved on since
 /// the act before (`downloads`), each by a plain name, its origin and its size, never a path. A
-/// host before 1.46 reads none of the three acts, so the window sends it none.
+/// host before 1.46 cannot read any of the three acts. The window sends the two that name a
+/// chat's folder only to its own host, which is its own build, and refuses them for a chat on a
+/// runner.
 pub const VERSION: Version = Version {
-    major: 1,
-    minor: 46,
-};
-
-/// The version that first carries a browser's files (#2020): the window sends no `downloads`,
-/// `upload` or `save_download` to a host before it.
-pub const KNOWS_BROWSER_FILES: Version = Version {
     major: 1,
     minor: 46,
 };

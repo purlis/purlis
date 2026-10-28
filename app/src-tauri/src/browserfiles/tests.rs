@@ -171,3 +171,44 @@ fn an_act_that_names_no_folder_goes_as_it_is() {
         Prepared::Go(act)
     );
 }
+
+#[test]
+fn a_yes_for_one_origin_covers_no_download_from_another() {
+    let files = Files::default();
+    files.heard(
+        "B",
+        &[
+            done("d1", Some("https://files.example.com")),
+            done("d2", Some("https://evil.example.net")),
+            done("d3", Some("https://files.example.com:8443")),
+        ],
+    );
+    files.allow_saves(1, "https://files.example.com");
+    assert!(matches!(
+        files.prepared(1, "B", save("d1", "a"), from_here, false),
+        Prepared::Go(_)
+    ));
+    assert_eq!(
+        refused(files.prepared(1, "B", save("d2", "b"), from_here, false)),
+        save_not_allowed_said("https://evil.example.net")
+    );
+    // Another port is another origin.
+    refused(files.prepared(1, "B", save("d3", "c"), from_here, false));
+}
+
+#[test]
+fn a_save_or_an_upload_spelled_as_a_folding_disk_reads_a_kept_or_planted_name_is_refused() {
+    let files = Files::default();
+    files.heard("B", &[done("d1", Some("https://x.test"))]);
+    files.allow_saves(1, "https://x.test");
+    for to in [".claude/\u{17f}ettings.json", "purli\u{17f}.toml", ".ENVRC"] {
+        refused(files.prepared(1, "B", save("d1", to), || Ok(at("/p")), false));
+    }
+    refused(files.prepared(
+        1,
+        "B",
+        upload(&[".purlis/vault\u{17f}/forge.json"]),
+        || Ok(at("/p")),
+        false,
+    ));
+}

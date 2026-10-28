@@ -898,8 +898,9 @@ enum FollowUp {
         at: (f64, f64),
         data: Value,
     },
-    /// A download past the browser's limits, cancelled (#2020).
-    CancelDownload(String),
+    /// A download past the browser's limits, cancelled where it still downloads and its file
+    /// removed (#2020).
+    DiscardDownload(downloads::Discard),
     /// A request of DevTools' front end, which never goes (#2028).
     Refuse(String),
     /// A request held until the judge says whether it goes (#2018).
@@ -956,6 +957,8 @@ pub(crate) struct Inner {
     following: Mutex<Option<std::sync::mpsc::Sender<FollowUp>>>,
     /// purlis's own world in each frame its scripts run in, as the engine told of each (#2138).
     worlds: Worlds,
+    /// The folder its downloads are held in, once it was given one (#2020).
+    held_in: Mutex<Option<std::path::PathBuf>>,
 }
 
 /// A frame of a page to read: where its tree comes from and where its holder is.
@@ -1078,6 +1081,7 @@ impl Browser {
             judging: Mutex::new(None),
             following: Mutex::new(None),
             worlds: Worlds::default(),
+            held_in: Mutex::new(None),
         });
         Screencast::start(&inner);
         if inner.judge.is_some() {
@@ -1265,6 +1269,22 @@ impl Browser {
         let mut state = lock(&self.inner.state);
         answer.asked = std::mem::take(&mut state.asked);
         answer.downloads = state.downloads.untold();
+        if let Some(refused) = state.downloads.refused_since() {
+            let said = format!(
+                "purlis cancelled {refused} more {} the page began: a browser makes at most {} \
+                 downloads",
+                if refused == 1 {
+                    "download"
+                } else {
+                    "downloads"
+                },
+                self.inner.limits.most_downloads
+            );
+            answer.note = Some(match answer.note.take() {
+                Some(note) => format!("{note}; {said}"),
+                None => said,
+            });
+        }
         answer
     }
 
@@ -1278,6 +1298,7 @@ impl Browser {
     /// one opened later included. Refused where the engine will not, so a browser never runs
     /// downloading where it was not told to.
     pub fn hold_downloads_in(&self, folder: &std::path::Path) -> Result<(), Refusal> {
+        *lock(&self.inner.held_in) = Some(folder.to_path_buf());
         self.devtools()
             .call(
                 "Browser.setDownloadBehavior",
@@ -3852,7 +3873,7 @@ impl Inner {
                             &self.limits,
                         )
                     {
-                        follow.push(FollowUp::CancelDownload(cancel));
+                        follow.push(FollowUp::DiscardDownload(cancel));
                     }
                 }
                 "Browser.downloadProgress" => {
@@ -3872,7 +3893,7 @@ impl Inner {
                             &self.limits,
                         )
                     {
-                        follow.push(FollowUp::CancelDownload(cancel));
+                        follow.push(FollowUp::DiscardDownload(cancel));
                     }
                 }
                 "Target.targetCreated" | "Target.targetInfoChanged"
@@ -4250,8 +4271,27 @@ impl Inner {
                     None,
                 );
             }
-            FollowUp::CancelDownload(guid) => {
-                let _ = devtools.call("Browser.cancelDownload", json!({ "guid": guid }), None);
+            FollowUp::DiscardDownload(discard) => {
+                if discard.going {
+                    let _ = devtools.call(
+                        "Browser.cancelDownload",
+                        json!({ "guid": discard.guid }),
+                        None,
+                    );
+                }
+                // The engine names each file by its guid, so the guid is one plain name.
+                let held = lock(&self.held_in).clone();
+                if let Some(folder) = held
+                    && !discard.guid.is_empty()
+                    && !discard.guid.contains(['/', '\\', '\0'])
+                    && discard.guid != ".."
+                    && discard.guid != "."
+                {
+                    let file = folder.join(&discard.guid);
+                    if std::fs::symlink_metadata(&file).is_ok_and(|there| there.is_file()) {
+                        let _ = std::fs::remove_file(file);
+                    }
+                }
             }
             FollowUp::Close(target) => {
                 let _ = devtools.call("Target.closeTarget", json!({ "targetId": target }), None);

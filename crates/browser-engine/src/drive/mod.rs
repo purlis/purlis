@@ -494,18 +494,17 @@ pub enum DownloadState {
     Done,
     /// The engine or the page cancelled it.
     Cancelled,
-    /// purlis cancelled it: past [`Limits::most_download_bytes`], or past
+    /// purlis cancelled it and removed its file: past [`Limits::most_download_bytes`], or past
     /// [`Limits::most_held_bytes`] with the browser's others.
     TooLarge,
-    /// purlis cancelled it: the browser had [`Limits::most_downloads`] already.
-    TooMany,
 }
 
 /// The longest name [`plain_file_name`] keeps, in characters.
 pub const MOST_FILE_NAME_CHARS: usize = 120;
 
-/// **A name a page suggested for a file, made plain** (#2020): no path, no control or
-/// direction-changing character, no leading dot, at most [`MOST_FILE_NAME_CHARS`] characters;
+/// **A name a page suggested for a file, made plain** (#2020): no path, no character a reader
+/// does not see ([`purlis_unicode::invisible`]: controls, format characters such as a direction
+/// mark or a zero-width space, line and paragraph separators), no leading dot, at most [`MOST_FILE_NAME_CHARS`] characters;
 /// `download` where nothing is left.
 pub fn plain_file_name(suggested: &str) -> String {
     let kept: String = suggested
@@ -517,7 +516,7 @@ pub fn plain_file_name(suggested: &str) -> String {
                 c
             }
         })
-        .filter(|c| !c.is_control() && !is_direction_mark(*c))
+        .filter(|c| !purlis_unicode::invisible(*c))
         .collect();
     let trimmed = kept.trim().trim_start_matches('.').trim();
     let cut: String = trimmed.chars().take(MOST_FILE_NAME_CHARS).collect();
@@ -527,15 +526,6 @@ pub fn plain_file_name(suggested: &str) -> String {
     } else {
         cut.to_owned()
     }
-}
-
-/// Whether `c` changes the direction text is drawn in, which could make a name read as
-/// another (`exe.txt` drawn as `txt.exe`).
-fn is_direction_mark(c: char) -> bool {
-    matches!(
-        c,
-        '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{061c}'
-    )
 }
 
 /// **What a request a page is about to send is**, as the driver tells the browser's judge
@@ -775,7 +765,8 @@ pub struct Limits {
     pub most_tree_read_bytes: usize,
     /// The most bytes one download may hold (#2020): past it, purlis cancels it.
     pub most_download_bytes: u64,
-    /// The most downloads one browser makes (#2020): any after it is cancelled as it begins.
+    /// The most downloads one browser makes (#2020): any after it is cancelled as it begins,
+    /// listed nowhere, and only counted in the next answer's note.
     pub most_downloads: usize,
     /// The most bytes a browser's downloads hold together (#2020): the one that passes it is
     /// cancelled.

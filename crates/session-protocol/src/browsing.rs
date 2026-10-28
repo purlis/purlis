@@ -284,10 +284,8 @@ pub enum DownloadState {
     Done,
     /// The page or the engine cancelled it.
     Cancelled,
-    /// purlis cancelled it: larger than a download may be.
+    /// purlis cancelled it and removed its file: larger than a download may be.
     TooLarge,
-    /// purlis cancelled it: the browser had as many downloads as it may.
-    TooMany,
 }
 
 /// What a browser may reach, given as it starts (1.11): the hosts its chat's sandbox lists, each
