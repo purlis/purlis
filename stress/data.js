@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793159737923,
+  "lastUpdate": 1793166978518,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8150,6 +8150,42 @@ window.BENCHMARK_DATA = {
             "value": 432.1,
             "unit": "MB",
             "extra": "median of 6 samples: 425, 429.8, 430.8, 433.3, 434.4, 593.2 MB; window 243.9 MB, session host 188.2 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "76ec2ca129bec394745cf18239cdfc2b06641444",
+          "message": "Grades: each grade's chat from its scorecard, and the model a grade runs on (#3239, #3240) (#3577)\n\n* Grades: pick the model a grade's chats run on (#3240)\n\nThe plan offers the models the profile's harness can run beside the\nprofile's own: each adapter says which (grade_models; Claude Code's\nopus, sonnet and haiku) and how a chat starts on one (model_words, pure).\nA model the adapter does not offer is refused, and the dollar limit is\npriced from the one picked. The eval record gains `model`, the model\nthe chats reported at SessionStart, shown in the Grades panel and in\n`purlis skill grade`.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: each grade's chat one click away from its scorecard (#3239)\n\nA grade's chat is drawn nowhere and its piece goes when it closes, so\npurlis keeps what its terminal showed as the grade ended it (the\nsession's snapshot, scrollback with it) in this machine's state, for the\nskill's three newest grades. A Grades panel row opens the grade's\nscorecard: each trigger test in each arm, with each chat opening\nread-only in a tab. A chat that asked the person something is counted\nper test (`asked`), and the grade's end and scorecard say so instead of\na notice on a chat nobody can see.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: review of #3239 and #3240\n\nA kept chat's names refuse dots, so no name reaches above its folder;\nits screen is every piece a view is sent until quiet, as a host sends a\nsnapshot in pieces; the new commands are served on a link as reads;\nchats are numbered by their run; the plan reads the profile's start\nonce where no model is picked; the words follow ui-copy.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Grades: a kept chat's store is clone state, transient\n\nOnly a machine store is syncable or device-bound (ADR 0069), so the\nkept chats are transient clone state: losing them loses only the\nread-only view of a grade's chats.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T04:38:15Z",
+          "tree_id": "64f230645a86ed7249efc6df7a10945fa0ff279b",
+          "url": "https://github.com/purlis/purlis/commit/76ec2ca129bec394745cf18239cdfc2b06641444"
+        },
+        "date": 1793166973941,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 707,
+            "unit": "MB",
+            "extra": "median of 3 samples: 584, 707, 799 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 435.1,
+            "unit": "MB",
+            "extra": "median of 6 samples: 426.7, 432.7, 433.7, 436.5, 437.4, 548.6 MB; window 245.6 MB, session host 188.8 MB"
           }
         ]
       }
