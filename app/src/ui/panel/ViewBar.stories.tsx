@@ -8,7 +8,7 @@
  * button unavailable with its reason at its end. Held to axe in Chromium and WebKit.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, waitFor } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import { onAMac } from "../../tabKeys";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Button } from "../button/Button";
@@ -117,7 +117,7 @@ export const WalkThePath: Story = {
     await userEvent.keyboard(FORWARD());
     await waitFor(() => expect(here()).toBe("Grades"));
     // By the path: Library, a step of its own, which back undoes.
-    await userEvent.click(canvas.getByRole("button", { name: "Library" }));
+    await userEvent.click(within(path()).getByRole("button", { name: "Library" }));
     await waitFor(() => expect(here()).toBe("Library"));
     await expect(forward).toHaveAttribute("aria-disabled", "true");
     await userEvent.keyboard(BACK());
