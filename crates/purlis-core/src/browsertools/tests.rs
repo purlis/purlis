@@ -180,6 +180,8 @@ fn an_act_on_a_page_may_ask_for_what_changed_and_a_read_may_not() {
                 "browser_new",
                 "browser_close",
                 "browser_login",
+                // It writes a file into the chat's folder, and leaves the page as it was.
+                "browser_save_download",
             ]
             .contains(&tool.name);
         assert_eq!(offers, acts_on_a_page, "{}", tool.name);

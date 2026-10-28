@@ -49,7 +49,7 @@ pub struct Asked {
 
 /// The tools whose answer may say what changed on the page (#2137): every one that acts on a
 /// page already open.
-const SAY_CHANGES: [&str; 10] = [
+const SAY_CHANGES: [&str; 11] = [
     "browser_navigate",
     "browser_click",
     "browser_double_click",
@@ -60,6 +60,7 @@ const SAY_CHANGES: [&str; 10] = [
     "browser_drag",
     "browser_scroll",
     "browser_back",
+    "browser_upload",
 ];
 
 /// The call id of the changes that follow the act of `call_id`: its own, so a retry of the act
@@ -733,6 +734,10 @@ fn c_scroll() -> Value {
     saying_changes(s_scroll())
 }
 
+fn c_upload() -> Value {
+    saying_changes(s_upload())
+}
+
 fn c_page_only() -> Value {
     saying_changes(s_page_only())
 }
@@ -895,7 +900,7 @@ pub const TOOLS: [Tool; 23] = [
         description: "Put files from your working folder into the page's file input, as if \
                       chosen in its file dialog. Only files in your working folder that you may \
                       read, at most 20 and 100 MB.",
-        schema: s_upload,
+        schema: c_upload,
         read_only: false,
     },
 ];
