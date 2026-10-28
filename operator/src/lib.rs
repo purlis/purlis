@@ -15,6 +15,11 @@
 //!
 //! It acts only on Claims admitted under its policy, however it was installed ([`admission`]).
 //!
+//! **A Claim is kept or fresh** (#2057): a kept one's runner starts cold with a volume of its
+//! own for its home, which keeps its work and its pairing through the loss of its pod; a fresh
+//! one's takes a warm runner where one waits, and keeps nothing. While a runner starts, its
+//! Claim says its stage ([`stage`]).
+//!
 //! **It vouches for each runner's link key** ([`vouch`], #2056): the key a runner's pod made as
 //! it started, signed with the operator's own key into a statement on the Claim's status, which
 //! the desktop checks against its own pairing over `kubectl exec`.
@@ -30,6 +35,7 @@ mod admission;
 pub mod doctor;
 mod reconcile;
 mod resources;
+pub mod stage;
 pub mod upstream;
 pub mod vouch;
 
@@ -40,4 +46,6 @@ pub use reconcile::{
     status_of_a_missing_pool, status_of_an_object_in_the_way,
     status_of_objects_held_by_refused_claims, status_patch,
 };
-pub use resources::{Claim, ClaimSpec, ClaimStatus, LinkKey, Pool, PoolSpec, PoolStatus};
+pub use resources::{
+    Claim, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, Pool, PoolSpec, PoolStatus,
+};

@@ -390,3 +390,117 @@ fn a_key_made_at_start_that_others_may_read_is_not_paired_with() {
     assert!(refused.contains("could not be read safely"), "{refused}");
     assert!(answering(home.path()).unwrap().is_none());
 }
+
+/// A cluster runner's pod made (again) on `volume`, its home there and the image's home at
+/// `image`: its first step, run as [`make_at_start_in`] runs it, with a hand-off folder of its
+/// own, in memory as the pod's is. Answers the folder, the hand-off path and what it published.
+fn pod_started_on(
+    volume: &std::path::Path,
+    image: Option<&std::path::Path>,
+) -> (tempfile::TempDir, std::path::PathBuf, String) {
+    let pod = tempfile::tempdir().unwrap();
+    let handoff = pod.path().join("link-key");
+    let published = pod.path().join("termination-log");
+    let home = volume.join("home");
+    make_at_start_in(&handoff, &published, &home, image, &home.join(".config")).unwrap();
+    let public = std::fs::read_to_string(&published).unwrap();
+    (pod, handoff, public)
+}
+
+#[test]
+fn a_kept_runner_made_again_keeps_its_pairing_and_publishes_the_key_it_was_paired_with() {
+    let volume = tempfile::tempdir().unwrap();
+    let config = volume.path().join("home").join(".config");
+    let (_first, handoff, public) = pod_started_on(volume.path(), None);
+    let desktop = desktop();
+    let runner = pair_with_key_made_at_start(&config, &desktop, &handoff).unwrap();
+    assert_eq!(hex_of(runner.key.as_bytes()), public);
+
+    // The pod is lost and made again on the same volume: no new key, the same pairing.
+    let (_again, handoff, published) = pod_started_on(volume.path(), None);
+    assert_eq!(published, public, "the key it was paired with");
+    assert!(!handoff.exists(), "nothing is handed over");
+    let (ours, peer) = answering(&config).unwrap().expect("still paired");
+    assert_eq!(
+        (ours.device, ours.key.public()),
+        (runner.device, runner.key)
+    );
+    assert_eq!(peer, desktop);
+}
+
+#[test]
+fn a_fresh_runners_home_starts_as_a_copy_of_the_images_and_a_kept_one_is_left_as_it_is() {
+    use std::os::unix::fs::PermissionsExt;
+    let image = tempfile::tempdir().unwrap();
+    std::fs::write(image.path().join(".gitconfig"), "[user]\n\tname = runner\n").unwrap();
+    std::fs::create_dir(image.path().join(".ssh")).unwrap();
+    std::fs::write(
+        image.path().join(".ssh/known_hosts"),
+        "github.com ssh-ed25519 AAAA\n",
+    )
+    .unwrap();
+    std::os::unix::fs::symlink("/etc/hostname", image.path().join("hostname")).unwrap();
+    let volume = tempfile::tempdir().unwrap();
+    let home = volume.path().join("home");
+    seed_home(&home, Some(image.path())).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(home.join(".ssh/known_hosts")).unwrap(),
+        "github.com ssh-ed25519 AAAA\n"
+    );
+    assert!(home.join(".gitconfig").is_file());
+    assert_eq!(
+        std::fs::read_link(home.join("hostname")).unwrap(),
+        std::path::Path::new("/etc/hostname"),
+        "a link is copied as a link, never followed"
+    );
+    assert_eq!(
+        std::fs::metadata(&home).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    // The runner's own work, and a later pod: nothing of the image's is copied over it.
+    std::fs::write(home.join("conversation"), "kept").unwrap();
+    std::fs::write(image.path().join(".gitconfig"), "changed in the image").unwrap();
+    seed_home(&home, Some(image.path())).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(home.join("conversation")).unwrap(),
+        "kept"
+    );
+    assert_ne!(
+        std::fs::read_to_string(home.join(".gitconfig")).unwrap(),
+        "changed in the image"
+    );
+    // No image home: an empty one.
+    let bare = volume.path().join("bare");
+    seed_home(&bare, None).unwrap();
+    assert_eq!(std::fs::read_dir(&bare).unwrap().count(), 0);
+}
+
+#[test]
+fn a_home_left_half_made_is_made_again_and_one_that_is_not_a_folder_is_refused() {
+    let image = tempfile::tempdir().unwrap();
+    std::fs::write(image.path().join("dotfile"), "x").unwrap();
+    let volume = tempfile::tempdir().unwrap();
+    let home = volume.path().join("home");
+    std::fs::create_dir(volume.path().join("home.making")).unwrap();
+    std::fs::write(volume.path().join("home.making/half"), "stopped").unwrap();
+    seed_home(&home, Some(image.path())).unwrap();
+    assert!(home.join("dotfile").is_file());
+    assert!(!home.join("half").exists());
+    assert!(!volume.path().join("home.making").exists());
+
+    let link = volume.path().join("linked");
+    std::os::unix::fs::symlink(image.path(), &link).unwrap();
+    assert!(seed_home(&link, None).is_err());
+}
+
+#[test]
+fn a_fresh_runners_home_that_came_with_a_device_id_is_still_never_paired() {
+    let image = tempfile::tempdir().unwrap();
+    let minted = crate::machine::mint_device_id(&image.path().join(".config")).unwrap();
+    assert!(minted.is_some());
+    let volume = tempfile::tempdir().unwrap();
+    let (_pod, handoff, _) = pod_started_on(volume.path(), Some(image.path()));
+    let config = volume.path().join("home").join(".config");
+    let refused = pair_with_key_made_at_start(&config, &desktop(), &handoff).unwrap_err();
+    assert!(refused.contains("came with a device id"), "{refused}");
+}

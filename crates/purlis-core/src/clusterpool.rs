@@ -18,6 +18,11 @@
 //!   device id and public key, as a Docker pool's does. A key that is not the one the operator
 //!   vouched for is refused ([`Refused::KeyChanged`]), and so is a statement that no longer
 //!   names the pod and key the desktop paired with, before every link ([`still_vouched`]).
+//!
+//! **A claim is kept or fresh** (#2057), and purlis chooses ([`kept_for`]): a kept claim's runner
+//! has a volume of its own for its home, so its pod made again keeps its work and its pairing,
+//! which belongs to the claim and not to the pod (ruled 2026-10-28); a fresh claim's comes warm
+//! from the pool and keeps nothing.
 
 use std::path::PathBuf;
 
@@ -56,10 +61,11 @@ impl std::fmt::Display for Refused {
 impl std::error::Error for Refused {}
 
 /// The first line of every statement: what it is, and its version.
-pub const STATEMENT_HEADER: &str = "purlis runner link key v1";
+pub const STATEMENT_HEADER: &str = "purlis runner link key v2";
 
-/// **What the cluster operator vouches for**: one claim's runner, the pod it runs in, the
-/// public link key that pod made as it started, and who asked for the claim. Signed as its
+/// **What the cluster operator vouches for**: one claim's runner, the pod it runs in, by name,
+/// the public link key that runner holds, and who asked for the claim. A kept claim's pod made
+/// again has the same name and key (#2057), so the statement says the same. Signed as its
 /// text ([`Vouched::text`]), one `name: value` line each, in this order, after
 /// [`STATEMENT_HEADER`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,21 +74,12 @@ pub struct Vouched {
     pub claim: String,
     pub claim_uid: String,
     pub pod: String,
-    pub pod_uid: String,
     pub key: PublicKey,
     pub requester: String,
 }
 
 /// The names of a statement's lines, in their order.
-const LINES: [&str; 7] = [
-    "namespace",
-    "claim",
-    "claim uid",
-    "pod",
-    "pod uid",
-    "key",
-    "requester",
-];
+const LINES: [&str; 6] = ["namespace", "claim", "claim uid", "pod", "key", "requester"];
 
 /// The longest value a statement's line holds.
 const MOST_VALUE: usize = 512;
@@ -96,7 +93,6 @@ impl Vouched {
             &self.claim,
             &self.claim_uid,
             &self.pod,
-            &self.pod_uid,
             &key,
             &self.requester,
         ];
@@ -131,16 +127,15 @@ impl Vouched {
                 .ok_or_else(bad)?;
             values.push(value.to_owned());
         }
-        let key = bytes_of(&values[5]).ok_or_else(bad)?;
-        let [namespace, claim, claim_uid, pod, pod_uid, _key, requester]: [String; 7] =
+        let key = bytes_of(&values[4]).ok_or_else(bad)?;
+        let [namespace, claim, claim_uid, pod, _key, requester]: [String; 6] =
             values.try_into().map_err(|_| bad())?;
         // Names and uids only as Kubernetes gives them: nothing that could read as a flag or
         // another kind of object where kubectl is handed the pod's name.
         let named = is_label(&namespace)
             && is_subdomain(&claim)
             && is_subdomain(&pod)
-            && is_uid(&claim_uid)
-            && is_uid(&pod_uid);
+            && is_uid(&claim_uid);
         if !named {
             return Err(bad());
         }
@@ -149,7 +144,6 @@ impl Vouched {
             claim,
             claim_uid,
             pod,
-            pod_uid,
             key: PublicKey::from_bytes(key),
             requester,
         })
@@ -446,20 +440,17 @@ impl Kubectl {
     }
 
     /// **Claims a runner of `pool` in `namespace`**, as `requester` (who this kubeconfig is,
-    /// [`Kubectl::whoami`]): the Claim's uid, which the operator's statement must name.
+    /// [`Kubectl::whoami`]), kept or fresh as `keeping` says ([`kept_for`]): the Claim's uid,
+    /// which the operator's statement must name.
     pub fn claim(
         &self,
         namespace: &str,
         name: &str,
         pool: &str,
         requester: &str,
+        keeping: Keeping,
     ) -> Result<String, Refused> {
-        let claim = serde_json::json!({
-            "apiVersion": "runners.purlis.dev/v1alpha1",
-            "kind": "Claim",
-            "metadata": { "name": name, "namespace": namespace },
-            "spec": { "pool": pool, "requester": requester },
-        });
+        let claim = claim_definition(namespace, name, pool, requester, keeping);
         let made = self.json(
             &["create", "--filename", "-", "--output", "json"],
             Some(&claim.to_string()),
@@ -514,6 +505,62 @@ impl Kubectl {
         )
         .map(|_| ())
     }
+}
+
+/// **Whether a claim's runner keeps its work** (#2057).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keeping {
+    /// Started cold with a volume of its own for its home: its checkout, conversation, profile
+    /// sign-in, kept browser logins and pairing outlive its pod.
+    Kept,
+    /// A warm runner where the pool has one waiting, which keeps nothing past its pod.
+    Fresh,
+}
+
+/// What purlis knows of a chat as it chooses a claim for it ([`kept_for`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ChatOnARunner {
+    /// A short task another chat dispatched, rather than a chat the person works in.
+    pub dispatched: bool,
+    /// How the chat's profile signs in to its harness, where it is known.
+    pub sign_in: Option<crate::harness_declaration::SignInKind>,
+    /// The person's "Keep this runner's work" switch, where they turned it one way or the
+    /// other: it decides, whatever purlis would choose.
+    pub keep_work: Option<bool>,
+}
+
+/// **purlis's choice of a kept or fresh claim** (spec #2041 stories 26 and 27): kept for a
+/// chat the person works in and for any chat of a subscription profile, whose sign-in lives on
+/// the kept volume; fresh for a short dispatched task. The person's "Keep this runner's work"
+/// switch, where set, decides.
+pub fn kept_for(chat: &ChatOnARunner) -> Keeping {
+    use crate::harness_declaration::SignInKind;
+    let kept = match chat.keep_work {
+        Some(kept) => kept,
+        None => chat.sign_in == Some(SignInKind::Subscription) || !chat.dispatched,
+    };
+    if kept { Keeping::Kept } else { Keeping::Fresh }
+}
+
+/// The Claim purlis makes: `kept` only on a kept one, so a fresh claim reads as every claim did
+/// before claims were kept.
+pub fn claim_definition(
+    namespace: &str,
+    name: &str,
+    pool: &str,
+    requester: &str,
+    keeping: Keeping,
+) -> serde_json::Value {
+    let mut spec = serde_json::json!({ "pool": pool, "requester": requester });
+    if keeping == Keeping::Kept {
+        spec["kept"] = serde_json::Value::Bool(true);
+    }
+    serde_json::json!({
+        "apiVersion": "runners.purlis.dev/v1alpha1",
+        "kind": "Claim",
+        "metadata": { "name": name, "namespace": namespace },
+        "spec": spec,
+    })
 }
 
 /// One claim this desktop made, as it knows it before the runner answers.
@@ -606,7 +653,9 @@ pub fn pair(
 }
 
 /// **Before every link**: the operator still vouches for the pod and key `paired` was paired
-/// with. Another pod or key is refused as a changed key; no statement at all is refused too.
+/// with. Another pod or key is refused as a changed key; no statement at all is refused too. A
+/// kept claim's pod made again under its name, answering the key it was paired with, is the
+/// same runner (#2057): its pairing is the claim's.
 pub fn still_vouched(
     kubectl: &Kubectl,
     operator: &OperatorKey,
@@ -623,7 +672,7 @@ pub fn still_vouched(
 
 /// `now`, what the operator vouches for, held to what `paired` was paired with.
 pub fn held_to(paired: &Paired, now: &Vouched) -> Result<(), Refused> {
-    if now.pod_uid != paired.vouched.pod_uid || now.key != paired.pinned.key {
+    if now.pod != paired.vouched.pod || now.key != paired.pinned.key {
         return Err(Refused::KeyChanged {
             claim: format!("{}/{}", paired.claimed.namespace, paired.claimed.name),
         });

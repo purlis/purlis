@@ -24,7 +24,10 @@ use kube::ResourceExt;
 use ring::signature::{Ed25519KeyPair, KeyPair};
 
 /// The first line of every statement: what it is, and its version.
-pub const STATEMENT_HEADER: &str = "purlis runner link key v1";
+/// `v2` since a kept claim's runner keeps its pairing through the loss of its pod (#2057, ruled
+/// 2026-10-28): the statement names the claim, the pod's name and the key, and no longer the
+/// pod's uid, which changes when the pod is made again.
+pub const STATEMENT_HEADER: &str = "purlis runner link key v2";
 
 /// Where the operator's pod holds its signing key: a Secret the kubelet mounts there
 /// (`deploy/operator.yaml`), so the operator itself holds no right to read any Secret.
@@ -36,8 +39,9 @@ pub struct About<'a> {
     pub namespace: &'a str,
     pub claim: &'a str,
     pub claim_uid: &'a str,
+    /// The pod's name, which the desktop execs into: a kept claim's pod is made again under
+    /// the same name.
     pub pod: &'a str,
-    pub pod_uid: &'a str,
     /// The public link key, 64 lower-case hex.
     pub key: &'a str,
     pub requester: &'a str,
@@ -56,15 +60,13 @@ pub fn statement(about: &About<'_>) -> Option<String> {
         ("claim", about.claim),
         ("claim uid", about.claim_uid),
         ("pod", about.pod),
-        ("pod uid", about.pod_uid),
         ("key", about.key),
         ("requester", about.requester),
     ];
     let named = is_label(about.namespace)
         && is_subdomain(about.claim)
         && is_subdomain(about.pod)
-        && is_uid(about.claim_uid)
-        && is_uid(about.pod_uid);
+        && is_uid(about.claim_uid);
     if !named || !lines.iter().all(|(_, value)| plain(value)) || !is_lower_hex(about.key, 64) {
         return None;
     }
@@ -281,11 +283,16 @@ fn plain_resources(resources: &serde_json::Value) -> bool {
 }
 
 /// The labels upstream puts on a runner's pod (agent-sandbox v1.0.6), measured on the kind run;
-/// the operator's template sets none. `CLAIM_UID_LABEL` must name the upstream claim.
-pub const UPSTREAM_LABELS: [&str; 3] = [
+/// the operator's template sets none. `CLAIM_UID_LABEL` must name the upstream claim. The last
+/// three are a warm runner's, which upstream's warm pool made before a fresh claim took it
+/// (#2057): its pool and the hashes of the template it was made from.
+pub const UPSTREAM_LABELS: [&str; 6] = [
     CLAIM_UID_LABEL,
     "agents.x-k8s.io/sandbox-name-hash",
     "agents.x-k8s.io/sandbox-template-ref-hash",
+    "agents.x-k8s.io/warm-pool-sandbox",
+    "agents.x-k8s.io/sandbox-pod-template-hash",
+    "agents.x-k8s.io/sandbox-template-hash",
 ];
 
 /// The label upstream names a pod's claim by, its uid.
@@ -500,8 +507,6 @@ pub struct Held<'a> {
 /// the pool's template changed by no one else, the pod the operator's `template` in full, and
 /// the key its first step published; then the statement, signed with `signing`.
 pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &SigningKey) -> Vouching {
-    let template = wanted_template.spec.as_ref().cloned().unwrap_or_default();
-    let template = &template;
     let not_yet = |why: &str| Vouching::Starting(why.to_owned());
     let Some(named) = held
         .upstream
@@ -541,6 +546,14 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &Signi
     let Some(pod) = held.pod else {
         return not_yet("The runner's pod has not been made yet.");
     };
+    // The pod upstream makes for this claim: a kept one's with its own volume (#2057).
+    let Some(template) = crate::upstream::pod_for(wanted_template, held.claim, &named.name) else {
+        return Vouching::Refused(
+            "the sandbox of a kept claim is not named as the claim, so its volume is not the claim's own"
+                .into(),
+        );
+    };
+    let template = &template;
     if !controlled_by(&pod.metadata, "agents.x-k8s.io", "Sandbox", sandbox) {
         return Vouching::Refused("its pod is not the one its sandbox made".into());
     }
@@ -554,14 +567,13 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &Signi
     };
     let claim = held.claim;
     let (claim_name, claim_uid) = (claim.name_any(), claim.uid().unwrap_or_default());
-    let (pod_name, pod_uid) = (pod.name_any(), pod.uid().unwrap_or_default());
+    let pod_name = pod.name_any();
     let namespace = claim.namespace().unwrap_or_default();
     let about = About {
         namespace: &namespace,
         claim: &claim_name,
         claim_uid: &claim_uid,
         pod: &pod_name,
-        pod_uid: &pod_uid,
         key: &key,
         requester: &claim.spec.requester,
     };

@@ -12,10 +12,11 @@
 //! becomes a `SandboxClaim` on that warm pool. Upstream's controller adopts a warm runner when
 //! there is one and otherwise makes one from the template.
 
-use crate::resources::{Claim, Pool};
+use crate::resources::{Claim, KeptVolume, Pool};
 use k8s_openapi::api::core::v1::{
-    Capabilities, Container, EmptyDirVolumeSource, PodSpec, PodTemplateSpec, SeccompProfile,
-    SecurityContext, Volume, VolumeMount,
+    Capabilities, Container, EmptyDirVolumeSource, EnvVar, PersistentVolumeClaimSpec,
+    PersistentVolumeClaimVolumeSource, PodSecurityContext, PodSpec, PodTemplateSpec,
+    SeccompProfile, SecurityContext, Volume, VolumeMount, VolumeResourceRequirements,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{Condition, ObjectMeta, OwnerReference};
@@ -62,6 +63,30 @@ pub const TERMINATION_LOG: &str = "/dev/termination-log";
 /// the kind run of v1.0.6; moving the pin moves it.
 pub const MANAGED_NAME_SERVERS: [&str; 2] = ["8.8.8.8", "1.1.1.1"];
 
+/// **The volume a runner's home is on** (#2057), in every pod of a pool: in memory's place, a
+/// folder of the node's (`emptyDir`) for a fresh claim's runner, which keeps nothing past its
+/// pod; for a kept claim's, the volume claim upstream makes from the claim's own template of
+/// this name, `purlis-kept-<claim>` ([`KEPT_PREFIX`]), which outlives its pod. Upstream puts a
+/// claim's volume in place of the template's volume of the same name.
+pub const KEPT_VOLUME: &str = "purlis-kept";
+
+/// The prefix of a kept claim's volume claim: upstream names it `<template>-<sandbox>`, and a
+/// kept claim's sandbox has the claim's name.
+pub const KEPT_PREFIX: &str = "purlis-kept-";
+
+/// Where [`KEPT_VOLUME`] is mounted in both of a pod's containers.
+pub const KEPT_FOLDER: &str = "/var/lib/purlis";
+
+/// **The runner's home** (#2057): a folder on [`KEPT_VOLUME`], made by the pod's first step as a
+/// copy of the image's own `HOME` the first time the volume is used, and the runner's `HOME`.
+/// So a kept claim's runner keeps everything under it, its pairing too, when its pod is lost.
+pub const RUNNER_HOME: &str = "/var/lib/purlis/home";
+
+/// The group every process of a runner's pod is in, and that owns [`KEPT_VOLUME`] where the
+/// volume's kind lets Kubernetes set its owner: so a runner image's user, whatever its number,
+/// can make its home on a volume made for root (`fsGroup`). purlis's own image's group.
+pub const VOLUME_GROUP: i64 = 10001;
+
 /// What [`KEY_STEP`] runs, after the image's own entrypoint (`purlis`).
 pub fn key_step_args() -> Vec<String> {
     [
@@ -70,6 +95,8 @@ pub fn key_step_args() -> Vec<String> {
         &format!("{LINK_FOLDER}/link-key"),
         "--publish",
         TERMINATION_LOG,
+        "--home",
+        RUNNER_HOME,
     ]
     .map(str::to_owned)
     .to_vec()
@@ -86,6 +113,10 @@ pub fn key_step_args() -> Vec<String> {
 #[serde(rename_all = "camelCase")]
 pub struct SandboxTemplateSpec {
     pub pod_template: PodTemplateSpec,
+    /// Whether a claim may add a volume claim template of its own: `Allowed`, so a kept claim
+    /// adds [`KEPT_VOLUME`]'s, and none may replace one of the template's (it holds none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volume_claim_templates_policy: Option<String>,
 }
 
 /// The runners upstream keeps started ahead of a claim, for one template.
@@ -125,6 +156,24 @@ pub struct SandboxSpec {}
 #[serde(rename_all = "camelCase")]
 pub struct SandboxClaimSpec {
     pub warm_pool_ref: Reference,
+    /// The volume claims upstream makes for this claim's sandbox: a kept claim's
+    /// [`KEPT_VOLUME`]. A claim with one is never given a warm runner: upstream makes its
+    /// sandbox cold, under the claim's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volume_claim_templates: Option<Vec<VolumeClaimTemplate>>,
+}
+
+/// A volume claim upstream makes for a sandbox, named `<name>-<sandbox>`, owned by the sandbox.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct VolumeClaimTemplate {
+    pub metadata: VolumeClaimName,
+    pub spec: PersistentVolumeClaimSpec,
+}
+
+/// The name of a [`VolumeClaimTemplate`], which is also its volume's in the pod.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct VolumeClaimName {
+    pub name: String,
 }
 
 /// What upstream says about its claim: purlis reads its `Ready` condition, and the sandbox it
@@ -315,19 +364,35 @@ pub fn claims_holding(held: &ObjectMeta, pool: &Pool, claims: &[&Claim]) -> Vec<
 /// The template of a pool's runners in `namespace`, owned by `owners` ([`owners_with`]): one
 /// container running the pool's image with its own entrypoint (`purlis serve` under an init,
 /// the runner image contract), as a user who is not root, with no added privilege, no
-/// Kubernetes credential and no service addresses.
+/// Kubernetes credential and no service addresses, its home on [`KEPT_VOLUME`]. One template
+/// serves a pool's kept and fresh claims alike, so a fresh claim can take a warm runner of it.
 pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> SandboxTemplate {
-    let link_folder = || {
-        Some(vec![VolumeMount {
-            name: LINK_VOLUME.to_owned(),
-            mount_path: LINK_FOLDER.to_owned(),
-            ..VolumeMount::default()
-        }])
+    // Both containers mount the folder the key is handed over in and the volume the runner's
+    // home is on (#2056, #2057).
+    let mounts = || {
+        Some(vec![
+            VolumeMount {
+                name: LINK_VOLUME.to_owned(),
+                mount_path: LINK_FOLDER.to_owned(),
+                ..VolumeMount::default()
+            },
+            VolumeMount {
+                name: KEPT_VOLUME.to_owned(),
+                mount_path: KEPT_FOLDER.to_owned(),
+                ..VolumeMount::default()
+            },
+        ])
     };
     let runner = Container {
         name: RUNNER_CONTAINER.to_owned(),
         image: Some(pool.spec.image.clone()),
-        volume_mounts: link_folder(),
+        // Its home is on the kept volume (#2057); the first step made it from the image's.
+        env: Some(vec![EnvVar {
+            name: "HOME".to_owned(),
+            value: Some(RUNNER_HOME.to_owned()),
+            ..EnvVar::default()
+        }]),
+        volume_mounts: mounts(),
         security_context: Some(confined()),
         ..Container::default()
     };
@@ -337,7 +402,7 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
         name: KEY_STEP.to_owned(),
         image: Some(pool.spec.image.clone()),
         args: Some(key_step_args()),
-        volume_mounts: link_folder(),
+        volume_mounts: mounts(),
         termination_message_path: Some(TERMINATION_LOG.to_owned()),
         termination_message_policy: Some("File".to_owned()),
         security_context: Some(confined()),
@@ -351,19 +416,93 @@ pub fn template_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -
                 spec: Some(PodSpec {
                     init_containers: Some(vec![key_step]),
                     containers: vec![runner],
-                    volumes: Some(vec![Volume {
-                        name: LINK_VOLUME.to_owned(),
-                        empty_dir: Some(EmptyDirVolumeSource {
-                            medium: Some("Memory".to_owned()),
-                            size_limit: Some(Quantity("1Mi".to_owned())),
-                        }),
-                        ..Volume::default()
-                    }]),
+                    volumes: Some(vec![
+                        Volume {
+                            name: LINK_VOLUME.to_owned(),
+                            empty_dir: Some(EmptyDirVolumeSource {
+                                medium: Some("Memory".to_owned()),
+                                size_limit: Some(Quantity("1Mi".to_owned())),
+                            }),
+                            ..Volume::default()
+                        },
+                        // A fresh claim's home, as big as a kept one's; a kept claim's volume
+                        // takes its place (#2057).
+                        Volume {
+                            name: KEPT_VOLUME.to_owned(),
+                            empty_dir: Some(EmptyDirVolumeSource {
+                                medium: None,
+                                size_limit: Some(Quantity(pool.spec.kept_volume.size.clone())),
+                            }),
+                            ..Volume::default()
+                        },
+                    ]),
+                    security_context: Some(PodSecurityContext {
+                        fs_group: Some(VOLUME_GROUP),
+                        fs_group_change_policy: Some("OnRootMismatch".to_owned()),
+                        ..PodSecurityContext::default()
+                    }),
                     automount_service_account_token: Some(false),
                     enable_service_links: Some(false),
                     ..PodSpec::default()
                 }),
             },
+            volume_claim_templates_policy: Some("Allowed".to_owned()),
+        },
+    }
+}
+
+/// **The pod upstream makes for `claim`'s runner from `template`**, the operator's template
+/// for its pool, when its sandbox is named `sandbox` (#2057): the template's pod, and for a
+/// kept claim its volume claim in place of the template's [`KEPT_VOLUME`], last among the
+/// volumes, as upstream puts it (agent-sandbox v1.0.6, `MergeVolumeClaimVolumes`). `None` for a
+/// kept claim whose sandbox is not named as the claim: its volume claim would not be
+/// `purlis-kept-<claim>`.
+pub fn pod_for(template: &PodTemplateSpec, claim: &Claim, sandbox: &str) -> Option<PodSpec> {
+    let mut spec = template.spec.clone().unwrap_or_default();
+    if !claim.spec.kept {
+        return Some(spec);
+    }
+    if sandbox != claim.name_any() {
+        return None;
+    }
+    let mut volumes = spec.volumes.take().unwrap_or_default();
+    volumes.retain(|volume| volume.name != KEPT_VOLUME);
+    volumes.push(Volume {
+        name: KEPT_VOLUME.to_owned(),
+        persistent_volume_claim: Some(PersistentVolumeClaimVolumeSource {
+            claim_name: kept_volume_name(claim),
+            ..PersistentVolumeClaimVolumeSource::default()
+        }),
+        ..Volume::default()
+    });
+    spec.volumes = Some(volumes);
+    Some(spec)
+}
+
+/// The name of a kept claim's volume claim: `purlis-kept-<claim>`.
+pub fn kept_volume_name(claim: &Claim) -> String {
+    format!("{KEPT_PREFIX}{}", claim.name_any())
+}
+
+/// The volume claim template a kept claim's upstream claim carries, as `volume` asks: one
+/// volume, written to by one node at a time.
+pub fn kept_volume_template(volume: &KeptVolume) -> VolumeClaimTemplate {
+    VolumeClaimTemplate {
+        metadata: VolumeClaimName {
+            name: KEPT_VOLUME.to_owned(),
+        },
+        spec: PersistentVolumeClaimSpec {
+            access_modes: Some(vec!["ReadWriteOnce".to_owned()]),
+            resources: Some(VolumeResourceRequirements {
+                requests: Some(
+                    [("storage".to_owned(), Quantity(volume.size.clone()))]
+                        .into_iter()
+                        .collect(),
+                ),
+                ..VolumeResourceRequirements::default()
+            }),
+            storage_class_name: volume.storage_class_name.clone(),
+            ..PersistentVolumeClaimSpec::default()
         },
     }
 }
@@ -387,7 +526,9 @@ fn confined() -> SecurityContext {
 }
 
 /// A pool's warm pool in `namespace`, owned by `owners` ([`owners_with`]). It keeps no runner
-/// started ahead of a claim: every claim starts one from the template.
+/// started ahead of a claim when the operator makes it; a warm pool it finds keeps the number
+/// it holds ([`replicas_held`]), so a team admin's `kubectl scale` stands until pools scale on
+/// their own (#2058).
 pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) -> SandboxWarmPool {
     SandboxWarmPool {
         metadata: owned_by(pool, namespace, owners),
@@ -400,9 +541,17 @@ pub fn warm_pool_for(pool: &Pool, namespace: &str, owners: Vec<OwnerReference>) 
     }
 }
 
+/// How many runners the warm pool `held` keeps warm, as the cluster holds it: none when there is
+/// no warm pool yet.
+pub fn replicas_held(held: Option<&SandboxWarmPool>) -> i32 {
+    held.map(|held| held.spec.replicas.max(0)).unwrap_or(0)
+}
+
 /// The upstream claim a Claim becomes: same name and namespace, on its pool's warm pool, and
-/// owned by the Claim, so deleting the Claim deletes it and its runner.
-pub fn sandbox_claim_for(claim: &Claim) -> SandboxClaim {
+/// owned by the Claim, so deleting the Claim deletes it and its runner. A kept Claim's carries
+/// its volume, as `volume` (its pool's) asks (#2057), so upstream makes it a runner of its own,
+/// cold; a fresh one takes a warm runner where the warm pool holds one.
+pub fn sandbox_claim_for(claim: &Claim, volume: &KeptVolume) -> SandboxClaim {
     SandboxClaim {
         metadata: ObjectMeta {
             name: Some(claim.name_any()),
@@ -414,6 +563,7 @@ pub fn sandbox_claim_for(claim: &Claim) -> SandboxClaim {
             warm_pool_ref: Reference {
                 name: name_for(&claim.spec.pool),
             },
+            volume_claim_templates: claim.spec.kept.then(|| vec![kept_volume_template(volume)]),
         },
         status: None,
     }

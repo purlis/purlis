@@ -53,7 +53,6 @@ fn vouched(key: PublicKey) -> Vouched {
         claim: "ada-1".into(),
         claim_uid: claimed().uid,
         pod: "ada-1".into(),
-        pod_uid: "0a1b2c3d-4e5f-4061-8728-394a5b6c7d8e".into(),
         key,
         requester: "ada@example.com".into(),
     }
@@ -67,7 +66,6 @@ fn the_operators_worked_example_is_verified_and_read() {
     assert_eq!(read.namespace, "ada");
     assert_eq!(read.claim, "ada-1");
     assert_eq!(read.pod, "ada-1");
-    assert_eq!(read.pod_uid, "0a1b2c3d-4e5f-4061-8728-394a5b6c7d8e");
     assert_eq!(read.requester, "ada@example.com");
     assert_eq!(
         hex_of(read.key.as_bytes()),
@@ -109,11 +107,17 @@ fn a_statement_purlis_does_not_read_is_refused_even_when_signed() {
     let operator = Operator::new();
     let good = vouched(LinkKey::generate().unwrap().public()).text();
     let unread = [
-        good.replace(STATEMENT_HEADER, "purlis runner link key v2"),
+        good.replace(STATEMENT_HEADER, "purlis runner link key v1"),
+        good.replace(STATEMENT_HEADER, "purlis runner link key v3"),
+        // A v1 statement's pod uid line is one purlis no longer reads.
+        good.replace(
+            "pod: ada-1\n",
+            "pod: ada-1\npod uid: 0a1b2c3d-4e5f-4061-8728-394a5b6c7d8e\n",
+        ),
         good.replace("pod: ada-1\n", "pod: ada-1\nextra: line\n"),
         good.replace("requester: ada@example.com", "requester: ada@example.com\r"),
         good.replace("requester: ada@example.com", "requester:  ada@example.com"),
-        good.replace("pod uid: ", "pod uid:"),
+        good.replace("claim uid: ", "claim uid:"),
         good.trim_end().to_owned(),
         good.replace("key: ", "key: 0"),
         good.replace("pod: ada-1", "pod: --server=https://elsewhere"),
@@ -121,8 +125,8 @@ fn a_statement_purlis_does_not_read_is_refused_even_when_signed() {
         good.replace("namespace: ada", "namespace: a.b"),
         good.replace("claim uid: 6f1c2b8e", "claim uid: 6F1C2B8E"),
         good.replace(
-            "pod uid: 0a1b2c3d-4e5f-4061-8728-394a5b6c7d8e",
-            "pod uid: a-pod",
+            "claim uid: 6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60",
+            "claim uid: a-claim",
         ),
     ];
     for text in unread {
@@ -220,7 +224,7 @@ fn a_statement_naming_another_pod_or_key_than_the_paired_ones_refuses_the_link()
     assert_eq!(held_to(&paired, &vouched(key)), Ok(()));
     let changed = [
         Vouched {
-            pod_uid: "another pod".into(),
+            pod: "ada-2".into(),
             ..vouched(key)
         },
         vouched(LinkKey::generate().unwrap().public()),
@@ -301,4 +305,73 @@ fn pairing_execs_into_the_vouched_pod_and_refuses_a_runner_answering_another_key
 #[test]
 fn the_link_key_path_is_the_one_the_operators_template_names() {
     assert_eq!(KEY_MADE_AT_START, fixture("link-key-path.txt").trim());
+}
+
+#[test]
+fn a_kept_claims_pod_made_again_with_the_key_it_was_paired_with_is_the_same_runner() {
+    // The pod's uid is not in the statement: a kept claim's pairing is the claim's (#2057).
+    let key = LinkKey::generate().unwrap().public();
+    let paired = Paired {
+        claimed: claimed(),
+        vouched: vouched(key),
+        pinned: Pinned {
+            device: "01JB0RUNNER000000000000000".into(),
+            key,
+        },
+    };
+    let remade = Vouched::from_text(&vouched(key).text()).unwrap();
+    assert_eq!(held_to(&paired, &remade), Ok(()));
+    assert!(!vouched(key).text().contains("pod uid"));
+}
+
+#[test]
+fn purlis_keeps_a_chats_runner_unless_it_is_a_short_dispatched_task() {
+    use crate::harness_declaration::SignInKind;
+    let chat = |dispatched, sign_in, keep_work| ChatOnARunner {
+        dispatched,
+        sign_in,
+        keep_work,
+    };
+    for (asked, kept) in [
+        (chat(false, None, None), Keeping::Kept),
+        (chat(false, Some(SignInKind::ApiKey), None), Keeping::Kept),
+        (chat(true, None, None), Keeping::Fresh),
+        (chat(true, Some(SignInKind::ApiKey), None), Keeping::Fresh),
+        (chat(true, Some(SignInKind::Cloud), None), Keeping::Fresh),
+        // A subscription's sign-in lives on the kept volume.
+        (
+            chat(true, Some(SignInKind::Subscription), None),
+            Keeping::Kept,
+        ),
+        // The person's switch decides, either way.
+        (chat(true, None, Some(true)), Keeping::Kept),
+        (chat(false, None, Some(false)), Keeping::Fresh),
+        (
+            chat(true, Some(SignInKind::Subscription), Some(false)),
+            Keeping::Fresh,
+        ),
+    ] {
+        assert_eq!(kept_for(&asked), kept, "{asked:?}");
+    }
+    assert_eq!(kept_for(&ChatOnARunner::default()), Keeping::Kept);
+}
+
+#[test]
+fn a_kept_claim_says_so_and_a_fresh_one_reads_as_every_claim_did() {
+    let kept = claim_definition("ada", "ada-1", "team", "ada@example.com", Keeping::Kept);
+    assert_eq!(
+        kept["spec"],
+        serde_json::json!({ "pool": "team", "requester": "ada@example.com", "kept": true })
+    );
+    let fresh = claim_definition("ada", "ada-1", "team", "ada@example.com", Keeping::Fresh);
+    assert_eq!(
+        fresh["spec"],
+        serde_json::json!({ "pool": "team", "requester": "ada@example.com" })
+    );
+    assert_eq!(fresh["apiVersion"], "runners.purlis.dev/v1alpha1");
+    assert_eq!(fresh["kind"], "Claim");
+    assert_eq!(
+        fresh["metadata"],
+        serde_json::json!({ "name": "ada-1", "namespace": "ada" })
+    );
 }

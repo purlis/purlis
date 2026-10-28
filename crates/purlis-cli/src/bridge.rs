@@ -13,7 +13,9 @@
 //! connector's own login vouches for this one exchange; after it, the keys decide.
 //!
 //! A cluster runner's key is made earlier, as its pod starts (#2056): `purlis bridge --make-key
-//! <file> --publish <file>`, the pod's first step, hands the private half to the pairing and
+//! <file> --publish <file> --home <dir>`, the pod's first step, makes the runner's home on its
+//! pod's volume (#2057), publishes the key a kept home already keeps, or hands the private half
+//! of a new one to the pairing and
 //! writes the public half where the cluster shows it, and the cluster operator vouches for that
 //! key. `purlis bridge --pair --key-made-at-start <file>` then pairs with it, and the desktop
 //! accepts the runner only when its answer is the vouched key. Pairing and making the key are
@@ -33,16 +35,35 @@ pub enum Asked {
     Pair {
         key_made_at_start: Option<std::path::PathBuf>,
     },
-    /// Make a cluster runner's link key as its pod starts (#2056).
+    /// Make a cluster runner's link key as its pod starts (#2056), with its home on its pod's
+    /// volume (#2057).
     MakeKey {
         handoff: std::path::PathBuf,
         published: std::path::PathBuf,
+        home: Option<std::path::PathBuf>,
     },
 }
 
 pub fn run(asked: Asked) -> Result<u8, String> {
-    if let Asked::MakeKey { handoff, published } = &asked {
-        purlis_core::runnerlink::make_at_start(handoff, published)?;
+    if let Asked::MakeKey {
+        handoff,
+        published,
+        home,
+    } = &asked
+    {
+        match home {
+            // The image's own HOME is this step's: the runner's is set to `home` (#2057).
+            Some(home) => purlis_core::runnerlink::make_at_start_in(
+                handoff,
+                published,
+                home,
+                std::env::var_os("HOME")
+                    .map(std::path::PathBuf::from)
+                    .as_deref(),
+                &purlis_core::machine::config_root_under(home),
+            )?,
+            None => purlis_core::runnerlink::make_at_start(handoff, published)?,
+        }
         return Ok(0);
     }
     let config = purlis_core::machine::config_root()

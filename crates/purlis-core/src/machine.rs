@@ -357,6 +357,18 @@ pub fn spellings_of(root: &Path) -> Vec<PathBuf> {
 /// `unsafe_code = "forbid"`, and it is process-global besides, so a test that set it would
 /// race every other test in the same binary. The ladder is the part worth testing, so the
 /// ladder is what is testable.
+/// [`config_root`]'s ladder for a process whose home is `home` and whose environment is
+/// otherwise this one's: where a cluster runner's host will keep its config once its pod sets
+/// `HOME` to `home`, as its pod's first step reads it (#2057).
+pub fn config_root_under(home: &Path) -> PathBuf {
+    rooted(
+        crate::envvar::var_os(HOME_VAR),
+        std::env::var_os("XDG_CONFIG_HOME"),
+        Some(home.to_path_buf()),
+    )
+    .unwrap_or_else(|| home.join(".config"))
+}
+
 pub(crate) fn rooted(
     charter_home: Option<std::ffi::OsString>,
     xdg: Option<std::ffi::OsString>,

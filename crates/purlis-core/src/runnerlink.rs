@@ -13,6 +13,10 @@
 //! - **A runner holds one peer** (ADR 0078, ruled 2026-10-15): the desktop that paired it, in
 //!   `<config>/peers.json` ([`PEERS_FILE`]), which chats may neither read nor write. A runner
 //!   is paired once: a second pairing is refused whichever desktop asks, and the first stays.
+//! - **A kept claim's runner keeps its pairing** (#2057, ruled 2026-10-28): its home is on its
+//!   pod's own volume, so a pod made again finds its device id, key and peer there, and its
+//!   first step publishes the key it keeps ([`make_at_start_in`]). Its pairing is the claim's,
+//!   not the pod's.
 //! - **Its host answers a link only once it is paired** ([`answering`]), reading both files as
 //!   each link arrives, so a pairing made while the host runs is in force at the next link. A
 //!   file another user could read or write, a link in its place, or one that is not what this
@@ -77,6 +81,102 @@ pub fn make_at_start(handoff: &Path, published: &Path) -> Result<(), String> {
         .map_err(|why| format!("the runner's link key could not be written: {why}"))?;
     std::fs::write(published, hex_of(key.public().as_bytes()))
         .map_err(|why| format!("the runner's public link key could not be published: {why}"))
+}
+
+/// **A cluster runner's pod's first step, with the runner's home on its pod's volume**
+/// (#2057): the home is made at `home` from `image_home` (the image's own `HOME`) the first
+/// time the volume is used ([`seed_home`]). A home whose config home `config` (as the runner
+/// will read it, [`crate::machine::config_root_under`]) keeps the runner's pairing, as a kept
+/// claim's does when its pod is made again, keeps its key: that key's public half is published,
+/// and nothing is handed over, so the runner answers with the key it was paired with. Otherwise
+/// the key is made as [`make_at_start`] makes it.
+pub fn make_at_start_in(
+    handoff: &Path,
+    published: &Path,
+    home: &Path,
+    image_home: Option<&Path>,
+    config: &Path,
+) -> Result<(), String> {
+    seed_home(home, image_home)?;
+    match answering(config)? {
+        Some((ours, _desktop)) => std::fs::write(published, hex_of(ours.key.public().as_bytes()))
+            .map_err(|why| {
+                format!("the runner's kept public link key could not be published: {why}")
+            }),
+        None => make_at_start(handoff, published),
+    }
+}
+
+/// **The runner's home on its pod's volume, made once** (#2057): where `home` is not yet, a
+/// copy of `image_home` (its folders, files and links, each as the image holds it, nothing
+/// followed) is made beside it and renamed into place, so a step stopped half-way leaves no
+/// half home; with no image home, an empty folder this user's alone. A home already there is
+/// left exactly as it is: it is the runner's, kept from its earlier pods. One that is not a
+/// folder is refused.
+pub fn seed_home(home: &Path, image_home: Option<&Path>) -> Result<(), String> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    match std::fs::symlink_metadata(home) {
+        Ok(found) if found.is_dir() => return Ok(()),
+        Ok(_) => {
+            return Err(format!(
+                "the runner's home {} is not a folder, so the runner is not started",
+                home.display()
+            ));
+        }
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+        Err(why) => return Err(format!("the runner's home could not be looked at: {why}")),
+    }
+    let name = home
+        .file_name()
+        .ok_or_else(|| format!("{} cannot be a runner's home", home.display()))?;
+    let mut making = name.to_owned();
+    making.push(".making");
+    let making = home.with_file_name(making);
+    let failed = |why: std::io::Error| {
+        format!(
+            "the runner's home could not be made at {}: {why}",
+            home.display()
+        )
+    };
+    match std::fs::remove_dir_all(&making) {
+        Ok(()) => {}
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+        Err(why) => return Err(failed(why)),
+    }
+    let source = image_home.filter(|source| source.is_dir() && *source != home);
+    match source {
+        Some(source) => {
+            copy_tree(source, &making).map_err(failed)?;
+        }
+        None => std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&making)
+            .map_err(failed)?,
+    }
+    // A home is this user's alone, whatever mode the image gave its own.
+    std::fs::set_permissions(&making, std::fs::Permissions::from_mode(0o700)).map_err(failed)?;
+    std::fs::rename(&making, home).map_err(failed)
+}
+
+/// `from`, copied to `to` (which is not there yet): folders and files with their modes, links
+/// as links. Nothing else (a socket, a device) is copied.
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    let mode = std::fs::symlink_metadata(from)?.permissions().mode() & 0o7777;
+    std::fs::DirBuilder::new().mode(0o700).create(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let (source, target) = (entry.path(), to.join(entry.file_name()));
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            std::os::unix::fs::symlink(std::fs::read_link(&source)?, &target)?;
+        } else if kind.is_dir() {
+            copy_tree(&source, &target)?;
+        } else if kind.is_file() {
+            std::fs::copy(&source, &target)?;
+        }
+    }
+    std::fs::set_permissions(to, std::fs::Permissions::from_mode(mode))
 }
 
 /// **Pair a cluster runner with the key its pod made as it started** (#2056), read from

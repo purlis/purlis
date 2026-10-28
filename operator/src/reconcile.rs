@@ -13,6 +13,7 @@
 
 use crate::admission::{Admission, POLICY, admission};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
+use crate::stage;
 use crate::upstream::{
     self, Found, Sandbox, SandboxClaim, SandboxTemplate, SandboxWarmPool, made_for, made_for_pool,
     owners_with, sandbox_claim_for, template_for, warm_pool_for,
@@ -230,10 +231,12 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &namespace);
             let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &namespace);
             // All three are looked at before any is written: one in the way stops them all.
-            let wanted = sandbox_claim_for(&claim);
+            let wanted = sandbox_claim_for(&claim, &pool.spec.kept_volume);
             let pool_object = upstream::name_for(&pool.name_any());
             let template_held = templates.get_opt(&pool_object).await?.map(meta);
-            let warm_held = warm_pools.get_opt(&pool_object).await?.map(meta);
+            let warm_full = warm_pools.get_opt(&pool_object).await?;
+            let replicas = upstream::replicas_held(warm_full.as_ref());
+            let warm_held = warm_full.map(meta);
             let claim_held = upstream_claims.get_opt(&name).await?.map(meta);
             // Only a Claim it acts on proves an object is the operator's; once it is, every
             // Claim on the pool there that already owns it stays an owner.
@@ -263,6 +266,8 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             warm.metadata.resource_version = warm_held
                 .as_ref()
                 .and_then(|held| held.resource_version.clone());
+            // The runners it keeps warm stay as many as it holds (#2057, until #2058).
+            warm.spec.replicas = replicas;
             // Who holds an object in the way: Claims the operator made it for and now refuses,
             // or none it knows of.
             let holders = |held: &Option<ObjectMeta>| {
@@ -312,7 +317,7 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             let template_now = write_ours(&templates, template, template_found).await?;
             write_ours(&warm_pools, warm, warm_found).await?;
             let applied = write_ours(&upstream_claims, wanted, claim_found).await?;
-            let vouching = vouch_for(
+            let (vouching, pod) = vouch_for(
                 client,
                 &context.signing,
                 &claim,
@@ -324,7 +329,8 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             if let Vouching::Refused(why) = &vouching {
                 tracing::warn!(claim = %name, %namespace, %why, "no link key vouched for");
             }
-            let mut status = status_of(Some(&applied));
+            // A runner not ready yet says its stage (#2057).
+            let mut status = stage::staged(status_of(Some(&applied)), pod.as_ref());
             status.conditions.push(vouching.condition());
             status.link_key = vouching.link_key();
             write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
@@ -338,7 +344,7 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
 }
 
 /// **The operator's word on `claim`'s runner's link key** (#2056): the sandbox its upstream
-/// claim names and the pod of that sandbox's name, read, then [`vouch::vouch`].
+/// claim names and the pod of that sandbox's name, read, then [`vouch::vouch`]; and the pod.
 async fn vouch_for(
     client: &Client,
     signing: &SigningKey,
@@ -346,7 +352,7 @@ async fn vouch_for(
     pool: &Pool,
     upstream: &SandboxClaim,
     template: &SandboxTemplate,
-) -> Result<Vouching, Error> {
+) -> Result<(Vouching, Option<Pod>), Error> {
     let namespace = claim.namespace().unwrap_or_default();
     let named = upstream
         .status
@@ -368,7 +374,7 @@ async fn vouch_for(
     let wanted = upstream::template_for(pool, &namespace, Vec::new())
         .spec
         .pod_template;
-    Ok(vouch::vouch(
+    let vouching = vouch::vouch(
         &vouch::Held {
             claim,
             upstream,
@@ -379,7 +385,8 @@ async fn vouch_for(
         },
         &wanted,
         signing,
-    ))
+    );
+    Ok((vouching, pod))
 }
 
 /// An object's metadata, which is all [`made_for`] and [`made_for_pool`] read of it.
