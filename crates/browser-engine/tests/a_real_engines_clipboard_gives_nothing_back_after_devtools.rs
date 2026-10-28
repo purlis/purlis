@@ -74,7 +74,7 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
     };
     let ours = set_system_clipboard(THEIRS);
     open(&browser, "two-fields.html");
-    let from = ref_on(&find(&browser, "Copy from"), "Copy from");
+    let from = ref_on(&find(&browser, "Copy from"), "textbox \"Copy from\"");
     call(
         &browser,
         Call::Type {
@@ -106,7 +106,7 @@ fn what_was_copied_is_not_pasted_after_devtools_and_the_machines_own_clipboard_i
         }
     ));
     // A paste before DevTools gets what was copied: the clipboard works.
-    let into = ref_on(&find(&browser, "Paste into"), "Paste into");
+    let into = ref_on(&find(&browser, "Paste into"), "textbox \"Paste into\"");
     call(
         &browser,
         Call::Click {
