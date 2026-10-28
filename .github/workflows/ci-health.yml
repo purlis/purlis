@@ -46,10 +46,14 @@ jobs:
     name: ci health (weekly report, evidence only)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    # Read the repository (the tool) and its workflow runs; write the one issue.
+    # Read the repository (the tool), its workflow runs and its pull requests' merge-queue
+    # events; write the one issue. Without `pull-requests: read` the merged pull requests come
+    # back from GraphQL's search with no fields, and the queue's wait reads as none (seen on
+    # this workflow's first run, 2026-10-28).
     permissions:
       contents: read
       actions: read
+      pull-requests: read
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

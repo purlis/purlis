@@ -168,7 +168,7 @@ export function headline(week) {
     `${percent(runs.successRate)} green`,
     `${runs.greenOnRerun} green only on a rerun`,
     `merge queue p50 ${minutes(queue.p50)} min / p90 ${minutes(queue.p90)} min`,
-    `${flaky.length} flaky tests`,
+    plural(flaky.length, "flaky test"),
   ].join(", ");
 }
 
@@ -423,6 +423,10 @@ async function main(argv) {
   if (out) appendFileSync(out, `${body}\n`);
   else process.stdout.write(`${body}\n`);
   console.log(headline(week));
+  console.log(
+    `read ${week.runs.runs} runs, the jobs of ${week.sampled.runs}, ${week.queue.merged} merged pull requests ` +
+      `(${week.queue.n} through the queue), the slowest tests of ${week.slowestFrom} runs on main`,
+  );
   if (argv.includes("--issue")) {
     const server = process.env.GITHUB_SERVER_URL ?? "https://github.com";
     const run = process.env.GITHUB_RUN_ID ? ` ([run](${server}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}))` : "";

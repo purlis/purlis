@@ -155,6 +155,10 @@ test("the report's headline names the numbers a slowdown shows in first", () => 
   );
 });
 
+test("one flaky test is named in the singular", () => {
+  assert.match(headline({ ...week, flaky: week.flaky.slice(0, 1) }), /, 1 flaky test$/);
+});
+
 test("the report lists every flaky test with its count, and the jobs with their spread in minutes", () => {
   const text = report(week);
   assert.match(text, /^## CI health, 2026-10-21 to 2026-10-28$/m);
