@@ -149,12 +149,7 @@ fn an_open_start_counts_only_while_docker_says_it_runs_and_only_this_week() {
 
 #[test]
 fn a_stop_with_no_start_before_it_counts_nothing_and_other_runners_count_apart() {
-    let line = |at, runner: &str, event| Line {
-        at,
-        pool: "builds".into(),
-        runner: runner.into(),
-        event,
-    };
+    let line = |at, runner: &str, event| Line::new(at, "builds", runner, event);
     let lines = vec![
         line(MONDAY + HOUR, "builds", Event::Stop),
         line(MONDAY + HOUR, "builds-1a2b3c4d", Event::Start),
@@ -194,23 +189,38 @@ fn this_week_begins_on_monday_at_midnight_in_local_time() {
 }
 
 #[test]
-fn the_record_drops_what_is_two_weeks_old_but_each_runners_last_line() {
+fn the_record_drops_what_is_two_weeks_old_but_each_runners_last_run() {
     let now = MONDAY + 20 * 24 * HOUR;
-    let line = |at, runner: &str, event| Line {
-        at,
-        pool: "builds".into(),
-        runner: runner.into(),
-        event,
-    };
+    let line = |at, runner: &str, event| Line::new(at, "builds", runner, event);
     let lines = vec![
-        line(MONDAY, "old", Event::Start),
-        line(MONDAY + HOUR, "old", Event::Stop),
-        line(MONDAY + 2 * HOUR, "long", Event::Start),
+        line(MONDAY, "gone", Event::Start),
+        line(MONDAY + HOUR, "gone", Event::Stop),
+        line(MONDAY + 2 * HOUR, "old", Event::Start),
+        line(MONDAY + 3 * HOUR, "old", Event::Stop),
+        line(MONDAY + 4 * HOUR, "long", Event::Start),
         line(now - HOUR, "new", Event::Start),
+        line(MONDAY + 5 * HOUR, "gone", Event::Start),
+        line(MONDAY + 6 * HOUR, "gone", Event::Stop),
     ];
+    // `gone`'s first run is two weeks old and not its last: it goes, start and stop together.
+    // `old`'s last run stays whole, its start with its stop.
+    assert_eq!(pruned(lines.clone(), now), lines[2..].to_vec());
+}
+
+/// A run longer than two weeks that has just stopped keeps its start, so its hours this week
+/// are counted from Monday to its stop, and are not lost as it stops.
+#[test]
+fn a_run_longer_than_two_weeks_keeps_its_start_when_it_stops() {
+    let now = MONDAY + 3 * 24 * HOUR;
+    let lines = vec![
+        Line::new(now - 15 * 24 * HOUR, "builds", "builds", Event::Start),
+        Line::new(now - 24 * HOUR, "builds", "builds", Event::Stop),
+    ];
+    let kept = pruned(lines.clone(), now);
+    assert_eq!(kept, lines);
     assert_eq!(
-        pruned(lines.clone(), now),
-        vec![lines[1].clone(), lines[2].clone(), lines[3].clone()]
+        ran_since(&kept, "builds", "builds", MONDAY, None),
+        now - 24 * HOUR - MONDAY
     );
 }
 
@@ -218,15 +228,13 @@ fn the_record_drops_what_is_two_weeks_old_but_each_runners_last_line() {
 fn the_record_is_held_to_its_most_bytes_by_dropping_the_oldest() {
     let now = MONDAY + 7 * 24 * HOUR;
     let lines: Vec<Line> = (0..2_000)
-        .map(|n| Line {
-            at: MONDAY + n,
-            pool: "builds".into(),
-            runner: "builds".into(),
-            event: if n % 2 == 0 {
+        .map(|n| {
+            let event = if n % 2 == 0 {
                 Event::Start
             } else {
                 Event::Stop
-            },
+            };
+            Line::new(MONDAY + n, "builds", "builds", event)
         })
         .collect();
     let kept = pruned(lines.clone(), now);
@@ -234,6 +242,9 @@ fn the_record_is_held_to_its_most_bytes_by_dropping_the_oldest() {
     assert!(bytes <= MOST_BYTES, "{bytes}");
     assert!(kept.len() < lines.len());
     assert_eq!(kept.last(), lines.last(), "the newest are kept");
+    // Runs are dropped whole: what is kept begins with a start, never with a stop alone.
+    assert_eq!(kept[0].event, Event::Start);
+    assert_eq!(kept.len() % 2, 0);
 }
 
 #[test]
@@ -290,11 +301,101 @@ fn a_line_purlis_would_not_write_is_skipped() {
         r#"{"at":1,"event":"paused","pool":"builds","runner":"builds"}"#,
         r#"{"at":-1,"event":"stop","pool":"builds","runner":"builds"}"#,
         r#"{"at":1,"event":"stop","pool":"Builds","runner":"builds"}"#,
-        r#"{"at":1,"event":"stop","pool":"builds","runner":"builds","more":1}"#,
     ] {
         text.push_str(bad);
         text.push('\n');
     }
     std::fs::write(&path, text).unwrap();
     assert_eq!(events(&read(config.path())), [(MONDAY, Event::Start)]);
+}
+
+/// A line a later purlis wrote, with a field this one does not know, is read and written back
+/// with it, not skipped and dropped at the next write.
+#[test]
+fn a_field_a_later_purlis_wrote_is_kept_through_a_write() {
+    let config = tempfile::tempdir().unwrap();
+    let path = crate::machine::dir(config.path()).join(crate::machine::RUNNER_HOURS_FILE);
+    seen(
+        config.path(),
+        "builds",
+        "builds",
+        running(MONDAY),
+        MONDAY + 1,
+    )
+    .unwrap();
+    let later = format!(
+        "{{\"at\":{},\"pool\":\"tests\",\"runner\":\"tests\",\"event\":\"start\",\"claim\":\"c-1\"}}\n",
+        MONDAY + 2
+    );
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str(&later);
+    std::fs::write(&path, text).unwrap();
+    assert_eq!(read(config.path()).len(), 2);
+    stopped(config.path(), "builds", "builds", MONDAY + HOUR).unwrap();
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert!(after.contains(later.trim_end()), "{after}");
+}
+
+/// A test time zone whose clocks go forward from 00:00 to 01:00 on Monday 2026-10-26.
+#[derive(Debug, Clone, Copy)]
+struct SkipsMondayMidnight;
+
+impl SkipsMondayMidnight {
+    fn switch() -> chrono::NaiveDateTime {
+        chrono::NaiveDate::from_ymd_opt(2026, 10, 26)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+    }
+
+    fn offset(summer: bool) -> chrono::FixedOffset {
+        chrono::FixedOffset::east_opt(if summer { 3600 } else { 0 }).unwrap()
+    }
+}
+
+impl chrono::TimeZone for SkipsMondayMidnight {
+    type Offset = chrono::FixedOffset;
+
+    fn from_offset(_: &chrono::FixedOffset) -> Self {
+        SkipsMondayMidnight
+    }
+
+    fn offset_from_local_date(
+        &self,
+        _: &chrono::NaiveDate,
+    ) -> chrono::MappedLocalTime<chrono::FixedOffset> {
+        chrono::MappedLocalTime::None
+    }
+
+    fn offset_from_local_datetime(
+        &self,
+        local: &chrono::NaiveDateTime,
+    ) -> chrono::MappedLocalTime<chrono::FixedOffset> {
+        let switch = Self::switch();
+        if *local < switch {
+            chrono::MappedLocalTime::Single(Self::offset(false))
+        } else if *local < switch + chrono::Duration::hours(1) {
+            chrono::MappedLocalTime::None
+        } else {
+            chrono::MappedLocalTime::Single(Self::offset(true))
+        }
+    }
+
+    fn offset_from_utc_date(&self, _: &chrono::NaiveDate) -> chrono::FixedOffset {
+        Self::offset(false)
+    }
+
+    fn offset_from_utc_datetime(&self, utc: &chrono::NaiveDateTime) -> chrono::FixedOffset {
+        Self::offset(*utc >= Self::switch())
+    }
+}
+
+#[test]
+fn a_week_whose_monday_has_no_midnight_begins_at_its_first_hour() {
+    use chrono::TimeZone as _;
+    let wednesday = SkipsMondayMidnight
+        .with_ymd_and_hms(2026, 10, 28, 10, 0, 0)
+        .unwrap();
+    // Monday 01:00 there, the first hour it has, is 00:00 UTC.
+    assert_eq!(week_began(&wednesday), MONDAY);
 }

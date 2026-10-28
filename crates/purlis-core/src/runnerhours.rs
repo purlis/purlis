@@ -39,15 +39,31 @@ pub struct Line {
     pub pool: String,
     pub runner: String,
     pub event: Event,
+    /// Fields a later purlis may write, kept as they were through every write (#3492).
+    pub other: serde_json::Map<String, serde_json::Value>,
 }
 
+/// The four fields every line has; any other is kept in [`Line::other`].
+const FIELDS: [&str; 4] = ["at", "pool", "runner", "event"];
+
 impl Line {
+    /// A line with no other field.
+    pub fn new(at: u64, pool: &str, runner: &str, event: Event) -> Line {
+        Line {
+            at,
+            pool: pool.to_owned(),
+            runner: runner.to_owned(),
+            event,
+            other: serde_json::Map::new(),
+        }
+    }
+
     fn of(&self, pool: &str, runner: &str) -> bool {
         self.pool == pool && self.runner == runner
     }
 
     fn text(&self) -> String {
-        serde_json::json!({
+        let mut value = serde_json::json!({
             "at": self.at,
             "pool": self.pool,
             "runner": self.runner,
@@ -55,17 +71,22 @@ impl Line {
                 Event::Start => "start",
                 Event::Stop => "stop",
             },
-        })
-        .to_string()
+        });
+        if let Some(fields) = value.as_object_mut() {
+            for (key, other) in &self.other {
+                if !FIELDS.contains(&key.as_str()) {
+                    fields.insert(key.clone(), other.clone());
+                }
+            }
+        }
+        value.to_string()
     }
 
-    /// The line `text` is, exactly as [`Line::text`] writes one, or `None`.
+    /// The line `text` is, as [`Line::text`] writes one, or `None`. A field it does not know is
+    /// kept, so a line a later purlis wrote is neither skipped nor dropped at the next write.
     fn read(text: &str) -> Option<Line> {
         let value: serde_json::Value = serde_json::from_str(text).ok()?;
         let fields = value.as_object()?;
-        if fields.len() != 4 {
-            return None;
-        }
         let name = |key: &str| {
             fields
                 .get(key)
@@ -83,6 +104,11 @@ impl Line {
             pool: name("pool")?,
             runner: name("runner")?,
             event,
+            other: fields
+                .iter()
+                .filter(|(key, _)| !FIELDS.contains(&key.as_str()))
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
         })
     }
 }
@@ -109,12 +135,7 @@ pub fn after_seen(lines: &[Line], pool: &str, runner: &str, ran: Ran, now: u64) 
     let floor = last.map_or(0, |line| line.at);
     // No line goes before the runner's last one, nor after now.
     let held = |at: u64| at.max(floor).min(now.max(floor));
-    let line = |at: u64, event: Event| Line {
-        at: held(at),
-        pool: pool.to_owned(),
-        runner: runner.to_owned(),
-        event,
-    };
+    let line = |at: u64, event: Event| Line::new(held(at), pool, runner, event);
     let open = last.is_some_and(|line| line.event == Event::Start);
     let mut added = Vec::new();
     match (ran.running, open) {
@@ -217,30 +238,68 @@ pub fn this_week_began() -> u64 {
 
 /// **`lines`, bounded** (#3492): those older than [`KEPT_FOR`] at `now` dropped, each runner's
 /// last line kept, then the oldest dropped until they are written in at most [`MOST_BYTES`].
+///
+/// **A run is never split**: a start and the stop that ends it are kept or dropped together, so a
+/// run longer than [`KEPT_FOR`] that has just stopped keeps its start, and its hours this week.
 pub fn pruned(lines: Vec<Line>, now: u64) -> Vec<Line> {
-    let mut last: HashMap<(&str, &str), usize> = HashMap::new();
-    for (at, line) in lines.iter().enumerate() {
-        last.insert((line.pool.as_str(), line.runner.as_str()), at);
+    // Each line's group: a stop is in its start's, as [`ran_since`] pairs them; any other line
+    // is a group of its own, named by its index.
+    let mut group: Vec<usize> = (0..lines.len()).collect();
+    let mut kept_groups = BTreeSet::new();
+    {
+        let mut open: HashMap<(&str, &str), usize> = HashMap::new();
+        let mut last: HashMap<(&str, &str), usize> = HashMap::new();
+        for (at, line) in lines.iter().enumerate() {
+            let key = (line.pool.as_str(), line.runner.as_str());
+            match line.event {
+                Event::Start => {
+                    open.entry(key).or_insert(at);
+                }
+                Event::Stop => {
+                    if let Some(start) = open.remove(&key) {
+                        group[at] = start;
+                    }
+                }
+            }
+            last.insert(key, at);
+        }
+        let lasts: BTreeSet<usize> = last.into_values().collect();
+        for (at, line) in lines.iter().enumerate() {
+            if line.at.saturating_add(KEPT_FOR) >= now || lasts.contains(&at) {
+                kept_groups.insert(group[at]);
+            }
+        }
     }
-    let lasts: BTreeSet<usize> = last.into_values().collect();
-    let mut kept: Vec<Line> = lines
-        .iter()
+    let kept: Vec<(usize, Line)> = lines
+        .into_iter()
         .enumerate()
-        .filter(|(at, line)| line.at.saturating_add(KEPT_FOR) >= now || lasts.contains(at))
-        .map(|(_, line)| line.clone())
+        .filter(|(at, _)| kept_groups.contains(&group[*at]))
+        .map(|(at, line)| (group[at], line))
         .collect();
-    let mut bytes: usize = kept.iter().map(|line| line.text().len() + 1).sum();
-    let mut oldest = 0;
-    while bytes > MOST_BYTES && oldest < kept.len() {
-        bytes -= kept[oldest].text().len() + 1;
-        oldest += 1;
+    // Then the oldest groups, whole, until the rest fit.
+    let mut sizes: HashMap<usize, usize> = HashMap::new();
+    for (of, line) in &kept {
+        *sizes.entry(*of).or_default() += line.text().len() + 1;
     }
-    kept.drain(..oldest);
-    kept
+    let mut bytes: usize = sizes.values().sum();
+    let mut dropped = BTreeSet::new();
+    for (of, _) in &kept {
+        if bytes <= MOST_BYTES {
+            break;
+        }
+        if dropped.insert(*of) {
+            bytes -= sizes[of];
+        }
+    }
+    kept.into_iter()
+        .filter(|(of, _)| !dropped.contains(of))
+        .map(|(_, line)| line)
+        .collect()
 }
 
 /// **The record under `config_root`**: none where there is no file, or where it cannot be read
-/// safely, which is said; a line purlis would not write is skipped.
+/// safely, which is said; a line purlis would not write is skipped, and one with a field it does
+/// not know is kept with it.
 pub fn read(config_root: &Path) -> Vec<Line> {
     let path = crate::machine::dir(config_root).join(RUNNER_HOURS_FILE);
     match purlis_same_user::read_private_file(&path) {
@@ -277,12 +336,9 @@ pub fn stopped(config_root: &Path, pool: &str, runner: &str, now: u64) -> Result
     changed(config_root, now, |lines| {
         let last = lines.iter().rev().find(|line| line.of(pool, runner));
         match last {
-            Some(line) if line.event == Event::Start => vec![Line {
-                at: now.max(line.at),
-                pool: pool.to_owned(),
-                runner: runner.to_owned(),
-                event: Event::Stop,
-            }],
+            Some(line) if line.event == Event::Start => {
+                vec![Line::new(now.max(line.at), pool, runner, Event::Stop)]
+            }
             _ => Vec::new(),
         }
     })

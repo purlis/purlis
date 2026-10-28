@@ -706,12 +706,7 @@ fn a_pools_removed_runners_hours_this_week_are_counted_and_its_kept_ones_are_not
     use purlis_core::runnerhours::{Event, Line};
     const HOUR: u64 = 3600;
     let week = 1_792_972_800;
-    let line = |at, pool: &str, runner: &str, event| Line {
-        at,
-        pool: pool.into(),
-        runner: runner.into(),
-        event,
-    };
+    let line = |at, pool: &str, runner: &str, event| Line::new(at, pool, runner, event);
     let hours = vec![
         line(week - 3 * HOUR, "builds", "builds", Event::Start),
         line(week + HOUR, "builds", "builds", Event::Stop),
