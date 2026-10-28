@@ -97,10 +97,22 @@ function TheWindow({
         </span>
       </header>
       {/* What the window holds under the bar, which a card must never move. */}
-      <div data-testid="page" style={{ blockSize: 240, background: "var(--surface-base)" }}>
-        <p role="status" data-testid="said" style={{ margin: 0, padding: "var(--space-4)" }}>
+      <div
+        data-testid="page"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          blockSize: 360,
+          background: "var(--surface-base)",
+        }}
+      >
+        <p role="status" style={{ margin: 0, padding: "var(--space-4)" }}>
           {said}
         </p>
+        {/* Somewhere to press that no card is over, whatever a theme's metrics: the page's
+            bottom start corner. */}
+        <span data-testid="elsewhere" style={{ inlineSize: 40, blockSize: 40 }} />
       </div>
     </div>
   );
@@ -153,9 +165,8 @@ export const HangsFromItsChip: Story = {
     ).toBeLessThanOrEqual(1);
     // It pushes nothing: the page under the bar is where it is with the card hidden.
     const page = canvas.getByTestId("page").getBoundingClientRect();
-    // A press elsewhere: on the words at the page's start, well clear of the card in every
-    // theme's metrics (the page's middle can be under a taller card).
-    await userEvent.click(canvas.getByTestId("said"));
+    // A press elsewhere, well clear of the card in every theme's metrics.
+    await userEvent.click(canvas.getByTestId("elsewhere"));
     await waitFor(() => expect(cardOf()).toBeNull());
     await expect(canvas.getByTestId("page").getBoundingClientRect().toJSON()).toEqual(
       page.toJSON(),
