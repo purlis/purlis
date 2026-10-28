@@ -26,19 +26,7 @@ const NAME: &str = "shadowed docs";
 
 /// The skills purlis's Claude Code plugin ships, by directory name: the bundle's
 /// `plugin/skills/<name>/SKILL.md` (held to that directory by a test).
-pub(crate) const SHIPPED_SKILLS: [&str; 11] = [
-    "add-curation-action",
-    "browser",
-    "compact",
-    "handoff",
-    "persona",
-    "safe-remove",
-    "secrets",
-    "smart-close",
-    "theme",
-    "update",
-    "working-in-a-clone",
-];
+pub(crate) const SHIPPED_SKILLS: [&str; 11] = crate::skills::SHIPPED;
 
 /// What a project at `root` keeps of purlis's own: the shipped skills it has a copy of, and
 /// the documentation topics, each sorted.

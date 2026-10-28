@@ -658,6 +658,8 @@ pub(crate) fn studio(
         rows,
         harnesses: all,
         not_supported,
+        // Needs you's to draw (#3689).
+        named_as_a_built_in: _,
     } = purlis_core::skills::studio_list(
         built_in,
         root,

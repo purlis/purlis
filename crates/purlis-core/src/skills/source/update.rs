@@ -442,6 +442,11 @@ pub fn update(
             "the source moved {name}: install it again from where it is now"
         ));
     }
+    // A skill it brings along takes no built-in skill's name, as an install's does not.
+    for skill in reviewed.skills.iter().skip(1) {
+        cx.not_built_in(&skill.name)
+            .map_err(|why| format!("{} cannot be brought along: {why}", skill.name))?;
+    }
     let level_dir = level_parts(level)?;
     let files = fetched.files_of(&one.dir)?;
     paths_fit(&level_dir, name, &files)?;

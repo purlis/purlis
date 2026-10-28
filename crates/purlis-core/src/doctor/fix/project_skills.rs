@@ -461,7 +461,6 @@ fn carried(root: &Path) -> Result<(), String> {
 /// whole skill, or its name is not ASCII, or is a built-in skill's, a project skill's, or another
 /// moved folder's, each in any case.
 fn whole(root: &Path, built_in: Option<&Path>, names: &[String]) -> Result<Vec<Folder>, String> {
-    let built_in: Vec<String> = crate::skills::built_in_names(built_in);
     let project: Vec<String> = crate::skills::scan(root, Path::new(TO))
         .into_iter()
         .filter_map(Result::ok)
@@ -494,7 +493,7 @@ fn whole(root: &Path, built_in: Option<&Path>, names: &[String]) -> Result<Vec<F
                  it to letters, digits and hyphens"
                     .to_owned(),
             )
-        } else if built_in.iter().any(|theirs| same_name(theirs, &name)) {
+        } else if crate::skills::name_reserved(built_in, &name.to_ascii_lowercase()) {
             Some(
                 "a built-in skill has this name, and a built-in skill is never replaced".to_owned(),
             )
