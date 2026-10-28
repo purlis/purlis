@@ -498,6 +498,10 @@ impl crate::killswitch::Authority for Connection {
     fn stopped(&self) -> Result<bool, String> {
         Ok(self.kill_switch_after(Command::KillSwitch)?.stopped)
     }
+
+    fn runners(&self) -> Result<Vec<String>, String> {
+        Ok(self.kill_switch_after(Command::KillSwitch)?.runners)
+    }
 }
 
 impl Connection {
@@ -736,6 +740,8 @@ struct Shared {
     /// `take_code` or `give_code` (1.34, #2046).
     transfers:
         Mutex<HashMap<u64, tokio::sync::oneshot::Sender<purlis_session_protocol::link::Stream>>>,
+    /// What this link holds of the event log of the runner its host relays it to (#3393).
+    runner_log: Mutex<crate::runnerlog::RunnerLog>,
 }
 
 /// What a link hears of the runner its host relays it to (#2496).
@@ -783,6 +789,12 @@ struct Views {
 }
 
 impl HostLink {
+    /// What this link holds of its runner's event log, and whether the link to it is down
+    /// (#3393).
+    pub(crate) fn runner_log(&self) -> crate::runnerlog::RunnerLogNow {
+        lock(&self.shared.runner_log).now()
+    }
+
     /// The session protocol version the host agreed on.
     pub fn version(&self) -> purlis_session_protocol::version::Version {
         self.client.version()
@@ -857,13 +869,21 @@ impl HostLink {
                 format!("the session host did not relay the link to runner {runner}: {why}")
             })?;
         }
+        let shared = Arc::new(Shared::default());
+        // A runner's own event log is read from where it ends now, with a cursor for its device
+        // (#3393): a runner before 1.41 says no end, and none of its log is read.
+        if relaying.is_some()
+            && let Ok((device, seq)) = client.log_end().await
+        {
+            lock(&shared.runner_log).starts_at(device, seq);
+        }
+        let since = lock(&shared.runner_log).since();
         client
-            .subscribe(session::Since::new())
+            .subscribe(since)
             .await
             .map_err(|why| format!("the session host refused to tell of its programs: {why}"))?;
         static LINKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let id = LINKS.fetch_add(1, Ordering::Relaxed);
-        let shared = Arc::new(Shared::default());
         runtime.spawn(take_views(views, Arc::clone(&shared)));
         let hearing = hear(
             events,
@@ -981,9 +1001,9 @@ impl HostLink {
         })
     }
 
-    /// **Has the host take a moving chat's work tree over** (1.41, #2048): `refs`, the branch
+    /// **Has the host take a moving chat's work tree over** (1.44, #2048): `refs`, the branch
     /// `checkout` and its snapshot, from the bundle at `bundle`. Refused in purlis's words by a
-    /// host before 1.41, which would not read it as a move.
+    /// host before 1.44, which would not read it as a move.
     pub(crate) fn send_work(
         &self,
         project: &str,
@@ -1003,7 +1023,7 @@ impl HostLink {
         })
     }
 
-    /// **Has the host keep a moving chat's conversation** (1.41, #2048), from `file`.
+    /// **Has the host keep a moving chat's conversation** (1.44, #2048), from `file`.
     pub(crate) fn send_conversation(
         &self,
         project: &str,
@@ -1049,7 +1069,7 @@ impl HostLink {
     }
 
     /// [`Self::fetch_code`], with the work tree's uncommitted work as its branch's snapshot, as
-    /// a chat moves off the host (1.41, #2048).
+    /// a chat moves off the host (1.44, #2048).
     pub(crate) fn fetch_work(
         &self,
         project: &str,
@@ -1065,7 +1085,7 @@ impl HostLink {
         .map(|(heads, read)| (heads, read > 0))
     }
 
-    /// **Has the host write a moving chat's conversation into `into`** (1.41, #2048). Answers
+    /// **Has the host write a moving chat's conversation into `into`** (1.44, #2048). Answers
     /// where its harness keeps it there.
     pub(crate) fn fetch_conversation(
         &self,
@@ -1091,7 +1111,7 @@ impl HostLink {
         .map(|(file, _)| file)
     }
 
-    /// Refused in purlis's words where the host is before 1.41 and moves no chat.
+    /// Refused in purlis's words where the host is before 1.44 and moves no chat.
     pub(crate) fn moves_chats(&self) -> Result<(), String> {
         if self.version() < session::MOVES_CHATS {
             return Err(format!(
@@ -1745,13 +1765,34 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                     hears.told(told);
                 }
             }
+            // A line of the runner's own event log, or a gap in it (#3393).
+            Told::Pushed(Pushed::Event(event)) => lock(&shared.runner_log).heard(&event),
+            Told::Pushed(Pushed::Missed {
+                device, resumes_at, ..
+            }) => lock(&shared.runner_log).missed(&device, resumes_at),
             Told::Pushed(Pushed::LinkDown { key_changed, .. }) => {
+                lock(&shared.runner_log).link(true);
                 reconnect(&shared, Reconnect::Started);
                 if key_changed {
                     reconnect(&shared, Reconnect::KeyChanged);
                 }
             }
-            Told::Pushed(Pushed::LinkBack {}) => reconnect(&shared, Reconnect::Over),
+            Told::Pushed(Pushed::LinkBack {}) => {
+                lock(&shared.runner_log).link(false);
+                reconnect(&shared, Reconnect::Over);
+                // A runner that said no end of its log as the link came up is asked again now,
+                // and read from there (#3393).
+                if !lock(&shared.runner_log).started() {
+                    let (client, shared) = (Arc::clone(&client), Arc::clone(&shared));
+                    tokio::spawn(async move {
+                        if let Ok((device, seq)) = client.log_end().await {
+                            lock(&shared.runner_log).starts_at(device, seq);
+                            let since = lock(&shared.runner_log).since();
+                            let _ = client.subscribe(since).await;
+                        }
+                    });
+                }
+            }
             // A browser engine's first download, as it goes (1.37, #2207).
             Told::Pushed(Pushed::EngineDownload {
                 program,
@@ -1777,15 +1818,16 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                     finish_view(&shared, view);
                 }
             }
-            // The window keeps no events of the host's log yet: only the notices matter, so a
-            // reader that fell behind subscribes again from now.
+            // A reader that fell behind subscribes again: from now for what the host says, and
+            // from its cursor for the runner's own log (#3393).
             Told::FellBehind { .. } => {
                 // Whether the runner's link came back meanwhile is not known: nothing is left
                 // dimmed on a word that may have been missed (#2496).
+                lock(&shared.runner_log).link(false);
                 reconnect(&shared, Reconnect::Over);
-                let _ = client.subscribe(session::Since::new()).await;
+                let since = lock(&shared.runner_log).since();
+                let _ = client.subscribe(since).await;
             }
-            Told::Pushed(_) => {}
         }
     }
 }
@@ -2668,6 +2710,8 @@ impl SessionHost for HostedSessions {
             cols: Some(opening.size.columns),
             rows: Some(opening.size.rows),
             launch: Some(launch_of(opening, program)),
+            // A host before 1.42 ignores it, and this window ends the chat as it comes back.
+            ends_with_its_window: opening.ends_with_its_window,
             ..StartProgram::of(project, kind_of(opening))
         };
         self.started(&link, id, start, opening.operator_shell, announce)
@@ -2886,6 +2930,18 @@ impl SessionHost for HostedSessions {
 
     fn reconnecting(&self) -> Vec<u32> {
         lock(&self.reconnecting).chats.iter().copied().collect()
+    }
+
+    /// What the link the project is held on holds of its runner's log (#3393): none where the
+    /// project's chats run here, or no link to the runner is open.
+    fn runner_log(&self) -> Option<crate::runnerlog::RunnerLogNow> {
+        if !self.on_a_runner {
+            return None;
+        }
+        self.connection
+            .of_project(&self.root, Duration::ZERO)
+            .ok()
+            .map(|link| link.runner_log())
     }
 
     fn lost_with_its_host(&self, id: u32) -> bool {

@@ -42,6 +42,11 @@ use crate::planes::{Held, PlaneId, Planes};
 /// The most proposals one chat has waiting at once: one more is not taken.
 pub const AT_MOST_PER_CHAT: usize = 8;
 
+/// **The session of a change purlis itself proposes** (#3467): no chat's, so no chat is told
+/// of it, and no chat's ask can name it (a chat's must be one this app has open). Its file is
+/// judged by [`proposed::proposable_by_purlis`].
+pub const BY_PURLIS: u32 = 0;
+
 /// One proposal that waits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proposal {
@@ -214,6 +219,10 @@ pub fn asked_in(
     if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
         return Err(why);
     }
+    // No chat proposes as purlis itself, whose changes are judged by a wider rule.
+    if ask.chat == BY_PURLIS {
+        return Err(format!("chat {BY_PURLIS} is no chat that proposes"));
+    }
     if ask.change.carried() > proposed::MOST_BYTES {
         return Err(proposed::UNPREPARED.to_owned());
     }
@@ -294,6 +303,9 @@ pub fn waiting(held: &Held) -> Vec<(Proposal, Now)> {
 
 /// Tells chat `session` `word` on its next turn.
 fn tell(held: &Held, session: u32, word: ProposalWord) {
+    if session == BY_PURLIS {
+        return;
+    }
     held.tasks().ledger().talk.proposal_word(session, word);
 }
 
@@ -503,7 +515,12 @@ pub fn apply_in(
     if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
         return Err(Refusal::Not(why));
     }
-    let rel: PathBuf = proposed::proposable(root, &root.join(&one.path)).map_err(Refusal::Not)?;
+    let judged = if one.session == BY_PURLIS {
+        proposed::proposable_by_purlis
+    } else {
+        proposed::proposable
+    };
+    let rel: PathBuf = judged(root, &root.join(&one.path)).map_err(Refusal::Not)?;
     let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let made = match proposed::prepare(root, &rel, Some(one.base.as_deref()), &one.change) {
         Ok(made) => made,
@@ -531,11 +548,28 @@ pub fn apply_in(
         })
     };
     record(proposed::Outcome::Intent, None).map_err(Refusal::Not)?;
-    let result = proposed::write_pinned(root, &rel, one.base.as_deref(), &made.after);
-    let couldnt = format!(
-        "purlis could not write {}, so nothing was written.",
-        purlis_core::shown::short(&one.path)
-    );
+    // purlis's own change to a workspace's manifest goes through the manifest's writer (#3486).
+    // Where its writer said why it refused, that is what the person is told.
+    let (result, said) = match if one.session == BY_PURLIS {
+        proposed::write_by_purlis(
+            root,
+            &rel,
+            one.base.as_deref(),
+            made.before.as_deref(),
+            &made.after,
+        )
+    } else {
+        proposed::write_pinned(root, &rel, one.base.as_deref(), &made.after).map_err(|m| (m, None))
+    } {
+        Ok(()) => (Ok(()), None),
+        Err((made, said)) => (Err(made), said),
+    };
+    let couldnt = said.unwrap_or_else(|| {
+        format!(
+            "purlis could not write {}, so nothing was written.",
+            purlis_core::shown::short(&one.path)
+        )
+    });
     let (outcome, why) = match &result {
         Ok(()) => (proposed::Outcome::Applied, None),
         Err(NotMade::Stale) => (proposed::Outcome::Stale, None),

@@ -21,7 +21,9 @@ import {
 } from "lucide-react";
 import { catalogueMenu } from "./Menus";
 import { useSessionOffers } from "./sessionOffers";
-import { PanelList } from "./PanelList";
+import { PanelList, type CheckOfRow } from "./PanelList";
+import { doneSlugOf, todoDoneId, todoReopenId } from "./todos";
+import { PersonaAtWork, usePersonasAtWork } from "./ChatRows";
 import { HeadingOffer, PanelSection } from "./PanelSection";
 import { Vaults, type VaultsSaid } from "./Vaults";
 import { Chart, Facts, Table } from "./Views";
@@ -38,6 +40,7 @@ import type { WorkspaceState } from "./workspaceState";
 import { isPanelView, panelKeyOf, panelView, type OwnViewId, type ViewId } from "./sideViews";
 import type { PanelTab } from "./ActivityBar";
 import { Form, TextField } from "./ui/field/Field";
+import { Segment, SegmentedControl } from "./ui/choice/Radio";
 
 /**
  * One view of the right region: **what is asking for you** (ADR 0038).
@@ -87,6 +90,8 @@ export function Panels({
   onAddTodo,
   atRoot = false,
   rootPanels,
+  personaChats,
+  chatPersonasHere,
 }: {
   /** The view this draws: one of the right side's own, or an extension's panel (#1678). */
   view: ViewId;
@@ -129,16 +134,39 @@ export function Panels({
    *  the plane root is, while it is focused (`sessions.usePlaneRootPanels`); and its Personas,
    *  which are the project's, with no workspace focused too (#1686). */
   rootPanels?: readonly PanelView[];
+  /** Each persona's chats, by number (#3341): a persona's row says whether one is at work or
+   *  asks for the person. */
+  personaChats?: ReadonlyMap<string, readonly number[]>;
+  /** The personas of the focused workspace's chats, at work or at rest (#3483): with the ones
+   *  its session records name, the Personas view's In this workspace. */
+  chatPersonasHere?: ReadonlySet<string>;
 }) {
   const { panels, trouble } = state;
   // Each view is still the "for you" side's (ADR 0038), and says whose: the tab names the view,
   // and this names the region and the workspace it is drawing, as the one region did.
   const named = workspace === undefined ? "Attention" : `Attention · ${workspace}`;
 
+  /** Who works in the focused workspace (#3483): a persona one of its session records names,
+   *  or one of its chats runs as. No persona lives in a workspace (`personas/` is the plane's),
+   *  so this is where each has worked, and none with no workspace focused. */
+  const records = panels?.sessions;
+  const personasHere = useMemo(
+    () =>
+      workspace === undefined
+        ? NO_PERSONAS
+        : new Set([
+            ...(records ?? []).flatMap((record) =>
+              record.persona === null ? [] : [record.persona],
+            ),
+            ...(chatPersonasHere ?? NO_PERSONAS),
+          ]),
+    [workspace, records, chatPersonasHere],
+  );
+
   if (view === "vaults") {
     // A vault is the plane's, so the view is drawn with no workspace focused too.
     return (
-      <aside className="panels ui-text-body" data-view={view} aria-label={named}>
+      <aside className="panels panels-view ui-text-body" data-view={view} aria-label={named}>
         {vaults !== undefined && <Vaults said={vaults} offers={offers} onPress={onPress} />}
       </aside>
     );
@@ -146,12 +174,9 @@ export function Panels({
 
   /** The panel this view shows, by its key: purlis's own by name, an extension's by its own. */
   const key = isPanelView(view) ? panelKeyOf(view) : OWN_PANELS[view];
-  /** A view drawn on the panel family's view (#3340): its region is its one scroll, with no
-   *  room of its own around it, and the view's top is held at the top of it. */
-  const aside =
-    key !== undefined && FRAMED.has(key)
-      ? "panels panels-view ui-text-body"
-      : "panels ui-text-body";
+  /** Every view is drawn on the panel family's view (#3340, #3341): its region is its one
+   *  scroll, with no room of its own around it, and the view's top is held at the top of it. */
+  const aside = "panels panels-view ui-text-body";
   const all = [...(panels?.contributed ?? []), ...contributed];
   const draw = (panel: PanelView, at: string) => (
     <Contributed
@@ -163,6 +188,8 @@ export function Panels({
       onPress={onPress}
       shownRow={shownRow}
       onShowRow={onShowRow}
+      personaChats={personaChats}
+      personasHere={personasHere}
     />
   );
 
@@ -225,17 +252,6 @@ const OWN_PANELS: Partial<Record<OwnViewId, string>> = {
 export function ownPanelKey(view: OwnViewId): string | undefined {
   return OWN_PANELS[view];
 }
-
-/**
- * **The panels drawn as a view** (#3340): one scroll, the heading and the field held at the top,
- * each group's name held under them, 30px rows. Memory, Todos and Sessions first; the others
- * follow (#3341).
- */
-const FRAMED: ReadonlySet<string | undefined> = new Set([
-  OWN_PANELS.memory,
-  OWN_PANELS.todos,
-  OWN_PANELS.sessions,
-]);
 
 /**
  * **The extensions' panels, each a view of the right side** (#1678): every approved extension's
@@ -322,6 +338,8 @@ function Contributed({
   onPress,
   shownRow,
   onShowRow,
+  personaChats,
+  personasHere,
 }: {
   panel: PanelView;
   /** The focused workspace, which charter's todos panel writes to. */
@@ -331,8 +349,19 @@ function Contributed({
   onPress: (offer: Offer) => void;
   shownRow: string | undefined;
   onShowRow: (row: string | undefined) => void;
+  personaChats?: ReadonlyMap<string, readonly number[]>;
+  personasHere: ReadonlySet<string>;
 }) {
   const Mark = MARKS[panel.mark] ?? Circle;
+  /** The personas with a chat at work or asking: the Personas view's Working now (#3483), read
+   *  as each row's mark reads its state, so a row's group and its mark agree. */
+  const atWork = usePersonasAtWork(panel.key === PERSONAS ? personaChats : undefined);
+  const personaGroupOf = (row: { key: string }): PersonaGroup =>
+    atWork.has(row.key)
+      ? "Working now"
+      : personasHere.has(row.key)
+        ? "In this workspace"
+        : "On the plane";
   const open = shownRow?.startsWith(`${panel.key}/`)
     ? shownRow.slice(panel.key.length + 1)
     : undefined;
@@ -350,10 +379,33 @@ function Contributed({
   // (`sessionOffers.tsx`, #1160), so a record written draws this list and not the whole view.
   const sessions = useSessionOffers();
   const lookUp = (id: string) => memories.get(id) ?? sessions.get(id) ?? offers.get(id);
-  const framed = FRAMED.has(panel.key);
+  /**
+   * **A todo's box toggles done** (R131, ADR 0106): ticking an open todo marks it done, and
+   * unticking a done one reopens it — the catalogue's rows, so the box, the row's menu and the
+   * palette are one verb. A row the catalogue offers no such row for keeps its mark.
+   */
+  const todoCheck: CheckOfRow | undefined =
+    panel.key === TODOS
+      ? (row) => {
+          const done = doneSlugOf(row.key);
+          const offer = offers.get(done === undefined ? todoDoneId(row.key) : todoReopenId(done));
+          if (offer === undefined) return undefined;
+          return {
+            checked: done !== undefined,
+            label: offer.title,
+            off: offer.available ? undefined : offer.reason,
+            onChange: () => onPress(offer),
+          };
+        }
+      : undefined;
+  /** Which of its todos the Todos view lists: the open ones first (#3358, the prototype's Q1 A). */
+  const [todosShown, setTodosShown] = useState<TodosShown>("open");
   const addTodo =
-    panel.key === TODOS && onAddTodo !== undefined ? (
-      <AddTodo workspace={workspace} onAdd={onAddTodo} />
+    panel.key === TODOS ? (
+      <>
+        {onAddTodo !== undefined && <AddTodo workspace={workspace} onAdd={onAddTodo} />}
+        <TodoTabs shown={todosShown} onShow={setTodosShown} />
+      </>
     ) : undefined;
 
   return (
@@ -363,9 +415,10 @@ function Contributed({
       mark={Mark}
       title={panel.title}
       provenance={panel.from ?? undefined}
-      view={framed}
-      // A view's top holds the box that adds one, under the heading and above the rows (#3340).
-      top={framed ? addTodo : undefined}
+      // **Every panel is a view** (#3340, #3341): one scroll, its heading and its field held at
+      // the top. The top holds the box that adds one, under the heading and above the rows.
+      view
+      top={addTodo}
       actions={
         <>
           {/* charter's own panels are about things charter can make (SI-3): the heading's `+`
@@ -396,7 +449,6 @@ function Contributed({
         </>
       }
     >
-      {!framed && addTodo}
       {panel.blocks.map((block, at) =>
         block.kind === "chart" ? (
           <Chart key={at} chart={block} />
@@ -419,8 +471,14 @@ function Contributed({
           <PanelList
             /* By position, as above. */
             key={at}
-            rows={block.rows}
-            empty={block.empty}
+            rows={
+              panel.key === TODOS
+                ? block.rows.filter(todosOf(todosShown))
+                : panel.key === PERSONAS
+                  ? byPersonaGroup(block.rows, personaGroupOf)
+                  : block.rows
+            }
+            empty={panel.key === TODOS && todosShown === "done" ? NOTHING_DONE : block.empty}
             label={panel.title}
             testid={`list-${named(panel)}`}
             // One line a row on this side (#1674): the title, the note on hover, and a dated
@@ -428,11 +486,20 @@ function Contributed({
             titleOnly
             // In a view the search is in its top from the first row (the prototype's Q1 A), but
             // the Todos view's top holds its box for adding one, and searches past a page.
-            search={framed && panel.key !== TODOS ? "always" : "beyond-a-page"}
+            search={panel.key !== TODOS ? "always" : "beyond-a-page"}
             // A memory's and a session's date at the row's end, and no mark that every row
             // would share, as the prototype's Q1 A draws them (#3340).
-            dateAtEnd={framed && (panel.key === MEMORY || panel.key === SESSIONS)}
-            markless={framed && (panel.key === MEMORY || panel.key === SESSIONS)}
+            dateAtEnd={panel.key === MEMORY || panel.key === SESSIONS}
+            markless={panel.key === MEMORY || panel.key === SESSIONS}
+            // A list of things named is filtered; a store of things written is searched (Q1 A).
+            searchWord={panel.key === PERSONAS ? "Filter" : "Search"}
+            // **A persona's row says whether its chats are at work or ask for you** (#3341): the
+            // state's own mark at the row's end, the strongest of its chats'.
+            stateOf={
+              panel.key === PERSONAS
+                ? (row) => <PersonaAtWork sessions={personaChats?.get(row.key) ?? NO_CHATS} />
+                : undefined
+            }
             open={open}
             // The empty list's way out (#1156): the catalogue's row, as a row's is.
             offerFor={lookUp}
@@ -446,11 +513,28 @@ function Contributed({
               const offer = lookUp(id);
               if (offer) onPress(kept ? toKeep(offer) : offer);
             }}
+            checkOf={todoCheck}
+            // The open todos under their days, then the done ones (ADR 0106).
+            // And the personas under who is at work, who works here, and the rest (#3483).
+            groupOf={
+              panel.key === TODOS
+                ? todoGroupOf
+                : panel.key === PERSONAS
+                  ? personaGroupOf
+                  : undefined
+            }
             menuOf={(row) =>
               panel.key === TODOS
                 ? /* Open, Mark done, and Forget (SI-3, #1214): the catalogue's rows for this todo
-                     in the focused workspace, which is the one this panel is about. */
-                  catalogueMenu({ on: "todo", slug: row.key }, offers, onPress)
+                     in the focused workspace, which is the one this panel is about. A done one's
+                     are Reopen, and Delete under the line (ADR 0106). */
+                  catalogueMenu(
+                    doneSlugOf(row.key) === undefined
+                      ? { on: "todo", slug: row.key }
+                      : { on: "doneTodo", slug: doneSlugOf(row.key) ?? "" },
+                    offers,
+                    onPress,
+                  )
                 : panel.key === SESSIONS
                   ? /* Open and Resume (SI-8d): the place's rows for this record, whose key is
                        its plane-relative path. */
@@ -477,8 +561,84 @@ function Contributed({
   );
 }
 
+/** No chats: what a persona with none running is handed. */
+const NO_CHATS: readonly number[] = [];
+
+/** No personas: who works in no workspace. */
+const NO_PERSONAS: ReadonlySet<string> = new Set();
+
+/**
+ * **The Personas view's groups** (#3483, the prototype's Q1 A), in the order they are drawn:
+ * the personas with a chat at work or asking, then the ones who work in the focused workspace,
+ * then the rest of the plane's. The shared store is the plane's, so it is among the rest.
+ */
+const PERSONA_GROUPS = ["Working now", "In this workspace", "On the plane"] as const;
+type PersonaGroup = (typeof PERSONA_GROUPS)[number];
+
+/** `rows` in their groups' order, each group in the order the panel gave its rows. */
+function byPersonaGroup<T extends { key: string }>(
+  rows: readonly T[],
+  groupOf: (row: T) => PersonaGroup,
+): T[] {
+  return PERSONA_GROUPS.flatMap((group) => rows.filter((row) => groupOf(row) === group));
+}
+
 /** charter's own panels, by the key `purlis_core::panel::Panel::key` gives them. */
 const TODOS = "charter/todos";
+
+/** Which todos the Todos view lists (#3358): its tabs, Open, Done and All. */
+type TodosShown = "open" | "done" | "all";
+
+/** The Todos view's tabs, in the order the prototype's Q1 A draws them. */
+const TODO_TABS: readonly { shown: TodosShown; says: string }[] = [
+  { shown: "open", says: "Open" },
+  { shown: "done", says: "Done" },
+  { shown: "all", says: "All" },
+];
+
+/** Whether a Todos row is one `shown` lists. */
+function todosOf(shown: TodosShown): (row: { key: string }) => boolean {
+  return (row) => shown === "all" || (doneSlugOf(row.key) === undefined) === (shown === "open");
+}
+
+/** What the Done tab says when no todo is done: the panel's own sentence is about open ones. */
+const NOTHING_DONE = {
+  headline: "Nothing done yet",
+  body: "A todo marked done stays here, struck through, until it is reopened or deleted.",
+  offer: null,
+};
+
+/**
+ * **The Todos view's tabs** (#3358, the prototype's Q1 A): Open, Done and All, under the box that
+ * adds one, in the view's top. One of a few views of the same list, so the segmented control: one
+ * Tab stop, the arrows between them.
+ */
+function TodoTabs({ shown, onShow }: { shown: TodosShown; onShow: (to: TodosShown) => void }) {
+  return (
+    <SegmentedControl
+      size="sm"
+      className="todo-tabs"
+      aria-label="Show the todos that are"
+      value={shown}
+      onChange={(to) => {
+        const one = TODO_TABS.find((tab) => tab.shown === to);
+        if (one !== undefined) onShow(one.shown);
+      }}
+    >
+      {TODO_TABS.map((tab) => (
+        <Segment key={tab.shown} value={tab.shown}>
+          {tab.says}
+        </Segment>
+      ))}
+    </SegmentedControl>
+  );
+}
+
+/** The group a done todo's row is drawn under, after the days the open ones are under
+ *  (ADR 0106); an open todo's stays under its day. */
+function todoGroupOf(row: { key: string }): string | undefined {
+  return doneSlugOf(row.key) === undefined ? undefined : "Done";
+}
 const PERSONAS = "charter/personas";
 const SESSIONS = "charter/sessions";
 const MEMORY = "charter/memory";

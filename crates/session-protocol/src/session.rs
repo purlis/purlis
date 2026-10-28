@@ -260,25 +260,63 @@ use crate::view::{Limits, Views};
 /// project path, which such a host never used. A host before 1.40 says nothing of it, and is
 /// sent the path as before.
 ///
-/// 1.41 added a chat moving between the desktop and a runner (#2048, spec #2041): `take_code`
+/// 1.41 added a host's own event log over a link (#3393, ADR 0078 §7): `log_end` answers the
+/// host's device and the last `seq` of its log, and a `subscribe` whose `since` names that device
+/// is pushed each line of the log after it, then each as it is written, as `event`, and a gap as
+/// `missed`. A link that may read it, the window's or its host's relaying it, is pushed it; one
+/// whose `since` names no such device is pushed none of it, as before. A host before 1.41 refuses
+/// `log_end` `unknown_command`, and its window reads none of its log. And the kill switch says
+/// which runners a desktop's stop stopped (`runners`), and that a stop found a host stopped
+/// already (`already`), so a runner stopped from its own command line is not re-armed by its
+/// desktop (#2051).
+///
+/// 1.42 added a program that ends with its window (#3274): a start from this machine's window
+/// may say so (`ends_with_its_window`), and the host then ends that program as soon as its last
+/// window link ends without a `quit`, rather than keeping it for the window to come back to. A
+/// grade's chat is started so (SK-16): only the window that started it watches it. The word is
+/// the window's alone ([`crate::auth::Scope::LocalUi`]): a host takes it from no other link, so
+/// a relayed start keeps its program as any other. A host before 1.42 ignores the word and keeps
+/// the program as any other, and the window ends it as it comes back, as nothing takes it back.
+///
+/// 1.43 added a desktop's profiles on its runner (#2049, spec #2041): `keep_profile`, sent by
+/// the desktop on its own link to the runner, has the runner keep a profile of that name in a
+/// folder of its own ([`ProfileToKeep`]: its name, harness, sandbox-only mark and pinned
+/// version, and nothing of the desktop's folder), and answers `profile_kept` with whether its
+/// harness says it is signed in there. A host before 1.43 refuses it `unknown_command`, and its
+/// pool's chats run on the profiles the runner has of its own.
+///
+/// 1.44 added a chat moving between the desktop and a runner (#2048, spec #2041): `take_code`
 /// with `moving` takes a repository's work tree over onto the branch and work the client sends,
 /// where it is still what the two ends last agreed, and `give_code` with `with_work` sends the
 /// work tree's uncommitted work back as its branch's snapshot; `take_conversation` and
 /// `give_conversation` carry the chat's conversation into and out of the harness folder of the
 /// profile it runs on there, on a code stream, answered `conversation` with where the
-/// harness's declaration keeps it. The window's alone, relayed for it. A host before 1.41 reads
+/// harness's declaration keeps it. The window's alone, relayed for it. A host before 1.44 reads
 /// no `moving` or `with_work` and refuses the conversation commands `unknown_command`, so the
 /// window moves no chat to or from one.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 41,
+    minor: 44,
 };
 
 /// The version that first moves a chat's work tree and conversation (#2048): the window moves
 /// no chat to or from a host before it.
 pub const MOVES_CHATS: Version = Version {
     major: 1,
+    minor: 44,
+};
+
+/// The version that first pushes a host's own event log to a link that asks with a cursor for its
+/// device, and answers `log_end` (#3393).
+pub const KNOWS_EVENT_LOG: Version = Version {
+    major: 1,
     minor: 41,
+};
+
+/// The version that first keeps a desktop's profile on a runner (#2049).
+pub const KNOWS_KEEP_PROFILE: Version = Version {
+    major: 1,
+    minor: 43,
 };
 
 /// The version that first knows browsers relayed for a window (#2050): a runner before it refuses
@@ -479,7 +517,11 @@ pub enum Command {
     /// Close a view the client attached. The program keeps running.
     DetachView { program: String, view: u32 },
     /// Every event after `since`, then each as it is written ([`Pushed`]): ADR 0066's
-    /// `subscribe(since)`.
+    /// `subscribe(since)`. **The host's own event log is pushed from its device's cursor**
+    /// (1.41, #3393): to a link that may read it ([`crate::grants::Power::EventLog`]) and whose
+    /// `since` names the host's device ([`Command::LogEnd`] says which), each of its lines after
+    /// that cursor, then each as it is written, as [`Pushed::Event`], and a gap as
+    /// [`Pushed::Missed`]. A `since` that does not name it is pushed none of its log.
     Subscribe { since: Since },
     /// Stop pushing events.
     Unsubscribe,
@@ -610,6 +652,13 @@ pub enum Command {
     /// paired with, carries it out; every other host refuses it [`NOT_ALLOWED`]
     /// ([`crate::grants::Power::Unpair`]).
     Unpair,
+    /// The desktop on this link has the runner keep its profile (1.43, #2049): the runner's
+    /// host keeps a profile of that name in a folder of its own, made where it has none, and
+    /// answers [`Answer::ProfileKept`] with whether its harness says it is signed in there.
+    /// Nothing of the desktop's profile folder, sign-in or settings is in it. Only a runner's
+    /// host, on the link between hosts from the desktop it is paired with, carries it out;
+    /// every other host refuses it [`NOT_ALLOWED`] ([`crate::grants::Power::KeepProfile`]).
+    KeepProfile(ProfileToKeep),
     /// The person takes browser `program` over (1.14, #2014): an act in flight answers that it
     /// was interrupted, and every act is refused in words until [`Command::HandBack`]. The lease
     /// is the host's: it stays with the person whatever becomes of the link that took it, until
@@ -687,12 +736,12 @@ pub enum Command {
     /// chats then work in. A repository with something checked out is left as it is, and a
     /// branch one of its work trees has checked out is the runner's own and is never moved.
     ///
-    /// `moving` (1.41, #2048) moves a chat's work tree with the chat: `refs` are exactly the
+    /// `moving` (1.44, #2048) moves a chat's work tree with the chat: `refs` are exactly the
     /// branch `checkout` names and its snapshot, and the repository's work tree is taken over
     /// onto them, checked out or not, where it is still what the two ends last agreed (it was
     /// left as a move left it, or has nothing uncommitted and no commit `checkout` lacks).
     /// Refused [`NOT_ALLOWED`] otherwise, with nothing of the repository changed. A host before
-    /// 1.41 does not read it, so the window moves no chat to one.
+    /// 1.44 does not read it, so the window moves no chat to one.
     TakeCode {
         project: String,
         #[serde(default)]
@@ -710,7 +759,7 @@ pub enum Command {
     /// [`Answer::Code`] with the branches the bundle is of. The window's alone
     /// ([`crate::grants::Power::Code`]), relayed for it.
     ///
-    /// `with_work` (1.41, #2048) also carries the repository's work tree as a chat moving off the
+    /// `with_work` (1.44, #2048) also carries the repository's work tree as a chat moving off the
     /// host leaves it: a snapshot of its uncommitted work on the branch it is on, as
     /// `refs/purlis/snapshots/<branch>`, which the two ends agree on from then on.
     GiveCode {
@@ -723,7 +772,7 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         with_work: bool,
     },
-    /// The client writes a chat's conversation into the host's harness folder (1.41, #2048), as
+    /// The client writes a chat's conversation into the host's harness folder (1.44, #2048), as
     /// the chat moves there: on a code stream named `transfer`, as `take_code` reads a bundle,
     /// at most [`crate::code::MOST_BUNDLE_BYTES`]. `conversation` is the harness's session id,
     /// and `file` where the harness's declaration keeps it, every `*` part as found and
@@ -740,7 +789,7 @@ pub enum Command {
         conversation: String,
         file: String,
     },
-    /// The host writes a chat's conversation back to the client (1.41, #2048), as the chat
+    /// The host writes a chat's conversation back to the client (1.44, #2048), as the chat
     /// moves off it: found in the harness folder of `profile` there, as its declaration keeps
     /// it, on a code stream named `transfer`. Answered [`Answer::Conversation`] with where the
     /// declaration keeps it, as `take_conversation` names it. The window's alone
@@ -763,6 +812,12 @@ pub enum Command {
     /// the one before, and [`NO_SUCH_CHAT`] for a program the host does not hold. The window's
     /// alone ([`crate::grants::Power::Reattach`]).
     NoteProgram { program: String, note: ProgramNote },
+    /// **Where the host's own event log ends now** (1.41, #3393): its device and the `seq` of
+    /// its last line, 0 for none, answered [`Answer::LogEnd`]: the cursor a client that holds
+    /// none of it subscribes from, so it is pushed what is written from now on. Refused
+    /// [`NOT_STARTED`] by a host whose binary keeps no event log. The window's, and its host's
+    /// relaying it ([`crate::grants::Power::EventLog`]).
+    LogEnd,
 }
 
 /// One ref of a repository and the commit it is at (1.34): what `take_code` names and `code`
@@ -933,6 +988,36 @@ pub struct Start {
     pub harness: Option<String>,
 }
 
+/// **A desktop's profile, as its runner keeps it** (1.43, #2049): what [`Command::KeepProfile`]
+/// sends, and nothing else. No file, setting, sign-in or vault reference of the desktop's
+/// profile has a field here, so none can reach a runner through it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileToKeep {
+    /// The name the desktop's chats run on it by.
+    pub name: String,
+    /// Its harness, as a profile's kind names it: `claude`, `codex` or `opencode`.
+    pub harness: String,
+    /// Only a sandboxed chat starts on it (#2037).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sandbox_only: bool,
+    /// The harness version the desktop's profile is pinned to (#2038), where it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<String>,
+}
+
+/// **Whether a profile a runner keeps is signed in there**, as its harness says (1.43, #2049).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileStanding {
+    /// The harness says it is signed in.
+    SignedIn,
+    /// The harness says it is not: a chat on it does not start there until it is.
+    SignedOut,
+    /// The harness did not say, or has no way to; and a word a later minor adds.
+    #[serde(other)]
+    CannotTell,
+}
+
 /// What a [`Command::StartProgram`] asks for: the full start (1.2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StartProgram {
@@ -1016,6 +1101,12 @@ pub struct StartProgram {
     /// ([`crate::grants::Power::Reattach`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<ProgramNote>,
+    /// The program ends with its window (1.42, #3274): once the host's last window link ends
+    /// without a `quit`, the host ends it at once, rather than keeping it for the grace period a
+    /// window has to come back in. Taken from a `local-ui` link alone; a browser never takes it.
+    /// A grade's chat is started so (SK-16).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ends_with_its_window: bool,
 }
 
 impl StartProgram {
@@ -1042,6 +1133,7 @@ impl StartProgram {
             alone: Vec::new(),
             kept: None,
             note: None,
+            ends_with_its_window: false,
         }
     }
 }
@@ -1197,11 +1289,16 @@ pub enum Answer {
     /// The refs a transfer of code left (1.34): [`Command::TakeCode`] and
     /// [`Command::GiveCode`].
     Code { heads: Vec<CodeRef> },
-    /// Where a conversation is kept, as its harness's declaration says it (1.41):
+    /// Where a conversation is kept, as its harness's declaration says it (1.44):
     /// [`Command::GiveConversation`].
     Conversation { file: String },
+    /// Whether the profile a runner keeps is signed in there, as its harness says:
+    /// [`Command::KeepProfile`] (1.43).
+    ProfileKept { standing: ProfileStanding },
     /// Events follow, as [`Pushed`] frames: [`Command::Subscribe`].
     Subscribed,
+    /// Where the host's own event log ends: [`Command::LogEnd`] (1.41).
+    LogEnd { device: String, seq: u64 },
     /// Done, with nothing to say.
     Done,
 }
@@ -1256,7 +1353,7 @@ pub struct HeldProgram {
 }
 
 /// The kill switch as the host holds it (1.5, ADR 0071).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KillSwitch {
     /// Every agent is stopped, and nothing starts until the window re-arms.
     pub stopped: bool,
@@ -1264,6 +1361,14 @@ pub struct KillSwitch {
     /// across its restart, or a state it could not read and so holds as stopped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<String>,
+    /// **It was stopped already when this stop came** (1.41, #2051): a runner stopped from its own
+    /// command line, which its desktop's re-arm leaves stopped. Said only in answer to a stop.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub already: bool,
+    /// **The runners this host's stop stopped, which its window's re-arm re-arms** (1.41,
+    /// #2051), each `<pool>/<runner>`: what the window lists before it re-arms.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runners: Vec<String>,
 }
 
 /// What a host said of a program it started ([`Client::start_program_told`]).
@@ -1537,6 +1642,7 @@ wire_words!(Command {
     TakeBack => "take_back",
     NameWindow => "name_window",
     Unpair => "unpair",
+    KeepProfile => "keep_profile",
     RelayTo => "relay_to",
     TakeCode => "take_code",
     GiveCode => "give_code",
@@ -1544,6 +1650,7 @@ wire_words!(Command {
     GiveConversation => "give_conversation",
     CancelEngineDownload => "cancel_engine_download",
     NoteProgram => "note_program",
+    LogEnd => "log_end",
 });
 
 impl Command {
@@ -1591,11 +1698,13 @@ impl Command {
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
             Command::Unpair => Power::Unpair,
+            Command::KeepProfile(_) => Power::KeepProfile,
             Command::RelayTo { .. } => Power::RelayTo,
             Command::TakeCode { .. }
             | Command::GiveCode { .. }
             | Command::TakeConversation { .. }
             | Command::GiveConversation { .. } => Power::Code,
+            Command::LogEnd => Power::EventLog,
         }
     }
 }
@@ -1662,7 +1771,9 @@ wire_words!(Answer {
     TakenBack => "taken_back",
     Code => "code",
     Conversation => "conversation",
+    ProfileKept => "profile_kept",
     Subscribed => "subscribed",
+    LogEnd => "log_end",
     Done => "done",
 });
 
@@ -2091,6 +2202,7 @@ impl Lane {
             | Command::TakeBack { .. }
             | Command::NameWindow { .. }
             | Command::Unpair
+            | Command::KeepProfile(_)
             | Command::RelayTo { .. }
             | Command::TakeCode { .. }
             | Command::GiveCode { .. }
@@ -2115,7 +2227,10 @@ impl Lane {
             Command::LetGoOfConfinement { confinement }
             | Command::ChangeReach { confinement, .. }
             | Command::ReachOf { confinement } => Some(Lane::Confinement(confinement.clone())),
-            Command::Subscribe { .. } | Command::Unsubscribe => Some(Lane::Subscription),
+            // Where the log ends is asked before the subscribe that starts from it (1.41).
+            Command::Subscribe { .. } | Command::Unsubscribe | Command::LogEnd => {
+                Some(Lane::Subscription)
+            }
             // The replies to one line keep their order: a command's frames, one after another.
             Command::ReplyHeard { heard, .. } => Some(Lane::Heard(*heard)),
             Command::StartSaving { project }
@@ -2711,6 +2826,16 @@ impl Client {
         self.done(Command::Unpair).await
     }
 
+    /// Have the runner keep this link's desktop's profile `profile` (1.43, #2049): whether its
+    /// harness says it is signed in there. Refused by every host but a runner's, on its link
+    /// from that desktop.
+    pub async fn keep_profile(&self, profile: ProfileToKeep) -> Result<ProfileStanding, CallError> {
+        match self.call(Command::KeepProfile(profile)).await? {
+            Answer::ProfileKept { standing } => Ok(standing),
+            other => Err(unexpected(&other)),
+        }
+    }
+
     /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,
     /// #2679): the link's first command, before [`Client::subscribe`].
     pub async fn relay_to(&self, runner: &str) -> Result<(), CallError> {
@@ -2745,7 +2870,7 @@ impl Client {
     }
 
     /// [`Client::take_code`], taking the repository's work tree over onto `checkout` and its
-    /// snapshot as a chat moves to the host (1.41, #2048).
+    /// snapshot as a chat moves to the host (1.44, #2048).
     pub async fn take_work(
         &self,
         project: &str,
@@ -2766,7 +2891,7 @@ impl Client {
     }
 
     /// [`Client::give_code`], with the work tree's uncommitted work as its branch's snapshot, as
-    /// a chat moves off the host (1.41, #2048).
+    /// a chat moves off the host (1.44, #2048).
     pub async fn give_work(
         &self,
         project: &str,
@@ -2786,7 +2911,7 @@ impl Client {
 
     /// Have the host keep chat's conversation `conversation`, written on the code stream it
     /// opens for `transfer`, as `file` in the harness folder of `profile` there, for a chat in
-    /// `workspace` of `project` (1.41, #2048).
+    /// `workspace` of `project` (1.44, #2048).
     pub async fn take_conversation(
         &self,
         project: &str,
@@ -2808,7 +2933,7 @@ impl Client {
     }
 
     /// Have the host write chat's conversation `conversation` of `profile` on the code stream
-    /// it opens for `transfer` (1.41, #2048). Answers where the harness keeps it.
+    /// it opens for `transfer` (1.44, #2048). Answers where the harness keeps it.
     pub async fn give_conversation(
         &self,
         project: &str,
@@ -2877,6 +3002,15 @@ impl Client {
     /// Let programs start again (1.5): refused on every link but the window's.
     pub async fn rearm(&self) -> Result<KillSwitch, CallError> {
         self.kill_switch_after(Command::Rearm).await
+    }
+
+    /// **Where the host's own event log ends now** (1.41, #3393): its device, and the `seq` of
+    /// its last line.
+    pub async fn log_end(&self) -> Result<(String, u64), CallError> {
+        match self.call(Command::LogEnd).await? {
+            Answer::LogEnd { device, seq } => Ok((device, seq)),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// Whether every agent is stopped (1.5).

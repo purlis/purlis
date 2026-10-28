@@ -60,7 +60,7 @@ const HEIGHT = 620;
  * nothing — no harness ran, and no identity was recorded.
  *
  * **Two panes, at a fixed height** (#2918, prototype B of #2798; R1–R36 of the audit in #2897):
- * a wide dialog of the family, `min(620 px, the window less 48 px)` tall whatever the list holds,
+ * a wide dialog of the family, `min(620 px, the room under its fixed top)` tall whatever the list holds,
  * with the persona list on the left under its filter and what the chat starts with on the right.
  * Each pane scrolls on its own; the header and the footer, with Start, never leave. The dialog is
  * as wide as its size and anchored at a fixed top, so a pick changes nothing of its place.
@@ -77,7 +77,8 @@ const HEIGHT = 620;
  *   and its check (R24–R27, #2798 d3).
  * - **The name, the footer box** and, where they apply, the branch box and the sandbox.
  * - **The footer** says what Start will do, `steward on Claude Code` (R33), then Cancel and
- *   Start chat. It keeps the room of every word it can reach in this dialog (R163).
+ *   Start chat, with the key that starts it inside (⌘↩, the button family's `shortcut` part). It
+ *   keeps the room of every word it can reach in this dialog, and of the key (R163).
  *
  * **⏎ starts from the filter, a persona row or a harness card** (R17), as ⌘⏎ does from anywhere
  * (N26): never from the Name field, where Return is a stray key, and never an approval or a start
@@ -673,8 +674,13 @@ export function StartChat({
               id={nameLabel}
               value={name}
               onChange={setName}
-              // It follows the persona picked: the name the chat takes when this is left empty.
-              placeholder={`${persona ?? picked?.kind ?? "chat"} and its number`}
+              // It follows the persona picked: the name the chat takes when this is left empty,
+              // `steward 10` by the number the core says the next chat takes (R30), or in words
+              // where an older answer sent none. A guess, which can run low under the session
+              // host after a window ended without its record (`Chats::next_number`).
+              placeholder={`${persona ?? picked?.kind ?? "chat"} ${
+                options.next_number == null ? "and its number" : options.next_number
+              }`}
               help="Left empty, the chat is named after its persona and its number. You can rename it from its tab later."
               autoComplete="off"
             />

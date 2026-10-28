@@ -134,7 +134,8 @@ stay as they are: they are brand, not theme.
 **Forced colours win** (#2328). On a platform that forces its contrast colours (Windows'
 contrast themes), the browser draws every colour in the system's palette, and what the window
 says with a background or a shadow alone would be lost. `app/src/theme/forced-colors.css`, the
-last layer of the window's stylesheet, says it again in system colours and with a shape: a solid
+last layer of the window's stylesheet (each family's own parts in its
+`app/src/ui/<family>/forced-colors.css`, imported just before it), says it again in system colours and with a shape: a solid
 `Highlight` ring wherever Tab lands; what is selected or current in `SelectedItem` and
 `SelectedItemText`, underlined (an icon tab keeps its edge); what cannot be used in `GrayText`;
 each state mark's shape in `CanvasText`; a count of chats that need you in `Mark` and
@@ -444,7 +445,10 @@ asked for), whatever the system's appearance. Where its values come from:
   the button would have its consent floors measured at every hue at every launch); Allow, on the control's ground behind the
   accent's edge, stands farther from it than before. **A chosen activity button** is the
   record's .14 wash (`accent.wash`) with its icon in the lighter lavender (`accent.text`,
-  `#c3baf5`), and the update pill's words take `accent.text` too. Section labels are tracked at
+  `#c3baf5`), and the update pill's words take `accent.text` too. **The chosen title-bar chip**
+  takes the same wash with the primary words, and `accent.wash-hover` (the record's .23
+  lavender) under the pointer, while any other chip under the pointer takes the card's fill, so
+  chosen never reads as hovered (R101 as amended by #3345). Section labels are tracked at
   .05em in every theme. Purlis Classic draws as it did: each new token is the value of the one
   that drew it before, and its parts keep its 9px rail buttons, its 5px title-bar chips and its
   update pill's primary words.
@@ -1039,6 +1043,7 @@ has it; nothing reads the key after that.
   "notifications": { "quiet": { "on": true, "from": "22:00", "to": "07:00" } },
   "explorer": { "closed": ["repos"] },
   "rail": "auto",
+  "skills": { "onlyThisChat": true },
   "dismissed": { "/home/me/project": ["pin-dormant:ide", "chat-fresh:3"] }
 }
 ```
@@ -1189,6 +1194,12 @@ has it; nothing reads the key after that.
   (`app/src/railMode.ts`); the first frame draws the rail as it says. Where the rail would
   crowd the work, the window hides it over a `rail` left out (#3077, `app/src/railRoom.ts`), and
   that hide is never written.
+- **`skills`** is what the Skills view keeps for the window (#3308, #3281): `"onlyThisChat": true`
+  while Only this chat's narrows its list to the chat in front, and `"folded"`, the levels folded
+  in its tree (`["built-in", "program:Claude Code"]`, at most 16, a name that is no level
+  skipped). Each is left out at its default, every skill listed and every level open, and the
+  whole entry while both are. Any other value is the default, and the Inbox says so. The switch
+  and the folds write it (`app/src/skillsViewPrefs.ts`).
 - **`dismissed`** is the Notices you dismissed (NO-2, V91j), per project by its path, each
   by its cause. A Notice stays hidden while its cause is kept here, and the window lets the
   cause go once the project answers without it, so the Notice shows again if the cause comes

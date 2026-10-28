@@ -1,11 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   commands,
   type ChatSkill,
   type HarnessKind,
+  type SkillPinsRefused,
   type StudioFirst,
   type StudioLevel,
 } from "./bindings";
@@ -24,15 +25,17 @@ import {
 } from "./skillStudio";
 import { SkillMenu, SkillsList } from "./SkillsList";
 import {
+  explorerPlaceOf,
   groupsOf,
-  listedOf,
   narrowedTo,
-  personaRowsOf,
   pinOf,
   turnOf,
+  viewRowsOf,
+  type ExplorerPlace,
   type ListedSkill,
   type SkillAct,
 } from "./skillsListing";
+import { useFoldedGroups, useOnlyThisChat } from "./skillsViewPrefs";
 import type { ViewRef } from "./tabs";
 import { useListFilter } from "./ui/list/ListFilter";
 
@@ -47,30 +50,17 @@ export type FrontChat = {
   harness: HarnessKind | undefined;
 };
 
-/** **Whether the list is narrowed to the chat in front** (the amendment's (c)): one switch for
- *  the window, whichever project is in front, kept while the window is open. */
-let onlyThisChat = false;
-const onlyListeners = new Set<() => void>();
-
-function useOnlyThisChat(): [boolean, (only: boolean) => void] {
-  const only = useSyncExternalStore(
-    (listener) => {
-      onlyListeners.add(listener);
-      return () => void onlyListeners.delete(listener);
-    },
-    () => onlyThisChat,
-  );
-  const set = useCallback((to: boolean) => {
-    onlyThisChat = to;
-    for (const one of onlyListeners) one();
-  }, []);
-  return [only, set];
-}
-
 /** What the view read: its rows, what the studio offers to start from, and the levels a new
  *  skill can land at; or the core's refusal. */
 type Read =
-  { rows: ListedSkill[]; first: StudioFirst; levels: StudioLevel[] } | { refused: string };
+  | {
+      rows: ListedSkill[];
+      first: StudioFirst;
+      levels: StudioLevel[];
+      /** Why the workspace's chats read none of its pins, where they read none (#3432). */
+      pinsRefused: SkillPinsRefused | null;
+    }
+  | { refused: string };
 
 /** A command's answer, or its refusal, thrown or said, as a sentence. */
 async function answered<T>(
@@ -86,18 +76,25 @@ async function answered<T>(
 /**
  * **Reads what the view lists** from the Skill studio's own answer (the amendment's (f)): the
  * workspace's chats' skills, each program's own and each repo's, then every persona's own, which
- * a persona brings into every workspace, in one more read.
+ * a persona brings into every workspace, in one more read. Read for a chat as `persona` where the
+ * list is narrowed to a chat (#3462), so each program's and repo's skills carry the marks the
+ * studio gives that chat; for a chat on no persona otherwise.
  */
-async function readSkills(plane: string, workspace: string | undefined): Promise<Read> {
+async function readSkills(
+  plane: string,
+  workspace: string | undefined,
+  persona: string | null,
+): Promise<Read> {
   const [base, personas] = await Promise.all([
-    answered(commands.skillStudio(plane, workspace ?? null, null)),
+    answered(commands.skillStudio(plane, workspace ?? null, persona)),
     answered(commands.skillPersonaSkills(plane, workspace ?? null)),
   ]);
   if ("refused" in base) return base;
   return {
-    rows: [...listedOf(base.ok), ...("ok" in personas ? personaRowsOf(personas.ok) : [])],
+    rows: viewRowsOf(base.ok, "ok" in personas ? personas.ok : undefined),
     first: base.ok.first,
     levels: base.ok.levels,
+    pinsRefused: base.ok.pins_refused,
   };
 }
 
@@ -108,7 +105,9 @@ async function readSkills(plane: string, workspace: string | undefined): Promise
  *
  * Every act is one the window already has: a row opens the skill's tab, Use in this chat is
  * Use skill… opened on it, the switch and the pin are the studio's, Show in Explorer opens
- * Explorer on its folder, and New skill is the studio's three starts.
+ * Explorer on its folder (a repo skill's in its clone), and New skill is the studio's three
+ * starts. Only this chat's and the folded levels are kept in the layout file
+ * (`skillsViewPrefs.ts`).
  */
 export function SkillsView({
   plane,
@@ -126,23 +125,33 @@ export function SkillsView({
   onOpenView: (view: ViewRef, title: string) => void;
   /** Opens Use skill… for chat `session` on `skill`. */
   onUseSkill: (session: number, skill: string) => void;
-  /** Opens Explorer on `folder`, one of the project's own files. */
-  onShowInExplorer: (folder: string) => void;
+  /** Opens Explorer on a skill's folder: one of the project's own files, or in a clone of the
+   *  title bar's workspace. */
+  onShowInExplorer: (place: ExplorerPlace) => void;
 }) {
   const [only, setOnly] = useOnlyThisChat();
+  const [folded, onFold] = useFoldedGroups();
   const narrowed = only && chat !== undefined ? chat : undefined;
   // Where the rows are read for, and where the switch and Explorer act: the chat's own place
   // while narrowed to it, else the title bar's.
   const place = narrowed === undefined ? workspace : narrowed.workspace;
+  // Whom the rows are read as, and the persona the list is narrowed for: the chat's while
+  // narrowed to it.
+  const persona = narrowed?.persona ?? null;
   const changed = useViewChanged([plane], skillsIn(place));
   const [read, setRead] = useState<Read>();
-  // The chat in front's real set, what Use skill… types from, while the list is narrowed to it.
-  const [chatSet, setChatSet] = useState<{ session: number; skills: ChatSkill[] }>();
+  // The chat in front's real set, what Use skill… types from, and the clones it works in, while
+  // the list is narrowed to it.
+  const [chatSet, setChatSet] = useState<{
+    session: number;
+    skills: ChatSkill[];
+    repos: string[];
+  }>();
   const [said, setSaid] = useState<{ label: string; text: string }>();
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let live = true;
-    void readSkills(plane, place)
+    void readSkills(plane, place, persona)
       .catch((err: unknown): Read => ({ refused: String(err) }))
       .then((answer) => {
         if (live) setRead(answer);
@@ -150,13 +159,18 @@ export function SkillsView({
     return () => {
       live = false;
     };
-  }, [plane, place, changed]);
+  }, [plane, place, persona, changed]);
   const session = narrowed?.session;
   useEffect(() => {
     let live = true;
     if (session === undefined) return;
     void answered(commands.chatSkills(plane, session)).then((answer) => {
-      if (live) setChatSet({ session, skills: "ok" in answer ? answer.ok.skills : [] });
+      if (live)
+        setChatSet(
+          "ok" in answer
+            ? { session, skills: answer.ok.skills, repos: answer.ok.repos }
+            : { session, skills: [], repos: [] },
+        );
     });
     return () => {
       live = false;
@@ -164,15 +178,14 @@ export function SkillsView({
   }, [plane, session, changed]);
 
   const base = read !== undefined && "rows" in read ? read.rows : NO_ROWS;
-  const persona = narrowed?.persona ?? null;
   const harness = narrowed?.harness;
-  const set = chatSet !== undefined && chatSet.session === session ? chatSet.skills : undefined;
+  const front = chatSet !== undefined && chatSet.session === session ? chatSet : undefined;
   const rows = useMemo(
     () =>
-      session === undefined || set === undefined
+      session === undefined || front === undefined
         ? base
-        : narrowedTo(base, set, { persona, harness }),
-    [base, session, set, persona, harness],
+        : narrowedTo(base, front.skills, { persona, harness, repos: front.repos }),
+    [base, session, front, persona, harness],
   );
   const nameOf = useCallback((row: ListedSkill) => row.skill.name, []);
   const filter = useListFilter(rows, nameOf);
@@ -203,7 +216,9 @@ export function SkillsView({
       return;
     }
     if (what === "explorer") {
-      onShowInExplorer(row.skill.folder);
+      // Explorer shows the title bar's workspace, whichever chat the list is narrowed to.
+      const shown = explorerPlaceOf(row.skill, workspace);
+      if (!("reason" in shown)) onShowInExplorer(shown);
       return;
     }
     const change = what === "pin" ? pinOf(row, place) : turnOf(row.skill, place);
@@ -240,13 +255,20 @@ export function SkillsView({
         menu: () => (
           <SkillMenu
             row={row}
-            at={{ workspace: place, chat: chat !== undefined }}
+            at={{
+              workspace: place,
+              chat: chat !== undefined,
+              explorer: workspace,
+              pinsRefused: read.pinsRefused,
+            }}
             busy={busy}
             onAct={(what) => act(row, what)}
           />
         ),
       })}
       chat={chat === undefined ? undefined : { only, onOnly: setOnly }}
+      folded={folded}
+      onFold={onFold}
       notice={
         said !== undefined && (
           <Notice

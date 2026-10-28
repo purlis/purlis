@@ -120,33 +120,41 @@ pub struct StudioSkill {
 }
 
 /// A skill router (SK-15, ADR 0102): the core's `Router`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillRouter {
     /// purlis's own.
     BuiltIn,
+    /// An extension that declares `skill-router`, by its id (SK-15b).
+    Extension(String),
 }
 
 impl From<purlis_core::skills::Router> for SkillRouter {
     fn from(router: purlis_core::skills::Router) -> SkillRouter {
         match router {
             purlis_core::skills::Router::BuiltIn => SkillRouter::BuiltIn,
+            purlis_core::skills::Router::Extension(id) => SkillRouter::Extension(id),
         }
     }
 }
 
 /// Why a router hid a skill: the core's `HiddenWhy`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillHiddenWhy {
     /// The chat's skills are past its budget, and this one is not pinned.
     OverBudget,
+    /// An extension router hid it, with its own one line (SK-15b).
+    ByRouter(String),
 }
 
 impl From<purlis_core::skills::HiddenWhy> for SkillHiddenWhy {
     fn from(why: purlis_core::skills::HiddenWhy) -> SkillHiddenWhy {
         match why {
             purlis_core::skills::HiddenWhy::OverBudget => SkillHiddenWhy::OverBudget,
+            purlis_core::skills::HiddenWhy::ByRouter(line) => {
+                SkillHiddenWhy::ByRouter(line.as_str().to_owned())
+            }
         }
     }
 }
@@ -163,8 +171,8 @@ pub struct SkillHidden {
 impl From<&purlis_core::skills::Hidden> for SkillHidden {
     fn from(hidden: &purlis_core::skills::Hidden) -> SkillHidden {
         SkillHidden {
-            router: hidden.router.into(),
-            why: hidden.why.into(),
+            router: hidden.router.clone().into(),
+            why: hidden.why.clone().into(),
             said: hidden.to_string(),
         }
     }
@@ -304,45 +312,14 @@ impl From<purlis_core::skills::Switch> for SkillSwitch {
     }
 }
 
-/// What the project has a harness's plugin at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum PluginState {
-    On,
-    Off,
-    /// No layer names it: the harness decides, from its own settings.
-    NotSet,
-}
-
-/// One of a harness's plugins in the studio (SK-6).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct StudioPlugin {
-    /// The harness's own id for it, which the switch names.
-    pub id: String,
-    pub name: String,
-    /// Where purlis found it installed; empty where this machine has not installed it.
-    pub origin: String,
-    pub installed: bool,
-    /// What the project has it at, in the chats the studio shows.
-    pub state: PluginState,
-    /// Why purlis fixes it whatever the project says, or `None`: no switch is drawn for it.
-    pub pinned: Option<String>,
-}
-
-/// One harness in the studio (SK-6): its plugins and the skills it finds itself.
+/// One harness in the studio (SK-6): the skills it finds itself. Its plugins are its own to turn
+/// on or off (#3467): a plugin's skills are among these, read-only, each naming its plugin.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct StudioHarness {
     /// Which harness it is, which a switch names.
     pub harness: HarnessKind,
     pub title: String,
-    /// Why its plugins cannot be chosen for one chat, where they cannot: no plugin switch.
-    pub unsupported: Option<String>,
-    /// Why a plugin can only be turned off, where that is all it can be.
-    pub only_off: Option<String>,
-    /// Why its own record of what it installed could not be read, if it could not.
-    pub trouble: Option<String>,
-    pub plugins: Vec<StudioPlugin>,
-    /// The skills it finds itself, read only, each by the name it knows it by.
+    /// The skills it finds itself, each by the name it knows it by.
     pub skills: Vec<StudioSkill>,
     /// The project's skills a repo of the workspace leaves out of its chats in that clone, each
     /// with why (SK-53): the core's `HarnessInTheStudio::repo_left_out`.
@@ -482,9 +459,9 @@ pub(crate) fn persona_skills(
     let off = workspace
         .map(|ws| purlis_core::skills::turned_off(root, ws))
         .unwrap_or_default();
-    purlis_core::skills::persona_rows(built_in, root, workspace)
+    purlis_core::skills::persona_rows(built_in, root)
         .into_iter()
-        .map(|(persona, rows)| {
+        .map(|purlis_core::skills::PersonaRows { persona, rows }| {
             let pinners = pinners_of(root, workspace, Some(&persona));
             PersonaSkills {
                 skills: rows
@@ -523,6 +500,63 @@ pub struct Studio {
     /// Why a chat reads none of the pins of the workspace or the persona it is filtered to,
     /// where it reads none (SK-15d): its rows' Pin switches then say so.
     pub pins_refused: Option<crate::skillchange::SkillPinsRefused>,
+    /// The router its chats are routed by, and how it did at each one's start (SK-15b). Null
+    /// while the studio is off.
+    pub router: Option<StudioRouter>,
+}
+
+/// **The router a studio's chats are routed by** (SK-15b, ADR 0102 §5, §6), and how it did at
+/// the start of each such chat open here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioRouter {
+    /// Which router, in a sentence; or why the one chosen is not one, where it is not.
+    pub said: String,
+    /// Whether the choice names no router, so its chats are routed by the built-in one.
+    pub problem: bool,
+    /// The extension's id, where an extension's router is chosen.
+    pub extension: Option<String>,
+    /// Each chat open here that its start routed by an extension, by its number, with how
+    /// that went: its timing, and whether it fell back on the built-in router.
+    pub chats: Vec<StudioRouted>,
+}
+
+/// One chat a router extension was asked about at its start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioRouted {
+    pub session: u32,
+    pub routing: crate::useskill::SkillRouting,
+}
+
+/// The router chats in `workspace` as `persona` of the project at `root` are routed by.
+fn router_of(
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> StudioRouter {
+    use purlis_core::skills::router::{Chosen, chosen};
+    let (said, problem, extension) = match chosen(root, workspace, persona) {
+        Ok(Chosen::BuiltIn) => (
+            "Chats here are routed by the built-in router.".to_owned(),
+            false,
+            None,
+        ),
+        Ok(Chosen::Extension(id)) => (
+            format!(
+                "Chats here are routed by {}, asked at each chat's start; the rows show what \
+                 the built-in router would hide.",
+                purlis_core::skills::Router::Extension(id.clone()).shown()
+            ),
+            false,
+            Some(id),
+        ),
+        Err(why) => (format!("{why}."), true, None),
+    };
+    StudioRouter {
+        said,
+        problem,
+        extension,
+        chats: Vec::new(),
+    }
 }
 
 /// **What the studio offers when it opens** (SK-22, #2785; decision 42), as the core works it
@@ -582,6 +616,7 @@ pub(crate) fn studio(
             clashes: Vec::new(),
             first: StudioFirst::default(),
             pins_refused: None,
+            router: None,
         };
     }
     let off = workspace
@@ -616,6 +651,7 @@ pub(crate) fn studio(
     let workspaces = purlis_core::workspaces::Plane::open(root)
         .workspaces()
         .unwrap_or_default();
+    let router = router_of(root, workspace.as_deref(), persona.as_deref());
     Studio {
         on,
         workspace,
@@ -627,6 +663,7 @@ pub(crate) fn studio(
         clashes,
         first,
         pins_refused,
+        router: Some(router),
     }
 }
 
@@ -670,12 +707,11 @@ fn outside_shown(row: purlis_core::skills::StudioRow) -> StudioSkill {
 fn harnesses(
     all: &[purlis_core::skills::HarnessInTheStudio],
 ) -> (Vec<StudioHarness>, Vec<StudioClash>) {
-    use purlis_core::harness_plugin;
     let mut clashes: Vec<StudioClash> = Vec::new();
     let harnesses = all
         .iter()
         .map(|one| {
-            let adapter = one.group.adapter;
+            let adapter = one.harness.adapter().plugins();
             for clash in &one.set.clashes {
                 clashes.push(StudioClash {
                     name: clash.name.clone(),
@@ -695,27 +731,6 @@ fn harnesses(
             StudioHarness {
                 harness: one.harness.into(),
                 title: adapter.title().to_owned(),
-                unsupported: harness_plugin::not_supported(adapter),
-                only_off: harness_plugin::only_off(adapter),
-                trouble: one.group.trouble.clone(),
-                plugins: one
-                    .group
-                    .plugins
-                    .iter()
-                    .filter(|it| it.installed || it.pinned.is_some())
-                    .map(|it| StudioPlugin {
-                        id: it.id.clone(),
-                        name: it.name.clone(),
-                        origin: it.origin.clone(),
-                        installed: it.installed,
-                        state: match it.wanted {
-                            Some(true) => PluginState::On,
-                            Some(false) => PluginState::Off,
-                            None => PluginState::NotSet,
-                        },
-                        pinned: it.pinned.map(str::to_owned),
-                    })
-                    .collect(),
                 skills: one.rows.iter().cloned().map(outside_shown).collect(),
                 repo_left_out: one
                     .repo_left_out
@@ -1128,14 +1143,28 @@ pub(crate) async fn skill_studio(
     crate::off_the_window("reading the project's skills", move || {
         let built_in =
             crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-        Ok(studio(
+        let mut studio = studio(
             held.root(),
             built_in.as_deref(),
             purlis_core::skills::studio_on_here(),
             workspace.as_deref(),
             persona.as_deref(),
             &purlis_core::harness_plugin::Env::of(&[]),
-        ))
+        );
+        // How the router did at the start of each chat open here in the studio's scope (SK-15b).
+        if let Some(router) = studio.router.as_mut() {
+            router.chats = held
+                .chats()
+                .routings()
+                .into_iter()
+                .filter(|one| one.workspace == workspace && one.persona == persona)
+                .map(|one| StudioRouted {
+                    session: one.session,
+                    routing: (&one.routed).into(),
+                })
+                .collect();
+        }
+        Ok(studio)
     })
     .await
 }
@@ -1254,27 +1283,8 @@ pub(crate) async fn put_away_chat_skills_missing(
     Ok(())
 }
 
-/// What the studio's switch turns on or off for a harness: the core's `Switched`, spelled for
-/// the window. purlis-core keeps no UI typing crate (CLAUDE.md), so the window's copy of the type
-/// lives here and turns into the core's in one place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum StudioSwitched {
-    Plugin,
-    Skill,
-}
-
-impl From<StudioSwitched> for purlis_core::harness_plugin::Switched {
-    fn from(what: StudioSwitched) -> purlis_core::harness_plugin::Switched {
-        match what {
-            StudioSwitched::Plugin => purlis_core::harness_plugin::Switched::Plugin,
-            StudioSwitched::Skill => purlis_core::harness_plugin::Switched::Skill,
-        }
-    }
-}
-
-/// **Turns one of a harness's plugins or skills on or off** (SK-6, #2769) for the chats the
-/// studio shows: at the project's root on this machine alone (`charter.local.toml`), in a
+/// **Turns one of a harness's own skills on or off** (SK-6, #2769) for the chats the studio
+/// shows (a plugin's is the plugin's, and refused, #3467): at the project's root on this machine alone (`charter.local.toml`), in a
 /// workspace in its own settings, as `purlis_core::harness_plugin::switch_in_the_studio` writes
 /// it. A chat started after it is handed the change.
 #[tauri::command]
@@ -1284,7 +1294,6 @@ pub(crate) async fn skill_studio_switch(
     plane: crate::planes::PlaneId,
     workspace: Option<String>,
     harness: HarnessKind,
-    what: StudioSwitched,
     id: String,
     on: bool,
 ) -> Result<(), String> {
@@ -1302,7 +1311,6 @@ pub(crate) async fn skill_studio_switch(
             held.root(),
             workspace.as_deref(),
             harness.into(),
-            what.into(),
             &id,
             on,
             &built_in,

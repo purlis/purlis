@@ -401,6 +401,49 @@ fn a_start_carries_the_run_it_begins_and_the_host_lists_it_and_names_it_as_it_en
     drop(runtime);
 }
 
+/// #3274: a grade's chat ends with its window. The start says so to the host (1.42), and once
+/// the window's links end without a quit the host ends that chat at once, while every other
+/// waits for the window to come back.
+#[test]
+fn a_chat_that_ends_with_its_window_is_ended_by_the_host_once_the_window_goes() {
+    let runtime = a_runtime();
+    let runs = StandIns::default();
+    let hosting = Hosting::running_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+    );
+    let (connection, window) = in_memory(hosting, &runtime);
+    let (_dir, root) = a_project();
+    let sessions = HostedSessions::new(connection, &root);
+    sessions
+        .open(None, &a_shell("true"), &|_| {})
+        .expect("it starts");
+    let kept = runs.last();
+    sessions
+        .open(
+            None,
+            &Opening {
+                ends_with_its_window: true,
+                ..a_shell("true")
+            },
+            &|_| {},
+        )
+        .expect("it starts");
+    let graded = runs.last();
+    assert!(!graded.seen().stopped, "it runs while the window is there");
+
+    drop(sessions);
+    drop(window);
+
+    let deadline = Instant::now() + PATIENCE;
+    while !graded.seen().stopped {
+        assert!(Instant::now() < deadline, "the host never ended it");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!kept.seen().stopped, "the other waits for its window");
+    drop(runtime);
+}
+
 #[test]
 fn a_chat_keeps_the_number_it_already_answers_to_and_numbers_are_dealt_past_it() {
     let hosted = hosted();

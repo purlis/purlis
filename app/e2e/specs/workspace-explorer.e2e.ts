@@ -79,7 +79,7 @@ async function onAlpha(): Promise<void> {
   // (#1677) would be where the next chat starts, and its files what Files draws.
   await browser.execute(() => {
     // The Repos view, in the left half of the Panel since #1737.
-    const root = document.querySelector<HTMLElement>('[data-testid="repos-view"] button.spot-root');
+    const root = document.querySelector<HTMLElement>('[data-testid="repos-view"] .spot-root');
     if (root !== null && root.getAttribute("aria-current") !== "true") root.click();
   });
 }
@@ -90,10 +90,10 @@ async function onAlpha(): Promise<void> {
  * picks the workspace itself again.
  */
 async function showFilesOf(piece: string): Promise<void> {
-  const row = await $(inExplorer(`[data-testid="piece-svc-${piece}"] .spot`));
+  const row = await $(inExplorer(`.spot[data-testid="piece-svc-${piece}"]`));
   await row.waitForExist({ timeout: 20_000 });
   await row.click();
-  await $(inExplorer(`[role="tree"][aria-label^="Files of ${piece}"]`)).waitForExist({
+  await $(inExplorer(`[role="treegrid"][aria-label^="Files of ${piece}"]`)).waitForExist({
     timeout: 20_000,
     timeoutMsg: `Files never showed the files of ${piece}`,
   });
@@ -194,7 +194,7 @@ describe("the explorer", () => {
     await onAlpha();
     await $('[data-testid="piece-svc-fix-login"]').waitForExist({ timeout: 20_000 });
 
-    const sent = await sendContextMenu('[data-testid="piece-svc-fix-login"] .spot');
+    const sent = await sendContextMenu('.spot[data-testid="piece-svc-fix-login"]');
     expect(sent).toBe(true);
 
     const menu = await $('[role="menu"]');
@@ -213,7 +213,9 @@ describe("the explorer", () => {
   it("says a clone has no branches cut rather than drawing nothing under it", async () => {
     await onAlpha();
 
-    const tool = await $('[data-testid="clone-tool"]');
+    // A line of the tree under the clone's row (the tree family, #2911).
+    const tool = await $('[data-clone="tool"].none');
+    await tool.waitForExist({ timeout: 20_000 });
     await browser.waitUntil(async () => (await tool.getText()).includes("No branches cut"), {
       timeout: 20_000,
       timeoutMsg: "the explorer never said whether `tool` has branches cut",
@@ -262,7 +264,7 @@ describe("the explorer", () => {
     // starts its chat — `files a chat under the workspace it was started in` needs nothing
     // picked, and a palette left up would be a dialog over every row after this.
     try {
-      const spot = await $('[data-testid="piece-svc-fix-login"] .spot');
+      const spot = await $('.spot[data-testid="piece-svc-fix-login"]');
       await spot.waitForExist({ timeout: 20_000 });
       await spot.click();
 
@@ -311,7 +313,7 @@ describe("the explorer", () => {
       await expect($('[role="dialog"]')).not.toBeDisplayed();
     } finally {
       if (await $('[role="dialog"]').isDisplayed()) await browser.keys(["Escape"]);
-      const root = await $('[data-testid="repos-view"] button.spot-root');
+      const root = await $('[data-testid="repos-view"] .spot-root');
       await root.click();
       await expect(root).toHaveAttribute("aria-current", "true");
       rmSync(join(branch, "found-by-name"), { recursive: true, force: true });
@@ -340,7 +342,7 @@ describe("the explorer", () => {
     // **It leaves the window as it found it**, for ⌘P's reason above: nothing picked in the
     // explorer, and no dialog up.
     try {
-      const spot = await $('[data-testid="piece-svc-fix-login"] .spot');
+      const spot = await $('.spot[data-testid="piece-svc-fix-login"]');
       await spot.waitForExist({ timeout: 20_000 });
       await spot.click();
 
@@ -393,7 +395,7 @@ describe("the explorer", () => {
       if (await $('[role="dialog"]').isDisplayed()) await browser.keys(["Escape"]);
       // Back on the Explorer view, which this describe holds the side on.
       await showView("Explorer");
-      const root = await $('[data-testid="repos-view"] button.spot-root');
+      const root = await $('[data-testid="repos-view"] .spot-root');
       await root.click();
       await expect(root).toHaveAttribute("aria-current", "true");
       rmSync(join(branch, "found-by-content"), { recursive: true, force: true });
@@ -463,7 +465,7 @@ describe("the explorer", () => {
       writeFileSync(join(branch, "README.md"), readme);
       rmSync(join(branch, "agent-marked.md"), { force: true });
     }
-    await $(inExplorer('li[data-mark] > [data-row="file:svc/fix-login:README.md"]')).waitForExist({
+    await $(inExplorer('[data-row="file:svc/fix-login:README.md"][data-mark]')).waitForExist({
       timeout: 60_000,
       reverse: true,
       timeoutMsg: "README.md is still marked after the agent put it back",
@@ -478,7 +480,7 @@ describe("the explorer", () => {
     // `.claude` holds a file git tracks, is closed, and the branch has changed nothing in it.
     const folder = await explorerRow("fix-login", ".claude");
     await expect(folder).toHaveAttribute("aria-expanded", "false");
-    await $(inExplorer('li[data-mark] > [data-row="file:svc/fix-login:.claude"]')).waitForExist({
+    await $(inExplorer('[data-row="file:svc/fix-login:.claude"][data-mark]')).waitForExist({
       timeout: 20_000,
       reverse: true,
       timeoutMsg: ".claude is marked before anything was written in it",
@@ -556,7 +558,7 @@ describe("the explorer", () => {
     await $('[data-testid="piece-svc-fix-login"]').waitForExist({ timeout: 20_000 });
 
     try {
-      expect(await sendContextMenu('[data-testid="piece-svc-fix-login"] .spot')).toBe(true);
+      expect(await sendContextMenu('.spot[data-testid="piece-svc-fix-login"]')).toBe(true);
       const menu = await $('[role="menu"]');
       await menu.waitForDisplayed({ timeout: 20_000 });
       await pressMenuPath(ROW.focus);
@@ -576,7 +578,7 @@ describe("the explorer", () => {
       await expect(await $("aria/Breadcrumb")).toBeDisplayed();
       // Explorer's own: the Repos view keeps its tree, in the Panel (#1737).
       await expect(
-        await $('[data-testid="explorer"] [role="tree"][aria-label="Repos and branches"]'),
+        await $('[data-testid="explorer"] [role="treegrid"][aria-label="Repos and branches"]'),
       ).not.toBeExisting();
       const files = await $(inExplorer('[data-row="file:svc/fix-login:"]'));
       await expect(files).toHaveAttribute("aria-expanded", "true");
@@ -608,7 +610,7 @@ describe("the explorer", () => {
 
   it("expands a repo into the repo's own files", async () => {
     await onAlpha();
-    const files = await $('[data-testid="files-tool"] .file-node');
+    const files = await $('.file-node[data-testid="files-tool"]');
     await files.waitForExist({ timeout: 20_000 });
 
     await files.click();
@@ -632,7 +634,7 @@ describe("the explorer", () => {
     const readme = await tree.$('[data-row="file:svc/fix-login:README.md"]');
     await readme.waitForExist({ timeout: 20_000 });
     await readme.click();
-    const preview = await $('[aria-label="README.md"]');
+    const preview = await $('section.piece-files-shown[aria-label="README.md"]');
     await browser.waitUntil(async () => (await preview.getText()).includes("svc"), {
       timeout: 20_000,
       timeoutMsg: "the preview never drew README.md",
@@ -791,14 +793,16 @@ describe("the explorer", () => {
     await expect($('[data-testid="explorer"] [data-row^="workspace:"]')).not.toBeExisting();
   });
 
-  it("is the files of the workspace the strip is on, and names it in its heading", async () => {
-    /** What the Files heading says its files are of. Read from the document, shown or not. */
+  it("is the files of the workspace the strip is on, and names it in its tree", async () => {
+    /** What the files' tree says it is of: *Files* is no fold since #3343, and the view's title
+     *  is its region's. Read from the document, shown or not. */
     const filesOf = () =>
       browser.execute(
         () =>
           document
-            .querySelector('[data-testid="explorer"] [data-section="files"] .section-of')
-            ?.textContent?.trim() ?? "",
+            .querySelector('[data-testid="explorer"] [data-section="files"] [role="treegrid"]')
+            ?.getAttribute("aria-label")
+            ?.replace(/^Files of /, "") ?? "",
       );
     const untilFilesOf = (name: string) =>
       browser.waitUntil(async () => (await filesOf()) === name, {
@@ -821,7 +825,7 @@ describe("the explorer", () => {
     await focusWorkspace("Plane root");
     await untilFilesOf("Plane root");
     await $(
-      '[data-testid="explorer"] [role="tree"][aria-label="Files of Plane root"]',
+      '[data-testid="explorer"] [role="treegrid"][aria-label="Files of Plane root"]',
     ).waitForExist({ timeout: 20_000 });
     await expect($('[data-testid="explorer"] [data-testid="files-svc"]')).not.toBeExisting();
 
@@ -877,14 +881,13 @@ describe("the explorer", () => {
   });
 
   /**
-   * **A chat's row and a file's row are one height** (#1920): both are the shared tree row
-   * (`--ui-row-height`), so the Chats list and the Files tree read at one rhythm, whatever size
-   * each one's words are. jsdom lays nothing out, so the two are measured here, in the real
-   * engine: within a pixel of each other, never an exact height. And the row's words are the
-   * roles' sizes, as shares of the window's text: a name a body (13 of 14), the section's title
-   * the label (11 of 14).
+   * **A chat's row is a sidebar view's row** (#3342, the prototype's Q1 A): the control's height
+   * and a step, 30px at 14px, measured here in the real engine within a pixel, never exactly. A
+   * file's row is still the shared tree row (the Explorer moves onto the frame on its own
+   * ticket). The row's words are the roles' sizes, as shares of the window's text: a name a
+   * body (13 of 14), and the view's title a strong body (13 of 14).
    */
-  it("draws a chat's row as high as a file's row, its name at the body's size (#1920)", async () => {
+  it("draws a chat's row as a view's row, its name and its title at the body's size (#1920, #3342)", async () => {
     await onAlpha();
     await showView("Chats");
     const rows = '[data-testid="chats-section"] [role="treeitem"]';
@@ -896,7 +899,13 @@ describe("the explorer", () => {
       const name = row?.querySelector(".session");
       const title = document.querySelector("#chats-title");
       if (!row || !name || !title) return null;
+      const probe = document.createElement("div");
+      probe.style.height = "calc(var(--size-control) + var(--space-1))";
+      document.body.append(probe);
+      const viewRow = probe.getBoundingClientRect().height;
+      probe.remove();
       return {
+        viewRow,
         height: row.getBoundingClientRect().height,
         root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
         name: Number.parseFloat(getComputedStyle(name).fontSize),
@@ -906,24 +915,24 @@ describe("the explorer", () => {
     if (chat === null) throw new Error("no chat's row was drawn to measure");
 
     await showView("Explorer");
-    const file = await $('[data-testid="files-tool"] .file-node');
+    const file = await $('.file-node[data-testid="files-tool"]');
     await file.waitForExist({ timeout: 20_000 });
     const fileHeight = await browser.execute(
       () =>
-        document.querySelector('[data-testid="files-tool"] .file-node')?.getBoundingClientRect()
+        document.querySelector('.file-node[data-testid="files-tool"]')?.getBoundingClientRect()
           .height ?? 0,
     );
 
     const seen = { chat, fileHeight };
     if (!(chat.height > 0 && fileHeight > 0))
       throw new Error(`a row has no height: ${JSON.stringify(seen)}`);
-    if (Math.abs(chat.height - fileHeight) > 1)
-      throw new Error(`a chat's row is not a file's row's height: ${JSON.stringify(seen)}`);
+    if (Math.abs(chat.height - chat.viewRow) > 1)
+      throw new Error(`a chat's row is not a view's row's height: ${JSON.stringify(seen)}`);
     // Ranges, never exact pixels: within half a pixel of the role's share of the window's text.
     if (Math.abs(chat.name - (chat.root * 13) / 14) > 0.5)
       throw new Error(`a chat's name is not the body's size: ${JSON.stringify(seen)}`);
-    if (Math.abs(chat.title - (chat.root * 11) / 14) > 0.5)
-      throw new Error(`the Chats title is not the label's size: ${JSON.stringify(seen)}`);
+    if (Math.abs(chat.title - (chat.root * 13) / 14) > 0.5)
+      throw new Error(`the Chats title is not a view's title's size: ${JSON.stringify(seen)}`);
   });
 
   it("shows one workspace's chats on the strip, and keeps the others running", async () => {
@@ -1034,7 +1043,8 @@ describe("the explorer", () => {
     });
     expect(dropped).toBe(true);
 
-    const said = await $('p[role="status"]');
+    // What the action answered: its closable notice at the top of the content (#3344).
+    const said = await $('.window-work > .action-result [role="status"]');
     await said.waitForExist({ timeout: 20_000 });
     await expect(said).toHaveText(expect.stringContaining("Nothing was sent."));
     await browser.waitUntil(
@@ -1065,7 +1075,7 @@ describe("the explorer", () => {
     const files = ["picked-a.md", "picked-b.md"];
     // The Explorer view's *Files*, the one tree whose rows are picked: the Repos view draws no
     // picks, and a modified click there would open the file instead.
-    const PICKING = '[data-testid="explorer"] [role="tree"][aria-multiselectable="true"]';
+    const PICKING = '[data-testid="explorer"] [role="treegrid"][aria-multiselectable="true"]';
     const rows = paneRows;
     // By the number the core gave it, which the dialog's row carries (#1796).
     const chat = await aRawPromptChat(plane);
@@ -1381,7 +1391,7 @@ describe("the explorer's rows, in a region too narrow for them", () => {
 
       const rows = [
         ...[...explorer.querySelectorAll(".spot")].map((el) => oneLine(el, "a spot")),
-        ...[...explorer.querySelectorAll(".clone > summary")].map((el) => oneLine(el, "a clone")),
+        ...[...explorer.querySelectorAll(".clone")].map((el) => oneLine(el, "a clone")),
         ...[...explorer.querySelectorAll(".chat")].map((el) => oneLine(el, "a chat")),
         ...[...explorer.querySelectorAll(".worktree")].map((el) => oneLine(el, "a worktree")),
       ];
@@ -1437,9 +1447,9 @@ describe("the explorer's rows, in a region too narrow for them", () => {
   /**
    * **Each level a step in, with a guide per level** (#1672, the shared tree row since DS-12).
    *
-   * The explorer's rows are `.ui-tree-row`s: a row stands one `--ui-tree-step` further in per
-   * `aria-level`, and each level above it draws a `tree.guide` hairline as part of the row's own
-   * background, VS Code's straight guides. What is held here is what only a real WebView can
+   * The explorer's rows are the tree family's (#2911): a row stands one `--tree-step` further in
+   * per `aria-level`, and each level above it draws a `tree.guide` hairline on the row's own
+   * `::before`, VS Code's straight guides. What is held here is what only a real WebView can
    * say: a deeper row's name really starts further in, by about one step per level (a range,
    * never a pixel), and a row under another really paints its guides.
    */
@@ -1449,16 +1459,19 @@ describe("the explorer's rows, in a region too narrow for them", () => {
 
     const rows = await browser.execute(() => {
       const tree = document.querySelector<HTMLElement>(
-        '[data-testid="repos-view"] [role="tree"].ui-tree[aria-label="Repos and branches"]',
+        '[data-testid="repos-view"] [role="treegrid"][aria-label="Repos and branches"]',
       );
-      if (!tree) throw new Error("no explorer tree drawn in the shared tree style");
-      return [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')].map((row) => {
+      if (!tree) throw new Error("no explorer tree drawn by the tree family");
+      // The rows that name something: a line under a clone ("Asking git…") has no name to
+      // measure.
+      return [...tree.querySelectorAll<HTMLElement>('[role="row"]:not([data-line])')].map((row) => {
         const name = row.querySelector(".spot-name, .repo") ?? row;
         return {
           what: row.textContent?.trim().slice(0, 40) ?? "",
           level: Number(row.getAttribute("aria-level")),
           nameAt: name.getBoundingClientRect().left - tree.getBoundingClientRect().left,
-          guides: getComputedStyle(row).backgroundImage,
+          // The tree family draws a row's guides on its `::before` (`ui/tree/tree.css`).
+          guides: getComputedStyle(row, "::before").backgroundImage,
         };
       });
     });
@@ -1490,7 +1503,7 @@ describe("the explorer's rows, in a region too narrow for them", () => {
    */
   it("draws a folding row's chevron in the middle of the row, closed or open", async () => {
     await onAlpha();
-    const tool = await $('[data-testid="files-tool"] .file-node');
+    const tool = await $('.file-node[data-testid="files-tool"]');
     await tool.waitForExist({ timeout: 20_000 });
     // One repo's own folder open and the other closed, whatever an earlier spec left.
     const wanted: [string, string][] = [
@@ -1498,7 +1511,7 @@ describe("the explorer's rows, in a region too narrow for them", () => {
       ["files-svc", "false"],
     ];
     for (const [testid, expanded] of wanted) {
-      const row = await $(`[data-testid="${testid}"] .file-node`);
+      const row = await $(`.file-node[data-testid="${testid}"]`);
       await row.waitForExist({ timeout: 20_000 });
       if ((await row.getAttribute("aria-expanded")) !== expanded) await row.click();
       await browser.waitUntil(async () => (await row.getAttribute("aria-expanded")) === expanded, {
@@ -1512,10 +1525,13 @@ describe("the explorer's rows, in a region too narrow for them", () => {
     const twists = await browser.execute(() =>
       [
         ...document.querySelectorAll<HTMLElement>(
-          ':is([data-testid="explorer"], [data-testid="repos-view"]) .ui-tree-row',
+          ':is([data-testid="explorer"], [data-testid="repos-view"]) :is(.ui-tree-row, [data-scope="tree"][data-part="root"])',
         ),
       ].flatMap((row) => {
-        const icon = row.querySelector<SVGElement>(":scope > .ui-tree-twist > svg");
+        // The Repos tree's twist (`.ui-tree-twist`), or the tree family's (`[data-part="twist"]`).
+        const icon = row.querySelector<SVGElement>(
+          ':scope > .ui-tree-twist > svg, [data-part="twist"] > svg',
+        );
         const box = row.getBoundingClientRect();
         // A row not drawn (its view is not the one shown) has no box to measure.
         if (icon === null || box.height === 0) return [];
@@ -1594,9 +1610,7 @@ async function explorerRow(
 
 /** Waits until a file's row in a branch's folder in the explorer carries `mark`. */
 async function marked(piece: string, path: string, mark: string): Promise<void> {
-  await $(
-    inExplorer(`li[data-mark="${mark}"] > [data-row="file:svc/${piece}:${path}"]`),
-  ).waitForExist({
+  await $(inExplorer(`[data-row="file:svc/${piece}:${path}"][data-mark="${mark}"]`)).waitForExist({
     // FSEvents gives no bound on when it delivers on a busy Mac (#577), so the wait is long.
     timeout: 60_000,
     timeoutMsg: `the explorer never marked ${path} as ${mark}`,
@@ -1609,7 +1623,7 @@ async function marked(piece: string, path: string, mark: string): Promise<void> 
  */
 async function browseTheFiles(): Promise<void> {
   await $('[data-testid="piece-svc-fix-login"]').waitForExist({ timeout: 20_000 });
-  expect(await sendContextMenu('[data-testid="piece-svc-fix-login"] .spot')).toBe(true);
+  expect(await sendContextMenu('.spot[data-testid="piece-svc-fix-login"]')).toBe(true);
   const menu = await $('[role="menu"]');
   await menu.waitForDisplayed({ timeout: 20_000 });
   await pressMenuPath(ROW.browseFiles);

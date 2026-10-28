@@ -32,6 +32,7 @@ import { forgetThisLaunch } from "./regions";
 import { chipSays, rowSays, stripNamed } from "./test-strips";
 import { askOfBlock, askOfDispatch } from "./test-asks";
 import { forgetInboxOpen, inboxAwayAtLaunch } from "./test-inbox";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * **A task opens inside its session's tab** (#1486), against the whole window: pressing a task
@@ -73,10 +74,6 @@ declare global {
 }
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
-
-// These tests render the whole app: about 1–2 s each on an idle machine, and just over 5 s on a
-// runner with every core busy. This is the budget a test is given, not a wait for anything.
-vi.setConfig({ testTimeout: 15_000 });
 
 const PLANE = "/home/dev/plane";
 
@@ -1518,9 +1515,7 @@ describe("a file dropped on a tab", () => {
     await waitFor(() =>
       expect(commandsOf(asked, "reference_into_chat").map((sent) => sent.session)).toEqual([4]),
     );
-    expect(
-      await screen.findByText(/Typed @src\/main\.rs into talk\. Nothing was sent\./),
-    ).toBeTruthy();
+    expect(await findResult(/Typed @src\/main\.rs into talk\. Nothing was sent\./)).toBeTruthy();
   });
 
   it("goes to the session's own chat while the tab shows it", async () => {

@@ -29,17 +29,17 @@ use super::verbs::{Level, find, rel};
 use crate::skilluse::Content;
 
 /// The directory under `personas/` the eval record lives in, beside the skill log's.
-pub const DIR_NAME: &str = "_grades";
+const DIR_NAME: &str = "_grades";
 
 /// The version of a row this purlis writes and reads.
 pub const VERSION: u32 = 1;
 
 /// The most bytes of one month's file read, and of one row.
-pub const MOST_FILE_BYTES: u64 = 16 * 1024 * 1024;
-pub const MOST_LINE_BYTES: usize = 1024 * 1024;
+const MOST_FILE_BYTES: u64 = 16 * 1024 * 1024;
+const MOST_LINE_BYTES: usize = 1024 * 1024;
 
 /// The most grades of one skill answered, newest first.
-pub const MOST_GRADES: usize = 200;
+const MOST_GRADES: usize = 200;
 
 /// The arms the built-in runner compares now: the skill against no skill.
 pub const ARMS: [Arm; 2] = [Arm::With, Arm::Without];
@@ -49,15 +49,15 @@ pub const CHAT_TIME: std::time::Duration = std::time::Duration::from_secs(5 * 60
 
 /// The folder of this machine's state the grades of a local copy are kept in, never committed
 /// (a copy in `skills.local/`, or in a workspace that is this machine's alone).
-pub const LOCAL_DIR: &str = "skill-grades";
+pub(crate) const LOCAL_DIR: &str = "skill-grades";
 
 /// The most files of one record folder looked at: a folder with more is read no further.
-pub const MOST_FILES: usize = 600;
+const MOST_FILES: usize = 600;
 
 /// The first characters a chat program reads as its own command, a flag, a shell line, a memory
 /// or a file's mention, rather than as a prompt: a query that starts with one is left out of a
 /// grade, never sent (the review of #3229).
-pub const COMMAND_STARTS: [char; 5] = ['-', '/', '!', '#', '@'];
+const COMMAND_STARTS: [char; 5] = ['-', '/', '!', '#', '@'];
 
 /// `personas/_grades/<YYYY-MM>.<device>.jsonl`, `<device>` named as the skill log's is.
 fn path_for(root: &Path, when: chrono::DateTime<chrono::Utc>, device: &str) -> PathBuf {
@@ -119,6 +119,17 @@ pub struct Graded {
     pub runs: u8,
     pub report: GradeReport,
     pub spent: Spent,
+    /// The harness's own plugins its chats were handed off, by the harness's id (P8, #3468):
+    /// every one it had installed, purlis's own kept on and left out here. `None` in a row
+    /// written before #3468, in one whose grade no chat of started, and in the row held while a
+    /// grade is under way (so an interrupted grade's record has none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugins_off: Option<Vec<String>>,
+    /// **The model its chats ran on, as they reported it** (SK-60, #3240; ADR 0087 §6): the one
+    /// the first chat that said its model said, by the harness's own id for it. `None` in a row
+    /// written before #3240, and where no chat said ([`reported_model`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl Graded {
@@ -132,7 +143,7 @@ impl Graded {
     /// time's shape, and a spend and a report that hold together ([`report_holds_together`],
     /// #3353). A teammate's purlis writes the record, and a person reads these words in the
     /// window and the terminal, so a row that says anything else is skipped.
-    fn sound(&self) -> bool {
+    fn sound(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
         let hex = |word: &str| {
             matches!(word.len(), 40 | 64)
                 && word
@@ -143,12 +154,91 @@ impl Graded {
             && self.commit.as_deref().is_none_or(hex)
             && self.harness.as_deref().is_none_or(plain)
             && self.profile.as_deref().is_none_or(plain)
+            && self.level.as_deref().is_none_or(level_word)
             && plain(&self.grade)
-            && chrono::DateTime::parse_from_rfc3339(&self.ts).is_ok()
-            && self.spent.cost_usd.is_none_or(amount)
+            && stamped_by(&self.ts, now)
+            && (1..=MOST_RUNS).contains(&self.runs)
+            && self.spent.tokens.is_none_or(tokens)
+            && self.spent.cost_usd.is_none_or(dollars)
+            && self.plugins_off.as_deref().is_none_or(|ids| {
+                ids.len() <= MOST_PLUGINS_OFF
+                    && ids.iter().all(|id| crate::harness_plugin::id_ok(id))
+            })
+            && self.model.as_deref().is_none_or(price::model_id)
             && report_holds_together(&self.report, self.runs)
+            && spent_is_the_reports(&self.spent, &self.report)
     }
 }
+
+/// **The model a grade records its chats ran on** (SK-60, #3240), from `said`, what each chat
+/// reported in order: the first that is a model's id as a harness names one, so the record
+/// never holds words no reader could take for one.
+pub fn reported_model<'a>(said: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    said.into_iter()
+        .map(str::trim)
+        .find(|model| price::model_id(model))
+        .map(str::to_owned)
+}
+
+/// The most runs a row read back says each test had in each arm: past any grade's.
+const MOST_RUNS: u8 = 16;
+
+/// The most tokens a figure of a row read back says: ten times the largest cap, as a chat may
+/// pass the cap a little before it is ended.
+const MOST_TOKENS: u64 = 10 * cap::MOST;
+
+/// The most dollars a figure of a row read back says: ten times the largest cap at the dearest
+/// price a row may name.
+const MOST_USD: f64 = 10.0 * (cap::MOST as f64) * price::MOST_READ_USD_PER_MILLION / 1_000_000.0;
+
+/// The most seconds a row read back says a chat ran: a day, far past a grade's chat's time.
+const MOST_SECONDS: f64 = 24.0 * 60.0 * 60.0;
+
+/// How far past this machine's clock a row read back may be stamped: a teammate's clock may run
+/// a little ahead, but a row stamped later than this would stay newest and push real ones out
+/// of the [`MOST_GRADES`] read.
+const MOST_AHEAD: chrono::TimeDelta = chrono::TimeDelta::hours(1);
+
+/// Whether `ts` is a time's stamp, no later than [`MOST_AHEAD`] past `now`.
+fn stamped_by(ts: &str, now: chrono::DateTime<chrono::Utc>) -> bool {
+    chrono::DateTime::parse_from_rfc3339(ts).is_ok_and(|at| {
+        now.checked_add_signed(MOST_AHEAD)
+            .is_none_or(|latest| at <= latest)
+    })
+}
+
+/// A level as purlis records it: a folder of a level, spelled as that level spells its own.
+fn level_word(word: &str) -> bool {
+    word.len() <= 256
+        && Level::of_rel(word).is_some_and(|level| level.rel().as_deref() == Some(word))
+}
+
+/// A count of tokens no larger than [`MOST_TOKENS`].
+fn tokens(value: u64) -> bool {
+    value <= MOST_TOKENS
+}
+
+/// An amount of dollars no larger than [`MOST_USD`].
+fn dollars(value: f64) -> bool {
+    amount(value) && value <= MOST_USD
+}
+
+/// **Whether a row's spend `spent` is what its report `report` says it spent** (#3273): the
+/// chats that ran, as the arms count them, and the tokens, as the report adds them up; and the
+/// cost, where the report adds it up (a row before #3469 does not).
+fn spent_is_the_reports(spent: &Spent, report: &GradeReport) -> bool {
+    let ran: u64 = report.arms.iter().map(|arm| u64::from(arm.chats)).sum();
+    u64::from(spent.chats) == ran
+        && spent.tokens == report.spent_tokens
+        && report.spent_usd.is_none_or(|said| {
+            spent
+                .cost_usd
+                .is_some_and(|cost| (cost - said).abs() <= 1e-9 * said.max(1.0))
+        })
+}
+
+/// The most plugin ids a row read back names as off: far past any machine's installs.
+const MOST_PLUGINS_OFF: usize = 256;
 
 /// A plain name: at most 64 of letters, digits, `-`, `_` and `.`.
 fn plain(word: &str) -> bool {
@@ -201,26 +291,53 @@ fn report_holds_together(report: &GradeReport, runs: u8) -> bool {
             && rate
             && test.pass.is_some() == test.rate.is_some()
             && test.chats.len() <= usize::from(runs)
+            && u64::from(test.runs) + u64::from(test.asked) <= u64::from(runs)
             && test.chats.iter().flatten().all(|chat| plain(chat))
     });
     let mut arms = std::collections::HashSet::new();
     let arms_hold = report.arms.iter().all(|arm| {
+        // What its tests say of this arm: the runs that ran, and every chat asked for.
+        let of_arm = || report.triggers.iter().filter(|test| test.arm == arm.arm);
+        let ran: u64 = of_arm().map(|test| u64::from(test.runs)).sum();
+        let asked: u64 = of_arm().map(|test| test.chats.len() as u64).sum();
         arms.insert(arm.arm)
             && arm.pass_rate.as_ref().is_none_or(|one| stat(one, share))
-            && arm.tokens.as_ref().is_none_or(|one| stat(one, amount))
-            && arm.seconds.as_ref().is_none_or(|one| stat(one, amount))
+            && arm
+                .tokens
+                .as_ref()
+                .is_none_or(|one| stat(one, |value| amount(value) && value <= MOST_TOKENS as f64))
+            && arm
+                .seconds
+                .as_ref()
+                .is_none_or(|one| stat(one, |value| amount(value) && value <= MOST_SECONDS))
+            && u64::from(arm.chats) == ran
+            && u64::from(arm.chats) + u64::from(arm.not_run) == asked
     });
+    // Every test is of an arm the report scores.
+    let tests_of_its_arms = report
+        .triggers
+        .iter()
+        .all(|test| report.arm(test.arm).is_some());
     plain(&report.grader)
         && report.triggers.len() <= grade::MOST_TRIGGER_TESTS * ARMS_THERE_ARE
         && tests
         && arms_hold
+        && tests_of_its_arms
+        && report.cap.is_none_or(|cap| cap <= cap::MOST)
+        && report.spent_tokens.is_none_or(tokens)
         && report
             .delta
             .is_none_or(|delta| (-1.0..=1.0).contains(&delta))
-        && [report.cost_cap_usd, report.spent_usd]
+        && [report.cost_cap_usd, report.spent_usd, report.counted_usd]
             .into_iter()
             .flatten()
-            .all(amount)
+            .all(dollars)
+        && report.priced.as_ref().is_none_or(|priced| {
+            amount(priced.usd_per_million)
+                && priced.usd_per_million <= price::MOST_READ_USD_PER_MILLION
+                && priced.model.as_deref().is_none_or(price::model_id)
+        })
+        && (report.ended != grade::GradeEnd::OverLimit || report.cost_cap_usd.is_some())
         && report
             .not_started
             .as_deref()
@@ -280,18 +397,34 @@ fn append_local(path: &Path, row: &serde_json::Value) -> std::io::Result<PathBuf
     Ok(path.to_path_buf())
 }
 
-/// The text of the record file `path`, read through no link and at most [`MOST_FILE_BYTES`].
-fn file_text(path: &Path) -> Option<String> {
-    let meta = std::fs::symlink_metadata(path).ok()?;
-    if !meta.is_file() || meta.len() > MOST_FILE_BYTES {
-        return None;
+/// Why the record file `path` was not read: it is not a file of its own, or it is larger than
+/// [`MOST_FILE_BYTES`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Unread {
+    NotAFile,
+    TooLarge,
+}
+
+/// The text of the record file `path`, read through no link and at most [`MOST_FILE_BYTES`], or
+/// why not. A byte that is not text spoils only the row it is in, never the file.
+fn file_text(path: &Path) -> Result<String, Unread> {
+    let meta = std::fs::symlink_metadata(path).map_err(|_| Unread::NotAFile)?;
+    if !meta.is_file() {
+        return Err(Unread::NotAFile);
+    }
+    if meta.len() > MOST_FILE_BYTES {
+        return Err(Unread::TooLarge);
     }
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
-    let file = crate::contain::nofollow(&mut options).open(path).ok()?;
-    let mut text = String::new();
-    file.take(MOST_FILE_BYTES).read_to_string(&mut text).ok()?;
-    Some(text)
+    let file = crate::contain::nofollow(&mut options)
+        .open(path)
+        .map_err(|_| Unread::NotAFile)?;
+    let mut bytes = Vec::new();
+    file.take(MOST_FILE_BYTES)
+        .read_to_end(&mut bytes)
+        .map_err(|_| Unread::NotAFile)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// The record files of folder `dir`, newest month first: only where `dir` is a folder of its
@@ -320,49 +453,227 @@ fn record_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+/// **A skill's grades as the record was read** (#3273): the rows, newest first, and what was
+/// left out of them, so a row or a file that was not taken is said, never dropped unseen.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+pub struct Read {
+    pub grades: Vec<Graded>,
+    /// The rows of the skill skipped: ones that say what purlis does not write, or are stamped
+    /// later than this machine's clock allows ([`MOST_AHEAD`]).
+    pub skipped: usize,
+    /// The files not read, by their name, each with why.
+    pub unread: Vec<String>,
+}
+
+impl Read {
+    /// **What was left out, in a sentence**, or `None` where nothing was.
+    pub fn said(&self) -> Option<String> {
+        let mut parts = Vec::new();
+        match self.skipped {
+            0 => {}
+            1 => parts.push(
+                "A row of the grade record was skipped, as it says what purlis does not write, or \
+                 is stamped ahead of this machine's clock"
+                    .to_owned(),
+            ),
+            many => parts.push(format!(
+                "{many} rows of the grade record were skipped, as they say what purlis does not \
+                 write, or are stamped ahead of this machine's clock"
+            )),
+        }
+        parts.extend(self.unread.iter().cloned());
+        (!parts.is_empty()).then(|| format!("{}.", parts.join("; ")))
+    }
+}
+
+/// Whether `line`, which is not a row this purlis reads, names the skill `name` as a row would:
+/// an object whose `skill` is it, of a version this purlis reads.
+fn names_the_skill(line: &str, name: &str) -> bool {
+    if line.len() > MOST_LINE_BYTES {
+        // Too long to read whole: the key looked for as purlis writes it, or as JSON may.
+        return line.contains(&format!("\"skill\": {}", serde_json::Value::from(name)))
+            || line.contains(&format!("\"skill\":{}", serde_json::Value::from(name)));
+    }
+    serde_json::from_str::<serde_json::Value>(line).is_ok_and(|value| {
+        value.get("skill").and_then(serde_json::Value::as_str) == Some(name)
+            && value
+                .get("v")
+                .and_then(serde_json::Value::as_u64)
+                .is_none_or(|v| v <= u64::from(VERSION))
+    })
+}
+
+/// What the window and the terminal say of the record file `path` that was not read, `why`.
+fn unread_said(path: &Path, why: Unread) -> String {
+    let name = path
+        .file_name()
+        .map(|name| crate::shown::short(&name.to_string_lossy()))
+        .unwrap_or_default();
+    match why {
+        Unread::NotAFile => format!("{name} is not a file of its own, so its grades were not read"),
+        Unread::TooLarge => format!(
+            "{name} is larger than {} MiB, so its grades were not read",
+            MOST_FILE_BYTES / (1024 * 1024)
+        ),
+    }
+}
+
 /// **The grades of the skill `name`** in the project at `root`, newest first, at most
-/// [`MOST_GRADES`]: every copy's, or with `level`, that copy's alone (a row of a local
-/// workspace's copy says no level, and is that copy's where its name and content match). The
-/// committed record and this machine's are read, newest month first, until enough are held.
+/// [`MOST_GRADES`]: [`read`]'s rows.
 pub fn grades_of(root: &Path, name: &str, level: Option<&Level>) -> Vec<Graded> {
+    read(root, name, level).grades
+}
+
+/// **The grades of the skill `name`** in the project at `root`, newest first, at most
+/// [`MOST_GRADES`], and what was left out ([`Read`]): every copy's, or with `level`, that copy's
+/// alone (a row of a local workspace's copy says no level, and is that copy's where its name and
+/// content match). The committed record and this machine's are read, newest month first, until
+/// enough are held.
+pub fn read(root: &Path, name: &str, level: Option<&Level>) -> Read {
+    read_at(root, name, level, chrono::Utc::now())
+}
+
+/// [`read`], with this machine's clock at `now`.
+fn read_at(
+    root: &Path,
+    name: &str,
+    level: Option<&Level>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Read {
     let wanted = level.map(|level| level.rel());
     let mut files = record_files(&root.join("personas").join(DIR_NAME));
     files.extend(record_files(&crate::plane::state_dir(root).join(LOCAL_DIR)));
     // Newest month first, across both folders: a file's name starts with its month.
     files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
-    let mut out: Vec<Graded> = Vec::new();
+    let mut out = Read::default();
     for file in files {
-        if out.len() >= MOST_GRADES {
+        if out.grades.len() >= MOST_GRADES {
             break;
         }
-        let Some(text) = file_text(&file) else {
-            continue;
+        let text = match file_text(&file) {
+            Ok(text) => text,
+            Err(why) => {
+                out.unread.push(unread_said(&file, why));
+                continue;
+            }
         };
-        let mut rows: Vec<Graded> = crate::mdsection::split_lines(&text)
-            .into_iter()
-            .filter(|line| line.len() <= MOST_LINE_BYTES)
-            .filter_map(|line| serde_json::from_str::<Graded>(line).ok())
-            .filter(|row| row.v <= VERSION && row.skill == name && row.sound())
-            .filter(|row| match &wanted {
-                None => true,
-                Some(word) => row.level.is_none() || row.level == *word,
-            })
-            .collect();
+        let mut rows: Vec<Graded> = Vec::new();
+        for line in crate::mdsection::split_lines(&text) {
+            // A line too long or not a row is skipped; it is counted where it names this
+            // skill, so a row of it is never dropped unseen.
+            let row = (line.len() <= MOST_LINE_BYTES)
+                .then(|| serde_json::from_str::<Graded>(line).ok())
+                .flatten();
+            let Some(row) = row else {
+                if names_the_skill(line, name) {
+                    out.skipped += 1;
+                }
+                continue;
+            };
+            let its = row.v <= VERSION
+                && row.skill == name
+                && match &wanted {
+                    None => true,
+                    Some(word) => row.level.is_none() || row.level == *word,
+                };
+            if !its {
+                continue;
+            }
+            if row.sound(now) {
+                rows.push(row);
+            } else {
+                out.skipped += 1;
+            }
+        }
         rows.reverse();
-        out.extend(rows);
+        out.grades.extend(rows);
     }
-    out.sort_by(|a, b| b.ts.cmp(&a.ts));
-    out.truncate(MOST_GRADES);
+    out.grades.sort_by(|a, b| b.ts.cmp(&a.ts));
+    out.grades.truncate(MOST_GRADES);
     out
 }
 
-/// What a grade of a copy would cost, from what the copy's last grade spent per chat.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+/// **How a grade ended, as its row and its scorecard say it.**
+pub fn ended_said(end: grade::GradeEnd) -> &'static str {
+    use grade::GradeEnd;
+    match end {
+        GradeEnd::Whole => "Finished",
+        GradeEnd::Cancelled => "Stopped",
+        GradeEnd::ChatsDidNotStart => "Chats did not start",
+        GradeEnd::OverCap => "Stopped at its token cap",
+        GradeEnd::OverLimit => "Stopped at its dollar limit",
+        GradeEnd::SpendNotReported => "Stopped: spend not reported",
+        GradeEnd::Interrupted => "Interrupted: not scored",
+    }
+}
+
+/// **The grade `grade` of the skill `name`** in the project at `root`, as the eval record holds
+/// it (SK-59, #3239): what its scorecard is drawn from. `None` where no row of it is read.
+pub fn grade_of(root: &Path, name: &str, grade: &str) -> Option<Graded> {
+    grades_of(root, name, None)
+        .into_iter()
+        .find(|one| one.grade == grade)
+}
+
+/// **What a grade of a copy would cost**, from what a grade of it before spent per chat
+/// ([`estimate_of`]), and which grade that was. Its tokens and cost are both `None` where that
+/// grade's chats did not say what they spent: the copy was graded, and the cost is not known.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Estimate {
     pub tokens: Option<u64>,
     pub cost_usd: Option<f64>,
-    /// The last grade it is worked out from, by when it ran.
+    /// The chats the grade it is worked out from asked for: none where none ran, as in one
+    /// purlis stopped under.
     pub chats_then: u32,
+    /// That grade: when it ran, and the profile and the harness its chats ran on.
+    pub ts: String,
+    pub profile: Option<String>,
+    pub harness: Option<String>,
+    /// The model its chats reported (SK-60, #3240): a grade on another model spends otherwise,
+    /// so the plan names it. `None` in a row from before #3240 and where no chat said.
+    pub model: Option<String>,
+    /// Whether it ran on the profile this grade runs on (a grade on another one may have spent
+    /// otherwise), or `None` where this grade's profile is not known.
+    pub same_profile: Option<bool>,
+}
+
+/// **What a grade of `chats` chats on `profile` would cost, from `grades`** (newest first), and
+/// which grade it is worked out from (#3273): the newest one on that profile that asked for a
+/// chat, else the newest that asked for one on any; where none did, the newest, which says no
+/// cost and no chat. `None` where there is none. What it spent is shared over every chat it
+/// asked for, a chat stopped, ended at a limit or never started among them, as what a chat
+/// stopped spent is counted too.
+fn estimate_of(grades: &[Graded], chats: u32, profile: Option<&str>) -> Option<Estimate> {
+    let asked = |row: &Graded| -> u64 {
+        row.report
+            .arms
+            .iter()
+            .map(|arm| u64::from(arm.chats) + u64::from(arm.not_run))
+            .sum()
+    };
+    let any = |row: &&Graded| asked(row) > 0;
+    let last = grades
+        .iter()
+        .filter(any)
+        .find(|row| profile.is_some() && row.profile.as_deref() == profile)
+        .or_else(|| grades.iter().find(any))
+        .or_else(|| grades.first())?;
+    let then = asked(last);
+    let per = |of: u64| (then > 0).then(|| of.div_ceil(then).saturating_mul(u64::from(chats)));
+    Some(Estimate {
+        tokens: last.spent.tokens.and_then(per),
+        cost_usd: last
+            .spent
+            .cost_usd
+            .filter(|_| then > 0)
+            .map(|cost| cost / then as f64 * f64::from(chats)),
+        chats_then: u32::try_from(then).unwrap_or(u32::MAX),
+        ts: last.ts.clone(),
+        profile: last.profile.clone(),
+        harness: last.harness.clone(),
+        model: last.model.clone(),
+        same_profile: profile.map(|profile| last.profile.as_deref() == Some(profile)),
+    })
 }
 
 /// **What grading a copy would run, before anything runs** (decision 22): its fixtures, the
@@ -377,6 +688,12 @@ pub struct Planned {
     pub request: Option<GradeRequest>,
     pub plan: Option<Plan>,
     pub estimate: Option<Estimate>,
+    /// What the record left out as it was read ([`Read::said`]).
+    pub record_said: Option<String>,
+    /// The record of the copy's grades, read once for the plan: what the estimate is worked
+    /// out from, and what `purlis skill grade` lists.
+    #[serde(skip)]
+    pub record: Read,
     pub unseen: Vec<usize>,
     /// The trigger tests left out, each with why: a query a chat cannot be started on
     /// ([`left_out_why`]).
@@ -432,8 +749,14 @@ fn copy_of(root: &Path, level: &Level, name: &str) -> Result<SkillCopy, String> 
     })
 }
 
-/// **The plan of grading the copy of `name` at `level`** in the project at `root`.
-pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String> {
+/// **The plan of grading the copy of `name` at `level`** in the project at `root`, its chats on
+/// `profile` where it is known: what its estimate is closest to ([`estimate_of`]).
+pub fn planned(
+    root: &Path,
+    level: &Level,
+    name: &str,
+    profile: Option<&str>,
+) -> Result<Planned, String> {
     let folder = find(root, level, name)?;
     let fixtures = grade::fixtures_of(root, Path::new(&rel(root, &folder)), name);
     let mut left_out: Vec<LeftOut> = Vec::new();
@@ -463,19 +786,9 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
         runs: RUNS,
     });
     let plan = request.as_ref().map(grade::plan);
-    let estimate = plan.and_then(|plan| {
-        let last = grades_of(root, name, Some(level)).into_iter().next()?;
-        let chats = u64::from(last.spent.chats.max(1));
-        let per = |of: u64| of.div_ceil(chats) * u64::from(plan.chats);
-        Some(Estimate {
-            tokens: last.spent.tokens.map(per),
-            cost_usd: last
-                .spent
-                .cost_usd
-                .map(|cost| cost / chats as f64 * f64::from(plan.chats)),
-            chats_then: last.spent.chats,
-        })
-    });
+    let record = read(root, name, Some(level));
+    let estimate = plan.and_then(|plan| estimate_of(&record.grades, plan.chats, profile));
+    let record_said = record.said();
     let unseen = request
         .as_ref()
         .map(|request| {
@@ -504,6 +817,8 @@ pub fn planned(root: &Path, level: &Level, name: &str) -> Result<Planned, String
         request,
         plan,
         estimate,
+        record_said,
+        record,
         unseen,
         left_out,
         cap: cap::token_cap(root),
@@ -561,14 +876,109 @@ use super::verbs::drafts::Snapshot;
 /// Allows ([`crate::sandbox::policy::holding_no_kept_grants`]), and refused unless it runs at the
 /// full sandbox on a profile that keeps its permission prompts ([`chat_refused`]). The one answer
 /// a grade's plan and its chats both take.
+///
+/// **Its chats have only purlis's plugin on** (P8, #3468): every plugin the harness has
+/// installed is handed off for the chat alone, by the harness's own per-chat switch, and
+/// nothing of the person's own settings is written ([`crate::harness_plugin::only_purlis_on`]),
+/// so a grade measures the skill alone. [`plugins_off`] names them for the record.
 pub fn ready_to_grade(
     start: &crate::start::Start,
     root: &Path,
 ) -> Result<crate::start::Ready, String> {
-    let ready =
+    ready_to_grade_on(start, root, None)
+}
+
+/// **[`ready_to_grade`], on the model `model` the person picked** (SK-60, #3240): one of those
+/// its harness's adapter offers ([`models_for`]), started by that adapter's own words after the
+/// profile's ([`crate::harness::HarnessAdapter::model_words`]), so the chat runs on it and its
+/// dollar limit is priced from it ([`priced`]). `None` is the profile's own model. A model the
+/// adapter does not offer is refused, so nothing but a name it takes reaches the line.
+pub fn ready_to_grade_on(
+    start: &crate::start::Start,
+    root: &Path,
+    model: Option<&str>,
+) -> Result<crate::start::Ready, String> {
+    let mut ready =
         crate::sandbox::policy::holding_no_kept_grants(|| crate::start::ready(start, root))?;
     chat_refused(&ready)?;
+    if let Some(model) = model {
+        let adapter = ready.harness.map(crate::harness::Harness::adapter);
+        let offered = models_for(&ready);
+        match adapter {
+            Some(adapter) if offered.contains(&model) => {
+                ready.command.extend(adapter.model_words(model));
+            }
+            _ => return Err(model_not_offered(model, offered)),
+        }
+    }
+    if let Some(harness) = ready.harness {
+        let adapter = harness.adapter().plugins();
+        ready.plugins.plugins = crate::harness_plugin::only_purlis_on(
+            adapter,
+            &crate::harness_plugin::Env::of(&ready.env),
+        )
+        .map_err(|why| {
+            format!(
+                "{why}, and a grade runs with every plugin but purlis's own off, so no grade \
+                 runs on this profile: mend the record with the program's own plugin command, or \
+                 pick another profile."
+            )
+        })?;
+    }
     Ok(ready)
+}
+
+/// **The models a grade's chat that starts as `ready` can be picked to run on** (SK-60, #3240):
+/// what its harness's adapter offers ([`crate::harness::HarnessAdapter::grade_models`]), none
+/// for a chat on no harness.
+pub fn models_for(ready: &crate::start::Ready) -> &'static [&'static str] {
+    ready
+        .harness
+        .map_or(&[], |harness| harness.adapter().grade_models())
+}
+
+/// Why the model `model` is refused for a grade whose harness offers `offered`, in a sentence.
+fn model_not_offered(model: &str, offered: &[&str]) -> String {
+    let model = crate::shown::one_line(model, 60);
+    if offered.is_empty() {
+        return format!(
+            "A grade on this profile runs on the profile's own model, so it cannot be picked as \
+             {model}: pick the profile's own model."
+        );
+    }
+    format!(
+        "{model} is not a model a grade on this profile can pick: pick {}, or the profile's own \
+         model.",
+        offered.join(", ")
+    )
+}
+
+/// **The harness's own plugins a grade's chat that starts as `ready` is handed off** (#3468):
+/// what its record says, purlis's pins left out.
+pub fn plugins_off(ready: &crate::start::Ready) -> Vec<String> {
+    ready.harness.map_or_else(Vec::new, |harness| {
+        crate::harness_plugin::persons_plugins_off(
+            harness.adapter().plugins(),
+            &ready.plugins.plugins,
+        )
+    })
+}
+
+/// **The price a grade's chat started as `ready` has its dollar limit worked out at** (#3469):
+/// that of the model its harness's adapter says it runs on
+/// ([`crate::harness::HarnessAdapter::grade_model`]), or the dearest where it says none or its
+/// price is not known ([`price::of_model`]).
+pub fn priced(ready: &crate::start::Ready) -> grade::Priced {
+    let command: Vec<String> = std::iter::once(ready.program.clone())
+        .chain(ready.command.iter().cloned())
+        .collect();
+    let model = ready
+        .harness
+        .map(crate::harness::Harness::adapter)
+        .and_then(|adapter| {
+            adapter.grade_model(&command, &crate::harness_plugin::Env::of(&ready.env))
+        });
+    price::of_model(model.as_deref())
 }
 
 /// **Why a grade's chat may not start as `ready` would start it**, or the sandbox level it would
@@ -579,13 +989,13 @@ pub fn ready_to_grade(
 /// ([`crate::harness::HarnessAdapter::grade_refused`]); and only at the full sandbox, never at
 /// the floor, with the sandbox lifted, or with no backend.
 pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level, String> {
-    let Some(adapter) = ready
-        .harness
-        .map(crate::harness::Harness::adapter)
-        .filter(|adapter| adapter.can_grade())
-    else {
+    let Some(harness) = ready.harness else {
         return Err(not_on_this_harness());
     };
+    let adapter = harness.adapter();
+    if let Err(why) = adapter.can_grade() {
+        return Err(refused_because(&why));
+    }
     let command: Vec<String> = std::iter::once(ready.program.clone())
         .chain(ready.command.iter().cloned())
         .collect();
@@ -626,14 +1036,33 @@ pub fn chat_refused(ready: &crate::start::Ready) -> Result<crate::sandbox::Level
     }
 }
 
-/// **Why a grade's chat is refused on a profile whose harness cannot grade**: named by the
+/// **Why a grade's chat is refused on a harness that cannot grade**, in one sentence: its
+/// adapter's reason `why` ([`crate::harness::HarnessAdapter::can_grade`]), then the harnesses
+/// that can, so the core names none.
+pub fn refused_because(why: &str) -> String {
+    let can = can_grade_on();
+    if can.is_empty() {
+        return format!("{why}, and no program this purlis runs can grade yet, so no grade runs.");
+    }
+    format!(
+        "{why}, so a grade runs on a {} profile only: pick one.",
+        can.join(" or ")
+    )
+}
+
+/// The titles of the harnesses that can grade.
+fn can_grade_on() -> Vec<&'static str> {
+    crate::harness::Harness::ALL
+        .into_iter()
+        .filter(|harness| harness.adapter().can_grade().is_ok())
+        .map(crate::harness::Harness::title)
+        .collect()
+}
+
+/// **Why a grade's chat is refused on a profile of no harness purlis knows**: named by the
 /// harnesses that can ([`crate::harness::HarnessAdapter::can_grade`]), so the core names none.
 fn not_on_this_harness() -> String {
-    let can: Vec<&str> = crate::harness::Harness::ALL
-        .into_iter()
-        .filter(|harness| harness.adapter().can_grade())
-        .map(crate::harness::Harness::title)
-        .collect();
+    let can = can_grade_on();
     if can.is_empty() {
         return "No program this purlis runs can hold a grade's chats to its limits yet, so no \
                 grade runs."
@@ -666,6 +1095,8 @@ fn commit_of(root: &Path, level: &Level, name: &str, content: &Content) -> Optio
 }
 
 pub mod cap;
+pub mod kept;
+pub mod price;
 pub mod underway;
 
 #[cfg(test)]

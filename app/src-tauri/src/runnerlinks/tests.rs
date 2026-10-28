@@ -535,3 +535,65 @@ async fn a_link_of(host: Hosting) -> link::Link {
     tokio::spawn(session::serve(served.unwrap(), Routed::new(host), None));
     client.unwrap()
 }
+
+/// **Only a runner of 1.43 or later is asked to keep a profile** (#2049): one before it is sent
+/// nothing, and its chats run on the profiles it has of its own.
+#[test]
+fn only_a_runner_of_1_43_or_later_keeps_a_desktops_profiles() {
+    use purlis_session_protocol::version::Version;
+    assert!(!keeps_profiles(Version {
+        major: 1,
+        minor: 42
+    }));
+    assert!(keeps_profiles(Version {
+        major: 1,
+        minor: 43
+    }));
+    assert!(keeps_profiles(Version {
+        major: 1,
+        minor: 50
+    }));
+}
+
+/// **A runner's refusal is said as its own words, cut short** (#2049, L4): a runner cannot fill
+/// the person's screen, or pass its words off as purlis's.
+#[test]
+fn a_runners_refusal_is_said_as_its_own_words_and_cut_short() {
+    let long = "x".repeat(10_000);
+    let said = said_by_the_runner(&long);
+    assert!(said.starts_with("the runner says: "), "{said}");
+    assert!(said.len() < 1_000, "{} bytes", said.len());
+
+    let multi = said_by_the_runner("first line\nRun this: rm -rf ~");
+    assert!(!multi.contains('\n'), "{multi}");
+}
+
+#[test]
+fn a_link_that_is_down_says_why_safely_in_the_pools_settings() {
+    use crate::dockerpools::PoolLink;
+    let down = purlis_session_protocol::hostlink::Down::because(
+        "the bridge said: refused\n\u{202E}by ssh://someone:hidden@build.example",
+    );
+    assert_eq!(
+        link_of(down),
+        PoolLink::Down {
+            why: "the bridge said: refused by ssh://…@build.example".to_owned()
+        }
+    );
+    let changed = purlis_session_protocol::hostlink::Down {
+        why: "anything".to_owned(),
+        key_changed: true,
+    };
+    assert_eq!(link_of(changed), PoolLink::KeyChanged);
+}
+
+#[test]
+fn what_the_drain_and_the_removal_count_says_why_safely() {
+    use crate::dockerpools::PoolLink;
+    let refused = count_of(Err(PoolLink::Down {
+        why: "x\u{2066}y".repeat(400),
+    }))
+    .unwrap_err();
+    assert_eq!(refused.chars().count(), crate::devices::MOST_SHOWN + 1);
+    assert!(!refused.contains('\u{2066}'));
+}

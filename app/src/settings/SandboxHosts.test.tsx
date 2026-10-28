@@ -107,8 +107,6 @@ function core({
           return { shared: fileOf("shared", hosts.shared), local: local_() };
         case "project_extensions":
           return { extensions: [], local_left_out: null };
-        case "project_harness_plugins":
-          return [];
         case "project_saving_in_force":
           return SAVING;
         case "project_theme":
@@ -395,8 +393,6 @@ describe("Settings › Sandbox › Persona hosts", () => {
             return { shared: personaFile(now), local: fileOf("local", []) };
           case "project_extensions":
             return { extensions: [], local_left_out: null };
-          case "project_harness_plugins":
-            return [];
           case "project_saving_in_force":
             return SAVING;
           case "start_options":

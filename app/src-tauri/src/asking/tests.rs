@@ -104,6 +104,7 @@ struct World {
     since: Vec<(&'static str, u32)>,
     /// The profiles waiting to be signed in (#2035).
     sign_ins: Vec<purlis_core::profilestore::sign_in::Wait>,
+    pool_sign_ins: Vec<purlis_core::profilestore::onrunner::PoolWait>,
     sandbox_only: Option<purlis_core::profilestore::sandbox_only::Wait>,
     /// The chats whose first browser call asks what their browser may reach (#2013).
     browsers: Vec<crate::chatbrowsers::Waits>,
@@ -135,6 +136,7 @@ impl World {
             held: Vec::new(),
             since: Vec::new(),
             sign_ins: Vec::new(),
+            pool_sign_ins: Vec::new(),
             sandbox_only: None,
             browsers: Vec::new(),
             needs_you: Vec::new(),
@@ -167,6 +169,7 @@ impl World {
         };
         derive(&Waiting {
             sign_ins: self.sign_ins.clone(),
+            pool_sign_ins: self.pool_sign_ins.clone(),
             sandbox_only: self.sandbox_only.clone(),
             proposals: Vec::new(),
             runner_writes: Vec::new(),
@@ -221,6 +224,96 @@ fn a_held_permission_prompt_is_an_ask_answered_on_its_own_hook() {
     assert_eq!(shown.says, "Run cargo test");
     assert_eq!(ids(&shown), ["allow", "deny"]);
     assert_eq!(shown.answer, AnswerPath::Hook);
+}
+
+#[test]
+fn a_permission_holding_a_line_break_its_command_is_not_laid_out_with_shows_its_mark() {
+    // #3470: a next line, a vertical tab or a line separator in a command reaches the Inbox as
+    // its mark, so the window can say why only Deny is offered, as for a no-break space.
+    for (c, mark) in [
+        ('\u{85}', "⟦U+0085⟧"),
+        ('\u{0B}', "⟦U+000B⟧"),
+        ('\u{2028}', "⟦U+2028⟧"),
+    ] {
+        let asks = Asks::new();
+        let raised = asks
+            .raise("3", a_hook_ask(&format!("Run ls{c}rm")), Instant::now())
+            .raised;
+
+        let shown = permission(raised).expect("a chat of this project's");
+
+        assert_eq!(shown.says, format!("Run ls{mark}rm"));
+    }
+}
+
+/// A hook's ask to run `line`, its summary made from it as the hook makes it.
+fn a_command_ask(line: &str) -> Ask {
+    let action = purlis_core::harness::model::Action::Command {
+        line: line.to_owned(),
+    };
+    Ask {
+        summary: purlis_core::harness::model::Summary::of(&action.said()),
+        action,
+        ..a_hook_ask("")
+    }
+}
+
+#[test]
+fn a_permission_over_several_lines_carries_them_as_its_line_shows_them() {
+    // #3502: its line puts `ls` and `rm -rf x` on one. The row is given the lines, each as that
+    // line has it, a character it hides written as its mark there too.
+    let asks = Asks::new();
+    let raised = asks
+        .raise(
+            "3",
+            a_command_ask("ls\n  rm\u{200B} -rf x\r\n"),
+            Instant::now(),
+        )
+        .raised;
+
+    let shown = permission(raised).expect("a chat of this project's");
+
+    assert_eq!(shown.says, "Run a command: ls rm⟦U+200B⟧ -rf x");
+    let lines = shown.lines.expect("it runs over several lines");
+    assert_eq!(lines.count, 2);
+    assert_eq!(lines.shown, ["Run a command: ls", "rm⟦U+200B⟧ -rf x"]);
+    assert_eq!(lines.shown.join(" "), shown.says);
+}
+
+#[test]
+fn a_permission_on_one_line_not_a_command_or_not_said_from_it_carries_no_lines() {
+    let asks = Asks::new();
+    let one = asks
+        .raise("3", a_command_ask("ls -la"), Instant::now())
+        .raised;
+    let titled = asks
+        .raise(
+            "3",
+            Ask {
+                summary: purlis_core::harness::model::Summary::of("Run the build"),
+                ..a_command_ask("ls\nrm -rf x")
+            },
+            Instant::now(),
+        )
+        .raised;
+
+    let question = asks
+        .raise(
+            "3",
+            Ask {
+                action: purlis_core::harness::model::Action::Question {
+                    question: "Which?\nThis one".to_owned(),
+                },
+                summary: purlis_core::harness::model::Summary::of("Asks you: Which?\nThis one"),
+                ..a_hook_ask("")
+            },
+            Instant::now(),
+        )
+        .raised;
+
+    assert_eq!(permission(one).expect("a chat").lines, None);
+    assert_eq!(permission(question).expect("a chat").lines, None);
+    assert_eq!(permission(titled).expect("a chat").lines, None);
 }
 
 #[test]
@@ -1149,7 +1242,8 @@ fn a_profile_not_signed_in_is_one_ask_about_no_chat_that_signs_it_in() {
     assert_eq!(
         ask.answer,
         AnswerPath::SignIn {
-            profile: "work".to_owned()
+            profile: "work".to_owned(),
+            pool: None,
         }
     );
     assert!(
@@ -1164,6 +1258,61 @@ fn a_profile_not_signed_in_is_one_ask_about_no_chat_that_signs_it_in() {
             .any(|one| one.session == 3 && one.chain == ["steward 3"]),
         "the chats keep their own chains"
     );
+}
+
+/// **A profile not signed in on a pool is one Ask to sign it in there** (#2049), about no chat,
+/// beside the same profile's Ask for this machine, each answered on its own device.
+#[test]
+fn a_profile_not_signed_in_on_a_pool_is_one_ask_to_sign_it_in_on_that_pool() {
+    let mut world = World::new();
+    world.sign_ins = vec![waits_to_sign_in("claude", "Claude Code")];
+    world.pool_sign_ins = vec![purlis_core::profilestore::onrunner::PoolWait {
+        root: "/p".into(),
+        pool: "builds".to_owned(),
+        profile: "work".to_owned(),
+        kind: "claude".to_owned(),
+        harness: "Claude Code".to_owned(),
+        since: 9,
+    }];
+    world.since = vec![("sign-in:work:on:builds", 9)];
+
+    let asks = world.asks();
+    let on_pool: Vec<_> = asks
+        .iter()
+        .filter(|ask| {
+            ask.answer
+                != AnswerPath::SignIn {
+                    profile: "work".to_owned(),
+                    pool: None,
+                }
+        })
+        .filter(|ask| ask.source == AskSource::SignIn)
+        .collect();
+
+    assert_eq!(on_pool.len(), 1);
+    let ask = on_pool[0];
+    assert_eq!(ask.session, 0);
+    assert_eq!(ask.chain, ["Profile work on pool builds"]);
+    assert_eq!(ids(ask), ["sign-in", "dismiss"]);
+    assert_eq!(
+        ask.answer,
+        AnswerPath::SignIn {
+            profile: "work".to_owned(),
+            pool: Some("builds".to_owned()),
+        }
+    );
+    assert!(
+        ask.says.contains("not signed in on pool builds"),
+        "{}",
+        ask.says
+    );
+    assert!(
+        ask.says
+            .contains("nothing of this machine's sign-in goes there"),
+        "{}",
+        ask.says
+    );
+    assert_eq!(ask.since, Some(9));
 }
 
 #[test]
@@ -1811,4 +1960,33 @@ fn each_run_of_a_runner_chats_tool_asks_whether_its_values_may_be_sent_for_that_
         "{}",
         tools[1].says
     );
+}
+
+/// #3467: the old harness plugin keys are one Ask about no chat, with Remove only where the
+/// project's own files hold them, and no Allow.
+#[test]
+fn the_old_harness_plugin_keys_are_one_ask_of_no_chat() {
+    let old = crate::oldplugins::OldHarnessPlugins {
+        said: "purlis no longer turns other harnesses' plugins on or off".to_owned(),
+        files: vec!["charter.toml".to_owned()],
+        removable: true,
+    };
+    let shown = old_harness_plugins(&old);
+    assert_eq!(shown.session, 0);
+    assert_eq!(shown.source, AskSource::OldHarnessPlugins);
+    assert_eq!(shown.answer, AnswerPath::OldHarnessPlugins);
+    let ids: Vec<&str> = shown.options.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, [REMOVE_OLD_PLUGINS, DISMISS]);
+    assert!(shown.options.iter().all(|one| !one.allows));
+
+    let named_only = old_harness_plugins(&crate::oldplugins::OldHarnessPlugins {
+        removable: false,
+        ..old
+    });
+    let ids: Vec<&str> = named_only
+        .options
+        .iter()
+        .map(|one| one.id.as_str())
+        .collect();
+    assert_eq!(ids, [DISMISS]);
 }

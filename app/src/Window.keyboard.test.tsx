@@ -390,16 +390,18 @@ describe("the window's tab order", () => {
       // icons (#1737), the same column below the divider: ONE stop, the left half's open view.
       "tab Chats",
       "tab Repos",
-      // The left region, top to bottom. The Chats view's scope switch beside its title
-      // (#1679): ONE stop, the arrows between This tab, Workspace and All.
-      "radio Workspace",
-      // The Chats list's filter (#1499): its box, then its
-      // chips, needs you and working, which are ONE stop with the arrows between them.
+      // The left region, top to bottom, as the Chats view's top stacks it (#3342, Q1 A): the
+      // new chat and More on its title's line, the filter's box (#1499), the scope switch (#1679, ONE
+      // stop, the arrows between This tab, Workspace and All), then the chips, needs you and
+      // working, ONE stop with the arrows between them.
+      "button New chat",
+      "button More",
       "input Filter chats by name, persona, workspace or state",
+      "radio Workspace",
       "checkbox needs you",
       // The project's chats (#1447): ONE stop, the row of the chat in front, which reads as
-      // its name and its state's word (#1484), on its one line (#1675).
-      "treeitem steward two running (no detail from Claude Code)",
+      // its name, its persona and its state's word (#1484, #3342), on its one line (#1675).
+      "treeitem steward two steward, running (no detail from Claude Code)",
       // Explorer, Search and Changes are the side's other views, hidden while Chats is open.
       // The handle between it and the centre — `react-resizable-panels`' keyboard resize.
       "separator Resize the left sidebar",
@@ -427,7 +429,7 @@ describe("the window's tab order", () => {
       // halves; then Memory, which this workspace's answer leaves empty, and so its line's +
       // too.
       "separator Resize the Panel",
-      "treeitem alphathe workspace itself",
+      "row alpha",
       "separator Resize the Panel's halves",
       // The right side's activity bar (#1678): ONE stop, the open view's tab, then its Lower
       // icons, ONE stop. The window's rightmost column, so last in the DOM; Tab walks it
@@ -454,21 +456,18 @@ describe("the window's tab order", () => {
 });
 
 /** The rows of a list-shaped region, in the order it draws them. */
-const rowsIn = (region: HTMLElement) => [
-  ...region.querySelectorAll<HTMLElement>("button, summary"),
-];
-
 describe("a list is one Tab stop", () => {
   it("the explorer: the current row is the stop, and Up, Down, Home and End move", async () => {
     await theWholeWindow();
     await showTheExplorer();
-    const rows = rowsIn(screen.getByRole("tree", { name: "Repos and branches" }));
+    const tree = screen.getByRole("treegrid", { name: "Repos and branches" });
+    const rows = within(tree).getAllByRole("row");
     // The workspace row, the clone and its one branch. No chat: the Chats view lists them
     // (#1673); no files: the Files section draws them (#1677).
     expect(rows.map(said)).toEqual([
-      expect.stringMatching(/^treeitem alpha/),
-      "treeitem svc1",
-      "treeitem one in svc",
+      expect.stringMatching(/^row alpha/),
+      "row svc",
+      "row one in svc",
     ]);
     expect(rows.map((row) => row.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
 
@@ -495,9 +494,7 @@ describe("a list is one Tab stop", () => {
   it("the explorer: a picked worktree is where the keyboard comes back in", async () => {
     await theWholeWindow();
     await showTheExplorer();
-    const piece = within(screen.getByTestId("piece-svc-one")).getByRole("treeitem", {
-      name: "one in svc",
-    });
+    const piece = screen.getByRole("row", { name: "one in svc" });
     await userEvent.click(piece);
     await waitFor(() => expect(piece).toHaveAttribute("tabindex", "0"));
   });

@@ -150,6 +150,14 @@ function doing(): Doing & { calls: string[] } {
       calls.push(`forgetTodo:${workspace},${slug}`);
       return { ok: true as const };
     }),
+    reopenTodo: vi.fn(async (workspace: string, slug: string) => {
+      calls.push(`reopenTodo:${workspace},${slug}`);
+      return { ok: true as const };
+    }),
+    forgetDoneTodo: vi.fn(async (workspace: string, slug: string) => {
+      calls.push(`forgetDoneTodo:${workspace},${slug}`);
+      return { ok: true as const };
+    }),
     pinBrowser: vi.fn(async (program: string, session: number, pinned: boolean) => {
       calls.push(`pinBrowser:${program},${session},${pinned}`);
       return { ok: true as const };
@@ -593,7 +601,7 @@ describe("the one list of actions", () => {
     const row = by(offers, "workspace.settings:alpha");
     expect(row?.title).toBe("Workspace settings…");
     expect(row?.note).toBe(
-      "alpha: Settings at its level — live, repos, extensions, appearance and plugins.",
+      "alpha: Settings at its level — live, repos, extensions and appearance.",
     );
     await run(offers, "workspace.settings:alpha", hands);
     expect(hands.calls).toEqual(["openWorkspaceSettings:alpha"]);
@@ -699,7 +707,7 @@ describe("the one list of actions", () => {
       ]),
     );
     // Only the focused workspace's: the other one is a focus away.
-    expect(rows.filter((one) => one.title.startsWith("Workspace settings:"))).toHaveLength(7);
+    expect(rows.filter((one) => one.title.startsWith("Workspace settings:"))).toHaveLength(6);
     expect(by(offers, "settings.group:workspace.repos:web")?.note).toBe(
       "web: Settings at its level, at Repos.",
     );
@@ -1743,6 +1751,7 @@ describe("carrying out a row", () => {
         personas: ["steward"],
         vaults: ["ops"],
         todos: [{ slug: "20260302-091400-review", title: "Review the plan" }],
+        doneTodos: [{ slug: "20260301-090000-ship", title: "Ship it" }],
         needsYou: [8],
         nameOf: (s) => String(s),
         // A split window, so the row that moves a project back is reached too (charter#126).
@@ -1814,7 +1823,9 @@ describe("carrying out a row", () => {
         "setPersonaProfile:steward",
         "removePersona:steward",
         "closeTodo:alpha,20260302-091400-review",
+        "reopenTodo:alpha,20260301-090000-ship",
         "forgetTodo:alpha,20260302-091400-review",
+        "forgetDoneTodo:alpha,20260301-090000-ship",
         "sendKey:F2",
         "openProject",
         "createProject",
@@ -2436,8 +2447,9 @@ describe("the palette at fifty chats", () => {
     // Your settings: Pools is offered only once this machine keeps a pool. 918 since #2765:
     // Your settings: Previews (Open Skill studio is offered only while its flag is on). 920
     // since #2925: Your settings: Motion and contrast, and Your colours. 922 since #2921: Focus
-    // mode and Keyboard shortcuts, one row each.
-    expect(offers).toHaveLength(922);
+    // mode and Keyboard shortcuts, one row each. 920 since #3467: no Plugins group at the Project
+    // or the Workspace level.
+    expect(offers).toHaveLength(920);
   });
 
   /**
@@ -4184,6 +4196,7 @@ describe("a project this purlis opens read-only (#826, FR-24)", () => {
         personas: ["steward"],
         vaults: ["ops"],
         todos: [{ slug: "t1", title: "Review" }],
+        doneTodos: [{ slug: "d1", title: "Shipped" }],
         readOnly,
       }),
     );
@@ -4201,6 +4214,8 @@ describe("a project this purlis opens read-only (#826, FR-24)", () => {
       "vault.remove:ops",
       "todo.done:t1",
       "todo.forget:t1",
+      "todo.reopen:d1",
+      "todo.delete:d1",
     ]) {
       const row = by(offers, id);
       expect(row, id).toBeDefined();

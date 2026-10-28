@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { SandboxMark, type SandboxSaid } from "./SandboxMark";
-import { memo, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import { Hand, ListTodo, SquareTerminal } from "lucide-react";
 import { ChatMark, StoppingMark, WrappingUp } from "./NeedsYou";
-import { markOf, useChatsHere, useChatsSelect } from "./chatState";
+import { markOf, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { PlaneUpdatedMark, type PlaneUpdates } from "./PlaneUpdated";
 import { chatOf, contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
 import { PersonaMark } from "./PersonaMark";
@@ -101,6 +101,70 @@ export const ChatShownState = memo(function ChatShownState({
     sameShown,
   );
   return shown === undefined ? null : <StateShown shown={shown} changed={changed} />;
+});
+
+/**
+ * **Who a chat runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
+ * persona's mark in the persona's colour, first on the chat's row. A chat that asks for the person
+ * or is at work wears its state's own mark on the persona's corner, shape and colour (`App.css`
+ * draws `StateShown`'s mark as that badge); a chat at rest wears none. A chat with no persona
+ * wears the terminal's mark. Its tooltip and what a screen reader hears both say the two:
+ * `steward, needs you`.
+ */
+export const ChatPersonaState = memo(function ChatPersonaState({
+  persona,
+  session,
+  shell,
+  report = null,
+  outcome = null,
+  asking = null,
+  harness,
+  changed = false,
+}: {
+  persona: string | null;
+  session: number;
+  changed?: boolean;
+  shell: boolean;
+  report?: TaskFacts["report"] | null;
+  outcome?: string | null;
+  asking?: string | null;
+  harness: string | null;
+}) {
+  const below = useTasksBelow(session);
+  const shown = useChatsSelect(
+    useChatsHere(),
+    (states) =>
+      shownState({
+        board: markOf(states, session, shell),
+        needsYou: states.needsYou.includes(session),
+        task: report === null ? null : { report, outcome, asking },
+        harness,
+        tasksAtWork: tasksAtWorkOf(states, below),
+      }),
+    sameShown,
+  );
+  const who = persona ?? "terminal";
+  const said = shown === undefined ? who : `${who}, ${shown.word}`;
+  return (
+    <span className="chat-persona" data-state={shown?.kind}>
+      {persona === null ? (
+        <Tooltip tip={said}>
+          <SquareTerminal className="node-icon" aria-hidden="true" />
+        </Tooltip>
+      ) : (
+        <PersonaMark persona={persona} tip={said} />
+      )}
+      {/* Heard after the chat's name, as the persona and then the state: the state's word is
+          `StateShown`'s, out of sight where it stands. */}
+      <span className="hidden-words">{shown === undefined ? who : `${who},`}</span>
+      {shown !== undefined && (
+        <>
+          {" "}
+          <StateShown shown={shown} changed={changed} markOnly />
+        </>
+      )}
+    </span>
+  );
 });
 
 /**
@@ -262,3 +326,65 @@ export function TabMarks({
     </>
   );
 }
+
+/** The states a persona's row tells, the strongest first (#3341): the person is asked for, then
+ *  a question or a wait is open, then something is at work. A persona at rest tells none. */
+const AT_WORK: readonly Shown["kind"][] = ["needs-you", "asking", "waiting-on-tasks", "working"];
+
+/** The strongest of `sessions`' states that tells a persona at work (#3341), or nothing for a
+ *  persona whose chats all rest. The one reading both the row's mark and its group use (#3483),
+ *  so the two always agree. */
+function atWorkOf(states: ChatStates, sessions: readonly number[]): Shown | undefined {
+  let best: Shown | undefined;
+  for (const session of sessions) {
+    const one = shownState({
+      board: markOf(states, session, false),
+      needsYou: states.needsYou.includes(session),
+      task: null,
+      harness: null,
+    });
+    if (one === undefined || !AT_WORK.includes(one.kind)) continue;
+    if (best === undefined || AT_WORK.indexOf(one.kind) < AT_WORK.indexOf(best.kind)) best = one;
+  }
+  return best;
+}
+
+/**
+ * **The personas with a chat at work or asking** (#3483): what the Personas view's Working now
+ * holds, by {@link atWorkOf}, as the row's mark reads it. Redrawn only when who is at work
+ * changes, never on a move that leaves it the same.
+ */
+export function usePersonasAtWork(
+  personaChats: ReadonlyMap<string, readonly number[]> | undefined,
+): ReadonlySet<string> {
+  const names = useChatsSelect(useChatsHere(), (states) =>
+    [...(personaChats ?? NO_PERSONA_CHATS)]
+      .filter(([, sessions]) => atWorkOf(states, sessions) !== undefined)
+      .map(([persona]) => persona)
+      .sort()
+      .join("\n"),
+  );
+  return useMemo(() => new Set(names === "" ? [] : names.split("\n")), [names]);
+}
+
+/** No persona's chats: what a view drawn without them is handed. */
+const NO_PERSONA_CHATS: ReadonlyMap<string, readonly number[]> = new Map();
+
+/**
+ * **Whether a persona's chats are at work or ask for you** (#3341, the prototype's Personas
+ * `.dot`): the strongest state among its chats, as its own mark (a shape and a colour,
+ * `shownState.ts`), with its word for a screen reader. Nothing for a persona at rest.
+ */
+export const PersonaAtWork = memo(function PersonaAtWork({
+  sessions,
+}: {
+  sessions: readonly number[];
+}) {
+  const shown = useChatsSelect(useChatsHere(), (states) => atWorkOf(states, sessions), sameShown);
+  if (shown === undefined) return null;
+  return (
+    <span className="persona-at-work">
+      <StateShown shown={shown} markOnly />
+    </span>
+  );
+});

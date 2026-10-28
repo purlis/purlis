@@ -60,6 +60,14 @@ pub struct Event {
     pub body: serde_json::Value,
 }
 
+/// **When an event was written**, in milliseconds since 1970, read from its ULID's time part
+/// (ADR 0066: there is no timestamp field): `None` for an id that is not a ULID.
+pub fn written_at_ms(ulid: &str) -> Option<u64> {
+    ulid::Ulid::from_string(ulid)
+        .ok()
+        .map(|id| id.timestamp_ms())
+}
+
 /// The version of the envelope, and of every kind's body this module writes.
 pub const VERSION: u32 = 1;
 
@@ -554,6 +562,17 @@ impl Log {
     /// lock holds the log.
     pub fn durable(&self) -> std::sync::Arc<Durable> {
         std::sync::Arc::clone(&self.durable)
+    }
+
+    /// **Where the log ends**: its device and the `seq` of its last line, 0 for none (#3393): the
+    /// cursor a reader that holds none of it subscribes from.
+    pub fn ends_at(&self) -> (String, u64) {
+        (self.device.clone(), self.next.saturating_sub(1))
+    }
+
+    /// The device's directory it is written in, where a reader [`subscribe`]s.
+    pub fn written_in(&self) -> &Path {
+        &self.dir
     }
 }
 
@@ -1354,6 +1373,9 @@ struct Identity {
     held: Option<Began>,
     /// The trust event held with it, written just before it (#2252).
     held_trust: Option<HeldTrust>,
+    /// Its start's routing record, told while its `run.started` is held (SK-15b): written just
+    /// after it, and never for a start taken back.
+    held_routed: Option<crate::skills::router::Record>,
 }
 
 /// A start's trust event held with its run's `run.started` ([`Recorder::begin_held`]): the
@@ -1416,10 +1438,14 @@ pub fn kill_switch_kind(event: crate::halt::Event) -> &'static str {
 /// user can run `purlis stop --all` and nothing says a person did.
 fn kill_switch_body(entry: &crate::halt::Entry) -> serde_json::Value {
     use crate::halt::Actor;
-    let (actor_kind, actor) = match entry.by {
-        Actor::Window => ("human", "operator"),
-        Actor::App => ("host", "purlis"),
-        Actor::Cli => ("unattributed", "unattributed"),
+    let (actor_kind, actor) = match (entry.by, entry.event) {
+        (Actor::Window, _) => ("human", "operator"),
+        (Actor::App, _) => ("host", "purlis"),
+        (Actor::Cli, _) => ("unattributed", "unattributed"),
+        // A link's re-arm is the desktop's window's, a person's; its stop may come from any
+        // scope of the desktop (ADR 0075, "ADR 0071, amended").
+        (Actor::Link, crate::halt::Event::Rearm) => ("human", "operator"),
+        (Actor::Link, _) => ("unattributed", "unattributed"),
     };
     serde_json::json!({
         "actor_kind": actor_kind,
@@ -1583,6 +1609,11 @@ pub struct Recorder {
     /// the chat's next report hands it to its run ([`Recorder::skill_prompted`]): held from
     /// before the chat starts, so it is there however soon the chat's first prompt comes.
     prompted: HashMap<(PathBuf, u32), crate::skillspan::Prompted>,
+    /// The routing record of each chat run whose start asked a router extension, by the run: its
+    /// id, and whether it fell back, which every skill run the chat opens names
+    /// ([`Recorder::skill_routed`], SK-15b), a clear's run carrying its cleared run's. Held up to
+    /// [`ROUTINGS_HELD`] runs, the oldest let go of first.
+    routings: HashMap<String, (String, bool)>,
     /// Every run this writer began in the log, ended or not, up to [`RUNS_HELD`]: an id no run
     /// a clear begins may take (#3394).
     begun: std::collections::HashSet<String>,
@@ -1603,6 +1634,13 @@ const CLOCKS_AGREE_WITHIN_MS: u64 = 5 * 60 * 1000;
 /// How many chats' prompts [`Recorder::skill_prompted`] holds at most: a start that never
 /// reported is let go when there are more.
 const PROMPTED_HELD: usize = 256;
+
+/// The kind of a chat's routing record (SK-15b).
+pub const ROUTED: &str = "skill.routed";
+
+/// The most chat runs whose routing record a writer holds for their skill runs to name: more
+/// chats than one machine runs at once, so only a run long over is ever let go of.
+const ROUTINGS_HELD: usize = 1024;
 
 /// One end of a tool call, heard and waiting for the other.
 #[derive(Debug, Clone, Copy)]
@@ -1682,6 +1720,7 @@ impl Recorder {
             kill_switch_skipped: None,
             skills: crate::skillspan::Tracker::default(),
             prompted: HashMap::new(),
+            routings: HashMap::new(),
             begun: std::collections::HashSet::new(),
             begun_until_ms: 0,
         }
@@ -1944,6 +1983,7 @@ impl Recorder {
                 attributes: Attributes::default(),
                 held: None,
                 held_trust: None,
+                held_routed: None,
             },
         );
     }
@@ -2225,7 +2265,7 @@ impl Recorder {
                 return Ok(Vec::new());
             }
         }
-        let written = self.kill_switch_reconcile(config, None)?;
+        let written = self.kill_switch_reconcile(config, None, None)?;
         if let Some(seen) = self.kill_switch.as_mut() {
             seen.read_as = signature;
         }
@@ -2242,14 +2282,27 @@ impl Recorder {
         entry: crate::halt::Entry,
         config: &Path,
     ) -> io::Result<Vec<Event>> {
-        self.kill_switch_reconcile(config, Some(entry))
+        self.kill_switch_reconcile(config, Some(entry), None)
+    }
+
+    /// [`Recorder::kill_switch_wrote`], the line's event naming `device`, the desktop whose link
+    /// wrote it on a runner (#2051, ADR 0075 as amended: its device id in `meta`).
+    pub fn kill_switch_wrote_by(
+        &mut self,
+        entry: crate::halt::Entry,
+        device: Option<&str>,
+        config: &Path,
+    ) -> io::Result<Vec<Event>> {
+        self.kill_switch_reconcile(config, Some(entry), device)
     }
 
     fn kill_switch_reconcile(
         &mut self,
         config: &Path,
         wrote: Option<crate::halt::Entry>,
+        device: Option<&str>,
     ) -> io::Result<Vec<Event>> {
+        let mut device = device.and_then(|device| wrote.map(|line| (line, device.to_owned())));
         let keep = self.log.retention.keep;
         let oldest = crate::halt::now().saturating_sub(keep.as_secs());
         // Taken before the journal is read: a journal changed after it reads as changed.
@@ -2296,13 +2349,15 @@ impl Recorder {
         }
         let mut written = Vec::with_capacity(owed.len());
         for entry in owed {
-            let event = self.write(
-                None,
-                None,
-                None,
-                kill_switch_kind(entry.event),
-                kill_switch_body(&entry),
-            )?;
+            let mut body = kill_switch_body(&entry);
+            // The line a link wrote names the desktop's device, once (#2051).
+            if device.as_ref().is_some_and(|(line, _)| *line == entry)
+                && let Some((_, by)) = device.take()
+                && let Some(meta) = body.as_object_mut()
+            {
+                meta.insert("device".into(), serde_json::Value::String(by));
+            }
+            let event = self.write(None, None, None, kill_switch_kind(entry.event), body)?;
             if let Some(seen) = self.kill_switch.as_mut() {
                 *seen.logged.entry(entry).or_default() += 1;
             }
@@ -2323,6 +2378,16 @@ impl Recorder {
     /// What makes this recorder's events durable: [`Durable::through`] after each write.
     pub fn durable(&self) -> std::sync::Arc<Durable> {
         self.log.durable()
+    }
+
+    /// Where its log ends ([`Log::ends_at`], #3393).
+    pub fn ends_at(&self) -> (String, u64) {
+        self.log.ends_at()
+    }
+
+    /// The directory its log is written in ([`Log::written_in`], #3393).
+    pub fn log_written_in(&self) -> &Path {
+        self.log.written_in()
     }
 
     /// How long a tool call ran, once both of its ends have been heard, in either order.
@@ -2455,6 +2520,13 @@ impl Recorder {
         if let Some(level) = opened.whose.level {
             body["skill_level"] = level.word().into();
         }
+        // The routing its chat started under (SK-15b): every run it opens names it.
+        if let Some((routing, fell_back)) = self.routings.get(span_of(under)) {
+            body["routing"] = routing.as_str().into();
+            if *fell_back {
+                body["routing_fell_back"] = true.into();
+            }
+        }
         self.append(under, "skill.started", body)?;
         let starting = crate::skilluse::Starting::of_open(opened, who.harness.as_deref());
         crate::skilluse::started(
@@ -2523,6 +2595,59 @@ impl Recorder {
         }
         self.prompted
             .insert((plane.to_path_buf(), number), prompted);
+    }
+
+    /// **Chat `number` of `plane` was routed at its start by a router extension** (SK-15b, ADR
+    /// 0102 §6), or again as it was reattached: its routing record, `skill.routed`, under the
+    /// chat's run, which every skill run it opens names from now on. Held with a held run, and
+    /// dropped for a start taken back.
+    pub fn skill_routed(
+        &mut self,
+        plane: &Path,
+        number: u32,
+        record: &crate::skills::router::Record,
+    ) -> io::Result<Option<Event>> {
+        // A start whose run is held may still be taken back: its record waits with it.
+        if let Some(who) = self.chats.get_mut(&(plane.to_path_buf(), number))
+            && who.held.is_some()
+        {
+            who.held_routed = Some(record.clone());
+            return Ok(None);
+        }
+        // A start put aside before its record came ran no chat: it has no routing.
+        if self.was_taken_back(plane, number) {
+            return Ok(None);
+        }
+        let Some(who) = self.identity(plane, number)? else {
+            return Ok(None);
+        };
+        self.routed_under(&who, record).map(Some)
+    }
+
+    /// Holds that every skill run of chat run `run` names `routing` from now on, letting go of
+    /// the oldest run held where [`ROUTINGS_HELD`] are (by its id's time): never every one.
+    fn keep_routing(&mut self, run: &str, routing: (String, bool)) {
+        if self.routings.len() >= ROUTINGS_HELD
+            && !self.routings.contains_key(run)
+            && let Some(oldest) = self.routings.keys().min().cloned()
+        {
+            self.routings.remove(&oldest);
+        }
+        self.routings.insert(run.to_owned(), routing);
+    }
+
+    /// Writes `record` under `who`'s run, which every skill run it opens names from now on.
+    fn routed_under(
+        &mut self,
+        who: &Identity,
+        record: &crate::skills::router::Record,
+    ) -> io::Result<Event> {
+        let body = serde_json::to_value(record).map_err(io::Error::other)?;
+        self.keep_routing(
+            &who.run,
+            (record.routing.clone(), record.fell_back.is_some()),
+        );
+        self.write(Some(&who.chat), Some(&who.run), None, ROUTED, body)
     }
 
     /// Closes every skill run open in `under`'s chat run as `ended`.
@@ -2663,6 +2788,7 @@ impl Recorder {
                 attributes: attributes.clone(),
                 held: Some(cause),
                 held_trust: trust,
+                held_routed: None,
             },
         );
     }
@@ -2679,6 +2805,7 @@ impl Recorder {
             return Ok(None);
         };
         let trust = who.held_trust.take();
+        let routed = who.held_routed.take();
         let who = who.clone();
         // Its start's trust event first, as at any start, made durable as the host makes it.
         // One the log refuses costs the record of the sandbox coming back on, never the run.
@@ -2695,8 +2822,15 @@ impl Recorder {
         let ended = self.end_children(&who.chat, RunState::Completed, Cause::Superseded);
         ended?;
         let body = who.attributes.body(cause, &self.log.device);
-        self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)
-            .map(Some)
+        let started = self.write(Some(&who.chat), Some(&who.run), None, "run.started", body)?;
+        // Its start's routing record, held with it (SK-15b): one the log refuses costs the
+        // record, never the run.
+        if let Some(record) = routed
+            && let Err(why) = self.routed_under(&who, &record)
+        {
+            tracing::warn!(error = %why, "the event log did not keep a held routing record");
+        }
+        Ok(Some(started))
     }
 
     /// Chat `number`'s start whose run is held ([`Recorder::begin_held`]) was put aside: its
@@ -2829,6 +2963,7 @@ impl Recorder {
             },
             held: None,
             held_trust: None,
+            held_routed: None,
         };
         if cause == Began::Clear {
             // The cleared run is superseded, and its children and skill runs end with it,
@@ -2840,6 +2975,11 @@ impl Recorder {
                 parent: None,
             }) {
                 self.close_skills(plane, &cleared, purlis_skills::runs::Ended::Session)?;
+                // A clear keeps the chat's listing, so the run it begins is routed as the
+                // cleared one was (SK-15b).
+                if let Some(routing) = self.routings.get(&cleared.run).cloned() {
+                    self.keep_routing(&who.run, routing);
+                }
             }
         }
         let body = who.attributes.body(cause, &self.log.device);

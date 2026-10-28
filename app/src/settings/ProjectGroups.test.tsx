@@ -179,8 +179,6 @@ function core({
         case "project_extensions":
           count.extensions += 1;
           return { extensions, local_left_out: leftOut };
-        case "project_harness_plugins":
-          return [];
         case "project_saving_in_force": {
           count.saving += 1;
           const answer = () => {

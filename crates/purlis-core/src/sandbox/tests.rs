@@ -346,6 +346,8 @@ fn a_chat_never_writes_charters_integrity_state() {
             // Neither folder is there yet, so neither is the chat's to make (D-RN2a-7).
             plane.path().join(".purlis"),
             plane.path().join(".charter"),
+            // The folder chats' servers listen in (#2019).
+            door::root_in(None),
         ]
     );
 }
@@ -1183,6 +1185,22 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
                 .expect("a folder")
                 .to_path_buf(),
         ]
+    );
+}
+
+/// **On a runner, a chat reads no other profile's folder** (#2049): a runner keeps each of its
+/// desktop's profiles under its own `<data>/profiles`, each with its sign-in, and its chats are
+/// held by the Linux sandbox, which denies the whole folder as on any machine.
+#[test]
+fn on_linux_no_chat_reads_or_writes_the_folders_of_the_profiles_kept_there() {
+    let profiles = Homes::charter_data(&machine(Os::Linux))
+        .expect("a data home")
+        .join(crate::profilestore::DIR);
+    let (_plane, denied) = denied_with(None, Os::Linux);
+    assert!(
+        paths(&denied, Class::HumanPowers, Access::ReadWrite).contains(&profiles),
+        "{:?}",
+        denied.paths
     );
 }
 
@@ -6714,4 +6732,53 @@ fn a_pattern_denial_is_held_by_a_regular_expression_of_one_name_a_part() {
     assert!(regex.is_match(&at("workspaces/later/skills")));
     assert!(!regex.is_match(&at("workspaces/later/skills-repo/x")));
     assert!(!regex.is_match(&at("workspaces/later/notes/skills/x")));
+}
+
+#[test]
+fn no_chat_writes_the_folder_chats_servers_listen_in() {
+    // A chat that wrote there could take another chat's socket, or the folder its door
+    // carries to (#2019); its own socket is given back by the rules that let it serve.
+    let (_plane, denied) = denied_with(None, Os::MacOs);
+    assert!(
+        paths(&denied, Class::Integrity, Access::Write).contains(&door::root_in(None)),
+        "{:?}",
+        denied.paths
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn whatever_is_left_where_a_servers_socket_goes_is_cleared_but_a_folder() {
+    // A chat may make a file at its socket's path (#2019); what it left there never keeps its
+    // servers from being served again, and a folder there is refused and said.
+    let dir = tempfile::tempdir().expect("a folder");
+    let at = dir.path().join("5173.sock");
+    assert!(cleared(&at).is_ok(), "nothing there");
+    std::os::unix::fs::symlink("/nowhere", &at).expect("a link");
+    assert!(cleared(&at).is_ok());
+    assert!(std::fs::symlink_metadata(&at).is_err(), "the link is gone");
+    std::fs::write(&at, "x").expect("a file");
+    assert!(cleared(&at).is_ok());
+    assert!(std::fs::symlink_metadata(&at).is_err(), "the file is gone");
+    std::fs::create_dir(&at).expect("a folder");
+    let refused = cleared(&at).expect_err("a folder is refused");
+    assert!(
+        refused
+            .to_string()
+            .contains("a folder is where its socket goes"),
+        "{refused}"
+    );
+}
+
+/// #2019: a port something on this Mac listens on as a chat is compiled is neither served nor
+/// reached for a grant to serve on it, and is told.
+#[test]
+fn a_port_something_listens_on_is_neither_served_nor_reached_for_a_listen_grant() {
+    let taken = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("a port in use");
+    let port = taken.local_addr().expect("bound").port();
+    let widened = Widened::default().and_listens(&[port], &policy::Locks::default());
+    assert_eq!(widened.unserved, [port]);
+    assert!(widened.listens.is_empty());
+    assert!(!widened.ports.contains(&port));
+    assert!(widened.listen_only.is_empty());
 }

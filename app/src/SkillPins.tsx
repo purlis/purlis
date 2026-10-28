@@ -9,18 +9,13 @@
  * always seen and can always be undone.
  */
 import { type SkillPinner, type SkillPinsRefused } from "./bindings";
-import { pinnerSaid } from "./skillStudio";
+import { pinnerSaid, pinsRefusedSaid } from "./skillStudio";
 import { Button } from "./ui/button/Button";
 import { Switch } from "./ui/choice/Switch";
 
 /** Whose chats a pin keeps a skill listed for, as a sentence says it. */
 export function pinnedChats(by: SkillPinner): string {
   return by.at === "workspace" ? `${by.name}'s chats` : `chats as ${by.name}`;
-}
-
-/** Why a chat reads none of a pinner's pins, in one sentence: `workspace ops's pins aren't used: …`. */
-export function pinsRefusedSaid(refused: SkillPinsRefused): string {
-  return `${pinnerSaid(refused.by)}'s pins aren't used: ${refused.why}.`;
 }
 
 /**

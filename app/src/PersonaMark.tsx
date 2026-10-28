@@ -258,6 +258,7 @@ export function PersonaMark({
   className,
   onImageTrouble,
   named = false,
+  tip,
 }: {
   persona: string;
   /** Its mark, where the caller holds it. Left out, it is looked up in {@link PersonaMarks}. */
@@ -268,6 +269,9 @@ export function PersonaMark({
   /** The persona's name is beside it, so no tooltip repeats it: a row of a list whose name is
    *  the persona's, where a second "steward" would be read into the row (WCAG 2.5.3). */
   named?: boolean;
+  /** What its tooltip says, where more than the persona's name: a chat's row says its state
+   *  too (`steward, needs you`, #3342). */
+  tip?: string;
 }) {
   const known = useContext(PersonaMarks).get(persona);
   const given = mark ?? known;
@@ -308,5 +312,5 @@ export function PersonaMark({
       ) : null}
     </span>
   );
-  return named ? drawn : <Tooltip tip={persona}>{drawn}</Tooltip>;
+  return named ? drawn : <Tooltip tip={tip ?? persona}>{drawn}</Tooltip>;
 }

@@ -678,7 +678,7 @@ fn the_walk_stops_at_the_nearer_of_the_git_root_and_the_project_root() {
 fn claude_code_alone_says_a_grade_can_run_on_it() {
     for harness in Harness::ALL {
         assert_eq!(
-            harness.adapter().can_grade(),
+            harness.adapter().can_grade().is_ok(),
             harness == Harness::ClaudeCode,
             "{harness:?}"
         );
@@ -820,4 +820,105 @@ fn a_profile_command_that_starts_in_a_mode_that_asks_nobody_keeps_a_grade_from_r
             "{words:?}"
         );
     }
+}
+
+/// #3468, P8: a plugin the profile's own command loads (`--plugin-dir`) is not one a grade can
+/// turn off for its chat, so a grade never runs on such a profile.
+#[test]
+fn a_profile_command_that_loads_a_plugin_of_its_own_keeps_a_grade_from_running() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    for words in [&["--plugin-dir", "/mine"][..], &["--plugin-dir=/mine"]] {
+        let why = adapter()
+            .grade_refused(&line(words), &env)
+            .expect("refused");
+        assert!(why.contains("--plugin-dir"), "{why}");
+        assert!(why.contains("pick another profile"), "{why}");
+    }
+}
+
+#[test]
+fn a_grades_model_is_its_flag_then_anthropic_model_and_never_a_settings_file() {
+    let config = tempfile::tempdir().unwrap();
+    std::fs::write(
+        config.path().join("settings.json"),
+        r#"{"model": "claude-haiku-4-5"}"#,
+    )
+    .unwrap();
+    let dir = (
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    );
+    let only_settings = [dir.clone()];
+    let with_env = [
+        dir,
+        ("ANTHROPIC_MODEL".to_owned(), "claude-sonnet-4-6".to_owned()),
+    ];
+    let model = |words: &[&str], chat: &[(String, String)]| {
+        adapter().grade_model(&line(words), &settings_in(chat))
+    };
+    assert_eq!(
+        model(&[], &only_settings),
+        None,
+        "a project's settings may outrank yours, so neither prices the limit"
+    );
+    assert_eq!(
+        model(&[], &with_env).as_deref(),
+        Some("claude-sonnet-4-6"),
+        "ANTHROPIC_MODEL says it"
+    );
+    assert_eq!(
+        model(&["--model", "opus"], &with_env).as_deref(),
+        Some("opus"),
+        "the flag outranks both"
+    );
+    assert_eq!(
+        model(&["--model=sonnet", "--model", "haiku"], &with_env).as_deref(),
+        Some("haiku"),
+        "the last flag is the one Claude Code reads"
+    );
+    assert_eq!(
+        model(&["--model"], &[]),
+        None,
+        "a flag with no model says none"
+    );
+    assert_eq!(
+        model(&[], &[]),
+        None,
+        "nothing says it: Claude Code's own default"
+    );
+}
+
+#[test]
+fn a_family_alias_is_the_model_its_variable_remaps_it_to() {
+    let model = |words: &[&str], chat: &[(String, String)]| {
+        adapter().grade_model(&line(words), &settings_in(chat))
+    };
+    let remapped = [(
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_owned(),
+        "claude-opus-4-1".to_owned(),
+    )];
+    assert_eq!(
+        model(&["--model", "haiku"], &remapped).as_deref(),
+        Some("claude-opus-4-1")
+    );
+    assert_eq!(model(&["--model", "haiku"], &[]).as_deref(), Some("haiku"));
+    assert_eq!(
+        model(&["--model", "sonnet"], &remapped).as_deref(),
+        Some("sonnet"),
+        "another family's variable leaves it"
+    );
+    let opus = [(
+        "ANTHROPIC_DEFAULT_SONNET_MODEL".to_owned(),
+        "claude-sonnet-4-5".to_owned(),
+    )];
+    assert_eq!(
+        model(&["--model", "opusplan"], &opus),
+        None,
+        "opusplan runs both, so a remap of either is priced at the dearest"
+    );
 }

@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { commands, type PlaneId, type ReachableRepos } from "./bindings";
+import { hides } from "./invisible";
 import { Choice, Field } from "./settings/components";
 import { Button } from "./ui/button/Button";
 
@@ -33,6 +34,15 @@ export const FORGE_LOGIN = "forge-login-asked";
 
 /** What a login asks of a project's window: which project, and the line to type. */
 export type LoginAsk = { plane: string; line: string };
+
+/**
+ * Whether a login line may be typed in a shell tab and left unrun: it holds no character
+ * purlis's one rule hides on one line (#3470). That is every control (a newline is a Return,
+ * an escape moves the cursor, DEL and the C1 controls), and every other character a reader does
+ * not see there (a bidi override, a zero-width or a no-break space), so the line typed is the
+ * line read.
+ */
+export const typableLogin = (line: string) => !hides(line, "marked");
 
 /** Asks the window of the project `plane` to type `line` in a shell tab at its root. */
 export function askLogin(plane: string, line: string): void {

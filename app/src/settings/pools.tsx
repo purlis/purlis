@@ -11,6 +11,7 @@ import { Button } from "../ui/button/Button";
 import { Tooltip } from "../ui/tooltip/Tooltip";
 import { AlertDialog } from "../ui/dialog/Dialog";
 import { Badge } from "../ui/badge/Badge";
+import { PoolProfiles } from "./PoolProfiles";
 
 /**
  * **You › This machine › Pools** (#2679, the person's rulings of 2026-10-20): the Docker pools
@@ -37,13 +38,13 @@ import { Badge } from "../ui/badge/Badge";
  * **Every Remove asks first** ({@link RemovePool}): it says what goes and that there is no undo,
  * and Remove pool removes it.
  */
-export function poolsGroup(): SettingsGroup {
+export function poolsGroup(plane?: string): SettingsGroup {
   return {
     id: POOLS,
     label: "Pools",
     help: "The Docker pools on this machine. Each runs a runner: a container of its image on your Docker, held to its limits and paired with this machine.",
     sub: true,
-    settings: [poolsList],
+    settings: [poolsList(plane)],
   };
 }
 
@@ -62,6 +63,7 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link === undefined || link === "asking") return "asking its runner…";
   if (link.state === "linked") return "linked";
   if (link.state === "key_changed") return "key changed";
+  if (link.state === "suspended") return "suspended";
   return "not linked";
 }
 
@@ -137,6 +139,7 @@ function PoolEntry({
   removing,
   onAsk,
   notHeld,
+  profiles,
 }: {
   pool: PoolRow;
   link: PoolLink | "asking" | undefined;
@@ -146,6 +149,8 @@ function PoolEntry({
   onAsk: () => void;
   /** The marks of projects whose chats run on it, drawn on its row. */
   notHeld: ReactNode;
+  /** This machine's profiles on its runner (#2049). */
+  profiles: ReactNode;
 }) {
   const remove = onAsk;
   return (
@@ -180,6 +185,7 @@ function PoolEntry({
         <p className="ui-setting-help">{versionSaid(version)}</p>
       )}
       {notHeld}
+      {profiles}
     </li>
   );
 }
@@ -205,7 +211,7 @@ export function NotHeldNotice({
   );
 }
 
-const poolsList: LiveSetting = {
+const poolsList = (plane: string | undefined): LiveSetting => ({
   id: `${POOLS}.list`,
   label: "Docker pools",
   help: "Remove takes this machine out of the runner's peers while it answers, then removes its container and home. There is no undo.",
@@ -263,6 +269,7 @@ const poolsList: LiveSetting = {
                     removing={now.removing === pool.name}
                     onAsk={() => setAsking(pool.name)}
                     notHeld={marks(shown.filter((one) => rowOf(one) === pool.name))}
+                    profiles={<PoolProfiles pool={pool.name} plane={plane} />}
                   />
                 ))}
               </ul>
@@ -284,4 +291,4 @@ const poolsList: LiveSetting = {
       ),
     };
   },
-};
+});

@@ -70,10 +70,12 @@ impl Host for Board {
             Command::StopAll | Command::KillSwitch => Answer::KillSwitch(session::KillSwitch {
                 stopped: true,
                 why: None,
+                ..Default::default()
             }),
             Command::Rearm => Answer::KillSwitch(session::KillSwitch {
                 stopped: false,
                 why: None,
+                ..Default::default()
             }),
             _ => Answer::Done,
         })
@@ -303,6 +305,13 @@ fn every_command() -> Vec<Command> {
         },
         // The desktop taken out of a runner's peers (1.25, #2525).
         Command::Unpair,
+        // A desktop's profile kept on its runner (1.43, #2049).
+        Command::KeepProfile(session::ProfileToKeep {
+            name: "work".into(),
+            harness: "claude".into(),
+            sandbox_only: false,
+            pinned: None,
+        }),
         // A browser the person takes over, drives and hands back: the window's alone (1.14).
         Command::TakeOver {
             program: CHAT.into(),
@@ -425,6 +434,8 @@ fn every_command() -> Vec<Command> {
             profile: "claude".into(),
             conversation: "0d6f3c1e".into(),
         },
+        // Where the host's own event log ends (1.41, #3393): the window's, and relayed.
+        Command::LogEnd,
     ]
 }
 
@@ -489,6 +500,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "give_code",
             "take_conversation",
             "give_conversation",
+            "log_end",
         ],
         Scope::Terminal => &[
             "list",
@@ -540,6 +552,8 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "start_program", // the start whose composed confinement is named to its link
             "stop_all",
             "kill_switch",
+            // Its desktop re-arms it, as its window re-arms the desktop (#2051, V29b).
+            "rearm",
             // A chat's browser on the runner, for the desktop's window (1.38, #2050): started,
             // watched, driven for its chat and by the person, and logged in by purlis; never a
             // kept login, which stays on the device it was made on.
@@ -548,6 +562,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "browse",
             // The desktop removing the runner (1.25, #2525).
             "unpair",
+            "keep_profile",
             "take_over",
             "browser_input",
             "size_browser",
@@ -555,11 +570,13 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "log_in",
             "take_back",
             // Code moved for the desktop's window (1.34, #2046), and a chat's conversation as it
-            // moves (1.41, #2048).
+            // moves (1.44, #2048).
             "take_code",
             "give_code",
             "take_conversation",
             "give_conversation",
+            // The runner's own event log, read by its desktop's window (1.41, #3393).
+            "log_end",
         ],
         Scope::FleetMcp => &[
             "list",
@@ -651,12 +668,8 @@ async fn remote_link_may_drive_a_chat_and_take_the_windows_relayed_start_but_nev
 
 #[tokio::test]
 async fn every_scope_that_may_stop_stops_all_and_is_told_in_words_that_only_the_window_re_arms() {
-    for scope in [
-        Scope::Terminal,
-        Scope::FleetMcp,
-        Scope::Approval,
-        Scope::RemoteLink,
-    ] {
+    // A runner's `remote-link` is re-armed by its desktop (#2051, V29b): it is not among them.
+    for scope in [Scope::Terminal, Scope::FleetMcp, Scope::Approval] {
         let board = Board::new(false);
         let client = linked(scope, board.clone()).await;
 

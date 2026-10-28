@@ -21,8 +21,8 @@ use purlis_core::skills::review::escaped as esc;
 use purlis_core::skills::source::{self, Remote, Source, VaultEntry};
 use purlis_core::skills::verbs::{self, By, Level};
 use purlis_core::skills::{
-    Deprecated, Grant, Lifecycle, Outcome, StudioList, StudioRow, Switch, Template, TemplateId,
-    clash_said, history, lifecycle,
+    Clash, Deprecated, Grant, HarnessInTheStudio, Lifecycle, Outcome, StudioList, StudioRow,
+    Switch, Template, TemplateId, clash_said, history, lifecycle,
 };
 use serde_json::{Value, json};
 
@@ -438,8 +438,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         say: &mut said,
     };
     // A delete a crash or a quit cut short is finished or undone before any change (SK-35).
+    // And the skills this machine kept deleted past their time are removed (SK-33), but before a
+    // restore, which `purlis skill restore`'s list offered the person as they saw it.
     if writes {
         verbs::interrupted(&mut cx);
+        if !matches!(command, SkillCommand::Restore { .. }) {
+            verbs::expire_now(root);
+        }
     }
     // The studio's own list (SK-34, #3008): the plane's skills, and each harness's, the same
     // call the window makes.
@@ -470,7 +475,8 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
                             "title": one.harness.title(),
                             "skills": one.rows.iter().map(|row| outside_json(one.harness, row))
                                 .collect::<Vec<_>>(),
-                            "repo_left_out": one.repo_left_out.iter().map(row_json)
+                            "repo_left_out": one.repo_left_out.iter()
+                                .map(|row| left_out_json(one, row, row_json(row)))
                                 .collect::<Vec<_>>(),
                         })).collect::<Vec<_>>(),
                     })
@@ -508,15 +514,19 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             // A harness's own copies follow the plane's, harness by harness, as the studio lists
             // them (SK-34).
             let list = list_for(workspace.as_deref(), persona.as_deref());
-            let copies: Vec<(Option<Harness>, &StudioRow)> = list
+            let copies: Vec<(CopyOf, &StudioRow)> = list
                 .rows
                 .iter()
-                .map(|row| (None, row))
+                .map(|row| (CopyOf::Plane, row))
                 .chain(list.harnesses.iter().flat_map(|one| {
                     one.rows
                         .iter()
-                        .chain(&one.repo_left_out)
-                        .map(|row| (Some(one.harness), row))
+                        .map(move |row| (CopyOf::Outside(one), row))
+                        .chain(
+                            one.repo_left_out
+                                .iter()
+                                .map(move |row| (CopyOf::LeftOut(one), row)),
+                        )
                 }))
                 .filter(|(_, row)| row.name == name)
                 .collect();
@@ -529,18 +539,23 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             if json {
                 let shown: Vec<Value> = copies
                     .iter()
-                    .map(|(harness, row)| match harness {
-                        Some(harness) => outside_json(*harness, row),
-                        None => plane_json(&list, row),
+                    .map(|(copy, row)| match copy {
+                        CopyOf::Plane => plane_json(&list, row),
+                        CopyOf::Outside(one) => outside_json(one.harness, row),
+                        CopyOf::LeftOut(one) => {
+                            left_out_json(one, row, outside_json(one.harness, row))
+                        }
                     })
                     .collect();
                 println!("{}", json!({ "copies": shown }));
             } else {
                 let shown: Vec<String> = copies
                     .iter()
-                    .map(|(harness, row)| match harness {
-                        Some(_) => detail(*harness, row, &[]),
-                        None => detail(None, row, &clashes_said(&list, row)),
+                    .map(|(copy, row)| match copy {
+                        CopyOf::Plane => detail(None, row, &clashes_said(&list, row)),
+                        CopyOf::Outside(one) | CopyOf::LeftOut(one) => {
+                            detail(Some(one.harness), row, &[])
+                        }
                     })
                     .collect();
                 print!("{}", shown.join("\n"));
@@ -672,8 +687,9 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             if deleted.is_empty() {
                 println!("No deleted skill can be restored here.");
             }
+            let now = std::time::SystemTime::now();
             for one in deleted {
-                println!("{}", restorable(&one.name, &one.level));
+                println!("{}", restorable(&one.name, &one.level, &one.stays(now)));
             }
             Ok(0)
         }
@@ -909,14 +925,25 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         },
         SkillCommand::Grade { name, at, json } => {
             let level = at.level();
-            match purlis_core::skills::grades::planned(root, &level, &name) {
+            // The terminal knows no profile: the estimate is the newest grade's whose chats ran.
+            match purlis_core::skills::grades::planned(root, &level, &name, None) {
                 Ok(planned) => {
-                    let graded = purlis_core::skills::grades::grades_of(root, &name, Some(&level));
+                    // The record as the plan read it, once: its rows, and what it left out
+                    // (`plan.record_said`).
                     if json {
-                        println!("{}", json!({ "plan": planned, "grades": graded }));
+                        println!(
+                            "{}",
+                            json!({ "plan": planned, "grades": planned.record.grades })
+                        );
                     } else {
                         let local_file = purlis_core::settings::Which::Local.file_at(root);
-                        print!("{}", grade_said(&planned, &graded, local_file));
+                        print!(
+                            "{}",
+                            grade_said(&planned, &planned.record.grades, local_file)
+                        );
+                        if let Some(said) = &planned.record_said {
+                            voice::warn(said.clone());
+                        }
                     }
                     Ok(0)
                 }
@@ -1072,8 +1099,13 @@ fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
         .own(".")
 }
 
-fn restorable(name: &str, level: &Level) -> Markup {
-    Markup::new().text(name).own("  ").text(level)
+fn restorable(name: &str, level: &Level, stays: &str) -> Markup {
+    Markup::new()
+        .text(name)
+        .own("  ")
+        .text(level)
+        .own(" · ")
+        .text(stays)
 }
 
 /// What `skill uses` says of `name`: each skill it names, as its text says it, then each skill
@@ -1174,6 +1206,54 @@ fn versions_table(name: &str, history: &history::History) -> String {
     text
 }
 
+/// **What a grade should spend, from a grade before, in a line** (#3273): which grade it is
+/// worked out from, or that its cost is not known where that grade's chats did not say, or that
+/// there was none.
+fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> String {
+    let Some(estimate) = estimate else {
+        return "It has not been graded here before, so what a grade spends is not known yet.\n"
+            .to_owned();
+    };
+    let when = estimate.ts.get(..10).unwrap_or(&estimate.ts);
+    let on = match (&estimate.profile, &estimate.harness) {
+        (Some(profile), Some(harness)) => format!(
+            " on {profile} ({})",
+            purlis_core::skilluse::harness_title(harness)
+        ),
+        (Some(profile), None) => format!(" on {profile}"),
+        (None, Some(harness)) => format!(" on {}", purlis_core::skilluse::harness_title(harness)),
+        (None, None) => String::new(),
+    };
+    // The model its chats reported (SK-60): a grade on another model spends otherwise.
+    let on = match &estimate.model {
+        Some(model) => format!("{on} on {model}"),
+        None => on,
+    };
+    if estimate.chats_then == 0 {
+        return format!(
+            "Its last grade{on}, {when}, ran no chat, so what a grade spends is not known yet.\n"
+        );
+    }
+    let mut parts = Vec::new();
+    if let Some(tokens) = estimate.tokens {
+        parts.push(format!("about {tokens} tokens"));
+    }
+    if let Some(cost) = estimate.cost_usd {
+        parts.push(format!("about ${cost:.2}"));
+    }
+    if parts.is_empty() {
+        return format!(
+            "Its last grade{on}, {when}, did not say what its chats spent, so what a grade spends \
+             is not known.\n"
+        );
+    }
+    format!(
+        "From its grade{on}, {when}, of {}, a grade spends {}.\n",
+        counted(estimate.chats_then, "chat", "chats"),
+        parts.join(", ")
+    )
+}
+
 /// **`purlis skill grade`'s text**: the plan, cost first, then each grade, newest first.
 fn grade_said(
     planned: &purlis_core::skills::grades::Planned,
@@ -1199,25 +1279,7 @@ fn grade_said(
                 counted(u32::from(request.runs), "time", "times"),
                 counted(u32::from(request.runs), "time", "times"),
             ));
-            match planned.estimate {
-                Some(estimate) if estimate.tokens.is_some() || estimate.cost_usd.is_some() => {
-                    let mut parts = Vec::new();
-                    if let Some(tokens) = estimate.tokens {
-                        parts.push(format!("about {tokens} tokens"));
-                    }
-                    if let Some(cost) = estimate.cost_usd {
-                        parts.push(format!("about ${cost:.2}"));
-                    }
-                    text.push_str(&format!(
-                        "From its last grade, of {}, a grade spends {}.\n",
-                        counted(estimate.chats_then, "chat", "chats"),
-                        parts.join(", ")
-                    ));
-                }
-                _ => text.push_str(
-                    "It has not been graded here before, so what a grade spends is not known yet.\n",
-                ),
-            }
+            text.push_str(&estimate_said(planned.estimate.as_ref()));
             for (at, test) in request.triggers.iter().enumerate() {
                 text.push_str(&format!(
                     "  {}. {}  ({})\n",
@@ -1233,16 +1295,22 @@ fn grade_said(
             for left in &planned.left_out {
                 text.push_str(&format!("Test {} is left out: {}\n", left.at + 1, left.why));
             }
+            // The terminal knows no profile, so its limit is at the dearest known price: the
+            // Skill studio's plan prices it from the model its profile's chats run on (#3469).
+            let dearest = purlis_core::skills::grades::price::of_model(None);
             text.push_str(&format!(
                 "A grade stops once its chats have spent {} ({}; [skill_grades] token_cap in {} \
-                 sets it), or once they cost ${:.2}, where the harness says what they cost.\n",
+                 sets it), or once they cost ${:.2}, its tokens at the dearest known price of \
+                 ${:.2} a million; the Skill studio's plan prices it from the model the chats \
+                 run on.\n",
                 counted(planned.cap.tokens, "token", "tokens"),
                 match planned.cap.from {
                     purlis_core::skills::grades::cap::From::Default => "the default",
                     purlis_core::skills::grades::cap::From::Yours => "this machine's cap",
                 },
                 local_file,
-                planned.cap.cost_usd(),
+                planned.cap.cost_usd(&dearest),
+                dearest.usd_per_million,
             ));
             text.push_str("Grade it from its tab in the Skill studio, which shows this first.\n");
         }
@@ -1278,8 +1346,17 @@ fn grade_said(
                 )
         };
         let (passed, of) = one.report.passed_with();
+        // The chats that asked the person something (SK-59): ended there, and said here.
+        let asked = match one.report.asked() {
+            0 => String::new(),
+            asked => format!(
+                "  {} asked you something, and purlis ended {them} there without counting {them}",
+                counted(asked, "chat", "chats"),
+                them = if asked == 1 { "it" } else { "them" }
+            ),
+        };
         text.push_str(&format!(
-            "  {}  {}  {passed} of {} passed  with {}  without {}{}  ({})\n",
+            "  {}  {}  {passed} of {} passed  with {}  without {}{}{asked}  ({})\n",
             purlis_core::skills::review::escaped_line(&one.ts),
             one.commit.as_deref().map_or("uncommitted", history::short),
             counted(of, "test", "tests"),
@@ -1289,7 +1366,11 @@ fn grade_said(
                 .delta
                 .map(|delta| format!("  difference {:+.0} points", delta * 100.0))
                 .unwrap_or_default(),
-            counted(one.spent.chats, "chat", "chats"),
+            match &one.model {
+                // The model its chats reported (SK-60): a model's id, which the record checks.
+                Some(model) => format!("{} on {model}", counted(one.spent.chats, "chat", "chats")),
+                None => counted(one.spent.chats, "chat", "chats"),
+            },
         ));
     }
     text
@@ -1802,27 +1883,48 @@ fn row_json(row: &StudioRow) -> Value {
     })
 }
 
+/// Whose list a copy `show` prints is from: the plane's, the skills a harness finds itself, or
+/// the plane's a repo leaves out of that harness's chats in it.
+enum CopyOf<'a> {
+    Plane,
+    Outside(&'a HarnessInTheStudio),
+    LeftOut(&'a HarnessInTheStudio),
+}
+
 /// A plane or built-in row as JSON: [`row_json`]'s, with each skill from outside the plane that
 /// has its name (SK-46, #3149), as the studio marks it.
 fn plane_json(list: &StudioList, row: &StudioRow) -> Value {
     let mut shown = row_json(row);
     shown["clashes"] = list
         .clashes_of(row)
-        .map(|(harness, clash)| {
-            json!({
-                "harness": harness.name(),
-                "outside": clash.outside.level(),
-                "owner": clash.owner,
-                "outcome": match clash.outcome {
-                    Outcome::BothLoad => "both-load",
-                    Outcome::RepoWins => "repo-wins",
-                    Outcome::EitherOne => "either-one",
-                },
-                "said": clash_said(harness, clash),
-            })
-        })
+        .map(|(harness, clash)| clash_json(harness, clash))
         .collect();
     shown
+}
+
+/// `shown`, a plane row a repo leaves out of `one`'s chats in it, with the clash that left it
+/// out (#3461): the repo's copy that won, as a row purlis hands says each of its clashes.
+fn left_out_json(one: &HarnessInTheStudio, row: &StudioRow, mut shown: Value) -> Value {
+    shown["clashes"] = one
+        .clashes_of_left_out(row)
+        .map(|clash| clash_json(one.harness, clash))
+        .collect();
+    shown
+}
+
+/// One clash on `harness` as JSON, with what the studio says of it.
+fn clash_json(harness: Harness, clash: &Clash) -> Value {
+    json!({
+        "harness": harness.name(),
+        "outside": clash.outside.level(),
+        "owner": clash.owner,
+        "outcome": match clash.outcome {
+            Outcome::BothLoad => "both-load",
+            Outcome::RepoWins => "repo-wins",
+            Outcome::EitherOne => "either-one",
+        },
+        "said": clash_said(harness, clash),
+    })
 }
 
 /// What the studio says of each clash of a plane or built-in row (SK-46, #3149), harness by

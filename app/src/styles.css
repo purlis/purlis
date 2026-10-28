@@ -85,7 +85,8 @@
  * **Forced colours are drawn over all of it** (#2328). `theme/forced-colors.css` says again, in
  * the system's palette and with a shape, what the window says with a background or a shadow
  * alone, for a platform that forces its contrast colours. It is the last layer, `forced`, so it is
- * drawn over every view, control and utility, and it holds only system colours.
+ * drawn over every view, control and utility, and it holds only system colours. Each family's own
+ * (`ui/<family>/forced-colors.css`) takes the `@forced` line's place, just before it.
  *
  * **A word's rank is one class too** (#1920). `primitives/text.css`, last in the same layer,
  * gives each text role (title, heading, body, secondary, meta, label, code) its size, weight
@@ -134,6 +135,7 @@
 @import "./paneFrame.css" layer(components);
 @import "./ui/tree/tree.css" layer(components);
 @import "./primitives/text.css" layer(components);
+/* @forced: every src/ui/<family>/forced-colors.css, by name */
 @import "./theme/forced-colors.css" layer(forced);
 
 @theme {
@@ -162,6 +164,7 @@
   --color-accent-base: var(--accent-base);
   --color-accent-surface: var(--accent-surface);
   --color-accent-wash: var(--accent-wash);
+  --color-accent-wash-hover: var(--accent-wash-hover);
   --color-accent-text: var(--accent-text);
   --color-accent-fill: var(--accent-fill);
   --color-accent-fill-hover: var(--accent-fill-hover);

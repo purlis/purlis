@@ -7,7 +7,6 @@ import { useProjectThemeAnswers } from "../projectTheme";
 import {
   commands,
   type ExtensionTheme,
-  type HarnessPlugins,
   type ProjectHarnesses,
   type PlaneId,
   type ProjectExtensions,
@@ -24,7 +23,6 @@ import {
   entries,
   envAt,
   EXTENSIONS,
-  harnessPluginGroups,
   key,
   KINDS,
   listAt,
@@ -74,7 +72,6 @@ import {
   yourLevelHelp,
 } from "./yourLevel";
 import { sandboxCommandReturned } from "../sandboxAsked";
-import { pluginsSummaryGroup } from "./skillsSummary";
 import {
   PERSONA_HOSTS_COLLECTION,
   SANDBOX_MODE,
@@ -94,7 +91,7 @@ import {
 /**
  * **The Project level** (SE-17, #1167; V89b, V89e, V89h): a project's settings in the Settings
  * tab, grouped as General · Saving · Harness & profiles · Sandbox · Dispatch · Forges · Extensions ·
- * Appearance · Plugins. "Saving" is the old page's Plane and Repos together.
+ * Appearance. "Saving" is the old page's Plane and Repos together.
  *
  * **The groups are data**, declared once in {@link projectGroups} with their stable ids, and
  * **their settings are the old page's controls** (`fileControls.ts`), each with the file it is
@@ -115,7 +112,6 @@ export type ProjectRead = {
   shared: SettingsFile;
   local: SettingsFile;
   extensions: ProjectExtensions;
-  harnesses: readonly HarnessPlugins[];
   theme: ProjectTheme | undefined;
   saving: Saving;
   sandbox: SandboxState | undefined;
@@ -146,7 +142,7 @@ export function kept(file: Pick<SettingsFile, "which" | "file">): string {
  */
 // `[theme]` is not among them: the person's own theme is kept on this machine (Settings › Theme,
 // #2323, #2331), and `charter.toml`'s is the project's committed default.
-const EITHER = new Set(["plane", "repos", "extensions", "harness_plugins"]);
+const EITHER = new Set(["plane", "repos", "extensions"]);
 
 /** Whether a key in `charter.toml` may be moved to `charter.local.toml` and back. */
 function eitherFile(path: readonly SettingsStep[]): boolean {
@@ -442,15 +438,11 @@ function loosensTheSandbox(back: readonly SettingsEdit[]): boolean {
  * A file that is not TOML has no settings to show until it is mended: its standing refusals say
  * why, above the groups.
  */
-export function projectGroups(
-  read: ProjectRead,
-  reread?: () => void,
-  skillStudio = false,
-): SettingsGroup[] {
+export function projectGroups(read: ProjectRead, reread?: () => void): SettingsGroup[] {
   const names = namesOf(read);
   // The Sandbox's pages are written with the names in use, and quote hosts a person wrote:
   // nothing in them is renamed (#1340).
-  return declaredGroups(read, reread, skillStudio).map((group) =>
+  return declaredGroups(read, reread).map((group) =>
     WRITTEN_NAMED.has(group.id) ? group : inFiles(group, names),
   );
 }
@@ -528,11 +520,7 @@ function inFiles(
 }
 
 /** The level's groups, as declared: {@link projectGroups} names the files in them. */
-function declaredGroups(
-  read: ProjectRead,
-  reread?: () => void,
-  skillStudio = false,
-): SettingsGroup[] {
+function declaredGroups(read: ProjectRead, reread?: () => void): SettingsGroup[] {
   const shared: Shown = read.shared;
   const local: Shown = read.local;
   const sharedOk = shared.parsed;
@@ -569,9 +557,6 @@ function declaredGroups(
 
   const extensions = asked(EXTENSIONS, shared, read);
   const theme = asked(themeGroup("not set — the window's own theme"), shared, read);
-  const plugins = harnessPluginGroups(read.harnesses, "project").map((group) =>
-    asked(group, shared, read),
-  );
   const forgeSettings = fromShared("project.forges", asked(forges, shared, read).controls);
 
   return [
@@ -782,19 +767,6 @@ function declaredGroups(
         ),
       ],
     },
-    // Once the Skill studio is on, every plugin choice is the studio's (SK-6, decision 35).
-    skillStudio
-      ? pluginsSummaryGroup("project.plugins", read.harnesses, null)
-      : {
-          id: "project.plugins",
-          label: "Plugins",
-          help: "Which harness plugins the chats purlis starts here have on.",
-          settings: fromShared(
-            "project.plugins",
-            plugins.flatMap((one) => one.controls),
-          ),
-          notes: plugins.flatMap((one) => one.notes),
-        },
   ];
 }
 
@@ -832,7 +804,6 @@ type ProjectFiles = { shared: SettingsFile; local: SettingsFile };
  */
 export function useProjectLevel(plane: PlaneId): ProjectLevel {
   const [extensions, setExtensions] = useState<ProjectExtensions>(NO_EXTENSIONS);
-  const [harnesses, setHarnesses] = useState<HarnessPlugins[]>([]);
   const [declarations, setDeclarations] = useState<ProjectHarnesses>();
   const [theme, setTheme] = useState<ProjectTheme>();
   const [iconThemes, setIconThemes] = useState<ExtensionTheme[]>();
@@ -889,12 +860,6 @@ export function useProjectLevel(plane: PlaneId): ProjectLevel {
           setExtensions(said.status === "ok" ? (said.data ?? NO_EXTENSIONS) : NO_EXTENSIONS);
       })
       .catch(() => newest() && setExtensions(NO_EXTENSIONS));
-    void commands
-      .projectHarnessPlugins(plane, null)
-      .then((said) => {
-        if (newest()) setHarnesses(said.status === "ok" ? (said.data ?? []) : []);
-      })
-      .catch(() => newest() && setHarnesses([]));
     void commands
       .projectHarnessDeclarations(plane)
       .then((said) => {
@@ -1139,7 +1104,6 @@ export function useProjectLevel(plane: PlaneId): ProjectLevel {
     read: {
       ...driver.now,
       extensions,
-      harnesses,
       declarations,
       theme,
       saving,

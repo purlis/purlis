@@ -215,16 +215,16 @@ fn does_its_job(chars: &[char], at: usize) -> bool {
 }
 
 /// Is `c` a letter of the Brahmic scripts' blocks, Devanagari to Malayalam (U+0900-U+0D7F): a
-/// consonant, a vowel or a vowel sign, never a digit or a danda.
+/// consonant, a vowel or a vowel sign, never a digit or a danda ([`tables::BRAHMIC_LETTER`],
+/// the UCD's Alphabetic of this file's Unicode version, as the window asks it, #3470).
 fn brahmic_letter(c: char) -> bool {
-    c.is_alphabetic() && matches!(c as u32, 0x0900..=0x0D7F)
+    in_table(c, &tables::BRAHMIC_LETTER)
 }
 
-/// Is `c` a virama of those scripts: each block's U+0x4D, and Malayalam's vertical-bar and
-/// circular viramas.
+/// Is `c` a virama of those scripts ([`tables::VIRAMA`]): each block's U+0x4D, and Malayalam's
+/// vertical-bar and circular viramas.
 fn virama(c: char) -> bool {
-    let cp = c as u32;
-    matches!(cp, 0x0900..=0x0D7F) && (cp & 0x7F == 0x4D || matches!(cp, 0x0D3B | 0x0D3C))
+    in_table(c, &tables::VIRAMA)
 }
 
 /// Is `c` an emoji a presentation selector or a ZWJ may follow: Unicode's
@@ -243,13 +243,9 @@ fn emoji_modifier(c: char) -> bool {
 }
 
 /// Is `c` a letter of the Arabic script, in which Persian, Urdu and others are written: the
-/// Arabic blocks and their presentation forms.
+/// Arabic blocks and their presentation forms ([`tables::ARABIC_LETTER`], #3470).
 fn arabic_letter(c: char) -> bool {
-    c.is_alphabetic()
-        && matches!(
-            c as u32,
-            0x0600..=0x06FF | 0x0750..=0x077F | 0x08A0..=0x08FF | 0xFB50..=0xFDFF | 0xFE70..=0xFEFF
-        )
+    in_table(c, &tables::ARABIC_LETTER)
 }
 
 #[cfg(test)]

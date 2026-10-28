@@ -93,16 +93,22 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". Add a Docker pool's refusal (#2679), in the core's words, under the form it refused; " +
       "the form, kept as it was typed, and Add pool are the way on",
   },
+  "ui/notice/Notice.tsx": {
+    count: 1,
+    why:
+      "the notice family's message part, the live region of a card Notice (#3344): drawn live " +
+      "only by `Notice.tsx`, which this guard holds as the one way to draw a standing line",
+  },
+  "AddVision.tsx": {
+    count: 1,
+    why: ACTION,
+  },
   "AnswerQuestion.tsx": {
     count: 2,
     why:
       "the refusal of the person's answer to a task's question (#1496), in the core's sentence " +
       "under the box, with what was typed kept: Send is the retry. And, where the form was " +
       "opened for a task that asks nothing now, the sentence that says so, beside Close",
-  },
-  "App.tsx": {
-    count: 1,
-    why: "what the last action answered: replaced by the next action, not about something true now",
   },
   "AskPersona.tsx": {
     count: 1,
@@ -175,11 +181,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "(FX-1): inside the dialog, over the rows it changed",
   },
   "Explorer.tsx": {
-    count: 2,
+    count: 3,
     why:
       "a folder of a branch's tree that could not be read, in the tree where its entries go: a " +
-      "row's own refusal, and opening the folder again reads it again (NO-4); and how many file " +
-      "rows are picked, a live count read out as it changes (#1151)",
+      "row's own refusal, and opening the folder again reads it again (NO-4); a branch the " +
+      "filter could not find files in by name, said where the files found go, and typing again " +
+      "asks again (#3343); and how many file rows are picked, a live count read out as it " +
+      "changes (#1151)",
   },
   "ExtensionAction.tsx": {
     count: 1,
@@ -460,14 +468,17 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "it moved to: what the last press answered, not a standing line",
   },
   "UseSkill.tsx": {
-    count: 3,
+    count: 4,
     why:
       ACTION +
       ", drawn once under the picker or the arguments form, one shown at a time (#2775). And the " +
       "dialog's warning that the chat's set is past its skill budget, read as it opens: about " +
       "the chat the dialog is for, gone with the dialog. And its line that the chat's workspace " +
       "and persona pin past the most it reads together, with a way to each one's studio (#3391): " +
-      "about the same chat, read as the dialog opens and gone with it",
+      "about the same chat, read as the dialog opens and gone with it. And its line that the " +
+      "chat's router fell back on the built-in router at its start (SK-15b): what that start " +
+      "did, read as the dialog opens and gone with it, with nothing to press: the next chat " +
+      "started there asks the router again",
   },
   "VaultSignIn.tsx": {
     count: 5,
@@ -536,6 +547,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". The Pools group's read refusing (#2679), in the core's words: the group is read again " +
       "as it comes on screen. A runner whose key changed has a Notice of its own",
+  },
+  "settings/PoolProfiles.tsx": {
+    count: 1,
+    why:
+      ACTION +
+      ". A pool's profiles refusing (#2049), in the core's words: its Ask again is the way on",
   },
   "settings/accounts.tsx": {
     count: 2,
@@ -712,7 +729,11 @@ describe("the window's standing lines", () => {
     const counted: Record<string, number> = {};
     for (const { name, text } of sources()) {
       if (name === "Notice.tsx") continue;
-      const n = tags(text, (tag) => tag !== "Notice").filter(({ attrs }) => live(attrs)).length;
+      // A card's message drawn `live` is a live region too (#3344): only Notice may draw one.
+      const n = tags(text, (tag) => tag !== "Notice").filter(
+        ({ tag, attrs }) =>
+          live(attrs) || (tag === "NoticeMessage" && /\blive\b/.test(ownAttributes(attrs))),
+      ).length;
       if (n > 0) counted[name] = n;
     }
     const listed = Object.fromEntries(

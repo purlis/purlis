@@ -268,6 +268,69 @@ fn a_todo_is_closed_in_the_chats_own_workspace_with_its_journal_entry() {
     );
     assert!(files_in(&root.join("workspaces/alpha/todos")).is_empty());
     assert_eq!(files_in(&root.join("workspaces/alpha/memory")).len(), 1);
+    assert_eq!(ws.done_todos().unwrap().len(), 1, "a done todo stays");
+}
+
+#[test]
+fn a_chats_forget_reaches_the_open_todos_and_leaves_a_done_one_to_the_person() {
+    let (_dir, root) = a_project();
+    let ws = crate::workspaces::Plane::open(&root)
+        .workspace("alpha")
+        .unwrap();
+    let todo = ws.record_todo("Port the picker", now()).expect("a todo");
+    let slug = todo.file_stem().unwrap().to_string_lossy().into_owned();
+    ws.close_todo(&slug, now()).expect("closed");
+
+    let (lines, code) = said(
+        &root,
+        &chat_in_alpha_as(None),
+        &Write::TodoClose {
+            how: crate::wscmd::todo::Close::Forget,
+            slug: slug.clone(),
+        },
+    );
+
+    assert_eq!(code, 1, "{lines:?}");
+    let text = joined(&lines);
+    assert!(
+        text.contains("a chat does not delete a done todo"),
+        "{text}"
+    );
+    assert_eq!(
+        ws.done_todos().unwrap()[0].slug,
+        slug,
+        "the done todo is still there"
+    );
+}
+
+#[test]
+fn a_done_todo_is_reopened_in_the_chats_own_workspace_and_journals_nothing() {
+    let (_dir, root) = a_project();
+    let ws = crate::workspaces::Plane::open(&root)
+        .workspace("alpha")
+        .unwrap();
+    let todo = ws.record_todo("Port the picker", now()).expect("a todo");
+    let slug = todo.file_stem().unwrap().to_string_lossy().into_owned();
+    ws.close_todo(&slug, now()).expect("closed");
+
+    let (lines, code) = said(
+        &root,
+        &chat_in_alpha_as(None),
+        &Write::TodoClose {
+            how: crate::wscmd::todo::Close::Reopen,
+            slug: slug.clone(),
+        },
+    );
+
+    assert_eq!(code, 0, "{lines:?}");
+    let text = joined(&lines);
+    assert!(
+        text.contains("Reopened 'Port the picker' in 'alpha'."),
+        "{text}"
+    );
+    assert_eq!(ws.todos().unwrap()[0].slug, slug);
+    assert!(ws.done_todos().unwrap().is_empty());
+    assert_eq!(ws.memories().unwrap().len(), 1, "only the close's entry");
 }
 
 #[test]

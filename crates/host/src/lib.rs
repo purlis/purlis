@@ -60,6 +60,10 @@ mod killswitch;
 #[cfg(unix)]
 mod lifetime;
 #[cfg(unix)]
+mod ownlog;
+#[cfg(unix)]
+mod reach;
+#[cfg(unix)]
 mod recording;
 #[cfg(unix)]
 mod relay;
@@ -69,6 +73,8 @@ mod routing;
 mod serving;
 #[cfg(all(unix, any(test, feature = "test-support")))]
 pub mod standin;
+#[cfg(unix)]
+mod unattended;
 
 pub use browsers::NotStarted as BrowserNotStarted;
 #[cfg(unix)]
@@ -100,15 +106,19 @@ pub use lifetime::GRACE;
 #[cfg(unix)]
 pub use purlis_session_protocol as protocol;
 #[cfg(unix)]
-pub use recording::{Ended, Record, RecordsNothing, Stopped};
+pub use reach::{EveryRunner, REACHED_WITHIN, TRIED_AGAIN_EVERY};
+#[cfg(unix)]
+pub use recording::{Ended, ReadsLog, Record, RecordsNothing, Stopped};
 #[cfg(unix)]
 pub use relay::{Dial, Keep, Relay};
 #[cfg(unix)]
 pub use routing::{DrainsTo, RelaysTo, Routed};
 #[cfg(unix)]
 pub use serving::{
-    Answering, HostError, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,
+    Answering, HostError, Keeping, LOCK, Pairing, Place, Unpairing, Window, serve, serve_answering,
 };
+#[cfg(unix)]
+pub use unattended::UNLINKED_FOR;
 
 /// The argument that starts the window's binary as its session host. Its word is the window's
 /// own business: the binary is the window's, and only the window starts it so.
@@ -167,20 +177,32 @@ pub fn serve_alone(place: &Place, hosting: impl FnOnce(&Place) -> Hosting) -> i3
 
 /// [`serve_alone`], as a runner's host: it also answers links from the one desktop it is paired
 /// with ([`Pairing`]) on its link socket ([`Place::link`]), which the bridge a connector runs
-/// opens (ADR 0078 §2).
+/// opens (ADR 0078 §2). **Paired, it suspends itself after `suspends` with no link from its
+/// desktop** (#2051, [`UNLINKED_FOR`] by default), where it is given one: it stops serving, and
+/// every program it runs ends as at a quit.
 #[cfg(unix)]
 pub fn serve_alone_answering(
     place: &Place,
     hosting: impl FnOnce(&Place) -> Hosting,
     pairing: Pairing,
+    suspends: Option<std::time::Duration>,
 ) -> i32 {
-    run(
-        place,
-        None,
-        hosting(place),
-        Some(pairing),
-        std::future::pending(),
-    )
+    let hosting = hosting(place);
+    let answering = std::sync::Arc::clone(&pairing.answering);
+    let suspended = {
+        let hosting = hosting.clone();
+        async move {
+            match suspends {
+                Some(after) => {
+                    hosting
+                        .until_unlinked_for(after, move || matches!(answering(), Ok(Some(_))))
+                        .await;
+                }
+                None => std::future::pending().await,
+            }
+        }
+    };
+    run(place, None, hosting, Some(pairing), suspended)
 }
 
 #[cfg(unix)]

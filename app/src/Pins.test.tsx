@@ -15,6 +15,7 @@ import {
   workspacesListed,
 } from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
+import { findResult } from "./actionResult.testkit";
 
 /**
  * Pinning, against the whole window (ADR 0039, stored per ADR 0040).
@@ -479,7 +480,7 @@ describe("a pinned workspace", () => {
       within(await forgotten("was-here")).getByRole("button", { name: "Undo" }),
     );
 
-    expect(await screen.findByText(/pins at most 12 workspaces/)).toBeInTheDocument();
+    expect(await findResult(/pins at most 12 workspaces/)).toBeInTheDocument();
     expect(await forgotten("was-here")).toBeInTheDocument();
   });
 
@@ -598,6 +599,6 @@ describe("a pinned project", () => {
 
     await runFromPalette("Pin project plane");
 
-    expect(await screen.findByText("charter pins at most 32 projects.")).toBeInTheDocument();
+    expect(await findResult("charter pins at most 32 projects.")).toBeInTheDocument();
   });
 });

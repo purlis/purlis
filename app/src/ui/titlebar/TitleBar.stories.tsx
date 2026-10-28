@@ -144,6 +144,53 @@ function whatHides(element: Element): string {
   return "";
 }
 
+/** A computed CSS colour as red, green, blue (0–255) and alpha (0–1). */
+function rgba(colour: string): [number, number, number, number] {
+  const [r = 0, g = 0, b = 0, a = 1] = (colour.match(/[\d.]+/g) ?? []).map(Number);
+  return [r, g, b, colour.startsWith("rgba") || colour.includes("/") ? a : 1];
+}
+
+/** The first opaque fill behind `element`: what a translucent fill on it is laid over. */
+function groundOf(element: Element): string {
+  for (let at = element.parentElement; at !== null; at = at.parentElement) {
+    const fill = getComputedStyle(at).backgroundColor;
+    if (rgba(fill)[3] === 1) return fill;
+  }
+  return getComputedStyle(document.body).backgroundColor;
+}
+
+/** `fill` laid over the opaque `ground`, as the screen draws it. */
+function composited(fill: string, ground: string): [number, number, number] {
+  const [r, g, b, a] = rgba(fill);
+  const [R, G, B] = rgba(ground);
+  return [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a)];
+}
+
+/** How far apart two drawn colours are, the largest of their channels' differences. */
+/** WCAG's relative luminance of a drawn colour. */
+function luminance([r, g, b]: number[]): number {
+  const lin = (channel: number) => {
+    const c = channel / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** **How a chip's waiting count reads** (D-3345-3): its amber words over its wash laid on its
+ *  own opaque ground, as drawn, and that ground. */
+function countOn(count: HTMLElement): { ratio: number; ground: string } {
+  const style = getComputedStyle(count);
+  const ground = getComputedStyle(count.parentElement ?? count).backgroundColor;
+  const drawn = composited(style.backgroundColor, ground);
+  const words = composited(style.color, `rgb(${drawn.join(", ")})`);
+  const [light, dark] = [luminance(words), luminance(drawn)].sort((a, b) => b - a);
+  return { ratio: (light + 0.05) / (dark + 0.05), ground };
+}
+
+function apart(one: number[], other: number[]): number {
+  return Math.max(...one.map((channel, at) => Math.abs(channel - other[at])));
+}
+
 const chipsOf = (bar: HTMLElement) =>
   [...bar.querySelectorAll<HTMLElement>('[data-part="workspace"]')].filter(
     (one) => one.dataset.scope === "titlebar",
@@ -181,6 +228,79 @@ export const Pins: Story = {
     await userEvent.keyboard("{ArrowRight}");
     await expect(chips[1]).toHaveFocus();
     await userEvent.keyboard("{Escape}");
+  },
+};
+
+/**
+ * **The chosen chip, in every state** (R101 as amended by #3345, the sidebar-views prototype's
+ * Q4 A): the chosen chip on the accent's wash, any other under the pointer on the card's fill,
+ * the chosen one under the pointer on the stronger wash, and the keyboard's ring. Each state
+ * draws its own fill in every built-in theme, and none moves the chip's box by a pixel. The
+ * picture is the chosen chip under the pointer.
+ */
+export const ChosenStates: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const chips = chipsOf(canvas.getByTestId("title-bar"));
+    const [chosen, other] = chips;
+    await expect(chosen).toHaveAttribute("data-selected");
+    const box = (one: HTMLElement) => {
+      const { width, height } = one.getBoundingClientRect();
+      return `${width}x${height}`;
+    };
+    const boxes = [box(chosen), box(other)];
+    const fill = (one: HTMLElement) => getComputedStyle(one).backgroundColor;
+    const fills: Record<string, string> = { rest: fill(other), chosen: fill(chosen) };
+    // The pointer may rest where a story before this one left it: it leaves the bar and comes
+    // back until the chip hears it arrive, so the chip is surely under it. What the chip draws
+    // is read at that moment: a tooltip that opens later may lie under the pointer and take
+    // the chip's hover away.
+    const point = (one: HTMLElement) =>
+      waitFor(async () => {
+        await userEvent.hover(canvas.getByText("Nothing chosen"));
+        await userEvent.hover(one);
+        await expect(one).toHaveAttribute("data-hovered");
+        return { fill: fill(one), color: getComputedStyle(one).color, box: box(one) };
+      });
+    const hovered = await point(other);
+    fills.hover = hovered.fill;
+    await expect(hovered.box).toBe(boxes[1]);
+    // The primary words on the wash, as under the pointer.
+    await expect(getComputedStyle(chosen).color).toBe(hovered.color);
+    // The pointer leaves, and the tooltip it opened goes, before it reaches the chosen chip.
+    await userEvent.hover(canvas.getByText("Nothing chosen"));
+    await waitFor(() => expect(other).not.toHaveAttribute("data-hovered"));
+    await waitFor(() =>
+      expect(document.querySelector('[role="tooltip"][data-scope="tooltip"]')).toBeNull(),
+    );
+    const both = await point(chosen);
+    fills["chosen + hover"] = both.fill;
+    await expect(both.box).toBe(boxes[0]);
+    // Every state its own fill: the chosen chip never looks hovered, nor at rest.
+    // Compared as drawn: each fill laid over the ground the bar stands on, so a translucent wash
+    // and an opaque fill are told apart by the colour they make, not by how they are written.
+    const drawn = Object.values(fills).map((one) => composited(one, groundOf(chosen)));
+    for (const [at, one] of drawn.entries())
+      for (const other of drawn.slice(at + 1))
+        await expect(apart(one, other), `${one} and ${other}`).toBeGreaterThan(2);
+    await userEvent.unhover(chosen);
+    // The keyboard's ring on the chosen chip moves nothing either.
+    chosen.focus();
+    await userEvent.keyboard("{ArrowRight}");
+    await userEvent.keyboard("{ArrowLeft}");
+    await expect(chosen).toHaveFocus();
+    await waitFor(() => expect(chosen).toHaveAttribute("data-focus-visible"));
+    await expect(box(chosen)).toBe(boxes[0]);
+    // Its waiting count stands on its own ground, the bar's, chosen and under the pointer as at
+    // rest, and its amber reads at 4.5:1 there (D-3345-3).
+    const count = chosen.querySelector<HTMLElement>('[data-part="count"]');
+    if (count === null) throw new Error("the chosen chip draws no count");
+    const lit = countOn(count);
+    await expect(rgba(lit.ground)[3]).toBe(1);
+    await expect(lit.ratio).toBeGreaterThanOrEqual(4.5);
+    await expect(fill(chosen)).toBe(fills.chosen);
+    // The picture: the chosen chip under the pointer.
+    chosen.blur();
+    await point(chosen);
   },
 };
 

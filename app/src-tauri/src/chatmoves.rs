@@ -248,6 +248,21 @@ pub(crate) fn brings_work_back(
     })
 }
 
+/// **Moves `chat` to pool `pool`'s runner** (#2048, #2049): its profile kept on the runner
+/// first (`ready`, `poolprofiles::keep_on` through the start's own readiness check), so its
+/// conversation is written into a folder of a profile the runner keeps, and only then its work
+/// and conversation (`move_in`). Nothing moves where the profile is not kept or not signed in
+/// there.
+pub(crate) fn to_a_runner(
+    pool: &str,
+    chat: &crate::host::Moving,
+    ready: &dyn Fn(&str, &str) -> Result<(), String>,
+    move_in: &dyn Fn() -> Result<(), String>,
+) -> Result<(), String> {
+    ready(pool, &chat.profile)?;
+    move_in()
+}
+
 /// **What a chat's tab says of what came back with it** (the person's ruling of 2026-10-27):
 /// every file a tool here runs or reads as its settings, every one a save would refuse, and
 /// every link, by its path in the project. None where nothing such came.
@@ -384,10 +399,14 @@ impl crate::planes::Held {
                 // Weak: a project let go of meanwhile is prepared for no more.
                 let held = Arc::downgrade(self);
                 let (pool, workspace) = (pool.clone(), mover.chat.workspace.clone());
+                let profile = mover.chat.profile.clone();
                 Box::new(move || {
                     let held = held
                         .upgrade()
                         .ok_or_else(|| "The project was closed, so nothing moved.".to_owned())?;
+                    // Its profile is kept on the runner first (#2049), so a profile the runner
+                    // cannot keep, or one not signed in there, is said before anything moves.
+                    held.chats().ready_profile_on(&pool, &profile)?;
                     held.chats().sessions().move_ahead(&pool, &workspace)
                 })
             }
@@ -444,7 +463,9 @@ impl crate::planes::Held {
         let sessions = self.chats().sessions();
         let came = match (&one.from, &one.to) {
             (None, Some(pool)) => {
-                sessions.move_in(pool, &mover.chat)?;
+                to_a_runner(pool, &mover.chat, &|pool, profile| {
+                    self.chats().ready_profile_on(pool, profile)
+                }, &|| sessions.move_in(pool, &mover.chat))?;
                 Vec::new()
             }
             (Some(pool), None) => {

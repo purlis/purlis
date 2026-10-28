@@ -214,7 +214,10 @@ pub fn subject(write: &Write) -> String {
         }
         Write::WorkspaceOptimize { .. } => "tidying this workspace's memory".to_owned(),
         Write::PersonaOptimize { of, .. } => format!("tidying {}", store(*of)),
-        Write::TodoClose { .. } => "closing a todo".to_owned(),
+        Write::TodoClose { how, .. } => match how {
+            crate::wscmd::todo::Close::Reopen => "reopening a todo".to_owned(),
+            _ => "closing a todo".to_owned(),
+        },
         Write::WorkspaceCreate { .. } => "a new workspace".to_owned(),
         Write::WorkspaceSnapshot { .. } => "a record of this workspace's branches".to_owned(),
     }
@@ -301,7 +304,10 @@ fn said_held_to(write: &Write, most: Option<usize>) -> String {
                 ""
             }
         ),
-        Write::TodoClose { how, slug } => format!("Close todo {slug} ({})", how.verb()),
+        Write::TodoClose { how, slug } => match how {
+            crate::wscmd::todo::Close::Reopen => format!("Reopen done todo {slug}"),
+            _ => format!("Close todo {slug} ({})", how.verb()),
+        },
         Write::WorkspaceCreate { name, vision } => match vision {
             Some(vision) => format!("Make workspace {name}, its vision: {}", shown(vision)),
             None => format!("Make workspace {name}"),

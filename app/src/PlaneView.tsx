@@ -104,10 +104,11 @@ import { Menued } from "./Menus";
 import { afterDrop, reslotted } from "./reorder";
 import { stripAccessibility, useStripSensors } from "./sortable";
 import { NewWorkspace } from "./NewWorkspace";
-import { FORGE_LOGIN, type LoginAsk } from "./RepoPicker";
+import { FORGE_LOGIN, typableLogin, type LoginAsk } from "./RepoPicker";
 import { NewBranch } from "./NewBranch";
 import { LinkWorkItem } from "./LinkWorkItem";
 import { RenameWorkspace } from "./RenameWorkspace";
+import { AddVision } from "./AddVision";
 import { cloneRepos, settleRepoClones, useRepoClones } from "./repoClones";
 import { StartChat } from "./StartChat";
 import {
@@ -125,7 +126,7 @@ import {
   type OpenUseSkill,
   type SkillBudgets,
 } from "./UseSkill";
-import { Explorer, type Spot } from "./Explorer";
+import { Explorer, type SearchKeyHere, type Spot } from "./Explorer";
 import {
   pieceFileTitle,
   pieceFileView,
@@ -186,6 +187,7 @@ import { taskChangesTitle, taskChangesView } from "./taskChanges";
 import { heldFor as blockHeldFor, useSandboxBlocks } from "./sandboxBlocks";
 import { taskBlockGroups, whoseOf, withoutGrouped, type TaskBlockGroup } from "./taskAsks";
 import { TaskBlocksAnswered, TaskBlocksNotice } from "./TaskBlocksNotice";
+import { workspaceMade } from "./actionResult";
 import { Inbox, landOnGroupIn, type UpdateRow, type WindowLines } from "./Inbox";
 import { awayRow } from "./AwayRefusals";
 import {
@@ -215,8 +217,9 @@ import {
   type Toggled,
   type ViewId,
 } from "./regions";
-import { drawnOnlyPresent, NO_PREVIEWS, PREVIEWED_VIEWS, type ViewPlace } from "./sideViews";
+import { drawnOnlyPresent, previewsDrawn, type ViewPlace } from "./sideViews";
 import { SkillsView, type FrontChat } from "./SkillsView";
+import type { ExplorerPlace } from "./skillsListing";
 import { SIDE_KEYS_SAID, sideKeyOf } from "./sideKeys";
 import { RegionFrame, stepRegions } from "./RegionFrame";
 import { putAway } from "./regionsAway";
@@ -413,7 +416,7 @@ import type {
 } from "./bindings";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
-import { skillStudioTitle, skillStudioView, useSkillStudioOn } from "./skillStudio";
+import { skillStudioTitle, skillStudioView, useSkillStudioSaid } from "./skillStudio";
 import { SkillRunsHere, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
@@ -509,10 +512,6 @@ import {
 import { LayoutPanes } from "./LayoutPanes";
 import { carryPaneBand, forgetPaneBand, forgetPaneBands, paneBand } from "./noticeSettle";
 
-/** Any C0 or C1 control character, or DEL: what a line typed and left unrun must not hold. */
-// eslint-disable-next-line no-control-regex
-const HAS_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
-
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
   a.length === b.length &&
@@ -548,6 +547,8 @@ type Typed =
   | {
       signIn: string;
       provider?: string;
+      /** The pool whose runner it is signed in on (#2049), where it is not this machine. */
+      pool?: string;
       line?: undefined;
       installer?: undefined;
       sandboxInstall?: undefined;
@@ -1021,8 +1022,10 @@ export const PlaneView = memo(function PlaneView({
    *  again after a write — a vault's own tab (charter-app#235). */
   const vaults = useVaults(plane);
   const vaultNames = useMemo(() => vaults.vaults?.map((one) => one.name), [vaults.vaults]);
-  // Whether the Skill studio's flag is on (#2765): its palette row is offered only then.
-  const studioOn = useSkillStudioOn();
+  // Whether the Skill studio's flag is on (#2765): its palette row is offered only then. What
+  // the core said of it, `undefined` until it has, holds a side left on Skills (#3308).
+  const studioSaid = useSkillStudioSaid();
+  const studioOn = studioSaid === true;
   /** Every chat open here, by session, in strip order: whose skill budgets the window holds. */
   const chatSessions = useMemo(
     () => [...new Set(tabs.order.flatMap((id) => panesOf(tabs, id).map((pane) => pane.session)))],
@@ -1066,6 +1069,13 @@ export const PlaneView = memo(function PlaneView({
   }>();
   /** The workspace being renamed, while its dialog is up: whether charter is renaming it now,
    *  and why the last attempt renamed nothing, in the core's words (charter#367). */
+  /** The workspace whose vision is being added (#3344), whether it is being saved, and why the
+   *  last Save recorded nothing. */
+  const [addingVision, setAddingVision] = useState<{
+    workspace: string;
+    busy: boolean;
+    trouble?: string;
+  }>();
   const [renamingWs, setRenamingWs] = useState<{
     workspace: string;
     busy: boolean;
@@ -1267,6 +1277,30 @@ export const PlaneView = memo(function PlaneView({
       }),
     [],
   );
+  /** What ⌘⇧F runs while the keyboard is in Explorer's files (#3343), kept by Explorer. */
+  const explorerSearchKey = useRef<SearchKeyHere | undefined>(undefined);
+  const keepExplorerSearchKey = useCallback((here: SearchKeyHere | undefined) => {
+    explorerSearchKey.current = here;
+  }, []);
+  /** **Search contents, from Explorer's filter** (#3343): the Search view on the scope the filter
+   *  found in, Branch or Workspace, with what it held; the switches as they were left. */
+  const searchContents = useCallback(
+    (kind: "branch" | "workspace", at: Place, query: string) => {
+      setSideSearch((was) => {
+        const kept = was === undefined ? undefined : searchOf(was);
+        const here = searchFromFocus(at, at.workspace);
+        return searchView({
+          ...here,
+          kind,
+          query: query !== "" ? query : (kept?.query ?? ""),
+          matching: kept?.matching ?? here.matching,
+        });
+      });
+      showSide("search");
+      requestAnimationFrame(() => giveViewTheKeyboard("search"));
+    },
+    [showSide],
+  );
   const showSideView = useCallback(
     (view: ViewId) => {
       if (view === "search") searchHere();
@@ -1275,12 +1309,13 @@ export const PlaneView = memo(function PlaneView({
     },
     [searchHere, showSide],
   );
-  /** **Show in Explorer's ask** (#3266, the Skills view): the folder, with a count that moves on
-   *  each ask, so asking for the same folder again shows it again. */
-  const [explorerReveal, setExplorerReveal] = useState<{ folder: string; asked: number }>();
+  /** **Show in Explorer's ask** (#3266, #3308, the Skills view): the folder, in the project's own
+   *  files or a clone's, with a count that moves on each ask, so asking for the same folder
+   *  again shows it again. */
+  const [explorerReveal, setExplorerReveal] = useState<ExplorerPlace & { asked: number }>();
   const revealInExplorer = useCallback(
-    (folder: string) => {
-      setExplorerReveal((was) => ({ folder, asked: (was?.asked ?? 0) + 1 }));
+    (place: ExplorerPlace) => {
+      setExplorerReveal((was) => ({ ...place, asked: (was?.asked ?? 0) + 1 }));
       showSideView("explorer");
     },
     [showSideView],
@@ -2359,8 +2394,13 @@ export const PlaneView = memo(function PlaneView({
   const [sidePanels, setSidePanels] = useState(sidePanelsNow);
   if (!samePanels(sidePanels, sidePanelsNow)) setSidePanels(sidePanelsNow);
   /** **The views behind a preview that is on** (#3266): Skills while the Skill studio's is. One
-   *  left out is drawn nowhere, and its side opens on its first view until it is back. */
-  const previews = studioOn ? PREVIEWED_VIEWS : NO_PREVIEWS;
+   *  left out is drawn nowhere, and its side opens on its first view until it is back. Until the
+   *  core has said, a side left on Skills is held there, drawn empty (#3308). */
+  const pickedViews = arrangement.map((one) => one.view).join(" ");
+  const previews = useMemo(
+    () => previewsDrawn(studioSaid, pickedViews.split(" ")),
+    [studioSaid, pickedViews],
+  );
   /** Every view drawn only while it is present: the extensions' panels contributed now, and the
    *  views behind a preview that is on. */
   const presentViews = useMemo(
@@ -2946,7 +2986,13 @@ export const PlaneView = memo(function PlaneView({
           // sign-in with the profile's folder set, and the person drives it in this tab.
           else if (typed?.signIn !== undefined)
             void commands
-              .typeProfileSignIn(plane, session, typed.signIn, typed.provider ?? null)
+              .typeProfileSignIn(
+                plane,
+                session,
+                typed.signIn,
+                typed.provider ?? null,
+                typed.pool ?? null,
+              )
               .then((said) => {
                 if (said.status === "error") refusedBy("shell", said.error);
               })
@@ -3100,9 +3146,13 @@ export const PlaneView = memo(function PlaneView({
       const asked = (event as CustomEvent<LoginAsk>).detail;
       if (asked.plane !== plane || sidebar === undefined) return;
       // "Typed, not run" holds here, not only in the core's host check: a line with a control
-      // character in it (a newline is a Return) is refused and typed nowhere.
-      if (HAS_CONTROL.test(asked.line)) {
-        refusedBy("shell", "purlis will not type a login line that holds a control character");
+      // character in it (a newline is a Return), or any other the one rule hides, is refused
+      // and typed nowhere (#3470).
+      if (!typableLogin(asked.line)) {
+        refusedBy(
+          "shell",
+          "purlis will not type a login line that holds a control or a hidden character. Type the login in a terminal yourself.",
+        );
         return;
       }
       openShell(sidebar.root, OUTSIDE, { line: asked.line, held: true });
@@ -3159,15 +3209,15 @@ export const PlaneView = memo(function PlaneView({
    * core. The person drives the harness's flow there; purlis reads none of it.
    */
   const signIn = useCallback(
-    (profile: string, provider?: string) => {
-      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider });
+    (profile: string, provider?: string, pool?: string) => {
+      if (root !== undefined) openShell(root, OUTSIDE, { signIn: profile, provider, pool });
     },
     [openShell, root],
   );
   useEffect(() => {
     const asked = (event: Event) => {
       const wanted = (event as CustomEvent<ProfileSignInAsk>).detail;
-      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider);
+      if (wanted.plane === plane) signIn(wanted.profile, wanted.provider, wanted.pool);
     };
     window.addEventListener(PROFILE_SIGN_IN, asked);
     return () => window.removeEventListener(PROFILE_SIGN_IN, asked);
@@ -4483,9 +4533,16 @@ export const PlaneView = memo(function PlaneView({
       // the workspace strip draws what is pinned. A pin the store refused leaves the
       // workspace made and says why, beside what charter said about making it.
       const pinned = await pinWorkspace(name, true);
-      const words = pinned.ok ? answer.data : [...answer.data, pinned.refused];
-      // charter's own lines, which say where it landed and whether it is LOCAL or LIVE.
-      setReport({ from: "workspace.create", refused: false, words: words.join(" ") });
+      // Said in the app's own words, with Open; the core's lines, where it landed and whether
+      // it is LOCAL or LIVE, are kept behind Details, less the lines written for an agent
+      // (#3344, `actionResult.ts`).
+      setReport(
+        workspaceMade(name, answer.data, {
+          onOpen: () => focusWorkspace(name),
+          onAddVision: () => setAddingVision({ workspace: name, busy: false }),
+          pinRefused: pinned.ok ? undefined : pinned.refused,
+        }),
+      );
       // The plane is read again rather than this window writing the workspace into its own
       // copy of the sidebar, and the strip lands on what was just made: it holds no chats, so
       // `picked` is the only thing that can put the window in it.
@@ -4498,6 +4555,8 @@ export const PlaneView = memo(function PlaneView({
         from: "workspace.create",
         refused: false,
         words: `Cloning ${repos.length} repo(s) into ${name}…`,
+        // Under way: the clone's result replaces it, and only that is kept (#3344).
+        progress: true,
       });
       const failed = await cloneRepos(plane, name, repos);
       setReport(
@@ -4522,7 +4581,36 @@ export const PlaneView = memo(function PlaneView({
       );
       setReplan((asked) => asked + 1);
     },
-    [pinWorkspace, plane],
+    [focusWorkspace, pinWorkspace, plane],
+  );
+
+  /**
+   * **Add a vision** (#3344): `purlis workspace vision`'s write, through the core's own broker.
+   * A refusal stays in the dialog, in the core's words; once recorded, the window says so.
+   */
+  const saveVision = useCallback(
+    async (workspace: string, vision: string) => {
+      setAddingVision({ workspace, busy: true });
+      const answer = await commands
+        .workspaceVision(plane, workspace, vision)
+        .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
+      if (answer.status === "error") {
+        setAddingVision({ workspace, busy: false, trouble: answer.error });
+        return;
+      }
+      setAddingVision(undefined);
+      setReport({
+        from: "workspace.vision",
+        refused: false,
+        title: answer.data,
+        words: "Its chats read it in its workspace.md.",
+        ways: [
+          { label: `Open ${workspace}`, onPress: () => focusWorkspace(workspace), primary: true },
+        ],
+      });
+      setReplan((asked) => asked + 1);
+    },
+    [focusWorkspace, plane],
   );
 
   /** Asks for a new vault. It makes nothing: the dialog asks, and `vault_create` makes one. */
@@ -6598,6 +6686,23 @@ export const PlaneView = memo(function PlaneView({
   /** The Chats list's rows: a task that ended keeps its row until its finished row is read,
    *  so the rows below it move once and not up and then down (`useRowsUntilRead`). */
   const listRows = useRowsUntilRead(chatRows, finishedSettled);
+  /** Each persona's chats, by number (#3341): what a persona's row in the Personas view reads
+   *  its state from. */
+  const personaChats = useMemo(() => {
+    const of = new Map<string, number[]>();
+    for (const row of listRows)
+      if (row.persona !== null) of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
+    return of;
+  }, [listRows]);
+  /** The personas each workspace's chats run as (#3483): the Personas view's In this
+   *  workspace, with the ones the workspace's session records name. */
+  const chatPersonasIn = useMemo(() => {
+    const of = new Map<string, Set<string>>();
+    for (const row of listRows)
+      if (row.persona !== null)
+        of.set(row.workspace, (of.get(row.workspace) ?? new Set()).add(row.persona));
+    return of;
+  }, [listRows]);
   /**
    * **How long each chat has been in its state, as this window saw it** (`stateClock.ts`): one
    * clock for the project, held here so it runs whether or not the Chats list is drawn, and
@@ -7144,6 +7249,8 @@ export const PlaneView = memo(function PlaneView({
   );
   /** The focused workspace's open todos, the same way: one close and one forget row each. */
   const todos = workspaceState.panels?.todos;
+  /** And its done ones (ADR 0106): one Reopen and one Delete row each. */
+  const doneTodos = workspaceState.panels?.done_todos;
   /** What the plane, its workspaces and its personas are offered to curate (ADR 0061), read
    *  again when those change and when the plane changes on disk. */
   const subjects = useMemo(
@@ -7188,6 +7295,7 @@ export const PlaneView = memo(function PlaneView({
             personas,
             vaults: vaultNames,
             todos,
+            doneTodos,
             browsers: browsersOffered,
             plane,
             projects,
@@ -7286,6 +7394,7 @@ export const PlaneView = memo(function PlaneView({
       tabs,
       vaultNames,
       todos,
+      doneTodos,
       browsersOffered,
       views,
       extensionCommands,
@@ -7857,6 +7966,18 @@ export const PlaneView = memo(function PlaneView({
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
+      // ⌘⇧F in Explorer's files does what its Search contents link says (#3343): Search on the
+      // filter's scope, with its words.
+      const here = explorerSearchKey.current;
+      if (
+        "show" in which &&
+        which.show === "search" &&
+        here !== undefined &&
+        here.inside?.contains(document.activeElement) === true
+      ) {
+        here.run();
+        return;
+      }
       if ("toggle" in which) toggleRegionSeen(which.toggle);
       else showSideViewSeen(which.show);
     };
@@ -8238,6 +8359,7 @@ export const PlaneView = memo(function PlaneView({
    *  so a project behind another has its own summary when the person switches to it. */
   const { away: awayOn } = useChatsListPrefs();
   const awayNow = useAwaySummary({
+    plane,
     chats,
     on: awayOn,
     finished: finishedTasks,
@@ -8387,6 +8509,15 @@ export const PlaneView = memo(function PlaneView({
   ]);
   /** The Inbox, shown: where the away summary's refused dispatches are answered (#1693). */
   const showInbox = useCallback(() => showSideView("inbox"), [showSideView]);
+  /** A runner's branch ready to push, from the away summary (#2051): its workspace in front,
+   *  and Changes, where it is taken here and pushed. */
+  const showChangesOf = useCallback(
+    (workspace: string) => {
+      focusWorkspace(workspace);
+      showSideView("changes");
+    },
+    [focusWorkspace, showSideView],
+  );
   /**
    * **An answer given on a pane is listed in the Inbox once its ask goes** (#1700, 2026-10-10
    * 21:09 item 2), as one given in the Inbox is: a pane's Notice says the words pressed and the
@@ -8699,6 +8830,7 @@ export const PlaneView = memo(function PlaneView({
         onShowChat={showChat}
         onShowFinished={showFinished}
         onShowInbox={showInbox}
+        onShowChanges={showChangesOf}
       />
       {alerts !== undefined && (
         <InboxAlerts
@@ -8863,6 +8995,9 @@ export const PlaneView = memo(function PlaneView({
                     onGoToWorkspace={focusWorkspace}
                     // The Skills view's Show in Explorer (#3266).
                     reveal={explorerReveal}
+                    // Search contents (#3343): Search on the filter's scope, with its words.
+                    onSearchContents={searchContents}
+                    onSearchKey={keepExplorerSearchKey}
                   />
                 )}
               />
@@ -8995,6 +9130,10 @@ export const PlaneView = memo(function PlaneView({
                       onAddTodo={edits.addTodo}
                       atRoot={focused === OUTSIDE}
                       rootPanels={rootPanels?.contributed}
+                      personaChats={personaChats}
+                      chatPersonasHere={
+                        ofWorkspace === undefined ? undefined : chatPersonasIn.get(ofWorkspace)
+                      }
                     />
                   )}
                 />,
@@ -9551,6 +9690,19 @@ export const PlaneView = memo(function PlaneView({
             />
           )}
 
+          {addingVision && (
+            <AddVision
+              workspace={addingVision.workspace}
+              current={
+                sidebar?.workspaces.find((ws) => ws.name === addingVision.workspace)?.vision ?? ""
+              }
+              trouble={addingVision.trouble}
+              saving={addingVision.busy}
+              onSave={(vision) => void saveVision(addingVision.workspace, vision)}
+              onCancel={() => setAddingVision(undefined)}
+            />
+          )}
+
           {renamingWs && (
             <RenameWorkspace
               workspace={renamingWs.workspace}
@@ -9935,7 +10087,7 @@ function StatusLineHere({
 const FOR_THE_GIT_SIDE = sameFor(GIT_SIDE);
 const LINE_READS: readonly PanelsField[] = [...GIT_SIDE, "todos", "todos_refused"];
 const FOR_THE_LINE = sameFor(LINE_READS);
-const WINDOW_READS: readonly PanelsField[] = [...LINE_READS, "personas", "persona"];
+const WINDOW_READS: readonly PanelsField[] = [...LINE_READS, "done_todos", "personas", "persona"];
 const forTheWindowsFields = sameFor(WINDOW_READS);
 function forTheWindow(a: WorkspaceState, b: WorkspaceState): boolean {
   return (

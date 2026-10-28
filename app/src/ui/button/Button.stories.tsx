@@ -229,6 +229,45 @@ export const RowOfOneSize: Story = {
   },
 };
 
+/**
+ * **The key that presses it** (R33, #3377): the `shortcut` part, small and mono after the words,
+ * on the primary and the secondary, and off (`shortcutOff`): its room kept and nothing drawn, so
+ * a button whose key does not press it now is as wide as one whose key does (R163). The key is
+ * never part of the button's name or words.
+ */
+export const WithItsKey: Story = {
+  render: () => (
+    <div style={{ display: "grid", gap: "var(--space-3)", justifyItems: "start" }}>
+      <ButtonRow aria-label="Keys on" role="group">
+        <Button variant="primary" shortcut="⌘↩" aria-keyshortcuts="Meta+Enter">
+          Start chat
+        </Button>
+        <Button shortcut="⌘S" aria-keyshortcuts="Meta+S">
+          Save
+        </Button>
+      </ButtonRow>
+      <ButtonRow aria-label="Key off" role="group">
+        <Button variant="primary" shortcut="⌘↩" shortcutOff>
+          Start chat
+        </Button>
+      </ButtonRow>
+    </div>
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const [on, off] = canvas.getAllByRole("button", { name: "Start chat" });
+    for (const button of [on, off]) await expect(button).toHaveTextContent(/^Start chat$/);
+    const hint = (button: HTMLElement) =>
+      button.querySelector('[data-scope="button"][data-part="shortcut"]') as HTMLElement;
+    await expect(hint(on)).toBeVisible();
+    await expect(hint(off)).not.toBeVisible();
+    // Off keeps its room: the two are one width.
+    await expect(off.getBoundingClientRect().width).toBe(on.getBoundingClientRect().width);
+    await userEvent.tab();
+    await expect(on).toHaveFocus();
+    expectFocusInSight();
+  },
+};
+
 /** Icon buttons: square at each size, named by their label alone. */
 function IconButtonsDrawn() {
   const [said, setSaid] = useState("Nothing pressed");

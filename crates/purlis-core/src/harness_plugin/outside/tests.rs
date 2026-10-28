@@ -97,7 +97,8 @@ fn claude_code_finds_the_persons_own_skills_and_each_installed_plugins_by_its_na
     assert_eq!(
         found[1].switch,
         Switch::Not(
-            "Claude Code turns a plugin's skill off only with the whole plugin, figma".to_owned()
+            "it comes with the plugin figma, which Claude Code turns on or off itself, so its skills are shown read-only"
+                .to_owned()
         )
     );
     assert_eq!(
@@ -140,7 +141,15 @@ fn codex_finds_the_persons_own_and_each_plugins_newest_version() {
         rows(&found),
         [
             ("notes", Origin::Harness, "you".to_owned(), true, false),
-            ("zp:zp-skill", Origin::Harness, "zp".to_owned(), true, true),
+            // #3467: a plugin's skill is its plugin's, read-only, and a file's `false` for it
+            // turns nothing off.
+            (
+                "zp:zp-skill",
+                Origin::Harness,
+                "zp".to_owned(),
+                false,
+                false
+            ),
         ]
     );
 }

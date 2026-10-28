@@ -2072,6 +2072,9 @@ pub struct Planes {
     /// Told what a working chat is doing, each time its one line changes (#1493).
     doings: crate::doing::Teller,
     skill_runs: crate::skillrun::Teller,
+    /// The app's executor, which asks each chat's router extension at its start (SK-15b): none
+    /// for a registry a test makes, whose chats are then routed by the built-in router.
+    routers: Option<Arc<purlis_core::executor::Executor>>,
     /// Told each sandbox block a chat's hook found, once kept in the network record (#1338,
     /// #1662).
     blocks: hooks::BlockTeller,
@@ -2359,6 +2362,7 @@ impl Planes {
             touches: Arc::new(|_| {}),
             doings: Arc::new(|_| {}),
             skill_runs: Arc::new(|_| {}),
+            routers: None,
             blocks: Arc::new(|_| {}),
             arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
             refused_more: Arc::new(|_| {}),
@@ -2569,6 +2573,13 @@ impl Planes {
     /// it changes (SK-3).
     pub fn telling_skill_runs(mut self, skill_runs: crate::skillrun::Teller) -> Self {
         self.skill_runs = skill_runs;
+        self
+    }
+
+    /// Asks each chat's router extension at its start with `executor` (SK-15b, ADR 0102 §5): the
+    /// app's own, so quitting stops what it asked too.
+    pub fn asking_routers_with(mut self, executor: Arc<purlis_core::executor::Executor>) -> Self {
+        self.routers = Some(executor);
         self
     }
 
@@ -3097,6 +3108,9 @@ impl Planes {
                         told,
                         strong.chats().runner_of(block.line.chat).as_deref(),
                     );
+                    // A server asking for a port the chat serves on already (#2019).
+                    told =
+                        hooks::on_its_serving(told, &strong.chats().served_ports(block.line.chat));
                     // Held while the person answers (#1666): the chat's own board says so,
                     // never anything the block's sender said.
                     told.held = strong.chats().asking(told.session, told.target.as_deref());
@@ -3888,6 +3902,12 @@ impl Planes {
             chats.sessions().hear_through(relayed);
         }
         chats.arming_with(self.shipped.clone());
+        if let Some(executor) = &self.routers {
+            chats.asks_routers_with(Arc::new(purlis_core::skills::router::OnThisMachine {
+                executor: Arc::clone(executor),
+                project: root.clone(),
+            }));
+        }
         chats.stopped_by(Arc::clone(&self.kill_switch));
         chats.on_device(device);
         chats.keeping_pools_in(self.pools_in.clone());
@@ -3919,6 +3939,23 @@ impl Planes {
                     });
                     if let Err(why) = begun {
                         tracing::warn!("purlis: a run was not written to the event log ({why})");
+                    }
+                }
+            }));
+            // Its routing record, under the run its start began (SK-15b), held with a held run.
+            chats.when_a_chat_is_routed(Box::new({
+                let (events, root) = (events.clone(), root.clone());
+                move |session, record| {
+                    let routed = events.record(purlis_core::eventlog::Entry::SkillRouted {
+                        plane: root.clone(),
+                        number: session,
+                        record: record.clone(),
+                    });
+                    if let Err(why) = routed {
+                        tracing::warn!(
+                            "purlis: a chat's routing record was not written to the event log \
+                             ({why})"
+                        );
                     }
                 }
             }));
@@ -5273,9 +5310,9 @@ pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_children_end};
 mod tests;
 
 #[cfg(test)]
-#[path = "planes_restoring_tests.rs"]
+#[path = "planes/tests/restoring.rs"]
 mod restoring_tests;
 
 #[cfg(all(test, unix))]
-#[path = "planes_review_tests.rs"]
+#[path = "planes/tests/review.rs"]
 mod review_tests;

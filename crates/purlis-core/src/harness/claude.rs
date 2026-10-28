@@ -80,6 +80,7 @@ impl HarnessAdapter for ClaudeCode {
             skills_off: crate::skills::skills_off_for(kit, Harness::ClaudeCode, plugins)
                 .into_iter()
                 .collect(),
+            own_index: plugins.own_index,
         };
         let mut args = words(["--plugin-dir", &plugin.display().to_string()]);
         // The plane's skills, as a plugin of their own (ADR 0063 as amended 2026-10-20).
@@ -316,9 +317,10 @@ impl HarnessAdapter for ClaudeCode {
 
     /// Yes (SK-16): a grade's chat is armed with purlis's MCP server alone and its read tools
     /// (`--strict-mcp-config`), is denied the tools that start a sub-agent, and says what it
-    /// spent, so purlis holds it to the grade's limits.
-    fn can_grade(&self) -> bool {
-        true
+    /// spent, so purlis holds it to the grade's limits. Its plugins are turned off for that chat
+    /// alone in its `--settings` (`enabledPlugins`), purlis's own pinned on (#3468).
+    fn can_grade(&self) -> Result<(), String> {
+        Ok(())
     }
 
     /// The person's own settings that start every chat with its prompts off, or that purlis
@@ -333,9 +335,49 @@ impl HarnessAdapter for ClaudeCode {
         if let Some(why) = settings_keep_a_grade_from_running(env) {
             return Some(why);
         }
-        crate::dispatchunattended::bypass_in(command)
+        if let Some(flag) = crate::dispatchunattended::bypass_in(command)
             .or_else(|| mode_that_does_not_ask(command))
-            .map(|flag| prompts_off_by(&flag))
+        {
+            return Some(prompts_off_by(&flag));
+        }
+        // A plugin the command loads itself is not in the install record, so a grade could not
+        // turn it off for its chat (P8, #3468).
+        plugin_dir_in(command).map(|flag| {
+            format!(
+                "This profile's command loads a plugin of its own ({}), which a grade cannot turn \
+                 off for its chat, and a grade runs with only purlis's plugin on: pick another \
+                 profile.",
+                crate::shown::one_line(&flag, 60)
+            )
+        })
+    }
+
+    /// Claude Code's own order: the last `--model` in the command, then `ANTHROPIC_MODEL`; a
+    /// family alias read through the variable that remaps it ([`remapped`]). `None` where
+    /// neither says, and Claude Code picks: a `model` in its settings is not read, as the
+    /// project's outranks the person's and both reach the chat, so the limit is priced at the
+    /// dearest rather than at a model that may not run.
+    fn grade_model(
+        &self,
+        command: &[String],
+        env: &crate::harness_plugin::Env<'_>,
+    ) -> Option<String> {
+        let model = model_flag_in(command)
+            .or_else(|| env.var(MODEL_VARIABLE))
+            .filter(|model| !model.trim().is_empty())?;
+        remapped(&model, env)
+    }
+
+    /// Claude Code's three family aliases, as `claude --help` names them for `--model` (2.1.x):
+    /// each the family's newest model, so the list never goes stale with a release. A full
+    /// model id stays the profile's to name in its command.
+    fn grade_models(&self) -> &'static [&'static str] {
+        &["opus", "sonnet", "haiku"]
+    }
+
+    /// `--model <model>`: Claude Code takes the last one its line names.
+    fn model_words(&self, model: &str) -> Vec<String> {
+        vec![MODEL_FLAG.to_owned(), model.to_owned()]
     }
 
     /// The line as it is: Claude Code's sandbox rides in the `--settings` charter hands it (in
@@ -451,9 +493,9 @@ fn settings(
     graded: bool,
 ) -> String {
     let mut settings = serde_json::Map::new();
-    // The project's own choice of Claude Code's plugins first (charter-app#274, ADR 0050): a
-    // session `enabledPlugins` wins over the project's and the user's for the keys it names,
-    // and leaves every other plugin to them.
+    // What purlis hands this chat first: a Try it's scratch chat's every plugin off. A session
+    // `enabledPlugins` wins over the project's and the user's for the keys it names, and leaves
+    // every other plugin to them, which is every plugin purlis does not pin (#3467).
     let mut enabled: serde_json::Map<String, serde_json::Value> = plugins
         .plugins
         .iter()
@@ -479,7 +521,15 @@ fn settings(
     // '{"skillOverrides":{"langfuse":"off"}}'` took `langfuse` out of the init event's skills.
     // It does not reach a plugin's skill (`<plugin>:<skill>`), which goes only with its plugin,
     // so none is written, and nor is a built-in skill's name ([`crate::skills::skills_off_for`]).
-    // Not written at all where none is off, so the operator's own overrides stand.
+    // Not written at all where none is off.
+    //
+    // **The operator's own overrides stand beside it** (#3320): Claude Code merges a session's
+    // `skillOverrides` with theirs name by name, so only purlis's names are written. Measured on
+    // 2.1.311 in a throwaway `CLAUDE_CONFIG_DIR` holding skills `alpha` and `beta` and a
+    // `settings.json` of `{"skillOverrides":{"alpha":"off"}}`: `--settings
+    // '{"skillOverrides":{"beta":"off"}}'` took both out of the init event's skills, and
+    // `{"alpha":"on"}` put `alpha` back. A session's name wins over theirs for that name alone,
+    // and purlis only ever writes `"off"`.
     let overrides: serde_json::Map<String, serde_json::Value> = plugins
         .skills_off
         .iter()
@@ -706,6 +756,19 @@ fn prompts_off_by(flag: &str) -> String {
     )
 }
 
+/// **The `--plugin-dir` in `command`**, as it is written, or `None` (#3468): in either spelling,
+/// `--plugin-dir <dir>` or `--plugin-dir=<dir>`.
+fn plugin_dir_in(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command
+        .iter()
+        .find(|word| is_flag(word) && split(word).0 == PLUGIN_DIR_FLAG)
+        .cloned()
+}
+
+/// The flag Claude Code loads a plugin from a folder by, for one session.
+const PLUGIN_DIR_FLAG: &str = "--plugin-dir";
+
 /// **Claude Code's permission modes a grade's chat may start in** (#3352): each asks before a
 /// tool its rules do not allow, so a grade's "end at the first ask" fires. Every other mode
 /// (`acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`, and any a later version adds) is
@@ -740,6 +803,46 @@ fn mode_that_does_not_ask(command: &[String]) -> Option<String> {
         })
     })
 }
+
+/// **The model the last `--model` in `command` names**, where one names a model.
+fn model_flag_in(command: &[String]) -> Option<String> {
+    use crate::sandbox::codex::{is_flag, split};
+    command
+        .iter()
+        .enumerate()
+        .filter(|(_, word)| is_flag(word))
+        .filter_map(|(at, word)| {
+            let (flag, attached) = split(word);
+            (flag == MODEL_FLAG).then(|| {
+                attached
+                    .map(str::to_owned)
+                    .or_else(|| command.get(at + 1).filter(|next| !is_flag(next)).cloned())
+            })
+        })
+        .next_back()
+        .flatten()
+}
+
+/// **`model` as Claude Code runs it**: a family alias it remaps through
+/// `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` is the model that variable names, and `opusplan`, which
+/// runs both Opus and Sonnet, is none where either is remapped (the limit then prices at the
+/// dearest). Any other model is itself.
+fn remapped(model: &str, env: &crate::harness_plugin::Env<'_>) -> Option<String> {
+    let family = |name: &str| env.var(&format!("ANTHROPIC_DEFAULT_{name}_MODEL"));
+    let alias = model.trim().to_ascii_lowercase();
+    let alias = alias.split('[').next().unwrap_or_default();
+    match alias {
+        "opus" | "sonnet" | "haiku" => {
+            Some(family(&alias.to_ascii_uppercase()).unwrap_or_else(|| model.to_owned()))
+        }
+        "opusplan" if family("OPUS").is_some() || family("SONNET").is_some() => None,
+        _ => Some(model.to_owned()),
+    }
+}
+
+/// The flag Claude Code starts a chat on a model by, and the variable it reads after it.
+const MODEL_FLAG: &str = "--model";
+const MODEL_VARIABLE: &str = "ANTHROPIC_MODEL";
 
 /// The flag Claude Code starts a chat in a permission mode by.
 const PERMISSION_MODE_FLAG: &str = "--permission-mode";

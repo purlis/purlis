@@ -85,6 +85,11 @@ pub struct MachineProfile {
     /// nothing is imported into it. Written only where true.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub sandbox_only: bool,
+    /// **On a runner, the desktop it is kept for** (#2049), by its device id: a profile the
+    /// desktop paired with this runner had it keep (`keep_profile`, [`onrunner`]). Only such a
+    /// record of a folder adopted in place is signed in by purlis here. Written only where set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kept_for: Option<String>,
     /// Every field of the record this build does not know, written back as it was read.
     #[serde(flatten)]
     pub rest: Map<String, Value>,
@@ -490,6 +495,7 @@ pub fn adopt(
                 sign_in: None,
                 pinned: None,
                 sandbox_only: false,
+                kept_for: None,
                 rest: Map::new(),
             };
             store.profiles.push(profile.clone());
@@ -512,6 +518,7 @@ pub fn adopt_at_launch() -> Result<Adoption, String> {
 mod made;
 pub use made::*;
 
+pub mod onrunner;
 pub mod pin;
 pub mod sandbox_only;
 pub mod sign_in;

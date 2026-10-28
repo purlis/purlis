@@ -184,8 +184,24 @@ pub struct ChatForSkills {
     pub persona: Option<String>,
     /// Its harness, `None` for a shell or a program purlis has no adapter for.
     pub harness: Option<Harness>,
+    /// Where its plane skills came from, as its start read them (#3234): what its set is routed
+    /// from again (#3245).
+    pub start: purlis_core::hoststart::ChatSkills,
     /// What its prompts are digested under (SK-38): its own id, which its hooks read too.
     pub salt: Option<purlis_core::skillspan::PromptSalt>,
+    /// The folder it was started in: which of its workspace's clones it works in (#3462).
+    pub cwd: Option<PathBuf>,
+    /// Whether the plane's skills reached it at its start ([`Running::plane_skills`], #3445).
+    pub plane_skills: bool,
+}
+
+/// One chat open here that its start routed by a router extension ([`Chats::routings`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatRouted {
+    pub session: u32,
+    pub workspace: Option<String>,
+    pub persona: Option<String>,
+    pub routed: purlis_core::skills::router::Routed,
 }
 
 /// One chat open here, as its theme drafts are found and named ([`Chats::drafting`]).
@@ -218,6 +234,9 @@ pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>) + Send + Sy
 /// number, its id, the run's id, why it began and what it is (ADR 0066, #868), and whether its
 /// `run.started` is held until the start goes on. What the event log is told.
 pub type Beginning = Box<dyn Fn(u32, RunOf<'_>, Began, &Attributes, RunSaid) + Send + Sync>;
+
+/// Told a chat's number and its routing record as its run begins (SK-15b).
+pub type Routed = Box<dyn Fn(u32, &purlis_core::skills::router::Record) + Send + Sync>;
 
 /// When a run's `run.started` is written (#2250).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -402,6 +421,32 @@ struct Running {
     /// change to them: what [`Chats::skills_changed`] compares with the skills now. `None` for a
     /// chat that runs no harness.
     skills: Option<purlis_core::skills::Stamp>,
+    /// **Whether the plane's skills reached it at its start** (#3445): the Skill studio's flag
+    /// as this window read it once as the chat started (`purlis_core::skills::reach_chats_here`),
+    /// which its arming, its Notice, its stamp and Use skill… all take. A chat reattached from
+    /// the session host (#2006) takes its first start's, from its record (#3466), or the flag
+    /// as read at its reattach where a record written before that has none. A runner's chat is
+    /// armed by its runner (#2446), so this is this machine's word for it.
+    plane_skills: bool,
+    /// **Where its plane skills came from, read once at its start** (#3234): what its restart's
+    /// stamp and Use skill… route it from again, so neither reads its clone a second time and
+    /// both see the set it was handed (#3245).
+    skills_read: purlis_core::hoststart::ChatSkills,
+}
+
+/// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
+/// `reattaching` from the session host keeps the flag its first start read, `recorded`, where its
+/// record has one; any other start reads the Skill studio's flag now (`read`).
+fn plane_skills_at_start(
+    reattaching: bool,
+    recorded: Option<bool>,
+    read: impl FnOnce() -> bool,
+) -> bool {
+    if reattaching {
+        recorded.unwrap_or_else(read)
+    } else {
+        read()
+    }
 }
 
 /// **The personas a chat is named by** (#2691), from one read of the app's record of its run
@@ -598,6 +643,12 @@ pub struct Chats {
     reattached: Mutex<Option<Starting>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
+    /// What asks a chat's router extension at its start (SK-15b): none until the app hands one,
+    /// so a chat whose workspace or persona chose one is routed by the built-in router.
+    router: Mutex<Option<Arc<dyn purlis_core::skills::router::AskRouter>>>,
+    /// Told each chat's routing record as its run begins, where its start asked a router
+    /// extension (SK-15b): what the event log is told.
+    routed: Mutex<Option<Routed>>,
     /// Told, by number, what became of a start whose run was held ([`RunSaid::Held`]).
     #[allow(clippy::type_complexity)]
     settled: Mutex<Option<Box<dyn Fn(u32, HeldStart) + Send + Sync>>>,
@@ -633,6 +684,9 @@ pub struct Chats {
     /// This machine's config home, where the pools this machine keeps and which workspaces run
     /// their chats on one are (#2679); `None` where nothing is kept there, a test's.
     pools_in: Option<PathBuf>,
+    /// How a chat's profile is kept, and found signed in, on the pool's runner it starts on
+    /// (#2049); `None` where nothing is kept there, a test's.
+    profiles_on_pools: Option<Arc<dyn crate::poolprofiles::ProfilesOnPools>>,
     /// What each chat closed this launch was, by number, for a start in one's place: its ids,
     /// and where it stood in a lineage.
     let_go: Mutex<HashMap<u32, LetGo>>,
@@ -848,6 +902,8 @@ struct Settled {
     services: Vec<String>,
     /// The services on this Mac a chat may connect to, each by its port (qw384).
     ports: Vec<u16>,
+    /// The ports of this Mac a chat may listen on (#2019).
+    listens: Vec<u16>,
 }
 
 /// **What of a running chat its sandbox is compiled from now** ([`Chats::on_older_sandbox`]):
@@ -901,11 +957,28 @@ impl Settled {
                 services.dedup();
                 services
             },
+            // As granted, not as this Mac was at the compile (#2019): a port given for a listen
+            // grant alone, and whether something listened on it then (the chat's own door, once
+            // it serves), change no grant.
             ports: {
-                let mut ports = confines.widened.ports.clone();
+                let widened = &confines.widened;
+                let mut ports: Vec<u16> = widened
+                    .ports
+                    .iter()
+                    .copied()
+                    .filter(|port| !widened.listen_only.contains(port))
+                    .collect();
                 ports.sort_unstable();
                 ports.dedup();
                 ports
+            },
+            listens: {
+                let widened = &confines.widened;
+                let mut listens = widened.listens.clone();
+                listens.extend(&widened.unserved);
+                listens.sort_unstable();
+                listens.dedup();
+                listens
             },
         }
     }
@@ -948,6 +1021,10 @@ impl Settled {
                 // was before ports were allowed (qw384).
                 if !settled.ports.is_empty() {
                     list("ports", &mut settled.ports.iter().map(u16::to_string));
+                }
+                // Likewise ports to listen on (#2019).
+                if !settled.listens.is_empty() {
+                    list("listens", &mut settled.listens.iter().map(u16::to_string));
                 }
             }
         }
@@ -1108,6 +1185,8 @@ impl Chats {
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
+            router: Mutex::new(None),
+            routed: Mutex::new(None),
             settled: Mutex::new(None),
             trusting: Mutex::new(None),
             late_notes: Mutex::new(HashMap::new()),
@@ -1120,6 +1199,7 @@ impl Chats {
             older_in_notes: Mutex::new(HashMap::new()),
             device: None,
             pools_in: None,
+            profiles_on_pools: None,
             let_go: Mutex::new(HashMap::new()),
             never_started: Mutex::new(None),
             shipped: crate::Shipped::default(),
@@ -1214,6 +1294,18 @@ impl Chats {
         *lock(&self.beginning) = Some(tell);
     }
 
+    /// Asks a chat's router extension at its start with `router` (SK-15b, ADR 0102 §5).
+    pub fn asks_routers_with(&self, router: Arc<dyn purlis_core::skills::router::AskRouter>) {
+        *lock(&self.router) = Some(router);
+    }
+
+    /// Calls `tell` with each chat's routing record as its run begins, where its start asked a
+    /// router extension (SK-15b): after the run's own `run.started` is told; and again for a
+    /// chat reattached, whose router its start asked again.
+    pub fn when_a_chat_is_routed(&self, tell: Routed) {
+        *lock(&self.routed) = Some(tell);
+    }
+
     /// Calls `tell` with the number of a chat whose run began [`RunSaid::Held`] once its project
     /// settings were screened at its start: whether the start goes on or was put aside (#2250,
     /// #2252).
@@ -1272,7 +1364,30 @@ impl Chats {
     /// Reads where each workspace runs its chats from this machine's config home `config`
     /// (#2679): a workspace whose chats run on a pool starts none here.
     pub fn keeping_pools_in(&mut self, config: Option<PathBuf>) {
+        self.profiles_on_pools = config.clone().map(|config| {
+            Arc::new(crate::poolprofiles::Linked::at(config))
+                as Arc<dyn crate::poolprofiles::ProfilesOnPools>
+        });
         self.pools_in = config;
+    }
+
+    /// Readies each chat's profile on the pool it starts on through `on_pools` (#2049).
+    #[cfg(test)]
+    pub fn readying_profiles_on_pools(
+        &mut self,
+        on_pools: Arc<dyn crate::poolprofiles::ProfilesOnPools>,
+    ) {
+        self.profiles_on_pools = Some(on_pools);
+    }
+
+    /// **Keeps `profile` on pool `pool`'s runner, signed in there** (#2049), as a start there
+    /// does first: what a chat moving there asks before its conversation goes (#2048). `Ok`
+    /// where this machine keeps no pool to ready it on.
+    pub fn ready_profile_on(&self, pool: &str, profile: &str) -> Result<(), String> {
+        match &self.profiles_on_pools {
+            Some(on_pools) => on_pools.ready(&self.project, pool, profile),
+            None => Ok(()),
+        }
     }
 
     /// This machine's config home, where the pools it keeps are, where it keeps any (#2050).
@@ -1373,7 +1488,8 @@ impl Chats {
     /// purlis's server and read tools alone (`purlis_core::hoststart::Arming::graded`).
     ///
     /// `skills` is where its plane skills come from, read once at its start
-    /// (`purlis_core::hoststart::ChatSkills::read`, #3234), as its tab's Notice reads them.
+    /// (`purlis_core::hoststart::ChatSkills::read`, #3234), as its tab's Notice reads them: read
+    /// only once the arming's fail-closed checks have passed (#3461).
     ///
     /// **Fail closed.** A sandbox compiled for another harness, or one the harness is not armed
     /// to carry here (the app shipped without its plugin or its binary), refuses the chat rather
@@ -1388,7 +1504,7 @@ impl Chats {
         persona: Option<&str>,
         env: &[(String, String)],
         graded: bool,
-        skills: &purlis_core::hoststart::ChatSkills,
+        skills: &dyn std::ops::Deref<Target = purlis_core::hoststart::ChatSkills>,
     ) -> Result<Armed, String> {
         purlis_core::hoststart::armed(&purlis_core::hoststart::Arming {
             root: &self.project,
@@ -1976,10 +2092,14 @@ impl Chats {
     /// Each chat it was withdrawn from is told narrowed ([`Self::tell_narrowed_to`]), whose
     /// browsers end, and a browser it opens after is given the port withdrawn (#2013).
     pub fn withdraw_port(&self, chat: Option<&str>, port: u16) -> Result<Vec<u32>, String> {
-        let what = purlis_core::sandbox::grant::What::Port(port);
+        // A chat that holds the port to connect to or to listen on (#2019) keeps it.
+        let held = [
+            purlis_core::sandbox::grant::What::Port(port),
+            purlis_core::sandbox::grant::What::Listen(port),
+        ];
         let holding: Vec<String> = lock(&self.grants)
             .iter()
-            .filter(|(_, made)| made.iter().any(|one| one.what == what))
+            .filter(|(_, made)| made.iter().any(|one| held.contains(&one.what)))
             .map(|(id, _)| id.clone())
             .collect();
         let open = lock(&self.open);
@@ -2133,6 +2253,45 @@ impl Chats {
     /// Owes chat `session` a restart on its conversation that tells it `told` (#1342): a grant
     /// of any level reaches a running chat that way.
     /// A chat that is not open is owed nothing: what was allowed reaches it at its next start.
+    /// The ports open chat `session` serves on, behind their doors (#2019).
+    pub fn served_ports(&self, session: u32) -> Vec<u16> {
+        lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.confinement.as_ref())
+            .and_then(purlis_core::sandbox::Confinement::served)
+            .map(|(_, ports)| ports)
+            .unwrap_or_default()
+    }
+
+    /// **Each open chat serving on `port` is owed a restart** (#2019): its server's grant was
+    /// taken back, and its door and its profile were fixed as it started, so until it restarts
+    /// it still serves there. `chat` names the one chat it was taken back from, by id; none,
+    /// every chat. The chats owed it, by number.
+    pub fn owe_restart_serving(&self, chat: Option<&str>, port: u16) -> Vec<u32> {
+        let serving: Vec<u32> = lock(&self.open)
+            .iter()
+            .filter(|(_, running)| {
+                chat.is_none_or(|one| running.chat.identity.id.as_deref() == Some(one))
+                    && running
+                        .confinement
+                        .as_ref()
+                        .and_then(purlis_core::sandbox::Confinement::served)
+                        .is_some_and(|(_, ports)| ports.contains(&port))
+            })
+            .map(|(number, _)| *number)
+            .collect();
+        for number in &serving {
+            self.owe_restart(
+                *number,
+                format!(
+                    "⬢ purlis: running a server on port `{port}` — taken back by the person; \
+                     this chat restarted without it."
+                ),
+            );
+        }
+        serving
+    }
+
     pub fn owe_restart(&self, session: u32, told: String) {
         if !lock(&self.open).contains_key(&session) {
             return;
@@ -2838,6 +2997,7 @@ impl Chats {
             Option<String>,
             Option<String>,
             Harness,
+            purlis_core::hoststart::ChatSkills,
             purlis_core::skills::Stamp,
         );
         let started: Vec<Started> = lock(&self.open)
@@ -2848,6 +3008,7 @@ impl Chats {
                     running.workspace.clone(),
                     running.chat.persona.clone(),
                     running.harness?,
+                    running.skills_read.clone(),
                     running.skills.clone()?,
                 ))
             })
@@ -2855,14 +3016,16 @@ impl Chats {
         let built_in = built_in_skills_here();
         let mut changed: Vec<u32> = started
             .into_iter()
-            .filter(|(_, workspace, persona, harness, then)| {
-                purlis_core::skills::stamp_of(
-                    &self.project,
-                    workspace.as_deref(),
-                    persona.as_deref(),
-                    *harness,
-                    built_in.as_deref(),
-                ) != *then
+            .filter(|(_, workspace, persona, harness, start, then)| {
+                purlis_core::skills::stamp_of(&purlis_core::skills::Running {
+                    plane: &self.project,
+                    workspace: workspace.as_deref(),
+                    persona: persona.as_deref(),
+                    harness: *harness,
+                    built_in: built_in.as_deref(),
+                    plane_skills: true,
+                    start: Some(start),
+                }) != *then
             })
             .map(|(session, ..)| session)
             .collect();
@@ -3214,12 +3377,29 @@ impl Chats {
                     .to_owned(),
             );
         }
+        // **Its profile is kept, and signed in, on the pool's runner before it starts there**
+        // (#2049): signed in, it starts with nobody asked, a moved chat's too; signed out, it
+        // starts nothing and waits as one Ask to sign it in on that pool.
+        if on_the_runner
+            && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
+            && let Some(pool) = self.sessions.pool_for(workspace.as_deref())
+        {
+            on_pools.ready(&self.project, &pool, profile)?;
+        }
         // The services of this machine the person allowed it alone, which the runner is told
         // of: it leaves out those its own sandbox does not give, and asks about each (#2590).
-        let alone = sandbox
+        // Never a port given for a grant to serve on alone: a runner opens no door (#2019).
+        let alone: Vec<u16> = sandbox
             .filter(|_| on_the_runner)
-            .and_then(purlis_core::sandbox::Applied::plan)
-            .map(|plan| plan.given_for_this_chat_alone())
+            .and_then(|applied| {
+                let listen_only = applied.confines().widened.listen_only.clone();
+                applied.plan().map(|plan| {
+                    plan.given_for_this_chat_alone()
+                        .into_iter()
+                        .filter(|port| !listen_only.contains(port))
+                        .collect()
+                })
+            })
             .unwrap_or_default();
         // Whether this window's own reading of the chat's start compiled a sandbox for it, which
         // a runner's record of its run is held to below (#2692).
@@ -3330,36 +3510,36 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
+        // here, so its arming, its Notice, its stamp and Use skill… take the same word; a chat
+        // reattached keeps its start's, where its record has it (#3466).
+        let plane_skills = plane_skills_at_start(reattaching, chat.plane_skills, || {
+            purlis_core::skills::reach_chats_here(&self.project)
+        });
         // Where its plane skills come from, and its clone's repo skills, read once (#3234): what
-        // arms it below and what its tab's Notice says are both worked out from this.
-        let skills = if on_the_runner {
-            purlis_core::hoststart::ChatSkills::default()
-        } else {
-            purlis_core::hoststart::ChatSkills::read(
-                purlis_core::skills::reach_chats_here(&self.project),
-                &self.project,
-                harness,
-                chat.cwd.as_deref(),
-                runs_as.as_deref(),
-            )
-        };
-        // A skill its persona names that this machine does not have (SK-5, #2768), or one it
-        // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
-        // tab's Notice says which, never a silent drop.
-        let skills_missing = if reattaching || on_the_runner {
-            None
-        } else {
-            purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
-                |not| SkillsMissing {
-                    persona: runs_as.clone(),
-                    missing: not.missing,
-                    no_built_in: not.no_built_in,
-                    broken: not.broken.into_iter().map(SkillBroken::from).collect(),
-                    by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
-                    beside_a_built_in: not.beside_a_built_in,
-                },
-            )
-        };
+        // arms it below and what its tab's Notice says are both worked out from this. Read once
+        // its arming has checked the start is not refused (#3461).
+        // And routed by the router its persona or workspace chose, asked now where it is an
+        // extension's (SK-15b).
+        let router = lock(&self.router).clone();
+        let skills = std::cell::LazyCell::new(|| {
+            if on_the_runner {
+                purlis_core::hoststart::ChatSkills::default()
+            } else {
+                purlis_core::hoststart::ChatSkills::read(
+                    plane_skills,
+                    &self.project,
+                    harness,
+                    chat.cwd.as_deref(),
+                    runs_as.as_deref(),
+                )
+                .routed_by(
+                    built_in_skills_here().as_deref(),
+                    harness,
+                    router.as_ref(),
+                )
+            }
+        });
         // A sandboxed Claude Code chat whose project's own settings it does not load says which
         // keys, in the window only (ADR 0067 as amended 2026-10-15). Its arming read the same
         // files and decided the same way.
@@ -3460,6 +3640,23 @@ impl Chats {
                 chat.graded,
                 &skills,
             )?
+        };
+        // A skill its persona names that this machine does not have (SK-5, #2768), or one it
+        // would have loaded that cannot be (SK-8, #2771): the chat starts without it, and its
+        // tab's Notice says which, never a silent drop.
+        let skills_missing = if reattaching || on_the_runner {
+            None
+        } else {
+            purlis_core::hoststart::skills_not_here(&skills, &self.kit(harness), harness, &env).map(
+                |not| SkillsMissing {
+                    persona: runs_as.clone(),
+                    missing: not.missing,
+                    no_built_in: not.no_built_in,
+                    broken: not.broken.into_iter().map(SkillBroken::from).collect(),
+                    by_a_repo: not.by_a_repo.into_iter().map(SkillBroken::from).collect(),
+                    beside_a_built_in: not.beside_a_built_in,
+                },
+            )
         };
         let hooks = match &settings_watched {
             Some(Err(why)) => {
@@ -3585,6 +3782,46 @@ impl Chats {
             })?),
             None => None,
         };
+        // The doors to the servers this chat may run (#2019), opened in this process wherever
+        // its proxy runs, before its line is compiled: a socket for each, in its own folder. A
+        // port it serves on none of is told, and withdrawn from its proxy where only its listen
+        // grant gave it.
+        if let (Some(confinement), Some(confines)) = (confinement.as_mut(), confines.as_ref())
+            && sandbox.is_some_and(|applied| {
+                applied.harness() != purlis_core::harness::Harness::ClaudeCode
+            })
+        {
+            let widened = &confines.widened;
+            let mut unserved = widened.unserved.clone();
+            if !widened.listens.is_empty() {
+                let folder = identity
+                    .id
+                    .as_deref()
+                    .and_then(purlis_core::sandbox::door::folder_for);
+                let served = match folder {
+                    Some(folder) => confinement
+                        .serve(&folder, widened)
+                        .map_err(|err| err.to_string()),
+                    None => {
+                        for port in &widened.listen_only {
+                            let _ = confinement.withdraw_port(*port);
+                        }
+                        Err("it has no folder of its own to serve in".to_owned())
+                    }
+                };
+                match served {
+                    Ok(more) => unserved.extend(more),
+                    Err(why) => {
+                        tracing::warn!("purlis: a chat's servers were not served ({why})");
+                        late.extend(purlis_core::sandbox::door::unservable_said(
+                            &widened.listens,
+                            &why,
+                        ));
+                    }
+                }
+            }
+            late.extend(purlis_core::sandbox::door::unserved_said(&unserved));
+        }
         // A runner starts the chat without the services you allowed for this chat alone on this
         // machine, and the tab says so, and whether the chat is asked about them there (#2510).
         late.extend(
@@ -3655,6 +3892,14 @@ impl Chats {
                 }
                 Err(err) => tracing::warn!("purlis: a chat's kubeconfig was not written ({err})"),
             }
+        }
+        // Where its servers listen (#2019), for `purlis listen` to name each one's socket.
+        if let Some((folder, _)) = confinement.as_ref().and_then(|it| it.served()) {
+            env.retain(|(key, _)| key != purlis_core::sandbox::door::FOLDER_ENV);
+            env.push((
+                purlis_core::sandbox::door::FOLDER_ENV.to_owned(),
+                folder.display().to_string(),
+            ));
         }
         what_its_hooks_read(
             &mut env,
@@ -3780,6 +4025,8 @@ impl Chats {
                         .map(str::to_owned),
                     // The run this start begins, which its `run.started` is written under.
                     run: identity.run.clone(),
+                    // A grade's chat ends with this window (#3274): only it watches the chat.
+                    ends_with_its_window: chat.graded,
                 },
                 &announce,
             ),
@@ -3815,6 +4062,9 @@ impl Chats {
                 unsandboxed.is_some()
             },
             identity,
+            // The Skill studio's flag this start took (#3466): what its record keeps, and what
+            // a later reattach of it takes.
+            plane_skills: Some(plane_skills),
             ..chat.clone()
         };
         // What a start says on its tab was said at the start it reattached to (#2006); what
@@ -3836,14 +4086,16 @@ impl Chats {
         }
         let workspace = workspace_at_start(Some(&self.project), under.cwd.as_deref());
         // Read before any lock is taken: a stamp is a read of the plane's skill folders.
-        let skills = harness.map(|harness| {
-            purlis_core::skills::stamp_now(
-                &self.project,
-                workspace.as_deref(),
-                under.persona.as_deref(),
+        let stamp = harness.map(|harness| {
+            purlis_core::skills::stamp_now(&purlis_core::skills::Running {
+                plane: &self.project,
+                workspace: workspace.as_deref(),
+                persona: under.persona.as_deref(),
                 harness,
-                built_in_skills_here().as_deref(),
-            )
+                built_in: built_in_skills_here().as_deref(),
+                plane_skills,
+                start: Some(&skills),
+            })
         });
         // A start under this number has been told nothing yet (#1450).
         lock(&self.told).remove(&session);
@@ -3865,9 +4117,20 @@ impl Chats {
                 ran,
                 composed_by_its_host: on_the_runner,
                 grants_as: grants_persona_of(chat, &self.project),
-                skills,
+                skills: stamp,
+                skills_read: (*skills).clone(),
+                plane_skills,
             },
         );
+        // Its routing record, after its run began (SK-15b). A chat reattached began no run here,
+        // and its router was asked again as its start was read again (#3578): that answer is
+        // what its skills are routed by from now on, so it is recorded under the run it is in.
+        if !on_the_runner
+            && let Some(routed) = skills.routed.as_ref()
+            && let Some(tell) = lock(&self.routed).as_ref()
+        {
+            tell(session, &routed.record);
+        }
         lock(&self.sizes).insert(session, size);
         // Screened once more now its program runs: a change since the screen its arming made is
         // answered to the start, which starts it again on the person's settings.
@@ -4642,6 +4905,12 @@ impl Chats {
         }
     }
 
+    /// **The model chat `session`'s harness said it runs on** (ADR 0087 §6, #1021), where it
+    /// said one ([`Self::heard_model`]): what a grade records its chats ran on (SK-60, #3240).
+    pub fn model_of(&self, session: u32) -> Option<String> {
+        lock(&self.models).get(&session).cloned()
+    }
+
     /// What the window says its view tabs are now. Written down when it differs from what was
     /// held, and not otherwise — for [`Self::pin`]'s reason: every write is a fingerprint the
     /// machine store then has to vouch for.
@@ -4784,13 +5053,35 @@ impl Chats {
             workspace: running.workspace.clone(),
             persona: running.persona().started_as,
             harness: running.harness,
+            start: running.skills_read.clone(),
+            plane_skills: running.plane_skills,
             salt: running
                 .chat
                 .identity
                 .id
                 .as_deref()
                 .and_then(purlis_core::skillspan::PromptSalt::of_chat),
+            cwd: running.chat.cwd.clone(),
         })
+    }
+
+    /// **Every chat open here that its start routed by a router extension** (SK-15b), by number,
+    /// with where it works and as whom: what the Skill studio shows of the router's timings.
+    pub fn routings(&self) -> Vec<ChatRouted> {
+        let open = lock(&self.open);
+        let mut out: Vec<ChatRouted> = open
+            .iter()
+            .filter_map(|(session, running)| {
+                Some(ChatRouted {
+                    session: *session,
+                    workspace: running.workspace.clone(),
+                    persona: running.persona().started_as,
+                    routed: running.skills_read.routed.clone()?,
+                })
+            })
+            .collect();
+        out.sort_by_key(|one| one.session);
+        out
     }
 
     /// **The personas chat `session` is named by** (#2691): the one it was started as, whose
@@ -4996,6 +5287,21 @@ impl Chats {
             .collect()
     }
 
+    /// The number the next chat started here would take (#3376): one past the highest this
+    /// plane has dealt. Only a guess for what to show — the Name field's placeholder,
+    /// `steward 10` — since a chat started meanwhile takes it first; a start is dealt its
+    /// number by the sessions, never by this.
+    ///
+    /// **Under the session host it can be low** (#3510): the host's counter is the one that
+    /// deals, and this window's mirror of it is restored from the record. A window that ended
+    /// without writing its record, after the host had dealt numbers to chats now gone, leaves
+    /// the mirror behind the host, so the placeholder names a number the start will pass. It is
+    /// never high, and the name the chat takes is the host's. Asking the host would take a
+    /// protocol command that peeks without dealing, for a placeholder.
+    pub fn next_number(&self) -> u32 {
+        self.sessions.dealt().saturating_add(1)
+    }
+
     /// What was open, to write down.
     pub fn record(&self) -> Record {
         // The chats a launch has still to start are written as they were recorded, each in
@@ -5037,6 +5343,8 @@ impl Chats {
             .map(|chat| Chat {
                 pid: None,
                 model: None,
+                // Not started this launch, so no flag of a start of its (#3466).
+                plane_skills: None,
                 ..chat.clone()
             })
             .collect();
@@ -5071,6 +5379,9 @@ impl Chats {
                     active: front == Some(session),
                     pid: None,
                     model: None,
+                    // Its start is under way, and the flag it takes is not known yet (#3466):
+                    // a later reattach reads it again rather than take an earlier run's.
+                    plane_skills: None,
                     ..one.chat.clone()
                 });
             };
@@ -6206,9 +6517,9 @@ fn built_in_skills_here() -> Option<std::path::PathBuf> {
 pub(crate) mod tests;
 
 #[cfg(test)]
-#[path = "chats_restoring_tests.rs"]
+#[path = "chats/tests/restoring.rs"]
 mod restoring_tests;
 
 #[cfg(test)]
-#[path = "chats_letting_go_tests.rs"]
+#[path = "chats/tests/letting_go.rs"]
 mod letting_go_tests;

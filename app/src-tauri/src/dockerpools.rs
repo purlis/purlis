@@ -68,6 +68,9 @@ pub enum PoolLink {
     KeyChanged,
     /// It did not answer, and why.
     Down { why: String },
+    /// It suspended itself, a day without a link (#2051): its container is stopped, its home
+    /// kept, and the window's next chat there starts it again. A check never wakes it.
+    Suspended,
 }
 
 /// **Which version a pool's runner runs, against this desktop's** (#2749): what its row says
@@ -95,7 +98,8 @@ pub struct PoolVersion {
 }
 
 #[cfg(unix)]
-fn shown(limits: Limits) -> PoolLimitsShown {
+/// `limits`, as a row draws them.
+pub(crate) fn shown(limits: Limits) -> PoolLimitsShown {
     let (whole, part) = (limits.millicpus() / 1000, limits.millicpus() % 1000);
     let cpus = if part == 0 {
         whole.to_string()
@@ -219,7 +223,7 @@ pub async fn add_docker_pool(adding: PoolAdding) -> Result<PoolRow, String> {
 pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
     let desktop = machine.desktop_made()?.pinned();
     purlis_core::pools::add(&machine.config, &machine.docker, pool, &desktop)
-        .map_err(|why| why.to_string())?;
+        .map_err(|why| refused_said(&why.to_string()))?;
     Ok(row(pool))
 }
 
@@ -253,12 +257,12 @@ pub fn remove_on(machine: &Machine, name: &str) -> Result<Option<String>, String
         crate::runnerlinks::unpair(&to)
     };
     let removed = purlis_core::pools::remove(&machine.config, &machine.docker, name, Some(&unpair))
-        .map_err(|why| why.to_string())?;
+        .map_err(|why| refused_said(&why.to_string()))?;
     // The projects that ran their chats on it run them on no pool now: their marks go (#2846).
     crate::notheld::recheck(&machine.config);
     // Nothing of it waits on chats any more (#2865).
     crate::poolfollow::forget_waiting(&machine.config, name);
-    Ok(removed.and_then(|removed| removed.left()))
+    Ok(left_said(removed.and_then(|removed| removed.left())))
 }
 
 /// **Whether the pool `name`'s runner answers with the key pinned for it**: one link, made and
@@ -270,7 +274,12 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
     {
         crate::off_the_window("asking a pool's runner", move || {
             let machine = Machine::here(&config_root()?)?;
-            crate::runnerlinks::link_state(&ToARunner::of(&machine, &name)?)
+            let kept = purlis_core::runners::runner_for(&machine.config, &name)
+                .map_err(|why| why.to_string())?;
+            if matches!(machine.docker.running(&kept.made), Ok(false)) {
+                return Ok(PoolLink::Suspended);
+            }
+            crate::runnerlinks::link_state(&ToARunner::of_kept(&machine, &kept)?)
         })
         .await
     }
@@ -312,10 +321,7 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         .iter()
         .filter(|kept| kept.pool() == name)
         .count();
-    let (runner, why) = match crate::runnerlinks::version_of(machine, &kept) {
-        Ok(version) => (Some(version), None),
-        Err(why) => (None, Some(why)),
-    };
+    let (runner, why) = version_read(crate::runnerlinks::version_of(machine, &kept));
     Ok(PoolVersion {
         runner,
         why,
@@ -325,6 +331,27 @@ pub fn version_on(machine: &Machine, name: &str) -> Result<PoolVersion, String> 
         named: crate::poolfollow::this_versions_image_named(),
         waiting: crate::poolfollow::waiting_on(&machine.config, name),
     })
+}
+
+/// **Why adding or removing a pool was refused**, shown safely
+/// ([`crate::devices::shown_safely`]): the reason may be Docker's or the runner's words.
+pub fn refused_said(why: &str) -> String {
+    crate::devices::shown_safely(why)
+}
+
+/// **What a removal says it left**, shown safely ([`crate::devices::shown_safely`]): Docker's
+/// words for what it could not remove.
+pub fn left_said(left: Option<String>) -> Option<String> {
+    left.map(|left| crate::devices::shown_safely(&left))
+}
+
+/// **A runner's version as a row says it**, or why it could not be read, shown safely
+/// ([`crate::devices::shown_safely`]): the reason is Docker's words.
+pub fn version_read(read: Result<String, String>) -> (Option<String>, Option<String>) {
+    match read {
+        Ok(version) => (Some(version), None),
+        Err(why) => (None, Some(crate::devices::shown_safely(&why))),
+    }
 }
 
 #[cfg(test)]

@@ -1,9 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import * as RovingFocusGroup from "@radix-ui/react-roving-focus";
-import { LoaderCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useBranchFolders, type BranchFolderRef } from "../branchFolders";
 import { branchKey, type Indexed, type StatusRead } from "../branchStatus";
 import {
@@ -11,20 +9,20 @@ import {
   fileFold,
   fileRow,
   fileTreeRows,
-  FolderEntries,
+  foldFileRows,
   levelOf,
-  treeKey,
+  openFileRows,
+  TopItems,
   type FilesOf,
-  type TreeItem,
 } from "../Explorer";
 import type { Offer } from "../actions";
 import { commands, type OpenChat, type PlaneId } from "../bindings";
 import { useFileIcons } from "../projectTheme";
 import { placeName, type Place } from "../pieceViews";
-import { useTabStop } from "../roving";
 import { useReferenceChats } from "../references";
 import { touchingIn, useTouching, type Touching, type Touches } from "../touching";
 import { ToggleButton } from "../ui/button/Button";
+import { Tree } from "../ui/tree/Tree";
 
 /**
  * **A branch's files as a tree, in its file tab** (FM-2, #1103 F3): the explorer's own file rows
@@ -32,10 +30,10 @@ import { ToggleButton } from "../ui/button/Button";
  * reasons and *Show ignored files* — with the branch's folder as the root rather than a *Files*
  * row under a branch.
  *
- * It is the WAI-ARIA "Tree View" pattern the explorer is: one Tab stop (`roving.ts`), Up, Down,
- * Home and End from the roving focus, Right opening a folder or moving into it, Left closing it
- * or moving to its parent, and type-ahead. Enter or a click on a file picks it, and the file
- * picked is the tree's `aria-selected` row and where the keyboard comes back in.
+ * It is the tree family's (`ui/tree`, #2911), the WAI-ARIA "Tree View" pattern: one Tab stop,
+ * Up, Down, Home and End, Right opening a folder or moving into it, Left closing it or moving
+ * to its parent, and type-ahead. Enter or a click on a file picks it, and the file picked is the
+ * tree's chosen row (`aria-selected`) and its Tab stop.
  *
  * **The file picked is revealed** (#1137): when the pick comes from outside the tree (a search
  * jump, `fileJump.ts`), the folders above it are opened and its row is scrolled into view once it
@@ -106,25 +104,32 @@ export function BranchTree({
     touching: touching.size === 0 ? undefined : new Map([[branchKey(place), touching]]),
   };
   const rows = fileTreeRows(workspace, top, files);
-  const drawn = rows.filter((row) => row.drawn);
   const pickedRow = picked === undefined ? undefined : fileRow({ ...top, folder: picked });
-  const stop = useTabStop(
-    pickedRow,
-    drawn.map((row) => row.id),
-  );
-  const byId = new Map(rows.map((row) => [row.id, row]));
   const treeRef = useRef<HTMLDivElement>(null);
   /** The reveal last scrolled to, so a redraw does not scroll the tree under the operator. */
   const scrolled = useRef<string>(undefined);
-  const pickedDrawn = pickedRow !== undefined && drawn.some((row) => row.id === pickedRow);
+  const pickedDrawn = pickedRow !== undefined && rows.some((row) => row.id === pickedRow);
   useEffect(() => {
     if (!pickedDrawn || asked === undefined || scrolled.current === asked) return;
-    scrolled.current = asked;
-    // `block: "nearest"` moves the list only when the row is off screen. Optional because jsdom
-    // has no layout, and so no `scrollIntoView`.
-    [...(treeRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])]
-      .find((el) => el.dataset.row === pickedRow)
-      ?.scrollIntoView?.({ block: "nearest" });
+    // The tree family draws a row a moment after it knows of it (React Aria builds its
+    // collection first): looked for until it is drawn, a few frames at most.
+    let tries = 0;
+    let soon = 0;
+    const look = () => {
+      const row = [...(treeRef.current?.querySelectorAll<HTMLElement>("[data-row]") ?? [])].find(
+        (el) => el.dataset.row === pickedRow,
+      );
+      if (row === undefined) {
+        if ((tries += 1) < 20) soon = window.setTimeout(look, 16);
+        return;
+      }
+      scrolled.current = asked;
+      // `block: "nearest"` moves the list only when the row is off screen. Optional because
+      // jsdom has no layout, and so no `scrollIntoView`.
+      row.scrollIntoView?.({ block: "nearest" });
+    };
+    look();
+    return () => window.clearTimeout(soon);
   }, [asked, pickedDrawn, pickedRow]);
 
   const fold = (key: string, open: boolean) =>
@@ -136,73 +141,46 @@ export function BranchTree({
       return now;
     });
 
-  const treeitem = (id: string): TreeItem => {
-    const row = byId.get(id);
-    return {
-      role: "treeitem",
-      "aria-level": row?.level,
-      "aria-posinset": row?.posinset,
-      "aria-setsize": row?.setsize,
-      "aria-expanded": row?.fold?.open,
-      // A file is selectable and says whether it is the one shown; a folder only opens.
-      "aria-selected": row !== undefined && row.fold === undefined ? id === pickedRow : undefined,
-      "data-row": id,
-    };
-  };
-
-  const onKey = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
-    const to = treeKey(drawn, (event.target as HTMLElement).dataset.row, event.key);
-    if (to === "not-mine") return;
-    event.preventDefault();
-    if (to === "stay") return;
-    if ("fold" in to) fold(to.fold, to.open);
-    else
-      [...event.currentTarget.querySelectorAll<HTMLElement>("[data-row]")]
-        .find((el) => el.dataset.row === to.focus)
-        ?.focus();
-  };
-
   const level = levelOf(files, top);
   return (
     <div className="explorer piece-files-tree ui-text-body">
-      <RovingFocusGroup.Root asChild orientation="vertical" {...stop}>
-        <div
+      {/* A branch that could not be read says why, in place of a tree with nothing in it to
+          stop on. */}
+      {"trouble" in level ? (
+        <p className="trouble" role="alert" data-testid="piece-files-trouble">
+          {level.trouble}
+        </p>
+      ) : (
+        <Tree
           ref={treeRef}
-          className="ui-tree"
-          role="tree"
+          fit="content"
           aria-label={`Files of ${placeName(place)}`}
           data-testid="piece-files-tree"
-          onKeyDown={onKey}
+          size="sm"
+          expandedKeys={openFileRows(rows)}
+          onExpandedChange={foldFileRows(rows, fold)}
+          // **The file shown is the tree's chosen row** (FM-2): a press on a file, or Enter,
+          // shows it (again, if it is shown), the arrows never do, and the tree's Tab stop is on
+          // it.
+          stopAt={pickedRow}
         >
-          {"pending" in level ? (
-            <p className="pending" aria-busy="true">
-              <LoaderCircle className="node-icon spinning" />
-              Reading…
-            </p>
-          ) : "trouble" in level ? (
-            <p className="trouble" role="alert" data-testid="piece-files-trouble">
-              {level.trouble}
-            </p>
-          ) : (
-            <FolderEntries
-              branch={top}
-              level={level}
-              at={{
-                plane,
-                place,
-                files,
-                fold,
-                treeitem,
-                isDrawn: (id) => byId.get(id)?.drawn ?? false,
-                onOpenFile: (_place, path) => onPick(path),
-                icons,
-                onPress,
-              }}
-            />
-          )}
-        </div>
-      </RovingFocusGroup.Root>
+          <TopItems
+            top={top}
+            level={level}
+            reading="Reading…"
+            at={{
+              plane,
+              place,
+              files,
+              fold,
+              onOpenFile: (_place, path) => onPick(path),
+              icons,
+              onPress,
+              shown: picked ?? "",
+            }}
+          />
+        </Tree>
+      )}
       <ToggleButton
         size="sm"
         isSelected={showIgnored}

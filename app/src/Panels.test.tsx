@@ -9,6 +9,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { attentionPanels, Panels } from "./Panels";
 import { HeadActions } from "./viewHead";
+import { ChatsHere, fixedChats, nothingKnown, type State } from "./chatState";
 import { drawnWith } from "./cascade.testkit";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { wears } from "./textRoles.testkit";
@@ -151,6 +152,7 @@ const PANELS: PanelsModel = {
     { slug: "20260302-091400-review", title: "Review the rollout plan", stamp: "2026-03-02" },
   ],
   todos_refused: null,
+  done_todos: [],
   personas: ["devops", "steward"],
   persona: "steward",
   sessions: [],
@@ -538,8 +540,10 @@ describe("charter's own panels", () => {
     // default persona keeps its star beside the name, and the word is the row's hover.
     draw();
 
-    const rows = within(screen.getByTestId("panel-personas")).getAllByRole("row");
-    const [devops, steward] = rows;
+    // The rows, and not the names of the groups they are under (#3483).
+    const personas = within(screen.getByTestId("panel-personas"));
+    const devops = personas.getByRole("row", { name: "devops" });
+    const steward = personas.getByRole("row", { name: "steward" });
     expect(devops).toHaveTextContent(/^devops$/);
     expect(steward).toHaveTextContent(/^steward$/);
     expect(within(screen.getByTestId("panel-personas")).queryByText(/memories/)).toBeNull();
@@ -796,6 +800,150 @@ describe("a todo row's menu", () => {
     expect(pressed.map((offer) => offer.does)).toEqual([
       { verb: "closeTodo", workspace: "alpha", slug: "20260302-091400-review" },
     ]);
+  });
+});
+
+/** Picks one of the Todos view's tabs (#3358). */
+async function showTodos(tab: "Open" | "Done" | "All") {
+  await userEvent.click(
+    within(screen.getByTestId("panel-todos")).getByRole("radio", { name: tab }),
+  );
+}
+
+describe("a todo's box and a done todo (R131, ADR 0106)", () => {
+  const DONE = row("done/20260301-090000-ship", "Ship the importer", {
+    mark: "todo",
+    note: "2026-03-01",
+    detail: { kind: "text", text: "Shipped." },
+  });
+  const withDone = (): WorkspaceState =>
+    state({
+      panels: {
+        ...PANELS,
+        done_todos: [{ slug: "20260301-090000-ship", title: "Ship the importer", stamp: "" }],
+        contributed: [todosPanel([TODO, DONE]), personasPanel(["devops", "steward"], "steward")],
+      },
+    });
+  const offers = () =>
+    catalogued(
+      catalogue({
+        tabs: noTabs(),
+        workspaces: ["alpha"],
+        focused: "alpha",
+        plane: PLANE,
+        personas: ["devops", "steward"],
+        vaults: ["ops"],
+        todos: PANELS.todos,
+        doneTodos: [{ slug: "20260301-090000-ship", title: "Ship the importer" }],
+        needsYou: [],
+        nameOf: String,
+      }),
+    );
+
+  it("ticks an open todo's box to mark it done", async () => {
+    const pressed: Offer[] = [];
+    draw({ state: withDone(), offers: offers(), onPress: (offer) => pressed.push(offer) });
+
+    const box = within(screen.getByTestId("panel-todos")).getByRole("checkbox", {
+      name: "Mark done: Review the rollout plan",
+    });
+    expect(box).not.toBeChecked();
+    await userEvent.click(box);
+
+    expect(pressed.map((offer) => offer.does)).toEqual([
+      { verb: "closeTodo", workspace: "alpha", slug: "20260302-091400-review" },
+    ]);
+  });
+
+  it("draws a done todo after the open ones, ticked and struck through, and unticks it to reopen", async () => {
+    const pressed: Offer[] = [];
+    draw({ state: withDone(), offers: offers(), onPress: (offer) => pressed.push(offer) });
+    await showTodos("All");
+
+    const panel = within(screen.getByTestId("panel-todos"));
+    const done = panel.getByTestId("panel-row-done/20260301-090000-ship");
+    expect(done).toHaveClass("is-checked");
+    expect(panel.getByTestId("panel-row-20260302-091400-review")).not.toHaveClass("is-checked");
+    // Under a group of its own, after the days the open ones are under.
+    const groups = panel.getAllByRole("rowgroup");
+    expect(groups.at(-1)).toBe(panel.getByRole("rowgroup", { name: "Done" }));
+    expect(within(groups.at(-1) as HTMLElement).getByText("Ship the importer")).toBeInTheDocument();
+
+    const box = panel.getByRole("checkbox", { name: "Reopen todo: Ship the importer" });
+    expect(box).toBeChecked();
+    await userEvent.click(box);
+
+    expect(pressed.map((offer) => offer.does)).toEqual([
+      { verb: "reopenTodo", workspace: "alpha", slug: "20260301-090000-ship" },
+    ]);
+  });
+
+  it("offers Reopen above the line and Delete below it on a done todo's menu", async () => {
+    const pressed: Offer[] = [];
+    draw({ state: withDone(), offers: offers(), onPress: (offer) => pressed.push(offer) });
+    await showTodos("Done");
+
+    rightClickRow("panel-todos", "Ship the importer");
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((one) => one.getAttribute("aria-label")),
+    ).toEqual(["Reopen", "Delete"]);
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(pressed.map((offer) => offer.does)).toEqual([
+      { verb: "forgetDoneTodo", workspace: "alpha", slug: "20260301-090000-ship" },
+    ]);
+  });
+});
+
+describe("the Todos view's tabs (#3358)", () => {
+  const DONE = row("done/20260301-090000-ship", "Ship the importer", { mark: "todo" });
+  const both = (): WorkspaceState =>
+    state({
+      panels: {
+        ...PANELS,
+        contributed: [todosPanel([TODO, DONE]), personasPanel(["devops", "steward"], "steward")],
+      },
+    });
+  const titles = () =>
+    within(screen.getByTestId("panel-todos"))
+      .queryAllByRole("row")
+      .map((one) => one.textContent ?? "");
+
+  it("lists the open todos first, then the done ones, then both, as Open, Done and All", async () => {
+    draw({ state: both() });
+
+    const tabs = within(screen.getByTestId("panel-todos")).getByRole("radiogroup", {
+      name: "Show the todos that are",
+    });
+    expect(
+      within(tabs)
+        .getAllByRole("radio")
+        .map((one) => one.getAttribute("value")),
+    ).toEqual(["open", "done", "all"]);
+    expect(within(tabs).getByRole("radio", { name: "Open" })).toBeChecked();
+    expect(titles().join("|")).toContain("Review the rollout plan");
+    expect(titles().join("|")).not.toContain("Ship the importer");
+
+    await showTodos("Done");
+    expect(titles().join("|")).toContain("Ship the importer");
+    expect(titles().join("|")).not.toContain("Review the rollout plan");
+
+    await showTodos("All");
+    expect(titles().join("|")).toContain("Review the rollout plan");
+    expect(titles().join("|")).toContain("Ship the importer");
+  });
+
+  it("says nothing is done yet on Done when no todo is", async () => {
+    draw();
+
+    await showTodos("Done");
+
+    expect(
+      within(screen.getByTestId("panel-todos")).getByText("Nothing done yet"),
+    ).toBeInTheDocument();
   });
 });
 
@@ -1091,7 +1239,7 @@ describe("a view on the sidebar view frame (#3340)", () => {
     return top;
   };
 
-  it("draws Memory, Todos and Sessions as views, and leaves the others as they were", () => {
+  it("draws every panel as a view: Memory, Todos, Sessions, Personas, Vaults and an extension's (#3341)", () => {
     const sessions: PanelView = { ...memoryPanel([]), key: "charter/sessions", title: "Sessions" };
     const memory = memoryPanel([MEMORY_ROW]);
     const personas = personasPanel(["devops", "steward"], "steward");
@@ -1099,15 +1247,58 @@ describe("a view on the sidebar view frame (#3340)", () => {
       state: state({
         panels: { ...PANELS, contributed: [todosPanel([TODO]), memory, personas, sessions] },
       }),
+      contributed: [contributedPanel()],
+      vaults: [
+        {
+          name: "ops",
+          provider: "keyring",
+          count: 1,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+      ],
     });
 
-    for (const testid of ["panel-memory", "panel-todos", "panel-sessions"]) {
+    for (const testid of [
+      "panel-memory",
+      "panel-todos",
+      "panel-sessions",
+      "panel-personas",
+      "panel-vaults",
+      "panel-ext-acme-reviews",
+    ]) {
       expect(screen.getByTestId(testid)).toHaveAttribute("data-frame");
       expect(screen.getByTestId(testid).closest("aside")).toHaveClass("panels-view");
     }
-    // Personas, Vaults and the extensions' panels follow (#3341).
-    expect(screen.getByTestId("panel-personas")).toHaveAttribute("data-variant", "default");
-    expect(screen.getByTestId("panel-personas").closest("aside")).not.toHaveClass("panels-view");
+  });
+
+  it("holds the filter of Personas, Vaults and an extension's panel in the top, by its one title (#3341)", () => {
+    draw({
+      contributed: [contributedPanel()],
+      vaults: [
+        {
+          name: "ops",
+          provider: "keyring",
+          count: 1,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+      ],
+    });
+
+    // A list of things named is filtered, as the prototype's Q1 A says it (#3341).
+    for (const [testid, name, placeholder] of [
+      ["panel-personas", "Filter Personas", "Filter personas"],
+      ["panel-vaults", "Filter Vaults", "Filter vaults"],
+      ["panel-ext-acme-reviews", "Search Reviews", "Search reviews"],
+    ]) {
+      const top = topOf(testid);
+      expect(within(top).getAllByRole("heading")).toHaveLength(1);
+      expect(within(top).getByRole("searchbox", { name })).toHaveAttribute(
+        "placeholder",
+        placeholder,
+      );
+    }
   });
 
   it("holds the heading, its actions and the search in the top, before the rows", () => {
@@ -1187,5 +1378,139 @@ describe("a view on the sidebar view frame (#3340)", () => {
     expect(within(top).getByRole("searchbox", { name: "Search Memory" })).toBeInTheDocument();
     expect(within(line).getByRole("button", { name: "New memory in alpha…" })).toBeInTheDocument();
     line.remove();
+  });
+});
+
+describe("the right side's rows on the frame (#3341)", () => {
+  it("draws a vault as its name and count, under its provider, with no shared mark", () => {
+    draw({
+      vaults: [
+        {
+          name: "forge",
+          provider: "keyring",
+          count: 3,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+        {
+          name: "devops",
+          provider: "file",
+          count: 1,
+          health: { ok: true, detail: "" },
+          reads_on_open: false,
+        },
+      ],
+    });
+
+    const vaults = screen.getByTestId("panel-vaults");
+    const forge = within(vaults).getByRole("row", { name: /forge/ });
+    expect(forge.querySelector(".row-text")).toHaveTextContent("forge");
+    expect(forge.querySelector(".row-date")).toHaveTextContent("3 secrets");
+    expect(forge.querySelector('[data-part="lead"]')).toBeNull();
+    // Under its provider, each a group of its own.
+    expect(
+      within(vaults)
+        .getAllByRole("rowgroup")
+        .map((group) => group.getAttribute("aria-label") ?? group.textContent?.split(/\d/)[0]),
+    ).toHaveLength(2);
+  });
+
+  it("marks a persona whose chat is at work with that state's own mark, and one at rest with none", () => {
+    const personas = personasPanel(["devops", "steward"], "steward");
+    render(
+      <ChatsHere.Provider
+        value={fixedChats({ ...nothingKnown, bySession: { 7: "running" }, needsYou: [] })}
+      >
+        <Panels
+          view="personas"
+          workspace="alpha"
+          state={state({ panels: { ...PANELS, contributed: [personas] } })}
+          offers={new Map()}
+          onPress={() => {}}
+          contributed={[]}
+          shownRow={undefined}
+          onShowRow={() => {}}
+          personaChats={new Map([["steward", [7]]])}
+        />
+      </ChatsHere.Provider>,
+    );
+
+    const steward = screen.getByRole("row", { name: /steward/ });
+    const mark = steward.querySelector(".persona-at-work .shown-state");
+    expect(mark).toHaveAttribute("data-state", "working");
+    // Its shape, and its word for a screen reader.
+    expect(mark?.querySelector('[data-shape="ring"]')).not.toBeNull();
+    expect(steward).toHaveTextContent(/working/);
+    expect(
+      screen.getByRole("row", { name: /devops/ }).querySelector(".persona-at-work"),
+    ).toBeNull();
+  });
+});
+
+describe("the Personas view's groups (#3483, the prototype's Q1 A)", () => {
+  const personas = personasPanel(["devops", "ops", "release", "steward"], "steward");
+  /** A session record of `persona` in the focused workspace: who has worked here. */
+  const record = (persona: string) => ({
+    path: `workspaces/alpha/sessions/2026-10-27-1000-${persona}.md`,
+    title: `${persona}'s work`,
+    when: "2026-10-27 10:00",
+    persona,
+    harness: null,
+    resumable: false,
+  });
+  const drawn = (bySession: Record<number, State>, workingHere = new Set<string>()) => (
+    <ChatsHere.Provider value={fixedChats({ ...nothingKnown, bySession, needsYou: [] })}>
+      <Panels
+        view="personas"
+        workspace="alpha"
+        state={state({
+          panels: { ...PANELS, sessions: [record("devops")], contributed: [personas] },
+        })}
+        offers={new Map()}
+        onPress={() => {}}
+        contributed={[]}
+        shownRow={undefined}
+        onShowRow={() => {}}
+        personaChats={
+          new Map([
+            ["steward", [7]],
+            ["release", [8]],
+          ])
+        }
+        chatPersonasHere={workingHere}
+      />
+    </ChatsHere.Provider>
+  );
+  /** Each group's name and its rows' names, in the order they are drawn. */
+  const groups = () =>
+    screen.getAllByRole("rowgroup").map((group) => ({
+      name: within(group).getByRole("rowheader").firstElementChild?.textContent,
+      count: group.querySelector('[data-part="header"] [data-count]')?.textContent,
+      rows: [...group.querySelectorAll('[data-part="root"] .row-text')].map(
+        (row) => row.textContent,
+      ),
+    }));
+
+  it("draws Working now, In this workspace and On the plane, each with its count", () => {
+    render(drawn({ 7: "running" }, new Set(["ops"])));
+
+    expect(groups()).toEqual([
+      { name: "Working now", count: "1", rows: ["steward"] },
+      // Who has a record here (devops) or a chat at rest here (ops).
+      { name: "In this workspace", count: "2", rows: ["devops", "ops"] },
+      // release's chat is at rest, and not in this workspace.
+      { name: "On the plane", count: "1", rows: ["release"] },
+    ]);
+  });
+
+  it("moves a persona to Working now when one of its chats starts, and back when they rest", () => {
+    const { rerender } = render(drawn({}));
+    expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+    rerender(drawn({ 8: "running" }));
+    expect(groups()[0]).toEqual({ name: "Working now", count: "1", rows: ["release"] });
+
+    rerender(drawn({ 8: "done" }));
+    expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
   });
 });

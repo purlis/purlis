@@ -18,6 +18,7 @@ import { forgetThisLaunch } from "./regions";
 import { forgetYourEditor, setYourEditor } from "./yourEditor";
 import { showTheExplorer, stripNamed } from "./test-strips";
 import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
+import { findResult, theResult } from "./actionResult.testkit";
 
 /**
  * **A file or folder row's actions, against the whole window** (FM-10, #1113): each row of its
@@ -141,11 +142,9 @@ async function fromTheMenu(name: string, row: string | RegExp) {
   await showTheExplorer();
   // Picked in the Repos view, the Panel's since #1737, which is what Files lists.
   const repos = await screen.findByRole("navigation", { name: "Repos" });
-  await userEvent.click(await within(repos).findByRole("treeitem", { name: /^one in svc/ }));
-  const tree = await screen.findByRole("tree", { name: "Files of one in svc" });
-  fireEvent.contextMenu(
-    await within(tree).findByRole("treeitem", { name: new RegExp(`^${name}`) }),
-  );
+  await userEvent.click(await within(repos).findByRole("row", { name: /^one in svc/ }));
+  const tree = await screen.findByRole("treegrid", { name: "Files of one in svc" });
+  fireEvent.contextMenu(await within(tree).findByRole("row", { name: new RegExp(`^${name}`) }));
   const menu = await screen.findByRole("menu");
   await userEvent.click(within(menu).getByRole("menuitem", { name: row }));
 }
@@ -162,7 +161,7 @@ describe("a file or folder row's actions (FM-10)", () => {
         { plane: PLANE, ...ONE, path: "README.md", absolute: true },
       ]),
     );
-    expect(await screen.findByText("Copied the absolute path of README.md.")).toBeInTheDocument();
+    expect(await findResult("Copied the absolute path of README.md.")).toBeInTheDocument();
   });
 
   it("says the core's refusal in its own words", async () => {
@@ -172,7 +171,7 @@ describe("a file or folder row's actions (FM-10)", () => {
     await fromTheMenu("README.md", "Copy relative path");
 
     expect(
-      await screen.findByText("'README.md' is not in the branch's folder any more"),
+      await findResult("'README.md' is not in the branch's folder any more"),
     ).toBeInTheDocument();
   });
 
@@ -211,7 +210,7 @@ describe("a file or folder row's actions (FM-10)", () => {
     render(<App />);
 
     await fromTheMenu("README.md", "Open in your editor");
-    expect(await screen.findByText("Choose your editor in Settings first.")).toBeInTheDocument();
+    expect(await findResult("Choose your editor in Settings first.")).toBeInTheDocument();
 
     setYourEditor("zed");
     await fromTheMenu("README.md", "Open in your editor");
@@ -231,9 +230,10 @@ describe("a file or folder row's actions (FM-10)", () => {
       render(<App />);
 
       await fromTheMenu("README.md", "Open in your editor");
-      const words = await screen.findByText("Choose your editor in Settings first.");
-      const said = words.closest<HTMLElement>('[role="alert"]');
-      if (said === null) throw new Error("the refusal is not said as an alert");
+      const words = await findResult("Choose your editor in Settings first.");
+      // A closable notice in the trouble tone, said once as a polite status (#3344).
+      expect(words.closest('[role="status"]')).not.toBeNull();
+      const said = theResult();
       await userEvent.click(within(said).getByRole("button", { name: "Choose your editor" }));
 
       expect(links).toEqual([
@@ -266,9 +266,7 @@ describe("a file or folder row's actions (FM-10)", () => {
         }),
       ]),
     );
-    expect(
-      await screen.findByText(/Typed @README\.md into .*Nothing was sent\./),
-    ).toBeInTheDocument();
+    expect(await findResult(/Typed @README\.md into .*Nothing was sent\./)).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 

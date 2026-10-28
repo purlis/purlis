@@ -27,13 +27,18 @@ afterEach(() => {
  * `stop_every_agent` does: throw the switch and answer 20, or throw it and answer that it
  * could not be kept, or refuse and leave it where it was.
  */
-function core(stopped: boolean, stop: "kept" | "not-kept" | "refused" = "kept") {
+function core(
+  stopped: boolean,
+  stop: "kept" | "not-kept" | "refused" = "kept",
+  runners: string[] = [],
+) {
   const sent: string[] = [];
   let now = stopped;
   mockIPC(
     (cmd) => {
       sent.push(cmd);
       if (cmd === "agents_stopped") return now;
+      if (cmd === "runners_a_rearm_reaches") return runners;
       if (cmd === "stop_every_agent") {
         if (stop === "refused") throw "the stop did not finish";
         now = true;
@@ -156,6 +161,19 @@ describe("the kill switch", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "purlis could not read whether chats are stopped: the stop marker is unreadable",
+    );
+  });
+
+  it("names the runners its re-arm re-arms before it is pressed (#2051)", async () => {
+    core(true, "kept", ["qa/r1", "build/r2"]);
+    render(<TitleBar />);
+
+    const rearm = await rearmControl();
+    await waitFor(() =>
+      expect(tipOf(rearm)).toBe(
+        "Every chat purlis started is stopped — re-arm to let chats start again here and on " +
+          "runners qa/r1, build/r2",
+      ),
     );
   });
 });

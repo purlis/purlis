@@ -207,6 +207,7 @@ describe("the Skill studio's changes", () => {
                 name: "deploy",
                 level: { at: "project", local: false },
                 label: "project",
+                stays: "kept on this machine for 30 more days",
               },
             ]
           : [],
@@ -225,6 +226,10 @@ describe("the Skill studio's changes", () => {
     );
 
     const notice = await screen.findByRole("status", { name: /Skill deleted/ });
+    // The restore list says how long the deleted skill stays (SK-33).
+    expect(await screen.findByTestId("deleted-deploy")).toHaveTextContent(
+      "kept on this machine for 30 more days",
+    );
     await user.click(within(notice).getByRole("button", { name: "Restore" }));
     await waitFor(() =>
       expect(asked.find((one) => one.cmd === "skill_restore")?.args).toMatchObject({

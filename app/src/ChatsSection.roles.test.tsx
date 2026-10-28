@@ -206,13 +206,12 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     ).toEqual([]);
   });
 
-  it("titles the section with the one section label", () => {
+  it("titles the view as a view's title, a strong body in its own case (#3342)", () => {
     const section = draw();
-    const title = section.querySelector("#chats-title");
+    const title = section.querySelector("#chats-title") as Element;
 
-    wears(title, "label", "the title");
-    expect(drawnWith(title as Element, "text-transform")).toBe("uppercase");
-    expect(drawnWith(title as Element, "letter-spacing")).toBe("0.05em");
+    expect(title).toHaveClass("side-title", "ui-text-body", "ui-text-strong");
+    expect(title.tagName).toBe("H2");
   });
 
   it("draws a chat's name as a body, at the regular weight on every row", () => {
@@ -273,16 +272,23 @@ describe("the Chats list's words wear text roles (#1920)", () => {
     expect(named(drawnWith(count, "background-color"))).toBe("--control-count");
   });
 
-  it("heads a workspace's sessions with the section label, where the list is grouped", () => {
+  it("heads a workspace's sessions with the frame's group head, where the list is grouped (#3484)", () => {
     setChatsListPrefs({ grouped: true });
     const section = draw();
     const groups = [...section.querySelectorAll(".chats-group")];
 
-    expect(groups.map((one) => one.textContent)).toEqual(["smart-ide", "volaticloud"]);
+    expect(groups.map((one) => one.querySelector(".chats-group-name")?.textContent)).toEqual([
+      "smart-ide",
+      "volaticloud",
+    ]);
     for (const group of groups) {
-      wears(group, "label", `${group.textContent}'s heading`);
+      // The frame's group head (`ui/panel/panel.css`): 11px spaced capitals, medium, quiet.
+      expect(named(drawnWith(group, "font-size"))).toBe("--font-size-xs");
+      expect(named(drawnWith(group, "font-weight"))).toBe("--font-weight-medium");
+      expect(named(drawnWith(group, "color"))).toBe("--text-quiet");
       expect(drawnWith(group, "text-transform")).toBe("uppercase");
-      expect(drawnWith(group, "letter-spacing")).toBe("0.05em");
+      expect(drawnWith(group, "letter-spacing")).toBe("0.06em");
+      expect(group.querySelector("[data-count]")?.textContent).toMatch(/^\d+$/);
     }
   });
 

@@ -6,7 +6,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "../App";
-import type { PoolLink, PoolRow, PoolVersion, PoolsShown } from "../bindings";
+import type { PoolLink, PoolProfileRow, PoolRow, PoolVersion, PoolsShown } from "../bindings";
 import { forgetThisLaunch } from "../regions";
 import { GLOBAL } from "../windowprefs";
 
@@ -15,7 +15,8 @@ import { GLOBAL } from "../windowprefs";
  * shows until one is added; Add a Docker pool… in the palette adds the first, with the limits
  * typed and the defaults for the rest; and a pool whose runner answered with another key has a
  * Notice whose Remove removes it. A runner of another version than this machine's says so, and
- * what follows (#2749).
+ * what follows (#2749). Adding a pool ends with this machine's profiles, each to sign in on its
+ * runner (#2049).
  */
 
 vi.mock("../SessionPane", () => ({
@@ -35,6 +36,16 @@ let version: PoolVersion;
 let added: unknown[];
 let removed: unknown[];
 let notHeld: { root: string; name: string; why: string; pools: string[] }[];
+let profilesAsked: unknown[];
+
+const a_profile = (name: string, standing: string): PoolProfileRow => ({
+  name,
+  kind: "claude",
+  harness: "Claude Code",
+  standing,
+  not_kept: null,
+  plans: [],
+});
 
 beforeEach(() => {
   forgetThisLaunch();
@@ -56,6 +67,7 @@ beforeEach(() => {
   added = [];
   removed = [];
   notHeld = [];
+  profilesAsked = [];
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, unknown>;
@@ -69,6 +81,10 @@ beforeEach(() => {
       if (cmd === "docker_pool_link") return link;
       if (cmd === "docker_pool_version") return version;
       if (cmd === "projects_not_held") return structuredClone(notHeld);
+      if (cmd === "pool_profiles") {
+        profilesAsked.push(a.pool);
+        return [a_profile("work", "signed-out"), a_profile("claude", "signed-in")];
+      }
       if (cmd === "add_docker_pool") {
         added.push(a.adding);
         const row = a_pool((a.adding as { name: string }).name);
@@ -148,6 +164,20 @@ describe("You › This machine › Pools", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Add a Docker pool" })).toBeNull(),
     );
+    // Adding it ends with this machine's profiles, each to sign in on its runner (#2049).
+    const signIn = await screen.findByRole("dialog", {
+      name: "Sign your profiles in on pool builds",
+    });
+    const list = await within(signIn).findByRole("list", { name: "Profiles on pool builds" });
+    expect(within(list).getByText(/Not signed in on pool builds/)).toBeInTheDocument();
+    expect(within(list).getByText("Signed in on pool builds.")).toBeInTheDocument();
+    expect(profilesAsked).toEqual(["builds"]);
+    await userEvent.click(within(signIn).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Sign your profiles in on pool builds" }),
+      ).toBeNull(),
+    );
     const nav = await yourSettings();
     expect(await within(nav).findByRole("button", { name: "Pools" })).toBeInTheDocument();
   });
@@ -183,6 +213,17 @@ describe("You › This machine › Pools", () => {
     await waitFor(() => expect(removed).toEqual(["builds"]));
     // With none left, nothing about pools shows.
     await waitFor(() => expect(within(nav).queryByRole("button", { name: "Pools" })).toBeNull());
+  });
+
+  it("says a suspended runner is suspended, not that it would not link (#2051)", async () => {
+    pools = [a_pool("builds")];
+    link = { state: "suspended" };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText("suspended");
+    expect(group).not.toHaveTextContent(/not linked/);
   });
 
   it("says nothing of a runner of this machine's version", async () => {

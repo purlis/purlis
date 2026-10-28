@@ -365,9 +365,9 @@ under a tree's row (`.ui-row.ui-tree-row`), which the tree family takes next.
 ### Tree row
 
 **A tree is the tree family's** since #2911: [The tree family](#the-tree-family) below draws the
-Changes view. The trees still drawn by hand (a branch's files, the Explorer's three trees, the
-Chats list) keep the shared tree row below until each moves; `purlis/tree-family` is off for
-those files alone.
+Changes view, every file tree (a file tab's, the Explorer's *Files* and a branch's cockpit) and
+the Explorer's *Repos and branches*. The Chats list, still drawn by hand, keeps the shared tree
+row below until it moves (#3198); `purlis/tree-family` is off for its files alone.
 
 ```html
 <ul class="ui-tree" role="tree">
@@ -461,7 +461,10 @@ own `min-width: max-content` beside the class.
   suggested as a grant).
 - **Drawn by its parts** (ADR 0103): the root carries `data-scope="button"`, `data-part="root"`,
   `data-variant` and `data-size`; its words are `data-part="label"`, its icon
-  `data-part="icon"`. `app/src/ui/button/button.css` draws the family default from those and
+  `data-part="icon"`, and the key that presses it, where it says one (`shortcut`, R33),
+  `data-part="shortcut"`: a `kbd` after the words, small and mono, drawn from its `data-key` and
+  hidden from a screen reader (`aria-keyshortcuts` says the key), its room kept and nothing drawn
+  while the key does not press it (`shortcutOff`). `app/src/ui/button/button.css` draws the family default from those and
   React Aria's state attributes (`data-hovered`, `data-pressed`, `data-selected`,
   `data-focus-visible`, `data-disabled`), and a theme's parts reach the same attributes. A state
   changes a colour, a ground or a ring, never a size.
@@ -604,7 +607,7 @@ imports Radix's checkbox, radio group, switch, slider or toggles, or wears the o
 
 | Member | Is |
 | --- | --- |
-| `Checkbox` | a native box in its own label: a press of its words ticks it as a press of its box does, Space from the keyboard; `isIndeterminate` draws a bar. `variant="chip"` is one of a few small chips over the list they narrow, its tick in a slot it always keeps |
+| `Checkbox` | a native box in its own label: a press of its words ticks it as a press of its box does, Space from the keyboard; `isIndeterminate` draws a bar. `variant="chip"` is one of a few small chips over the list they narrow, its tick in a slot it always keeps; a chip's `count` is after its words and describes it, never part of its name (#3484) |
 | `CheckboxGroup` | a named group of boxes, each holding its own value (two may stand for one); `roving` makes the row one Tab stop with the arrows between its `RovingCheckbox`es (the Chats list's state chips, #1687) |
 | `RadioGroup`, `Radio` | one of a few, a column of options, each its mark, its words (and a `lead` before them: a persona's mark) and a `description` under them |
 | `SegmentedControl`, `Segment` | a few views of one thing side by side (a level of Settings, a side view's scope), `sm` (the chrome's height, never under 24) or `md` (the control's, as a button's); a segment's `count` is beside its words and in its name. The chosen segment stands on the window's ground with a 1 px edge under it, held to 3:1; its weight never changes |
@@ -682,7 +685,9 @@ spec #2897, ADR 0104), each one wrapper under `app/src/ui/` and its own lint rul
   rows are 30px. Its title, whether the region's head or its own heading line, is the panel's
   `title` part (`PanelTitle`): 13px and strong in the primary tier, in its own case. A list puts its search field in the top with
   `InPanelTop`, and draws it where it stands outside a view. Memory, Todos and Sessions are
-  drawn on it, in a half of the Panel or in either sidebar.
+  drawn on it, in a half of the Panel or in either sidebar, and so are Personas, Vaults and every
+  extension's panel (#3341), and the Chats view (#3342), whose rows lead with the
+  persona's mark and the chat's state as a dot on its corner.
 - **The status bar follows its contribution model** (N28, `ui/status/StatusBar.tsx`): every item,
   purlis's own and an extension's, says its `id`, `side` (left or right) and `priority` (highest
   first from the side's left), and the person may hide any item from the bar's menu (a right
@@ -1005,9 +1010,9 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
 
 | Member | What it is |
 | --- | --- |
-| `Tree` | **A tree**: rows that may hold rows under them. `expandedKeys` and `onExpandedChange` say which are open (a folder is read when it opens); `selectionMode` lets rows be chosen; `onAction` runs one; `twist` puts the twist before a row's words (`"lead"`, the default, R129) or at its end (`"trail"`, #2799 rule 1); `fixed` is a tree that never folds (the Changes view): every row open, no twist, nothing to press |
-| `TreeRow` | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says; `hasChildItems` for a folder not read yet; `menu` and `tip` as a list's row |
-| `TreeLine` | **A line that is not a row to act on**, in its place among the rows: "Reading…", why a folder could not be read, "12 more not shown". In the quiet tier; the keyboard reads it |
+| `Tree` | **A tree**: rows that may hold rows under them. `expandedKeys` and `onExpandedChange` say which are open (a folder is read when it opens); `selectionMode` lets rows be chosen where a press chooses (a file tab's file, `toggle`, so the arrows never open a file); `onAction` runs one; `twist` puts the twist before a row's words (`"lead"`, the default, R129) or at its end (`"trail"`, #2799 rule 1); `fixed` is a tree that never folds (the Changes view): every row open, no twist, nothing to press; `draggable` drags a row out with what it `carries`, by the pointer and by its drag button; `choosesMany` says its owner chooses several rows at once (#1151's picks); `onRowKey` takes a key before the tree does (Shift and the arrows picking); `stopAt` is the row the tree's one Tab stop is on until the keyboard has been in (the place the next chat starts, the file a tab shows) |
+| `TreeRow` | **One row**, with the rows under it as its children: `content` is its slots (the list's `RowLead`, `RowLabel`, `RowDescription`, `RowTrail`, in the tree's scope), `textValue` what typing finds it by **and its name to a reader**, so the whole of what it says (a file's name, then its marks' words); `hasChildItems` for a folder not read yet (it holds a row that is never drawn until the owner's arrive); `menu` and `tip` as a list's row; `unavailable` for a row that keeps the keyboard to say why it cannot run (a file purlis will not open); `chosen` for a row its owner chooses while a press still runs it; `carries` what a drag of it carries; `onPressStart` to hear a press's modifier keys before its action runs; `current` for the current one of its kind (`aria-current`, drawn as chosen: where the next chat starts); `alwaysOpen` for a row whose rows never fold (a workspace's own) |
+| `TreeLine` | **A line that is not a row to act on**, in its place among the rows: "Reading…", why a folder could not be read, "12 more not shown", a path the branch names and does not read. In the quiet tier; the arrows read it, and it holds nothing to press, drag or pick |
 | `TreeSection` | A group of rows under its name (`header`) |
 
 - **The keys are the WAI-ARIA tree's**: one Tab stop, the row last focused (the tree itself until
@@ -1054,8 +1059,8 @@ tree's role (`tree`, `treeitem`, `treegrid`), wears the shared tree's old classe
 | --- | --- |
 | **Header, body, footer** | Three rows: the title and the line under it, the body, which is the only part that scrolls, and the footer with the answers, always in view. A control the keyboard is on is never under the footer (WCAG 2.4.11): the two never overlap. |
 | **Width by size, never by content** | `size="standard"`, 600 px, or `size="wide"`, 800 px, only for a list beside its details; each at most the window's width less 16 px a side. |
-| **Height** | At most the window less 48 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
-| **A fixed top** | 24 px under the window's top edge, so a change in its content moves only its bottom edge. |
+| **Height** | At most the window less its top less 24 px; `height` gives a dialog one of its own, and it takes the lesser of the two whatever it holds. |
+| **A fixed top** | `max(24px, 6vh)` under the window's top edge (R2, as the prototype places it), so a change in its content moves only its bottom edge. |
 | **Text that changes with a choice keeps its room** | `Reserved` (`ui/dialog/Reserved.tsx`) lays every text a place can show in one cell, and an answer's `reserve` lists every word it can say (`Create`, `Creating…`), so nothing moves or resizes when a choice or a state changes. |
 | **A list over about seven items gets a filter** | `useListFilter` and `ListFilter` (the list family's, `ui/list/ListFilter.tsx`): from eight items, a filter field at the large size over the list, its total in its placeholder ("Filter 28 personas"), a case-insensitive substring of each item's name, and "No persona is called “x”." where nothing matches. |
 | **At most three answers, each in its place** | `cancel` leads, `main` trails, and one `alternative` may stand between them. They are props, not children, so a fourth, or a main action anywhere but last, cannot be written. The main action is in the same place in every dialog. |

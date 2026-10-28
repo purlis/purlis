@@ -270,6 +270,8 @@ pub const PAIRS: &[Pair] = &[
     // An alert's mark in the Inbox's Notices (#1695), on the list's `surface.raised`.
     p("state.waiting", "surface.raised", 3.0),
     p("state.failed", "surface.raised", 3.0),
+    // A chat's state badge on the persona's mark (#3342), ringed in a Purlis panel's fill.
+    p("needs-you.base", "surface.raised", 3.0),
     // Words in a state's colour on a view tab (#1457), at the window's text size.
     p("state.running", "surface.raised", TEXT),
     p("state.waiting", "surface.raised", TEXT),
@@ -381,8 +383,10 @@ pub const PAIRS: &[Pair] = &[
     // pointer, it is held at the window's text size on the part's fill, not at the 3:1 a mark
     // takes (`parts/state_words_tests.rs` keeps this list whole).
     // - A title-bar chip's waiting count (#2916, R101): its digits in amber on the amber wash,
-    //   over the title bar, and over the card's fill while the chip is lit.
+    //   over the title bar, which backs it on every chip, lit or chosen (D-3345-3).
     p("state.waiting", "wash.warning", TEXT).over("surface.deep"),
+    // - What waits said in a badge or a count (#2912): the same amber on its wash, on a popover's
+    //   surface.
     p("state.waiting", "wash.warning", TEXT).over("surface.overlay"),
     // - The rail's waiting badge (R79): its digits in amber on the overlay's pill.
     p("state.waiting", "surface.overlay", TEXT),
@@ -393,6 +397,10 @@ pub const PAIRS: &[Pair] = &[
     //   the window and the frame (#3177), held as words are, the icon being all it says.
     p("accent.text", "accent.wash", TEXT).over("surface.base"),
     p("accent.text", "accent.wash", TEXT).over("surface.deep"),
+    // - The chosen title-bar chip (#3345, R101 as amended): its name in the primary words on the
+    //   accent's wash laid on the frame, and on the stronger wash under the pointer.
+    p("text.primary", "accent.wash", TEXT).over("surface.deep"),
+    p("text.primary", "accent.wash-hover", TEXT).over("surface.deep"),
     // - What waits on the person said in a badge or a count, in the waiting colour on the amber
     //   wash, on a panel (#2912, R66: "Waiting for you").
     p("state.waiting", "wash.warning", TEXT).over("surface.raised"),

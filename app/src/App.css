@@ -2560,6 +2560,14 @@ body {
   line-clamp: 2;
   overflow: hidden;
 }
+/* A command over several lines, one per line (#3502). */
+.ask-lines {
+  display: flex;
+  flex-direction: column;
+}
+.ask-more-lines {
+  font-weight: var(--font-weight-regular);
+}
 .inbox-secondary {
   grid-area: 2 / 2;
   overflow: hidden;
@@ -2754,8 +2762,6 @@ body {
   padding: var(--space-4);
 }
 
-.explorer .pieces,
-.explorer .files,
 .explorer .absent ul {
   list-style: none;
   margin: 0;
@@ -2775,27 +2781,21 @@ body {
    second — because a run with only one of them in place still looks right.
 
    **Nothing here touches padding, font size or line height**: what this rule is about is
-   wrapping, and a row's metrics are its own rule's. The tree's guides (`.ui-tree`) are straight
-   lines down the group a level is (#1672), so no row's height is a number they are tuned to. */
+   wrapping, and a row's metrics are its own rule's. The tree's guides (`ui/tree`) are straight
+   lines down the rows a level is (#1672), so no row's height is a number they are tuned to. */
 .explorer .spot,
 .explorer .file-node,
-.explorer .clone > summary,
+.explorer .clone,
 .explorer .worktree,
 .explorer .absent-row {
   min-width: max-content;
   white-space: nowrap;
 }
 
-/* **The explorer's rows are the shared tree row** (DS-12, `.ui-row.ui-tree-row` in
-   `primitives/collections.css`): its height, its steps by `aria-level`, its guides, its twist,
-   its hover, its selected look and the keyboard's ring. What a row holds under it (a folder's
-   "Nothing here", a clone's "Asking git…", a branch's marks) stands where the row's children's
-   names start: the element holding it carries the children's level (`heldUnder` in
-   `Explorer.tsx`), and the sentence is drawn one step and a row's padding in from that depth. */
-.explorer .ui-tree :is(.none, .pending, .trouble, .worktree),
-.explorer .ui-tree .pieces > li > .worktree + .label {
-  padding-inline-start: calc((var(--ui-tree-depth) + 1) * var(--ui-tree-step) + var(--space-4));
-}
+/* **The explorer's rows are the tree family's** (#2911, `ui/tree`): its height, its steps by its
+   level, its guides, its twist, its hover, its chosen look and the keyboard's ring. What a row
+   holds under it (a folder's "Nothing here", a clone's "Asking git…") is a line of the tree, one
+   level under it. */
 
 /* An icon per kind of node, which is what tells the two kinds of leaf apart: a worktree is a
    branch and a chat is a terminal, and at four levels of indent the indent alone stopped
@@ -2857,25 +2857,24 @@ body {
 }
 
 /* A spot is what the next chat starts in. The current one is marked with more than colour —
-   a bar down its inline start and its own weight — because "where will this chat open" is
-   the one thing in this region that must never be read wrong. */
-/* Its fill and edge are a selected row's (`.ui-row`); the weight is the spot's own, on top. */
-.explorer .spot[aria-current="true"] {
-  font-weight: var(--font-weight-strong);
-}
+   a bar down its inline start, the tree family's chosen look — because "where will this chat
+   open" is the one thing in this region that must never be read wrong. No weight of its own:
+   a state never changes a row's size (#2800), and a bolder name is a wider one. */
 
 .explorer .explorer-section-head .twisty[data-open] {
   rotate: 90deg;
 }
 
-/* What git ignores, shown on request: there, and plainly not the branch's own work. */
-.explorer [data-ignored] > .file-node {
-  opacity: 0.55;
-}
-
 /* A file charter will not open says so beside it; its name is quieter than an openable one. */
 .explorer .file-node[data-refused] .spot-name {
   color: var(--text-muted);
+}
+
+/* What git ignores, shown on request: there, and plainly not the branch's own work. It never
+   opens, so its name is in the faint tier, a disabled row's (no opacity, #2794·4). After the
+   refused rule, which an ignored file is too. */
+.explorer .file-node[data-ignored] .spot-name {
+  color: var(--text-faint);
 }
 
 /* *Changed only*, *Show ignored files* and the picked rows' buttons: small toggles and buttons
@@ -2896,6 +2895,77 @@ body {
    width. */
 .explorer .files-filter {
   margin-block-end: var(--space-3);
+}
+
+/* **Explorer as a view** (#3343, the sidebar-views prototype's Q2 A): the panel family's view
+   frame draws the top (its title line, the filter, the scope and the Search link) held at the
+   top on the panel's fill, so the region keeps no padding of its own above it; the tree and
+   what follows it keep the room at the sides the rows had. */
+.explorer.explorer-view {
+  padding: 0 0 var(--space-4);
+}
+.explorer.explorer-view [data-frame] > :not([data-part="top"]) {
+  margin-inline: var(--space-2);
+}
+.explorer.explorer-view [data-part="top"] .files-filter {
+  margin-block-end: 0;
+}
+/* What stands beside the title (the one repo and its branch) and a repo row's branch: in the
+   code face, quiet, as the prototype's `.branch`. */
+.explorer .head-beside,
+.view-actions > .head-beside,
+.explorer .repo-branch {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.explorer .repo-branch {
+  margin-inline-start: auto;
+  padding-inline-start: var(--space-4);
+}
+/* On a region's head, the title gives way so what stands beside it sits right after it, and
+   the view's actions go to the end. */
+.side-head:has(> .view-actions:not([hidden]) > .head-beside) > h2 {
+  flex: 0 1 auto;
+}
+.view-actions:has(> .head-beside) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.view-actions > .head-beside {
+  margin-inline-end: auto;
+}
+[data-part="head"] > .head-beside {
+  margin-inline-end: auto;
+}
+.explorer .files-scope-note,
+.explorer .files-search-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+.explorer .files-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-base);
+  font-family: var(--font-mono);
+}
+.explorer .files-search-key {
+  font-family: var(--font-mono);
+}
+/* The repo the filter's *Selected* scope is of: the chosen wash, without the chosen edge. */
+.explorer [data-scope="tree"][data-part="root"][data-in-scope]:not([data-selected]) {
+  color: var(--text-primary);
+  background-color: var(--list-selected);
+}
+/* The letters of a found file's name the filter matched (#3343). */
+.explorer .found-match {
+  background: none;
+  color: var(--accent-text);
 }
 
 /* The branch cockpit (FM-5): a breadcrumb back out, then the branch's state with Merge and
@@ -2951,15 +3021,6 @@ body {
    the same. Added takes `state-success` and deleted `danger-base`, the editor's diff gutters'
    marks; changed takes `state-waiting` and renamed `accent-base`. Each is held on the window,
    the row under the pointer and the selected row in the engine's contrast pairs (#2392). */
-/* **Explorer's tree** (R129, #2917): 14px a level, its twisties in the quiet tier. */
-.explorer .ui-tree {
-  --ui-tree-step: calc(var(--space-5) + var(--space-1));
-}
-
-.explorer .ui-tree-twist {
-  color: var(--text-quiet);
-}
-
 .explorer .change-mark {
   margin-inline-start: auto;
   padding-inline: var(--space-2);
@@ -2969,26 +3030,26 @@ body {
 }
 
 .explorer .change-mark,
-.explorer [data-mark] > .file-node > .spot-name {
+.explorer .file-node[data-mark] .spot-name {
   color: var(--state-waiting);
 }
 
 .explorer .change-mark[data-mark="added"],
-.explorer [data-mark="added"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="added"] .spot-name {
   color: var(--state-success);
 }
 
 .explorer .change-mark[data-mark="deleted"],
-.explorer [data-mark="deleted"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="deleted"] .spot-name {
   color: var(--danger-base);
 }
 
 .explorer .change-mark[data-mark="renamed"],
-.explorer [data-mark="renamed"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="renamed"] .spot-name {
   color: var(--accent-base);
 }
 
-.explorer [data-mark="deleted"] > .file-node > .spot-name {
+.explorer .file-node[data-mark="deleted"] .spot-name {
   text-decoration: line-through;
 }
 
@@ -3009,18 +3070,6 @@ body {
 
 .explorer .touch-mark + .change-mark {
   margin-inline-start: var(--space-2);
-}
-
-/* A clone's heading, a tree row like the others. The default disclosure marker goes, because
-   the platform draws it at its own size in its own glyph and the row has its own twist, which
-   points the way the disclosure went (`aria-expanded`). */
-.explorer .clone > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-.explorer .clone > summary::-webkit-details-marker {
-  display: none;
 }
 
 /* How many pieces a clone has, on its heading. A count is a pill; the two things that are not
@@ -3074,8 +3123,8 @@ body {
   border-color: var(--state-unreadable);
 }
 
-.explorer .none,
-.explorer .pending {
+/* A sentence of the region's. A line of a tree of the tree family is laid out as its rows are. */
+.explorer :where(.none, .pending):not([data-part="root"]) {
   display: flex;
   gap: var(--space-3);
   align-items: center;
@@ -3107,12 +3156,6 @@ body {
   flex: 1;
   min-width: 0;
   white-space: nowrap;
-}
-.explorer .explorer-section-head .section-of {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-transform: none;
-  letter-spacing: normal;
 }
 .explorer .explorer-section-head .twisty {
   flex: none;
@@ -3168,7 +3211,16 @@ body {
   gap: var(--space-3);
   align-items: flex-start;
   color: var(--state-failed);
+}
+
+.explorer .trouble:where(:not([data-part="root"])) {
   margin: var(--space-2) 0;
+}
+
+/* A folder that could not be read, a line of the file tree (#2911): its words and its mark in the
+   failed colour, on the line the tree family draws. */
+.explorer .trouble[data-part="root"] :is([role="alert"], .node-icon) {
+  color: var(--state-failed);
 }
 
 /* The mark is on the sentence's first line, not centred on a paragraph that wraps to three. */
@@ -3239,33 +3291,28 @@ body {
      twist hangs (`--ui-tree-step`, `--space-5` in `collections.css`), the state mark's column,
      and the row's gap. The filter's text starts here too, and the group headings, so the list
      reads as one column under its filter (`chats-list.e2e.ts` measures it). */
-  --chats-mark: var(--space-5);
+  /* The persona's mark, which the row starts with (#3342): 20px, the prototype's. */
+  --chats-mark: calc(var(--space-6) + var(--space-2));
   --chats-name-at: calc(var(--space-5) + var(--chats-mark) + var(--space-3));
 }
 
-/* The title, the filter and the line under it stay at the top while the rows scroll under
-   them (#1499): at fifty chats the filter is what the person scrolled away from. */
-.chats-head {
-  position: sticky;
-  z-index: 1;
-  top: 0;
+/* The title, the filter, the scope and the chips stay at the top while the rows scroll under
+   them (#1499): at fifty chats the filter is what the person scrolled away from. The view's
+   top (`ui/panel`, #3342) holds them on the panel's own fill, from edge to edge. */
+.chats-section > [data-part="top"] {
   margin-inline: calc(-1 * var(--space-4));
-  padding: var(--space-4) var(--space-4) var(--space-2);
-  /* The panel's own fill, so the head is one piece with the rows under it (#3331): Purlis fills
-     its panels a step up from the window. */
-  background: var(--panel-fill, var(--surface-base));
 }
 
 /* **The title and the scope switch share a line** (#1679), the switch at its end, as a view's
    own controls sit in its title bar; where the sidebar is too narrow for both, the switch goes
    under the title and is never cut. */
 .chats-top {
-  /* **The line's text is the notes', the secondary's** (#1920). The scope switch at its end
-     has a fixed size of its own (the segmented control's `sm`, #2907), so this line's
-     size no longer moves it. The title and the notes each wear their own role. */
+  /* **The line's text is the notes', the secondary's** (#1920). The title and the notes each
+     wear their own role; the new chat's button ends the line (Q1 A, #3342), and the scope
+     switch is a line of its own under the filter. */
   font-size: var(--font-size-sm);
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--space-2) var(--space-3);
   align-items: center;
   justify-content: space-between;
@@ -3305,10 +3352,72 @@ body {
   inline-size: var(--chats-mark);
 }
 
-.chats-section .chat .ui-row-trail > svg,
-.chats-section .chat .ui-row-trail > .persona-mark {
-  inline-size: var(--space-6);
-  block-size: var(--space-6);
+/* **Who it runs as, with its state on it** (#3342, the operator's ruling of 2026-10-26): the
+   persona's mark leads the row, in its colour, and a chat that asks for the person or is at work
+   wears its state's own mark, about 10px, on the mark's lower end corner, ringed in the row's own
+   ground so it reads apart from the mark. **The mark keeps its shape** (`shownState.ts`: a state
+   is told without its colour, WCAG 1.4.1): the hand, the ring, the question, the hourglass, the
+   cross, the triangle. A chat at rest (done, idle, reported, stopped or closed) wears none, so no
+   grey mark stands for seven states; its state is still the row's word to a screen reader and
+   its tooltip's. */
+.chats-section .chat-persona {
+  position: relative;
+  display: inline-flex;
+  /* The ground the badge is ringed in: the row's, at rest, under the pointer, chosen. */
+  --chat-badge-ground: var(--panel-fill);
+}
+
+.chats-section .chat:hover .chat-persona {
+  --chat-badge-ground: var(--surface-hover);
+}
+
+.chats-section
+  .chat:is([aria-selected="true"], [aria-current]:not([aria-current="false"]))
+  .chat-persona {
+  --chat-badge-ground: var(--list-selected);
+}
+
+.chats-section .chat-persona > svg,
+.chats-section .chat-persona > .persona-mark {
+  inline-size: var(--chats-mark);
+  block-size: var(--chats-mark);
+}
+
+/* At rest, no badge. */
+.chats-section .chat-persona > .shown-state {
+  display: none;
+}
+
+/* The states that ask for the person or are at work. */
+.chats-section
+  .chat-persona:is(
+    [data-state="needs-you"],
+    [data-state="working"],
+    [data-state="asking"],
+    [data-state="waiting-on-tasks"],
+    [data-state="failed"],
+    [data-state="unreported"],
+    [data-state="last-message"]
+  )
+  > .shown-state {
+  display: block;
+  position: absolute;
+  inset-block-end: calc(-1 * var(--space-2));
+  inset-inline-end: calc(-1 * var(--space-2));
+}
+
+.chats-section .chat-persona > .shown-state .shape {
+  display: grid;
+  place-items: center;
+  inline-size: calc(var(--space-4) + var(--space-2));
+  block-size: calc(var(--space-4) + var(--space-2));
+  border-radius: 50%;
+  background-color: var(--chat-badge-ground);
+}
+
+.chats-section .chat-persona > .shown-state .shape > svg {
+  inline-size: calc(var(--space-4) + var(--space-1));
+  block-size: calc(var(--space-4) + var(--space-1));
 }
 
 /* **A finished row says how it ended by its mark** (#1687, as a chat's row does, #1675): the
@@ -3363,7 +3472,6 @@ body {
   flex-wrap: wrap;
   gap: var(--space-2);
   align-items: center;
-  margin-block-start: var(--space-2);
 }
 
 /* The box and its glass. **Its text starts where a top-level chat's name does** (DS-11): the
@@ -3375,7 +3483,10 @@ body {
   flex: 1 1 5rem;
   --text-input-start: var(--space-5);
   --text-input-icon: var(--chats-mark);
-  --text-input-gap: calc(var(--chats-name-at) - 1px - var(--space-5) - var(--chats-mark));
+  /* Less the step the view's top stands in further than the rows (its 10 to their 8). */
+  --text-input-gap: calc(
+    var(--chats-name-at) - 1px - var(--space-5) - var(--chats-mark) - var(--space-1)
+  );
 }
 
 /* **The notes, on the title's line** (#1499, DS-11). What the filter hides and why a key did
@@ -3439,11 +3550,29 @@ body {
   color: var(--needs-you-base);
 }
 
-/* A workspace's name over its sessions, where the list is grouped by workspace: a label over a
-   group, so the one section label (`ui-text-label`, #1920), as the section's own title is. */
+/* A workspace's name over its sessions, where the list is grouped by workspace: **the frame's
+   group head** (#3484), drawn by the panel family's rule for it (`ui/panel/panel.css`) on the
+   tree family's `header` part, so a theme that restyles a view's group heads restyles these too.
+   What is the Chats list's own: where its name starts, the room above it, and a long name cut.
+   Not a row of the tree, which stays flat (#1672): each row says its own workspace. */
 .chats-section li.chats-group {
   margin-block-start: var(--space-2);
-  padding-inline-start: var(--chats-name-at);
+  padding-inline: var(--chats-name-at) var(--space-4);
+}
+
+.chats-section li.chats-group > .chats-group-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A chat row's time at its end (#3484, the prototype's `.rm`): short and quiet, in figures of one
+   width, and never what gives way: the name does (#1675). */
+.chats-section .chat-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* **Every tree in the window is the shared tree** (#1672, DS-12): `.ui-tree` and its
@@ -3767,6 +3896,33 @@ body {
   border: 0;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* **What an action answered** (`ActionResultNotice.tsx`, #3344, the sidebar-views prototype's
+   Q3 A): a card Notice at the top of the content (its width is the card's, `notice.css`); what the core said, behind
+   Details, in mono on the code ground inside it. The same notice is listed under Results in the
+   Inbox's Notices, where the list's row is its box. */
+.action-result {
+  margin: var(--space-3) var(--space-5) 0;
+}
+
+/* A kept result's notice is drawn in the Results list's place; its keyboard handler is no box. */
+.action-result-kept {
+  display: contents;
+}
+
+.action-result-details {
+  margin: 0;
+  /* 8 and 10, as the prototype's details box. */
+  padding: var(--space-4) calc(var(--space-4) + var(--space-1));
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background-color: var(--terminal-background);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* **A refusal's way to its setting** (`SaidLink.tsx`, #1201): beside the last action's words, on
@@ -4997,6 +5153,24 @@ body {
   color: var(--danger-base);
 }
 
+/* **The Todos view's tabs** (#3358, the prototype's Q1 A): Open, Done and All across the view's
+   width under the box that adds one, each segment an equal share. */
+.todo-tabs {
+  display: flex;
+  inline-size: 100%;
+  margin-block: var(--space-2);
+}
+.todo-tabs > [data-scope="segment"] {
+  flex: 1 1 0;
+}
+
+/* **A done todo stays, struck through** (R131, ADR 0106): its box ticked, its words in the quiet
+   tier and crossed out. Nothing moves: the box takes the mark's place at the mark's size. */
+.panel-row.is-checked .row-text {
+  color: var(--text-quiet);
+  text-decoration: line-through;
+}
+
 /* **The search, once there is more than a page** — and it stays once it is there, because a
    box that vanished when a search narrowed the list would take away the control in use. */
 /* The box is the field family's (#2905), the list's width. */
@@ -5186,6 +5360,25 @@ body {
 .shortcuts-list {
   min-height: 0;
   overflow-y: auto;
+}
+
+/* **Devices** (#2052, `DevicesView.tsx`): no heading of its own (#3147). Refresh is its first
+   row, keeping the room the pane's actions take at its end; the devices and the use scroll under
+   it. */
+.devices-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5);
+}
+
+/* Whatever its first row is: Refresh, the line that says it is reading, or the Notice of a
+   read that failed (#3147). */
+.pane-frame.pane-viewed .devices-view > :first-child {
+  margin-inline-end: calc(var(--pane-actions-room) - var(--space-5));
 }
 
 /* The light editor (RC-5): a piece's files beside the file picked, or one file filling its
@@ -6047,12 +6240,6 @@ nav.piece-files-head {
 
 .settling {
   animation: charter-settle var(--motion-duration-settle) var(--motion-easing-standard);
-}
-
-/* The explorer's twisty turns with the disclosure: motion that is the direct answer to a click,
-   saying which way the thing just went. */
-.explorer .ui-tree-twist {
-  transition: transform var(--motion-duration-quick) var(--motion-easing-standard);
 }
 
 .explorer .explorer-section-head .twisty {
@@ -7546,7 +7733,8 @@ nav.piece-files-head {
 }
 
 /* The Skills view (#3266): a sidebar view, its header's two ways in, the switch to the chat in
-   front, then the list, which takes the rest and scrolls. The list's look is the list family's. */
+   front, then the tree, which takes the rest and scrolls. The tree's look is the tree family's
+   (#3281). */
 .skills-view {
   display: flex;
   flex-direction: column;
@@ -7568,6 +7756,12 @@ nav.piece-files-head {
 
 .skills-view-only {
   align-self: flex-start;
+}
+
+/* New skill…'s menu, narrower than the family's widest, so at a sidebar's width it stays over
+   the view and not the editor beside it (#3308); its starts' lines wrap. */
+.skills-view-starts {
+  --menu-max: calc(var(--space-8) * 8);
 }
 
 .skills-view > .skills-view-list {

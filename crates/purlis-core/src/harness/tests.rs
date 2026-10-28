@@ -403,6 +403,7 @@ fn a_claude_code_chat_is_handed_the_skills_the_project_turned_off_as_overrides()
     let chosen = crate::harness_plugin::Chosen {
         plugins: BTreeMap::new(),
         skills_off: ["langfuse".to_owned(), "figma:frame".to_owned()].into(),
+        own_index: false,
     };
     let (args, _) = claude_with("/bin/charter", empty.path(), &chosen);
     let settings: serde_json::Value = serde_json::from_str(settings_of(&args)).expect("JSON");
@@ -455,11 +456,13 @@ fn a_claude_code_chat_is_handed_the_projects_plugins_and_the_pins_win() {
 #[test]
 fn a_codex_chat_is_handed_each_plugin_and_skill_the_project_turned_off_by_its_own_flags() {
     // Measured on codex-cli 0.163.0 (SK-6, #2769): `-c plugins."<id>".enabled=false` takes a
-    // plugin's skills out for one session, and one `skills.config` takes a skill out, a
-    // plugin's included, beside the operator's own entries.
+    // plugin's skills out for one session (a Try it's scratch chat), and one `skills.config`
+    // takes a skill out beside the operator's own entries. A plugin's skill is its plugin's
+    // (#3467): never handed as turned off on its own.
     let chosen = crate::harness_plugin::Chosen {
         plugins: BTreeMap::from([("zp@zmkt".to_owned(), false)]),
         skills_off: ["langfuse".to_owned(), "zp:zp \"skill\"".to_owned()].into(),
+        own_index: false,
     };
     let StateHooks::ThisSessionOnly { args, .. } =
         Harness::Codex.state_hooks(kit("/bin/charter"), None, &chosen, None)
@@ -476,7 +479,7 @@ fn a_codex_chat_is_handed_each_plugin_and_skill_the_project_turned_off_by_its_ow
         flags,
         [
             "plugins.\"zp@zmkt\".enabled=false",
-            "skills.config=[{name=\"langfuse\",enabled=false},{name='zp:zp \"skill\"',enabled=false}]",
+            "skills.config=[{name=\"langfuse\",enabled=false}]",
         ]
     );
     let none = Harness::Codex.state_hooks(
@@ -1970,6 +1973,7 @@ fn a_clones_own_skill_index_is_left_out_where_the_harness_keeps_purliss_and_only
             plane: plane.path(),
             workspace: Some("alpha"),
             repo: &repo,
+            routed: None,
         }),
         ..kit("/bin/charter")
     };
@@ -1997,17 +2001,35 @@ fn a_clones_own_skill_index_is_left_out_where_the_harness_keeps_purliss_and_only
         "opencode knows purlis's index as `purlis-skill-index`, so the clone's \
          `skill-index` is another skill and is left on"
     );
-    // With no copy elsewhere, nothing is written, so the operator's own overrides stand.
+    // The harness's own copy, as the chat's start found it where its environment points
+    // (#3320), is turned off the same way.
+    let own = crate::harness_plugin::Chosen {
+        own_index: true,
+        ..crate::harness_plugin::Chosen::new()
+    };
     let alone = Kit {
         skills: Some(crate::skills::PlaneSkills {
             plane: plane.path(),
             workspace: Some("alpha"),
             repo: &[],
+            routed: None,
         }),
         ..kit
     };
-    assert!(
-        !crate::skills::skills_off_for(alone, Harness::ClaudeCode, &none)
-            .contains(&crate::skills::INDEX.to_owned())
-    );
+    for harness in [Harness::ClaudeCode, Harness::Codex] {
+        assert_eq!(
+            crate::skills::skills_off_for(alone, harness, &own),
+            [crate::skills::INDEX.to_owned()],
+            "{harness:?}"
+        );
+    }
+    // With no copy elsewhere, nothing is written, so the operator's own overrides stand. What
+    // this machine's harness holds is never read here (#3320): `none` says it holds no copy.
+    for harness in [Harness::ClaudeCode, Harness::Codex] {
+        assert_eq!(
+            crate::skills::skills_off_for(alone, harness, &none),
+            Vec::<String>::new(),
+            "{harness:?}"
+        );
+    }
 }

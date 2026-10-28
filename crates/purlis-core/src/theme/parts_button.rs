@@ -30,6 +30,12 @@ pub(super) const BUTTON: Family = Family {
             description: "Its icon.",
             properties: &[Prop::Text],
         },
+        Part {
+            name: "shortcut",
+            since: super::NEXT,
+            description: "The key that presses it, after its words.",
+            properties: &[Prop::Text, Prop::FontSize],
+        },
     ],
     variants: &[
         Variant {

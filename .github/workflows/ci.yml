@@ -56,18 +56,23 @@ env:
   NEXTEST_VERSION: "0.9.146"
 
 jobs:
-  # The Rust suite in two parts on two runners, each building the tests and running half of
-  # them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
-  # request waits on (2026-10-10). Part 1 also runs fmt, clippy and the doctests, which part 2's
-  # half of the tests outlasted by three minutes on #1712. Each part builds for itself: a build handed from one job to the next
-  # saves runner minutes, not the wait, since no test can start before the build ends.
-  # `rust-checks` below carries the required check's name and passes when both parts did.
+  # The Rust suite in four parts on four runners, each building the tests and running a quarter
+  # of them (`--partition`): one runner took 14 to 17 minutes, longer than any other job a pull
+  # request waits on (2026-10-10), and each of two took 15 to 16 minutes by 2026-10-27. Runners
+  # start at once (no queue on 2026-10-14..27), so a part costs runner minutes, not wait. Part 2
+  # also runs the doctests and the schema check (fmt and clippy are `lint`'s): `hash:` places a
+  # test by its name, and part 2 held the least (7.3 minutes of tests against 11.5 for part 1 on
+  # #3572's run), so the 3 minutes those take wait on no one. Each part builds
+  # for itself: a build handed from one job to the next saves runner minutes, not the wait, since
+  # no test can start before the build ends. An optimised test build was tried and dropped
+  # (#3553: 21 to 32 minutes to build cold, then the runners stopped). `rust-checks` below
+  # carries the required check's name and passes when every part did.
   rust:
-    name: rust tests (part ${{ matrix.part }} of 2)
+    name: rust tests (part ${{ matrix.part }} of 4)
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -134,9 +139,12 @@ jobs:
       # its test — and kills each one by pid. `--reap` is safe here because the runner is the
       # job's own machine.
       #
-      # `count:` deals each binary's tests out in turn, so each part gets half of every binary.
+      # `hash:` places each test by its name, not by its place in its binary: `count:` dealt the
+      # suite's heavy neighbours (the theme engine's import tests, 50 to 170 s each) to the same
+      # part, and in three parts on 2026-10-27 part 1 summed 51.6 minutes of tests against 35 and
+      # 30. On that run's own times four `hash:` parts put at most about 33 minutes in one.
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition count:${{ matrix.part }}/2 -E 'not test(/::in_a_docker_pool$/)'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E 'not test(/::in_a_docker_pool$/)'
       # The slowest tests and test binaries, as notices on the run: what makes the step above
       # slow, readable through the checks API without the job's log. A report, so it never turns
       # the job red.
@@ -146,7 +154,7 @@ jobs:
         run: node tools/slowest-tests.mjs target/nextest/ci/junit.xml
       # nextest does not run doctests, so cargo does.
       - name: Run the doctests
-        if: matrix.part == 1
+        if: matrix.part == 2
         run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
       # The theme schema only grows within a format (#2524). `Run the tests` holds the engine's
       # schema to the committed `docs/schema/theme.v2.schema.json`; this step holds it to the
@@ -154,15 +162,15 @@ jobs:
       # cannot carry a removal or a narrowing past the check. Before a release has a v2 schema
       # it says so in a notice and passes. The test it runs is `#[ignore]`d everywhere else.
       - name: The theme schema only grows since the last release
-        if: matrix.part == 1
+        if: matrix.part == 2
         run: >-
           tools/theme-schema-since-release.sh
           cargo nextest run --workspace --locked --run-ignored only
           -E 'package(purlis-core) & test(/the_schema_only_grows_since_the_last_release$/)'
-  # The required check `rust (fmt, clippy, test)`: green only when both parts of `rust` are.
+  # The required check `rust (fmt, clippy, test)`: green only when every part of `rust` is.
   # `!cancelled()` so a red part still reports here as red, not as skipped, which a required
   # check would count as passing.
-  # fmt and clippy, beside the two parts rather than in part 1: a check build of its own, 1.5
+  # fmt and clippy, beside the parts of `rust` rather than in part 1: a check build of its own, 1.5
   # minutes that part 1 waited on before its tests (2026-10-12).
   lint:
     name: rust (fmt, clippy)
@@ -214,7 +222,7 @@ jobs:
       # The app's `e2e` feature, so what only the scenario build compiles (`ipc_commands.rs`'s
       # `e2e_only` and what it calls, #2836) is linted too.
       - run: cargo clippy -p purlis-app --lib --features e2e --locked -- -D warnings
-  # The required check `rust (fmt, clippy, test)`: green only when the lint and both parts of
+  # The required check `rust (fmt, clippy, test)`: green only when the lint and every part of
   # `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.
   rust-checks:
@@ -223,7 +231,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: The lint and both parts passed
+      - name: The lint and every part passed
         env:
           RESULTS: ${{ needs.lint.result }} ${{ needs.rust.result }}
         run: test "$RESULTS" = "success success"
@@ -358,14 +366,16 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: >-
           tools/no-orphans.sh --reap --
-          cargo nextest run --locked -p purlis-app --lib --profile ci --no-tests fail
+          cargo nextest run --locked -p purlis-app --lib --profile ci --retries 0 --no-tests fail
           -E 'test(/::in_a_docker_pool$/) | test(/^runnerlinks::tests::a_(window_reaches|project_reaches)_/)'
+      # `--retries 0` in both: the `ci` profile's retry is reported by `rust`'s annotate step,
+      # which this job has not, so a flake here fails as it did rather than pass unseen.
       # Run whatever the step above found, so each step's result is its own.
       - name: The pool's link, code over it and a chat's move, on Docker
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
           tools/no-orphans.sh --reap --
-          cargo nextest run --locked -p purlis-core --profile ci --no-tests fail
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test a_docker_pool_runner_is_linked_through_docker_exec
           --test code_crosses_to_a_docker_pools_runner_and_back
           --test a_chat_moves_to_a_docker_pools_runner_and_back
@@ -404,16 +414,17 @@ jobs:
           fi
           exit "$status"
 
-  # The web checks in two parts, each running half of vitest's test files (`--shard`): after
-  # `rust` and `scenario` were split (#1712), vitest's 8 to 10 minutes made this the longest job
-  # a pull request waited on. Part 1 also runs the type check, lint and format check, part 2 the
+  # The web checks in four parts, each running a quarter of vitest's test files (`--shard`):
+  # after `rust` and `scenario` were split (#1712), vitest's 8 to 10 minutes made this the
+  # longest job a pull request waited on, and by 2026-10-27 each of two parts took 10 to 12
+  # minutes of vitest alone. Part 1 also runs the type check, lint and format check, part 2 the
   # licences and the tools' tests. `web-checks` carries the required check's name.
   web:
-    name: web (part ${{ matrix.part }} of 2)
+    name: web (part ${{ matrix.part }} of 4)
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2]
+        part: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -437,7 +448,7 @@ jobs:
         if: matrix.part == 1
       - run: npm run format:check
         if: matrix.part == 1
-      - run: npm test -- --shard=${{ matrix.part }}/2
+      - run: npm test -- --shard=${{ matrix.part }}/4
       # The tools' own tests (node:test), such as the cold-start gate's decision.
       - run: node --test "../tools/*.test.mjs"
         if: matrix.part == 2
@@ -448,7 +459,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: Every part passed
         env:
           RESULT: ${{ needs.web.result }}
         run: test "$RESULT" = success
@@ -624,11 +635,11 @@ jobs:
   # `xcode-27` is the runner images' macOS 27, a preview; when macOS 27 becomes `macos-latest`,
   # `xcode-27` here becomes `macos-26`. `expect` is the OS version the row in
   # `docs/platforms.md` says the label runs, and the first step warns when the label has moved
-  # off it. Only the `macos-latest` and `ubuntu-24.04` checks are required. `ubuntu-24.04`'s is
-  # `app`; `macos-latest`'s steps run in the macOS scenario job's part 1 (`app: true`), and its
-  # check is `app-macos-checks`, so a pull request holds two macOS runners rather than three: the
-  # free plan runs five macOS jobs at once across the org, and on 2026-10-12 a `main` run waited
-  # 26 minutes for one.
+  # off it. Only the `macos-latest` and `ubuntu-24.04` checks are required, and both are legs of
+  # `app`. Until 2026-10-28 macOS's steps ran in the macOS scenario job's part 1 to hold one macOS
+  # runner fewer (on the free plan a `main` run waited 26 minutes for one, 2026-10-12); since the
+  # move to GitHub Enterprise's runners (2026-10-13) 699 macOS jobs started with a median wait of
+  # 2 s and none over a minute, while part 1, building this app before its own, took 35 minutes.
   #
   # Two jobs, not one matrix, because a job's `if:` cannot see `matrix`, and a matrix `exclude`
   # computed per event is undone by `include`, which adds an excluded entry back.
@@ -637,10 +648,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04]
+        os: [ubuntu-24.04, macos-latest]
         include:
           - os: ubuntu-24.04
             expect: "24.04"
+            evidence: false
+          - os: macos-latest
+            expect: "26"
             evidence: false
     runs-on: ${{ matrix.os }}
     # `checks: read`: when main's app does not build here, the step reads main's own result for
@@ -849,14 +863,22 @@ jobs:
     steps:
       # Bounded, and each download tried again by dnf itself (#1625), as the Ubuntu jobs'
       # packages are (#1477): a slow mirror ends this step rather than holding the job.
+      #
+      # The programs the core's tests run that the Ubuntu runner image has and Fedora's does not
+      # (#3507): `nc` (`nmap-ncat`), the client the brokered tunnel's tests send through it, and
+      # the `openssl` command, which makes the certificate of a private skill source's https
+      # test. `openssl-devel` is only the library's headers.
       - name: Fedora's build dependencies for Tauri, and a display to start the app in
         timeout-minutes: 15
         run: |
           dnf -y install --setopt=install_weak_deps=False --setopt=retries=3 --setopt=timeout=60 \
             gcc gcc-c++ make pkgconf-pkg-config perl git tar gzip xz which findutils procps-ng gawk \
-            curl wget file openssl-devel webkit2gtk4.1-devel libxdo-devel \
+            curl wget file openssl openssl-devel webkit2gtk4.1-devel libxdo-devel \
             libappindicator-gtk3-devel librsvg2-devel \
-            xorg-x11-server-Xvfb xauth dbus-daemon dbus-x11 mesa-dri-drivers             bubblewrap socat
+            xorg-x11-server-Xvfb xauth dbus-daemon dbus-x11 mesa-dri-drivers bubblewrap socat \
+            nmap-ncat
+          test -x /usr/bin/nc
+          openssl version
           cat /etc/fedora-release
           got=$(. /etc/os-release && echo "$VERSION_ID")
           if [ "$got" != "$FEDORA" ]; then
@@ -1039,7 +1061,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|egress|reach|wrapper|hosts|localport|door)(\.rs|/)|crates/purlis-core/tests/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1062,11 +1084,56 @@ jobs:
       - name: A wrapped chat listens nowhere, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: cargo test --locked -p purlis-core --test a_sandboxed_chat_listens_nowhere_under_seatbelt
+      # A chat allowed to serve on a port, under its own compiled profile for real (#2019): its
+      # own socket and no TCP port, reached through purlis's door alone.
+      - name: A chat's server behind its door, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
       # Which of the confined profile's parts the probe needs to start, each tried on its own.
       # What Seatbelt refused while the probe ran, from the system's log, for a red run's reader.
       - name: What the sandbox refused
         if: failure() && steps.scope.outputs.run == 'true'
         run: log show --last 15m --style compact --predicate 'eventMessage CONTAINS "studio-probe" AND eventMessage CONTAINS "deny"' | tail -100 || true
+
+  # **`purlis listen`'s shim for Node, tried for real** (#2019): a server started on a chat's port
+  # by Node's own `http`, by Vite and by Next.js listens on the chat's socket and on no TCP port,
+  # under each Node the shim promises. Scoped like the confinement jobs: a pull request that does
+  # not touch the shim runs a check of a few seconds.
+  listen-shim:
+    name: listen shim (Node ${{ matrix.node }}, ${{ matrix.kind }})
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
+        kind: [plain, vite, next]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: The commit this change is measured against
+        id: base
+        uses: ./.github/actions/change-base
+      - name: Whether this change touches the shim
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          if [ "$EVENT" = schedule ] || git diff --name-only "$BASE" HEAD | grep -qE '^(crates/purlis-cli/src/listen|tests/listen-shim/|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::the listen shim has not changed; not run"
+          fi
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: A server on the chat's port listens on its socket
+        if: steps.scope.outputs.run == 'true'
+        run: node tests/listen-shim/check.mjs ${{ matrix.kind }}
 
   # What the Python charter answered, frozen: every scenario the old differential ran, and the
   # generated cases of the shell reader and the plane-root guards, replayed against this build
@@ -1121,13 +1188,16 @@ jobs:
   # The scenario specs on macOS in two parts on two runners (WebdriverIO's `--shard`): on one
   # runner the job took 15 minutes, 7 of them building on macOS's slow runner and 6 running the
   # specs one at a time, longer than any other job but `rust` (2026-10-10). Each part builds for
-  # itself, as `rust`'s do. Part 1 also builds the app as it ships (`app`, for `app builds
-  # (macos-latest)`) and runs the seven runs that each need an app of their own (`extras`): part
-  # 2's half of the specs is the heavier, 13 to 16 minutes against part 1's 7 to 11 (2026-10-12).
+  # itself, as `rust`'s do. The seven runs that each need an app of their own (`extras`) are a
+  # third leg that runs no spec (`specs: false`): in a spec part they added about 7 minutes after
+  # its specs, and that part was the run's longest job (31 to 32 minutes on 2026-10-28; 25.9 with
+  # the extras apart). macOS runners vary a lot: the same half of the specs took 622 to 984 s and
+  # the build 179 to 485 s across those runs. The app as it ships is `app`'s macOS leg
+  # (`app builds (macos-latest)`).
   # `scenario-checks` carries the required check's name. Linux has the same steps, in
   # `scenario-linux`.
   scenario:
-    name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
+    name: scenario tests (${{ matrix.os }}, ${{ matrix.specs && format('part {0} of {1}', matrix.shard, matrix.shards) || 'the single-app runs' }})
     strategy:
       fail-fast: false
       matrix:
@@ -1136,13 +1206,16 @@ jobs:
         shards: [2]
         include:
           - shard: 1
-            extras: true
-            app: true
-            expect: "26"
+            extras: false
+            specs: true
           - shard: 2
             extras: false
-            app: false
-            expect: ""
+            specs: true
+          - os: macos-latest
+            shard: extras
+            shards: 2
+            extras: true
+            specs: false
     runs-on: ${{ matrix.os }}
     steps: &scenario-steps
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1221,30 +1294,6 @@ jobs:
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/claude-code" "$package@$version"
           PURLIS_CLAUDE_CODE="$RUNNER_TEMP/claude-code/node_modules/$package/claude" \
             cargo test --locked -p purlis-core --test claude_codes_own_sandbox_holds_the_settings_purlis_writes -- --nocapture
-      # **The app as it ships, on macOS** (`app builds (macos-latest)`, `app-macos-checks`): the
-      # `app` job's steps, here in part 1 so a pull request holds one macOS runner fewer. Before
-      # the scenario build, which rewrites the same binary and `app/dist`.
-      - name: What this runner is
-        if: matrix.app
-        env:
-          EXPECT: ${{ matrix.expect }}
-        run: |
-          sw_vers
-          got=$(sw_vers -productVersion | cut -d. -f1)
-          uname -m
-          if [ "$got" != "$EXPECT" ]; then
-            echo "::warning::${{ matrix.os }} runs $got, but docs/platforms.md says it covers $EXPECT: update the row and this matrix"
-          fi
-      - name: Every shipped crate and npm package has its licence text
-        if: matrix.app
-        run: node tools/third-party-notices.mjs
-      - name: The app, as it ships, built
-        if: matrix.app
-        run: npx tauri build --debug --no-bundle
-        working-directory: app
-      - name: The window's main bundle carries no CodeMirror
-        if: matrix.app
-        run: node tools/main-chunk-has-no-codemirror.mjs
       # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
       # what drives it on macOS as well as Linux. It is in no build anyone is given.
       #
@@ -1263,18 +1312,18 @@ jobs:
         # and #1829's run showed no notice at all.
         run: |
           said=$(sccache --show-stats 2>&1 | head -30 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
-          echo "::notice title=sccache (macOS part ${{ matrix.shard }})::${said:-sccache said nothing}"
+          echo "::notice title=sccache (macOS, ${{ matrix.specs && format('part {0}', matrix.shard) || 'the single-app runs' }})::${said:-sccache said nothing}"
       - run: npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && matrix.specs
         working-directory: app
       - run: xvfb-run -a npm run e2e -- --shard ${{ matrix.shard }}/${{ matrix.shards }}
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.specs
         working-directory: app
       # The slowest spec files and tests of the run above, as notices on the job: what makes the
       # specs slow, readable through the checks API without the log (`tools/e2e-timings.mjs`). A
       # report, so it never turns the job red.
       - name: Annotate the slowest scenario specs
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.specs }}
         continue-on-error: true
         run: node ../tools/e2e-timings.mjs logs/timings.jsonl "${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}"
         working-directory: app
@@ -1282,7 +1331,7 @@ jobs:
       # notice on the part of the job that ran them: a switch to a project of many chats apart
       # from one to a project of one (`tools/switch-notice.mjs`). A report, never a verdict.
       - name: Annotate the project switches
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.specs }}
         continue-on-error: true
         run: node ../tools/switch-notice.mjs logs/project-switch.jsonl "${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }}"
         working-directory: app
@@ -1399,20 +1448,7 @@ jobs:
           name: scenario-logs-${{ matrix.os }}-${{ matrix.shard }}
           path: app/logs
 
-  # The required check `app builds (macos-latest)`: its steps ran in the macOS scenario job's
-  # part 1, so it is green when that job is. A red scenario part turns it red too.
-  app-macos-checks:
-    name: app builds (macos-latest)
-    needs: scenario
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: The macOS scenario job, which built the app as it ships, passed
-        env:
-          RESULT: ${{ needs.scenario.result }}
-        run: test "$RESULT" = success
-
-  # The required check `scenario tests (macos-latest)`: green only when both parts are, and
+  # The required check `scenario tests (macos-latest)`: green only when every leg is, and
   # `!cancelled()` for the reason `rust-checks` gives.
   scenario-checks:
     name: scenario tests (macos-latest)
@@ -1420,14 +1456,15 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: Every leg passed
         env:
           RESULT: ${{ needs.scenario.result }}
         run: test "$RESULT" = success
 
   # Its own job, not a leg of `scenario`'s matrix, so that `scenario-checks` waits on macOS
   # alone. Two parts too, since its specs alone took 7.8 minutes of 12.7 (2026-10-12); Linux
-  # runners are not the ones in short supply. Part 2 runs the seven single-app runs, as on macOS.
+  # runners are not the ones in short supply. Part 2 runs the seven single-app runs (on macOS
+  # they are a leg of their own).
   scenario-linux:
     name: scenario tests (${{ matrix.os }}, part ${{ matrix.shard }} of ${{ matrix.shards }})
     strategy:
@@ -1439,12 +1476,10 @@ jobs:
         include:
           - shard: 1
             extras: false
-            app: false
-            expect: ""
+            specs: true
           - shard: 2
             extras: true
-            app: false
-            expect: ""
+            specs: true
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
@@ -1455,7 +1490,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: Both parts passed
+      - name: Every leg passed
         env:
           RESULT: ${{ needs.scenario-linux.result }}
         run: test "$RESULT" = success

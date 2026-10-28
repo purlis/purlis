@@ -182,6 +182,11 @@
   /* How tall its top is, which its groups' names are held under: measured as it changes
      (`Panel.tsx`, `ViewTop`). */
   --panel-section-top-size: 0px;
+  /* How far below the view's edge a row the keyboard reaches is brought: under the top and a
+     group's 26px name. One value for a list's rows and a tree's. */
+  --panel-section-row-clear: calc(
+    var(--panel-section-top-size) + var(--size-chrome) + var(--space-1)
+  );
   display: flex;
   flex-direction: column;
 }
@@ -222,8 +227,10 @@
 }
 
 /* **A group's name is held under the top** while its group is in sight, on the panel's fill, so
-   the rows scroll under it: the prototype's 26px `.ghead`. */
-[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"] {
+   the rows scroll under it: the prototype's 26px `.ghead`. A list's group and a tree's alike: the
+   Chats view's workspace names are its tree's (#3484). */
+[data-scope="panel-section"][data-frame] [data-scope="list"][data-part="header"],
+[data-scope="panel-section"][data-frame] [data-scope="tree"][data-part="header"] {
   position: sticky;
   inset-block-start: var(--panel-section-top-size);
   z-index: 1;
@@ -244,6 +251,7 @@
 }
 
 [data-scope="panel-section"][data-frame] [data-part="header"] > [data-count] {
+  flex: none;
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
 }
@@ -259,15 +267,27 @@
   padding-block-end: var(--space-3);
 }
 
+/* **A tree's row the keyboard comes to is scrolled into sight below the top** (WCAG 2.4.11), as
+   a list's row is: a tree in a view (Explorer's files, #3343) scrolls under the held top too. */
+[data-scope="panel-section"][data-frame] [data-scope="tree"][data-part="root"] {
+  scroll-margin-block-start: var(--panel-section-top-size);
+}
+
 /* **A view's rows are 30px** (the prototype's `.row`): the control's height and a step, with 8
    at the sides and 8 between their marks and words. */
 [data-scope="panel-section"][data-frame] [data-scope="list"][data-part="root"] {
   /* A row the keyboard comes to is scrolled into sight below the top and its group's name, never
      under them (WCAG 2.4.11). */
-  scroll-margin-block-start: calc(
-    var(--panel-section-top-size) + var(--size-chrome) + var(--space-1)
-  );
+  scroll-margin-block-start: var(--panel-section-row-clear);
   min-block-size: calc(var(--size-control) + var(--space-1));
   padding-inline: var(--space-4);
   column-gap: var(--space-4);
+}
+
+/* **A tree's rows in a view are a view's rows** too (the Chats view, #3342): 30px, and scrolled
+   into sight below the top and a group's name. Over the tree row's own height
+   (`primitives/collections.css`), which this sheet comes after. */
+[data-scope="panel-section"][data-frame] .ui-tree-row {
+  --ui-row-height: calc(var(--size-control) + var(--space-1));
+  scroll-margin-block-start: var(--panel-section-row-clear);
 }

@@ -271,14 +271,36 @@ export async function answerTaken(
         // Sign in sends nothing (#2035): the project's window opens a shell tab where the core
         // types the harness's own sign-in, to the plan the option names where it names one. The
         // Ask waits until the harness says the profile is signed in. Dismiss puts it away.
-        if (option === "dismiss") return commands.dismissSignIn(plane, path.profile);
+        // With a pool (#2049), on that pool's runner: the line typed is the runner's own sign-in.
+        if (option === "dismiss")
+          return commands.dismissSignIn(plane, path.profile, path.pool ?? null);
         if (option === "sign-in" || option.startsWith("sign-in:")) {
           const provider = option.startsWith("sign-in:") ? option.slice("sign-in:".length) : "";
-          askProfileSignIn(plane, path.profile, provider === "" ? undefined : provider);
+          askProfileSignIn(
+            plane,
+            path.profile,
+            provider === "" ? undefined : provider,
+            path.pool ?? undefined,
+          );
           opened = true;
           return { status: "ok" };
         }
         break;
+      case "old-harness-plugins": {
+        // The old `[harness_plugins]` keys (#3467): Remove holds purlis's proposed change for
+        // each file and opens the first one's tab, where Apply is pressed; nothing is written
+        // before. Dismiss says it no more. Either is said once.
+        if (option === "dismiss") return commands.dismissOldHarnessPlugins(plane);
+        if (option === "remove") {
+          const held = await commands.removeOldHarnessPlugins(plane);
+          if (held.status === "error") return held;
+          const [first] = held.data;
+          if (first !== undefined) askOpenProposal(plane, first.id, first.file);
+          opened = true;
+          return { status: "ok" };
+        }
+        break;
+      }
       case "sandbox-only": {
         // Make one makes a sandbox-only Codex profile (#2037), then the project's window opens
         // a shell tab where the core types Codex's own sign-in for it. Dismiss puts it away.

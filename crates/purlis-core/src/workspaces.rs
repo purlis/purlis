@@ -559,13 +559,36 @@ impl Workspace {
         self.add_todo(text, stamp).map_err(RecordRefused::Io)
     }
 
-    /// Drop a todo without closing it: the file and its index line go, and **nothing is
-    /// journalled** — it was abandoned, not done. A slug that is not one path segment is
-    /// refused before anything is looked up ([`memstore::forget`]).
+    /// Drop an open todo without closing it: the file and its index line go, and **nothing is
+    /// journalled** — it was abandoned, not done. Only an open one: a done todo is deleted by
+    /// [`Self::forget_done_todo`], a person's act (ADR 0106). A slug that is not one path
+    /// segment is refused before anything is looked up ([`memstore::forget`]).
     pub fn forget_todo(&self, slug: &str) -> io::Result<()> {
         let dir = self.dir.join("todos");
         self.writable(&dir)?;
         memstore::forget(&self.plane_root, &dir, slug)
+    }
+
+    /// Delete a done todo, and only a done one, by its exact slug (SI-9d): its file in
+    /// `todos/archive/` goes and nothing is journalled. `NotFound` when no done todo is called
+    /// `slug`; a slug typed on a command line is made exact first (`wscmd::todo`).
+    pub fn forget_done_todo(&self, slug: &str) -> io::Result<()> {
+        let slug = slug.strip_suffix(".md").unwrap_or(slug);
+        if !crate::contain::segment_ok(slug) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("'{slug}' is not the slug of one todo"),
+            ));
+        }
+        let done = self.dir.join("todos").join(memstore::ARCHIVE);
+        self.writable(&done)?;
+        if !self.done_todos()?.iter().any(|todo| todo.slug == slug) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("no done todo: {slug}"),
+            ));
+        }
+        memstore::forget(&self.plane_root, &done, slug)
     }
 
     /// The title of an open todo about the same work as `text`, or `None` —
@@ -587,8 +610,10 @@ impl Workspace {
         .map(str::to_owned)
     }
 
-    /// Close a todo: write its closing memory into the journal, then delete the todo file
-    /// and its index line. There is no state field — a closed todo is a deleted file.
+    /// Close a todo as done: write its closing memory into the journal, then move the todo
+    /// file into `todos/archive/` and drop its index line (ADR 0106, amending ADR 0004). A done
+    /// todo stays, listed by [`Self::done_todos`], until [`Self::reopen_todo`] brings it back
+    /// or [`Self::forget_todo`] deletes it.
     pub fn close_todo(&self, slug: &str, stamp: chrono::NaiveDateTime) -> io::Result<()> {
         self.writable(&self.dir.join("todos"))?;
         let dir = self.dir.join("todos");
@@ -611,10 +636,56 @@ impl Workspace {
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::NotFound, format!("no such todo: {slug}"))
             })?;
-        // The journal entry goes in FIRST: charter writes the trace, then deletes the todo,
-        // so a failure leaves the todo open rather than closed with nothing recorded.
+        // The journal entry goes in FIRST: charter writes the trace, then moves the todo, so
+        // a failure leaves the todo open rather than closed with nothing recorded.
         self.remember(&format!("Closed todo: {title}"), stamp)?;
-        memstore::forget(&self.plane_root, &dir, slug)
+        self.file_as_done(&stem).map(|_| ())
+    }
+
+    /// Move the open todo named exactly `stem` into `todos/archive/` and drop its index line,
+    /// journalling nothing: the second half of [`Self::close_todo`], for a caller that wrote
+    /// the journal's entry itself and said so (`ws todo done`). The path it is at now.
+    ///
+    /// The store's one retire, which the journal's Delete moves a memory by too
+    /// ([`memstore::archive_one`]): exact names only, link-gated, and numbered when the name
+    /// is taken among the done ones.
+    pub fn file_as_done(&self, stem: &str) -> io::Result<PathBuf> {
+        let dir = self.dir.join("todos");
+        self.writable(&dir)?;
+        memstore::archive_one(&self.plane_root, &dir, stem)
+    }
+
+    /// Bring a done todo back: its file moves out of `todos/archive/` and its index line is
+    /// appended again, so it is open as it was, under the name it had. The journal keeps the
+    /// close it recorded, and the reopen adds nothing to it (ADR 0106).
+    ///
+    /// `slug` is a done todo's exact stem (SI-9d); a slug typed on a command line is made exact
+    /// first (`wscmd::todo`). `NotFound` when no done todo is called that, `InvalidInput` for a
+    /// slug that is not one path segment, and `AlreadyExists` when an open todo already has the
+    /// file's name.
+    pub fn reopen_todo(&self, slug: &str) -> io::Result<PathBuf> {
+        let slug = slug.strip_suffix(".md").unwrap_or(slug);
+        if !crate::contain::segment_ok(slug) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("'{slug}' is not the slug of one todo"),
+            ));
+        }
+        let dir = self.dir.join("todos");
+        self.writable(&dir)?;
+        if !self.done_todos()?.iter().any(|todo| todo.slug == slug) {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("no done todo: {slug}"),
+            ));
+        }
+        let name = format!("{slug}.md");
+        memstore::ensure_index(
+            &self.plane_root,
+            &dir,
+            &TODOS_HEADER.replace("{name}", &self.name),
+        )?;
+        memstore::unarchive(&self.plane_root, &dir, &name, None)
     }
 
     /// Record one durable fact in the workspace's journal.
@@ -847,9 +918,19 @@ impl Workspace {
         })
     }
 
-    /// The open todos. There is no state field: a closed todo is a deleted file.
+    /// The open todos, oldest first. There is no state field: an open todo is a file in
+    /// `todos/`, and a done one is a file in `todos/archive/` ([`Self::done_todos`], ADR 0106).
     pub fn todos(&self) -> io::Result<Vec<Entry>> {
         let dir = self.dir.join("todos");
+        self.readable(&dir)?;
+        read_store(&self.plane_root, &dir)
+    }
+
+    /// The done todos, sorted by filename (when each was opened): what `todos/archive/` holds,
+    /// read through the held store as the open ones are. A workspace that never closed one has
+    /// none.
+    pub fn done_todos(&self) -> io::Result<Vec<Entry>> {
+        let dir = self.dir.join("todos").join(memstore::ARCHIVE);
         self.readable(&dir)?;
         read_store(&self.plane_root, &dir)
     }

@@ -157,6 +157,44 @@ fn closing_a_todo_leaves_its_trace_in_the_journal() {
             .iter()
             .any(|m| m.title == "Closed todo: Write the tests")
     );
+    // It stays as done, and opens again as it was (ADR 0106).
+    let done = ws.done_todos().unwrap();
+    assert_eq!(done.len(), 1);
+    assert_eq!(done[0].slug, slug);
+    ws.reopen_todo(&slug).unwrap();
+    assert_eq!(ws.todos().unwrap()[0].title, "Write the tests");
+}
+
+#[test]
+fn a_todo_closed_twice_under_one_name_keeps_both_done() {
+    let p = project(&["alpha"]);
+    let ws = crate::workspaces::Plane::open(p.path())
+        .workspace("alpha")
+        .unwrap();
+    for _ in 0..2 {
+        call_ok(
+            p.path(),
+            &in_ws("alpha"),
+            "todo_add",
+            json!({"text": "Write the tests"}),
+        );
+        let slug = ws.todos().unwrap()[0].slug.clone();
+        call_ok(
+            p.path(),
+            &in_ws("alpha"),
+            "todo_done",
+            json!({"slug": slug}),
+        );
+    }
+
+    let done: Vec<String> = ws
+        .done_todos()
+        .unwrap()
+        .into_iter()
+        .map(|t| t.slug)
+        .collect();
+    assert_eq!(done.len(), 2, "{done:?}");
+    assert!(done.iter().any(|slug| slug.ends_with("-2")), "{done:?}");
 }
 
 #[test]

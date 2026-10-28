@@ -327,6 +327,10 @@ impl SessionHost for RoutedSessions {
         self.here.composes_its_harness_chats()
     }
 
+    fn pool_for(&self, workspace: Option<&str>) -> Option<String> {
+        self.route(workspace).ok().flatten()
+    }
+
     fn composes_its_harness_chats_in(&self, workspace: Option<&str>) -> bool {
         match self.route(workspace) {
             // A start whose pool is not kept is refused as it opens, in its own words.
@@ -583,6 +587,23 @@ impl SessionHost for RoutedSessions {
 
     fn pool_of(&self, id: u32) -> Option<String> {
         lock(&self.shared.chats).get(&id).cloned()
+    }
+
+    /// None for the project as a whole: each pool's is said by [`Self::runner_logs`] (#3393).
+    fn runner_log(&self) -> Option<crate::runnerlog::RunnerLogNow> {
+        None
+    }
+
+    /// Each pool's runner log this project's chats read (#3393).
+    fn runner_logs(&self) -> Vec<(String, crate::runnerlog::RunnerLogNow)> {
+        let pools: Vec<(String, Arc<dyn SessionHost>)> = lock(&self.shared.pools)
+            .iter()
+            .map(|(pool, host)| (pool.clone(), Arc::clone(host)))
+            .collect();
+        pools
+            .into_iter()
+            .filter_map(|(pool, host)| host.runner_log().map(|log| (pool, log)))
+            .collect()
     }
 
     /// Asked of this machine's host, then of each pool a workspace of the project runs its

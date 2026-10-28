@@ -71,7 +71,7 @@ type Story = StoryObj<typeof meta>;
 export const ScrolledUnderItsHead: Story = {
   play: async ({ canvasElement }) => {
     const section = canvasElement.querySelector<HTMLElement>(".chats-section");
-    const head = canvasElement.querySelector<HTMLElement>(".chats-head");
+    const head = canvasElement.querySelector<HTMLElement>('.chats-section > [data-part="top"]');
     const panel = canvasElement.querySelector<HTMLElement>(
       '[data-scope="panel"][data-part="root"]',
     );

@@ -217,11 +217,10 @@ fn plain_shell_input(ask: &Ask, payload: &Value) -> bool {
 /// whole change is shown beside it (#1146); never for an ask that says nothing.
 pub fn shown_in_full(ask: &Ask) -> bool {
     let whole = match &ask.action {
-        Action::Command { line } => format!("Run a command: {line}"),
-        Action::Tool { name, input } => format!("Use {name}: {input}"),
-        Action::Question { question } if !question.is_empty() => format!("Asks you: {question}"),
-        Action::Edit { path } if matches!(ask.writes, Some(Writes::Whole { .. })) => {
-            format!("Change {path}")
+        Action::Command { .. } | Action::Tool { .. } => ask.action.said(),
+        Action::Question { question } if !question.is_empty() => ask.action.said(),
+        Action::Edit { .. } if matches!(ask.writes, Some(Writes::Whole { .. })) => {
+            ask.action.said()
         }
         Action::Edit { .. } | Action::Elicit { .. } | Action::Question { .. } | Action::Unsaid => {
             return false;

@@ -33,6 +33,7 @@ const PANELS: PanelsModel = {
   refused: [],
   todos: [],
   todos_refused: null,
+  done_todos: [],
   personas: [],
   persona: "steward",
   sessions: [],
@@ -126,13 +127,13 @@ function draw() {
   );
 }
 
-const tree = () => screen.getByRole("tree", { name: /^Files of / });
+const tree = () => screen.getByRole("treegrid", { name: /^Files of / });
 const row = (id: string) => {
   const found = tree().querySelector<HTMLElement>(`[data-row="${id}"]`);
   if (found === null) throw new Error(`no row ${id}`);
   return found;
 };
-const named = (name: string) => within(tree()).findByRole("treeitem", { name: new RegExp(name) });
+const named = (name: string) => within(tree()).findByRole("row", { name: new RegExp(name) });
 const drawnNames = () =>
   [...tree().querySelectorAll<HTMLElement>('[data-row^="file:svc/one:"]')].map(
     (one) => one.dataset.row,
@@ -154,10 +155,11 @@ describe("what a branch changed, in the explorer", () => {
     expect(await named("^README.md")).toHaveAccessibleName("README.md changed");
     expect(await named("^new.rs")).toHaveAccessibleName("new.rs renamed from lib/old.rs");
     expect(await named("^src")).toHaveAccessibleName("src 2 changes");
-    // The branch's own folder is the section's heading, and carries its count.
-    expect(screen.getByRole("button", { name: /^Files/ })).toHaveAccessibleName(
-      "Files one in svc 4 changes",
-    );
+    // The branch's own folder is the view's title, and what stands beside it carries its count
+    // (#3343).
+    const beside = document.querySelector('[data-section="files"] .head-beside');
+    expect(beside).toHaveTextContent("svc · one");
+    expect(beside?.querySelector(".change-mark")).toHaveAccessibleName("4 changes");
     expect(row("file:svc/one:src/keep.rs")).toHaveAccessibleName("keep.rs");
   });
 
@@ -170,7 +172,7 @@ describe("what a branch changed, in the explorer", () => {
 
     expect(gone).toHaveAttribute("aria-disabled", "true");
     expect(gone).toHaveTextContent("deleted on this branch");
-    expect(gone.closest("li")).toHaveAttribute("data-mark", "deleted");
+    expect(gone).toHaveAttribute("data-mark", "deleted");
   });
 
   it("collapses to what the branch changed, every folder of it open, with no folder read", async () => {
@@ -225,7 +227,7 @@ describe("a path the branch changed that purlis names and does not read (#704)",
   };
   const refusedRows = () => screen.queryAllByTestId("explorer-refused-row");
 
-  it("is drawn under the branch's files as text, with its mark and why, and is no row of the tree", async () => {
+  it("is drawn under the branch's files as a line, with its mark and why, and is no row to act on", async () => {
     core(TOP, { now: REFUSED });
     draw();
 
@@ -234,11 +236,13 @@ describe("a path the branch changed that purlis names and does not read (#704)",
     expect(one).toHaveTextContent("added");
     expect(one).toHaveTextContent("not committed");
     expect(one).toHaveTextContent(WHY);
+    // A line of the tree (#2911): read by the arrows in its place, holding nothing to press,
+    // open, drag or pick.
+    expect(one).toHaveAttribute("data-line");
     expect(within(one).queryByRole("button")).toBeNull();
     expect(within(one).queryByRole("link")).toBeNull();
-    expect(within(one).queryByRole("treeitem")).toBeNull();
-    expect(one.querySelector("[tabindex]")).toBeNull();
-    expect(one.closest("[role=treeitem]")).toBeNull();
+    expect(one).not.toHaveAttribute("data-pick");
+    expect(one).not.toHaveAttribute("data-row");
     expect(drawnNames()).not.toContain("file:svc/one:vendor");
   });
 
@@ -262,6 +266,13 @@ describe("a path the branch changed that purlis names and does not read (#704)",
     await userEvent.type(screen.getByLabelText("Filter files"), "readme");
 
     await waitFor(() => expect(refusedRows()).toHaveLength(0));
+    // On a picked branch the box narrows its tree (D-3343-1): the file that matches is still a
+    // row of it, the folders that hold none are gone, and the tree's toggles stay.
+    expect(await named("^README.md")).toBeInTheDocument();
+    expect(row("file:svc/one:README.md")).toBeInTheDocument();
+    expect(tree().querySelector('[data-row="file:svc/one:lib"]')).toBeNull();
+    expect(screen.queryByRole("grid", { name: "Files found" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Changed only" })).toBeInTheDocument();
   });
 
   it("draws the first fifty and counts the rest", async () => {

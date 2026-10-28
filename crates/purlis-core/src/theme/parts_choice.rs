@@ -77,10 +77,10 @@ fn row_look(states: &[State]) -> Look {
     }
 }
 
-/// **A checkbox** (#2907): its row, its box, its words and the line under them.
+/// **A checkbox** (#2907): its row, its box, its words, a chip's count and the line under them.
 pub(super) const CHECKBOX: Family = Family {
     name: "checkbox",
-    description: "A checkbox: its row, the box ticked, its words and the line under them.",
+    description: "A checkbox: its row, the box ticked, its words, its count and the line under them.",
     since: super::NEXT,
     parts: &[
         Part {
@@ -100,6 +100,12 @@ pub(super) const CHECKBOX: Family = Family {
             since: super::NEXT,
             description: "Its words.",
             properties: WORDS,
+        },
+        Part {
+            name: "count",
+            since: super::NEXT,
+            description: "How many things it stands for, after its words, on a box or a chip.",
+            properties: &[Prop::Text],
         },
         Part {
             name: "description",

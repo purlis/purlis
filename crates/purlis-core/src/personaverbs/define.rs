@@ -13,10 +13,11 @@
 //!
 //! # What `create` refuses that Python did not
 //!
-//! A `--role` or `--delegate-when` holding a line break, a control character or `---` is
-//! refused. Each is written into the frontmatter as one line, so a line break there writes a
-//! key the operator never typed — `--role $'x\ntools: Bash'` would declare a tool the persona
-//! gate then approves — and a `---` ends the frontmatter early. `--vault` must be a vault name
+//! A `--role` or `--delegate-when` holding a line break or a control character is refused.
+//! Each is written into the frontmatter as one line, so a line break there writes a key the
+//! operator never typed — `--role $'x\ntools: Bash'` would declare a tool the persona gate then
+//! approves. A `---` inside one is text: only a line that is `---` ends the frontmatter
+//! (`purlis_skills::fence`, #3244), and a value is never a line of its own. `--vault` must be a vault name
 //! the registry accepts, or `none`. (`--extends` is already held to the persona-name alphabet.)
 //! Python wrote all of them as given.
 //!
@@ -124,10 +125,10 @@ fn one_line_refusal(flag: &str, value: &str) -> Option<String> {
     let breaks = value
         .chars()
         .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'));
-    (breaks || value.contains("---")).then(|| {
+    breaks.then(|| {
         format!(
             "{flag} is written into persona.md's frontmatter as one line, so it may hold no \
-             line break, control character or `---`: '{}'",
+             line break or control character: '{}'",
             crate::personas::one_line(value)
         )
     })

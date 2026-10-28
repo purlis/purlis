@@ -160,3 +160,46 @@ fn a_tab_names_what_came_back_that_a_local_tool_runs_and_nothing_when_none_did()
         "{said}"
     );
 }
+
+fn moving() -> crate::host::Moving {
+    crate::host::Moving {
+        workspace: "app".into(),
+        profile: "work".into(),
+        conversation: "0d6f3c1e".into(),
+    }
+}
+
+#[test]
+fn a_move_keeps_its_profile_on_the_runner_before_its_conversation_goes() {
+    let did = Mutex::new(Vec::new());
+    to_a_runner(
+        "builds",
+        &moving(),
+        &|pool, profile| {
+            lock(&did).push(format!("kept {profile} on {pool}"));
+            Ok(())
+        },
+        &|| {
+            lock(&did).push("moved".to_owned());
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(*lock(&did), vec!["kept work on builds", "moved"]);
+}
+
+#[test]
+fn a_profile_the_runner_does_not_keep_moves_nothing() {
+    let moved = Mutex::new(false);
+    let refused = to_a_runner(
+        "builds",
+        &moving(),
+        &|_, _| Err("the profile 'work' is not signed in on pool builds".into()),
+        &|| {
+            *lock(&moved) = true;
+            Ok(())
+        },
+    );
+    assert!(refused.is_err());
+    assert!(!*lock(&moved), "nothing moved before the profile was kept");
+}

@@ -1921,3 +1921,80 @@ fn a_reason_a_repo_gives_names_the_repo_and_reads_for_the_chat_in_it_on_its_tab(
         Reason::TurnedOff.to_string()
     );
 }
+
+// ---- a persona's own levels ---------------------------------------------------------------
+
+#[test]
+fn persona_set_is_a_personas_own_rows_of_its_chats_set_and_asks_only_of_its_own() {
+    // #3462: a persona's levels are read first, so the project's and a workspace's change
+    // nothing of them; `persona_set` reads none of those, and asks of no local skill there.
+    let plane = Plane::new();
+    skill(&plane.project_local(), "scratch", &whole("scratch"));
+    skill(&plane.project(), "deploy", &whole("deploy"));
+    skill(
+        &plane.workspace_local("smart-ide"),
+        "notes",
+        &whole("notes"),
+    );
+    let own = persona_dir(&plane.root, "reviewer", false).unwrap();
+    let own_local = persona_dir(&plane.root, "reviewer", true).unwrap();
+    skill(&own, "deploy", &whole("deploy"));
+    skill(&own, "review", &whole("review"));
+    skill(&own_local, "review", &whole("review"));
+    let asked = std::sync::Mutex::new(Vec::<PathBuf>::new());
+    let kept = |folder: &Path| {
+        asked.lock().unwrap().push(folder.to_path_buf());
+        Ok(())
+    };
+    let machine = Machine {
+        built_in: None,
+        kept_local: Some(&kept),
+        harness: None,
+        made_since: None,
+    };
+    let route = Route::Plugin;
+
+    let alone = persona_set(&plane.root, &machine, "reviewer", route);
+    let asked_alone = std::mem::take(&mut *asked.lock().unwrap());
+    let whole_set = skill_set(
+        Some(&plane.root),
+        &machine,
+        &Chat {
+            workspace: Some("smart-ide"),
+            persona: Some("reviewer"),
+            names: &[],
+            turned_off: &[],
+            harness: HarnessSkills { route },
+        },
+    );
+
+    assert_eq!(
+        asked_alone,
+        [own_local.join("review")],
+        "only the persona's own local skill is asked about"
+    );
+    let persona_of = |set: &SkillSet| {
+        (
+            effective(set)
+                .into_iter()
+                .filter(|(_, origin, _)| *origin == Origin::Persona)
+                .map(|(name, _, local)| (name.to_owned(), local))
+                .collect::<Vec<_>>(),
+            left_out(set)
+                .into_iter()
+                .filter(|(_, origin, _, _)| *origin == Origin::Persona)
+                .map(|(name, _, local, why)| (name.to_owned(), local, why))
+                .collect::<Vec<_>>(),
+        )
+    };
+    assert_eq!(persona_of(&alone), persona_of(&whole_set));
+    assert_eq!(
+        persona_of(&alone).0,
+        [("deploy".to_owned(), false), ("review".to_owned(), true)]
+    );
+    assert!(
+        alone.effective.iter().all(|e| e.origin == Origin::Persona)
+            && alone.left_out.iter().all(|l| l.origin == Origin::Persona),
+        "no wider level of the plane is read: {alone:?}"
+    );
+}

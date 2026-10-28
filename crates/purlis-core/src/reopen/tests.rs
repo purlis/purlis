@@ -2711,3 +2711,61 @@ fn a_grades_chat_has_no_tab_and_only_its_record_says_so() {
     assert!(back[0].graded);
     assert!(!back[1].graded);
 }
+
+#[test]
+fn the_studio_flag_a_chat_started_with_is_recorded_and_read_back_3466() {
+    // A chat reattached from the session host keeps the Skill studio flag its start read, so
+    // the record carries it; a chat recorded without one writes no key.
+    let plane = tempfile::tempdir().unwrap();
+    let on = Chat {
+        plane_skills: Some(true),
+        ..claude("ide.7", None)
+    };
+    let off = Chat {
+        plane_skills: Some(false),
+        ..claude("ide.8", Some(ID))
+    };
+    let unknown = claude("ide.9", None);
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![on.clone(), off.clone(), unknown],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let text = fs::read_to_string(path(plane.path())).unwrap();
+    assert_eq!(text.matches("\"plane_skills\"").count(), 2, "{text}");
+    let back = read(plane.path());
+    assert_eq!(back.chats[0], on);
+    assert_eq!(back.chats[1], off);
+    assert_eq!(back.chats[2].plane_skills, None);
+}
+
+#[test]
+fn a_record_written_before_the_studio_flag_reads_as_not_known_3466() {
+    let plane = tempfile::tempdir().unwrap();
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![claude("ide.7", Some(ID))],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let text = fs::read_to_string(path(plane.path())).unwrap();
+    assert!(!text.contains("plane_skills"), "{text}");
+    let back = read(plane.path());
+    assert_eq!(back.chats.len(), 1, "the record still reads whole");
+    assert_eq!(back.chats[0].plane_skills, None);
+
+    // A value that is no flag reads as not known, never as a record that does not read.
+    fs::write(
+        path(plane.path()),
+        text.replacen("\"name\"", "\"plane_skills\":\"yes\",\"name\"", 1),
+    )
+    .unwrap();
+    let back = read(plane.path());
+    assert_eq!(back.chats.len(), 1, "{back:?}");
+    assert_eq!(back.chats[0].plane_skills, None);
+}

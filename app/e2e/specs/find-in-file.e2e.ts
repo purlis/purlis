@@ -109,7 +109,7 @@ describe("find in a file", function () {
     // The branch's menu in the Explorer opens its Files tab (FM-2).
     await showView("Explorer");
     await focusWorkspace("alpha");
-    await openMenuOn(`[data-testid="piece-svc-${PIECE}"] .spot`);
+    await openMenuOn(`.spot[data-testid="piece-svc-${PIECE}"]`);
     await pressMenuPath(ROW.browseFiles);
     await untilInFront(TAB);
 

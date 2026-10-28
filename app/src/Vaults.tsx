@@ -43,11 +43,14 @@ export function Vaults({
   onPress: (offer: Offer) => void;
 }) {
   const { vaults, trouble, reload } = said;
+  const byName = new Map((vaults ?? []).map((vault) => [vault.name, vault]));
   return (
     <PanelSection
       testid="panel-vaults"
       mark={KeyRound}
       title="Vaults"
+      // A view (#3341): one scroll, its heading and its filter held at the top.
+      view
       // **New vault… on the heading** (SI-3): the palette's row, one press from where the vaults
       // are listed. It needs a plane and not a vault, so it is there on an empty section too.
       actions={<HeadingOffer offer={offers.get("vault.create")} onPress={onPress} />}
@@ -71,6 +74,21 @@ export function Vaults({
           empty={NO_VAULTS}
           label="Vaults"
           testid="list-vaults"
+          search="always"
+          searchWord="Filter"
+          // As the prototype's Q1 A draws a vault (#3341): its name, its count quiet at its end,
+          // under its provider; no mark, which every row would share. Provider and count stay its
+          // hover.
+          titleOnly
+          markless
+          trailOf={(row) => {
+            const count = byName.get(row.key)?.count;
+            return count === null || count === undefined ? undefined : counted(count);
+          }}
+          groupOf={(row) => {
+            const vault = byName.get(row.key);
+            return vault === undefined ? "" : providerName(vault.provider);
+          }}
           // No row opens a card: pressing one opens the vault's tab, which says the rest.
           open={undefined}
           onOpen={() => undefined}

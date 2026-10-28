@@ -981,3 +981,36 @@ fn what_a_send_left_out_is_said_in_words_that_agree_and_names_at_most_five() {
     );
     assert!(said.ends_with("They stay on this machine."), "{said}");
 }
+
+#[test]
+fn a_done_todo_is_a_row_after_the_open_ones_keyed_apart_and_never_counted_open() {
+    // ADR 0106, R131: a done todo stays, drawn after the open ones, and is told by its key.
+    let (_plane, root) = plane_with_a_todo_and_two_personas();
+    let done = root.join("workspaces/alpha/todos/archive");
+    std::fs::create_dir_all(&done).expect("the done ones");
+    std::fs::write(
+        done.join("20260301-090000-ship.md"),
+        "# Ship the importer\n\n_2026-03-01 09:00 · todo_\n\nShipped.\n",
+    )
+    .expect("a done todo");
+
+    let drawn = of(&root, "alpha").expect("the panels draw");
+
+    assert_eq!(
+        rows_of(&drawn, "todos"),
+        ["Review the rollout plan", "Ship the importer"]
+    );
+    let read = serde_json::to_value(&drawn).expect("serialisable");
+    let keys: Vec<&str> = read["contributed"][0]["blocks"][0]["rows"]
+        .as_array()
+        .expect("rows")
+        .iter()
+        .map(|row| row["key"].as_str().expect("a key"))
+        .collect();
+    assert_eq!(
+        keys,
+        ["20260302-091400-review", "done/20260301-090000-ship"]
+    );
+    assert_eq!(read["todos"].as_array().expect("open").len(), 1);
+    assert_eq!(read["done_todos"][0]["slug"], "20260301-090000-ship");
+}

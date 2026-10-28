@@ -88,7 +88,7 @@ import { focusKeySaid, shortcutsKeySaid } from "./keys/ownKeys";
 import { askedByOf, chatsOfTab } from "./tabChats";
 import { neighbour } from "./tabTasks";
 import { taskKeyNote, taskKeySaid } from "./taskKeys";
-import { todoOpenId, todoView } from "./todos";
+import { todoDeleteId, todoOpenId, todoReopenId, todoView } from "./todos";
 import { onAMac } from "./tabKeys";
 import type { RegionId, Toggled } from "./regions";
 import {
@@ -120,6 +120,8 @@ import {
   sessionOf,
   SHORTCUTS_TITLE,
   SHORTCUTS_VIEW,
+  DEVICES_TITLE,
+  DEVICES_VIEW,
   viewKey,
   type AskedBy,
   type Direction,
@@ -151,13 +153,32 @@ export const READ_AGAIN = "workspace.readagain";
 export type Ran =
   { ok: true; said?: string } | { ok: false; refused: string; settings?: SettingsWay };
 
+/** A way on from what an action answered (#3344): "Open git-ci-cd", the filled primary where
+ *  `primary`, or "Add a vision". */
+export type SaidWay = { label: string; onPress: () => void; primary?: boolean };
+
 /**
- * **What the window says about the last action** — the line under the strip, and the palette's
- * line while it is up: one state drawn in two places. `settings` is a refusal's way to the
- * setting that puts it right (#1201), drawn as a link beside the words, and either line
- * follows it.
+ * **What the window says about the last action** — the closable notice at the top of the
+ * content, and the palette's line while it is up: one state drawn in two places, and kept in
+ * the Inbox's Notices under Results (#3344). `settings` is a refusal's way to the setting that
+ * puts it right (#1201), drawn as a link beside the words, and either line follows it.
+ *
+ * `words` is one plain sentence in the app's own words. `title` heads it where the action has
+ * one (`actionResult.ts` writes the known ones); `details` is what the core said, behind a
+ * Details disclosure, never a line the core wrote for an agent; `ways` are where to go on.
  */
-export type Said = { from: string; refused: boolean; words: string; settings?: SettingsWay };
+export type Said = {
+  from: string;
+  refused: boolean;
+  words: string;
+  settings?: SettingsWay;
+  title?: string;
+  details?: string;
+  ways?: readonly SaidWay[];
+  /** A line about work still under way ("Cloning 2 repo(s)…"), which the next line replaces:
+   *  said, but not kept under Results. */
+  progress?: boolean;
+};
 
 /** What the window says of a row's answer: nothing for a quiet success. */
 export function saidOf(from: string, answer: Ran): Said | undefined {
@@ -447,6 +468,10 @@ export type Does =
   | { verb: "openBrowserTimeline"; chat: string; name: string }
   /** Drops one of the focused workspace's todos with nothing journalled. */
   | { verb: "forgetTodo"; workspace: string; slug: string }
+  /** Opens one of the focused workspace's done todos again, as it was (ADR 0106, R131). */
+  | { verb: "reopenTodo"; workspace: string; slug: string }
+  /** Deletes one of the focused workspace's done todos, with nothing journalled (ADR 0106). */
+  | { verb: "forgetDoneTodo"; workspace: string; slug: string }
   /** **Names the worktree it acts on**, and never "whichever one is in front".
    *
    *  It used to carry only `force`, which made `worktree.remove` a row about the chat in
@@ -742,6 +767,11 @@ export type Now = {
    */
   todos?: readonly { slug: string; title: string }[];
   /**
+   * The focused workspace's done todos (`Panels.done_todos`, ADR 0106), one Reopen and one
+   * Delete row each. They stay, struck through, until one or the other.
+   */
+  doneTodos?: readonly { slug: string; title: string }[];
+  /**
    * The project's chats' browsers (#2022): a Pin or Unpin row each, and for a pinned one whose
    * chat has closed, a row to hand it to each chat of `listed`, and Stop. `chat` is what its
    * chat is called, or was called when it closed.
@@ -1016,6 +1046,8 @@ export type Doing = {
    *  owed — which todo closed, and that the journal has it or does not. */
   closeTodo: (workspace: string, slug: string) => Promise<Ran>;
   forgetTodo: (workspace: string, slug: string) => Promise<Ran>;
+  reopenTodo: (workspace: string, slug: string) => Promise<Ran>;
+  forgetDoneTodo: (workspace: string, slug: string) => Promise<Ran>;
   /** Each answers a `Ran`: the core can refuse (#2022), a browser gone meanwhile, a chat
    *  already holding as many as a project may. */
   pinBrowser: (program: string, session: number, pinned: boolean) => Promise<Ran>;
@@ -1438,6 +1470,8 @@ export const TOGGLE_PANEL_ID = "view.toggle:panel";
 export const FOCUS_MODE_ID = "focus.toggle";
 /** The keyboard shortcuts' row (#2921). */
 export const SHORTCUTS_ID = "shortcuts.show";
+/** The Devices view's row (#2052). */
+export const DEVICES_ID = "devices.show";
 /** The right sidebar's own views, as the region's palette row names them: "Inbox, Personas and
  *  Vaults" (#1738). */
 const RIGHT_VIEWS_SAID = ((names: string[]) =>
@@ -2232,7 +2266,7 @@ export function catalogue(now: Now): Offer[] {
         verb: "openWorkspaceSettings",
         workspace,
       }),
-      note: `${workspace}: Settings at its level — live, repos, extensions, appearance and plugins.`,
+      note: `${workspace}: Settings at its level — live, repos, extensions and appearance.`,
     });
     // Its chats' skills (#2767): the Skill studio on this workspace, behind the studio's flag.
     // The Skills row of its Settings level runs it.
@@ -2342,6 +2376,17 @@ export function catalogue(now: Now): Offer[] {
     ...can("pool.add", "Add a Docker pool…", { verb: "addDockerPool" }),
     note: "A runner on your Docker, held to the limits you set.",
   });
+  // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
+  // so nothing about runners shows before the first is added (spec #2041 story 6).
+  if (anyPoolKept())
+    offers.push({
+      ...can(DEVICES_ID, DEVICES_TITLE, {
+        verb: "openView",
+        view: DEVICES_VIEW,
+        title: DEVICES_TITLE,
+      }),
+      note: "This machine and each runner, with the chats and browsers on it and each pool's use.",
+    });
   offers.push(
     ...settingsGroupRows(
       now.plane,
@@ -2601,7 +2646,19 @@ export function catalogue(now: Now): Offer[] {
           { verb: "closeTodo", workspace: now.focused, slug: todo.slug },
           todo.title,
         ),
-        note: `Closes it in ${now.focused}; the workspace's journal records it.`,
+        note: `Marks it done in ${now.focused}; the workspace's journal records it, and it stays, struck through, to reopen.`,
+      });
+    }
+    // **A done todo stays** (ADR 0106, R131): unticking its box reopens it as it was.
+    for (const todo of now.doneTodos ?? []) {
+      offers.push({
+        ...can(
+          todoReopenId(todo.slug),
+          `Reopen todo: ${todo.title}`,
+          { verb: "reopenTodo", workspace: now.focused, slug: todo.slug },
+          todo.title,
+        ),
+        note: `Opens it again in ${now.focused}, as it was.`,
       });
     }
   }
@@ -3107,6 +3164,17 @@ export function catalogue(now: Now): Offer[] {
         note: `Drops it from ${todoIn} with nothing journalled. Mark it done to keep a trace.`,
       });
     }
+    for (const todo of now.doneTodos ?? []) {
+      offers.push({
+        ...can(
+          todoDeleteId(todo.slug),
+          `Delete done todo ${todo.title}`,
+          { verb: "forgetDoneTodo", workspace: todoIn, slug: todo.slug },
+          todo.title,
+        ),
+        note: `Deletes it from ${todoIn}'s done todos with nothing journalled. There is no undo.`,
+      });
+    }
   }
 
   // Destructive, and therefore here: letting go of a project ends every chat in it. Nothing
@@ -3154,6 +3222,8 @@ export const WRITES_THE_PROJECT: ReadonlySet<Does["verb"]> = new Set<Does["verb"
   "removeVault",
   "closeTodo",
   "forgetTodo",
+  "reopenTodo",
+  "forgetDoneTodo",
   "askDropMembership",
   "newMemory",
   "editMemory",
@@ -3373,6 +3443,10 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
       return DID;
     case "closeTodo":
       return doing.closeTodo(does.workspace, does.slug);
+    case "reopenTodo":
+      return doing.reopenTodo(does.workspace, does.slug);
+    case "forgetDoneTodo":
+      return doing.forgetDoneTodo(does.workspace, does.slug);
     case "pinBrowser":
       return doing.pinBrowser(does.program, does.session, does.pinned);
     case "handBrowser":
@@ -4783,6 +4857,9 @@ export type MenuOn =
   /** One of the focused workspace's open todos, by slug — the Todos panel's rows (SI-3). The
    *  workspace is the focused one on the one surface that draws them. */
   | { on: "todo"; slug: string }
+  /** One of the focused workspace's done todos, by slug (ADR 0106): the Todos view's struck
+   *  rows. */
+  | { on: "doneTodo"; slug: string }
   /** One session record, by its plane-relative path — the Sessions panel's rows (SI-8d). */
   | { on: "session"; path: string }
   /** One memory, by its tab's key (`memories.memoryKey`) — a persona's memory rows (SI-9b). */
@@ -4974,6 +5051,8 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         above: [todoOpenId(what.slug), `todo.done:${what.slug}`],
         below: [`todo.forget:${what.slug}`],
       };
+    case "doneTodo":
+      return { above: [todoReopenId(what.slug)], below: [todoDeleteId(what.slug)] };
     case "session":
       return { above: [`session.open:${what.path}`, `session.resume:${what.path}`], below: [] };
     case "memory":

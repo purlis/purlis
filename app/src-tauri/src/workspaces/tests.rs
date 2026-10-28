@@ -361,3 +361,25 @@ fn a_workspace_that_is_a_link_out_of_the_plane_is_refused_and_its_target_survive
         "--force is not a way out of the plane"
     );
 }
+
+#[test]
+fn a_vision_added_later_is_the_one_the_cli_would_record_and_a_refusal_is_the_cores() {
+    // #3344: the window's Add a vision, after the workspace was made without one.
+    let (_dir, root) = plane();
+    create_in(&root, "gamma", None, false).expect("created");
+
+    let said = vision_in(&root, "gamma", "  keep the CI green  ").expect("recorded");
+    assert_eq!(said, "gamma has a vision now.");
+    let vision = purlis_core::workspaces::Plane::open(&root)
+        .workspace("gamma")
+        .expect("a workspace")
+        .vision();
+    assert_eq!(vision.trim(), "keep the CI green");
+
+    // The core's refusals, in its own words.
+    assert_eq!(
+        vision_in(&root, "gamma", "   "),
+        Err("a vision has words: nothing was written".to_owned())
+    );
+    assert!(vision_in(&root, "nope", "a goal").is_err());
+}

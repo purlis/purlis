@@ -309,6 +309,129 @@ pub fn refused_in(line: &str) -> Option<u16> {
     None
 }
 
+/// **Where a chat's server on `port` listens** (#2019): the socket `<port>.sock` in `folder`,
+/// the folder purlis made for that chat alone (`0700`), behind the door purlis listens on at
+/// `port` ([`super::door`]).
+pub fn serve_socket(folder: &std::path::Path, port: u16) -> std::path::PathBuf {
+    folder.join(format!("{port}.sock"))
+}
+
+/// **The Seatbelt rules that let a wrapped chat serve on `socket`** (#2019): make that one
+/// socket, bind it and accept on it, and take it away to start again. No TCP port: the door
+/// listens on the chat's port, and the chat reaches its own server through the door.
+pub fn serve_rules(socket: &std::path::Path) -> Result<[String; 3], &'static str> {
+    let at = super::seatbelt::string(&socket.display().to_string())?;
+    Ok([
+        format!("(allow network-bind (local unix-socket (path-literal {at})))"),
+        format!("(allow network-inbound (local unix-socket (path-literal {at})))"),
+        format!("(allow file-write-create file-write-unlink (literal {at}))"),
+    ])
+}
+
+/// **What allowing a chat to serve on `port` means**, as the Ask says it (#2019): who reaches
+/// the server, what the door holds back, and what a page it serves can do in the person's own
+/// browser, where it runs as a site of this Mac.
+pub fn listen_risk(port: u16) -> String {
+    format!(
+        "lets this chat run a server that its browser, its commands and your own browser reach \
+         at http://127.0.0.1:{port}, through purlis on this Mac. {LISTEN_RISK_REST}"
+    )
+}
+
+/// [`listen_risk`] where the port is not known yet: the person types it.
+pub fn listen_risk_unnamed() -> String {
+    format!(
+        "lets this chat run a server that its browser, its commands and your own browser reach \
+         at http://127.0.0.1 on the port you type, through purlis on this Mac. {LISTEN_RISK_REST}"
+    )
+}
+
+/// What [`listen_risk`] says after who reaches the server.
+const LISTEN_RISK_REST: &str = "purlis checks each request's address, and keeps your browser's \
+     cookies from the server. A page the server sends runs in your browser as a site of this \
+     Mac: it can read your other local apps' cookies that are not HttpOnly, send requests to \
+     those apps as you, and send what it reads to the internet. Open it in the chat's own browser \
+     unless you trust it. Nothing on another machine connects to it";
+
+/// What a chat is told to start a server on `port` with, once it may (#2019).
+pub fn listen_said(port: u16) -> String {
+    format!(
+        "start it with `purlis listen {port} -- <command>`, or on the socket `PURLIS_SERVE_SOCKET` \
+         names; its browser opens `http://127.0.0.1:{port}`"
+    )
+}
+
+/// The lowest port a chat may serve on: a port below it is a system service's.
+pub const FIRST_SERVED: u16 = 1024;
+
+/// **`typed` as a port a chat may serve on** (#2019), or why not: a port as [`port`] takes
+/// one, from [`FIRST_SERVED`], and none that anything on this Mac listens on now
+/// ([`super::door::in_use`]): that is a service to connect to, asked about as one.
+pub fn serve_port(typed: &str) -> Result<u16, Refused> {
+    let number = port(typed)?;
+    if number < FIRST_SERVED {
+        return Err(Refused::Not(format!(
+            "purlis lets a chat serve on a port from {FIRST_SERVED} to 65535: a port below \
+             {FIRST_SERVED} is a system service's."
+        )));
+    }
+    if super::door::in_use(number) {
+        return Err(Refused::Not(in_use_said(number)));
+    }
+    Ok(number)
+}
+
+/// Why a chat is not let serve on `port`: something on this Mac listens there now.
+pub fn in_use_said(port: u16) -> String {
+    format!(
+        "Something on this Mac already listens on port {port}, so this chat cannot run a server \
+         there. Allow it as a service on this Mac to connect to, or serve on another port."
+    )
+}
+
+/// **The port a server's own refusal to listen names** (#2019): Node's `listen EPERM:
+/// operation not permitted 127.0.0.1:3000` and Go's `listen tcp 127.0.0.1:3000: bind: operation
+/// not permitted`, on this Mac's loopback or on every interface (`0.0.0.0`, `::`, no address).
+/// None for any other line, another machine's address, or a port of zero.
+pub fn listen_refused_in(line: &str) -> Option<u16> {
+    let lower = line.to_ascii_lowercase();
+    let address = if let Some(at) = lower.find("listen eperm: operation not permitted ") {
+        line[at + "listen eperm: operation not permitted ".len()..]
+            .split_whitespace()
+            .next()?
+    } else if let Some(at) = lower.find("listen tcp")
+        && lower.contains(": bind: operation not permitted")
+    {
+        // `listen tcp 127.0.0.1:3000: bind: …`, `listen tcp4 :3000: bind: …`.
+        let rest = line[at + "listen tcp".len()..].trim_start_matches(['4', '6']);
+        rest.strip_prefix(' ')?.split(": ").next()?
+    } else {
+        return None;
+    };
+    listened_port(address)
+}
+
+/// **The port of `address` where it is this Mac's loopback or every interface** (#2019):
+/// `127.0.0.1:N`, `[::1]:N`, `::1:N`, `localhost:N`, and `0.0.0.0:N`, `:::N`, `[::]:N`, `:N` or
+/// Seatbelt's `*:N`. None for another machine's address or a port of zero.
+pub fn listened_port(address: &str) -> Option<u16> {
+    let address = address.trim().trim_end_matches(['.', ',', ';']);
+    let (host, port) = address.rsplit_once(':')?;
+    let port = port.parse::<u16>().ok().filter(|port| *port != 0)?;
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    let here = host.is_empty()
+        || host == "*"
+        || host == "::"
+        || host.eq_ignore_ascii_case("localhost")
+        || host.parse::<IpAddr>().is_ok_and(|ip| {
+            // Exactly the loopback addresses the profile carries, never another of 127/8.
+            ip.is_unspecified()
+                || ip == IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+                || ip == IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+        });
+    here.then_some(port)
+}
+
 #[cfg(test)]
-#[path = "localport_tests.rs"]
+#[path = "localport/tests.rs"]
 mod tests;

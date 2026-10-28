@@ -396,6 +396,13 @@ describe("a start already running (GL-1)", () => {
 
     const start = screen.getByRole("button", { name: "Starting…" });
     expect(start).toBeDisabled();
+    // The chord does nothing while it starts, so no key is shown: its room is kept, undrawn.
+    expect(start.querySelector('[data-scope="button"][data-part="shortcut"]')).toHaveAttribute(
+      "data-off",
+      "",
+    );
+    // Nor is the key named to assistive tech.
+    expect(start).not.toHaveAttribute("aria-keyshortcuts");
     await userEvent.setup().click(start);
     expect(onStart).not.toHaveBeenCalled();
   });
@@ -548,6 +555,22 @@ describe("the picker a chat starts from", () => {
       "aria-keyshortcuts",
       MAC ? "Meta+Enter" : "Control+Enter",
     );
+  });
+
+  it("says the key that starts it inside Start chat, and keeps its room on an approval (R33)", () => {
+    show();
+    const start = screen.getByRole("button", { name: "Start chat" });
+    const hint = start.querySelector('[data-scope="button"][data-part="shortcut"]');
+    expect(hint).toHaveAttribute("data-key", MAC ? "⌘↩" : "Ctrl+Enter");
+    expect(hint).not.toHaveAttribute("data-off");
+    cleanup();
+
+    // An approval is never sent by the key: the hint's room is kept, and nothing drawn in it.
+    show({
+      profiles: [{ ...ONE.profiles[0], name: "claude", shown: "claude --x", approval: "new" }],
+    });
+    const approve = screen.getByRole("button", { name: "Approve and start" });
+    expect(approve.querySelector('[data-part="shortcut"]')).toHaveAttribute("data-off", "");
   });
 
   it("never approves a command on ⌘⏎: a grant is a press of its own button (ADR 0097 §6)", () => {
@@ -1644,6 +1667,26 @@ describe("prototype B: the persona list beside the details (#2918)", () => {
     expect(name.getAttribute("placeholder")).toMatch(/^steward\b/);
     await user.click(screen.getByRole("option", { name: "release" }));
     expect(name.getAttribute("placeholder")).toMatch(/^release\b/);
+  });
+
+  it("names the next chat's number in the placeholder, following the persona (R30)", async () => {
+    const { user } = show({ next_number: 10 });
+    const name = screen.getByRole("textbox", { name: "Name" });
+
+    expect(name).toHaveAttribute("placeholder", "steward 10");
+    await user.click(screen.getByRole("option", { name: "release" }));
+    expect(name).toHaveAttribute("placeholder", "release 10");
+    // With no persona, the chat is named after its harness.
+    await user.click(screen.getByRole("option", { name: "No persona" }));
+    expect(name).toHaveAttribute("placeholder", "claude 10");
+  });
+
+  it("says the number in words where the core sent none (an older answer)", () => {
+    show();
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveAttribute(
+      "placeholder",
+      "steward and its number",
+    );
   });
 });
 

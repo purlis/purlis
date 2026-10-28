@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
-  configure,
   render as renderBare,
   renderHook,
   screen,
@@ -45,9 +44,6 @@ vi.mock("./SessionPane", () => ({
 }));
 
 const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMode>);
-// A whole window comes up through several answers; under a loaded machine that takes more
-// than the default second.
-configure({ asyncUtilTimeout: 5_000 });
 
 afterEach(() => {
   cleanup();

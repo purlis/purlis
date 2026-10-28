@@ -3,20 +3,22 @@
 
 /**
  * **The Skills view** (SK-55, #3266), drawn as the left sidebar draws it: its header, the switch
- * to the chat in front, and this workspace's skills by level with Needs you on top, one mark at
- * most per row, each with the view's own menu; then a project with no skill of its own, whose
- * starts are New skill…'s. Each is walked by the keyboard from the header in, held to axe and
- * pictured in every pictured cell of the theme matrix, light and dark among them
- * (`docs/component-stories.md`).
+ * to the chat in front, and this workspace's skills as a tree of levels that fold (#3281), Needs
+ * you on top, one mark at most per row, each with the view's own menu; then a project with no
+ * skill of its own, whose starts are New skill…'s. Each is walked by the keyboard from the header
+ * in, held to axe and pictured in every pictured cell of the theme matrix, light and dark among
+ * them (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { SkillPinsRefused } from "./bindings";
 import { useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { expectFocusInSight, pictureNow, untilFocused, untilSettled } from "./stories.testkit";
 import { Button } from "./ui/button/Button";
 import { useListFilter } from "./ui/list/ListFilter";
 import { SkillMenu, SkillsList } from "./SkillsList";
-import { groupsOf, type ListedSkill } from "./skillsListing";
+import { groupsOf, type GroupId, type ListedSkill } from "./skillsListing";
+import { foldedAfter } from "./skillsViewPrefs";
 import { skill } from "./skillsListing.testkit";
 
 /** A workspace's skills, as the studio answers them for `ops`. */
@@ -56,9 +58,19 @@ const OPS: ListedSkill[] = [
 }));
 
 /** The view with what was last done on it said under it, and a way out after it. */
-function Skills({ starts = false, rows = OPS }: { starts?: boolean; rows?: ListedSkill[] }) {
+function Skills({
+  starts = false,
+  rows = OPS,
+  pinsRefused = null,
+}: {
+  starts?: boolean;
+  rows?: ListedSkill[];
+  /** Why ops's chats read none of its pins, where they read none (#3432). */
+  pinsRefused?: SkillPinsRefused | null;
+}) {
   const [said, setSaid] = useState("Nothing done");
   const [only, setOnly] = useState(false);
+  const [folded, setFolded] = useState<readonly GroupId[]>([]);
   const filter = useListFilter(rows, (row) => row.skill.name);
   return (
     <div
@@ -83,12 +95,14 @@ function Skills({ starts = false, rows = OPS }: { starts?: boolean; rows?: Liste
         menuOf={(row) => () => (
           <SkillMenu
             row={row}
-            at={{ workspace: "ops", chat: true }}
+            at={{ workspace: "ops", chat: true, explorer: "ops", pinsRefused }}
             busy={false}
             onAct={(what) => setSaid(`Chose ${what}`)}
           />
         )}
         chat={{ only, onOnly: setOnly }}
+        folded={folded}
+        onFold={(shown, open) => setFolded((was) => foldedAfter(was, shown, open))}
       />
       <p role="status" style={{ margin: 0 }}>
         {said}
@@ -108,16 +122,18 @@ type Story = StoryObj<typeof meta>;
 
 /**
  * **By level**: Tab walks the header (Open Skill studio, New skill…, Only this chat's) onto the
- * list's first row, the arrows walk past the groups' names, Enter opens a skill's tab, the
- * keyboard on a row shows what it does and why it has its mark, Shift+F10 opens its menu, and
- * Tab leaves the list. The picture is a marked row under the keyboard.
+ * tree's first level; ↓ walks a level's skills and the next level; ← folds Built-in, → opens it
+ * and ← folds it again, and ↓ passes it; → moves into Project, Enter opens a skill's tab, the
+ * keyboard on a row shows what it does and why it has its mark, Shift+F10 opens its menu, and Tab
+ * leaves the tree (#3281). The picture is the tree with Built-in folded.
  */
 export const ByLevel: Story = {
   render: () => <Skills />,
   play: async ({ canvas, userEvent }) => {
-    const list = canvas.getByRole("grid", { name: "Skills" });
+    const list = canvas.getByRole("treegrid", { name: "Skills" });
+    const level = (name: string) => within(list).getByRole("row", { name: new RegExp(`^${name}`) });
     for (const name of ["Needs you", "Built-in", "Project", "Workspace", "Claude Code"])
-      expect(within(list).getByText(name)).toBeInTheDocument();
+      expect(level(name)).toHaveAttribute("aria-expanded", "true");
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "Open Skill studio" }),
@@ -134,11 +150,26 @@ export const ByLevel: Story = {
       "Skills: Tab reaches Only this chat's",
     );
     await userEvent.tab();
+    await untilFocused(() => level("Needs you"), "Skills: Tab lands on the tree's first level");
+    await userEvent.keyboard("{ArrowDown}");
     const first = within(list).getByRole("row", { name: /drafted/ });
-    await untilFocused(() => first, "Skills: Tab lands on the list's first row");
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    await untilFocused(() => first, "Skills: Down moves into the level");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => level("Built-in"), "Skills: Down reaches the next level");
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(level("Built-in")).toHaveAttribute("aria-expanded", "false"));
+    expect(within(list).queryByRole("row", { name: /secrets/ })).toBeNull();
+    await untilFocused(() => level("Built-in"), "Skills: Left folds the level, and stays on it");
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => expect(level("Built-in")).toHaveAttribute("aria-expanded", "true"));
+    await untilFocused(() => level("Built-in"), "Skills: Right opens the folded level");
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => expect(level("Built-in")).toHaveAttribute("aria-expanded", "false"));
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(() => level("Project"), "Skills: Down passes a folded level's skills");
+    await userEvent.keyboard("{ArrowRight}");
     const deploy = within(list).getByRole("row", { name: /^deploy/ });
-    await untilFocused(() => deploy, "Skills: Down passes the groups' names");
+    await untilFocused(() => deploy, "Skills: Right moves into an open level");
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Opened deploy"));
     await userEvent.keyboard("{ArrowDown}");
@@ -160,12 +191,22 @@ export const ByLevel: Story = {
     );
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
-    expectFocusInSight();
+    // **The focus is checked once it has settled on the row** (#3449): in WebKit the menu row
+    // the keyboard was on goes with the menu, which leaves the focus on the page, and React
+    // Aria's focus scope gives it back to the row a frame later. Checked before that frame,
+    // nothing has the focus (run 40415737701).
     await untilFocused(() => off, "Skills: Escape gives the keyboard back to the row");
+    expectFocusInSight();
     await userEvent.tab();
     await untilFocused(
       () => canvas.getByRole("button", { name: "After the view" }),
-      "Skills: Tab leaves the list",
+      "Skills: Tab leaves the tree",
+    );
+    // And once the row it left has taken its tooltip down: the page is at rest.
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull(), { timeout: 3_000 });
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "After the view" }),
+      "Skills: the keyboard stays after the view",
     );
     expectFocusInSight();
   },
@@ -177,7 +218,8 @@ export const ByLevel: Story = {
  * studio, Enter opens it on its first start, Enter starts one and closes it.
  *
  * The picture is of the menu open on its first start (#3414): taken once the menu has arrived,
- * its fade and its placement done, of the page, as the menu is drawn past the view's edge.
+ * its fade and its placement done, of the page, as a menu is drawn over the view. It opens from
+ * the button's end, so it stays inside the view's width (#3308).
  */
 export const NoSkillsOfItsOwn: Story = {
   parameters: { screenshot: "page" },
@@ -199,6 +241,41 @@ export const NoSkillsOfItsOwn: Story = {
     await pictureNow();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Started draft"));
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
+  },
+};
+
+/**
+ * **A pin no chat reads** (#3432): ops's pins are more than 64, so its chats read none of them.
+ * The pinned row's menu offers Unpin, and says under it that the pin is not used, and the core's
+ * why. The picture is of that menu, open and settled.
+ */
+export const APinNoChatReads: Story = {
+  parameters: { screenshot: "page" },
+  render: () => (
+    <Skills
+      pinsRefused={{
+        by: { at: "workspace", name: "ops" },
+        why: "the list holds more than 64 pins",
+        bad: null,
+        file: "workspaces/ops/skills.pins",
+      }}
+    />
+  ),
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("treegrid", { name: "Skills" });
+    const pinned = within(list).getByRole("row", { name: /release-notes/ });
+    pinned.focus();
+    await untilFocused(() => pinned, "Skills: the pinned row has the keyboard");
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu", { name: "release-notes" });
+    const unpin = within(menu).getByRole("menuitem", { name: "Unpin from this workspace" });
+    expect(unpin).toHaveAccessibleDescription(
+      "Pinned, not used: the list holds more than 64 pins.",
+    );
+    await untilSettled(menu);
+    await pictureNow();
+    await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("menu")).toBeNull(), { timeout: 3_000 });
   },
 };

@@ -96,6 +96,7 @@ fn host_armed(harness: Harness, here: &Here) -> (Vec<String>, Vec<(String, Strin
             plane: &here.plane,
             workspace: Some(WORKSPACE),
             repo: &[],
+            routed: None,
         }),
         graded: false,
         laid_out: linked.as_deref(),
