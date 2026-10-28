@@ -1,0 +1,199 @@
+<title>Skill changes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: frame A with the skill page that won; the subject is creating, editing, renaming, moving and deleting.
+   PROTOTYPE for "Prototype: creating, editing, moving and deleting a skill" (purlis#3631): throwaway, fake data. */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b4232c; --bad-soft:#fbe5e6;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --shadow:0 10px 30px rgba(20,24,40,.16);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 72px;box-sizing:border-box}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+input,textarea,select{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+textarea{font-family:var(--mono);font-size:12px}
+.note{max-width:1400px;margin:0 auto 10px;color:var(--muted);font-size:12px}.note b{color:var(--fg)}
+.try{max-width:1400px;margin:0 auto 10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.try span{color:var(--muted);font-size:12px;margin-right:4px}
+.win{max-width:1400px;margin:0 auto;height:calc(100% - 70px);min-height:560px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tabs span{padding:6px 12px;border-radius:7px 7px 0 0;color:var(--muted)}
+.tabs span.on{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;position:relative}
+.bar .crumb{color:var(--muted)}.bar .crumb b{color:var(--fg);font-weight:500}
+.studio{flex:1;display:grid;grid-template-columns:160px 250px minmax(0,1fr);min-height:0}
+.snav{border-right:1px solid var(--line);padding:8px 6px;display:flex;flex-direction:column;gap:1px}
+.snav span{padding:5px 9px;border-radius:6px;color:var(--muted)}.snav span.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.list{overflow:auto;border-right:1px solid var(--line)}
+.lrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.lrow:hover{background:var(--panel2)}.lrow.on{background:var(--accent-soft)}
+.lrow .nm{font-family:var(--mono);font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .ds{grid-column:1/-1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted);white-space:nowrap}
+.mark{font-size:10.5px;padding:0 6px;border-radius:9px;white-space:nowrap}.mark.acc{background:var(--accent-soft);color:var(--accent)}.mark.ok{background:var(--ok-soft);color:var(--ok)}
+.detail{overflow:auto;min-width:0}
+.btn{border:1px solid var(--line);border-radius:6px;padding:5px 10px;background:var(--panel);white-space:nowrap}
+.btn:hover{background:var(--panel2)}.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.split{display:inline-flex}.split .btn:first-child{border-radius:6px 0 0 6px}.split .btn:last-child{border-radius:0 6px 6px 0;border-left:0;padding:5px 7px}
+.dh{padding:16px 22px 12px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.dh h1{margin:0;font-family:var(--mono);font-size:19px;font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dh p{margin:0;color:var(--muted)}
+.acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.dtabs{display:flex;padding:0 22px;border-bottom:1px solid var(--line)}
+.dtabs span{padding:8px 4px;margin-right:12px;color:var(--muted);border-bottom:2px solid transparent}.dtabs span.on{color:var(--fg);border-bottom-color:var(--accent)}
+.dbody{padding:16px 22px;display:grid;gap:12px;max-width:860px}
+.lint{font-size:12px;padding:6px 10px;border-radius:6px}.lint.ok{background:var(--ok-soft);color:var(--ok)}.lint.warn{background:var(--warn-soft);color:var(--warn)}.lint.bad{background:var(--bad-soft);color:var(--bad)}
+.menu{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:4px;min-width:250px;z-index:6}
+.menu button{display:grid;width:100%;text-align:left;padding:7px 10px;border-radius:5px}.menu button:hover{background:var(--panel2)}
+.menu button small{color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--panel);padding:8px 14px;border-radius:8px;z-index:25;display:flex;gap:10px;align-items:center}
+.toast button{color:var(--panel);text-decoration:underline}
+.dialogwrap{position:fixed;inset:0;background:rgba(10,12,20,.38);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);width:min(520px,100%);padding:20px;display:grid;gap:12px;max-height:calc(100% - 32px);overflow:auto}
+.dialog h2{margin:0;font-size:16px}.dialog p{margin:0;color:var(--muted)}
+.dialog .row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.field{display:grid;gap:4px}.field label{font-weight:500}.field small{color:var(--muted)}.field small.bad{color:var(--bad)}
+.ways{display:grid;gap:8px}
+.way{border:1px solid var(--line);border-radius:8px;padding:10px 12px;text-align:left;display:grid;gap:2px}
+.way:hover{border-color:var(--accent);background:var(--accent-soft)}.way b{font-weight:500}.way small{color:var(--muted)}
+.levels{display:grid;gap:6px}
+.lvl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;align-items:start;border:1px solid var(--line);border-radius:8px;padding:9px 11px;cursor:pointer}
+.lvl input{width:auto;margin-top:3px}.lvl small{grid-column:2;color:var(--muted)}
+.lvl.on{border-color:var(--accent);background:var(--accent-soft)}
+.uses{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:4px}
+.uses div{display:flex;gap:6px}.uses div::before{content:"•";color:var(--muted)}
+.empty{padding:40px 24px;color:var(--muted);text-align:center;display:grid;gap:10px;justify-items:center}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));background:#11131a;color:#f2f3f7;border-radius:24px;padding:6px 8px;display:flex;align-items:center;gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:30;font-size:12.5px;max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+.switcher button{color:#f2f3f7;border-radius:16px;padding:4px 10px}.switcher button:hover{background:#2a2e3a}
+.switcher .lbl{padding:0 6px;font-weight:600}.switcher .st{color:#aab0c0;padding:0 6px;font-size:11.5px}
+@media (max-width:1000px){.studio{grid-template-columns:minmax(0,1fr)}.snav,.list{display:none}}
+</style>
+
+<div class="note"><b>Prototype, fake data.</b> Creating, editing, renaming, moving and deleting a skill, inside the frame and skill page that won. The three variants differ in how <b>New skill</b> works; Rename, Move, Delete and leaving with unsaved edits are the same in all three. Flip variants with the bar or ← →. Nothing is saved.</div>
+<div class="try"><span>Try:</span><button class="btn" data-a="new">New skill…</button><button class="btn" data-a="edit">Edit deploy</button><button class="btn" data-d="rename">Rename deploy</button><button class="btn" data-d="move">Move deploy</button><button class="btn" data-d="delete">Delete deploy</button><button class="btn" data-a="leave">Leave while editing</button></div>
+<div id="app"></div>
+
+<script>
+const V={a:"A · Ask how, then fill in",b:"B · Start a page, fill it in place",c:"C · A chat drafts it by default"};
+const S={v:(location.hash||"#a").slice(1),sel:"deploy",page:"skill",edit:false,dirty:false,dlg:null,step:0,menu:false,toast:null,newName:"",newDesc:"",newLevel:"workspace smart-ide",renameTo:"deploy",moveTo:"project"};
+if(!V[S.v])S.v="a";
+const L=[{n:"deploy",lv:"project",d:"Deploys a service to staging or production with the checks the team agreed on."},{n:"review-pr",lv:"project",d:"Reviews a pull request against REVIEW.md."},{n:"release-notes",lv:"workspace smart-ide",d:"Writes the release notes for a dev or stable cut."},{n:"grilling",lv:"persona steward",d:"Interviews the person about a plan until every branch is settled."},{n:"browser",lv:"built-in",d:"Drives a real browser for a task that needs one."}];
+const LEVELS=[["project","Every chat in the project gets it, unless a workspace turns it off."],["workspace smart-ide","Only chats in smart-ide get it."],["persona steward","Only chats run as steward get it, in every workspace."],["local","Only chats on this machine get it; it is never saved to the project."]];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const nameErr=n=>!n?"":!/^[a-z0-9-]+$/.test(n)?"Use lowercase letters, digits and hyphens.":L.some(x=>x.n===n)?`There is already a skill named ${n}.`:"";
+function skillPage(){
+  if(S.page==="new-b")return `<div class="dh"><h1><input id="nn" style="font-family:var(--mono);font-size:18px;max-width:360px" placeholder="skill-name" value="${esc(S.newName)}" aria-label="Name"><span class="tag">${esc(S.newLevel)}</span><span class="mark acc">New, not saved</span></h1>
+    <input id="nd" placeholder="What it does, and when a chat should use it" value="${esc(S.newDesc)}" aria-label="What it does">
+    <div class="acts"><label>Lands in <select id="nl">${LEVELS.map(([l])=>`<option ${l===S.newLevel?"selected":""}>${l}</option>`).join("")}</select></label><button class="btn primary" data-a="create" ${S.newName&&S.newDesc&&!nameErr(S.newName)?"":"disabled"}>Save skill</button><button class="btn" data-a="discardnew">Discard</button></div>
+    ${nameErr(S.newName)?`<small style="color:var(--bad)">${nameErr(S.newName)}</small>`:""}</div>
+    <div class="dtabs"><span class="on">Text</span></div><div class="dbody"><div class="acts"><span class="muted" style="color:var(--muted)">Start from</span><select style="width:auto"><option>Blank</option><option>A checklist skill</option><option>A skill with a script</option></select><button class="btn" data-a="chatdraft">Or ask a chat to draft it</button><button class="btn">Or install one from a source</button></div>
+    <textarea rows="14" aria-label="SKILL.md">---\nname: ${esc(S.newName||"skill-name")}\ndescription: ${esc(S.newDesc||"…")}\n---\n\n# ${esc(S.newName||"skill-name")}\n\n1. \n</textarea><div class="lint ${S.newName&&S.newDesc?"ok":"warn"}">${S.newName&&S.newDesc?"It is a whole skill.":"Worth knowing: a skill needs a name and a description before it can be saved."}</div></div>`;
+  if(S.page==="chat")return `<div class="empty"><b style="color:var(--fg)">A new chat tab opened</b>with the draft prompt typed in and not sent:<pre style="text-align:left;max-width:520px;white-space:pre-wrap;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:var(--mono);font-size:12px">Draft a skill for smart-ide that ${esc(S.newDesc||"…")}. When it's ready, it comes back to the Skill studio under Drafts to try and accept.</pre><span>Its draft appears under Drafts in the studio, with Try it and Accept.</span><button class="btn" data-a="back">Back to the studio</button></div>`;
+  const k=L.find(x=>x.n===S.sel)||L[0];
+  return `<div class="dh"><h1>${esc(S.sel)} <span class="tag">${esc(k.lv)}</span>${S.edit&&S.dirty?`<span class="mark acc">Unsaved changes</span>`:""}</h1><p>${esc(k.d)}</p>
+   <div class="acts"><button class="btn primary">Use in this chat</button><button class="btn" data-a="edit">${S.edit?"Stop editing":"Edit"}</button><button class="btn">Grade</button><button class="btn" data-a="menu" aria-label="More actions">…</button></div>
+   ${S.menu?`<div class="menu" style="margin-top:4px"><button data-d="rename">Rename…</button><button data-d="move">Move to another level…</button><button>Deprecate…</button><button>Archive…</button><button>Open the file</button><button data-d="delete" style="color:var(--bad)">Delete…</button></div>`:""}</div>
+   <div class="dtabs"><span>Overview</span><span class="on">Text</span><span>History</span><span>Grades</span><span>Runs</span></div>
+   <div class="dbody">${S.edit?`<textarea id="ed" rows="14" aria-label="SKILL.md">---\nname: ${esc(S.sel)}\ndescription: ${esc(k.d)}\n---\n\n# ${esc(S.sel)}\n\n1. Check the tests are green.\n2. Write the changelog entry.\n3. Tag and deploy.\n</textarea>
+     <div class="lint ${S.dirty?"warn":"ok"}">${S.dirty?"Worth knowing: step 3 names a script the skill doesn't have yet.":"It is a whole skill."}</div>
+     <div class="acts"><button class="btn primary" data-a="save" ${S.dirty?"":"disabled"}>Save</button><button class="btn" data-a="discard">Discard</button><span style="color:var(--muted)">Saving makes a new version; chats started after it get it.</span></div>`
+     :`<pre style="font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px;margin:0;white-space:pre-wrap">---\nname: ${esc(S.sel)}\ndescription: ${esc(k.d)}\n---\n\n# ${esc(S.sel)}\n\n1. Check the tests are green.\n2. Write the changelog entry.\n3. Tag and deploy.</pre>`}</div>`}
+function newButton(){
+  if(S.v==="c")return `<span class="split"><button class="btn primary" data-a="new">Ask a chat to draft a skill</button><button class="btn primary" data-a="newmenu" aria-label="Other ways to make a skill">▾</button></span>${S.nmenu?`<div class="menu" style="top:40px;right:12px"><button data-a="newblank"><b>Write it yourself</b><small>A name, where it lands, then its page opens to edit</small></button><button data-a="newsource"><b>Install one from a source</b><small>Opens Sources</small></button></div>`:""}`;
+  return `<button class="btn" data-a="new">New skill…</button>`}
+function dialog(){
+  const d=S.dlg; if(!d)return "";
+  let h="";
+  if(d==="new-a"){ if(S.step===0)h=`<h2>New skill</h2><p>How do you want to make it?</p><div class="ways">
+     <button class="way" data-a="wayblank"><b>Write it yourself</b><small>Give it a name and say what it does; its page opens with the text ready to edit.</small></button>
+     <button class="way" data-a="waychat"><b>Ask a chat to draft it</b><small>Say what you want; a chat drafts it and it comes back under Drafts to try and accept.</small></button>
+     <button class="way" data-a="newsource"><b>Install one from a source</b><small>Pick a reviewed skill from a git repository.</small></button></div><div class="row"><button class="btn" data-a="close">Cancel</button></div>`;
+    else h=`<h2>${S.step===1?"Write a new skill":"Ask a chat to draft a skill"}</h2>
+     ${S.step===1?`<div class="field"><label for="dn">Name</label><input id="dn" value="${esc(S.newName)}" placeholder="pr-review"><small class="${nameErr(S.newName)?"bad":""}">${nameErr(S.newName)||"Lowercase letters, digits and hyphens."}</small></div>`:""}
+     <div class="field"><label for="dd">What it does, and when a chat should use it</label><input id="dd" value="${esc(S.newDesc)}" placeholder="Reviews a pull request against our checklist"></div>
+     <div class="field"><label>Lands in</label><div class="levels">${LEVELS.map(([l,w])=>`<label class="lvl ${l===S.newLevel?"on":""}"><input type="radio" name="lv" data-lv="${l}" ${l===S.newLevel?"checked":""}><b>${l}</b><small>${w}</small></label>`).join("")}</div></div>
+     ${S.step===1?`<div class="field"><label for="tp">Start from</label><select id="tp"><option>Blank</option><option>A checklist skill</option><option>A skill with a script</option></select></div>`:""}
+     <div class="row"><button class="btn" data-a="stepback">Back</button><button class="btn primary" data-a="${S.step===1?"create":"chatdraft"}" ${(S.step===1?S.newName&&!nameErr(S.newName):true)&&S.newDesc?"":"disabled"}>${S.step===1?"Make it and open its page":"Open the chat"}</button></div>`}
+  if(d==="new-c")h=`<h2>Ask a chat to draft a skill</h2><div class="field"><label for="dd">What should it do?</label><input id="dd" value="${esc(S.newDesc)}" placeholder="Reviews a pull request against our checklist"></div>
+     <div class="field"><label>Lands in</label><select id="nl2">${LEVELS.map(([l])=>`<option ${l===S.newLevel?"selected":""}>${l}</option>`).join("")}</select></div>
+     <div class="row"><button class="btn" data-a="close">Cancel</button><button class="btn primary" data-a="chatdraft" ${S.newDesc?"":"disabled"}>Open the chat</button></div>`;
+  if(d==="new-c-blank")h=`<h2>Write a new skill</h2><div class="field"><label for="dn">Name</label><input id="dn" value="${esc(S.newName)}" placeholder="pr-review"><small class="${nameErr(S.newName)?"bad":""}">${nameErr(S.newName)||"Lowercase letters, digits and hyphens."}</small></div>
+     <div class="field"><label>Lands in</label><select id="nl2">${LEVELS.map(([l])=>`<option ${l===S.newLevel?"selected":""}>${l}</option>`).join("")}</select></div>
+     <div class="row"><button class="btn" data-a="close">Cancel</button><button class="btn primary" data-a="create" ${S.newName&&!nameErr(S.newName)?"":"disabled"}>Make it and open its page</button></div>`;
+  if(d==="rename")h=`<h2>Rename deploy</h2><div class="field"><label for="rn">New name</label><input id="rn" value="${esc(S.renameTo)}"><small class="${S.renameTo!=="deploy"&&nameErr(S.renameTo)?"bad":""}">${S.renameTo!=="deploy"&&nameErr(S.renameTo)||"Lowercase letters, digits and hyphens."}</small></div>
+     <div class="uses"><b style="font-weight:500">Changed with it</b><div>2 personas that name it: steward, reviewer</div><div>1 skill that names it: release-notes</div><div>Its pins, grades and history</div></div><p>Chats already running keep the old name until they restart.</p>
+     <div class="row"><button class="btn" data-a="close">Cancel</button><button class="btn primary" data-a="renamed" ${S.renameTo&&S.renameTo!=="deploy"&&!nameErr(S.renameTo)?"":"disabled"}>Rename</button></div>`;
+  if(d==="move")h=`<h2>Move deploy to another level</h2><p>Who gets it changes with where it lives. It's now a project skill: every chat in the project gets it.</p>
+     <div class="levels">${LEVELS.map(([l,w])=>`<label class="lvl ${l===S.moveTo?"on":""}"><input type="radio" name="mv" data-mv="${l}" ${l===S.moveTo?"checked":""}><b>${l}${l==="project"?" (where it is now)":""}</b><small>${w}</small></label>`).join("")}</div>
+     ${S.moveTo!=="project"?`<div class="uses"><b style="font-weight:500">What changes</b><div>${S.moveTo==="local"?"It leaves the project: teammates no longer get it":"Chats in git-ci-cd stop getting it"}</div><div>Its history and grades move with it</div></div>`:""}
+     <div class="row"><button class="btn" data-a="close">Cancel</button><button class="btn primary" data-a="moved" ${S.moveTo!=="project"?"":"disabled"}>Move</button></div>`;
+  if(d==="delete")h=`<h2>Delete deploy?</h2><div class="uses"><b style="font-weight:500">Who uses it now</b><div>Chats in smart-ide and git-ci-cd</div><div>2 personas name it: steward, reviewer</div><div>41 runs in the last 30 days</div></div>
+     <p>It moves to Deleted for 30 days, where you can bring it back. Chats started after this don't get it; the personas and skills that name it say it's missing.</p>
+     <div class="row"><button class="btn" data-a="close">Cancel</button><button class="btn danger" data-a="deleted">Delete</button></div>`;
+  if(d==="leave")h=`<h2>Save your changes to deploy?</h2><p>You changed its text and haven't saved. If you leave now the changes are lost.</p><div class="row"><button class="btn" data-a="close">Keep editing</button><button class="btn danger" data-a="discardleave">Discard and leave</button><button class="btn primary" data-a="saveleave">Save and leave</button></div>`;
+  return `<div class="dialogwrap" data-a="scrim"><div class="dialog" role="dialog" aria-modal="true">${h}</div></div>`}
+function render(){
+  const crumb=S.page==="new-b"?"Library › <b>New skill</b>":S.page==="chat"?"Library":`Library › <b>${esc(S.sel)}</b>`;
+  document.getElementById("app").innerHTML=`<div class="win"><div class="tabs"><span>steward 5</span><span class="on">Skill studio</span>${S.page==="chat"?`<span>new chat</span>`:""}</div>
+   <div class="bar"><span class="crumb">${crumb}</span><span style="flex:1"></span>${newButton()}</div>
+   <div class="studio"><div class="snav"><span class="on">Library</span><span>Needs you</span><span>Drafts</span><span>Sources</span><span>Deleted</span><span>Harness skills</span><span>Routing</span></div>
+   <div class="list">${S.page==="new-b"?`<div class="lrow on"><span class="nm">${esc(S.newName||"new skill")}</span><span class="mark acc">New</span><span class="ds">Not saved yet</span></div>`:""}${L.map(x=>`<div class="lrow ${x.n===S.sel&&S.page==="skill"?"on":""}" data-s="${x.n}"><span class="nm">${esc(x.n)}</span><span class="tag">${esc(x.lv.split(" ")[0])}</span><span class="ds">${esc(x.d)}</span></div>`).join("")}</div>
+   <div class="detail">${skillPage()}</div></div></div>${dialog()}
+   ${S.toast?`<div class="toast" role="status">${S.toast}</div>`:""}
+   <div class="switcher" role="toolbar" aria-label="Prototype switcher"><button data-a="prev" aria-label="Previous variant">←</button><span class="lbl">${V[S.v]}</span><button data-a="next" aria-label="Next variant">→</button><span class="st">${S.dlg?"dialog: "+S.dlg:S.page}${S.edit?" · editing":""}</span></div>`;
+  const bind=(id,key,re)=>{const el=document.getElementById(id);if(el)el.oninput=e=>{S[key]=e.target.value;if(key==="dirty")S.dirty=true;const p=e.target.selectionStart;render();const n=document.getElementById(id);if(n){n.focus();try{n.setSelectionRange(p,p)}catch(_){}}}};
+  bind("dn","newName");bind("dd","newDesc");bind("nn","newName");bind("nd","newDesc");bind("rn","renameTo");
+  const ed=document.getElementById("ed");if(ed)ed.oninput=()=>{if(!S.dirty){S.dirty=true;render();document.getElementById("ed").focus()}};
+  ["nl","nl2"].forEach(id=>{const el=document.getElementById(id);if(el)el.onchange=e=>{S.newLevel=e.target.value;render()}});
+}
+function toast(t){S.toast=t;render();clearTimeout(S.tt);S.tt=setTimeout(()=>{S.toast=null;render()},4000)}
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-a],[data-s],[data-d],[data-lv],[data-mv]");if(!t)return;const d=t.dataset;
+  if(d.lv){S.newLevel=d.lv;render();return} if(d.mv){S.moveTo=d.mv;render();return}
+  if(d.s){if(S.edit&&S.dirty){S.dlg="leave";S.pending=d.s;render();return}S.sel=d.s;S.page="skill";S.edit=false;S.menu=false;render();return}
+  if(d.d){S.menu=false;S.page="skill";S.sel="deploy";S.dlg=d.d;S.renameTo="deploy";S.moveTo="project";render();return}
+  const a=d.a;
+  if(a==="scrim"){if(e.target===t){S.dlg=null;render()}return}
+  if(a==="new"){S.nmenu=false;S.newName="";S.newDesc="";S.step=0;if(S.v==="a")S.dlg="new-a";else if(S.v==="b"){S.page="new-b";S.edit=false}else S.dlg="new-c";render();return}
+  if(a==="newmenu"){S.nmenu=!S.nmenu;render();return}
+  if(a==="newblank"){S.nmenu=false;S.newName="";S.dlg="new-c-blank";render();return}
+  if(a==="newsource"){S.nmenu=false;S.dlg=null;toast("Sources opens, with its skills to install.");return}
+  if(a==="wayblank"){S.step=1;render();return} if(a==="waychat"){S.step=2;render();return} if(a==="stepback"){S.step=0;render();return}
+  if(a==="create"){const n=S.newName;L.unshift({n,lv:S.newLevel,d:S.newDesc||"(says what it does once you write it)"});S.sel=n;S.page="skill";S.edit=true;S.dirty=false;S.dlg=null;toast(`Made ${esc(n)} in the ${esc(S.newLevel)} skills. Its text is open to edit.`);return}
+  if(a==="chatdraft"){S.dlg=null;S.page="chat";render();return}
+  if(a==="discardnew"){S.page="skill";render();return}
+  if(a==="back"){S.page="skill";render();return}
+  if(a==="edit"){if(S.edit&&S.dirty){S.dlg="leave";S.pending=null;render();return}S.page="skill";S.sel=S.sel||"deploy";S.edit=!S.edit;S.dirty=false;render();return}
+  if(a==="save"){S.dirty=false;S.edit=false;toast(`Saved ${esc(S.sel)}. Chats started from now get this version.`);return}
+  if(a==="discard"){S.dirty=false;S.edit=false;render();return}
+  if(a==="leave"){S.page="skill";S.sel="deploy";S.edit=true;S.dirty=true;S.dlg="leave";S.pending="review-pr";render();return}
+  if(a==="discardleave"||a==="saveleave"){S.dlg=null;S.edit=false;S.dirty=false;if(S.pending)S.sel=S.pending;if(a==="saveleave")toast("Saved deploy.");else render();return}
+  if(a==="menu"){S.menu=!S.menu;render();return}
+  if(a==="renamed"){const k=L.find(x=>x.n==="deploy");if(k)k.n=S.renameTo;S.sel=S.renameTo;S.dlg=null;toast(`Renamed to ${esc(S.renameTo)}, with 2 personas and 1 skill that name it. <button data-a="undo">Undo</button>`);return}
+  if(a==="moved"){const k=L.find(x=>x.n===S.sel);if(k)k.lv=S.moveTo;S.dlg=null;toast(`Moved to the ${esc(S.moveTo)} skills. <button data-a="undo">Undo</button>`);return}
+  if(a==="deleted"){const i=L.findIndex(x=>x.n===S.sel);if(i>=0)L.splice(i,1);S.sel=L[0].n;S.dlg=null;toast(`Deleted. It is in Deleted for 30 days. <button data-a="undo">Bring it back</button>`);return}
+  if(a==="undo"){toast("Undone.");return}
+  if(a==="close"){S.dlg=null;render();return}
+  if(a==="prev"||a==="next"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(a==="next"?1:2))%3];S.page="skill";S.dlg=null;S.nmenu=false;try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){S.dlg=null;S.menu=false;S.nmenu=false;render();return}
+  if(e.target.closest&&e.target.closest("input,textarea,select,[contenteditable]"))return;
+  if(e.key==="ArrowLeft"||e.key==="ArrowRight"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(e.key==="ArrowRight"?1:2))%3];S.page="skill";S.dlg=null;try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}});
+render();
+</script>
