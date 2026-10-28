@@ -448,6 +448,27 @@ describe("the order of the Chats list (V100-47)", () => {
     expect(shape()).toEqual(["1 steward 1", "1 steward 3", "1 steward 2"]);
   });
 
+  it("does not move a row while the keyboard is in a row's menu (#3594)", async () => {
+    const { move } = await settled();
+    const before = shape();
+
+    act(() => row("steward 3").focus());
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+    const menu = await screen.findByRole("menu");
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
+    move(1, "waiting", [3, 1]);
+
+    expect(shape()).toEqual(before);
+
+    // The menu closed and gave the keyboard back to its row; once that leaves, the rows move.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    act(() => (document.activeElement as HTMLElement).blur());
+
+    expect(shape()).toEqual(["1 steward 1", "2 devops 4", "1 steward 3", "1 steward 2"]);
+  });
+
   it("is not held by a row a pointer's press focused, once the pointer has left", async () => {
     const { move } = await settled();
 
