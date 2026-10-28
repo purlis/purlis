@@ -460,7 +460,7 @@ fn a_program_started_without_namespaces_makes_none() {
     let out = Command::new(PROBE)
         .args(purlis_linux_sandbox::no_namespaces_line(
             "/bin/sh".into(),
-            vec!["-c".into(), format!("{PROBE} user-namespace")],
+            vec!["-c".into(), format!("{PROBE} user-namespace").into()],
         ))
         .output()
         .expect("the shell ran");
