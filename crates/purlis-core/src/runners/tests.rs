@@ -776,3 +776,45 @@ fn a_price_is_a_plain_decimal_and_an_iso_4217_code() {
         assert!(Price::new("1", currency).is_err(), "{currency}");
     }
 }
+
+/// A price typed by hand that is not one refuses the whole file, as any other bad value does,
+/// and says which pool's price it is and how to write it (#3491).
+#[test]
+fn a_bad_price_refuses_the_file_and_says_which_pool_and_how_to_write_it() {
+    let config = tempfile::tempdir().unwrap();
+    record_pool(config.path(), &pool("builds", Set::default())).unwrap();
+    let folder =
+        purlis_same_user::PrivateDirectory::open(&crate::machine::dir(config.path())).unwrap();
+    for (price, said) in [
+        (
+            serde_json::json!({"amount": 0.40, "currency": "EUR"}),
+            "the amount in a string",
+        ),
+        (
+            serde_json::json!({"amount": "0,40", "currency": "EUR"}),
+            "\"0,40\" is not a price per hour",
+        ),
+        (
+            serde_json::json!({"amount": "0.40", "currency": "euro"}),
+            "ISO 4217",
+        ),
+    ] {
+        let mut text = the_file(config.path());
+        text["pools"][0]["pricePerHour"] = price;
+        folder
+            .replace_file(crate::machine::RUNNERS_FILE, text.to_string().as_bytes())
+            .unwrap();
+        let why = pools(config.path()).unwrap_err().to_string();
+        assert!(why.contains("the pricePerHour of pool builds"), "{why}");
+        assert!(why.contains(said), "{why}");
+        assert!(read(config.path()).is_err(), "the whole file is refused");
+        // Put back as purlis writes it, for the next case.
+        text["pools"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("pricePerHour");
+        folder
+            .replace_file(crate::machine::RUNNERS_FILE, text.to_string().as_bytes())
+            .unwrap();
+    }
+}

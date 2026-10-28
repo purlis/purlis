@@ -304,7 +304,16 @@ fn load(config_root: &Path) -> Result<Held, Refused> {
         .collect::<Result<Vec<_>, _>>()?;
     let pools = rows("pools")?
         .iter()
-        .map(|row| pool_from_row(row).ok_or_else(unreadable))
+        .map(|row| {
+            pool_from_row(row).map_err(|why| match why {
+                // Said, so the person who typed it knows which value to put right (#3491).
+                Some(why) => Refused::Other(format!(
+                    "{} is not as purlis writes it, so no pool or runner of it is used: {why}",
+                    path.display()
+                )),
+                None => unreadable(),
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let mut names: Vec<&str> = pools.iter().map(Pool::name).collect();
     names.sort_unstable();
@@ -837,8 +846,44 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
 /// A pool's row: its name, kind `docker` and image, and each limit the person set, as
 /// [`pool_to_row`] writes them: `cpus` a number of CPUs to the thousandth, `memory` and `tmp`
 /// in MiB, `processes` a count, and `pricePerHour` where the pool declares one (#3491). Any
-/// other key, or a value of another shape, is refused.
-fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
+/// other key, or a value of another shape, is refused: with the reason for a price, which the
+/// person writes by hand (#3491), and with none for anything else.
+fn pool_from_row(row: &serde_json::Value) -> Result<Pool, Option<String>> {
+    let price = match row.get("pricePerHour") {
+        None => None,
+        Some(price) => Some(price_from_row(price).map_err(|why| {
+            let pool = row
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .filter(|name| usable_pool_name(name).is_ok())
+                .map_or_else(|| "a pool".to_owned(), |name| format!("pool {name}"));
+            Some(format!("the pricePerHour of {pool} is not a price: {why}"))
+        })?),
+    };
+    plain_pool_from_row(row)
+        .map(|pool| pool.priced(price))
+        .ok_or(None)
+}
+
+/// A pool's `pricePerHour`, `{"amount": "<decimal>", "currency": "<ISO 4217>"}`, or why not.
+fn price_from_row(price: &serde_json::Value) -> Result<Price, String> {
+    let shape = || {
+        "write it as {\"amount\": \"0.40\", \"currency\": \"EUR\"}, the amount in a string"
+            .to_owned()
+    };
+    let price = price.as_object().ok_or_else(shape)?;
+    if price.len() != 2 {
+        return Err(shape());
+    }
+    let said = |key: &str| price.get(key).and_then(serde_json::Value::as_str);
+    let (Some(amount), Some(currency)) = (said("amount"), said("currency")) else {
+        return Err(shape());
+    };
+    Price::new(amount, currency).map_err(|why| why.to_string())
+}
+
+/// [`pool_from_row`] but its price.
+fn plain_pool_from_row(row: &serde_json::Value) -> Option<Pool> {
     let fields = row.as_object()?;
     let known = [
         "name",
@@ -886,20 +931,7 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         processes: count(fields.get("processes"))?,
         tmp_mib: count(fields.get("tmp"))?,
     };
-    let price = match fields.get("pricePerHour") {
-        None => None,
-        Some(price) => {
-            let price = price.as_object()?;
-            if price.len() != 2 {
-                return None;
-            }
-            let said = |key: &str| price.get(key).and_then(serde_json::Value::as_str);
-            Some(Price::new(said("amount")?, said("currency")?).ok()?)
-        }
-    };
-    Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set)
-        .ok()
-        .map(|pool| pool.priced(price))
+    Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
 }
 
 /// A runner's hours not written are said, and change nothing else (#3492).

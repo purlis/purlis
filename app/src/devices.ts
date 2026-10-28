@@ -393,7 +393,9 @@ export function hoursSaid(use: Pick<PoolUse, "ranThisWeek" | "hoursNotKnown">): 
 /**
  * What a use row's Money this week cell says (#3491): nothing for a pool that declares no price;
  * else its hours this week times its price, in its currency, and the runners whose hours are not
- * known yet apart, as its hours say them.
+ * known yet apart, as its hours say them. **Worked from the exact seconds**, not from the hours as
+ * the row rounds them to the tenth: what is charged is the time that ran, so it may differ from
+ * the shown hours times the price by up to three minutes' worth.
  */
 export function moneySaid(
   use: Pick<PoolUse, "ranThisWeek" | "hoursNotKnown" | "price">,
