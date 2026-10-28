@@ -59,7 +59,7 @@ describe("a skill's compatibility badges (SK-8)", () => {
 
   it("says skills are not supported on a declared harness that takes none (SK-30)", () => {
     const said =
-      "Skills are not supported on Goose: it has no skill format purlis can hand skills by, and takes no MCP servers, so its chats get no skills.";
+      "Skills are not supported on Goose: it has no skill format purlis can hand skills by, and its declaration does not say it takes MCP servers, so its chats get no skills.";
     render(
       <SkillCompatBadges
         name="deploy"

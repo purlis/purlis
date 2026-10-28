@@ -33,7 +33,7 @@ function answering(studio: unknown) {
 describe("the Skill studio", () => {
   it("says in one line why a declared harness's chats get no skills (SK-30)", async () => {
     const said =
-      "Skills are not supported on Goose: it has no skill format purlis can hand skills by, and takes no MCP servers, so its chats get no skills.";
+      "Skills are not supported on Goose: it has no skill format purlis can hand skills by, and its declaration does not say it takes MCP servers, so its chats get no skills.";
     answering({
       on: true,
       workspace: null,

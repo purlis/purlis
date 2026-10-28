@@ -2245,7 +2245,8 @@ pub fn not_supported_on(
         title: declared.title.clone(),
         said: format!(
             "Skills are not supported on {}: it has no skill format purlis can hand skills \
-             by, and takes no MCP servers, so its chats get no skills.",
+             by, and its declaration does not say it takes MCP servers, so its chats get no \
+             skills.",
             declared.title
         ),
     })

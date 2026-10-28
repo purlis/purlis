@@ -2416,7 +2416,7 @@ fn a_harness_with_neither_a_skill_format_nor_mcp_is_told_skills_are_not_supporte
     assert_eq!(
         said[0].said,
         "Skills are not supported on Goose: it has no skill format purlis can hand skills by, \
-         and takes no MCP servers, so its chats get no skills."
+         and its declaration does not say it takes MCP servers, so its chats get no skills."
     );
     assert!(!said[0].said.contains('\n'), "one line");
 }

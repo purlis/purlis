@@ -124,7 +124,8 @@ fn a_declared_harness_with_neither_a_skill_format_nor_mcp_is_said_in_one_line() 
             name: "goose".to_owned(),
             title: "Goose".to_owned(),
             said: "Skills are not supported on Goose: it has no skill format purlis can hand \
-                   skills by, and takes no MCP servers, so its chats get no skills."
+                   skills by, and its declaration does not say it takes MCP servers, so its \
+                   chats get no skills."
                 .to_owned(),
         }]
     );

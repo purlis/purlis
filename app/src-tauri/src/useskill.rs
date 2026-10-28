@@ -170,20 +170,8 @@ pub(crate) fn small(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-/// The skills of chat `session` of `held`, as the core works them out, and the salt its prompts
-/// are digested under, or `None` for a chat that is not open or runs no tool purlis knows the
-/// skills of. One read of the chat.
-fn of_the_chat(
-    held: &Held,
-    session: u32,
-) -> Option<(
-    purlis_core::skills::ChatSkills,
-    Option<purlis_core::skillspan::PromptSalt>,
-)> {
-    of_this_chat(held, &held.chats().skills_of(session)?)
-}
-
-/// [`of_the_chat`], for `chat`, read of the open chats once.
+/// **The skills of `chat` of `held`, as the core works them out**, and the salt its prompts are
+/// digested under, or `None` for a chat that runs no tool purlis knows the skills of.
 fn of_this_chat(
     held: &Held,
     chat: &crate::chats::ChatForSkills,
@@ -319,10 +307,13 @@ pub(crate) fn use_skill(
     if !purlis_core::skills::studio_on_here() {
         return Err("The Skill studio is not turned on on this machine.".to_owned());
     }
-    let (skills, salt) = of_the_chat(&held, session).ok_or_else(|| {
-        held.chats()
-            .skills_of(session)
-            .and_then(|chat| chat.not_supported)
+    let chat = held
+        .chats()
+        .skills_of(session)
+        .ok_or_else(|| NO_TOOL.to_owned())?;
+    let (skills, salt) = of_this_chat(&held, &chat).ok_or_else(|| {
+        chat.not_supported
+            .clone()
             .unwrap_or_else(|| NO_TOOL.to_owned())
     })?;
     let typing = typing_of(&skills, salt.as_ref(), &skill, &values)?;

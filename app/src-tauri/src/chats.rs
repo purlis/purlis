@@ -4942,11 +4942,11 @@ impl Chats {
                 .as_deref()
                 .and_then(purlis_core::skillspan::PromptSalt::of_chat),
             cwd: running.chat.cwd.clone(),
+            // As its start read its declaration: what a running chat started with (decision 15).
             not_supported: running
-                .harness
-                .is_none()
-                .then_some(running.declared.as_ref())
-                .flatten()
+                .declared
+                .as_ref()
+                .filter(|_| running.harness.is_none())
                 .and_then(purlis_core::skills::not_supported_on)
                 .map(|one| one.said),
         })
