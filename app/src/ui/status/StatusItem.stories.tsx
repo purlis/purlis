@@ -11,7 +11,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
 import { ArrowUpCircle, Bell, Hand, Info, OctagonX } from "lucide-react";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { drawWindowText, LEAST_TEXT } from "../../textSize";
 import { StatusBar, type StatusContribution } from "./StatusBar";
 import { StatusCell, StatusItem } from "./StatusItem";
@@ -237,7 +237,7 @@ export const StatusBarAndItsMenu: Story = {
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(bar.textContent).not.toContain("todo"));
     // The menu gives the keyboard back to the item it was opened from.
-    await waitFor(() => expect(notices).toHaveFocus());
+    await untilFocused(() => notices, "The menu gives the keyboard back to Notices");
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     const again = await within(document.body).findByRole("menuitemcheckbox", { name: "Todos" });
     await expect(again).toHaveAttribute("aria-checked", "false");
