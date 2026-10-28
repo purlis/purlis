@@ -140,8 +140,12 @@ export function sortChecks(checks, required = []) {
   return { pending, failing };
 }
 
-/** Whether a workflow run (the REST API's) is still going, and so may yet post a check. */
-const going = (run) => run.status !== "completed" && run.status !== "action_required";
+/**
+ * Whether a workflow run (the REST API's) is still going, and so may yet post a check. A run
+ * waiting on approval reads `completed`, with the conclusion `action_required`: it posts nothing
+ * until a person acts, so it is not going.
+ */
+const going = (run) => run.status !== "completed";
 
 /**
  * The required names that will not post, of `checks` (`sortChecks`'s answer) and `runs` (the
@@ -202,9 +206,11 @@ const SETTLE = seconds("LAND_SETTLE_SECONDS", 30);
 // How long a wait lasts before it gives up: the checks, then the queue. The tests shorten the first.
 const CHECKS_FOR = seconds("LAND_CHECKS_FOR_SECONDS", 120 * 60);
 const QUEUE_FOR = 240 * 60;
-// How many polls running the required checks left must be ones that have not posted, with no run
-// of the head going, before the wait gives up on them: a run just queued takes a moment to show.
+// How many polls running, and how long, the required checks left must be ones that have not
+// posted, with no run of the head going, before the wait gives up on them: a run just queued takes
+// a moment to show, and longer while Actions is slow. The tests shorten the time.
 const UNPOSTED_POLLS = 3;
+const UNPOSTED_FOR = seconds("LAND_UNPOSTED_SECONDS", 5 * 60);
 const waitedFor = (s) => (s % 60 === 0 ? `${s / 60} minutes` : `${s} seconds`);
 
 const pause = (s) =>
@@ -350,7 +356,7 @@ function main(options) {
     ]);
   const checksGate = (wait) => {
     let checks = readChecks();
-    let stuck = { names: "", polls: 0 };
+    let stuck = { names: "", polls: 0, since: 0 };
     let said = "";
     for (let waited = 0; wait && checks.pending.length > 0 && checks.failing.length === 0;) {
       if (waited >= CHECKS_FOR)
@@ -368,18 +374,31 @@ function main(options) {
       // The runs are read only when nothing posted is still going: it is the one case they decide.
       const names = missing.length === checks.pending.length ? unposted(checks, headRuns()) : [];
       const key = names.join("\n");
+      const same = names.length > 0 && key === stuck.names;
       stuck = {
         names: key,
-        polls: names.length === 0 ? 0 : key === stuck.names ? stuck.polls + 1 : 1,
+        polls: names.length === 0 ? 0 : same ? stuck.polls + 1 : 1,
+        since: same ? stuck.since : Date.now(),
       };
-      if (stuck.polls >= UNPOSTED_POLLS)
+      if (stuck.polls >= UNPOSTED_POLLS && Date.now() - stuck.since >= UNPOSTED_FOR * 1000) {
+        const again =
+          "Running it again is safe: it enqueues nothing until every required check has passed.";
+        // The runs were read of the reviewed head, the checks of the current one: a push since
+        // (the baselines bot's, say) leaves the new head with nothing posted.
+        const moved = viewPr().headRefOid;
+        if (moved !== head)
+          stop(
+            `pull request #${options.pr}'s head moved to ${moved}, off the reviewed ${head}: review it and run again with --sha ${moved}. ${again}`,
+          );
         stop(
           [
             `pull request #${options.pr} waits on required checks that have not posted, and no run of its head is going to post them:`,
             ...names.map((name) => `  ${name}`),
             "A job renamed or removed while main still requires its old name, or a run waiting on approval, does this; GitHub would refuse the enqueue. Fix main's required checks or the run, and land again.",
+            again,
           ].join("\n"),
         );
+      }
       pause(POLL);
       waited += Math.max(POLL, 1);
       checks = readChecks();

@@ -185,6 +185,7 @@ function land(args, over = {}, env = {}) {
       FAKE_GH_LOG: logPath,
       LAND_POLL_SECONDS: "0",
       LAND_SETTLE_SECONDS: "0",
+      LAND_UNPOSTED_SECONDS: "0",
       ...env,
     },
   });
@@ -359,9 +360,9 @@ test("only required checks that have not posted, with no run going, will not pos
   const notPosted = (name) => ({ name, state: "not posted yet" });
   const left = { pending: [notPosted("docs")], failing: [] };
   assert.deepEqual(unposted(left, []), ["docs"]);
-  assert.deepEqual(unposted(left, [{ status: "completed" }, { status: "action_required" }]), [
-    "docs",
-  ]);
+  // A run waiting on approval reads completed, as the live API answers it.
+  const waitingOnApproval = { status: "completed", conclusion: "action_required" };
+  assert.deepEqual(unposted(left, [{ status: "completed" }, waitingOnApproval]), ["docs"]);
   // A run still going may post it.
   for (const status of ["queued", "in_progress", "waiting", "requested", "pending"])
     assert.deepEqual(unposted(left, [{ status }]), [], status);
@@ -712,6 +713,7 @@ test("with --watch, a required check nothing is left to post is refused early, n
   );
   assert.equal(got.status, 1);
   assert.match(got.stderr, /no run of its head is going to post them:\n {2}renamed job$/m);
+  assert.match(got.stderr, /Running it again is safe/);
   assert.doesNotMatch(got.stderr, /still going after/);
   assert.equal(enqueueCall(got.calls), undefined);
   const said = lines(got.calls);
@@ -721,6 +723,62 @@ test("with --watch, a required check nothing is left to post is refused early, n
     3,
   );
   assert.equal(said.filter((line) => line.startsWith("pr checks")).length, 4);
+});
+
+// Main requires a check this head will never post, and every run of the head has finished.
+const neverPosts = {
+  branch: {
+    match: "^api repos/purlis/purlis/branches/main",
+    replies: [{ out: branchFor(["rust (fmt, clippy, test)", "renamed job"]) }],
+  },
+  checks: {
+    match: "^pr checks 7",
+    replies: [{ out: [check("rust (fmt, clippy, test)", "pass")] }],
+  },
+  headRuns: {
+    match: "head_sha=.*per_page=100",
+    replies: [{ out: runs([{ id: 50, status: "completed", conclusion: "success" }]) }],
+  },
+};
+
+test("the early refusal says running it again is safe, and waits a while as well as three polls", () => {
+  const got = land(["7", "--sha", HEAD, "--watch"], neverPosts, {
+    LAND_CHECKS_FOR_SECONDS: "3600",
+    LAND_UNPOSTED_SECONDS: "1",
+  });
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /renamed job/);
+  assert.match(got.stderr, /Running it again is safe/);
+  // Three polls take no time here; the second it must also wait is what holds it.
+  assert.ok(got.took >= 1000, `took ${got.took}ms`);
+  const runReads = lines(got.calls).filter(
+    (line) => line.includes("head_sha") && line.includes("per_page=100"),
+  );
+  assert.ok(runReads.length > 3, `${runReads.length} reads of the runs`);
+});
+
+test("when the head moved off the reviewed sha, the early refusal says so, not a renamed job", () => {
+  // The baselines bot pushes: gh pr checks reads the new head, where nothing has posted, while
+  // the runs read are the reviewed head's, all finished.
+  const got = land(
+    ["7", "--sha", HEAD, "--watch"],
+    {
+      ...neverPosts,
+      view: {
+        match: "^pr view 7 ",
+        replies: [{ out: prOf() }, { out: prOf({ headRefOid: OTHER }) }],
+      },
+    },
+    { LAND_CHECKS_FOR_SECONDS: "3600" },
+  );
+  assert.equal(got.status, 1);
+  assert.match(
+    got.stderr,
+    new RegExp(`head moved to ${OTHER}, off the reviewed ${HEAD}: review it and run again`),
+  );
+  assert.match(got.stderr, /Running it again is safe/);
+  assert.doesNotMatch(got.stderr, /renamed/);
+  assert.equal(enqueueCall(got.calls), undefined);
 });
 
 test("a draft is marked ready, and its checks read again, before the enqueue", () => {
