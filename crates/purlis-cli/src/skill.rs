@@ -438,10 +438,13 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         say: &mut said,
     };
     // A delete a crash or a quit cut short is finished or undone before any change (SK-35).
-    // And the skills this machine kept deleted past their time are removed (SK-33).
+    // And the skills this machine kept deleted past their time are removed (SK-33), but before a
+    // restore, which `purlis skill restore`'s list offered the person as they saw it.
     if writes {
         verbs::interrupted(&mut cx);
-        verbs::expire_now(root);
+        if !matches!(command, SkillCommand::Restore { .. }) {
+            verbs::expire_now(root);
+        }
     }
     // The studio's own list (SK-34, #3008): the plane's skills, and each harness's, the same
     // call the window makes.
@@ -684,9 +687,7 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             if deleted.is_empty() {
                 println!("No deleted skill can be restored here.");
             }
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |at| at.as_secs());
+            let now = std::time::SystemTime::now();
             for one in deleted {
                 println!("{}", restorable(&one.name, &one.level, &one.stays(now)));
             }

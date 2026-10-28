@@ -7184,17 +7184,18 @@ rewritten.
   emptied folder.
 - **Read by:** `verbs::deleted`, for the Skill studio's Deleted skills and `purlis skill restore`,
   each row saying how many days it stays. Deleted ⇒ those skills cannot be restored.
-- **Removed after 30 days** (SK-33, #3004): as the Skill studio opens and before a `purlis skill`
-  change, `verbs::expire` removes each folder whose `<stamp>` is more than 30 days old
-  (`verbs::KEPT_HERE_FOR`); a newer one, the newest copy of a skill included, stays its whole 30
-  days, and one stamped later than now stays. It removes only a folder named
+- **Restorable for 30 days, removed after 31** (SK-33, #3004): `verbs::deleted` lists a folder
+  only while its `<stamp>` is at most 30 days old (`verbs::KEPT_HERE_FOR`). As the Skill studio
+  opens and before a `purlis skill` change other than a restore, `verbs::expire` removes each
+  folder whose `<stamp>` is more than 31 days old (`verbs::EXPIRY_AFTER`), so a restore begun in
+  time never meets its removal. A newer one, the newest copy of a skill included, stays its whole
+  time, and one stamped later than now stays. It removes only a folder named
   `<digits>-<folder>` that holds nothing but `from`, `<folder>/` and `<folder>.toml`; one holding
-  anything else is left whole and logged. `from` goes first, so a removal cut short is never
-  offered back half there, and is finished the next time. The state folder, this folder and each
+  anything else, a name that is not text included, is left whole and logged. `from` goes last, so
+  a removal cut short is finished the next time. The state folder, this folder and each
   folder in it are opened `O_NOFOLLOW` and everything is removed relative to them, so a link in
-  the skill's folder is removed as a link and nothing outside this folder is reached. A delete
-  that was a commit is never removed: git keeps it. A committed skill whose delete was committed is
-  never kept here: git keeps it. Every read, write and removal here goes through folders held
+  the skill's folder is removed as a link and nothing outside this folder is reached. A committed
+  skill whose delete was committed is never kept here: git keeps it. Every read, write and removal here goes through folders held
   open with `O_NOFOLLOW`. A chat's sandbox denies writing it (SK-35).
 - **Git:** gitignored, under the state directory.
 

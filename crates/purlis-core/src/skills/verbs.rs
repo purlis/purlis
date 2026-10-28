@@ -959,14 +959,17 @@ impl Deleted {
     }
 
     /// **How long it stays, in a phrase** (SK-33): one git keeps stays in the project's history;
-    /// one this machine keeps stays [`KEPT_HERE_FOR`] after its delete, and the phrase counts the
-    /// days left at `now`, in seconds since the epoch.
-    pub fn stays(&self, now: u64) -> String {
+    /// one this machine keeps can be restored [`KEPT_HERE_FOR`] after its delete, and the phrase
+    /// counts the days left at `now`, never more than that (a delete stamped by a clock that ran
+    /// ahead).
+    pub fn stays(&self, now: std::time::SystemTime) -> String {
         match &self.kept.0 {
             Source::Commit(_) => "kept in the project's history".to_owned(),
             Source::Here(_) => {
-                let until = self.at.saturating_add(KEPT_HERE_FOR.as_secs());
-                let days = until.saturating_sub(now).div_ceil(DAY);
+                let now = u64::try_from(ms_since_epoch(now) / 1000).unwrap_or(u64::MAX);
+                let kept_for = KEPT_HERE_FOR.as_secs();
+                let until = self.at.saturating_add(kept_for);
+                let days = until.saturating_sub(now).min(kept_for).div_ceil(DAY);
                 match days {
                     0 => "removed from this machine soon".to_owned(),
                     1 => "kept on this machine for 1 more day".to_owned(),
@@ -980,11 +983,31 @@ impl Deleted {
 /// A day, in seconds.
 const DAY: u64 = 24 * 60 * 60;
 
-/// **How long a skill deleted on this machine is kept in its [`DELETED_DIR`]** before
-/// [`expire`] removes it (SK-33): 30 days after its delete, as a desktop's trash or a mail
-/// folder's deleted items keep theirs. A skill whose delete was a commit is never removed: git
-/// keeps it.
+/// **How long a skill deleted on this machine can be restored from its [`DELETED_DIR`]**
+/// (SK-33): 30 days after its delete, as a desktop's trash or a mail folder's deleted items keep
+/// theirs. Past that, [`deleted`] lists it no more, and [`expire`] removes it a day later
+/// ([`EXPIRY_AFTER`]), so a restore begun within its time never meets its removal. A skill whose
+/// delete was a commit is never removed: git keeps it.
 pub const KEPT_HERE_FOR: std::time::Duration = std::time::Duration::from_secs(30 * DAY);
+
+/// How long after its delete [`expire`] removes a kept delete: [`KEPT_HERE_FOR`] and a day.
+pub const EXPIRY_AFTER: std::time::Duration = std::time::Duration::from_secs(31 * DAY);
+
+/// `at` in milliseconds since the epoch, 0 before it.
+fn ms_since_epoch(at: std::time::SystemTime) -> u128 {
+    at.duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis())
+        .unwrap_or_default()
+}
+
+/// Whether a kept delete stamped `stamp` is more than `kept` old at `now_ms`. One stamped later
+/// than now is not.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn past(stamp: u128, now_ms: u128, kept: std::time::Duration) -> bool {
+    now_ms
+        .checked_sub(stamp)
+        .is_some_and(|age| age > kept.as_millis())
+}
 
 /// What one [`expire`] did: the kept deletes it removed, by their folder's name, and each it
 /// could not, with why.
@@ -994,7 +1017,7 @@ pub struct Expired {
     pub failed: Vec<(String, String)>,
 }
 
-/// **Removes the skills this machine kept deleted for longer than [`KEPT_HERE_FOR`]** (SK-33):
+/// **Removes the skills this machine kept deleted for longer than [`EXPIRY_AFTER`]** (SK-33):
 /// each kept delete in the state folder's [`DELETED_DIR`] whose stamp, the time of its delete,
 /// is that long before `now`. One deleted later, or with a stamp after `now`, is kept, so each
 /// copy, the newest of a skill's included, stays its whole time.
@@ -1009,24 +1032,14 @@ pub struct Expired {
 /// kept there.
 pub fn expire(plane: &Path, now: std::time::SystemTime) -> Expired {
     let state = crate::plane::state_dir(plane);
-    let now_ms = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|at| at.as_millis())
-        .unwrap_or_default();
-    store::expire(
-        &state,
-        DELETED_DIR,
-        KEPT_FROM,
-        now_ms,
-        KEPT_HERE_FOR.as_millis(),
-    )
+    store::expire(&state, DELETED_DIR, KEPT_FROM, ms_since_epoch(now))
 }
 
 /// [`expire`] in `plane` at this moment, each removal and each failure said in the log: what
-/// the Skill studio does as it opens, and `purlis skill` before a change.
+/// the Skill studio does as it opens, and `purlis skill` before a change other than a restore.
 pub fn expire_now(plane: &Path) {
     let expired = expire(plane, std::time::SystemTime::now());
-    let days = KEPT_HERE_FOR.as_secs() / DAY;
+    let days = EXPIRY_AFTER.as_secs() / DAY;
     for kept in &expired.removed {
         tracing::info!(
             "purlis: removed the deleted skill kept as {kept}: it was deleted over {days} days ago"
@@ -1446,7 +1459,16 @@ pub(in crate::skills) fn shared_globs() -> Vec<String> {
 pub fn deleted(plane: &Path) -> Vec<Deleted> {
     let mut out = Vec::new();
     let state = crate::plane::state_dir(plane);
+    let now_ms = ms_since_epoch(std::time::SystemTime::now());
     for (kept, from, folder, text) in store::kept(&state, DELETED_DIR, KEPT_FROM) {
+        // Only a kept delete named as a delete names it, and only within its time: one past it
+        // is [`expire`]'s and is offered back no more, so no restore meets its removal (SK-33).
+        let Some((stamp, _)) = kept_name(&kept) else {
+            continue;
+        };
+        if past(stamp, now_ms, KEPT_HERE_FOR) {
+            continue;
+        }
         let Some(level) = Level::of_rel(from.trim()) else {
             continue;
         };
@@ -1461,10 +1483,7 @@ pub fn deleted(plane: &Path) -> Vec<Deleted> {
         if taken_again(plane, &level, &name, &folder, toml_kept) {
             continue;
         }
-        let at = kept
-            .split_once('-')
-            .and_then(|(ms, _)| ms.parse::<u64>().ok())
-            .map_or(0, |ms| ms / 1000);
+        let at = u64::try_from(stamp / 1000).unwrap_or(u64::MAX);
         out.push(Deleted {
             name,
             level,
@@ -1895,16 +1914,10 @@ pub(in crate::skills) mod store {
         out
     }
 
-    /// **[`super::expire`] through handles**: every kept delete in `dir` under `state` older than
-    /// `keep_ms` at `now_ms`, removed. `state` and `dir` are opened as folders themselves, so a
+    /// **[`super::expire`] through handles**: every kept delete in `dir` under `state` past
+    /// [`super::EXPIRY_AFTER`] at `now_ms`, removed. `state` and `dir` are opened as folders themselves, so a
     /// link at either keeps everything.
-    pub(super) fn expire(
-        state: &Path,
-        dir: &str,
-        from: &str,
-        now_ms: u128,
-        keep_ms: u128,
-    ) -> super::Expired {
+    pub(super) fn expire(state: &Path, dir: &str, from: &str, now_ms: u128) -> super::Expired {
         let mut expired = super::Expired::default();
         let Ok(state_dir) = openat(rustix::fs::CWD, state, FOLDER, Mode::empty()) else {
             return expired;
@@ -1916,7 +1929,7 @@ pub(in crate::skills) mod store {
             let Some((stamp, folder)) = super::kept_name(&name) else {
                 continue;
             };
-            if stamp > now_ms || now_ms - stamp <= keep_ms {
+            if !super::past(stamp, now_ms, super::EXPIRY_AFTER) {
                 continue;
             }
             if let Err(why) = remove_kept(&kept, &name, folder, from) {
@@ -1929,13 +1942,27 @@ pub(in crate::skills) mod store {
     }
 
     /// Removes the kept delete `name` in `kept`, whose skill's folder is `folder`: only where it
-    /// holds nothing but `from`, that folder and the file beside it. `from` goes first, so a
-    /// removal cut short leaves nothing Restore would offer half there.
+    /// holds nothing but `from`, that folder and the file beside it, each named in text. `from`
+    /// goes last, so a removal cut short is still one [`super::expire`] knows and finishes next
+    /// time; past its time, no list offers it back meanwhile.
     fn remove_kept(kept: &OwnedFd, name: &str, folder: &str, from: &str) -> Result<(), String> {
         use crate::skills::at;
         let one = openat(kept, name, FOLDER, Mode::empty()).map_err(|why| why.to_string())?;
         let toml = format!("{folder}.toml");
         let entries = at::entries(&one).map_err(|why| why.to_string())?;
+        // A name that is not text is one no delete gives, and `at::entries` does not list it.
+        let named = rustix::fs::Dir::read_from(&one)
+            .map_err(|why| why.to_string())?
+            .filter_map(Result::ok)
+            .filter(|entry| !matches!(entry.file_name().to_bytes(), b"." | b".."))
+            .count();
+        if named != entries.len() {
+            return Err(
+                "it holds a name that is not text, which no delete puts there, so it \
+                        was left as it is"
+                    .to_owned(),
+            );
+        }
         let ours = |entry: &at::Entry| {
             (entry.name == folder && entry.kind == FileType::Directory)
                 || ((entry.name == from || entry.name == toml)
@@ -1947,17 +1974,15 @@ pub(in crate::skills) mod store {
                 theirs.name
             ));
         }
-        for entry in &entries {
-            if entry.name == from {
-                at::remove_file_in(&one, from).map_err(|why| why.to_string())?;
-            }
-        }
-        for entry in &entries {
+        for entry in entries.iter().filter(|entry| entry.name != from) {
             if entry.kind == FileType::Directory {
                 at::remove_tree_in(&one, &entry.name).map_err(|why| why.to_string())?;
-            } else if entry.name != from {
+            } else {
                 at::remove_file_in(&one, &entry.name).map_err(|why| why.to_string())?;
             }
+        }
+        if entries.iter().any(|entry| entry.name == from) {
+            at::remove_file_in(&one, from).map_err(|why| why.to_string())?;
         }
         at::remove_empty_folder_in(kept, name).map_err(|why| why.to_string())
     }
@@ -1998,7 +2023,7 @@ mod store {
 
     pub(super) fn put_away(_: &Path, _: &str, _: &str, _: &str) {}
 
-    pub(super) fn expire(_: &Path, _: &str, _: &str, _: u128, _: u128) -> super::Expired {
+    pub(super) fn expire(_: &Path, _: &str, _: &str, _: u128) -> super::Expired {
         super::Expired::default()
     }
 

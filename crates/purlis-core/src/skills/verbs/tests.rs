@@ -1518,9 +1518,9 @@ fn deleted_at(root: &Path, folder: &str, stamp: u128) -> String {
     now
 }
 
-/// Long enough ago that a kept delete is past its time: a day more than it is kept for.
+/// Long enough ago that a kept delete is past its removal: a day more than [`EXPIRY_AFTER`].
 fn long_ago() -> u128 {
-    (std::time::SystemTime::now() - KEPT_HERE_FOR - std::time::Duration::from_secs(DAY))
+    (std::time::SystemTime::now() - EXPIRY_AFTER - std::time::Duration::from_secs(DAY))
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis()
@@ -1557,12 +1557,8 @@ fn a_skill_kept_deleted_past_its_time_is_removed_and_a_newer_copy_of_it_is_kept(
     );
     let listed = deleted(root);
     assert_eq!(listed.len(), 2, "{listed:?}");
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
     assert_eq!(
-        listed[0].stays(now),
+        listed[0].stays(std::time::SystemTime::now()),
         "kept on this machine for 30 more days"
     );
     assert!(
@@ -1678,27 +1674,90 @@ fn a_deleted_skill_says_how_long_it_stays() {
         kept: Kept(Source::Here(format!("{}-deploy", at * 1000))),
         at,
     };
+    let when = |secs: u64| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
     let at = 1_761_000_000;
     let kept_for = KEPT_HERE_FOR.as_secs();
-    assert_eq!(here(at).stays(at), "kept on this machine for 30 more days");
     assert_eq!(
-        here(at).stays(at + kept_for - DAY - 1),
+        here(at).stays(when(at)),
+        "kept on this machine for 30 more days"
+    );
+    assert_eq!(
+        here(at).stays(when(at + kept_for - DAY - 1)),
         "kept on this machine for 2 more days"
     );
     assert_eq!(
-        here(at).stays(at + kept_for - 60),
+        here(at).stays(when(at + kept_for - 60)),
         "kept on this machine for 1 more day"
     );
     assert_eq!(
-        here(at).stays(at + kept_for + 1),
+        here(at).stays(when(at + kept_for + 1)),
         "removed from this machine soon"
+    );
+    assert_eq!(
+        here(at + 365 * DAY).stays(when(at)),
+        "kept on this machine for 30 more days",
+        "never more than its time, whatever clock stamped it"
     );
     let in_git = Deleted {
         kept: Kept(Source::Commit("abc".to_owned())),
         ..here(at)
     };
     assert_eq!(
-        in_git.stays(at + 10 * kept_for),
+        in_git.stays(when(at + 10 * kept_for)),
         "kept in the project's history"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kept_delete_past_its_time_is_offered_back_no_more_and_removed_only_a_day_later() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let ms = |at: std::time::SystemTime| {
+        at.duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    };
+    // Deleted 30 days and an hour ago: past its time, within its removal's day.
+    let then = std::time::SystemTime::now() - KEPT_HERE_FOR - std::time::Duration::from_secs(3600);
+    let kept = deleted_at(root, "deploy", ms(then));
+
+    assert!(deleted(root).is_empty(), "past its time, no list offers it");
+    assert_eq!(
+        expire(root, std::time::SystemTime::now()),
+        Expired::default()
+    );
+    assert!(
+        kept_deletes(root)
+            .join(&kept)
+            .join("deploy/SKILL.md")
+            .is_file()
+    );
+
+    let a_day_on = std::time::SystemTime::now() + std::time::Duration::from_secs(DAY);
+    assert_eq!(expire(root, a_day_on).removed, vec![kept]);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kept_delete_holding_a_name_that_is_not_text_is_left_whole() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    let kept = kept_deletes(root).join(&old);
+    let odd = kept.join(std::ffi::OsStr::from_bytes(b"\xff\xfe"));
+    if std::fs::write(&odd, "mine").is_err() {
+        // A file system that takes only text names (APFS refuses these): nothing to test.
+        return;
+    }
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert!(expired.removed.is_empty(), "{expired:?}");
+    assert!(kept.join(KEPT_FROM).is_file());
+    assert!(kept.join("deploy/SKILL.md").is_file());
+    assert!(odd.exists());
 }

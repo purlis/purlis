@@ -566,9 +566,7 @@ pub(crate) async fn skills_deleted(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the deleted skills", move || {
         flag_on()?;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |at| at.as_secs());
+        let now = std::time::SystemTime::now();
         verbs::deleted(held.root())
             .into_iter()
             .map(|one| {
