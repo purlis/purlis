@@ -1,0 +1,145 @@
+<title>Studio secondary pages</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the studio frame (A); its five secondary pages (Needs you, Drafts, Deleted, Harness skills, Routing).
+   PROTOTYPE for "Prototype: Needs you, Drafts, Deleted, Harness skills and Routing pages" (purlis#3645): throwaway, fake data. */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b4232c; --bad-soft:#fbe5e6;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --add:#e3f4e8; --del:#fbe8e8; --shadow:0 10px 30px rgba(20,24,40,.16);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --add:#16301f; --del:#3a1c1f; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --add:#16301f; --del:#3a1c1f; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 72px;box-sizing:border-box}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+select{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 6px}
+.note{max-width:1400px;margin:0 auto 10px;color:var(--muted);font-size:12px}.note b{color:var(--fg)}
+.win{max-width:1400px;margin:0 auto;height:calc(100% - 30px);min-height:600px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tabs span{padding:6px 12px;border-radius:7px 7px 0 0;color:var(--muted)}.tabs span.on{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.crumb{color:var(--muted)}.crumb b{color:var(--fg);font-weight:500}
+.studio{flex:1;display:grid;grid-template-columns:170px minmax(0,1fr);min-height:0}
+.snav{border-right:1px solid var(--line);padding:8px 6px;display:flex;flex-direction:column;gap:1px}
+.snav button{text-align:left;padding:5px 9px;border-radius:6px;color:var(--muted);display:flex;justify-content:space-between}
+.snav button:hover{background:var(--panel2)}.snav button.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.snav .sep{height:1px;background:var(--line);margin:8px 4px}.snav .c{font-size:11px}.snav .c.warn{color:var(--warn)}
+.content{overflow:auto;min-width:0}
+.split{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(0,1.2fr);min-height:100%}
+.split>div{min-width:0;overflow:auto}.split>div:first-child{border-right:1px solid var(--line)}
+.pg{padding:18px 22px;display:grid;gap:16px;max-width:980px}
+.pg h1{margin:0;font-size:18px;font-weight:600;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pg h2{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.lead{margin:0;color:var(--muted);max-width:74ch}
+code{font-family:var(--mono);font-size:12px}
+.btn{border:1px solid var(--line);border-radius:6px;padding:4px 10px;background:var(--panel);white-space:nowrap;font-size:12.5px}
+.btn:hover{background:var(--panel2)}.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}.btn.danger{color:var(--bad);border-color:var(--bad)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mark{font-size:10.5px;padding:0 6px;border-radius:9px;white-space:nowrap}.mark.ok{background:var(--ok-soft);color:var(--ok)}.mark.warn{background:var(--warn-soft);color:var(--warn)}.mark.bad{background:var(--bad-soft);color:var(--bad)}.mark.acc{background:var(--accent-soft);color:var(--accent)}.mark.mut{background:var(--tag);color:var(--muted)}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted)}
+.list{border-top:1px solid var(--line)}
+.it{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:10px 16px;border-bottom:1px solid var(--line);align-items:center}
+.it.click{cursor:pointer}.it.click:hover{background:var(--panel2)}.it.on{background:var(--accent-soft)}
+.it .t{font-weight:500;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.it .t code{font-weight:500}
+.it .s{grid-column:1;color:var(--muted);font-size:12px}
+.it .a{grid-row:1/span 2;grid-column:2;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.cards{display:grid;gap:8px}
+.card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:5px}
+.card .t{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-weight:500}.card .s{color:var(--muted);font-size:12.5px}
+.kind{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:12px 16px 4px;display:flex;justify-content:space-between}
+.diff div{font-family:var(--mono);font-size:12px;padding:1px 10px;white-space:pre-wrap}.diff .a{background:var(--add)}.diff .d{background:var(--del)}
+.file{border:1px solid var(--line);border-radius:8px;overflow:hidden}.file summary{padding:7px 10px;cursor:pointer;background:var(--panel2)}
+.kv{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 16px}.kv dt{color:var(--muted)}.kv dd{margin:0}
+.sw{display:inline-flex;align-items:center;gap:6px}.sw i{width:28px;height:16px;border-radius:9px;background:var(--tag);position:relative;display:inline-block}.sw i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--panel)}.sw.on i{background:var(--accent)}.sw.on i::after{left:14px}
+.empty{padding:40px 24px;color:var(--muted);text-align:center;display:grid;gap:8px;justify-items:center}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--panel);padding:8px 14px;border-radius:8px;z-index:25}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));background:#11131a;color:#f2f3f7;border-radius:24px;padding:6px 8px;display:flex;align-items:center;gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:30;font-size:12.5px;max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+.switcher button{color:#f2f3f7;border-radius:16px;padding:4px 10px}.switcher button:hover{background:#2a2e3a}.switcher button.on{background:#5b4fd6}
+.switcher .lbl{padding:0 6px;font-weight:600}
+@media (max-width:1000px){.studio{grid-template-columns:minmax(0,1fr)}.snav{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}.split{grid-template-columns:minmax(0,1fr)}.split>div:first-child{border-right:0;border-bottom:1px solid var(--line)}.kv{grid-template-columns:minmax(0,1fr)}}
+</style>
+
+<div class="note"><b>Prototype, fake data.</b> The studio's five secondary pages. Pick a page on the left. The three variants lay a page's items out three ways; flip with the bar or ← →. "Empty" on the bar shows each page with nothing in it. Nothing is changed.</div>
+<div id="app"></div>
+
+<script>
+const V={a:"A · List, with the item beside it",b:"B · Cards with their actions",c:"C · Rows with actions inline"};
+const NEEDS=[
+ {id:"n1",kind:"Changes to review",t:"grilling",lv:"persona steward",s:"A chat changed it on 28 Oct. Chats keep the last version you accepted until you review this one.",fix:"Review the change",more:"Opens its History with the diff."},
+ {id:"n2",kind:"Clashes",t:"lint-ts",lv:"repo svc",s:"The repo svc has a skill of the same name. Claude Code loads both, so chats in svc see two.",fix:"Rename the project's copy…",more:"One click renames the project's copy; the repo's stays."},
+ {id:"n3",kind:"Problems in a skill",t:"deploy",lv:"project",s:"Step 3 names a script, scripts/tag.sh, that the skill doesn't have.",fix:"Open its text",more:"Opens deploy › Text in Edit."},
+ {id:"n4",kind:"Pins no chat reads",t:"figma-handoff",lv:"pinned in smart-ide",s:"Pinned in smart-ide, but Codex chats there can't take it.",fix:"Unpin it",more:"Removes the pin; the skill stays."},
+ {id:"n5",kind:"Tidy up",t:"1 skill only some programs read",lv:".claude/skills",s:"Moving it gives every chat the skill, whichever program it runs on, in one commit you can undo. It reaches everyone in the project.",fix:"Move it",more:"Runs the doctor's fix as one commit."},
+ {id:"n6",kind:"Tidy up",t:"Old plugin keys",lv:"charter.toml",s:"The project still holds [harness_plugins], which nothing reads now.",fix:"Remove them…",more:"Proposes the edit for you to apply."}];
+const DRAFTS=[{id:"d1",n:"release-checklist",lv:"workspace smart-ide",kind:"A new skill",files:2,from:"chat 7",stale:false},{id:"d2",n:"review-pr",lv:"project",kind:"A change to it",files:1,from:"chat 4",stale:true}];
+const DELETED=[{n:"browser-old",lv:"project",days:27},{n:"pr-template",lv:"workspace smart-ide",days:12},{n:"scratch-notes",lv:"local",days:3}];
+const HARN=[{p:"Claude Code",skills:[{n:"my-notes",from:"You",on:true,sw:true,d:"Keeps your running notes."},{n:"frontend-design:frontend-design",from:"Plugin frontend-design",on:true,sw:false,why:"Comes with the plugin; Claude Code turns it on or off.",d:"Builds distinctive front-end pages."},{n:"lint-ts",from:"Repo svc",on:true,sw:true,d:"Runs eslint the way CI does."}]},{p:"Codex",skills:[]},{p:"opencode",skills:[{n:"scratch",from:"You",on:false,sw:true,d:"A scratch skill."}]}];
+const S={v:(location.hash||"#a").slice(1),page:"needs",sel:{},empty:false,toast:null,router:"Built-in"};
+if(!V[S.v])S.v="a";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const PAGES=[["needs","Needs you"],["drafts","Drafts"],["sources","Sources"],["deleted","Deleted"],["sep"],["harness","Harness skills"],["routing","Routing"]];
+function lay(items,opt){ // items: {id,title,sub,acts,detail}
+  if(!items.length)return `<div class="empty">${opt.empty}</div>`;
+  if(S.v==="b")return `<div class="cards" style="padding:0 0 8px">${items.map(i=>`${i.group?`<div class="kind" style="padding:8px 0 0">${esc(i.group)}</div>`:""}<div class="card"><div class="t">${i.title}</div><div class="s">${i.sub}</div><div class="row">${i.acts}</div></div>`).join("")}</div>`;
+  if(S.v==="c")return `<div class="list">${items.map(i=>`${i.group?`<div class="kind">${esc(i.group)}</div>`:""}<div class="it"><div class="t">${i.title}</div><div class="s">${i.sub}</div><div class="a">${i.acts}</div></div>`).join("")}</div>`;
+  const sel=S.sel[S.page]||items[0].id;const cur=items.find(i=>i.id===sel)||items[0];
+  return {split:true,left:`<div class="list">${items.map(i=>`${i.group?`<div class="kind">${esc(i.group)}</div>`:""}<div class="it click ${i.id===cur.id?"on":""}" data-sel="${i.id}" tabindex="0"><div class="t">${i.title}</div><div class="s">${i.short||i.sub}</div></div>`).join("")}</div>`,right:`<div class="pg">${cur.detail}</div>`}}
+function pageNeeds(){const items=S.empty?[]:NEEDS.map((n,k)=>({id:n.id,group:k===0||NEEDS[k-1].kind!==n.kind?n.kind:"",title:`<code>${esc(n.t)}</code> <span class="tag">${esc(n.lv)}</span>`,sub:esc(n.s),short:esc(n.s.split(". ")[0])+".",acts:`<button class="btn primary" data-t="${esc(n.fix)}">${esc(n.fix)}</button>`,
+  detail:`<h1><code>${esc(n.t)}</code> <span class="tag">${esc(n.lv)}</span></h1><p class="lead">${esc(n.s)}</p><div class="row"><button class="btn primary" data-t="${esc(n.fix)}">${esc(n.fix)}</button><span class="lead">${esc(n.more)}</span></div>`}));
+  return [`<h1>Needs you <span class="mark warn">${items.length}</span></h1><p class="lead">What in your skills needs a decision, each with its fix. It is empty when nothing does, and then it leaves the navigation.</p>`,lay(items,{empty:"Nothing needs you. Clashes, problems in a skill, changes to review and unused pins show up here."})]}
+function pageDrafts(){const items=S.empty?[]:DRAFTS.map(d=>({id:d.id,title:`<code>${esc(d.n)}</code> <span class="tag">${esc(d.lv)}</span> ${d.stale?`<span class="mark warn">Out of date</span>`:`<span class="mark acc">${esc(d.kind)}</span>`}`,sub:`${d.files} files · drafted by ${esc(d.from)}${d.stale?" · the project's copy changed since, so it can't be accepted":""}`,
+  acts:`<button class="btn" data-t="Try it">Try it</button>${d.stale?`<button class="btn" data-t="Ask the chat to redo it">Ask the chat to redo it</button>`:`<button class="btn primary" data-t="Accept ${esc(d.n)}">Accept</button>`}<button class="btn danger" data-t="Discard">Discard</button>`,
+  detail:`<h1><code>${esc(d.n)}</code> <span class="tag">${esc(d.lv)}</span></h1><p class="lead">${esc(d.kind)}, drafted by ${esc(d.from)}. A draft stays on this machine until you accept it; accepting is one commit.</p>${d.stale?`<div class="row"><span class="mark warn">Out of date</span><span class="lead">The project's copy changed since the chat drafted it.</span></div>`:""}
+   <div class="file"><details open><summary>SKILL.md</summary><div class="diff"><div class="a">+ name: ${esc(d.n)}</div><div class="a">+ 1. Check the milestone is closed.</div><div class="a">+ 2. Write the release notes.</div></div></details></div>
+   <div class="row"><label class="lead">Try it on <select><option>Where it was drafted (Claude Code)</option><option>Codex</option></select></label><button class="btn" data-t="Try it">Try it</button></div>
+   <div class="row">${d.stale?`<button class="btn" data-t="Ask the chat to redo it">Ask the chat to redo it</button>`:`<button class="btn primary" data-t="Accept">Accept</button>`}<button class="btn danger" data-t="Discard">Discard</button></div>`}));
+  return [`<h1>Drafts</h1><p class="lead">Skills a chat drafted for you. Try one, then accept it into the project or discard it.</p>`,lay(items,{empty:"No drafts. Ask a chat to draft a skill from New skill…, and it comes back here."})]}
+function pageDeleted(){const items=S.empty?[]:DELETED.map(d=>({id:d.n,title:`<code>${esc(d.n)}</code> <span class="tag">${esc(d.lv)}</span>`,sub:`${d.days} days left to bring it back`,acts:`<button class="btn primary" data-t="Bring back ${esc(d.n)}">Bring back</button>`,
+  detail:`<h1><code>${esc(d.n)}</code></h1><p class="lead">Deleted from the ${esc(d.lv)} skills. It can be brought back for ${d.days} more days, with its history and grades; after that it is removed for good.</p><div class="row"><button class="btn primary" data-t="Bring back">Bring back</button><button class="btn" data-t="Show its text">Show its last text</button></div>`}));
+  return [`<h1>Deleted</h1><p class="lead">Skills deleted in the last 30 days. Bring one back and chats started after that get it again.</p>`,lay(items,{empty:"Nothing deleted in the last 30 days."})]}
+function pageHarness(){const out=[];HARN.forEach(h=>{const sk=S.empty?[]:h.skills;if(!sk.length){out.push({id:h.p+"-none",group:h.p,title:`<span class="lead">${esc(h.p)} has no skills of its own here.</span>`,sub:"",acts:"",detail:`<h1>${esc(h.p)}</h1><p class="lead">It has no skills of its own here.</p>`});return}
+  sk.forEach((k,i)=>out.push({id:h.p+k.n,group:i===0?h.p:"",title:`<code>${esc(k.n)}</code> <span class="tag">${esc(k.from)}</span>${k.on?"":`<span class="mark mut">Off here</span>`}`,sub:k.sw?esc(k.d):esc(k.why),
+   acts:k.sw?`<button class="sw ${k.on?"on":""}" data-t="${k.on?"Turned off":"Turned on"} for this project" role="switch" aria-checked="${k.on}"><i></i>${k.on?"On":"Off"}</button>`:`<span class="lead">Read-only</span>`,
+   detail:`<h1><code>${esc(k.n)}</code></h1><dl class="kv"><dt>Program</dt><dd>${esc(h.p)}</dd><dt>From</dt><dd>${esc(k.from)}</dd><dt>What it does</dt><dd>${esc(k.d)}</dd><dt>In a chat</dt><dd>${k.sw?(k.on?"On for this project's chats":"Off for this project's chats"):esc(k.why)}</dd></dl>${k.sw?`<div class="row"><button class="sw ${k.on?"on":""}" data-t="Switched" role="switch" aria-checked="${k.on}"><i></i>${k.on?"On":"Off"} for this project</button></div>`:""}<p class="lead">purlis lists the program's own skills and never changes them; a switch reaches the chats started after it.</p>`}))});
+  return [`<h1>Harness skills</h1><p class="lead">The skills each program finds itself: your own, a repo's, and a plugin's. You can switch your own and a repo's for this project; a plugin's come and go with the plugin.</p>`,lay(out,{empty:""})]}
+function pageRouting(){const chats=S.empty?[]:[{c:"steward 5",ms:41,fb:false,hid:3},{c:"reviewer 2",ms:112,fb:true,hid:0}];
+  const items=chats.map(x=>({id:x.c,title:`${esc(x.c)} ${x.fb?`<span class="mark warn">Fell back to the built-in router</span>`:`<span class="mark ok">${x.ms} ms</span>`}`,sub:x.fb?"The router took 112 ms, over its 100 ms, so the chat lists what the built-in router shows.":`It hid ${x.hid} skills at the chat's start.`,acts:`<button class="btn" data-t="Open the chat">Open the chat</button>`,
+   detail:`<h1>${esc(x.c)}</h1><p class="lead">${x.fb?"The router took 112 ms, over its 100 ms, so this chat lists what the built-in router shows.":`Asked at the chat's start; answered in ${x.ms} ms and hid ${x.hid} skills: figma-handoff, gpu-profile, lint-rs.`}</p>`}));
+  return [`<h1>Routing</h1><p class="lead">When a chat's list of skills is over its budget, a router decides which it sees. The router is asked once, at a chat's start.</p>
+   <dl class="kv"><dt>Router in smart-ide</dt><dd class="row"><b style="font-weight:500">${esc(S.router)}</b><button class="btn" data-a="router">Change…</button></dd><dt>Budget</dt><dd>30 skills, 6,000 characters of descriptions</dd></dl><h2 style="margin:0">How it did at each chat's start</h2>`,lay(items,{empty:"No chat here has been routed yet: the built-in router asks nothing and writes no record."})]}
+function render(){
+  const fn={needs:pageNeeds,drafts:pageDrafts,deleted:pageDeleted,harness:pageHarness,routing:pageRouting}[S.page];
+  let body;
+  if(S.page==="sources")body=`<div class="pg"><h1>Sources</h1><p class="lead">Prototyped in "Prototype: sources, install and update".</p></div>`;
+  else{const [head,list]=fn();body=typeof list==="object"&&list.split?`<div class="split"><div><div class="pg" style="padding-bottom:6px">${head}</div>${list.left}</div><div>${list.right}</div></div>`:`<div class="pg">${head}${list}</div>`}
+  const label=PAGES.find(p=>p[0]===S.page)[1];
+  document.getElementById("app").innerHTML=`<div class="win"><div class="tabs"><span>steward 5</span><span class="on">Skill studio</span></div><div class="bar"><span class="crumb"><b>${esc(label)}</b></span></div>
+   <div class="studio"><div class="snav"><button data-p="library">Library</button>${PAGES.map(([id,l])=>id==="sep"?`<div class="sep"></div>`:(id==="needs"&&S.empty)||(id==="drafts"&&S.empty&&S.page!=="drafts")?"":`<button class="${S.page===id?"on":""}" data-p="${id}">${l}${id==="needs"?`<span class="c warn">${NEEDS.length}</span>`:id==="drafts"?`<span class="c">${DRAFTS.length}</span>`:""}</button>`).join("")}</div><div class="content">${body}</div></div></div>
+   ${S.toast?`<div class="toast" role="status">${S.toast}</div>`:""}
+   <div class="switcher" role="toolbar" aria-label="Prototype switcher"><button data-a="prev" aria-label="Previous variant">←</button><span class="lbl">${V[S.v]}</span><button data-a="next" aria-label="Next variant">→</button><button class="${S.empty?"on":""}" data-a="empty">Empty</button></div>`}
+function toast(t){S.toast=t;render();clearTimeout(S.tt);S.tt=setTimeout(()=>{S.toast=null;render()},3000)}
+document.addEventListener("click",e=>{const t=e.target.closest("[data-a],[data-p],[data-sel],[data-t]");if(!t)return;const d=t.dataset;
+ if(d.p){if(d.p==="library")return toast("Library: prototyped in the frame.");S.page=d.p;render();return}
+ if(d.sel){S.sel[S.page]=d.sel;render();return}
+ if(d.t){e.stopPropagation();return toast(d.t+" (prototype: nothing changes).")}
+ if(d.a==="router"){S.router=S.router==="Built-in"?"retrieval-router (extension)":"Built-in";toast("Change… is a dialog: the built-in router or an installed router extension, for this workspace or a persona.");return}
+ if(d.a==="empty"){S.empty=!S.empty;render();return}
+ if(d.a==="prev"||d.a==="next"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(d.a==="next"?1:2))%3];try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}});
+document.addEventListener("keydown",e=>{if(e.target.closest&&e.target.closest("input,textarea,select"))return;
+ if(e.key==="ArrowLeft"||e.key==="ArrowRight"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(e.key==="ArrowRight"?1:2))%3];try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}
+ if(e.key==="Enter"&&e.target.dataset&&e.target.dataset.sel)e.target.click()});
+render();
+</script>
