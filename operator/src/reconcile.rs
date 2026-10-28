@@ -162,6 +162,9 @@ pub fn status_of_a_stopped_claim(
         Suspension::NotMade => "its runner is not made",
         Suspension::Suspending => "its runner is being suspended, a kept claim's volume kept",
         Suspension::Suspended => "its runner is suspended, a kept claim's volume kept",
+        Suspension::NotEnded => {
+            "its runner was asked to suspend, but upstream has not ended its pod yet"
+        }
     };
     let message = match pool {
         Some(pool) if !claim.spec.stopped => format!(
@@ -179,13 +182,64 @@ pub fn status_of_a_stopped_claim(
     }
 }
 
-/// How soon a stopped claim is looked at again: soon while its runner is being suspended, so
-/// its status says when it is, and now and then once it is, so a sandbox made since is
+/// A Claim's status when its pool was deleted while its runner was suspended (#2058): the
+/// runner stays suspended, since nothing is left to set the pool running again; its claim's own
+/// `stopped` still suspends it, and deleting the claim ends it.
+pub fn status_of_a_suspended_runner_of_a_deleted_pool(claim: &Claim) -> ClaimStatus {
+    ClaimStatus {
+        link_key: None,
+        conditions: vec![condition(
+            "False",
+            "PoolDeleted",
+            format!(
+                "The pool {} was deleted, and this claim's runner is suspended: it stays \
+                 suspended, a kept claim's volume kept, until the claim is deleted. No new \
+                 claim is served from the pool.",
+                claim.spec.pool
+            ),
+        )],
+    }
+}
+
+/// How many times in a row a stopped claim's runner is looked at again while upstream has not
+/// ended its pod, before its claim says so ([`Suspension::NotEnded`]).
+const SUSPEND_PATIENCE: u32 = 8;
+
+/// How soon a stopped claim whose runner is being suspended is looked at again after its
+/// `attempts`-th look in a row: three seconds, doubling each time, never longer than a minute;
+/// none once [`SUSPEND_PATIENCE`] looks have passed (about four and a half minutes), when the
+/// claim says upstream has not ended the runner's pod and is looked at only now and then.
+pub fn suspending_again(attempts: u32) -> Option<Duration> {
+    (attempts <= SUSPEND_PATIENCE).then(|| {
+        vouch::KEY_WAIT
+            .saturating_mul(2u32.saturating_pow(attempts.saturating_sub(1)))
+            .min(vouch::RECHECK)
+    })
+}
+
+/// `suspension`, as far as `claim`'s runner has got, counted against the runs of looks of
+/// `context`, and how soon the claim is looked at again: soon while its runner is being
+/// suspended ([`suspending_again`]), now and then otherwise, so a sandbox made since is
 /// suspended too.
-fn again_while_stopped(suspension: Suspension) -> Duration {
-    match suspension {
-        Suspension::Suspending => vouch::KEY_WAIT,
-        _ => vouch::RECHECK,
+fn suspension_seen(
+    context: &Context,
+    claim: &Claim,
+    suspension: Suspension,
+) -> (Suspension, Duration) {
+    let mut runs = context
+        .suspending
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let at = ObjectRef::from_obj(claim);
+    if suspension != Suspension::Suspending {
+        runs.remove(&at);
+        return (suspension, vouch::RECHECK);
+    }
+    let attempts = runs.entry(at).or_insert(0);
+    *attempts = attempts.saturating_add(1);
+    match suspending_again(*attempts) {
+        Some(again) => (Suspension::Suspending, again),
+        None => (Suspension::NotEnded, vouch::RECHECK),
     }
 }
 
@@ -218,6 +272,8 @@ struct Context {
     claims: Store<Claim>,
     /// How many times in a row each Claim met an object changed under it.
     conflicts: Mutex<HashMap<ObjectRef<Claim>, u32>>,
+    /// How many times in a row each stopped Claim's runner was found still being suspended.
+    suspending: Mutex<HashMap<ObjectRef<Claim>, u32>>,
 }
 
 /// One pass over `claim`. Whenever it ends without an error, the Claim's run of conflicts is
@@ -230,6 +286,12 @@ async fn reconcile(claim: Arc<Claim>, context: Arc<Context>) -> Result<Action, E
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     conflicts.remove(&ObjectRef::from_obj(&*claim));
     conflicts.retain(|claim, _| context.claims.get(claim).is_some());
+    drop(conflicts);
+    context
+        .suspending
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .retain(|claim, _| context.claims.get(claim).is_some());
     Ok(done)
 }
 
@@ -264,13 +326,24 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                     let sandbox = sandbox_of(client, &namespace, &held).await?;
                     set_operating_mode(client, &claim, None, &held, sandbox.as_ref()).await?;
                     if upstream::is_stopped(&claim, None) {
-                        let suspension = upstream::suspension_of(sandbox.as_ref());
+                        let (suspension, again) = suspension_seen(
+                            &context,
+                            &claim,
+                            upstream::suspension_of(sandbox.as_ref()),
+                        );
                         let status = status_of_a_stopped_claim(&claim, None, suspension);
                         write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said)
                             .await?;
-                        return Ok(Action::requeue(again_while_stopped(suspension)));
+                        return Ok(Action::requeue(again));
                     }
-                    status_of_a_deleted_pool(&claim, &held)
+                    let suspended = sandbox.as_ref().is_some_and(|sandbox| {
+                        sandbox.spec.operating_mode.as_deref() == Some(upstream::SUSPENDED)
+                    });
+                    if suspended {
+                        status_of_a_suspended_runner_of_a_deleted_pool(&claim)
+                    } else {
+                        status_of_a_deleted_pool(&claim, &held)
+                    }
                 }
                 _ => status_of_a_missing_pool(&claim),
             }
@@ -416,10 +489,11 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             let sandbox = sandbox_of(client, &namespace, &applied).await?;
             set_operating_mode(client, &claim, Some(&pool), &applied, sandbox.as_ref()).await?;
             if stopped {
-                let suspension = upstream::suspension_of(sandbox.as_ref());
+                let (suspension, again) =
+                    suspension_seen(&context, &claim, upstream::suspension_of(sandbox.as_ref()));
                 let status = status_of_a_stopped_claim(&claim, Some(&pool), suspension);
                 write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
-                return Ok(Action::requeue(again_while_stopped(suspension)));
+                return Ok(Action::requeue(again));
             }
             let (vouching, pod) = vouch_for(
                 client,
@@ -883,6 +957,7 @@ async fn run_claims(client: Client, signing: Arc<SigningKey>) {
                 signing,
                 claims: known_claims,
                 conflicts: Mutex::new(HashMap::new()),
+                suspending: Mutex::new(HashMap::new()),
             }),
         )
         .for_each(|result| async move {

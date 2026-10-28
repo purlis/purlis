@@ -278,9 +278,13 @@ spec:
   Claim's home, its work and its pairing stay. A fresh Claim's runner keeps nothing past its
   pod, as ever. The Claim's `Ready` is `False` with the reason `Stopped`, saying whether the
   Claim or its pool is stopped and whether its runner is being suspended or is suspended
-  (upstream's own `Suspended` condition), and no key is vouched for. A Claim made while stopped
-  gets no runner yet. A stopped pool keeps no runner warm. A Claim's own `stopped` stops its
-  runner even after its Pool is deleted. Set back to `false` (the default), each runner the
+  (upstream's own `Suspended` condition), and no key is vouched for. While its runner is being
+  suspended the Claim is looked at again less and less often; after about four and a half
+  minutes it says upstream has not ended the runner's pod yet. A Claim made while stopped gets
+  no runner yet. A stopped pool keeps no runner warm. A Claim's own `stopped` stops its runner
+  even after its Pool is deleted. With its Pool deleted a runner is never run again: one
+  suspended by its pool's or its own `stopped` stays suspended, a kept Claim's volume kept,
+  until the Claim is deleted, and its `Ready` says `PoolDeleted` and that it stays suspended. Set back to `false` (the default), each runner the
   operator suspended runs again: a kept Claim's pod is made again on its volume, paired as it
   was, with the same key. A runner suspended by hand before it was stopped is left suspended,
   as far as the operator can tell: it goes by who last applied the sandbox's mode, which any
@@ -449,10 +453,14 @@ operator needs only one: to suspend a stopped Claim's runner and run it again, i
 `spec.operatingMode` and nothing else, to the sandbox its Claim's upstream claim controls, with
 that sandbox's uid as a precondition. A second admission policy in `policy.yaml`,
 `purlis-operator-changes-only-a-sandboxs-mode`, makes that the cluster's rule: an update by the
-operator's service account to a Sandbox is refused unless a SandboxClaim controls it, and
+operator's service account to a Sandbox is refused unless a SandboxClaim controls it (any
+SandboxClaim's, purlis's or not), and
 unless every field of its spec but `operatingMode`, and its labels, annotations, owners and
 finalizers, are as they were. The operator holds no right on admission policies or their
-bindings but reading the binding of the policy on Claims, so it cannot lift it. It runs as a user who is not root, with a read-only root file system and every
+bindings but reading the binding of the policy on Claims, so it cannot lift it. The spec fields
+it holds as they were are the pinned upstream's (v1.0.6, and a test holds the list to the
+vendored definitions): a cluster that serves another agent-sandbox version may have fields the
+policy does not hold, one more reason to run the version `doctor` checks for. It runs as a user who is not root, with a read-only root file system and every
 capability dropped.
 
 Upstream's controller holds its own ClusterRoles, in the vendored manifest: it makes and

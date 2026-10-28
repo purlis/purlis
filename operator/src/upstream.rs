@@ -195,7 +195,8 @@ pub fn is_stopped(claim: &Claim, pool: Option<&Pool>) -> bool {
 
 /// **The mode the operator puts `claim`'s runner's `sandbox` in**, if it changes it (#2058):
 /// [`SUSPENDED`] while the claim or its pool (if it still exists) is stopped, and [`RUNNING`]
-/// again once neither is, where the operator's own apply suspended it, so a runner someone
+/// again once neither is (never while its pool is deleted), where the operator's own apply
+/// suspended it, so a runner someone
 /// suspended by hand is left suspended. That record is best effort (D-2058-2): a manager's name
 /// is the client's to give, and a runner suspended by hand after the operator suspended it
 /// changes no field's owner, so it runs again with the rest. `None` leaves the sandbox as it is.
@@ -208,6 +209,9 @@ pub fn operating_mode_for(
     if is_stopped(claim, pool) {
         return (mode != SUSPENDED).then_some(SUSPENDED);
     }
+    // With its pool deleted, a runner is only ever suspended: one its pool's stopped suspended
+    // stays so, since nothing is left to set the pool running again (#2058).
+    pool?;
     (mode == SUSPENDED && suspended_by_the_operator(&sandbox.metadata)).then_some(RUNNING)
 }
 
@@ -251,6 +255,8 @@ pub enum Suspension {
     Suspending,
     /// Upstream says its pod has ended (its `Suspended` condition is `True`).
     Suspended,
+    /// Asked to suspend a while ago, and upstream still does not say its pod has ended.
+    NotEnded,
 }
 
 /// How far the runner whose sandbox is `sandbox`, if it has one yet, is suspended.

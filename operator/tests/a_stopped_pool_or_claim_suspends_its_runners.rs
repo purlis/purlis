@@ -13,6 +13,7 @@ use kube::api::ObjectMeta;
 use purlis_cluster_operator::upstream::{self, Sandbox, SandboxSpec, SandboxStatus, Suspension};
 use purlis_cluster_operator::{
     Claim, ClaimSpec, FIELD_MANAGER, Pool, PoolSpec, status_of_a_stopped_claim,
+    status_of_a_suspended_runner_of_a_deleted_pool, suspending_again,
 };
 use serde_json::json;
 
@@ -127,13 +128,26 @@ fn a_claim_whose_pool_is_deleted_is_still_stopped_by_its_own_stopped() {
         upstream::operating_mode_for(&claim(false), None, &running),
         None
     );
+    // Never run again while its pool is deleted: a runner its pool's stopped suspended stays
+    // suspended, since nothing is left to set the pool running again.
     assert_eq!(
         upstream::operating_mode_for(
             &claim(false),
             None,
             &sandbox(Some("Suspended"), Some(FIELD_MANAGER))
         ),
-        Some("Running")
+        None
+    );
+    let status = status_of_a_suspended_runner_of_a_deleted_pool(&claim(false));
+    let ready = &status.conditions[0];
+    assert_eq!(
+        (ready.status.as_str(), ready.reason.as_str()),
+        ("False", "PoolDeleted")
+    );
+    assert!(
+        ready.message.contains("stays suspended"),
+        "{}",
+        ready.message
     );
     assert!(upstream::is_stopped(&claim(true), None));
     assert!(!upstream::is_stopped(&claim(false), None));
@@ -289,4 +303,24 @@ fn a_pool_or_claim_is_running_unless_set_stopped() {
     }))
     .expect("a claim");
     assert!(!claim.spec.stopped);
+}
+
+#[test]
+fn a_runner_being_suspended_is_looked_at_again_less_and_less_then_said_not_ended() {
+    let secs = |attempts| suspending_again(attempts).map(|again| again.as_secs());
+    assert_eq!(secs(1), Some(3));
+    assert_eq!(secs(2), Some(6));
+    assert_eq!(secs(3), Some(12));
+    assert_eq!(secs(5), Some(48));
+    assert_eq!(secs(6), Some(60));
+    assert_eq!(secs(8), Some(60));
+    assert_eq!(secs(9), None);
+    let status = status_of_a_stopped_claim(&claim(true), Some(&pool(false)), Suspension::NotEnded);
+    assert!(
+        status.conditions[0]
+            .message
+            .contains("upstream has not ended its pod"),
+        "{}",
+        status.conditions[0].message
+    );
 }

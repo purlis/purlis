@@ -1828,6 +1828,38 @@ async fn stopped_on_a_pool_or_a_claim_suspends_its_runners_and_never_destroys_th
         pods.get_opt(&later_pod).await.ok()?.is_none().then_some(())
     })
     .await;
+    // Set running again while its pool is gone, it stays suspended, and says so.
+    claims
+        .patch(
+            "ada-later",
+            &PatchParams::default(),
+            &Patch::Merge(stop(false)),
+        )
+        .await
+        .expect("the claim no longer stopped");
+    eventually(
+        "the claim says its runner stays suspended",
+        Duration::from_secs(120),
+        || async {
+            let claim = claims.get("ada-later").await.ok()?;
+            let ready = claim
+                .status?
+                .conditions
+                .into_iter()
+                .find(|c| c.type_ == "Ready")?;
+            (ready.reason == "PoolDeleted" && ready.message.contains("stays suspended"))
+                .then_some(())
+        },
+    )
+    .await;
+    tokio::time::sleep(Duration::from_secs(15)).await;
+    assert!(
+        pods.get_opt(&later_pod)
+            .await
+            .expect("its pod looked for")
+            .is_none(),
+        "a runner of a deleted pool is never run again"
+    );
 
     for name in ["ada-kept", "ada-fresh", "ada-later"] {
         let _ = claims.delete(name, &DeleteParams::foreground()).await;
@@ -1938,8 +1970,13 @@ async fn a_warm_runner_of_an_earlier_template_is_replaced_and_a_fresh_claim_take
 }
 
 /// Whether `result` is the cluster's refusal by an admission policy.
+/// Whether `result` is the refusal of the policy on the operator's sandbox changes, in its own
+/// words.
 fn refused_by_policy<T: std::fmt::Debug>(result: &Result<T, kube::Error>) -> bool {
-    matches!(result, Err(kube::Error::Api(status)) if status.code == 403 || status.code == 422)
+    matches!(result, Err(kube::Error::Api(status))
+        if status.code == 403
+            && status.message.contains("purlis-operator-changes-only-a-sandboxs-mode")
+            && status.message.contains("purlis's cluster operator changes"))
 }
 
 #[tokio::test]
@@ -1985,6 +2022,32 @@ async fn the_cluster_lets_the_operator_change_only_the_mode_of_a_claims_sandbox(
         (
             "an annotation",
             serde_json::json!({ "metadata": { "annotations": { "e2e": "x" } } }),
+        ),
+        (
+            "its pod template",
+            serde_json::json!({ "spec": { "podTemplate": { "spec": {
+                "automountServiceAccountToken": true
+            } } } }),
+        ),
+        (
+            "a finalizer",
+            serde_json::json!({ "metadata": { "finalizers": ["e2e.example/hold"] } }),
+        ),
+    ] {
+        let refused = sandboxes.patch(&pod, &dry, &Patch::Merge(body)).await;
+        assert!(refused_by_policy(&refused), "{what}: {refused:?}");
+    }
+    // A field taken away (null in a merge patch), of its spec or its owners: refused too.
+    for (what, body) in [
+        (
+            "a field of its pod template",
+            serde_json::json!({ "spec": { "podTemplate": { "spec": {
+                "enableServiceLinks": null
+            } } } }),
+        ),
+        (
+            "its owners",
+            serde_json::json!({ "metadata": { "ownerReferences": null } }),
         ),
     ] {
         let refused = sandboxes.patch(&pod, &dry, &Patch::Merge(body)).await;
