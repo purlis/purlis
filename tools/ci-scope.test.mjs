@@ -183,6 +183,25 @@ test("a file deleted from changes/, site/ or an agent's steering runs everything
   assert.deepEqual([...renamed].sort(), all);
 });
 
+// #3596: a deletion runs everything only where its edit runs the docs alone; a window or e2e
+// rename keeps its own scopes, so a refactor of `app/src/` runs no Rust.
+test("a file deleted from app/src/ or app/e2e/ keeps the scopes its edit runs", () => {
+  const window = scopesOf({
+    event: "pull_request",
+    paths: ["app/src/App.tsx", "app/src/Shell.tsx"],
+    ciToolNames: CI_TOOLS,
+    deleted: new Set(["app/src/App.tsx"]),
+  }).scopes;
+  assert.deepEqual([...window].sort(), ["app", "scenario", "stories", "tools", "web"]);
+  const e2e = scopesOf({
+    event: "pull_request",
+    paths: ["app/e2e/specs/tabs.e2e.ts"],
+    ciToolNames: CI_TOOLS,
+    deleted: new Set(["app/e2e/specs/tabs.e2e.ts"]),
+  }).scopes;
+  assert.deepEqual([...e2e].sort(), ["scenario", "tools", "web"]);
+});
+
 test("an unknown path runs everything", () => {
   assert.deepEqual(of(["something-new/file.txt"]), all);
   assert.deepEqual(of(["LICENSE"]), all);
@@ -314,7 +333,9 @@ test("in this repository, the tools CI runs are found, and a hand-run tool is no
 // `join("..", "docs", "x.md")`, or a root Markdown file the same ways. A climb into a folder of
 // the docs, with or without its trailing slash (`"../../docs"`, `"../../docs/adr/"`,
 // `join("..", "docs")`), is a folder the code may list and read every file of (#3520). A
-// comment's link to a doc reads nothing, so comment lines are left out.
+// comment's link to a doc reads nothing, so comment lines are left out. Not found: a climb in a
+// backtick template (`${root}/../../docs`) and a chained `.join("..").join("docs")`; neither is
+// in the tree today.
 const DOCS_READ_SEARCH = String.raw`(\.\./)+(docs[/"']|[A-Z_]+\.md)|"\.\.", *"docs"`;
 function docsReadIn(lines) {
   const read = new Set();
