@@ -215,6 +215,15 @@ describe("You › This machine › Pools", () => {
         },
       ]),
     );
+    const signIn = await screen.findByRole("dialog", {
+      name: "Sign your profiles in on pool nightly",
+    });
+    await userEvent.click(within(signIn).getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Sign your profiles in on pool nightly" }),
+      ).toBeNull(),
+    );
   });
 
   it("says on each row how long its runner is left without a link before it suspends", async () => {

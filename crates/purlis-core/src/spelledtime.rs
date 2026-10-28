@@ -62,7 +62,7 @@ pub fn spelled(duration: Duration, units: &[Unit]) -> Option<String> {
     units
         .iter()
         .copied()
-        .filter(|unit| secs % unit.seconds() == 0)
+        .filter(|unit| secs.is_multiple_of(unit.seconds()))
         .max_by_key(|unit| unit.seconds())
         .map(|unit| format!("{}{}", secs / unit.seconds(), unit.suffix()))
 }
