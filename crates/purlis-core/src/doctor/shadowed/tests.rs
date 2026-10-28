@@ -14,7 +14,7 @@ fn the_shipped_skills_are_the_plugin_s_own() {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     on_disk.sort();
-    assert_eq!(on_disk, SHIPPED_SKILLS);
+    assert_eq!(on_disk, crate::skills::SHIPPED);
 }
 
 #[test]
