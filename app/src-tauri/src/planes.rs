@@ -305,6 +305,8 @@ pub struct Held {
     proposals: crate::proposals::Proposals,
     /// The writes to the project its runner chats asked for, held for the person (#2046).
     runner_writes: crate::runnerwrites::RunnerWrites,
+    /// The chats moving between this machine and a pool's runner (#2048).
+    moves: Arc<crate::chatmoves::Moves>,
     /// The persona MCP servers each chat could not start, until the person answers (qw381).
     mcp_failures: Arc<crate::mcpfailed::Failures>,
     /// The chats whose program ended with their session host, until the person answers
@@ -1334,6 +1336,16 @@ impl Held {
         self.in_its_place(session, started);
     }
 
+    /// [`Self::in_its_place`], for a chat that moved (#2048): its run where it was ends.
+    pub(crate) fn in_its_place_after_a_move(&self, session: u32, started: u32) {
+        self.in_its_place(session, started);
+    }
+
+    /// The chats moving between this machine and a pool's runner (#2048).
+    pub(crate) fn moves(&self) -> &Arc<crate::chatmoves::Moves> {
+        &self.moves
+    }
+
     /// `started` takes chat `session`'s place: the old one ends, and the new one is in front
     /// where the old one was.
     fn in_its_place(&self, session: u32, started: u32) {
@@ -2073,6 +2085,8 @@ pub struct Planes {
     /// Told each chat whose project's Claude Code settings no longer pass (ADR 0067 as amended
     /// 2026-10-16).
     project_settings: crate::projectsettings::Teller,
+    /// The window, for each chat move's stage (#2048).
+    moves_told: Arc<dyn Fn(PlaneId, crate::chatmoves::ChatMove) + Send + Sync>,
     /// Told each vault a chat was refused for its persona (#1430).
     vault_refused: crate::vaultroute::Teller,
     /// Told each Ask about a chat's browser that ended with the browser (#2015).
@@ -2353,6 +2367,7 @@ impl Planes {
             arranged: ArrangedBehind::new(|(config, windows)| write_arrangement(&config, windows)),
             refused_more: Arc::new(|_| {}),
             project_settings: Arc::new(|_| {}),
+            moves_told: Arc::new(|_, _| {}),
             vault_refused: Arc::new(|_| {}),
             browser_asks_ended: Arc::new(|_| {}),
             mcp_failed: Arc::new(|_| {}),
@@ -2592,6 +2607,15 @@ impl Planes {
     /// window's thread and outlives the registry's borrow (#1949).
     pub(crate) fn block_teller(&self) -> hooks::BlockTeller {
         Arc::clone(&self.blocks)
+    }
+
+    /// Who is told each chat move's stage (#2048).
+    pub(crate) fn telling_moves(
+        mut self,
+        told: Arc<dyn Fn(PlaneId, crate::chatmoves::ChatMove) + Send + Sync>,
+    ) -> Self {
+        self.moves_told = told;
+        self
     }
 
     /// Tells `told` each chat, in a plane this registry holds, whose project's Claude Code
@@ -4274,6 +4298,11 @@ impl Planes {
             let plane = id.clone();
             Arc::new(move |chat| moved(plane.clone(), chat))
         };
+        let moves = Arc::new(crate::chatmoves::Moves::default());
+        moves.telling({
+            let (plane, told) = (id.clone(), Arc::clone(&self.moves_told));
+            Arc::new(move |one| told(plane.clone(), one))
+        });
         Held {
             id,
             root,
@@ -4309,6 +4338,7 @@ impl Planes {
             browser_timeline,
             proposals: crate::proposals::Proposals::default(),
             runner_writes: crate::runnerwrites::RunnerWrites::default(),
+            moves,
             mcp_failures,
             lost_with_the_host,
             dispatch_grants: crate::dispatchgrants::Store::default(),

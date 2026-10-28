@@ -162,3 +162,8 @@
 {"call":{"id":157,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":4,"ends_with_its_window":true}}
 {"call":{"id":158,"command":"keep_profile","name":"work","harness":"claude","sandbox_only":true,"pinned":"2.1.300"}}
 {"reply":{"re":158,"ok":{"profile_kept":{"standing":"signed_in"}}}}
+{"call":{"id":159,"command":"take_code","project":"01J9PRJCT00000000000000000","repo":"workspaces/app/web","transfer":11,"refs":[{"name":"refs/heads/fix-login","oid":"4e90af629364f93a93f7ad38f3c4d02189bc5dcc"},{"name":"refs/purlis/snapshots/fix-login","oid":"d2e4009514e3c458b6b8b961a3b2a784fd86ba19"}],"checkout":"refs/heads/fix-login","moving":true}}
+{"call":{"id":160,"command":"give_code","project":"01J9PRJCT00000000000000000","repo":"workspaces/app/web","transfer":12,"with_work":true}}
+{"call":{"id":161,"command":"take_conversation","project":"01J9PRJCT00000000000000000","transfer":13,"workspace":"app","profile":"claude","conversation":"0d6f3c1e-8a4b-4c7d-9e21-5b3f2a1c0e99","file":"{config}/projects/{cwd_key}/0d6f3c1e-8a4b-4c7d-9e21-5b3f2a1c0e99.jsonl"}}
+{"call":{"id":162,"command":"give_conversation","project":"01J9PRJCT00000000000000000","transfer":14,"workspace":"app","profile":"claude","conversation":"0d6f3c1e-8a4b-4c7d-9e21-5b3f2a1c0e99"}}
+{"reply":{"re":162,"ok":{"conversation":{"file":"{config}/projects/{cwd_key}/0d6f3c1e-8a4b-4c7d-9e21-5b3f2a1c0e99.jsonl"}}}}

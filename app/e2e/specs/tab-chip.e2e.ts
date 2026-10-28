@@ -228,6 +228,12 @@ async function measured(name: string) {
 /** The window global the fence keeps its listener and what it stopped on. */
 const FENCE = "__purlisTabChipFence";
 
+/** The window global the parked case keeps what the counts heard on, and how to stop hearing. */
+const HEARD = "__purlisTabChipHeard";
+
+/** How many events the fence and the parked case's counts keep: the last ones, for a failure. */
+const KEPT = 20;
+
 /** The pointer events the engine sends of the runner's own cursor, which the fence stops. */
 const REAL_POINTER = [
   "pointerover",
@@ -240,12 +246,13 @@ const REAL_POINTER = [
 
 /**
  * **The runner's own cursor is fenced off the window** (`on`), or let in again: every pointer
- * event the engine sends itself (`isTrusted`) is stopped before the app hears it, and the first
- * few are kept, each with its point and what it was on. A dispatched event is never stopped.
+ * event the engine sends itself (`isTrusted`) is stopped before the app hears it, and the last
+ * {@link KEPT} are kept, each with its point and what it was on. A dispatched event is never
+ * stopped. Putting it up again starts what it keeps afresh (#3610), so a case reads its own.
  */
 async function fenceRealPointer(on: boolean): Promise<void> {
   await browser.execute(
-    (key: string, types: string[], up: boolean) => {
+    (key: string, types: string[], up: boolean, kept: number) => {
       const held = window as unknown as Record<string, unknown>;
       const was = held[key] as { stop: (event: Event) => void } | undefined;
       if (was) for (const type of types) window.removeEventListener(type, was.stop, true);
@@ -257,8 +264,8 @@ async function fenceRealPointer(on: boolean): Promise<void> {
         event.stopImmediatePropagation();
         const at = event as PointerEvent;
         const what = at.target instanceof Element ? at.target.className : String(at.target);
-        if (stopped.length < 20)
-          stopped.push(`${at.type} at ${at.clientX},${at.clientY} on ${what}`);
+        stopped.push(`${at.type} at ${at.clientX},${at.clientY} on ${what}`);
+        if (stopped.length > kept) stopped.shift();
       };
       for (const type of types) window.addEventListener(type, stop, true);
       held[key] = { stop, stopped };
@@ -266,7 +273,17 @@ async function fenceRealPointer(on: boolean): Promise<void> {
     FENCE,
     REAL_POINTER,
     on,
+    KEPT,
   );
+}
+
+/** The parked case's counts stop hearing, and what they heard goes (#3610). */
+async function unhear(): Promise<void> {
+  await browser.execute((key: string) => {
+    const held = window as unknown as Record<string, { off?: () => void } | undefined>;
+    held[key]?.off?.();
+    held[key] = undefined;
+  }, HEARD);
 }
 
 /** What the fence has stopped since it went up: the runner's cursor's events, in order. */
@@ -532,6 +549,7 @@ describe("the chip a session's tab wears for its tasks", () => {
     };
     await tried(() => pretend(asker, []));
     await tried(() => fenceRealPointer(false));
+    await tried(() => unhear());
     await tried(() => browser.keys("Escape"));
     await tried(() => browser.setWindowSize(was.width, was.height));
     await tried(() => endChatsStartedHere(started));
@@ -603,48 +621,67 @@ describe("the chip a session's tab wears for its tasks", () => {
     // the engine finds the pointer on the new chip, and nobody's hand moved.
     await pretend(asker, ["working"]);
     await untilChip(mine[0], true);
-    const parked = await browser.execute((strip: string) => {
-      const counts = document.querySelector<HTMLElement>(`${strip} .tab-tasks-counts`);
-      if (!counts) return false;
-      const at = counts.getBoundingClientRect();
-      const here = {
-        bubbles: true,
-        cancelable: true,
-        pointerId: 1,
-        pointerType: "mouse",
-        isPrimary: true,
-        clientX: at.left + at.width / 2,
-        clientY: at.top + at.height / 2,
-      };
-      // Every pointer event the counts hear from here, for a failure to say which moved them.
-      const heard: string[] = [];
-      (window as unknown as Record<string, unknown>).__purlisTabChipHeard = heard;
-      for (const type of ["pointerover", "pointermove", "pointerout"])
-        counts.addEventListener(type, (event) => {
+    // What the fence stopped before this case is the cases' before it.
+    await fenceRealPointer(true);
+    const parked = await browser.execute(
+      (strip: string, key: string, kept: number) => {
+        const counts = document.querySelector<HTMLElement>(`${strip} .tab-tasks-counts`);
+        if (!counts) return false;
+        const at = counts.getBoundingClientRect();
+        const here = {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: "mouse",
+          isPrimary: true,
+          clientX: at.left + at.width / 2,
+          clientY: at.top + at.height / 2,
+        };
+        // The last pointer events the counts hear from here, for a failure to say which moved
+        // them; `off` stops hearing them, as the case ends.
+        const heard: string[] = [];
+        const hear = (event: Event) => {
           const one = event as PointerEvent;
           heard.push(
             `${one.isTrusted ? "the engine's" : "dispatched"} ${one.type} at ${one.clientX},${one.clientY}`,
           );
-        });
-      counts.dispatchEvent(new PointerEvent("pointerover", { ...here, relatedTarget: null }));
-      // The same point again, as an engine says "still here" after a layout.
-      counts.dispatchEvent(new PointerEvent("pointermove", here));
-      counts.dispatchEvent(new PointerEvent("pointermove", here));
-      return true;
-    }, STRIP);
-    expect(parked).toBe(true);
+          if (heard.length > kept) heard.shift();
+        };
+        const types = ["pointerover", "pointermove", "pointerout"];
+        for (const type of types) counts.addEventListener(type, hear);
+        const off = () => {
+          for (const type of types) counts.removeEventListener(type, hear);
+        };
+        (window as unknown as Record<string, unknown>)[key] = { heard, off };
+        counts.dispatchEvent(new PointerEvent("pointerover", { ...here, relatedTarget: null }));
+        // The same point again, as an engine says "still here" after a layout.
+        counts.dispatchEvent(new PointerEvent("pointermove", here));
+        counts.dispatchEvent(new PointerEvent("pointermove", here));
+        return true;
+      },
+      STRIP,
+      HEARD,
+      KEPT,
+    );
+    try {
+      expect(parked).toBe(true);
 
-    await browser.pause(1_200);
-    if ((await menus()) !== 0) {
-      // Which pointer moved it (#3521): what the counts heard, and what the fence stopped.
-      const heard = await browser.execute(
-        () =>
-          (window as unknown as Record<string, string[] | undefined>).__purlisTabChipHeard ?? [],
-      );
-      throw new Error(
-        `a menu opened under a pointer parked 1.2 s; the counts heard ${JSON.stringify(heard)}; ` +
-          `the fence stopped ${JSON.stringify(await stoppedByFence())}`,
-      );
+      await browser.pause(1_200);
+      if ((await menus()) !== 0) {
+        // Which pointer moved it (#3521): what the counts heard, and what the fence stopped.
+        const heard = await browser.execute(
+          (key: string) =>
+            (window as unknown as Record<string, { heard?: string[] } | undefined>)[key]?.heard ??
+            [],
+          HEARD,
+        );
+        throw new Error(
+          `a menu opened under a pointer parked 1.2 s; the counts heard ${JSON.stringify(heard)}; ` +
+            `the fence stopped ${JSON.stringify(await stoppedByFence())}`,
+        );
+      }
+    } finally {
+      await unhear();
     }
   });
 

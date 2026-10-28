@@ -17,7 +17,8 @@
  * - **Placed under its trigger, aligned to its start or its end**, never nearer the window's
  *   edge than 8 px (`EDGE`); a submenu opens beside its row.
  * - **Closed by a click outside, by Escape and by choosing a row**, and the keyboard goes back
- *   to its trigger (React Aria's `FocusScope`), or where `onClosed` puts it.
+ *   to its trigger the moment the menu goes (the popover family's `HandsBack`, #3603), or where
+ *   `onClosed` puts it.
  * - **A row says its shortcut** where the act has one (the menus' rule 6): `keys`, or the key
  *   the window's key registry holds for `shortcut` (`MenuShortcuts`, #2921), in the row's
  *   `shortcut` part.
