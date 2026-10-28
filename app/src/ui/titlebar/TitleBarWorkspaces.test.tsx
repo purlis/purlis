@@ -64,8 +64,8 @@ describe("a chip's notice dot (#3648)", () => {
     expect(dot).toHaveAttribute("data-scope", "titlebar");
     expect(dot).toHaveAttribute("data-part", "dot");
     expect(dot).toHaveAttribute("data-kind", "info");
-    // A shape, not a colour alone (WCAG 1.4.1): ● for news.
-    expect(dot).toHaveTextContent("●");
+    // A shape, not a colour alone (WCAG 1.4.1): a disc for news, the icon family's.
+    expect(dot.querySelector("svg.lucide-circle")).not.toBeNull();
     // A stop the strip's arrows walk, never a Tab stop of its own (charter-app#189).
     expect(dot).toHaveAttribute("tabindex", "-1");
     await userEvent.click(dot);

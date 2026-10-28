@@ -186,8 +186,9 @@
 [data-part="dot"][data-scope="titlebar"] {
   position: absolute;
   z-index: 1;
-  inset-block-start: -5px;
-  inset-inline-start: -5px;
+  /* In the strip's 6px above the chip, inside its clip. */
+  inset-block-start: calc(var(--space-3) * -1);
+  inset-inline-start: calc(var(--space-3) * -1);
   display: grid;
   place-items: center;
   box-sizing: border-box;
@@ -198,16 +199,19 @@
   border-radius: var(--radius-full);
   color: var(--surface-base);
   background-color: var(--accent-base);
-  font: inherit;
-  font-size: 7px;
-  line-height: 1;
   cursor: default;
   appearance: none;
 }
 
+/* Its shape, filled: a disc 6px across for news, in the middle of the dot. */
+[data-part="dot"][data-scope="titlebar"] svg {
+  inline-size: 6px;
+  block-size: 6px;
+}
+
 [data-part="dot"][data-scope="titlebar"][data-focus-visible] {
   outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 1px;
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* ---------------------------------------------------------------------------------------------

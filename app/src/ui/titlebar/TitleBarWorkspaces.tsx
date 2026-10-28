@@ -32,15 +32,16 @@ import type {
   Ref,
 } from "react";
 import { mergeProps, useFocusRing, useHover, useId } from "react-aria";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Circle, type LucideIcon } from "lucide-react";
 import { Tooltip, type Tip } from "../tooltip/Tooltip";
 
 /** **What a notice is**, which its dot's shape says (spec #3647): `info`, ●. The warning and
  *  needs-you kinds come with the notices that are them (#3649, #3652). */
 export type NoticeKind = "info";
 
-/** Each kind's shape on a dot: a shape, never a colour alone (WCAG 1.4.1). */
-const GLYPH: Record<NoticeKind, string> = { info: "●" };
+/** Each kind's shape on a dot, a Lucide icon filled: a shape, never a colour alone (WCAG
+ *  1.4.1). News is a disc. */
+const SHAPE: Record<NoticeKind, LucideIcon> = { info: Circle };
 
 /** How many notices a chip's dot shows, as its description says it. */
 const noticesSaid = (count: number) => (count === 1 ? "1 notice" : `${count} notices`);
@@ -190,6 +191,7 @@ export function NoticeDot({
   onPress: () => void;
 }) {
   const marked = useMarked({ onClick: onPress }, false);
+  const Shape = SHAPE[kind];
   return (
     <button
       type="button"
@@ -204,7 +206,7 @@ export function NoticeDot({
       data-part="dot"
       data-kind={kind}
     >
-      <span aria-hidden="true">{GLYPH[kind]}</span>
+      <Shape aria-hidden="true" fill="currentColor" strokeWidth={0} />
     </button>
   );
 }

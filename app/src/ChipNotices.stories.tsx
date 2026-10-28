@@ -151,7 +151,7 @@ export const HangsFromItsChip: Story = {
     );
     // The dot it leaves, beside the amber count, brings it back.
     const dot = canvas.getByRole("button", { name: "Show the notice on 3rd-try" });
-    await expect(dot).toHaveTextContent("●");
+    await expect(dot.querySelector("svg")).not.toBeNull();
     await userEvent.click(dot);
     const again = await waitFor(() => cardOf() as HTMLElement);
     // The keyboard reaches it by a press: its ways, then Esc dismisses it.

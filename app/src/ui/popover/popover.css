@@ -254,11 +254,12 @@
   rotate: 45deg;
 }
 
-/* Its centre on the card's edge: the half that points at what it hangs from is shown. */
+/* Its centre on the card's edge: the half that points at what it hangs from is shown. Moved,
+   not laid out: the box it is in stays where React Aria put it. */
 [data-scope="popover"][data-of="notice"][data-placement="bottom"] > [data-part="arrow"] {
-  margin-block-start: 3.5px;
+  translate: 0 3.5px;
 }
 
 [data-scope="popover"][data-of="notice"][data-placement="top"] > [data-part="arrow"] {
-  margin-block-start: -5.5px;
+  translate: 0 -5.5px;
 }
