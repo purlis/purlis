@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793223385248,
+  "lastUpdate": 1793231285093,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28938,6 +28938,48 @@ window.BENCHMARK_DATA = {
             "value": 102.320141,
             "unit": "ms",
             "extra": "median of 5 runs: 100.226, 102.103, 102.320, 102.495, 103.901 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cdfdf27496503b4363bb1277db52c91b49ba6bf5",
+          "message": "Runners: every first step replaces what an earlier start left (#2057) (#3753)\n\nThe removal of a link key an earlier start of the pod handed over, and\nnobody paired with, moves into the step that makes the key, so a first\nstep started without a home on the pod's volume gets it too. A paired\nhome still publishes the key it keeps and hands nothing over.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T23:22:33Z",
+          "tree_id": "ba2132918bace37cf99b37a22cf02feb387c9105",
+          "url": "https://github.com/purlis/purlis/commit/cdfdf27496503b4363bb1277db52c91b49ba6bf5"
+        },
+        "date": 1793231280065,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6495869999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.632, 0.648, 0.650, 0.680, 0.685 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.560151,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.409, 16.498, 16.560, 16.593, 16.673 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2528785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.043, 102.050, 102.253, 102.460, 104.339 ms"
           }
         ]
       }
