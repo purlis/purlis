@@ -248,6 +248,49 @@ fn chats_on(root: &std::path::Path, profile: Option<String>, model: Option<Strin
     }
 }
 
+/// **What pressing Grade on `planned`, its chats `on`, consents to**: what it grades, and the
+/// profile, model, token cap and dollar limit the plan shows (`grades::consent_on`). `None`
+/// where there is nothing to grade.
+fn consent_shown(planned: &Planned, on: &On) -> Option<String> {
+    planned
+        .consent
+        .as_deref()
+        .map(|consent| grades::consent_on(consent, &terms_of(planned, on)))
+}
+
+/// **The terms a grade of `planned` would start on, on `on`**: the profile, the model its chats
+/// run on (their line's, the price's, where it names one, so a change of the profile's own model
+/// is a change too; else the one picked), the cap and the dollar limit at that model's price.
+fn terms_of<'a>(planned: &Planned, on: &'a On) -> grades::Terms<'a> {
+    grades::Terms {
+        profile: on.profile.as_deref(),
+        model: on.priced.model.as_deref().or(on.model.as_deref()),
+        token_cap: planned.cap.tokens,
+        limit_usd: planned.cap.cost_usd(&on.priced),
+    }
+}
+
+/// **Whether a press with `consent` was made on the plan a grade of `planned`, on `on`, would
+/// start on now**, or the sentence that refuses it: what it grades, the profile, the model, the
+/// cap or the limit changed since the plan was shown, and the window shows the new one. `so`
+/// says what did not happen: a grade's start, and once #3238 lands, turning grading after each
+/// edit on.
+fn plan_holds(
+    planned: &Planned,
+    on: &On,
+    consent: &str,
+    skill: &str,
+    so: &str,
+) -> Result<(), String> {
+    if consent_shown(planned, on).as_deref() == Some(consent) {
+        return Ok(());
+    }
+    Err(format!(
+        "The plan of {skill} changed since it was shown (what it grades, the profile or model \
+         its chats run on, or its limits), so {so}: read the new plan and press again."
+    ))
+}
+
 impl SkillGradePlan {
     fn of(planned: &Planned, running: Option<String>, on: On) -> Self {
         let tests = planned
@@ -266,6 +309,7 @@ impl SkillGradePlan {
                     .collect()
             })
             .unwrap_or_default();
+        let consent = consent_shown(planned, &on);
         let On {
             profile,
             checked: sandbox,
@@ -326,7 +370,7 @@ impl SkillGradePlan {
             model,
             refused: sandbox.as_ref().err().cloned(),
             sandbox: sandbox.ok(),
-            consent: planned.consent.clone(),
+            consent,
             previous: planned.previous.as_ref().map(|previous| GradePrevious {
                 commit: purlis_core::skills::history::short(&previous.commit).to_owned(),
                 subject: previous.subject.clone(),
@@ -503,16 +547,13 @@ pub(crate) async fn skill_grade_start(
     crate::off_the_window("starting a grade", move || {
         flag_on()?;
         let level: Level = (&level).into();
+        let on = chats_on(held.root(), profile.clone(), model.clone());
         // The estimate is the plan's to show: a start needs none of it.
         let planned = grades::planned(held.root(), &level, &skill, None)?;
         // What runs is what the plan showed (the review of #3229): the tests, the skill's files
-        // and what its folder holds, read once here and laid out from this one copy.
-        if planned.consent.as_deref() != Some(consent.as_str()) {
-            return Err(format!(
-                "{skill} or its trigger tests changed since the plan was shown, so nothing was \
-                 started: read the plan again."
-            ));
-        }
+        // and what its folder holds, read once here and laid out from this one copy, on the
+        // profile, model and limits it showed.
+        plan_holds(&planned, &on, &consent, &skill, "nothing was started")?;
         begin(
             app,
             held,

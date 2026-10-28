@@ -136,12 +136,16 @@ fn accepted_of(
     consent: &str,
     skill: &str,
 ) -> Result<after_edit::Accepted, String> {
-    if planned.consent.as_deref() != Some(consent) {
-        return Err(format!(
-            "{skill} or its trigger tests changed since the plan was shown, so grading after each \
-             edit was not turned on: read the plan again."
-        ));
-    }
+    // The plan the person read, whole: what it grades and the profile, model and limits it
+    // shows (#3622).
+    super::plan_holds(
+        planned,
+        &on,
+        consent,
+        skill,
+        "grading after each edit was not turned on",
+    )?;
+    let runs_on = super::terms_of(planned, &on).model.map(str::to_owned);
     let Some(plan) = planned.plan else {
         return Err(format!(
             "{skill} has no trigger tests to grade, so grading after each edit was not turned on."
@@ -164,6 +168,7 @@ fn accepted_of(
         limit_usd: planned.cap.cost_usd(&on.priced),
         tests: after_edit::tests_of(request),
         previous: planned.previous.as_ref().map(|one| one.commit.clone()),
+        runs_on,
         at: purlis_core::dispatch::stamp(chrono::Utc::now()),
         graded: None,
         paused: None,
@@ -438,7 +443,7 @@ fn grade_after(
             accepted.profile
         ));
     }
-    let Some(now) = after_edit::Now::of(&planned, planned.cap.cost_usd(&on.priced)) else {
+    let Some(now) = after_edit::Now::of(&planned, &super::terms_of(&planned, &on)) else {
         return not_graded(format!("{skill} has no trigger tests to grade."));
     };
     match after_edit::next(&accepted, &now) {

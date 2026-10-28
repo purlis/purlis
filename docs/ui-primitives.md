@@ -2596,6 +2596,18 @@ wait in the nearest wider scope and widens in one press, and a notification abou
 scope leaves out widens it to the project's before it lands. Notices and updates are the
 project's and are listed whatever the scope.
 
+**The Browsers grid** (#2027, `BrowsersGridTab.tsx`, `browsersGrid.ts`) is a view tab, one per
+project, opened by *Open browsers* in the palette and on the Chats view's heading while the
+project has a browser. It wears the Inbox's switch over the same three scopes, kept as
+`projects[path].browsers.scope`; This workspace is the strip the tab is on, and All projects is
+every project this window holds. Its tiles are one `ListBox` with `layout="grid"`: one Tab stop,
+the arrows walk the grid, and a press or Enter opens the browser's view in its own project,
+which comes to the front. A tile is the browser's thumbnail view (about a frame a second, drawn
+only while the tab can be seen) over its name and, in the quiet tier, where it is: its project
+among every project's, its workspace, its page and device as the chip says them, and who drives
+it. An empty scope is the empty state family, saying how many run in the nearest wider scope and
+widening in one press.
+
 **An Inbox row reads in three ranks** (`InboxRow.tsx`), from the existing tokens only:
 
 | Rank      | Says                                 | Class             | Size               | Weight | Colour             |

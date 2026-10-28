@@ -156,6 +156,33 @@ describe("Grade, cost first", () => {
     );
   });
 
+  it("says a plan changed since it was shown, and shows the new one to press", async () => {
+    let plans = 0;
+    mockIPC(
+      (cmd) => {
+        if (cmd === "skill_grade_plan") {
+          plans += 1;
+          return plans === 1 ? plan() : plan({ consent: "f00d", cost_cap_usd: 30 });
+        }
+        if (cmd === "start_options") return { profiles: [] };
+        if (cmd === "skill_grade_start")
+          throw "The plan of deploy changed since it was shown (what it grades, the profile or model its chats run on, or its limits), so nothing was started: read the new plan and press again.";
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<SkillGrade plane="p" name="deploy" level={LEVEL} onGraded={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Grade…" }));
+    await screen.findByTestId("skill-grade-cost");
+    const before = plans;
+    fireEvent.click(screen.getByRole("button", { name: "Grade" }));
+    await screen.findByText(/changed since it was shown/);
+    await waitFor(() => expect(plans).toBeGreaterThan(before));
+    await waitFor(() =>
+      expect(screen.getByTestId("skill-grade-cost").textContent).toContain("cost $30.00"),
+    );
+  });
+
   it("offers the models the profile's program can run, and grades on the one picked (SK-60)", async () => {
     const asked: Array<{ cmd: string; args: Record<string, unknown> }> = [];
     mockIPC(

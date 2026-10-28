@@ -54,9 +54,10 @@ export function browsersLetGo(
   );
 }
 
-/** What the tab of chat `chat`'s browser `name` (`b1`, as the chat knows it) is called. */
+/** What the tab of chat `chat`'s browser `name` (`b1`, as the chat knows it) is called: by its
+ *  name alone where no name of its chat was kept, as a pinned one's may not be (#2022). */
 export function chatBrowserTitle(chat: string, name: string): string {
-  return `Browser ${name} of ${chat}`;
+  return chat === "" ? `Browser ${name}` : `Browser ${name} of ${chat}`;
 }
 
 /**

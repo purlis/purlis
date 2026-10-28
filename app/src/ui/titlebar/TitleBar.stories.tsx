@@ -193,7 +193,8 @@ function apart(one: number[], other: number[]): number {
 
 const chipsOf = (bar: HTMLElement) =>
   [...bar.querySelectorAll<HTMLElement>('[data-part="workspace"]')].filter(
-    (one) => one.dataset.scope === "titlebar",
+    // The plane root's house is not a workspace's chip (#3654).
+    (one) => one.dataset.scope === "titlebar" && one.dataset.variant !== "root",
   );
 
 /**
@@ -312,6 +313,53 @@ export const Unpinned: Story = {
     const last = chips[chips.length - 1];
     await expect(last).toHaveAttribute("data-variant", "unpinned");
     await expect(last).toHaveTextContent("docs+");
+  },
+};
+
+/**
+ * **The plane root's chip** (#3654, spec #3647, the prototype's Root A): a house right after the
+ * project's name and its slash, outside the strip, 28px like a chip. A press brings the plane
+ * root in front: it takes the accent's wash and no workspace's chip is current; a pin's press
+ * takes it back. It is a Tab stop of its own, and its picture is the root in front.
+ */
+export const Root: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const bar = canvas.getByTestId("title-bar");
+    const root = canvas.getByRole("button", { name: "Plane root" });
+    const strip = canvas.getByRole("toolbar", { name: "Pinned workspaces" });
+    await expect(strip.contains(root)).toBe(false);
+    const slash = bar.querySelector('[data-part="slash"]');
+    if (slash === null) throw new Error("no slash");
+    // After the slash, before the strip, in the bar's row.
+    await expect(root.getBoundingClientRect().left).toBeGreaterThan(
+      slash.getBoundingClientRect().right,
+    );
+    await expect(strip.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+      root.getBoundingClientRect().right,
+    );
+    await expect(Math.round(root.getBoundingClientRect().height)).toBe(28);
+    const rest = getComputedStyle(root).backgroundColor;
+    await userEvent.click(root);
+    await waitFor(() => expect(root).toHaveAttribute("aria-current", "true"));
+    await expect(canvas.getByRole("status")).toHaveTextContent(`Went to ${OUTSIDE}`);
+    await expect(chipsOf(bar).some((one) => one.hasAttribute("aria-current"))).toBe(false);
+    await userEvent.hover(canvas.getByText(`Went to ${OUTSIDE}`));
+    await waitFor(() => expect(root).not.toHaveAttribute("data-hovered"));
+    await expect(getComputedStyle(root).backgroundColor).not.toBe(rest);
+    // The keyboard reaches it on its own stop, the one before the strip's.
+    chipsOf(bar)[0].focus();
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    await expect(root).toHaveFocus();
+    await waitFor(() => expect(root).toHaveAttribute("data-focus-visible"));
+    expectFocusInSight();
+    // A pin's press takes the chosen look back.
+    await userEvent.click(chipsOf(bar)[1]);
+    await waitFor(() => expect(root).not.toHaveAttribute("aria-current"));
+    // The picture: the plane root in front.
+    await userEvent.click(root);
+    await waitFor(() => expect(root).toHaveAttribute("aria-current", "true"));
+    root.blur();
+    await userEvent.hover(canvas.getByText(`Went to ${OUTSIDE}`));
   },
 };
 
