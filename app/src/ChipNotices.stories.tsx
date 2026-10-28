@@ -133,7 +133,7 @@ const surfaceOf = (card: HTMLElement) =>
 /**
  * **The ready notice, hung from its chip**: centred under it with its point in the middle, over
  * the window, taking no keyboard. A press elsewhere hides it and moves nothing; the dot it
- * leaves brings it back; × dismisses it, and Esc while the keyboard is in it.
+ * leaves brings it back; the keyboard reaches it, and Details opens in place.
  */
 export const HangsFromItsChip: Story = {
   play: async ({ canvas, userEvent }) => {
@@ -163,12 +163,24 @@ export const HangsFromItsChip: Story = {
     await expect(dot.querySelector("svg")).not.toBeNull();
     await userEvent.click(dot);
     const again = await waitFor(() => cardOf() as HTMLElement);
-    // The keyboard reaches it by a press: its ways, then Esc dismisses it.
-    await userEvent.click(again);
+    // The keyboard reaches it as F6 lands it there, on the card: Tab walks its ways.
+    again.focus();
     await userEvent.tab();
     await expect(again.contains(document.activeElement)).toBe(true);
+    await expect(document.activeElement).not.toBe(again);
+    // Details opens in place. The picture is the card, its Details open.
     await userEvent.click(within(again).getByRole("button", { name: "Details" }));
     await expect(again).toHaveTextContent("ready (LOCAL)");
+  },
+};
+
+/** **Esc dismisses it** while the keyboard is in it, and no dot is left. */
+export const DismissedByEsc: Story = {
+  play: async ({ canvas, userEvent }) => {
+    const card = await waitFor(() => cardOf() as HTMLElement);
+    card.focus();
+    await userEvent.tab();
+    await expect(card.contains(document.activeElement)).toBe(true);
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(cardOf()).toBeNull());
     await expect(canvas.queryByRole("button", { name: /^Show the notice/ })).toBeNull();
