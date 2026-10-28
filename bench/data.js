@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793168788612,
+  "lastUpdate": 1793170917815,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -27804,6 +27804,48 @@ window.BENCHMARK_DATA = {
             "value": 102.45863399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.148, 102.438, 102.459, 102.572, 102.660 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4d73161fba7d6e18ba78b813aeb5f1afc52716e2",
+          "message": "Skills kind in plane changes, skills not supported on a harness, the old plugin keys' ask comes back after a stale Remove (#2876, #2985, #3569) (#3579)\n\n* Old harness plugin keys: a stale Remove change brings the ask back (#3569)\n\nRemove no longer answers the ask. While purlis's own change to one of\nthe files waits, the ask stays out of the Inbox; Apply, or Dismiss of a\nchange that still applies, answers it once. A change dismissed stale, or\nthat can no longer be made, brings the ask back with Remove while its\nfile still holds the keys.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A planechange kind for skills, and saves that name the skills they changed (#2876)\n\nA path in any level's skills is planechange::Kind::Skills, with its\nworkspace or persona. Each concerns what its level's other files did,\nthe instructions with them. A save's message counts skill files by the\nskill (skill deploy 2, ops skill review 1). The window's Skills view and\na persona's page read again for a skill change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A harness with neither a skill format nor MCP is told skills are not supported (#2985)\n\nskills::not_supported names each declared harness purlis ships no\nadapter for and whose declaration takes no MCP servers. The Skill studio\nsays why in one line under the harnesses, each skill's badges say skills\nare not supported there, Use skill... on its chats says the same in place\nof the words for an unknown tool, and purlis skill list prints it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Old plugin keys ask: answered per file, so a stale change is asked again whatever its siblings do (#3569)\n\nReview: a stale change dismissed while another file's change waited\nbrought nothing back, and the sibling's Apply then answered the whole\nAsk. The record now names each file the person answered; the Ask's\nDismiss is still the whole Ask. Only a change to a file the keys can be\nin moves it, and the Inbox reads the waiting files' paths alone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* A skill change overtakes no cold read of sections or counts (#2876)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills not supported: say what the declaration says, and read the chat once (#2985)\n\nReview: a declaration that does not answer mcp_servers was said to take\nnone; use_skill read the chat twice.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T06:35:52Z",
+          "tree_id": "050f266102d8661688a240705095436f80d4e502",
+          "url": "https://github.com/purlis/purlis/commit/4d73161fba7d6e18ba78b813aeb5f1afc52716e2"
+        },
+        "date": 1793170913406,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.296969,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.286, 0.295, 0.297, 0.304, 0.314 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.632673500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.516, 16.549, 16.633, 16.683, 16.751 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.22113999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.995, 101.055, 101.221, 101.270, 101.661 ms"
           }
         ]
       }
