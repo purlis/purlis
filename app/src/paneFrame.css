@@ -144,7 +144,8 @@
 }
 
 /* **What needs a decision** (#3678): its own ground, and its words in the primary tier as every
-   warning's are. Its triangle is drawn in its own colour, below. */
+   warning's are. Its mark is a question in a circle, apart from a warning's triangle, in its own
+   colour, below. */
 .pane-top [data-scope="notice"][data-part="root"][data-placement="pane"][data-variant="attention"] {
   background-color: var(--attention-surface);
 }
@@ -181,6 +182,7 @@
 
 .pane-top
   [data-scope="notice"][data-part="root"][data-placement="pane"][data-variant="attention"]::before {
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01'/%3E%3C/svg%3E");
   background-color: var(--attention-text);
 }
 

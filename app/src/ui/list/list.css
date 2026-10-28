@@ -105,6 +105,19 @@
   color: var(--state-waiting);
 }
 
+/* A fold's twist turns with its own row, never with an open row or disclosure around the list. */
+[data-fold]:not([data-expanded]) > [data-scope="tree"][data-part="twist"] > svg {
+  transform: none;
+}
+
+[data-fold]:not([data-expanded]) > [data-scope="tree"][data-part="twist"]:dir(rtl) > svg {
+  transform: scaleX(-1);
+}
+
+[data-fold][data-expanded] > [data-scope="tree"][data-part="twist"] > svg {
+  transform: rotate(90deg);
+}
+
 [data-scope="list"][data-part="header"] > [data-part="title"] {
   flex: 1 1 auto;
   min-inline-size: 0;

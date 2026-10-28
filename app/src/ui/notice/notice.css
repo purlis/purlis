@@ -40,7 +40,7 @@
 }
 
 /* **What needs a decision** (#3678): nothing went wrong, but the person must choose. Its own
-   ground and words (`attention.*`), and its mark, a triangle, before its words, so it is never
+   ground and words (`attention.*`), and its mark, a question in a circle, before its words, so it is never
    told by colour alone. Trouble keeps the danger ground, for real failures. */
 [data-scope="notice"][data-part="root"][data-variant="attention"] {
   color: var(--attention-text);

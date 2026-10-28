@@ -42,6 +42,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -102,6 +103,9 @@ export function useSaidOnRow(name: string, value: string) {
   );
 }
 
+/** How long React Aria's typing to find a row lasts after a letter, in ms (`useTypeSelect`). */
+const TYPING_WINDOW = 1000;
+
 /**
  * **Space, → and ← on a row that folds** (#3670): Space folds or unfolds it, → unfolds it and ←
  * folds it, where React Aria's grid would walk into the row's controls, of which it has none. Heard before React Aria's own row
@@ -110,8 +114,16 @@ export function useSaidOnRow(name: string, value: string) {
  */
 function useFoldKeys(folds: Map<string, ((open: boolean) => void) | undefined>) {
   const { direction } = useLocale();
+  // When a letter was last typed: a Space within React Aria's typing window goes on finding a row
+  // by its words, and folds nothing.
+  const typed = useRef(0);
   return (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (event.key.length === 1 && event.key !== " ") {
+      typed.current = event.timeStamp;
+      return;
+    }
+    if (event.key === " " && event.timeStamp - typed.current < TYPING_WINDOW) return;
     const row = event.target;
     if (!(row instanceof HTMLElement) || row.getAttribute("role") !== "row") return;
     const toggle = folds.get(row.getAttribute("data-fold") ?? "");

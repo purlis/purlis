@@ -62,7 +62,9 @@
     "popover.root.border-width": 0,
     "card.root.fill": "surface.base",
     "card.root.border-width": 0,
-    "list.root.card.fill": "surface.base"
+    "list.root.card.fill": "surface.base",
+    "list.root.card.hover.fill": "surface.hover",
+    "list.root.card.selected.fill": "list.selected"
   },
   "appearances": [
     {

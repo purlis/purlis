@@ -128,6 +128,28 @@ describe("a section that folds", () => {
     expect(onAction).toHaveBeenCalledWith("grilling");
   });
 
+  it("lets a Space go on finding a row by its words", async () => {
+    render(<Groups />);
+    await userEvent.tab();
+    await userEvent.keyboard("i");
+    expect(row("In this chat, 4")).toHaveFocus();
+    await userEvent.keyboard(" ");
+    expect(row("In this chat, 4")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("draws a name that is data as it is written", () => {
+    render(
+      <List aria-label="Files">
+        <ListFoldSection id="day" title="2026-10-29" named>
+          <ListRow id="a" textValue="a">
+            <RowLabel>a</RowLabel>
+          </ListRow>
+        </ListFoldSection>
+      </List>,
+    );
+    expect(row("2026-10-29")).toHaveAttribute("data-named");
+  });
+
   it("starts folded, and tells its owner, who holds it", async () => {
     const onFoldedChange = vi.fn();
     render(<Groups onFoldedChange={onFoldedChange} />);

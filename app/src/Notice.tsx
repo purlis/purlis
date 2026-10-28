@@ -57,7 +57,7 @@ import {
  * date, #3678) or `trouble` (something went wrong, and only then), and it is only the look: a
  * Notice is always a polite `status`, because it stands until it is dealt with and an `alert`
  * would interrupt a screen reader on every relaunch. Attention is drawn on its own ground with
- * its mark, a triangle, and says "Needs a decision:" to a reader, so it is never told by colour
+ * its mark, a question in a circle, and says "Needs a decision:" to a reader, so it is never told by colour
  * alone.
  * `at` is where it stands: in the Inbox's Notices (`inbox`, the default, `NoticeList`, #1695), or
  * in its pane's row of Notices above the terminal, never over it (`pane`, `NoticePaneRow`,

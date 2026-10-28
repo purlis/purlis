@@ -143,7 +143,7 @@ export const Alone: Story = {
  * **What needs a decision** (#3678): nothing went wrong, but the person must choose. A card alone
  * on a page (a skill a chat changed), a line in the Inbox's list between trouble and news, and a
  * line in a pane. Each is a polite status, never an alert, says "Needs a decision" to a reader and
- * shows its triangle, so it is not told by colour alone. The picture is the three of them.
+ * shows its mark, a question in a circle, so it is not told by colour alone. The picture is the three of them.
  */
 export const NeedsADecision: Story = {
   render: () => (

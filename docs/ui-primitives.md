@@ -788,7 +788,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   (nothing is wrong, but the person must decide: a change a chat made to review, a grade plan
   that changed under them, a draft out of date) and `trouble` (something failed, and only then).
   Attention stands on its own ground in every theme and appearance (`attention.surface`, its words
-  and mark `attention.text`), leads with a triangle (a card's mark, a line's first word, the band's
+  and mark `attention.text`), leads with a question in a circle (a card's mark, a line's first word, the band's
   mark in a chat's pane) and says "Needs a decision:" to a reader, so it is never told by colour
   alone; in forced colours it keeps a dotted outline, apart from trouble's dashes. Like every
   Notice it is a polite `status`, never an `alert`. The Inbox lists trouble, then attention, then

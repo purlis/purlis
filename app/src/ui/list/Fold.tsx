@@ -18,8 +18,10 @@
  * - **Folding moves only what is under it**: the rows above keep their place. The twist is the
  *   tree's own (`TwistMark`), never a chevron drawn here.
  *
- * Both live in a `List` (rows that act). Their fold rows run no `onAction` of the list's: a press
- * on one folds it, and nothing else.
+ * Both live in a `List` of rows that act, **with no `selectionMode`**: a fold's row is a row of
+ * the grid, and a list that chooses would choose it rather than fold it. Their fold rows run no
+ * `onAction` of the list's: a press on one folds it, and nothing else. A run inside a section
+ * starts afresh when the section unfolds, unless its owner holds it (`folded`).
  */
 import { useContext, useLayoutEffect, useState, type ReactNode } from "react";
 import {
@@ -69,6 +71,7 @@ function FoldRow({
   onOpen,
   part,
   tone,
+  named = false,
   children,
 }: {
   id: string;
@@ -77,6 +80,7 @@ function FoldRow({
   onOpen: (open: boolean) => void;
   part: "header" | "run";
   tone?: "waiting";
+  named?: boolean;
   children: ReactNode;
 }) {
   const folds = useContext(ListFolds);
@@ -100,6 +104,7 @@ function FoldRow({
       data-fold={id}
       data-expanded={open || undefined}
       data-tone={tone}
+      data-named={named || undefined}
     >
       {children}
     </AriaGridListItem>
@@ -151,11 +156,10 @@ export function ListFoldSection({
         onOpen={(open) => setFolded(!open)}
         part="header"
         tone={tone}
+        named={named}
       >
         <TwistMark />
-        <span data-named={named || undefined} data-part="title">
-          {title}
-        </span>
+        <span data-part="title">{title}</span>
         {count !== undefined && (
           <span data-scope="list" data-part="count" data-count="" aria-hidden="true">
             {count}
@@ -204,8 +208,9 @@ export function ListRun<T>({
   onFoldedChange,
 }: ListRunProps<T>) {
   const [isFolded, setFolded] = useFolded(folded, defaultFolded, onFoldedChange);
-  const out = standsOut === undefined ? [] : items.filter(standsOut);
-  const kept = standsOut === undefined ? items : items.filter((item) => !standsOut(item));
+  const out: T[] = [];
+  const kept: T[] = [];
+  for (const item of items) (standsOut?.(item) === true ? out : kept).push(item);
   const line = says(kept.length);
   return (
     <>
