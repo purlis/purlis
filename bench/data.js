@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793218335195,
+  "lastUpdate": 1793219826810,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28812,6 +28812,48 @@ window.BENCHMARK_DATA = {
             "value": 102.229926,
             "unit": "ms",
             "extra": "median of 5 runs: 102.004, 102.132, 102.230, 103.171, 103.528 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "038b72a2ed0cb1ba67f9483b590a78bac29b2cb4",
+          "message": "Runners: a kept home's first step and what an earlier start left (#2057) (#3743)\n\n* Runners: a kept home's first step and what an earlier start left (#2057)\n\nThe first step opens the claim mark without waiting on what is there\nand takes only a plain file, and removes a link key an earlier start\nof the same pod handed over and nobody paired with before it makes a\nnew one.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: the test makes its fifo through the fork lock (#2057)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T19:52:07Z",
+          "tree_id": "c85aeaf7335de5dda66a4c0cd51f3ce46f0f4754",
+          "url": "https://github.com/purlis/purlis/commit/038b72a2ed0cb1ba67f9483b590a78bac29b2cb4"
+        },
+        "date": 1793219821177,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5454105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.534, 0.535, 0.545, 0.546, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 15.8737635,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.833, 15.861, 15.874, 15.935, 15.955 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.15799799999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.239, 101.303, 102.158, 102.176, 103.210 ms"
           }
         ]
       }
