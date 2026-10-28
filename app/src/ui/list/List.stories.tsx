@@ -19,7 +19,8 @@ import { List, ListBox, ListOption, ListRow, ListRowSection, type Selection } fr
 import { ListFilter, noMatchSaid, useListFilter } from "./ListFilter";
 import { AimedList, AimedOption } from "./AimedList";
 import { TextField } from "../field/Field";
-import { RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
+import { RowBelow, RowDescription, RowLabel, RowLead, RowTrail } from "./Row";
+import { Badge } from "../badge/Badge";
 
 /** Twenty-eight personas, as Start a chat lists them (R164: a list over about seven is filtered). */
 const PERSONAS = [
@@ -273,6 +274,80 @@ export const RowsThatAct: Story = {
     await untilFocused(() => ship, "Rows that act: Down moves to the next row");
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(() => ship, "Rows that act: Down passes over a row that cannot be used");
+    expectFocusInSight();
+  },
+};
+
+/** Skills as the Skill studio's Library lists them: a name and its tags, then a line under. */
+function LinesUnder() {
+  return (
+    <div style={{ inlineSize: "20rem" }}>
+      <List aria-label="Skills" selectionMode="single" defaultSelectedKeys={["deploy"]}>
+        <ListRow id="deploy" textValue="deploy">
+          <RowLabel>deploy</RowLabel>
+          <RowTrail>
+            <Badge>project</Badge>
+          </RowTrail>
+          <RowBelow clamp={1} data-testid="below-deploy">
+            Deploys a service to staging or production with the checks the team agreed on: tests
+            green, a changelog entry and a tag.
+          </RowBelow>
+        </ListRow>
+        <ListRow id="lint-rs" textValue="lint-rs">
+          <RowLabel>lint-rs</RowLabel>
+          <RowTrail>
+            <Badge>workspace</Badge>
+            <Badge variant="waiting">Off</Badge>
+          </RowTrail>
+          <RowBelow clamp={2} data-testid="below-lint-rs">
+            Off in smart-ide: a workspace can turn a granted skill off, and smart-ide has, so its
+            chats start without it until it is turned on again there.
+          </RowBelow>
+        </ListRow>
+        <ListRow id="browser" textValue="browser">
+          <RowLabel>browser</RowLabel>
+          <RowTrail>
+            <Badge>built-in</Badge>
+          </RowTrail>
+        </ListRow>
+      </List>
+    </div>
+  );
+}
+
+/**
+ * **A line under a row's words** (#3751): a skill's one-line description, cut at the end of its
+ * line, and a reason that takes two lines. Each row grows to fit what is under its words and no
+ * line is cut off mid-line; the arrows still walk one row at a time. The picture is the three
+ * rows.
+ */
+export const LinesUnderTheWords: Story = {
+  render: () => <LinesUnder />,
+  play: async ({ canvas, userEvent }) => {
+    const list = canvas.getByRole("grid", { name: "Skills" });
+    for (const name of ["deploy", "lint-rs"]) {
+      const row = within(list).getByRole("row", { name: new RegExp(`^${name}`) });
+      const below = canvas.getByTestId(`below-${name}`);
+      const rowBox = row.getBoundingClientRect();
+      const belowBox = below.getBoundingClientRect();
+      const label = within(row).getByText(name).getBoundingClientRect();
+      // Under the words, inside the row, and whole: nothing of its lines is past the row's end.
+      await expect(belowBox.top).toBeGreaterThanOrEqual(label.bottom - 1);
+      await expect(belowBox.bottom).toBeLessThanOrEqual(rowBox.bottom + 1);
+      await expect(below.scrollHeight).toBeLessThanOrEqual(below.clientHeight + 1);
+    }
+    // One line is one line high; the reason is two.
+    const one = canvas.getByTestId("below-deploy").getBoundingClientRect().height;
+    const two = canvas.getByTestId("below-lint-rs").getBoundingClientRect().height;
+    await expect(two).toBeGreaterThan(one * 1.5);
+    await userEvent.tab();
+    const deploy = within(list).getByRole("row", { name: /^deploy/ });
+    await untilFocused(() => deploy, "Lines under: Tab lands on the chosen row");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(list).getByRole("row", { name: /^lint-rs/ }),
+      "Lines under: Down moves to the next row, its line with it",
+    );
     expectFocusInSight();
   },
 };
