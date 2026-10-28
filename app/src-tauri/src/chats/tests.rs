@@ -8295,3 +8295,44 @@ fn the_flag_a_chat_started_with_is_what_its_record_keeps_3466() {
     assert_eq!(chats.record().chats[0].plane_skills, Some(now));
     let _ = chats.close(session);
 }
+
+#[test]
+fn a_reattached_chat_keeps_the_routing_its_start_kept_3578() {
+    use purlis_core::skills::router::Kept;
+    let kept = Kept::BuiltIn;
+    assert_eq!(
+        routing_kept_at_start(true, false, Some(&kept)),
+        Some(kept.clone())
+    );
+    // A record written before the routing was kept: its router is asked again, as before.
+    assert_eq!(routing_kept_at_start(true, false, None), None);
+    // A start that is not a reattach, or a runner's chat, is routed now.
+    assert_eq!(routing_kept_at_start(false, false, Some(&kept)), None);
+    assert_eq!(routing_kept_at_start(true, true, Some(&kept)), None);
+}
+
+#[test]
+fn the_routing_a_chat_started_with_is_what_its_record_keeps_3578() {
+    use purlis_core::skills::router::Kept;
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, _wrote) = recorded();
+    // A record put back from an earlier run says it asked a router: a fresh start routes now,
+    // here by the built-in router, and the record keeps that.
+    let put_back = Chat {
+        routing: Some(Kept::Asked(purlis_core::skills::router::Routed {
+            record: purlis_core::skills::router::Record {
+                routing: "01HZY3M6S4K9Q2W7E8R5T1Y6V0".to_owned(),
+                router: "relevance".to_owned(),
+                ms: 3,
+                fell_back: None,
+                error: None,
+                hidden: Vec::new(),
+            },
+            answer: Some(Vec::new()),
+        })),
+        ..chat(&a_claude(dir.path()), "ide.7", Some(ID))
+    };
+    let session = chats.start(&put_back, SIZE).unwrap();
+    assert_eq!(chats.record().chats[0].routing, Some(Kept::BuiltIn));
+    let _ = chats.close(session);
+}

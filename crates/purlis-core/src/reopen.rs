@@ -254,6 +254,14 @@ pub struct Chat {
     /// `None` is a chat whose start in this launch has not returned or did not happen, and every
     /// record written before this field: a reattach then reads the flag again, as before. Not a format change, for [`Self::pinned`]'s reason.
     pub plane_skills: Option<bool>,
+    /// **How the chat's start routed its skills** (SK-15f, #3578): the built-in router, or what
+    /// came of asking the router extension its persona or workspace chose (SK-15b). A chat
+    /// reattached from the session host routes its set by this, as its harness still holds the
+    /// listing that start handed it, and its router is not asked again. `None` is a chat whose
+    /// start in this launch has not returned or did not happen, one its runner armed, and every
+    /// record written before this field: a reattach then asks its router again, as before. Not a
+    /// format change, for [`Self::pinned`]'s reason.
+    pub routing: Option<crate::skills::router::Kept>,
 }
 
 impl Chat {
@@ -1592,6 +1600,14 @@ struct ChatOnDisk {
         deserialize_with = "lenient"
     )]
     plane_skills: Option<bool>,
+    /// How the chat's start routed its skills, or absent — see [`Chat::routing`]. A value that
+    /// does not read whole reads as absent.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    routing: Option<crate::skills::router::Kept>,
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -1817,6 +1833,7 @@ impl From<&Record> for OnDisk {
                     pid: chat.pid.unwrap_or_default(),
                     model: chat.model.clone().unwrap_or_default(),
                     plane_skills: chat.plane_skills,
+                    routing: chat.routing.clone(),
                 })
                 .collect(),
             dealt: highest_dealt(record),
@@ -1902,6 +1919,7 @@ impl From<ChatOnDisk> for Chat {
             pid: (chat.pid > 0).then_some(chat.pid),
             model: crate::state::Model::new(&chat.model).map(|model| model.as_str().to_owned()),
             plane_skills: chat.plane_skills,
+            routing: chat.routing,
         }
     }
 }
