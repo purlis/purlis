@@ -19,6 +19,7 @@ import {
   expectFocusInSight,
   inAWindow,
   pictureNow,
+  untilFocused,
 } from "./stories.testkit";
 
 const PERSONAS = [
@@ -151,7 +152,10 @@ export const PrototypeB: Story = {
     await expect(dialog).toHaveAttribute("data-size", "wide");
     await expect(dialog).toHaveAccessibleDescription("In smart-ide · purlis's built-in profiles");
     // The keyboard starts on Cancel: a Return pressed by habit starts nothing.
-    await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
+    await untilFocused(
+      () => page.getByRole("button", { name: "Cancel" }),
+      "Start a chat: the keyboard starts on Cancel",
+    );
     await pictureNow();
     // At its fixed top, its bottom clear of the window's (R2).
     expectAnchored(dialog);
@@ -212,7 +216,10 @@ export const InAShortWindow: Story = {
   play: async () => {
     const page = within(document.body);
     const dialog = await page.findByRole("dialog", { name: "Start a chat" });
-    await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
+    await untilFocused(
+      () => page.getByRole("button", { name: "Cancel" }),
+      "Start a chat: the keyboard starts on Cancel",
+    );
     if (await inAWindow(SHORT_WINDOW.width, SHORT_WINDOW.height))
       await expect(dialog.getBoundingClientRect().height).toBeLessThan(620);
     expectAnchored(dialog);
@@ -256,7 +263,10 @@ export const SandboxAndApproval: Story = {
   play: async ({ userEvent }) => {
     const page = within(document.body);
     const dialog = await page.findByRole("dialog", { name: "Start a chat" });
-    await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
+    await untilFocused(
+      () => page.getByRole("button", { name: "Cancel" }),
+      "Start a chat: the keyboard starts on Cancel",
+    );
     // Said in the details' Sandbox section; the dialog fades in as it opens, so it is waited for.
     await waitFor(() =>
       expect(page.getByText("claude reaches only the hosts this project allows.")).toBeVisible(),

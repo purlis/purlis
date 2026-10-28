@@ -114,7 +114,7 @@ export const AForm: Story = {
     const dialog = await page.findByRole("dialog", { name: "New workspace" });
     await answersInPlace(dialog, ["Cancel", "Create workspace"]);
     const name = page.getByRole("textbox", { name: "Name" });
-    await waitFor(() => expect(name).toHaveFocus());
+    await untilFocused(() => name, "New workspace: the keyboard starts in Name");
     expectFocusInSight();
     await pictureNow();
     await userEvent.tab();
@@ -140,7 +140,10 @@ export const EscapeCloses: Story = {
     // A dialog is drawn over the page, outside the story's page.
     const page = within(document.body);
     await page.findByRole("dialog", { name: "New workspace" });
-    await waitFor(() => expect(page.getByRole("textbox", { name: "Name" })).toHaveFocus());
+    await untilFocused(
+      () => page.getByRole("textbox", { name: "Name" }),
+      "New workspace: the keyboard starts in Name",
+    );
     await pictureNow();
     await userEvent.keyboard("{Escape}");
     await waitFor(() =>
@@ -180,14 +183,15 @@ export const EscapeClosesOneLayer: Story = {
     const page = within(document.body);
     await page.findByRole("dialog", { name: "Workspace" });
     const more = page.getByRole("button", { name: "More" });
-    await waitFor(() => expect(more).toHaveFocus());
+    await untilFocused(() => more, "Workspace: the keyboard starts on More");
     await pictureNow();
     await userEvent.keyboard("{Enter}");
     const menu = await page.findByRole("menu");
     // React Aria puts the keyboard on the menu's first row on the next frame, which WebKit may
     // draw late: the Esc is the menu's once the keyboard is in it.
-    await waitFor(() =>
-      expect(within(menu).getByRole("menuitem", { name: "Rename" })).toHaveFocus(),
+    await untilFocused(
+      () => within(menu).getByRole("menuitem", { name: "Rename" }),
+      "The menu: the keyboard lands on Rename",
     );
     await userEvent.keyboard("{Escape}");
     // A menu may take a moment to go: WebKit draws the next frame late in a busy run (as the menu
@@ -230,7 +234,10 @@ export const AQuestion: Story = {
     const page = within(document.body);
     const alert = await page.findByRole("alertdialog", { name: "Delete persona steward?" });
     await answersInPlace(alert, ["Cancel", "Delete persona"]);
-    await waitFor(() => expect(page.getByRole("button", { name: "Cancel" })).toHaveFocus());
+    await untilFocused(
+      () => page.getByRole("button", { name: "Cancel" }),
+      "Delete persona: the keyboard starts on Cancel",
+    );
     expectFocusInSight();
     await pictureNow();
     await userEvent.keyboard("{Enter}");
@@ -277,7 +284,10 @@ export const LongerThanTheWindow: Story = {
     const dialog = await page.findByRole("dialog", { name: "Ask steward" });
     const body = dialog.querySelector('[data-part="body"]') as HTMLElement;
     const footer = dialog.querySelector('[data-part="footer"]') as HTMLElement;
-    await waitFor(() => expect(page.getByRole("textbox", { name: "Field 1" })).toHaveFocus());
+    await untilFocused(
+      () => page.getByRole("textbox", { name: "Field 1" }),
+      "Ask steward: the keyboard starts in Field 1",
+    );
     expectAnchored(dialog);
     for (let at = 1; at <= 14; at += 1) {
       const field = page.getByRole("textbox", { name: `Field ${at}` });
@@ -327,7 +337,10 @@ export const InTheShortestWindow: Story = {
 async function answersInAWindow(size: { width: number; height: number }) {
   const page = within(document.body);
   const dialog = await page.findByRole("dialog", { name: "Ask steward" });
-  await waitFor(() => expect(page.getByRole("textbox", { name: "Field 1" })).toHaveFocus());
+  await untilFocused(
+    () => page.getByRole("textbox", { name: "Field 1" }),
+    "Ask steward: the keyboard starts in Field 1",
+  );
   // In a story test the window must have been resized: else this is the tall check again.
   if (await inAWindow(size.width, size.height)) await expect(window.innerHeight).toBe(size.height);
   expectAnchored(dialog);
@@ -432,7 +445,7 @@ export const AListBesideItsDetails: Story = {
     await expect(dialog).toHaveAttribute("data-size", "wide");
     const filter = page.getByRole("searchbox", { name: "Filter personas" });
     await expect(filter).toHaveAttribute("placeholder", "Filter 10 personas");
-    await waitFor(() => expect(filter).toHaveFocus());
+    await untilFocused(() => filter, "Start a chat: the keyboard starts in the filter");
     const before = dialog.getBoundingClientRect();
     await userEvent.type(filter, "re");
     await expect(filter).toHaveFocus();

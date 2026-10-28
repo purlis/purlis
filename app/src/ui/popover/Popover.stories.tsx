@@ -133,7 +133,7 @@ export const AListWithItsFilter: Story = {
     await userEvent.keyboard("{Enter}");
     const popover = await screen.findByRole("dialog", { name: "Workspaces" });
     const filter = within(popover).getByRole("textbox", { name: "Go to a workspace in purlis" });
-    await waitFor(() => expect(filter).toHaveFocus());
+    await untilFocused(() => filter, "Workspaces: the keyboard starts in the filter");
     expectFocusInSight();
     // The anatomy: the filter row, its rule, the list and the footer, in that order.
     const parts = [...popover.querySelectorAll("[data-part]")]
@@ -149,8 +149,9 @@ export const AListWithItsFilter: Story = {
         .map((one) => one.textContent),
     ).toEqual(["docs", "ops"]);
     await userEvent.keyboard("{ArrowDown}");
-    await waitFor(() =>
-      expect(within(popover).getByRole("menuitem", { name: "docs" })).toHaveFocus(),
+    await untilFocused(
+      () => within(popover).getByRole("menuitem", { name: "docs" }),
+      "Workspaces: Down reaches docs",
     );
     await userEvent.keyboard("{ArrowDown}{ArrowDown}");
     // The arrows stop at the list's end.
@@ -160,8 +161,9 @@ export const AListWithItsFilter: Story = {
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Went to ops"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // The keyboard is back on the trigger; open again for the picture.
-    await waitFor(() =>
-      expect(canvas.getByRole("button", { name: "All workspaces" })).toHaveFocus(),
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "All workspaces" }),
+      "Workspaces: the keyboard is back on the trigger",
     );
     await userEvent.keyboard("{Enter}");
     await screen.findByRole("dialog", { name: "Workspaces" });

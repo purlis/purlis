@@ -12,7 +12,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useMemo, useState } from "react";
 import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "../../actions";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "../../TitleBarSwitch";
 
 /** The prototype's projects and workspaces, with what waits in each. */
@@ -355,7 +355,7 @@ export const WorkspacePopover: Story = {
     const filter = await screen.findByRole("combobox", {
       name: "Go to a workspace in charter…",
     });
-    await waitFor(() => expect(filter).toHaveFocus());
+    await untilFocused(() => filter, "All workspaces: the keyboard starts in the filter");
     const popover = filter.closest<HTMLElement>('[data-scope="popover"][data-part="root"]');
     await expect(Math.round(popover?.getBoundingClientRect().width ?? 0)).toBe(320);
     const list = screen.getByRole("listbox", { name: "Workspaces in charter" });
@@ -379,7 +379,7 @@ export const ProjectSwitcher: Story = {
     await expect(Math.round(crumb.getBoundingClientRect().height)).toBe(28);
     await userEvent.click(crumb);
     const filter = await screen.findByRole("combobox", { name: "Go to a project or workspace…" });
-    await waitFor(() => expect(filter).toHaveFocus());
+    await untilFocused(() => filter, "The crumb: the keyboard starts in the filter");
     const popover = filter.closest<HTMLElement>('[data-scope="popover"][data-part="root"]');
     await expect(Math.round(popover?.getBoundingClientRect().width ?? 0)).toBe(560);
     await userEvent.keyboard("{ArrowDown}");
