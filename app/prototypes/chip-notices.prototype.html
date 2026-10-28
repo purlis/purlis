@@ -1,0 +1,509 @@
+<title>Workspace chip notices</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* Dark-first (Purlis dark) on bare :root; light under the guards. */
+:root{
+  color-scheme: dark;
+  --page:#0d0c14; --win:#15131d; --tb:#1b1926; --pane:#17151f; --block:#252232; --block2:#1f1d2b;
+  --line:#2d2a3c; --text:#e9e7f2; --muted:#9a96ad; --faint:#6c687e;
+  --accent:#6d58bb; --wash:rgba(109,88,187,.30); --wash-line:rgba(150,128,230,.55); --accent-text:#c3b6f5;
+  --amber:#e7a73c; --amber-ink:#241703;
+  --info:#9a87ea; --warn:#f0b44c; --needs:#ef7595;
+  --card:#211e2e; --card-line:#3a3550; --shadow:0 14px 40px rgba(0,0,0,.55);
+  --focus:#b3a4ff; --btn:#2b2840; --btn-h:#35314d; --ok:#6ccf9b;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme: light;
+    --page:#f3f2f8; --win:#ffffff; --tb:#efedf5; --pane:#fbfaff; --block:#e4e1ee; --block2:#eeecf4;
+    --line:#dbd7e6; --text:#1b1a25; --muted:#5f5b70; --faint:#8b879a;
+    --accent:#6d58bb; --wash:rgba(109,88,187,.16); --wash-line:rgba(109,88,187,.45); --accent-text:#4c3a9a;
+    --amber:#c98200; --amber-ink:#fff;
+    --info:#5a45b2; --warn:#a96300; --needs:#c0335a;
+    --card:#ffffff; --card-line:#d6d1e4; --shadow:0 14px 36px rgba(40,30,80,.18);
+    --focus:#5b45c4; --btn:#efedf6; --btn-h:#e4e0f0; --ok:#1d8a55;
+  }
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --page:#f3f2f8; --win:#ffffff; --tb:#efedf5; --pane:#fbfaff; --block:#e4e1ee; --block2:#eeecf4;
+  --line:#dbd7e6; --text:#1b1a25; --muted:#5f5b70; --faint:#8b879a;
+  --accent:#6d58bb; --wash:rgba(109,88,187,.16); --wash-line:rgba(109,88,187,.45); --accent-text:#4c3a9a;
+  --amber:#c98200; --amber-ink:#fff;
+  --info:#5a45b2; --warn:#a96300; --needs:#c0335a;
+  --card:#ffffff; --card-line:#d6d1e4; --shadow:0 14px 36px rgba(40,30,80,.18);
+  --focus:#5b45c4; --btn:#efedf6; --btn-h:#e4e0f0; --ok:#1d8a55;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",system-ui,sans-serif;padding-bottom:120px}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:6px}
+.wrap{max-width:1120px;margin:0 auto;padding:16px}
+.top{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px}
+.proto{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:4px;background:var(--amber);color:var(--amber-ink)}
+h1{font-size:18px;margin:8px 0 2px}
+.q{color:var(--muted);margin:0;max-width:70ch}
+.ghost{background:var(--btn);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+.ghost:hover{background:var(--btn-h)}
+.caption{background:var(--pane);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:0 0 12px}
+.caption b{color:var(--accent-text)}
+.caption p{margin:4px 0 0;color:var(--muted)}
+
+/* stage: the mock window scrolls inside, never the page */
+.stage{overflow-x:auto;border-radius:12px;padding:2px}
+.win{position:relative;min-width:980px;background:var(--win);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+.tb{display:flex;align-items:center;gap:8px;height:46px;padding:0 10px;background:var(--tb);border-bottom:1px solid var(--line);border-radius:12px 12px 0 0}
+.lights{display:flex;gap:7px;margin-right:6px}
+.lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}
+.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+.proj{display:flex;align-items:center;gap:6px;font-weight:600;white-space:nowrap}
+.proj .sep{color:var(--faint);font-weight:400}
+.projbtn{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid transparent;border-radius:7px;padding:3px 8px;cursor:pointer;font-weight:600}
+.projbtn:hover{background:var(--btn)}
+.projbtn.cur{background:var(--wash);border-color:var(--wash-line);color:var(--accent-text)}
+.strip{display:flex;align-items:center;gap:6px;overflow-x:auto;overflow-y:visible;padding:8px 6px;flex:0 1 auto;min-width:0;scrollbar-width:none}
+.strip::-webkit-scrollbar{display:none}
+.chip{position:relative;display:inline-flex;align-items:center;flex:none;border:1px solid transparent;border-radius:7px}
+.chip-main{background:none;border:0;border-radius:6px;padding:3px 10px;cursor:pointer;white-space:nowrap;color:var(--muted)}
+.chip:hover{background:var(--btn)}
+.chip.cur{background:var(--wash);border-color:var(--wash-line)}
+.chip.cur .chip-main{color:var(--accent-text);font-weight:600}
+.chip.dormant .chip-main{color:var(--faint);font-style:italic;opacity:.75}
+.chip.dormant::after{content:"";position:absolute;inset:0;border-radius:7px;border:1px dotted var(--faint);opacity:.6;pointer-events:none}
+.chip.dashed{border:1px dashed var(--wash-line);background:transparent}
+.chip.dashed.cur{background:var(--wash)}
+.chip .pin{background:none;border:0;border-left:1px dashed var(--wash-line);padding:3px 8px;cursor:pointer;color:var(--accent-text);font-weight:700}
+.chip .pin:hover{background:var(--btn-h);border-radius:0 6px 6px 0}
+.rootchip .chip-main{padding:3px 8px;display:inline-flex;align-items:center}
+.ico{width:15px;height:15px;display:block}
+.wait{position:absolute;top:-7px;right:-7px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--amber);color:var(--amber-ink);font-size:10px;font-weight:700;line-height:16px;text-align:center;pointer-events:none}
+.dot{position:absolute;top:-8px;left:-8px;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--tb);display:grid;place-items:center;font-size:9px;line-height:1;cursor:pointer;padding:0}
+.dot.k-info{background:var(--info);color:#fff}
+.dot.k-warn{background:var(--warn);color:#2a1a00}
+.dot.k-needs{background:var(--needs);color:#fff;font-size:10px}
+.dot:hover{transform:scale(1.12)}
+.ovf{background:none;border:0;color:var(--muted);cursor:pointer;padding:3px 6px;border-radius:6px}
+.ovf:hover{background:var(--btn)}
+.tbr{margin-left:auto;display:flex;align-items:center;gap:4px;white-space:nowrap}
+.tbr button{background:none;border:0;color:var(--muted);padding:4px 8px;border-radius:6px;cursor:pointer;font-size:13px}
+.tbr button:hover{background:var(--btn)}
+.tbr .changed{color:var(--text)}
+.body{display:grid;grid-template-columns:200px 1fr 230px;height:360px}
+.side,.panels{padding:12px;display:flex;flex-direction:column;gap:8px;background:var(--pane)}
+.side{border-right:1px solid var(--line)}.panels{border-left:1px solid var(--line)}
+.blk{background:var(--block);border-radius:6px;height:14px}
+.blk.t{height:60px;background:var(--block2)}
+.chat{display:flex;flex-direction:column;justify-content:flex-end;padding:16px}
+.chat .empty{margin:auto;color:var(--faint);font-size:13px}
+.composer{height:44px;border:1px solid var(--line);border-radius:10px;background:var(--block2)}
+.sb{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-top:1px solid var(--line);background:var(--tb);border-radius:0 0 12px 12px;font-size:12px;color:var(--muted)}
+.sb button{background:none;border:0;color:var(--muted);padding:2px 8px;border-radius:5px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px}
+.sb button:hover{background:var(--btn)}
+.sb .doc b{color:var(--warn);font-weight:600}
+.sb .right{margin-left:auto}
+.sbdot{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;font-size:8px}
+
+/* popover card */
+.card{position:absolute;z-index:20;width:360px;background:var(--card);border:1px solid var(--card-line);border-radius:12px;box-shadow:var(--shadow);padding:6px 0 4px}
+.arrow{position:absolute;width:14px;height:14px;background:var(--card);border:1px solid var(--card-line);transform:rotate(45deg)}
+.card.up .arrow{top:-8px;border-right:0;border-bottom:0}
+.card.down .arrow{bottom:-8px;border-left:0;border-top:0}
+.card-h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);padding:4px 14px 2px}
+.nt{position:relative;display:grid;grid-template-columns:20px 1fr 26px;gap:8px;padding:10px 10px 10px 14px}
+.nt+.nt{border-top:1px solid var(--line)}
+.g{font-size:12px;line-height:20px;text-align:center}
+.nt.k-info .g{color:var(--info)}.nt.k-warn .g{color:var(--warn)}.nt.k-needs .g{color:var(--needs)}
+.nt b{display:block;font-weight:600}
+.nt p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.det{margin-top:6px;font-size:12px;color:var(--muted);background:var(--block2);border-radius:6px;padding:6px 8px}
+.acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.acts button{background:var(--btn);border:1px solid var(--line);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:13px}
+.acts button:hover{background:var(--btn-h)}
+.acts button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.acts button.primary:hover{filter:brightness(1.1)}
+.x{background:none;border:0;color:var(--faint);width:26px;height:26px;border-radius:6px;cursor:pointer;font-size:16px;line-height:1}
+.x:hover{background:var(--btn);color:var(--text)}
+.prog{height:4px;border-radius:2px;background:var(--block);margin-top:8px;overflow:hidden}
+.prog span{display:block;height:100%;background:var(--accent);transition:width .35s}
+.pct{font-size:12px;color:var(--faint);margin-top:3px}
+.card-f{font-size:11px;color:var(--faint);padding:4px 14px 6px;border-top:1px solid var(--line)}
+
+/* below the mock */
+.lower{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+@media (max-width:760px){.lower{grid-template-columns:1fr}}
+.panel{background:var(--pane);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:0 0 8px}
+.last{font-size:13px;padding:6px 8px;border-radius:6px;background:var(--wash);color:var(--accent-text);margin-bottom:8px;overflow-wrap:anywhere}
+pre{margin:0;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text);max-height:340px;overflow:auto}
+.legend li{margin:3px 0;color:var(--muted)}
+.legend{padding-left:18px;margin:0}
+.k{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;font-size:8px;vertical-align:-3px;margin-right:4px}
+.k.k-info{background:var(--info);color:#fff}.k.k-warn{background:var(--warn);color:#2a1a00}.k.k-needs{background:var(--needs);color:#fff}
+
+/* floating scenario bar */
+.bar{position:fixed;left:8px;right:8px;bottom:10px;z-index:50;display:flex;justify-content:center;pointer-events:none}
+.bar-in{pointer-events:auto;display:flex;gap:4px;align-items:center;max-width:100%;overflow-x:auto;background:var(--card);border:1px solid var(--card-line);box-shadow:var(--shadow);border-radius:12px;padding:6px}
+.bar-in button{flex:none;background:none;border:0;padding:6px 10px;border-radius:8px;cursor:pointer;white-space:nowrap;color:var(--muted);font-size:13px}
+.bar-in button:hover{background:var(--btn)}
+.bar-in button[aria-pressed="true"]{background:var(--accent);color:#fff}
+.bar-in .sep{flex:none;width:1px;align-self:stretch;background:var(--line);margin:2px 4px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <span class="proto">PROTOTYPE, throwaway</span>
+      <h1>Workspace chip notices</h1>
+      <p class="q">What should workspace notices anchored to the title-bar chip look like, and where does the plane root's icon go? Pick a scenario at the bottom, then click around.</p>
+    </div>
+    <button class="ghost" data-act="theme" data-k="theme" id="themeBtn">Light / dark</button>
+  </div>
+
+  <div class="caption" id="caption"></div>
+
+  <div class="stage">
+    <div class="win" id="win">
+      <div class="tb" id="tb"></div>
+      <div class="body">
+        <div class="side"><div class="blk" style="width:70%"></div><div class="blk"></div><div class="blk" style="width:85%"></div><div class="blk" style="width:60%"></div><div class="blk t"></div><div class="blk" style="width:75%"></div></div>
+        <div class="chat"><div class="empty">Empty chat</div><div class="composer"></div></div>
+        <div class="panels"><div class="blk t"></div><div class="blk" style="width:80%"></div><div class="blk"></div><div class="blk t"></div><div class="blk" style="width:55%"></div></div>
+      </div>
+      <div class="sb" id="sb"></div>
+    </div>
+  </div>
+
+  <div class="lower">
+    <div class="panel">
+      <h2>State</h2>
+      <div class="last" id="last"></div>
+      <pre id="state"></pre>
+    </div>
+    <div class="panel">
+      <h2>How it behaves</h2>
+      <ul class="legend">
+        <li>The card hangs from its chip and overlays the window. Nothing is pushed down.</li>
+        <li>Nothing closes on a timer. A click elsewhere <b>hides</b> the card, and × or Esc <b>dismisses</b> it.</li>
+        <li>A hidden notice that hasn't been dismissed leaves a dot on the chip. Click the dot to reopen the card.</li>
+        <li>Dot shapes: <span class="k k-info">●</span>info, <span class="k k-warn">▲</span>warning, <span class="k k-needs">✋</span>needs you. The dot shows the most urgent notice.</li>
+        <li>The dot sits top-left and the amber waiting count sits top-right, so both can show at once.</li>
+        <li>Click a chip to bring it in front. Click the root icon to bring the plane root back.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="sr" aria-live="polite" id="live"></div>
+
+<div class="bar"><div class="bar-in" id="bar" role="toolbar" aria-label="Scenarios">
+  <button data-act="scen" data-s="created" data-k="s:created">Created</button>
+  <button data-act="scen" data-s="stacked" data-k="s:stacked">Stacked</button>
+  <button data-act="scen" data-s="dormant" data-k="s:dormant">Dormant</button>
+  <button data-act="scen" data-s="dashed" data-k="s:dashed">Dashed</button>
+  <button data-act="scen" data-s="status" data-k="s:status">Status-bar result</button>
+  <button data-act="scen" data-s="needs" data-k="s:needs">Needs-you</button>
+  <span class="sep"></span>
+  <button data-act="scen" data-s="root" data-v="A" data-k="s:rA">Root A</button>
+  <button data-act="scen" data-s="root" data-v="B" data-k="s:rB">Root B</button>
+  <button data-act="scen" data-s="root" data-v="C" data-k="s:rC">Root C</button>
+</div></div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const GLYPH = {info:'●', warn:'▲', needs:'✋'};
+const WORD = {info:'info', warn:'warning', needs:'needs you'};
+const RANK = {info:1, warn:2, needs:3};
+const HOUSE = '<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 7.2 8 2.5l5.5 4.7V13a.8.8 0 0 1-.8.8H9.6V10H6.4v3.8H3.3a.8.8 0 0 1-.8-.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+const PROJECT = 'purlis-demo';
+let seq = 0, S, timer = null, prevOpen = null;
+
+const N = (kind, title, body, actions = [], extra = {}) => ({id:'n' + (++seq), kind, title, body, actions, ...extra});
+const PINNED = ['skills-studio','another-workspace','second-try','3rd-try'];
+const chips = (over = {}) => PINNED.map(n => ({name:n, pinned:true, dormant:false, waiting:0, ...(over[n] || {})}));
+
+const INFO = {
+  created:{t:'Created', d:'Decisions 1–3', p:'Creating 3rd-try opened it and pinned its chip. Its card hangs under the chip and has no Open button. Click elsewhere to hide it and leave a ● dot. Press × or Esc to dismiss it.'},
+  stacked:{t:'Stacked', d:'Decision 5', p:'another-workspace has three notices in one card, newest first. The dot shows the most urgent one (▲). The clone finishes by itself, but the card stays open. Click away and the ▲ dot stays next to the amber waiting count.'},
+  dormant:{t:'Dormant', d:'Decision 6', p:'second-try\'s folder is gone. Its chip is dimmed and dotted, and the "kept dormant" notice hangs from it.'},
+  dashed:{t:'Dashed', d:'Decision 7', p:'scratch-7 is in front but not pinned, so it gets a dashed "name +" chip and its notices anchor there. Press + to pin it.'},
+  status:{t:'Status-bar result', d:'Decision 8', p:'The results of project or app actions are not tied to a workspace. They use the same card, hung from the status bar\'s Notices item with the arrow pointing down.'},
+  needs:{t:'Needs-you', d:'Decision 9', p:'A chat asks to remove another-workspace. Its chip shows a ✋ dot next to the amber count. Clicking the dot brings that chat forward (faked in the state panel) and opens the card.'},
+  root:{t:'Root', d:'Decision 10', p:''}
+};
+const ROOT_P = {
+  A:'<b>A</b>: a root icon chip right of the project name, outside the scrolling strip. It is always there, can\'t be unpinned and never scrolls away.',
+  B:'<b>B</b>: the project name is the root button, with an icon prefix. There is no extra chip, and the accent wash moves onto the name when the root is in front.',
+  C:'<b>C</b>: the root icon is the first chip inside the strip\'s scroll area. It looks like the other chips and scrolls away with them when the strip overflows.'
+};
+
+const SCEN = {
+  created: () => ({current:'3rd-try', chips:chips(), open:'3rd-try', notices:{'3rd-try':[
+    N('info','Workspace 3rd-try is ready','It has no vision yet. Add one so its chats know what it is for.',
+      [{label:'Add a vision', act:'vision', primary:true},{label:'Details', act:'details'}],
+      {details:'Created at workspaces/3rd-try · pinned · 0 repos · persona: steward'})]}}),
+  stacked: () => ({current:'3rd-try', chips:chips({'another-workspace':{waiting:2}}), open:'another-workspace', notices:{'another-workspace':[
+    N('info','Cloning 2 repos…','api-server and web-client into another-workspace.',[],{id:'clone', progress:30}),
+    N('warn','Workspace layout is out of date','The project layout changed since this workspace was made.',[{label:'Update', act:'resolve', primary:true}]),
+    N('warn','api-server is on fix-login, not main','New chats here start from fix-login.',[{label:'Switch to main', act:'resolve', primary:true}])
+  ]}}),
+  dormant: () => ({current:'3rd-try', chips:chips({'second-try':{dormant:true}}), open:'second-try', notices:{'second-try':[
+    N('info','second-try is gone, kept dormant','Its folder is missing from disk. Its chats and memory are kept, and nothing was deleted.',
+      [{label:'Locate folder…', act:'fake'},{label:'Remove workspace', act:'fake'}])]}}),
+  dashed: () => ({current:'scratch-7', chips:chips(), open:'scratch-7', notices:{'scratch-7':[
+    N('warn','web-client is on spike/search, not main','New chats here start from spike/search.',[{label:'Switch to main', act:'resolve', primary:true}])]}}),
+  status: () => ({current:'3rd-try', chips:chips(), open:'@status', statusNotices:[
+    N('warn',"Could not pin 'x': the project's layout file is read-only",'purlis.toml is not writable, so nothing changed.',[{label:'Show file', act:'fake'}])]}),
+  needs: () => ({current:'3rd-try', chips:chips({'another-workspace':{waiting:2}}), open:null, notices:{'another-workspace':[
+    N('needs','A chat asks to remove this workspace','"Tidy up workspaces" is waiting for your yes before it removes another-workspace.',
+      [{label:'Bring chat forward', act:'bring', primary:true}],{chat:'Tidy up workspaces'})]}}),
+  root: () => ({current:'@root', chips:chips({'skills-studio':{waiting:1}}), open:null, notices:{}})
+};
+
+function setScenario(name, variant){
+  clearInterval(timer); timer = null;
+  const keep = S ? S.rootVariant : null;
+  S = Object.assign({scenario:name, rootVariant: variant || keep || null, notices:{}, statusNotices:[], lastAction:'Scenario: ' + INFO[name].t + (variant ? ' ' + variant : '')}, SCEN[name]());
+  if (name === 'stacked') timer = setInterval(tickClone, 450);
+  prevOpen = null;
+  render();
+}
+
+function tickClone(){
+  const n = findNotice('clone');
+  if (!n || n.progress == null){ clearInterval(timer); return; }
+  n.progress = Math.min(100, n.progress + 4);
+  if (n.progress >= 100){
+    clearInterval(timer);
+    Object.assign(n, {kind:'info', title:'Cloned 2 repos', body:'api-server and web-client are ready.'});
+    delete n.progress;
+    S.lastAction = 'The clone finished. Its notice updated in place and was not dismissed.';
+    render(); return;
+  }
+  const bar = document.querySelector('[data-prog="clone"]');
+  if (bar){ bar.firstElementChild.style.width = n.progress + '%'; bar.setAttribute('aria-valuenow', n.progress); bar.nextElementSibling.textContent = n.progress + '%'; }
+  renderState();
+}
+
+function findNotice(id){
+  for (const list of [...Object.values(S.notices), S.statusNotices]){ const n = list.find(x => x.id === id); if (n) return n; }
+}
+function ownerOf(id){
+  for (const [k, list] of Object.entries(S.notices)) if (list.some(x => x.id === id)) return k;
+  if (S.statusNotices.some(x => x.id === id)) return '@status';
+}
+function listOf(key){ return key === '@status' ? S.statusNotices : (S.notices[key] || []); }
+function removeNotice(id){
+  const k = ownerOf(id); if (!k) return;
+  if (k === '@status') S.statusNotices = S.statusNotices.filter(x => x.id !== id);
+  else { S.notices[k] = S.notices[k].filter(x => x.id !== id); if (!S.notices[k].length) delete S.notices[k]; }
+  if (S.open === k && !listOf(k).length) S.open = null;
+}
+const top = list => list.reduce((a, n) => (!a || RANK[n.kind] > RANK[a.kind]) ? n : a, null);
+
+/* ---------- render ---------- */
+function chipHTML(c){
+  const cur = S.current === c.name;
+  const list = S.notices[c.name] || [];
+  const t = top(list);
+  const dot = (t && S.open !== c.name) ? `<button class="dot k-${t.kind}" data-act="dot" data-name="${esc(c.name)}" data-k="dot:${esc(c.name)}" aria-label="${list.length} notice${list.length>1?'s':''} on ${esc(c.name)}, most urgent: ${WORD[t.kind]}. Show">${GLYPH[t.kind]}</button>` : '';
+  const wait = c.waiting ? `<span class="wait" aria-label="${c.waiting} chats waiting on you">${c.waiting}</span>` : '';
+  const pin = c.dashed ? `<button class="pin" data-act="pin" data-name="${esc(c.name)}" data-k="pin:${esc(c.name)}" aria-label="Pin ${esc(c.name)}">+</button>` : '';
+  return `<div class="chip${cur?' cur':''}${c.dormant?' dormant':''}${c.dashed?' dashed':''}" data-chip="${esc(c.name)}">
+    <button class="chip-main" data-act="chip" data-name="${esc(c.name)}" data-k="chip:${esc(c.name)}" ${cur?'aria-current="page"':''} title="${c.dormant?'Dormant: folder missing':''}">${esc(c.name)}</button>${pin}${wait}${dot}</div>`;
+}
+function rootChipHTML(){
+  const cur = S.current === '@root';
+  return `<div class="chip rootchip${cur?' cur':''}" data-chip="@root"><button class="chip-main" data-act="root" data-k="root" ${cur?'aria-current="page"':''} aria-label="${PROJECT} plane root" title="${PROJECT}: plane root, always here">${HOUSE}</button></div>`;
+}
+function renderTB(){
+  const v = S.rootVariant, rootCur = S.current === '@root';
+  const proj = v === 'B'
+    ? `<div class="proj"><button class="projbtn${rootCur?' cur':''}" data-act="root" data-k="root" ${rootCur?'aria-current="page"':''} title="Plane root">${HOUSE}${PROJECT}</button><span class="sep">/</span></div>`
+    : `<div class="proj">${PROJECT} <span class="sep">/</span></div>`;
+  const list = S.chips.slice();
+  if (S.current !== '@root' && !list.some(c => c.name === S.current)) list.push({name:S.current, dashed:true, waiting:0});
+  $('#tb').innerHTML = `<div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>${proj}
+    ${v === 'A' ? rootChipHTML() : ''}
+    <div class="strip" id="strip">${v === 'C' ? rootChipHTML() : ''}${list.map(chipHTML).join('')}</div>
+    <button class="ovf" data-act="fake" data-label="Overflow menu" data-k="ovf" aria-label="More workspaces">▾</button>
+    <div class="tbr">
+      <button data-act="fake" data-label="Search" data-k="i1" aria-label="Search"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button data-act="fake" data-label="Toggle sidebar" data-k="i2" aria-label="Toggle sidebar"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6 3v10" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button class="changed" data-act="fake" data-label="11 changed" data-k="i3">11 changed</button>
+      <button data-act="fake" data-label="About" data-k="i4">About</button>
+    </div>`;
+}
+function renderSB(){
+  const t = top(S.statusNotices);
+  const dot = (t && S.open !== '@status') ? `<span class="sbdot k k-${t.kind}" aria-hidden="true">${GLYPH[t.kind]}</span>` : '';
+  $('#sb').innerHTML = `<button class="doc" data-act="fake" data-label="Doctor" data-k="doc"><b>▲</b> Doctor 8 warnings</button>
+    <button class="right" id="st-notices" data-act="notices" data-k="notices" aria-label="Notices${t?', '+S.statusNotices.length+' hidden, most urgent: '+WORD[t.kind]:''}">${dot}Notices</button>`;
+}
+function noticeHTML(n){
+  const acts = n.actions.map((a, i) => `<button class="${a.primary?'primary':''}" data-act="${a.act}" data-id="${n.id}" data-label="${esc(a.label)}" data-k="a:${n.id}:${i}">${esc(a.label)}${a.act==='details'?(n.expanded?' ▾':' ▸'):''}</button>`).join('');
+  const prog = n.progress != null ? `<div class="prog" data-prog="${n.id}" role="progressbar" aria-label="${esc(n.title)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${n.progress}"><span style="width:${n.progress}%"></span></div><div class="pct">${n.progress}%</div>` : '';
+  const det = n.expanded && n.details ? `<div class="det">${esc(n.details)}</div>` : '';
+  return `<div class="nt k-${n.kind}"><span class="g" aria-label="${WORD[n.kind]}">${GLYPH[n.kind]}</span>
+    <div><b>${esc(n.title)}</b><p>${esc(n.body)}</p>${prog}${det}${acts?`<div class="acts">${acts}</div>`:''}</div>
+    <button class="x" data-act="dismiss" data-id="${n.id}" data-k="x:${n.id}" aria-label="Dismiss: ${esc(n.title)}">×</button></div>`;
+}
+function renderCard(){
+  const old = $('#card'); if (old) old.remove();
+  if (!S.open) return;
+  const list = listOf(S.open);
+  if (!list.length){ S.open = null; return; }
+  const up = S.open !== '@status';
+  const name = S.open === '@status' ? 'Project and app' : S.open;
+  const card = document.createElement('div');
+  card.id = 'card'; card.className = 'card ' + (up ? 'up' : 'down');
+  card.setAttribute('role', 'region'); card.setAttribute('aria-label', 'Notices for ' + name);
+  card.innerHTML = `<span class="arrow" aria-hidden="true"></span>
+    ${list.length > 1 ? `<div class="card-h">${esc(name)} · ${list.length} notices · newest first</div>` : ''}
+    ${list.map(noticeHTML).join('')}
+    <div class="card-f">Esc or × dismisses · clicking elsewhere hides</div>`;
+  $('#win').appendChild(card);
+  place();
+}
+function place(){
+  const card = $('#card'); if (!card || !S.open) return;
+  const win = $('#win'), wr = win.getBoundingClientRect();
+  const anchor = S.open === '@status' ? $('#st-notices') : win.querySelector(`.chip[data-chip="${CSS.escape(S.open)}"]`);
+  if (!anchor){ card.remove(); return; }
+  const ar = anchor.getBoundingClientRect(), cw = card.offsetWidth;
+  const cx = ar.left + ar.width / 2 - wr.left;
+  const up = S.open !== '@status';
+  // Centred on its anchor, so the arrow sits in the card's middle; only a window edge shifts it.
+  let left = cx - cw / 2;
+  left = Math.max(8, Math.min(left, wr.width - cw - 8));
+  card.style.left = left + 'px';
+  const arrow = card.querySelector('.arrow');
+  arrow.style.left = Math.max(14, Math.min(cx - left - 7, cw - 28)) + 'px';
+  if (up){ card.style.top = (ar.bottom - wr.top + 10) + 'px'; card.style.bottom = ''; }
+  else { card.style.bottom = (wr.bottom - ar.top + 10) + 'px'; card.style.top = ''; }
+}
+function renderState(){
+  const dots = {};
+  for (const [k, list] of Object.entries(S.notices)){ const t = top(list); if (t && S.open !== k) dots[k] = GLYPH[t.kind] + ' ' + WORD[t.kind]; }
+  if (S.statusNotices.length && S.open !== '@status'){ const t = top(S.statusNotices); dots['status-bar Notices'] = GLYPH[t.kind] + ' ' + WORD[t.kind]; }
+  const slim = l => l.map(n => Object.assign({kind:n.kind, title:n.title}, n.progress != null ? {progress:n.progress + '%'} : {}, n.expanded ? {details:'open'} : {}));
+  const notices = {}; for (const [k, l] of Object.entries(S.notices)) notices[k] = slim(l);
+  const out = {
+    scenario: S.scenario,
+    rootVariant: S.rootVariant,
+    inFront: S.current === '@root' ? 'plane root' : S.current,
+    unpinnedInFront: (S.current !== '@root' && !S.chips.some(c => c.name === S.current)) ? S.current : null,
+    pinned: S.chips.map(c => c.name),
+    dormant: S.chips.filter(c => c.dormant).map(c => c.name),
+    waiting: Object.fromEntries(S.chips.filter(c => c.waiting).map(c => [c.name, c.waiting])),
+    cardOpenOn: S.open === '@status' ? 'status-bar Notices' : S.open,
+    notices, statusNotices: slim(S.statusNotices),
+    dots
+  };
+  $('#state').textContent = JSON.stringify(out, null, 2);
+  $('#last').textContent = '→ ' + S.lastAction;
+}
+function renderCaption(){
+  const i = INFO[S.scenario];
+  const p = S.scenario === 'root' ? ROOT_P[S.rootVariant] + ' Click any chip to bring it in front, and the root icon to bring the root back.' : i.p + (S.rootVariant ? ` (Root variant ${S.rootVariant} is still on.)` : '');
+  $('#caption').innerHTML = `<b>${i.t}</b> <span style="color:var(--faint)">· ${i.d}</span><p>${p}</p>`;
+  document.querySelectorAll('#bar [data-act="scen"]').forEach(b => {
+    const on = b.dataset.s === S.scenario && (S.scenario !== 'root' || b.dataset.v === S.rootVariant);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+function announce(){
+  if (S.open && S.open !== prevOpen){
+    const l = listOf(S.open), t = top(l);
+    $('#live').textContent = l.length > 1 ? `${l.length} notices on ${S.open}. Most urgent: ${t.title}` : `Notice: ${l[0].title}. ${l[0].body}`;
+  }
+  prevOpen = S.open;
+}
+function render(){
+  const k = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : null;
+  renderTB(); renderSB(); renderCard(); renderState(); renderCaption(); announce();
+  if (k){ const el = document.querySelector(`[data-k="${CSS.escape(k)}"]`); if (el && el !== document.activeElement) el.focus({preventScroll:true}); }
+}
+
+/* ---------- actions ---------- */
+function act(el){
+  const a = el.dataset.act, name = el.dataset.name, id = el.dataset.id, label = el.dataset.label;
+  switch (a){
+    case 'theme': {
+      const r = document.documentElement;
+      const dark = r.dataset.theme ? r.dataset.theme === 'dark' : !matchMedia('(prefers-color-scheme: light)').matches;
+      r.dataset.theme = dark ? 'light' : 'dark'; return;
+    }
+    case 'scen': return setScenario(el.dataset.s, el.dataset.v);
+    case 'chip':
+      S.current = name; S.open = null;
+      S.lastAction = `${name} is now in front` + (S.chips.some(c => c.name === name) ? '' : ' (unpinned)');
+      break;
+    case 'root':
+      S.current = '@root'; S.open = null; S.lastAction = 'The plane root is in front'; break;
+    case 'dot': {
+      const t = top(S.notices[name] || []);
+      S.open = name;
+      S.lastAction = t && t.kind === 'needs'
+        ? `Clicked the ✋ dot: this would bring the chat "${t.chat}" forward (fake) and reopen the card`
+        : `Clicked the dot: the card on ${name} reopened`;
+      break;
+    }
+    case 'pin':
+      S.chips.push({name, pinned:true, dormant:false, waiting:0});
+      S.lastAction = `Pinned ${name}. It is a normal chip now and its notices stay attached`; break;
+    case 'notices':
+      if (S.statusNotices.length){ S.open = S.open === '@status' ? null : '@status'; S.lastAction = S.open ? 'The Notices card opened from the status bar' : 'The Notices card is hidden'; }
+      else S.lastAction = 'There are no project or app notices';
+      break;
+    case 'dismiss': {
+      const n = findNotice(id); removeNotice(id);
+      S.lastAction = `Dismissed with ×: "${n.title}"`; break;
+    }
+    case 'vision': {
+      const k = ownerOf(id); removeNotice(id);
+      S.lastAction = `Add a vision: this would open the vision editor for ${k} (fake). The notice is resolved`; break;
+    }
+    case 'details': {
+      const n = findNotice(id); n.expanded = !n.expanded;
+      S.lastAction = 'Details ' + (n.expanded ? 'expanded' : 'collapsed') + ' in place'; break;
+    }
+    case 'resolve': {
+      const n = findNotice(id); removeNotice(id);
+      S.lastAction = `${label} (fake): "${n.title}" is resolved and removed`; break;
+    }
+    case 'bring': {
+      const n = findNotice(id); S.open = null;
+      S.lastAction = `This would bring the chat "${n.chat}" forward (fake). The ✋ notice stays until that chat gets its answer`; break;
+    }
+    case 'fake':
+      S.lastAction = `${label} (fake, not part of this prototype)`; break;
+  }
+  render();
+}
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (el){ act(el); return; }
+  if (S.open && !e.target.closest('#card')){
+    S.lastAction = 'Clicked elsewhere: the card is hidden, not dismissed, and its dot stays on the chip';
+    S.open = null; render();
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.open){
+    const k = S.open, n = listOf(k).length;
+    if (k === '@status') S.statusNotices = []; else delete S.notices[k];
+    S.open = null;
+    S.lastAction = `Esc dismissed the card on ${k === '@status' ? 'status-bar Notices' : k} (${n} notice${n>1?'s':''})`;
+    render();
+  }
+});
+document.addEventListener('scroll', place, true);
+addEventListener('resize', place);
+
+setScenario('created');
+})();
+</script>
