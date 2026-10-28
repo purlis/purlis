@@ -729,6 +729,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     "hand_back_browser",
     "browser_input",
     "size_browser",
+    // The person's DevTools of a browser they drive (#2028): they reach the whole of the page,
+    // so only the window, where the person sees them, opens, watches or types into them.
+    "inspect_browser",
+    "watch_inspector",
+    "inspector_input",
     // The person sends a browser of their own to an address they typed (#2176): theirs, from
     // its view tab, as their window shows it.
     "go_browser",

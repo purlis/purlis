@@ -587,6 +587,8 @@ export const commands = {
 	handBackBrowser: __WINDOW_ONLY_RESULT,
 	browserInput: __WINDOW_ONLY_RESULT,
 	sizeBrowser: __WINDOW_ONLY_RESULT,
+	inspectBrowser: __WINDOW_ONLY_RESULT,
+	inspectorInput: __WINDOW_ONLY_RESULT,
 	goBrowser: __WINDOW_ONLY_RESULT,
 	/**  The sessions that are running, in the order they were opened. */
 	runningSessions: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("running_sessions", { plane })),
@@ -2978,6 +2980,12 @@ export type BrowserFrame = {
 	 *  and before the first frame of each snapshot; `null` on every frame.
 	 */
 	page: PageAt | null,
+	/**
+	 *  Why a browser's DevTools closed (#2028), said on its own with no image, as their view's
+	 *  last frame: one of `handed_back`, `page_gone`, `fell_behind`, `too_large`, `moved` and
+	 *  `ended`; `null` on every other frame.
+	 */
+	closed: string | null,
 };
 
 /**
