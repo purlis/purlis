@@ -249,8 +249,8 @@ pub(crate) struct Inspection {
     /// The front end's own main world, where its stand-in runs.
     main_context: Mutex<Option<i64>>,
     /// purlis's own worlds in the inspected page, as the page's session tells of them: never
-    /// told to DevTools, and never reached by them.
-    ours: Mutex<HashSet<i64>>,
+    /// told to DevTools, and never reached by them. By session, as a world's id is its session's.
+    ours: Mutex<HashSet<World>>,
     ours_unique: Mutex<HashSet<String>>,
     /// The scripts DevTools are not shown, by id: those of purlis's own worlds, and those of a
     /// world not yet told of. Never reached by DevTools, and taken out of every stack they are in.
@@ -1142,7 +1142,7 @@ fn passed(open: &Inspection, event: crate::cdp::Event) -> Vec<crate::cdp::Event>
             if context["name"].as_str().is_some_and(super::world::is_ours)
                 && context["auxData"]["type"] == "isolated"
             {
-                lock(&open.ours).insert(id);
+                lock(&open.ours).insert((session, id));
                 if let Some(unique) = context["uniqueId"].as_str() {
                     lock(&open.ours_unique).insert(unique.to_owned());
                 }
@@ -1162,9 +1162,9 @@ fn passed(open: &Inspection, event: crate::cdp::Event) -> Vec<crate::cdp::Event>
             let unique = event.params["executionContextUniqueId"].as_str();
             if let Some(id) = id {
                 lock(&open.known).remove(&(session.clone(), id));
-                lock(&open.held).remove(&(session, id));
+                lock(&open.held).remove(&(session.clone(), id));
             }
-            if id.is_some_and(|id| lock(&open.ours).contains(&id))
+            if id.is_some_and(|id| lock(&open.ours).contains(&(session, id)))
                 || unique.is_some_and(|unique| lock(&open.ours_unique).contains(unique))
             {
                 return Vec::new();
@@ -1189,7 +1189,8 @@ fn passed(open: &Inspection, event: crate::cdp::Event) -> Vec<crate::cdp::Event>
                 told.push(event);
             } else {
                 lock(&open.our_scripts).insert(script);
-                let ours = context.is_none_or(|id| lock(&open.ours).contains(&id));
+                let ours =
+                    context.is_none_or(|id| lock(&open.ours).contains(&(session.clone(), id)));
                 let mut held = lock(&open.held);
                 if !ours
                     && held.values().map(Vec::len).sum::<usize>() < MOST_HELD
@@ -1212,15 +1213,33 @@ fn passed(open: &Inspection, event: crate::cdp::Event) -> Vec<crate::cdp::Event>
                     .params
                     .pointer(at)
                     .and_then(Value::as_i64)
-                    .is_some_and(|id| ours.contains(&id))
+                    .is_some_and(|id| ours.contains(&(session.clone(), id)))
             });
             drop(ours);
-            let at_ours = event
+            if in_ours {
+                return Vec::new();
+            }
+            let at = event
                 .params
                 .pointer("/location/scriptId")
                 .and_then(Value::as_str)
-                .is_some_and(|script| lock(&open.our_scripts).contains(script));
-            if in_ours || at_ours {
+                .filter(|script| lock(&open.our_scripts).contains(*script))
+                .map(str::to_owned);
+            if let Some(script) = at {
+                // A breakpoint resolved in a script still waiting for its world waits with it.
+                if event.method == "Debugger.breakpointResolved" {
+                    let mut held = lock(&open.held);
+                    let room = held.values().map(Vec::len).sum::<usize>() < MOST_HELD;
+                    if room
+                        && let Some(waiting) = held.values_mut().find(|waiting| {
+                            waiting
+                                .iter()
+                                .any(|e| e.params["scriptId"].as_str() == Some(script.as_str()))
+                        })
+                    {
+                        waiting.push(event);
+                    }
+                }
                 return Vec::new();
             }
             told.push(event);
@@ -1417,7 +1436,17 @@ fn to_the_page(inner: &Inner, open: &Inspection, payload: &str) -> Option<String
     };
     let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
     let origins = inner.origins_of(&open.inspected);
-    let ours = lock(&open.ours).clone();
+    // purlis's worlds in the session the call is for: a world's id is its session's.
+    let at = message
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| open.root());
+    let ours: HashSet<i64> = lock(&open.ours)
+        .iter()
+        .filter(|(of, _)| *of == at)
+        .map(|(_, id)| *id)
+        .collect();
     let ours_unique = lock(&open.ours_unique).clone();
     let our_scripts = lock(&open.our_scripts).clone();
     let reach = allowed::Reach {

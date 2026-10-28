@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! What of the inspected page's events DevTools are told, event by event ([`passed`]).
 
 use std::collections::{HashMap, HashSet};
