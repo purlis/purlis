@@ -408,10 +408,96 @@ fn a_pools_row_whole_cpus_and_set_limits_read_back_as_written() {
         memory_mib: Some(8192),
         processes: Some(2048),
         tmp_mib: Some(512),
+        frames: Some(30),
+        width: Some(1920),
     };
     record_pool(config.path(), &pool("big", set)).unwrap();
-    assert_eq!(the_file(config.path())["pools"][0]["cpus"], 3);
+    let row = &the_file(config.path())["pools"][0];
+    assert_eq!(row["cpus"], 3);
+    assert_eq!((&row["frames"], &row["width"]), (&30.into(), &1920.into()));
     assert_eq!(pools(config.path()).unwrap()[0].set(), set);
+}
+
+/// #3297: a pool's browser frame limits over the link are its own, and one that sets neither
+/// keeps spec #2041's 15 a second and 1280 pixels.
+#[test]
+fn a_pools_browsers_are_watched_over_the_link_at_its_own_frames_or_the_defaults() {
+    let image = || Image::pinned(IMAGE).unwrap();
+    let plain = Pool::new("plain", image(), Set::default()).unwrap();
+    assert_eq!(
+        plain.link_frames(),
+        LinkFrames {
+            frames: 15,
+            width: 1280
+        }
+    );
+    let fast = Pool::new(
+        "fast",
+        image(),
+        Set {
+            frames: Some(60),
+            width: Some(3840),
+            ..Set::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        fast.link_frames(),
+        LinkFrames {
+            frames: 60,
+            width: 3840
+        }
+    );
+    let slow = Pool::new(
+        "slow",
+        image(),
+        Set {
+            frames: Some(1),
+            ..Set::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        slow.link_frames(),
+        LinkFrames {
+            frames: 1,
+            width: 1280
+        }
+    );
+    for set in [
+        Set {
+            frames: Some(0),
+            ..Set::default()
+        },
+        Set {
+            frames: Some(61),
+            ..Set::default()
+        },
+        Set {
+            width: Some(319),
+            ..Set::default()
+        },
+        Set {
+            width: Some(3841),
+            ..Set::default()
+        },
+    ] {
+        assert!(Pool::new("builds", image(), set).is_err(), "{set:?}");
+    }
+    // Its definition, which a login's opt-in is bound to, changes with them.
+    assert_ne!(
+        plain.definition_digest(),
+        Pool::new(
+            "plain",
+            image(),
+            Set {
+                width: Some(1920),
+                ..Set::default()
+            }
+        )
+        .unwrap()
+        .definition_digest()
+    );
 }
 
 #[test]
@@ -441,6 +527,10 @@ fn a_file_of_an_unknown_shape_is_refused_whole_and_never_replaced() {
         with(&|row| row["memory"] = 1.5.into()),
         with(&|row| row["processes"] = 8.into()),
         with(&|row| row["tmp"] = 999_999.into()),
+        with(&|row| row["frames"] = 0.into()),
+        with(&|row| row["frames"] = "15".into()),
+        with(&|row| row["width"] = 70_000.into()),
+        with(&|row| row["width"] = 100.into()),
         with(&|row| {
             row.as_object_mut().unwrap().remove("kind");
         }),

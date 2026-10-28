@@ -294,9 +294,23 @@ use crate::view::{Limits, Views};
 /// harness's declaration keeps it. The window's alone, relayed for it. A host before 1.44 reads
 /// no `moving` or `with_work` and refuses the conversation commands `unknown_command`, so the
 /// window moves no chat to or from one.
+///
+/// 1.47 added a pool's own browser frame limits (#3297, spec #2041 story 53): a browser's start
+/// may say how its views over a link between hosts are held (`link_frames`: frames a second and
+/// the widest frame, each within its bounds), which the window gives as it starts a runner
+/// chat's browser on its pool's runner, from the pool's settings. A host before 1.47 ignores the
+/// field and holds every such view to spec #2041's defaults, so the window holds that runner's
+/// views to the defaults too.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 44,
+    minor: 47,
+};
+
+/// The version that first holds a browser's views over a link to the frame limits its start
+/// gives (#3297): the window gives them to a runner of this version or later alone.
+pub const KNOWS_LINK_FRAMES: Version = Version {
+    major: 1,
+    minor: 47,
 };
 
 /// The version that first moves a chat's work tree and conversation (#2048): the window moves
@@ -1107,6 +1121,12 @@ pub struct StartProgram {
     /// A grade's chat is started so (SK-16).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ends_with_its_window: bool,
+    /// For a [`ProgramKind::Browser`], how its views over a link between hosts are held (1.47,
+    /// #3297): its pool's own settings, given by the window as it starts the browser on the
+    /// pool's runner. Absent, they are held to [`crate::browsing::LinkFrames::DEFAULT`]. A start
+    /// whose `link_frames` are out of bounds is refused `malformed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_frames: Option<crate::browsing::LinkFrames>,
 }
 
 impl StartProgram {
@@ -1134,6 +1154,7 @@ impl StartProgram {
             kept: None,
             note: None,
             ends_with_its_window: false,
+            link_frames: None,
         }
     }
 }

@@ -158,6 +158,8 @@ describe("You › This machine › Pools", () => {
           memory_mib: null,
           processes: null,
           tmp_mib: null,
+          frames: null,
+          width: null,
         },
       ]),
     );
@@ -180,6 +182,37 @@ describe("You › This machine › Pools", () => {
     );
     const nav = await yourSettings();
     expect(await within(nav).findByRole("button", { name: "Pools" })).toBeInTheDocument();
+  });
+
+  it("adds a pool whose runner's browsers are watched at frames and a width of its own", async () => {
+    // #3297: a pool's browser frame limits over the link are its own settings.
+    render(<App />);
+    await palette("Add a Docker pool…");
+    const dialog = await screen.findByRole("dialog", { name: "Add a Docker pool" });
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Name" }), "fast");
+    await userEvent.type(within(dialog).getByRole("textbox", { name: "Image" }), IMAGE);
+    const frames = within(dialog).getByRole("textbox", { name: "Browser frames a second" });
+    const width = within(dialog).getByRole("textbox", { name: "Browser width in pixels" });
+    expect(frames).toHaveAttribute("placeholder", "15");
+    expect(width).toHaveAttribute("placeholder", "1280");
+    await userEvent.type(frames, "30");
+    await userEvent.type(width, "1920");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add pool" }));
+
+    await waitFor(() =>
+      expect(added).toEqual([
+        {
+          name: "fast",
+          image: IMAGE,
+          cpus: null,
+          memory_mib: null,
+          processes: null,
+          tmp_mib: null,
+          frames: 30,
+          width: 1920,
+        },
+      ]),
+    );
   });
 
   it("says a runner whose key changed in a Notice, whose Remove removes the pool", async () => {

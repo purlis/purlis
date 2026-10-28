@@ -3,13 +3,15 @@
 
 //! **The pools this desktop added, and the runners it pinned** (ADR 0078 §3 and §8, #2525,
 //! #2679, #2749): `<config>/runners.json`, ruled 2026-10-18 and 2026-10-20, `{"version": 1,
-//! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp"}], "runners":
+//! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "frames",
+//! "width"}], "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
 //! "draining"?}]}`.
 //!
 //! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
 //!   image by digest, and the limits the person set, each left out where purlis's default
-//!   holds ([`crate::dockerpool::Limits`]). A workspace names a pool (`machine.json`), and a name
+//!   holds ([`crate::dockerpool::Limits`]), its browsers' frame limits over the link among them
+//!   (#3297). A workspace names a pool (`machine.json`), and a name
 //!   that is not kept here, or whose runner is not, starts no chat ([`runner_for`]).
 //! - **A runner's device id and public link key are kept once** ([`keep`]): a later answer for
 //!   a runner already kept, with another device id or key, is refused and what was kept stays
@@ -30,6 +32,7 @@
 
 use std::path::Path;
 
+use purlis_session_protocol::browsing::LinkFrames;
 use purlis_session_protocol::hostlink::Pinned;
 
 use crate::dockerpool::{ContainerId, Docker, Image, Limits, Made, Runner, User};
@@ -61,14 +64,17 @@ impl std::fmt::Display for Refused {
 impl std::error::Error for Refused {}
 
 /// The limits a person set on a pool, each `None` where purlis's default holds
-/// ([`Limits::default`]): its CPUs in thousandths, its memory and its `/tmp` in MiB, and its
-/// processes.
+/// ([`Limits::default`], [`LinkFrames::DEFAULT`]): its CPUs in thousandths, its memory and its
+/// `/tmp` in MiB, and its processes; and how its runner's browsers are watched over the link
+/// (#3297): the most frames a second, and the widest frame in pixels.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Set {
     pub millicpus: Option<u32>,
     pub memory_mib: Option<u64>,
     pub processes: Option<u32>,
     pub tmp_mib: Option<u64>,
+    pub frames: Option<u32>,
+    pub width: Option<u16>,
 }
 
 /// One Docker pool on this machine, as the person added it (#2679): its name, which its one
@@ -95,12 +101,26 @@ impl Pool {
             set.tmp_mib.unwrap_or(default.tmp_mib()),
         )
         .map_err(|why| Refused::Other(why.0))?;
+        LinkFrames::new(
+            set.frames.unwrap_or(LinkFrames::DEFAULT.frames),
+            set.width.unwrap_or(LinkFrames::DEFAULT.width),
+        )
+        .map_err(Refused::Other)?;
         Ok(Pool {
             name: name.to_owned(),
             image,
             set,
             limits,
         })
+    }
+
+    /// **How its runner's browsers are watched over the link** (#3297): what the person set,
+    /// and spec #2041's defaults for the rest. Given with each browser's start on its runner.
+    pub fn link_frames(&self) -> LinkFrames {
+        LinkFrames {
+            frames: self.set.frames.unwrap_or(LinkFrames::DEFAULT.frames),
+            width: self.set.width.unwrap_or(LinkFrames::DEFAULT.width),
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -742,12 +762,19 @@ fn pool_to_row(pool: &Pool) -> serde_json::Value {
     if let Some(tmp) = set.tmp_mib {
         row["tmp"] = tmp.into();
     }
+    if let Some(frames) = set.frames {
+        row["frames"] = frames.into();
+    }
+    if let Some(width) = set.width {
+        row["width"] = width.into();
+    }
     row
 }
 
 /// A pool's row: its name, kind `docker` and image, and each limit the person set, as
 /// [`pool_to_row`] writes them: `cpus` a number of CPUs to the thousandth, `memory` and `tmp`
-/// in MiB, `processes` a count. Any other key, or a value of another shape, is refused.
+/// in MiB, `processes` a count, `frames` a count a second and `width` in pixels (#3297). Any
+/// other key, or a value of another shape, is refused.
 fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
     let fields = row.as_object()?;
     let known = [
@@ -758,6 +785,8 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         "memory",
         "processes",
         "tmp",
+        "frames",
+        "width",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -794,6 +823,8 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         memory_mib: count(fields.get("memory"))?,
         processes: count(fields.get("processes"))?,
         tmp_mib: count(fields.get("tmp"))?,
+        frames: count(fields.get("frames"))?,
+        width: count(fields.get("width"))?,
     };
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
 }

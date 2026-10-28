@@ -51,7 +51,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use futures::StreamExt;
 use purlis_session_protocol::browsing::{
-    Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LogIn, origin_of,
+    Act, Aim, Browsed, BrowserReach, Driver, Input, KeptLogin, LinkFrames, LogIn, origin_of,
 };
 use purlis_session_protocol::session::{self, Exit, Readiness, Refusal, ViewKind, ViewRole};
 use purlis_session_protocol::view::frames::{JPEG, aimed, frame, origin};
@@ -100,12 +100,13 @@ impl Reads {
     }
 
     /// The least time between frames a view of this link that asks for `every` is sent, and the
-    /// widest frame it is sent: over a link between hosts, the link's (#2050).
-    fn held_to(self, every: Duration) -> (Duration, Option<u16>) {
+    /// widest frame it is sent: over a link between hosts, `link`'s, its browser's (#2050,
+    /// #3297).
+    fn held_to(self, every: Duration, link: LinkFrames) -> (Duration, Option<u16>) {
         if self.between_hosts {
             (
-                every.max(Duration::from_secs(1) / LINK_MOST_FRAMES_A_SECOND),
-                Some(LINK_MOST_FRAME_WIDTH),
+                every.max(Duration::from_secs(1) / link.frames.max(1)),
+                Some(link.width),
             )
         } else {
             (every, None)
@@ -114,12 +115,14 @@ impl Reads {
 }
 
 /// **The most frames a second a view over a link between hosts is sent** (#2050, spec #2041's
-/// default): a runner's browser watched from its desktop.
-pub const LINK_MOST_FRAMES_A_SECOND: u32 = 15;
+/// default): a runner's browser watched from its desktop, where its start gives no
+/// `link_frames` of its pool's own (#3297).
+pub const LINK_MOST_FRAMES_A_SECOND: u32 = LinkFrames::DEFAULT.frames;
 
 /// **The widest frame a view over a link between hosts is sent, in pixels** (#2050, spec
-/// #2041's default): the engine scales a wider page down to it.
-pub const LINK_MOST_FRAME_WIDTH: u16 = 1280;
+/// #2041's default): the engine scales a wider page down to it. A start may give its pool's own
+/// (#3297).
+pub const LINK_MOST_FRAME_WIDTH: u16 = LinkFrames::DEFAULT.width;
 
 /// The least time between two frames sent to a thumbnail: about one a second.
 pub const THUMBNAIL_EVERY: Duration = Duration::from_secs(1);
@@ -401,6 +404,8 @@ impl Latest {
 /// One browser's frames, and the views that want them.
 struct Hub {
     screen: Arc<dyn Screen>,
+    /// How its views over a link between hosts are held: its start's, or the defaults (#3297).
+    link: LinkFrames,
     latest: watch::Sender<Latest>,
     /// Each attached view's least time between frames and widest frame, by its number here.
     viewers: Mutex<Vec<Viewer>>,
@@ -505,7 +510,7 @@ struct BrowserSource {
 
 impl Source for BrowserSource {
     fn attach(&self) -> Attachment {
-        let (every, most_width) = self.reads.held_to(self.every);
+        let (every, most_width) = self.reads.held_to(self.every, self.hub.link);
         let watching = self.hub.watched(every, most_width);
         let mut latest = self.hub.latest.subscribe();
         let reads = self.reads;
@@ -574,15 +579,28 @@ pub(crate) struct Browser {
 }
 
 impl Browser {
+    /// A browser of `screen`, its views over a link between hosts held to the defaults.
+    #[cfg(test)]
     pub(crate) fn new(
         screen: Arc<dyn Screen>,
         program: impl Into<String>,
         stopping: Arc<Mutex<Option<Stopped>>>,
     ) -> Browser {
+        Browser::held_over_links_to(screen, program, stopping, LinkFrames::DEFAULT)
+    }
+
+    /// [`Browser::new`], its views over a link between hosts held to `link` (#3297).
+    pub(crate) fn held_over_links_to(
+        screen: Arc<dyn Screen>,
+        program: impl Into<String>,
+        stopping: Arc<Mutex<Option<Stopped>>>,
+        link: LinkFrames,
+    ) -> Browser {
         let (latest, _) = watch::channel(Latest::Nothing);
         Browser {
             hub: Arc::new(Hub {
                 screen,
+                link,
                 latest,
                 viewers: Mutex::new(Vec::new()),
                 next: AtomicU64::new(1),

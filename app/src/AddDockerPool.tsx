@@ -46,6 +46,12 @@ function SignInOnTheAddedPool({ pool, plane }: { pool: string; plane: string | u
   );
 }
 
+/**
+ * How a pool's runner's browsers are watched over the link by default (#3297, spec #2041): at
+ * most 15 frames a second, 1280 pixels wide. The core holds a pool that sets neither to these.
+ */
+const LINK_FRAMES_BY_DEFAULT = { frames: "15", width: "1280" };
+
 /** A count typed, or `null` for the default; `undefined` when it is not a count. */
 function count(typed: string): number | null | undefined {
   const trimmed = typed.trim();
@@ -60,14 +66,25 @@ function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) 
   const [memory, setMemory] = useState("");
   const [processes, setProcesses] = useState("");
   const [tmp, setTmp] = useState("");
+  const [frames, setFrames] = useState("");
+  const [width, setWidth] = useState("");
   const [trouble, setTrouble] = useState<string | undefined>();
   const [adding, setAdding] = useState(false);
 
   const add = async () => {
     if (adding) return;
     const [memoryMib, processesCount, tmpMib] = [count(memory), count(processes), count(tmp)];
-    if (memoryMib === undefined || processesCount === undefined || tmpMib === undefined) {
-      setTrouble("Nothing was added: memory, processes and /tmp are whole numbers.");
+    const [framesCount, widthPixels] = [count(frames), count(width)];
+    if (
+      memoryMib === undefined ||
+      processesCount === undefined ||
+      tmpMib === undefined ||
+      framesCount === undefined ||
+      widthPixels === undefined
+    ) {
+      setTrouble(
+        "Nothing was added: memory, processes, /tmp, frames and width are whole numbers.",
+      );
       return;
     }
     const asked: PoolAdding = {
@@ -77,6 +94,8 @@ function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) 
       memory_mib: memoryMib,
       processes: processesCount,
       tmp_mib: tmpMib,
+      frames: framesCount,
+      width: widthPixels,
     };
     setTrouble(undefined);
     setAdding(true);
@@ -184,6 +203,20 @@ function AddDockerPool({ defaults }: { defaults: PoolLimitsShown | undefined }) 
         tmp,
         setTmp,
         defaults === undefined ? undefined : String(defaults.tmp_mib),
+      )}
+      {limit(
+        "Browser frames a second",
+        "How many frames a second its runner's browsers are watched at over the link. Empty is the default.",
+        frames,
+        setFrames,
+        LINK_FRAMES_BY_DEFAULT.frames,
+      )}
+      {limit(
+        "Browser width in pixels",
+        "The widest frame its runner's browsers are watched at over the link. Empty is the default.",
+        width,
+        setWidth,
+        LINK_FRAMES_BY_DEFAULT.width,
       )}
 
       {trouble !== undefined && (

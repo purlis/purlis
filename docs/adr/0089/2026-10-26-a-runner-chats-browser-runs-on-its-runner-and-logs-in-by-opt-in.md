@@ -56,3 +56,12 @@ keeps one label and never receives a vault value; an owned device receives one o
     every runner and never a pool's settings. They bound the memory a runner's host keeps for an
     absent desktop and keep one chat from crowding out another's, for a `secret exec` as for a
     login. *Decided in implementation, to be confirmed (D-2050-14).*
+12. **A pool's browser frame limits are its own** (#3297, the pool keys `frames` and `width`
+    ruled by the dispatcher 2026-10-28 under the person's delegation of that day): each pool may
+    set the most frames a second (1 to 60) and the widest frame (320 to 3840 pixels) its runner's
+    browsers are watched at over the link; one that sets neither keeps 15 and 1280. The window
+    gives them with each browser's start on the runner (session protocol 1.47), so a change holds
+    for the next browser without the runner being made again, and the runner holds that
+    browser's views over the link to them. The window holds the frames it draws to the more of
+    the pool's and the defaults, since a runner before 1.47 sends the defaults. This replaces
+    item 6's "the same for every pool". *Decided in implementation (D-2050-19 to D-2050-21).*

@@ -258,7 +258,7 @@ mod hosted {
     use std::time::Duration;
 
     use purlis_core::eventlog::browsing::{Closer, Driver as Drives, Said, Typist};
-    use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, Driver};
+    use purlis_session_protocol::browsing::{Act, Browsed, BrowserReach, Driver, LinkFrames};
     use purlis_session_protocol::session::{
         self, Answer, Command, ProgramKind, StartProgram, ViewKind, ViewRole,
     };
@@ -479,6 +479,30 @@ mod hosted {
         /// The origin of each browser's page, as its views were last told it, by program
         /// (#2842): what typing into it is said on.
         origins: Arc<Mutex<HashMap<String, Option<String>>>>,
+        /// What the window holds each runner browser's frames to, by program (#3297).
+        held_to: Arc<Mutex<HashMap<String, LinkFrames>>>,
+    }
+
+    /// **How pool `pool`'s runner's browsers are watched over the link** (#3297): its own
+    /// settings, as this machine keeps the pool; the defaults where it is not kept, or its file
+    /// cannot be read.
+    fn pools_link_frames(pool: &str) -> LinkFrames {
+        purlis_core::machine::config_root()
+            .and_then(|config| purlis_core::runners::pools(&config).ok())
+            .and_then(|pools| pools.into_iter().find(|it| it.name() == pool))
+            .map(|it| it.link_frames())
+            .unwrap_or_default()
+    }
+
+    /// **What the window holds a runner browser's frames to**, where its pool's are `frames`
+    /// (#3297): the more of each of those and the defaults. A runner before 1.47 holds its views
+    /// to the defaults, and one since to the pool's, and the window does not know which it
+    /// links to, so it draws either and nothing past both.
+    fn window_holds(frames: LinkFrames) -> LinkFrames {
+        LinkFrames {
+            frames: frames.frames.max(LinkFrames::DEFAULT.frames),
+            width: frames.width.max(LinkFrames::DEFAULT.width),
+        }
     }
 
     /// **Told what the window says of a browser in the event log** (#2293): the project the
@@ -559,6 +583,7 @@ mod hosted {
                 notes: Mutex::new(None),
                 closing: Arc::default(),
                 origins: Arc::default(),
+                held_to: Arc::default(),
             }
         }
 
@@ -963,10 +988,14 @@ mod hosted {
             let named = purlis_core::browsers::a_browsers_id();
             // Waited on before it is asked for, so no word of its download comes too early.
             crate::enginedownload::here().started(&named);
+            // On a pool's runner, its views over the link are held to the pool's own frames
+            // (#3297).
+            let link_frames = at.pool.as_deref().map(pools_link_frames);
             let start = Command::StartProgram(Box::new(StartProgram {
                 program: Some(named.clone()),
                 reach,
                 kept,
+                link_frames,
                 ..StartProgram::of(project, ProgramKind::Browser)
             }));
             // The host's first start downloads the engine inside it: waited for as long as that
@@ -976,6 +1005,9 @@ mod hosted {
             crate::enginedownload::here().finished(&named);
             match answered.map_err(|refused| not_started(refused, budget))? {
                 Answer::ProgramStarted { program, .. } => {
+                    if let Some(frames) = link_frames {
+                        lock(&self.held_to).insert(program.clone(), window_holds(frames));
+                    }
                     self.follow_its_end(&link, root, &program);
                     if let Some(held) = self.projects().get_mut(&at) {
                         held.browsers.push(program.clone());
@@ -1019,8 +1051,13 @@ mod hosted {
             };
             // Followed before it draws, so its first frame finds it.
             self.follow(&link, attached.view, link_said);
-            // A runner's browser is held to the link's frames by the window too (#2050).
-            let held = self.pool_of(program).is_some();
+            // A runner's browser is held to the link's frames by the window too (#2050, #3297).
+            let held = self.pool_of(program).map(|_| {
+                lock(&self.held_to)
+                    .get(program)
+                    .copied()
+                    .unwrap_or_default()
+            });
             // Where its page is, kept for what typing into it is said on (#2842).
             let kept = Arc::clone(&self.origins);
             let of = program.to_owned();

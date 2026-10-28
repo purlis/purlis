@@ -7672,6 +7672,10 @@ export type PoolAdding = {
 	memory_mib: number | null,
 	processes: number | null,
 	tmp_mib: number | null,
+	/**  The most frames a second its runner's browsers are watched at over the link (#3297). */
+	frames: number | null,
+	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
+	width: number | null,
 };
 
 /**

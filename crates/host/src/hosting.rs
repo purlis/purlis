@@ -2061,6 +2061,15 @@ impl Hosting {
         self.heed_a_stop_written_elsewhere().await;
         self.let_through(&start, peer)?;
         a_note_that_fits(start.note.as_ref())?;
+        // Its views over a link between hosts: its pool's own limits, each within its bounds, or
+        // the defaults (#3297).
+        let link_frames = match start.link_frames {
+            None => purlis_session_protocol::browsing::LinkFrames::DEFAULT,
+            Some(given) => given.checked().map_err(|why| Refusal {
+                code: session::MALFORMED.into(),
+                why,
+            })?,
+        };
         // Read before the lock: it may read this machine's store.
         let budget = self.inner.browsers.budget();
         let (program, at, place, download) = {
@@ -2134,8 +2143,12 @@ impl Hosting {
         // The host's own act that ends it, for the line its end leaves in the host's log
         // (#2745); a browser's end leaves nothing in the event log.
         let stopping: Arc<Mutex<Option<Stopped>>> = Arc::default();
-        let running: Arc<dyn Running> =
-            Arc::new(Browser::new(screen, program.clone(), Arc::clone(&stopping)));
+        let running: Arc<dyn Running> = Arc::new(Browser::held_over_links_to(
+            screen,
+            program.clone(),
+            Arc::clone(&stopping),
+            link_frames,
+        ));
         let process = running.process();
         let mut state = self.state();
         let opened_by = opened_by(&state, peer);

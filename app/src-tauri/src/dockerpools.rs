@@ -60,6 +60,10 @@ pub struct PoolAdding {
     pub memory_mib: Option<u32>,
     pub processes: Option<u32>,
     pub tmp_mib: Option<u32>,
+    /// The most frames a second its runner's browsers are watched at over the link (#3297).
+    pub frames: Option<u32>,
+    /// The widest frame its runner's browsers are watched at over the link, in pixels (#3297).
+    pub width: Option<u32>,
 }
 
 /// Where a pool's runner stands, as one link to it says.
@@ -165,6 +169,20 @@ pub fn pool_of(adding: &PoolAdding) -> Result<Pool, String> {
         memory_mib: adding.memory_mib.map(u64::from),
         processes: adding.processes,
         tmp_mib: adding.tmp_mib.map(u64::from),
+        frames: adding.frames,
+        width: adding
+            .width
+            .map(|width| {
+                u16::try_from(width).map_err(|_| {
+                    let widest = purlis_session_protocol::browsing::LinkFrames::WIDTH;
+                    format!(
+                        "a pool's widest browser frame is {} to {} pixels",
+                        widest.start(),
+                        widest.end()
+                    )
+                })
+            })
+            .transpose()?,
     };
     Pool::new(adding.name.trim(), image, set).map_err(|why| why.to_string())
 }

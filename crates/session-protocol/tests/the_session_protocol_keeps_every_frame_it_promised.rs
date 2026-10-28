@@ -28,7 +28,8 @@
 //! before it with frames of its own renumbers at merge), 1.42's program that ends with its
 //! window (#3274, id 157), 1.43's desktop keeping its profile on its runner (#2049, id 158), and
 //! 1.44's chat moving between the desktop and a runner with its work tree and conversation
-//! (#2048, ids 159 to 162). 1.35 adds no frame of the
+//! (#2048, ids 159 to 162), and 1.47's browser started with its pool's own frame limits over a
+//! link (#3297, id 169, after 1.45's and 1.46's). 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
 //! `a_browser_views_bytes_are_whole_frames_however_they_are_cut.rs` (#2300). Each must read back
 //! as it was recorded, by this build and so by every later one, which is what lets a client and a host one version apart
