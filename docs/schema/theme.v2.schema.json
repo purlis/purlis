@@ -2783,6 +2783,48 @@
         "card.title.ask.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "card.facts-label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.facts-label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card.facts-label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "card.facts-value.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.facts-value.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card.facts-value.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "card.tile.border-colour": {
+          "$ref": "#/$defs/part-border-colour"
+        },
+        "card.tile.border-width": {
+          "$ref": "#/$defs/part-border-width"
+        },
+        "card.tile.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "card.tile.padding": {
+          "$ref": "#/$defs/part-padding"
+        },
+        "card.tile.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "card.tile-value.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "card.tile-value.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "card.tile-value.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
         "checkbox.root.fill": {
           "$ref": "#/$defs/part-fill"
         },
@@ -4807,6 +4849,138 @@
         },
         "menu.indicator.danger.open.text": {
           "$ref": "#/$defs/part-text"
+        },
+        "meter.root.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.root.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "meter.root.subject.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.root.subject.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "meter.root.baseline.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.root.baseline.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "meter.root.previous.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.root.previous.gap": {
+          "$ref": "#/$defs/part-gap"
+        },
+        "meter.label.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.label.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.label.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.label.subject.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.label.subject.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.label.subject.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.label.baseline.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.label.baseline.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.label.baseline.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.label.previous.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.label.previous.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.label.previous.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.track.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.track.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "meter.track.subject.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.track.subject.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "meter.track.baseline.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.track.baseline.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "meter.track.previous.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.track.previous.corner-radius": {
+          "$ref": "#/$defs/part-corner-radius"
+        },
+        "meter.fill.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.fill.subject.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.fill.baseline.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.fill.previous.fill": {
+          "$ref": "#/$defs/part-fill"
+        },
+        "meter.value.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.value.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.value.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.value.subject.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.value.subject.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.value.subject.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.value.baseline.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.value.baseline.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.value.baseline.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "meter.value.previous.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "meter.value.previous.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "meter.value.previous.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
         },
         "notice.root.fill": {
           "$ref": "#/$defs/part-fill"

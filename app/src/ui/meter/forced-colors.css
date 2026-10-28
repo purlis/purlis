@@ -1,0 +1,38 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* **The meter family in forced colours** (#3674, #3387): what `theme/forced-colors.css` says of
+   the window, said of this family's own parts, in the system's palette alone. Forced colours take
+   a fill away, so a bar keeps its own: the fill in the system's highlight on a track edged in the
+   words' colour, and the previous version in the words' colour. The system's palette has no
+   pattern, so the baseline is told by its label (and its value) alone, and a bar going with no
+   end known is the whole track in the highlight. Its label and value are words, drawn in the
+   system's words' colour. */
+
+@media (forced-colors: active) {
+  [data-scope="meter"]:is([data-part="track"], [data-part="fill"]) {
+    forced-color-adjust: none;
+  }
+
+  [data-scope="meter"][data-part="track"] {
+    border: 1px solid CanvasText;
+    background-color: Canvas;
+  }
+
+  [data-scope="meter"][data-part="fill"] {
+    background-color: Highlight;
+  }
+
+  [data-scope="meter"][data-part="root"][data-variant="baseline"] [data-part="fill"] {
+    background-image: none;
+  }
+
+  [data-scope="meter"][data-part="root"][data-variant="previous"] [data-part="fill"] {
+    background-color: CanvasText;
+  }
+
+  [data-scope="meter"][data-part="root"][data-indeterminate] [data-part="fill"] {
+    background-color: Highlight;
+    background-image: none;
+  }
+}

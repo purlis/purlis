@@ -775,6 +775,35 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   `Separator.stories.tsx`): an ask with Allow and Keep blocked, a pane's row with +N more, the
   Inbox's list, a Notice alone, every badge and count, the hosts' statuses, a badge's hint, and a
   line across a card and down a strip, each walked by the keyboard and checked by axe.
+## The meter family
+
+**A value drawn as a bar is the meter family** (`app/src/ui/meter/`, #3674, on React Aria's
+`Meter` and `ProgressBar`, added to spec #2897's closed list by the operator on 2026-10-28). No
+screen writes a `<meter>` or a `<progress>`, or either role by hand: `purlis/meter-family` is an
+error (Get project's clone progress is still off, until it moves).
+
+| Wrapper | What it is |
+| --- | --- |
+| `Meter` (`Meter.tsx`) | **A labelled value on a known range**: a grade's score from 0 to 100. Its label at the start, its track, its value in figures of one width at the end (`valueLabel`, "86%"). Its `variant` says what it is in a comparison: `subject` (the accent), `baseline` (without it, the waiting colour, hatched) and `previous` (its previous version, the muted tier) |
+| `MeterGroup` | **Meters that compare**: one scale (0 to 100 unless said) and one label column, so their tracks are one length and a longer bar is a larger value; named for a reader ("Latest grade") |
+| `ProgressBar` | **How far something is**: done of N (`value`, `maxValue`, `valueLabel`), or going with no end known (`isIndeterminate`), its stripes moving, and standing still under reduced motion |
+
+- **A reader hears a meter by its label, with its value** (`aria-valuetext`). A progress bar's
+  value is said politely as it changes, at most once a second, in a status line beside it: its
+  own children are presentational to a reader.
+- **Told apart by more than colour** (WCAG 1.4.1): each bar's label, and the baseline's hatch.
+  Each fill is held at 3:1 on its track on every ground (`meter.fill.*.fill` on
+  `meter.track.fill`), by the theme engine: a theme that would lose a bar draws its default.
+- **Forced colours** draw the fill in the system's highlight on a track edged in the words'
+  colour and the previous version in the words' colour (`forced-colors.css`); the system's
+  palette has no pattern, so there the baseline is told by its label and its value. The value is
+  words, in the system's words' colour.
+- **Drawn by its parts** (ADR 0103): the `root` (its `data-variant`), `label`, `track`, `fill`
+  and `value`, in `meter.css`; a theme's parts reach the same attributes (`meter.*`, the next
+  release's manifest version).
+- **Stories hold it** (`Meter.stories.tsx`): the latest grade's three bars, a running grade's
+  progress that moves, and one going with no end known.
+
 ## The tooltip family
 
 **Every hint in the window is the shared tooltip** (`app/src/ui/tooltip/Tooltip.tsx`, #2908,
