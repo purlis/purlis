@@ -92,8 +92,47 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             clashes: Vec::new(),
             first: StudioFirst::default(),
             pins_refused: None,
+            not_supported: Vec::new(),
             router: None,
         }
+    );
+}
+
+#[test]
+fn a_declared_harness_with_neither_a_skill_format_nor_mcp_is_said_in_one_line() {
+    // SK-30, #2985: its chats get no skills, and the studio says why.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("plane");
+    skill(
+        &root.join("skills"),
+        "deploy",
+        "---\nname: deploy\ndescription: Deploys.\n---\n",
+    );
+    std::fs::create_dir_all(root.join("harnesses")).unwrap();
+    std::fs::write(
+        root.join("harnesses/goose.toml"),
+        "name = \"goose\"\ntitle = \"Goose\"\nprogram = \"goose\"\n\n[session]\n\n\
+         [terminal]\nready_to_type = \"raw-and-quiet\"\n\n[levels]\n\n[capabilities]\n\
+         mcp_servers = \"no: it takes none\"\n",
+    )
+    .unwrap();
+
+    let studio = studio(&root, None, true, None, None, &no_harness());
+
+    assert_eq!(
+        studio.not_supported,
+        [StudioNotSupported {
+            name: "goose".to_owned(),
+            title: "Goose".to_owned(),
+            said: "Skills are not supported on Goose: it has no skill format purlis can hand \
+                   skills by, and its declaration does not say it takes MCP servers, so its \
+                   chats get no skills."
+                .to_owned(),
+        }]
+    );
+    assert!(
+        studio.harnesses.iter().all(|one| one.title != "Goose"),
+        "it is no harness skills reach"
     );
 }
 

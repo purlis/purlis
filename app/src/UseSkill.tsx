@@ -303,7 +303,8 @@ export function UseSkill({
               ) : listed.length === 0 ? (
                 <p className="honest" data-testid="use-skill-none">
                   {!skills.known
-                    ? "This chat runs no tool purlis knows, so it has no skills to use here."
+                    ? (skills.not_supported ??
+                      "This chat runs no tool purlis knows, so it has no skills to use here.")
                     : "This chat has no skills. Open Skill studio from the palette to see why any skill is left out."}
                 </p>
               ) : shown.length === 0 ? (

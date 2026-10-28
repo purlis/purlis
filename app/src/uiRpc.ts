@@ -3129,7 +3129,7 @@ export type CertificateCheck = {
  *  What one changed path is part of, as the window's readers divide the plane
  *  ([`purlis_core::planechange::Kind`], which this mirrors for the bindings).
  */
-export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "git" | "chats";
+export type ChangeKind = "project" | "harness" | "workspace" | "todos" | "memory" | "sessions" | "persona" | "skills" | "git" | "chats";
 
 /**
  *  Where one change's member list is in a changes view, sent with its blocks
@@ -3453,6 +3453,11 @@ export type ChatSkills = {
 	 *  (#3462): what the Skills view narrows a chat's repo skills to. None for a chat in no clone.
 	 */
 	repos: string[],
+	/**
+	 *  Why the chat gets no skills, where its harness is a declared one skills are not supported
+	 *  on (SK-30): said in place of the words for a tool purlis does not know.
+	 */
+	not_supported: string | null,
 	/**
 	 *  How its router extension did at its start (SK-15b): null for a chat routed by the
 	 *  built-in router, which is asked nothing.
@@ -10553,6 +10558,11 @@ export type Studio = {
 	 */
 	pins_refused: SkillPinsRefused | null,
 	/**
+	 *  The declared harnesses skills are not supported on (SK-30): each skill's badge names them,
+	 *  and the harnesses' list says why in one line.
+	 */
+	not_supported: StudioNotSupported[],
+	/**
 	 *  The router its chats are routed by, and how it did at each one's start (SK-15b). Null
 	 *  while the studio is off.
 	 */
@@ -10620,6 +10630,18 @@ export type StudioLevel = {
 	level: SkillLevel,
 	/**  As a person reads it: `project`, `local workspace ops` (the core's `Level`). */
 	label: string,
+};
+
+/**
+ *  **A declared harness skills are not supported on** (SK-30, #2985): the core's
+ *  `skills::NotSupported`.
+ */
+export type StudioNotSupported = {
+	/**  The word a profile's `kind` names it by. */
+	name: string,
+	title: string,
+	/**  Why its chats get no skills, in one line. */
+	said: string,
 };
 
 /**  One chat a router extension was asked about at its start. */

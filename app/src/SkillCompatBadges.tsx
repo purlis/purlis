@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SkillCompat, SkillFit } from "./bindings";
+import type { SkillCompat, SkillFit, StudioNotSupported } from "./bindings";
 
 /** How well a skill fits, as its badge's word says it. */
 export function fitSaid(fit: SkillFit): string {
@@ -23,19 +23,23 @@ export function fitSaid(fit: SkillFit): string {
  * opened, the core's
  * lines that say why: what applies, what purlis leaves out because a skill may only narrow a
  * chat, what is carried over by purlis's equivalent, and what is not applied. Nothing is
- * silently half-applied.
+ * silently half-applied. A declared harness skills are not supported on gets a badge that says
+ * so, opened to its one line (SK-30).
  */
 export function SkillCompatBadges({
   name,
   compat,
   lint = [],
+  notSupported = [],
 }: {
   name: string;
   compat: SkillCompat[];
   /** What the built-in lints say of a skill from outside the project, one line each. */
   lint?: readonly string[];
+  /** The declared harnesses skills are not supported on (SK-30). */
+  notSupported?: readonly StudioNotSupported[];
 }) {
-  if (compat.length === 0 && lint.length === 0) return null;
+  if (compat.length === 0 && lint.length === 0 && notSupported.length === 0) return null;
   const widens = compat.some((one) => one.fit === "widens");
   return (
     <ul className="skill-compat" aria-label={`Where ${name} works`}>
@@ -56,6 +60,20 @@ export function SkillCompatBadges({
               {one.says.map((line) => (
                 <li key={line}>{line}</li>
               ))}
+            </ul>
+          </details>
+        </li>
+      ))}
+      {notSupported.map((one) => (
+        <li key={`not-${one.name}`}>
+          <details
+            className="skill-compat-badge"
+            data-fit="unsupported"
+            data-testid={`compat-${name}-${one.name}`}
+          >
+            <summary>{`${one.title}: skills not supported`}</summary>
+            <ul>
+              <li>{one.said}</li>
             </ul>
           </details>
         </li>

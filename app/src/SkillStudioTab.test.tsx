@@ -31,6 +31,27 @@ function answering(studio: unknown) {
 }
 
 describe("the Skill studio", () => {
+  it("says in one line why a declared harness's chats get no skills (SK-30)", async () => {
+    const said =
+      "Skills are not supported on Goose: it has no skill format purlis can hand skills by, and its declaration does not say it takes MCP servers, so its chats get no skills.";
+    answering({
+      on: true,
+      workspace: null,
+      first: { starts: false, unmoved: null },
+      workspaces: [],
+      levels: [],
+      harnesses: [],
+      clashes: [],
+      skills: [],
+      pins_refused: null,
+      not_supported: [{ name: "goose", title: "Goose", said }],
+    });
+    render(<SkillStudioTab plane="p" scope={AT_THE_ROOT} changed={0} />);
+    const line = await screen.findByTestId("skill-studio-not-supported-goose");
+    expect(line).toHaveTextContent("Goose");
+    expect(line).toHaveTextContent(said);
+  });
+
   it("lists each skill with its level, and why one is left out", async () => {
     answering({
       on: true,

@@ -6020,6 +6020,21 @@ down rather than read off the code.
   `vouched`, `retired_mirrors`), `crates/purlis-core/src/wslayer.rs` (`found`, `unwanted`,
   `withdraw`).
 
+### `app/old-harness-plugins-answered`
+- **Format:** UTF-8 text. Empty means the person answered the Inbox's whole Ask about the old
+  `[harness_plugins]` keys for this project with its Dismiss (#3467), and is what every answer
+  kept before #3569 looks like. Otherwise one line per file, relative to the project
+  (`charter.toml`, `workspaces/ops/workspace.json`), whose change from the Ask's Remove the person
+  applied, or dismissed while it still applied. Remove alone writes nothing here: a file with a
+  change of purlis's waiting is not asked about meanwhile. A change that went stale, or can no
+  longer be made, is no answer: dismissing it takes its file's line out, so the Ask comes back
+  with Remove for that file while it still holds the keys, whatever the other files' changes do
+  (#3569). Unreadable reads as the whole Ask answered.
+- **Status:** **internal** — written and read by purlis alone; no chat can write it (the sandbox denies every chat a write under `<state>/app`).
+- **Tier:** Clone state — deleting it brings the Ask back once more, while a file holds the keys.
+- **Code:** `app/src-tauri/src/oldplugins.rs` (`answered_at`, `notice_of`,
+  `purlis_change_applied`, `purlis_change_dismissed`).
+
 ### `app/reopen.json`
 - **Format:** JSON, `indent=2`, trailing `\n`. Replaced whole by `rewrite::replace`: written
   to a temp file beside it (`.charter-generated.reopen.json.<pid>.<tag>.tmp`), flushed and
