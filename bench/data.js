@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793209182699,
+  "lastUpdate": 1793210954636,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28560,6 +28560,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6181945,
             "unit": "ms",
             "extra": "median of 5 runs: 100.878, 101.325, 101.618, 102.006, 102.186 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ea9294758a1e3ad909daecb1d04e6a102253ada3",
+          "message": "Runners: hours this week and money per pool in Devices (#3706)\n\n* Plane format: the record of when each runner ran (#3492)\n\n`<config>/runner-hours.jsonl`, Machine, device-bound: one line per runner\nstart or stop, at Docker's own times, bounded to 14 days and 48 KiB, so\nDevices can sum each pool's hours this week (the ISO week in local time).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Devices: each pool's hours this week (#3492)\n\npurlis_core::runnerhours keeps when each runner started and stopped, at\nDocker's own times (State.StartedAt and FinishedAt), written as the window\nreads a runner's container and as a runner is removed. Devices sums each\npool's runners, its removed ones included, over the ISO week in local time,\nin a new Hours this week column of the use table.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Plane format: a pool declares its price per hour (#3491)\n\n`pricePerHour {amount, currency}` on a Docker pool's row of runners.json:\namount a decimal string, currency an ISO 4217 code. Devices shows money only\nfor a pool that declares one, in its currency, never converted.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Devices: money this week for a pool that declares a price (#3491)\n\nA Docker pool's row keeps `pricePerHour {amount, currency}` as it was\ndeclared (amount a decimal string), outside its definition digest. Devices\nadds a Money this week column only when some pool is priced: hours this\nweek times the price, worked in BigInt from the decimal, rounded half up to\nthe currency's minor unit, shown with its ISO 4217 code.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runner hours: key each runner's last line by name (#3492)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Devices: a runner not answered in time has no hours this week (#3492)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runner hours: a test's helper no longer hides the record's stop (#3492)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Plane format: a run is never split, other fields are kept, chats read no hours (#3492)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runner hours: prune whole runs, keep other fields, deny chats reading (#3492)\n\nA start and the stop that ends it are kept or dropped together, for the\n14-day prune and the 48 KiB cap, so a run longer than two weeks keeps its\nhours when it stops. A line with a field this purlis does not know is kept\nwith it. runner-hours.jsonl is denied to chats as runners.json is. A test\ntime zone covers a Monday with no midnight.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Pools: a bad price says which pool and how to write it (#3491)\n\nThe whole file is still refused, now with the reason the price is not one.\nMoney's doc says it is worked from the exact seconds. CONTEXT reflowed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T17:40:02Z",
+          "tree_id": "30611a045d6604da3e37218541ac0cbe585101a0",
+          "url": "https://github.com/purlis/purlis/commit/ea9294758a1e3ad909daecb1d04e6a102253ada3"
+        },
+        "date": 1793210950817,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5200925000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.509, 0.520, 0.520, 0.531, 0.536 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.271117,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.058, 16.108, 16.271, 16.635, 16.797 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2326745,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.041, 100.966, 101.233, 102.153, 102.746 ms"
           }
         ]
       }
