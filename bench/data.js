@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793193766164,
+  "lastUpdate": 1793195243650,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28266,6 +28266,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8705885,
             "unit": "ms",
             "extra": "median of 5 runs: 100.916, 101.212, 101.871, 102.022, 102.785 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "18b1db82be1df411682ef9a24fba76a6e232d2f9",
+          "message": "Title bar: a plane-root chip after the project's name (#3654) (#3657)\n\n* Title bar: a plane-root chip after the project's name (#3654)\n\nThe plane root gets a house chip right after the project's name and\nits slash, outside the scrolling strip, so it never scrolls away. It is\nalways drawn and has no pin: its context menu is the root's, which has\nno pin row, and the popover, the two-column switcher and the palette\nalready offer none for the root. A press brings the plane root to the\nfront through the same go the popover's root row takes, and the chip\ntakes the chosen look (the accent's wash, aria-current) while the root\nis in front. It is a button named \"Plane root\", a Tab stop of its own\nbefore the strip's.\n\nIt is the `root` variant of the title bar's workspace chip, since NEXT,\nso `titlebar.workspace.root.*` keys reach it with the chip's states and\ncontrast floors. Schema and the themes doc table are regenerated.\nQueries that list the workspace chips (test-strips, the stories, the\ne2e helpers) leave the root's house out.\n\nCloses #3654\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Title bar: the root chip takes its name from OUTSIDE_TITLE (#3654)\n\nThe copy check reads a literal \"Plane root\" in a shown attribute as the\nretired term; the words are the palette's constant, handed in as a prop.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Title bar: real checks that the root has no pin; the keyboard back on the house (#3654)\n\nReview round 1 of #3657:\n- The palette check opens the command palette (F2) and lists the\n  workspaces' pin rows as its control; none names the root.\n- The popover and the two-column switcher (rail hidden) draw a pin\n  toggle for every workspace and none for the root, by any name.\n- With the root in front, a switcher that closes on nothing it came\n  from gives the keyboard to the house, which is outside the strip.\n- The family's doc comments name the root variant and RootChip.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-28T12:58:03Z",
+          "tree_id": "8eb52e7780c0b6220d612483d87631a51d25668e",
+          "url": "https://github.com/purlis/purlis/commit/18b1db82be1df411682ef9a24fba76a6e232d2f9"
+        },
+        "date": 1793195238530,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.674231,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.660, 0.663, 0.674, 0.681, 0.693 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.575094,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.327, 16.424, 16.575, 16.602, 16.722 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.186403,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.653, 102.140, 102.186, 102.502, 102.812 ms"
           }
         ]
       }
