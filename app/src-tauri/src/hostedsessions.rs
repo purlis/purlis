@@ -621,10 +621,6 @@ pub const MOST_HELD_FRAME_BYTES: usize = 4 << 20;
 /// The highest frame of a runner's browser the window draws, in pixels.
 pub const MOST_HELD_FRAME_HEIGHT: u16 = 8192;
 
-/// The least time between two frames of a runner's browser the window draws, at the link's
-/// default 15 a second ([`HeldFrames::at_least`]).
-pub const HELD_FRAMES_AT_LEAST: Duration = Duration::from_millis(50);
-
 impl FrameSinks {
     /// Whether `image` is drawn: every frame, but for a view the window holds (#2050).
     fn held_draw(&mut self, image: &[u8]) -> bool {
