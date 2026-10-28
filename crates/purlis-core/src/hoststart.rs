@@ -531,18 +531,13 @@ pub fn compose_ready(
         let name = start
             .number
             .map_or_else(|| id.to_owned(), |number| number.to_string());
+        // No app state, no record of what was there: such a chat is not started.
+        if let Some(refused) = crate::skills::levels::refusal_for_a_sandboxed_start(root) {
+            return Err(refused);
+        }
         if let Err(why) = crate::skills::levels::note(root, id, &name) {
-            // Fail closed: no folder this chat makes reaches a chat until the person accepts it.
-            crate::skills::levels::fail_closed(root).map_err(|also| {
-                format!(
-                    "this sandboxed chat was not started: purlis could not keep the record of \
-                     its project's folders ({why}; {also})"
-                )
-            })?;
-            tracing::warn!(
-                "purlis: a sandboxed chat's start was not noted for its skills ({why}); every \
-                 workspace and persona folder waits for the person's Accept"
-            );
+            // Held in this process instead (`levels::note`): no folder it makes is accepted.
+            tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
         }
     }
     // Read once `armed` has checked the start is not refused (#3461), and routed by the router

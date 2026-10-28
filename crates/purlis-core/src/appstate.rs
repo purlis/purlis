@@ -13,9 +13,12 @@
 //!
 //! - **No data home, no store.** Where this machine has no data home, [`dir`] answers `None`, and
 //!   each store's callers refuse or say so: none falls back to the plane.
-//! - **A fenced build** (every test build, [`crate::fence::FENCED`]) whose data home is outside
-//!   its fence keeps the folder under the temporary directory instead, keyed the same way, so a
-//!   test never reaches the person's data home and no test passes a folder in.
+//! - **A fenced build** (every test build, [`crate::fence::FENCED`]) whose environment names no
+//!   data home inside its fence keeps the folder in the project's own tree instead
+//!   ([`FENCED_DATA`]), so a test never reaches the person's data home, no test passes a folder
+//!   in, and a test's temporary project takes its app state away with it.
+//! - **Bound to its project** ([`OWNER`], [`PLANE_ID`]): a new project made at a path an older one
+//!   had never inherits the older one's state.
 //! - **Moved once** ([`move_out_of_the_plane`]): at a project's first open after the upgrade, each
 //!   store an older purlis kept in the plane's state folder is moved here or discarded, the copy
 //!   in the plane is removed, and [`MOVED_MARK`] says so. Nothing reads the plane's copy after
@@ -28,32 +31,32 @@ use std::path::{Path, PathBuf};
 /// The folder of the data home the projects' app state is in, one folder each.
 pub const DIR: &str = "app-state";
 
-/// The folder of the temporary directory a fenced build keeps its data home in, where the one
-/// its environment names is outside its fence.
-const FENCED_DATA: &str = "purlis-fenced-data";
+/// The folder of a project's own tree a fenced build keeps its data home in, where its environment
+/// names none inside its fence. Never in a shipped build.
+pub const FENCED_DATA: &str = ".fenced-app-state";
 
-/// What a store answers where this machine has no data home.
-pub const NO_DATA_HOME: &str = "purlis has no data folder on this machine, so the Skill \
-     studio's state is not kept: set PURLIS_DATA_HOME to a folder outside any project";
+/// What a store answers where this machine has no usable data home.
+pub const NO_DATA_HOME: &str = "purlis has no usable data folder on this machine (none, or one \
+     inside a project or a git work tree), so the Skill studio's state is not kept: set \
+     PURLIS_DATA_HOME to a folder outside any project";
 
-/// `<data>` for the app's state, as named: the data home, or, in a fenced build whose data home is
-/// outside its fence, a folder of the temporary directory. Not yet asked whether it may hold it.
-fn named_data_home() -> Option<PathBuf> {
+/// `<data>` for the app's state of the project at `root`: the data home where it may hold it
+/// (none in a project or a git work tree, ADR 0075 §6, asked of the disk once per data home in a
+/// process, so a chat's open adds no walk of its folders); or, in a fenced build whose environment
+/// names no data home inside its fence, [`FENCED_DATA`] in the project's own tree.
+fn data_home(root: &Path) -> Option<PathBuf> {
     if crate::fence::FENCED {
-        let named = crate::datahome::root_in(&crate::envvar::var);
-        return match named {
-            Some(data) if crate::fence::inside(&data, &crate::fence::fence()) => Some(data),
-            _ => Some(std::env::temp_dir().join(FENCED_DATA)),
+        return match crate::datahome::root_in(&crate::envvar::var) {
+            Some(data)
+                if crate::envvar::var(crate::datahome::HOME_VAR).is_some_and(|v| !v.is_empty())
+                    && crate::fence::inside(&data, &crate::fence::fence()) =>
+            {
+                usable(&data).then_some(data)
+            }
+            _ => Some(root.join(FENCED_DATA)),
         };
     }
-    crate::datahome::root()
-}
-
-/// `<data>` for the app's state, where it may hold it: none in a project or a git work tree
-/// (ADR 0075 §6). Asked of the disk once per data home in a process, so a chat's open adds no
-/// walk of its folders.
-fn data_home() -> Option<PathBuf> {
-    let data = named_data_home()?;
+    let data = crate::datahome::root()?;
     usable(&data).then_some(data)
 }
 
@@ -73,10 +76,9 @@ fn usable(data: &Path) -> bool {
 }
 
 /// **The folder of the app's state of the project at `root`**: `<data>/app-state/<clone key>`.
-/// `None` where this machine has no data home, or one in a project or a git work tree. Nothing is
-/// made.
+/// `None` where this machine has no usable data home. Nothing is read or made.
 pub fn dir(root: &Path) -> Option<PathBuf> {
-    Some(in_data(&data_home()?, root))
+    Some(in_data(&data_home(root)?, root))
 }
 
 /// The folder of the app's state of the project at `root`, in the data home `data`.
@@ -89,30 +91,105 @@ pub fn in_data(data: &Path, root: &Path) -> PathBuf {
 /// a move of the project is checked against ([`follow_move`]).
 pub const ROOT_FILE: &str = "root";
 
-/// **[`dir`], made**: `<data>/app-state` and the project's folder in it, each a folder of its own
-/// (never a link), this user's, and `0700`, which a folder already there is made too; and the
-/// project's [`ROOT_FILE`]. Refused where there is no data home, or the data home is in a project
-/// or a git work tree.
+/// The file in a project's app state that names the project it belongs to, by the id in the
+/// project's [`PLANE_ID`].
+pub const OWNER: &str = "owner";
+
+/// The file of the project's own state folder's `app/` that names the project to its app state:
+/// 32 random hex characters, made with the folder, and written by purlis alone (a chat's sandbox
+/// denies writing `app/`). A project made new at the same path has none, or another.
+pub const PLANE_ID: &str = "app-state-id";
+
+/// The most bytes of a small record of the app's state read: a root, an id.
+const MOST_RECORD_BYTES: u64 = 4096;
+
+/// The project at `root`'s [`PLANE_ID`] file.
+fn plane_id_file(root: &Path) -> PathBuf {
+    crate::names::state(root).join("app").join(PLANE_ID)
+}
+
+/// The text of the small record `path`, where it is one: read following no link, at most
+/// [`MOST_RECORD_BYTES`].
+fn record_text(path: &Path) -> Option<String> {
+    let bytes = read_bounded(path, MOST_RECORD_BYTES).ok()?;
+    Some(String::from_utf8(bytes).ok()?.trim().to_owned()).filter(|text| !text.is_empty())
+}
+
+/// **[`dir`], made**, and bound to its project: `<data>/app-state` and the project's folder in
+/// it, each a folder of its own (never a link), this user's, and `0700`, which a folder already
+/// there is made too; the project's [`ROOT_FILE`]; and its [`OWNER`], the project's [`PLANE_ID`],
+/// made where the project has none. A folder whose owner is another project's is set aside as
+/// `<key>.foreign-<n>`, read no more, and a new one made. Refused where there is no usable data
+/// home.
 pub fn made(root: &Path) -> Result<PathBuf, String> {
-    let data = named_data_home().ok_or_else(|| NO_DATA_HOME.to_owned())?;
-    if let Some(why) = crate::datahome::refusal(&data) {
-        return Err(why);
-    }
+    made_in(
+        &data_home(root).ok_or_else(|| NO_DATA_HOME.to_owned())?,
+        root,
+    )
+}
+
+/// [`made`], in the data home `data`.
+fn made_in(data: &Path, root: &Path) -> Result<PathBuf, String> {
     let all = data.join(DIR);
-    let mine = in_data(&data, root);
-    for folder in [&all, &mine] {
-        held_private(folder).map_err(|why| format!("{}: {why}", folder.display()))?;
+    let mine = in_data(data, root);
+    held_private(&all).map_err(|why| format!("{}: {why}", all.display()))?;
+    let plane_id = record_text(&plane_id_file(root));
+    if std::fs::symlink_metadata(&mine).is_ok() {
+        let owner = record_text(&mine.join(OWNER));
+        if owner.is_none() || owner != plane_id {
+            set_aside(&mine)?;
+        }
     }
-    let named = mine.join(ROOT_FILE);
-    if std::fs::symlink_metadata(&named).is_err() {
+    held_private(&mine).map_err(|why| format!("{}: {why}", mine.display()))?;
+    if std::fs::symlink_metadata(mine.join(OWNER)).is_err() {
+        let id = match plane_id {
+            Some(id) => id,
+            None => {
+                let id = random_id()?;
+                let file = plane_id_file(root);
+                let app = file.parent().ok_or("no folder")?;
+                crate::profiletrust::private_dir(app).map_err(|why| why.to_string())?;
+                crate::plane::write_private(root, &file, id.as_bytes())
+                    .map_err(|why| why.to_string())?;
+                id
+            }
+        };
+        crate::plane::write_private(&mine, &mine.join(OWNER), id.as_bytes())
+            .map_err(|why| why.to_string())?;
+    }
+    if std::fs::symlink_metadata(mine.join(ROOT_FILE)).is_err() {
         let real = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
         let text = real
             .to_str()
             .ok_or_else(|| "the project's root is not text".to_owned())?;
-        crate::plane::write_private(&mine, &named, text.as_bytes())
+        crate::plane::write_private(&mine, &mine.join(ROOT_FILE), text.as_bytes())
             .map_err(|why| why.to_string())?;
     }
     Ok(mine)
+}
+
+/// The folder `mine`, another project's, renamed beside itself as `<key>.foreign-<n>`.
+fn set_aside(mine: &Path) -> Result<(), String> {
+    let name = mine
+        .file_name()
+        .ok_or("no name")?
+        .to_string_lossy()
+        .into_owned();
+    for n in 1..1000 {
+        let aside = mine.with_file_name(format!("{name}.foreign-{n}"));
+        if std::fs::symlink_metadata(&aside).is_err() {
+            tracing::info!(target: "purlis::appstate", "purlis: the app state at {} is another project's, so it was set aside", mine.display());
+            return std::fs::rename(mine, &aside).map_err(|why| why.to_string());
+        }
+    }
+    Err("another project's app state could not be set aside".to_owned())
+}
+
+/// Thirty-two random hex characters.
+fn random_id() -> Result<String, String> {
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|why| why.to_string())?;
+    Ok(crate::extension::hex(&random))
 }
 
 /// `folder` made private where it is not there; where it is, held to a folder of its own (no
@@ -184,9 +261,10 @@ pub const MOVED_MARK: &str = "moved-from-the-plane";
 
 /// **Moves the app's state an older purlis kept in the plane's state folder of the project at
 /// `root` into the app's state** ([`STORES`]), once: what a project's open does, before any chat
-/// of it starts. Both spellings of the plane's own state folder are looked at, and nothing else: a
-/// folder `$PURLIS_HOME` names may be shared by several clones, so its stores are left where they
-/// are, and read no more. Once every store is moved or removed, [`MOVED_MARK`] is written, and
+/// of it starts. Only the state folder purlis was reading is looked at, the one
+/// [`crate::names::state`] picks; the other spelling is left as it is, unread. A folder
+/// `$PURLIS_HOME` names may be shared by several clones, so where it is the one purlis reads,
+/// nothing is moved and its stores are read no more. Once every store is moved or removed, [`MOVED_MARK`] is written, and
 /// every later open looks at that one name and nothing in the plane. Nothing at all where there is
 /// no data home.
 pub fn move_out_of_the_plane(root: &Path) -> Moved {
@@ -197,10 +275,12 @@ pub fn move_out_of_the_plane(root: &Path) -> Moved {
     if std::fs::symlink_metadata(&mark).is_ok() {
         return Moved::default();
     }
-    let states: Vec<PathBuf> = crate::names::STATE_DIR
-        .spellings()
-        .map(|state| root.join(state))
-        .collect();
+    let picked = crate::names::state(root);
+    let states: Vec<PathBuf> = if crate::plane::state_dir(root) == picked {
+        vec![picked]
+    } else {
+        Vec::new()
+    };
     let moved = move_from(root, &states, &into);
     if moved.left.is_empty()
         && let Err(why) = crate::plane::write_private(&into, &mark, b"")
@@ -266,52 +346,39 @@ pub const CARRIED_ON_A_MOVE: [(&str, Carried); 3] = [
     (crate::skills::grades::kept::DIR_NAME, Carried::Moved),
 ];
 
-/// The most bytes of a [`ROOT_FILE`] read.
-const MOST_ROOT_BYTES: u64 = 4096;
-
-/// The root `folder`'s [`ROOT_FILE`] names, read following no link.
-fn recorded_root(folder: &Path) -> Option<String> {
-    use std::io::Read as _;
-    let path = folder.join(ROOT_FILE);
-    let meta = std::fs::symlink_metadata(&path).ok()?;
-    if !meta.is_file() || meta.len() > MOST_ROOT_BYTES {
-        return None;
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    let mut text = String::new();
-    crate::contain::nofollow(&mut options)
-        .open(&path)
-        .ok()?
-        .take(MOST_ROOT_BYTES)
-        .read_to_string(&mut text)
-        .ok()?;
-    Some(text)
-}
-
 /// **The app's state of the project at `root` follows it from where it was** (#3718): what a
 /// project's open does when its record of open chats says the project moved
 /// (`reopen::Arrival::Moved`, V43), with `was` the clone the record names. Only where the old
-/// clone key's folder says it is that clone's own (its [`ROOT_FILE`] names `was.root`): its
+/// clone key's folder says it is that clone's own (its [`ROOT_FILE`] names `was.root`, and its
+/// [`OWNER`] is the project's [`PLANE_ID`], which moved with it): its
 /// drafts, local grades and kept grade chats are carried ([`CARRIED_ON_A_MOVE`]); its opt-ins and
 /// levels records are not, and where it held levels records every workspace and persona folder of
 /// the project waits for the person's Accept again. The old folder is removed once all of it is
 /// carried. Nothing for any other folder, and nothing where there is no data home.
 pub fn follow_move(root: &Path, was: &crate::reopen::CloneSeat) -> Moved {
+    match data_home(root) {
+        Some(data) => follow_move_in(&data, root, was),
+        None => Moved::default(),
+    }
+}
+
+/// [`follow_move`], in the data home `data`.
+fn follow_move_in(data: &Path, root: &Path, was: &crate::reopen::CloneSeat) -> Moved {
     let mut out = Moved::default();
-    let Some(data) = data_home() else {
-        return out;
-    };
     let old = data.join(DIR).join(was.key.as_str());
-    let here = in_data(&data, root);
+    let here = in_data(data, root);
     if old == here || !std::fs::symlink_metadata(&old).is_ok_and(|meta| meta.is_dir()) {
         return out;
     }
-    if was.root.to_str() != recorded_root(&old).as_deref() {
-        tracing::warn!(target: "purlis::appstate", "purlis: the app state of {} names another project, so nothing was carried", was.root.display());
+    let its_own = was.root.to_str() == record_text(&old.join(ROOT_FILE)).as_deref()
+        && record_text(&old.join(OWNER)).is_some_and(|owner| {
+            record_text(&plane_id_file(root)).as_deref() == Some(owner.as_str())
+        });
+    if !its_own {
+        tracing::warn!(target: "purlis::appstate", "purlis: the app state of {} is another project's, so nothing was carried", was.root.display());
         return out;
     }
-    let into = match made(root) {
+    let into = match made_in(data, root) {
         Ok(into) => into,
         Err(why) => {
             out.left.push(format!("nothing was carried ({why})"));
@@ -319,7 +386,7 @@ pub fn follow_move(root: &Path, was: &crate::reopen::CloneSeat) -> Moved {
         }
     };
     if std::fs::symlink_metadata(old.join(crate::skills::levels::DIR)).is_ok() {
-        if let Err(why) = crate::skills::levels::ask_again(root) {
+        if let Err(why) = crate::skills::levels::ask_again_in(&into, root) {
             out.left.push(format!(
                 "{} was not asked about again ({why})",
                 crate::skills::levels::DIR
@@ -369,9 +436,6 @@ const DEEPEST: usize = 16;
 
 /// The most bytes of one carried file: past any store's.
 const MOST_FILE_BYTES: u64 = 64 * 1024 * 1024;
-
-/// The end of the name a carried file is written under beside its place, before it is renamed in.
-const CARRYING: &str = ".carrying";
 
 /// **The folder `from` carried to `to`**, which is made where it is not, and what of it was not
 /// (empty when all of it was). Each file `to` does not have is written in; one it has with the
@@ -439,12 +503,12 @@ fn carried_file(
     there: Option<&std::fs::Metadata>,
     append: bool,
 ) -> Result<(), String> {
-    let bytes = read_plain(from)?;
+    let bytes = read_bounded(from, MOST_FILE_BYTES)?;
     let now = match there {
         None => bytes,
         Some(meta) if !meta.is_file() => return Err("its place holds something else".into()),
         Some(_) => {
-            let was = read_plain(to)?;
+            let was = read_bounded(to, MOST_FILE_BYTES)?;
             if was == bytes {
                 return Ok(());
             }
@@ -480,14 +544,15 @@ fn lines_added(was: &[u8], more: &[u8]) -> Option<Vec<u8>> {
     added.then_some(out)
 }
 
-/// The bytes of the plain file `path`, read following no link, at most [`MOST_FILE_BYTES`].
-fn read_plain(path: &Path) -> Result<Vec<u8>, String> {
+/// The bytes of the plain file `path`, read following no link, at most `most`: the one read of the
+/// app's state's own files.
+fn read_bounded(path: &Path, most: u64) -> Result<Vec<u8>, String> {
     use std::io::Read as _;
     let meta = std::fs::symlink_metadata(path).map_err(|why| why.to_string())?;
     if !meta.is_file() {
         return Err("it is not a file of its own".into());
     }
-    if meta.len() > MOST_FILE_BYTES {
+    if meta.len() > most {
         return Err("it is larger than purlis carries".into());
     }
     let mut options = std::fs::OpenOptions::new();
@@ -495,37 +560,18 @@ fn read_plain(path: &Path) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     crate::contain::nofollow(&mut options)
         .open(path)
-        .and_then(|file| file.take(MOST_FILE_BYTES).read_to_end(&mut bytes))
+        .and_then(|file| file.take(most).read_to_end(&mut bytes))
         .map_err(|why| why.to_string())?;
     Ok(bytes)
 }
 
-/// `bytes` written to `to`, private, beside it first and renamed into its place.
+/// `bytes` written to `to`, private, beside it first and renamed into its place
+/// ([`crate::rewrite::replace`]).
 fn written_in(to: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write as _;
-    let name = to
-        .file_name()
-        .ok_or_else(|| std::io::Error::other("no name"))?
-        .to_string_lossy();
-    let beside = to.with_file_name(format!(".{name}{CARRYING}"));
-    let _ = std::fs::remove_file(&beside);
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.mode(0o600);
-    }
-    let written = (|| {
-        let mut file = crate::contain::nofollow(&mut options).open(&beside)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        std::fs::rename(&beside, to)
-    })();
-    if written.is_err() {
-        let _ = std::fs::remove_file(&beside);
-    }
-    written
+    let folder = to
+        .parent()
+        .ok_or_else(|| std::io::Error::other("no folder"))?;
+    crate::rewrite::replace(folder, to, bytes, crate::rewrite::Mode::Private)
 }
 
 /// **A test's seam: the app state's `name` of the project at `root` moved to where an older purlis

@@ -850,16 +850,8 @@ impl Held {
         // get ids of their own before any of them starts, and are written with them once
         // they are back, so no two clones ever hold one chat's id.
         let record = record.map(|record| {
-            let was = record.clone_seat.clone();
             let (arrival, record) =
                 reopen::arrive(record, &self.records.clone_seat, || self.records.known());
-            // A project that moved keeps its own app state under its new clone key (#3718), before
-            // any chat is put back; a copy starts with none of it, as its chats get new ids.
-            if arrival == reopen::Arrival::Moved
-                && let Some(was) = &was
-            {
-                let _ = purlis_core::appstate::follow_move(&self.root, was);
-            }
             if arrival == reopen::Arrival::Copied {
                 tracing::info!(
                     "purlis: plane {} is a copy of another clone; its chats get new ids",
@@ -2737,6 +2729,39 @@ impl Planes {
         self
     }
 
+    /// **The app state of the project at `root` follows it, where it moved** (#3718): its record
+    /// of open chats, read as it is, is put through the same decision its reopen makes
+    /// ([`reopen::arrive`], V43), and only a move carries anything
+    /// ([`purlis_core::appstate::follow_move`]). Nothing is started and nothing is written to the
+    /// record.
+    fn follow_a_move(&self, root: &Path) {
+        let Ok(record) = reopen::read_or_refusal(root) else {
+            return;
+        };
+        let Some(was) = record.clone_seat.clone() else {
+            return;
+        };
+        let device = self
+            .config
+            .as_deref()
+            .and_then(|config| purlis_core::machine::device_id(config).ok());
+        let here = reopen::CloneSeat::of(root, device);
+        let known = || {
+            self.config.as_deref().map_or_else(Vec::new, |config| {
+                machine::read(config)
+                    .store
+                    .recents
+                    .into_iter()
+                    .map(|recent| recent.plane)
+                    .collect()
+            })
+        };
+        let (arrival, _) = reopen::arrive(record, &here, known);
+        if arrival == reopen::Arrival::Moved {
+            let _ = purlis_core::appstate::follow_move(root, &was);
+        }
+    }
+
     /// Opens `root`: binds its hook socket and arms its board. Answers with the id every
     /// later call names it by.
     ///
@@ -2795,6 +2820,9 @@ impl Planes {
             // data home, once (#3718): before any chat is put back, so what arms them reads it
             // there, and outside the registry's lock, as the sweep is.
             let _ = purlis_core::appstate::move_out_of_the_plane(&root);
+            // And a project that moved keeps its own app state under its new clone key, as its
+            // record of open chats says (V43); a copy starts with none of it.
+            self.follow_a_move(&root);
         }
 
         let mut open = self.map();

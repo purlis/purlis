@@ -254,25 +254,42 @@ fn records_in_the_plane_s_state_folder_are_never_read() {
 }
 
 #[test]
-fn with_no_app_state_every_workspace_and_persona_folder_is_left_out() {
-    // #3718: no record of a sandboxed chat's start can be kept, so none is trusted.
+fn with_no_app_state_a_sandboxed_start_is_refused_and_nothing_is_left_out() {
+    // #3718: no sandboxed chat starts where no record of its start can be kept, so none could have
+    // made a folder, and every chat keeps the workspace and persona skills it had.
     let tmp = plane(&[]);
     let root = tmp.path();
+    let refused = refusal_with(None).expect("refused");
+    assert!(refused.contains("PURLIS_DATA_HOME"), "{refused}");
+    assert_eq!(refusal_with(Some(root)), None);
     let held = made_since_in(root, None);
     for owner in ["workspaces/ops", "personas/steward"] {
-        assert!(held(&root.join(owner)).is_some(), "{owner}");
+        assert_eq!(held(&root.join(owner)), None, "{owner}");
     }
-    assert_eq!(held(&root.join("skills")), None, "the project's own level");
 }
 
 #[test]
-fn a_start_that_could_not_be_noted_holds_every_folder_until_it_is_accepted() {
+fn a_start_that_could_not_be_noted_never_accepts_a_folder_made_since() {
     let tmp = plane(&[]);
     let root = tmp.path();
-    fail_closed(root).unwrap();
+    assert!(note(root, "not-an-id", "7").is_err());
+    std::fs::create_dir_all(root.join("workspaces/later")).unwrap();
+    assert!(made_since(root)(&root.join("workspaces/later")).is_some());
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+}
+
+#[test]
+fn folders_not_accepted_that_cannot_be_read_hold_every_folder() {
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    let state = crate::appstate::made(root).unwrap();
+    std::fs::create_dir_all(state.join(DIR)).unwrap();
+    std::fs::write(state.join(DIR).join(UNACCEPTED), "not json").unwrap();
     for owner in ["workspaces/ops", "personas/steward"] {
         assert!(made_since(root)(&root.join(owner)).is_some(), "{owner}");
     }
+    // Accepting one leaves the rest held.
     accept(root, "workspaces/ops").unwrap();
     assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+    assert!(made_since(root)(&root.join("personas/steward")).is_some());
 }

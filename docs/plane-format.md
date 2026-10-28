@@ -7781,22 +7781,27 @@ refuses a `<data>` under a project or inside any git work tree.
   what purlis reads back about the project to decide something: the Skill studio's drafts, tries,
   local grade record, grades under way, grade-after-edit opt-ins, kept grade chats and records of
   the levels a sandboxed chat could have made, each below. `root` names the project's root as the
-  kernel names it, written when the folder is made. `moved-from-the-plane`, an empty file, says an
-  older purlis's copies of these stores were moved out of the plane's own state folder (either
-  spelling), once, at the project's open (`appstate::move_out_of_the_plane`): drafts and local
-  grades are carried, the rest removed, and nothing reads the plane's copies again. A state folder
-  `$PURLIS_HOME` names may be shared by several clones: its copies are left where they are, and
-  read no more. Each store is removed from the plane only once all of it is carried; a file is
-  written beside its place and renamed in, and a line a grade file already holds is never added
-  again. A project that moved, as its [record of open chats](#appreopenjson) says (V43), keeps its
-  drafts, local grades and kept grade chats under its new clone key, where the old key's `root`
-  names the root the record names (`appstate::follow_move`); its opt-ins and levels records are
-  not carried, and every workspace and persona folder then waits for the person's Accept again.
-  A copy starts with none of it. Where the machine has no data home, or one in a project or a git
-  work tree, the stores are unavailable and say so, none falls back to the plane, and every
-  workspace and persona folder's skills are left out, since no record of a sandboxed chat's start
-  can be kept. A fenced (test) build whose data home is outside its fence keeps the folder under
-  the temporary directory instead.
+  kernel names it, and `owner` the project it belongs to, by the 32 hex characters of its state
+  folder's [`app/app-state-id`](#app--the-desktop-apps-own-state), each written when the folder is
+  made. A folder whose `owner` is not the project's own (a new project made at an older one's path)
+  is renamed `<clone key>.foreign-<n>`, read no more, and a new one made. `moved-from-the-plane`, an
+  empty file, says an older purlis's copies of these stores were moved out of the plane's state
+  folder, once, at the project's open (`appstate::move_out_of_the_plane`): only the folder purlis
+  was reading (the spelling `names::state` picks) is looked at, and the other is left unread; a
+  state folder `$PURLIS_HOME` names may be shared by several clones, so its copies are left where
+  they are, and read no more. Drafts and local grades are carried, the rest removed, and nothing
+  reads the plane's copies again. Each store is removed from the plane only once all of it is
+  carried; a file is written beside its place and renamed in, and a line a grade file already
+  holds is never added again. A project that moved, as its [record of open chats](#appreopenjson)
+  says (V43), keeps its drafts, local grades and kept grade chats under its new clone key, where
+  the old key's `root` names the root the record names and its `owner` is the project's own
+  (`appstate::follow_move`, at the project's open); its opt-ins and levels records are not carried,
+  and every workspace and persona folder then waits for the person's Accept again. A copy starts
+  with none of it. Where the machine has no data home, or one in a project or a git work tree, the
+  stores are unavailable and say so, none falls back to the plane, and a sandboxed chat is not
+  started, since no record of its start could be kept. A fenced (test) build whose environment names
+  no data home inside its fence keeps the folder in the project's own tree, in
+  `.fenced-app-state/`, which no shipped build makes.
 - **Status:** **internal**.
 - **Tier:** Machine, device-bound — this machine's own record of the project.
 - **Written by:** purlis alone: the app and the session host. A chat's sandbox reads it and never

@@ -25,15 +25,10 @@ fn a_projects_app_state_is_its_clone_key_under_the_data_homes_app_state() {
     let root = tmp.path();
     let dir = dir(root).expect("a fenced build always has one");
     let key = crate::plane::CloneKey::of(root);
-    assert!(
-        dir.ends_with(Path::new(DIR).join(key.as_str())),
-        "{}",
-        dir.display()
-    );
-    // Made private, as a folder of its own, inside the fence and never in the plane.
+    // A fenced build's, in the test's own tree, beside the state folder and never in it.
+    assert_eq!(dir, root.join(FENCED_DATA).join(DIR).join(key.as_str()));
+    assert!(!dir.starts_with(crate::names::state(root)));
     assert_eq!(made(root).unwrap(), dir);
-    assert!(crate::fence::inside(&dir, &crate::fence::fence()));
-    assert!(!dir.starts_with(root));
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
@@ -42,9 +37,46 @@ fn a_projects_app_state_is_its_clone_key_under_the_data_homes_app_state() {
             assert_eq!(mode & 0o777, 0o700, "{}", folder.display());
         }
     }
+    // Bound to its project.
+    assert_eq!(
+        record_text(&dir.join(OWNER)),
+        record_text(&plane_id_file(root))
+    );
     // Another clone has another folder.
     let other = project();
     assert_ne!(super::dir(other.path()), Some(dir));
+}
+
+#[test]
+fn a_new_project_at_the_same_path_starts_with_none_of_the_old_ones_state() {
+    let data = tempfile::tempdir().unwrap();
+    let tmp = project();
+    let root = tmp.path().to_path_buf();
+    let was = made_in(data.path(), &root).unwrap();
+    write(&was.join("skill-drafts/abc/draft.json"), "{}");
+    write(&was.join("skill-grade-after-edit.json"), "{\"v\":1}");
+    write(&was.join("skill-levels/unaccepted.json"), "{\"levels\":[]}");
+    // The project is removed, and another made at its path.
+    std::fs::remove_dir_all(&root).unwrap();
+    std::fs::create_dir_all(root.join(".purlis")).unwrap();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    let now = made_in(data.path(), &root).unwrap();
+    assert_eq!(now, was, "the same clone key");
+    for name in [
+        "skill-drafts",
+        "skill-grade-after-edit.json",
+        "skill-levels",
+    ] {
+        assert!(!now.join(name).exists(), "{name} was inherited");
+    }
+    let aside = now.with_file_name(format!(
+        "{}.foreign-1",
+        now.file_name().unwrap().to_string_lossy()
+    ));
+    assert!(
+        aside.join("skill-drafts/abc/draft.json").is_file(),
+        "set aside, unread"
+    );
 }
 
 #[test]
@@ -199,9 +231,20 @@ fn a_folder_already_there_is_made_private_and_a_link_is_refused() {
         let mode = std::fs::metadata(folder).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o700, "{}", folder.display());
     }
-    // The project's folder as a link to another is refused, and nothing is written through it.
+    // The project's folder as a link to another is set aside, and nothing is written through it.
     let other = tempfile::tempdir().unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
+    std::os::unix::fs::symlink(other.path(), &dir).unwrap();
+    assert_eq!(made(root).unwrap(), dir);
+    assert!(std::fs::symlink_metadata(&dir).unwrap().is_dir());
+    assert!(std::fs::read_dir(other.path()).unwrap().next().is_none());
+    // One that names this project, but is a link, is refused.
+    std::fs::remove_dir_all(&dir).unwrap();
+    std::fs::write(
+        other.path().join(OWNER),
+        record_text(&plane_id_file(root)).unwrap(),
+    )
+    .unwrap();
     std::os::unix::fs::symlink(other.path(), &dir).unwrap();
     assert!(made(root).is_err());
     assert!(!other.path().join(ROOT_FILE).exists());
@@ -253,10 +296,10 @@ fn a_store_not_carried_whole_stays_in_the_plane_and_is_said() {
     assert!(!into.join(MOVED_MARK).exists());
 }
 
-/// A project at `old` with app state of its own, as the clone it was: drafts, a grade row, kept
-/// chats, an opt-in and levels records.
-fn moved_from(old: &Path) -> crate::reopen::CloneSeat {
-    let was = made(old).unwrap();
+/// A project at `old` with app state of its own in `data`, as the clone it was: drafts, a grade
+/// row, kept chats, an opt-in and levels records.
+fn moved_from(data: &Path, old: &Path) -> crate::reopen::CloneSeat {
+    let was = made_in(data, old).unwrap();
     write(&was.join("skill-drafts/abc/draft.json"), "{}");
     write(&was.join("skill-grades/2026-10.jsonl"), "{\"row\":1}\n");
     write(&was.join("skill-grade-chats/deploy/g/c.screen"), "screen");
@@ -265,22 +308,29 @@ fn moved_from(old: &Path) -> crate::reopen::CloneSeat {
     crate::reopen::CloneSeat::of(old, None)
 }
 
-fn moved_to() -> tempfile::TempDir {
+/// Where the project at `old` moved to: its state folder's `app/` with it, and a workspace and a
+/// persona.
+fn moved_to(old: &Path) -> tempfile::TempDir {
     let tmp = project();
     std::fs::create_dir_all(tmp.path().join("workspaces/ops")).unwrap();
     std::fs::create_dir_all(tmp.path().join("personas/steward")).unwrap();
+    let id = plane_id_file(old);
+    let to = plane_id_file(tmp.path());
+    std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+    std::fs::copy(id, to).unwrap();
     tmp
 }
 
 #[test]
 fn a_moved_project_keeps_its_drafts_and_grades_and_is_asked_about_its_folders_again() {
+    let data = tempfile::tempdir().unwrap();
     let old = project();
-    let was = moved_from(old.path());
-    let new = moved_to();
+    let was = moved_from(data.path(), old.path());
+    let new = moved_to(old.path());
     let root = new.path();
-    let moved = follow_move(root, &was);
+    let moved = follow_move_in(data.path(), root, &was);
     assert!(moved.left.is_empty(), "{:?}", moved.left);
-    let here = dir(root).unwrap();
+    let here = in_data(data.path(), root);
     assert!(here.join("skill-drafts/abc/draft.json").is_file());
     assert_eq!(
         std::fs::read_to_string(here.join("skill-grades/2026-10.jsonl")).unwrap(),
@@ -289,36 +339,76 @@ fn a_moved_project_keeps_its_drafts_and_grades_and_is_asked_about_its_folders_ag
     assert!(here.join("skill-grade-chats/deploy/g/c.screen").is_file());
     // Never the opt-in, nor the levels records: every folder waits for the person's Accept.
     assert!(!here.join("skill-grade-after-edit.json").exists());
-    let held = crate::skills::levels::made_since(root);
+    let held = crate::skills::levels::made_since_in_for(root, &here);
     for owner in ["workspaces/ops", "personas/steward"] {
         assert!(held(&root.join(owner)).is_some(), "{owner} is not held");
     }
     assert!(
-        !dir(old.path()).unwrap().exists(),
+        !in_data(data.path(), old.path()).exists(),
         "the old folder is removed"
     );
 }
 
 #[test]
 fn a_move_whose_old_folder_names_another_project_carries_nothing() {
+    let data = tempfile::tempdir().unwrap();
     let old = project();
-    let mut was = moved_from(old.path());
+    let mut was = moved_from(data.path(), old.path());
     // The record names a root the old key's folder does not say it is.
     let elsewhere = tempfile::tempdir().unwrap();
     was.root = elsewhere.path().canonicalize().unwrap();
-    let new = moved_to();
-    let root = new.path();
-    let moved = follow_move(root, &was);
-    assert_eq!(moved, Moved::default());
-    let here = dir(root).unwrap();
-    for name in [
-        "skill-drafts",
-        "skill-grades",
-        "skill-grade-chats",
-        "skill-grade-after-edit.json",
-        "skill-levels",
-    ] {
-        assert!(!here.join(name).exists(), "{name} was carried");
+    let new = moved_to(old.path());
+    assert_eq!(
+        follow_move_in(data.path(), new.path(), &was),
+        Moved::default()
+    );
+    // And a project that is not the old one's, though the record names its root.
+    let was = crate::reopen::CloneSeat::of(old.path(), None);
+    let stranger = project();
+    assert_eq!(
+        follow_move_in(data.path(), stranger.path(), &was),
+        Moved::default()
+    );
+    for root in [new.path(), stranger.path()] {
+        let here = in_data(data.path(), root);
+        for name in [
+            "skill-drafts",
+            "skill-grades",
+            "skill-grade-chats",
+            "skill-grade-after-edit.json",
+            "skill-levels",
+        ] {
+            assert!(!here.join(name).exists(), "{name} was carried");
+        }
     }
-    assert!(dir(old.path()).unwrap().exists(), "left where it was");
+    assert!(
+        in_data(data.path(), old.path()).exists(),
+        "left where it was"
+    );
+}
+
+#[test]
+fn only_the_state_folder_purlis_reads_is_moved_and_the_other_is_left_unread() {
+    let tmp = project();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join(".charter")).unwrap();
+    let picked = crate::names::state(root);
+    let other = [root.join(".purlis"), root.join(".charter")]
+        .into_iter()
+        .find(|state| *state != picked)
+        .unwrap();
+    write(&picked.join("skill-drafts/abc/draft.json"), "{}");
+    write(&other.join("skill-drafts/def/draft.json"), "{}");
+    let moved = move_out_of_the_plane(root);
+    assert!(moved.left.is_empty(), "{:?}", moved.left);
+    let here = dir(root).unwrap();
+    assert!(here.join("skill-drafts/abc/draft.json").is_file());
+    assert!(
+        !here.join("skill-drafts/def").exists(),
+        "the other is never read"
+    );
+    assert!(
+        other.join("skill-drafts/def/draft.json").is_file(),
+        "and left as it is"
+    );
 }

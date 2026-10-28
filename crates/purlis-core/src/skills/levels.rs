@@ -72,12 +72,27 @@ fn rel_of(id: &str) -> String {
     format!("{DIR}/{id}.json")
 }
 
-fn unaccepted(state: &Path) -> Unaccepted {
-    crate::proposed::read_pinned(state, Path::new(&format!("{DIR}/{UNACCEPTED}")))
-        .ok()
-        .flatten()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+/// The folders not accepted yet, or `Err` where the file is there and cannot be read.
+fn unaccepted_read(state: &Path) -> Result<Unaccepted, ()> {
+    // No folder of records yet: nothing waits.
+    if std::fs::symlink_metadata(state.join(DIR))
+        .is_err_and(|why| why.kind() == std::io::ErrorKind::NotFound)
+    {
+        return Ok(Unaccepted::default());
+    }
+    match crate::proposed::read_pinned(state, Path::new(&format!("{DIR}/{UNACCEPTED}"))) {
+        Ok(None) => Ok(Unaccepted::default()),
+        Ok(Some(bytes)) => serde_json::from_slice(&bytes).map_err(|_| ()),
+        Err(_) => Err(()),
+    }
+}
+
+/// The folders not accepted yet, or, where they cannot be read, every workspace and persona folder
+/// of the plane at `root`: what cannot be read is never taken as accepted.
+fn unaccepted_or_all(state: &Path, root: &Path) -> Unaccepted {
+    unaccepted_read(state).unwrap_or_else(|()| Unaccepted {
+        levels: owners(root),
+    })
 }
 
 /// Writes `now` as the folders not accepted yet, over the file as it was just read. The app is
@@ -127,6 +142,66 @@ fn write(state: &Path, id: &str, was: Option<&Record>, now: &Record) -> Result<(
 /// the chat (a restart) is kept as it is, so a folder made during its earlier run stays one it
 /// could have made.
 pub fn note(root: &Path, id: &str, name: &str) -> Result<(), String> {
+    let noted = note_on_disk(root, id, name);
+    if noted.is_err() {
+        // Held in this process instead, so a folder the chat makes is still not accepted.
+        unnoted_add(
+            root,
+            Record {
+                name: name.to_owned(),
+                levels: owners(root),
+            },
+        );
+    }
+    noted
+}
+
+/// The starts this process could not note on disk ([`note`]), by the clone key of their plane: each
+/// counts as an open record for as long as the process runs.
+fn unnoted() -> &'static std::sync::Mutex<std::collections::HashMap<String, Vec<Record>>> {
+    static UNNOTED: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, Vec<Record>>>,
+    > = std::sync::OnceLock::new();
+    UNNOTED.get_or_init(Default::default)
+}
+
+fn unnoted_add(root: &Path, record: Record) {
+    if let Ok(mut held) = unnoted().lock() {
+        held.entry(crate::plane::CloneKey::of(root).to_string())
+            .or_default()
+            .push(record);
+    }
+}
+
+fn unnoted_of(root: &Path) -> Vec<(String, Record)> {
+    unnoted()
+        .lock()
+        .ok()
+        .and_then(|held| held.get(crate::plane::CloneKey::of(root).as_str()).cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|record| (String::new(), record))
+        .collect()
+}
+
+/// **Why a sandboxed chat in the plane at `root` is not started**, where this machine keeps no app
+/// state of it (`crate::appstate::dir`): no record of the folders there at its start could be kept,
+/// so a folder it made could not be told apart. `None` where there is app state.
+pub fn refusal_for_a_sandboxed_start(root: &Path) -> Option<String> {
+    refusal_with(crate::appstate::dir(root).as_deref())
+}
+
+/// [`refusal_for_a_sandboxed_start`], with `state` the project's app state.
+fn refusal_with(state: Option<&Path>) -> Option<String> {
+    state.is_none().then(|| {
+        format!(
+            "this sandboxed chat was not started: {}",
+            crate::appstate::NO_DATA_HOME
+        )
+    })
+}
+
+fn note_on_disk(root: &Path, id: &str, name: &str) -> Result<(), String> {
     if !an_id(id) {
         return Err("a chat with no id of its own is not noted".to_owned());
     }
@@ -148,33 +223,38 @@ pub fn note(root: &Path, id: &str, name: &str) -> Result<(), String> {
 /// The records of the chats the app lists as open in the plane at `root`.
 fn open_records(root: &Path) -> Vec<(String, Record)> {
     match crate::appstate::dir(root) {
-        Some(state) => records_in(&state),
+        Some(state) => records_in(&state).unwrap_or_default(),
         None => Vec::new(),
     }
 }
 
-/// The records in the app state `state`.
-fn records_in(state: &Path) -> Vec<(String, Record)> {
+/// The records in the app state `state`, or `Err` where the folder or a record in it cannot be
+/// read.
+fn records_in(state: &Path) -> Result<Vec<(String, Record)>, ()> {
     // Every record there is, whether or not its chat is still on the app's record: one whose chat
     // closed holds until the app's sweep moves what it could have made to the folders not
     // accepted yet ([`sweep`]), so no moment between the two lets such a folder through.
-    let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
-        return Vec::new();
+    let entries = match std::fs::read_dir(state.join(DIR)) {
+        Ok(entries) => entries,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err(()),
     };
-    let mut out: Vec<(String, Record)> = entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            entry
-                .file_name()
-                .to_str()
-                .and_then(|name| name.strip_suffix(".json"))
-                .filter(|id| an_id(id))
-                .map(str::to_owned)
-        })
-        .filter_map(|id| read(state, &id).map(|one| (id, one)))
-        .collect();
+    let mut out: Vec<(String, Record)> = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|_| ())?;
+        let Some(id) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_suffix(".json"))
+            .filter(|id| an_id(id))
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        out.push((id.clone(), read(state, &id).ok_or(())?));
+    }
     out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
+    Ok(out)
 }
 
 /// **Why the skills of the workspace or persona folder `owner` (absolute, in the plane at
@@ -186,33 +266,44 @@ pub type MadeSince = Box<dyn Fn(&Path) -> Option<String> + Sync>;
 /// chat could have made, or one a closed chat could have, that the person has not accepted. It
 /// stays left out until the person accepts it in the Skill studio ([`accept`]), whether or not
 /// the chat has closed.
-///
-/// **Where this machine keeps no app state** (no data home, or one in a project or a git work
-/// tree, `crate::appstate::dir`), no record of a sandboxed chat's start could be kept, so every
-/// workspace and persona folder is left out, with a reason that says how to keep one.
 pub fn made_since(root: &Path) -> MadeSince {
     made_since_in(root, crate::appstate::dir(root))
 }
 
-/// What a skill of a level is left out with where this machine keeps no app state.
-const NO_RECORD: &str = "purlis keeps no record here of which chats could have made its \
-     folder: set PURLIS_DATA_HOME to a folder outside any project";
+/// [`made_since`], read from the app state `state`: a test's seam for a data home of its own.
+#[cfg(test)]
+pub(crate) fn made_since_in_for(root: &Path, state: &Path) -> MadeSince {
+    made_since_in(root, Some(state.to_path_buf()))
+}
 
-/// [`made_since`], with `state` the project's app state, or `None` where there is none.
+/// What a skill of a level is left out with where which folders were accepted cannot be read.
+const UNREAD: &str = "purlis could not read which of this project's folders you accepted: \
+     accept it in the Skill studio";
+
+/// [`made_since`], with `state` the project's app state, or `None` where there is none: then no
+/// sandboxed chat could have started there ([`refusal_for_a_sandboxed_start`]), and only the starts
+/// this process could not note hold anything. A record or the folders not accepted yet that
+/// cannot be read hold every workspace and persona folder.
 fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
-    let Some(state) = state else {
-        let root = root.to_path_buf();
-        return Box::new(move |owner: &Path| {
-            rel_in(&root, owner)
-                .filter(|rel| an_owner(rel))
-                .map(|_| NO_RECORD.to_owned())
-        });
-    };
-    let records = records_in(&state);
-    let held = unaccepted(&state);
+    let mut records = unnoted_of(root);
+    let mut held = Unaccepted::default();
+    let mut unread = false;
+    if let Some(state) = &state {
+        match records_in(state) {
+            Ok(found) => records.extend(found),
+            Err(()) => unread = true,
+        }
+        match unaccepted_read(state) {
+            Ok(found) => held = found,
+            Err(()) => unread = true,
+        }
+    }
     let root = root.to_path_buf();
     Box::new(move |owner: &Path| {
         let rel = rel_in(&root, owner)?;
+        if unread && an_owner(&rel) {
+            return Some(UNREAD.to_owned());
+        }
         if let Some((_, record)) = records
             .iter()
             .find(|(_, record)| !record.levels.contains(&rel))
@@ -283,7 +374,7 @@ pub fn accept(root: &Path, owner: &str) -> Result<(), String> {
     let Some(state) = crate::appstate::dir(root) else {
         return Ok(());
     };
-    let was = unaccepted(&state);
+    let was = unaccepted_or_all(&state, root);
     if !was.levels.contains(owner) {
         return Ok(());
     }
@@ -346,7 +437,7 @@ pub fn sweep(root: &Path, open: &[String]) {
         if an_id(&id) && !open.contains(&id) && !young {
             // What it could have made stays left out until the person accepts it.
             if let Some(record) = read(&state, &id) {
-                let was = unaccepted(&state);
+                let was = unaccepted_or_all(&state, root);
                 let mut now = was.clone();
                 now.levels
                     .extend(owners(root).difference(&record.levels).cloned());
@@ -364,25 +455,18 @@ pub fn sweep(root: &Path, open: &[String]) {
 /// out of the plane's state does (`crate::appstate`). Those records are not carried forward, so
 /// no folder is taken as vouched for on their word.
 pub(crate) fn ask_again(root: &Path) -> Result<(), String> {
-    let state = crate::appstate::made(root)?;
-    let was = unaccepted(&state);
+    ask_again_in(&crate::appstate::made(root)?, root)
+}
+
+/// [`ask_again`], in the project's app state `state`.
+pub(crate) fn ask_again_in(state: &Path, root: &Path) -> Result<(), String> {
+    let was = unaccepted_or_all(state, root);
     let mut now = was.clone();
     now.levels.extend(owners(root));
     if now == was {
         return Ok(());
     }
-    write_unaccepted(&state, &now)
-}
-
-/// **A sandboxed chat whose start could not be noted** ([`note`]) still leaves no folder it makes
-/// reaching chats unasked: every workspace and persona folder of the project waits for the
-/// person's Accept ([`ask_again`]). Where this machine keeps no app state, [`made_since`] already
-/// leaves every one out. Refused only where neither can hold.
-pub fn fail_closed(root: &Path) -> Result<(), String> {
-    if crate::appstate::dir(root).is_none() {
-        return Ok(());
-    }
-    ask_again(root)
+    write_unaccepted(state, &now)
 }
 
 /// Removes the record of `id` from `state`, through its folder's handle: a name this module made.

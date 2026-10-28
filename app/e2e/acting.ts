@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { $, browser } from "@wdio/globals";
 import type { ChainablePromiseElement } from "webdriverio";
@@ -55,15 +55,17 @@ export function stateOf(project: string): string {
 
 /**
  * The project's app state, `<data>/app-state/<clone key>` (`purlis_core::appstate`, #3718): in the
- * data home of the app this run started, which made the folder as it opened the project. The clone
+ * newest of this run's data homes that holds it, which the app made as it opened the project. The clone
  * key is the first 16 hex characters of the SHA-256 of the project's real path.
  */
 export function appStateOf(project: string): string {
   const key = createHash("sha256").update(realpathSync(project)).digest("hex").slice(0, 16);
+  // The newest of the run's data homes that holds it: an older one may be a launch before.
   const found = readdirSync(THE_RUNS_TREE)
     .filter((name) => name.startsWith("data-"))
     .map((name) => join(THE_RUNS_TREE, name, "app-state", key))
-    .find((dir) => existsSync(dir));
+    .filter((dir) => existsSync(dir))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
   if (found === undefined) throw new Error(`no app state of ${project} in ${THE_RUNS_TREE}`);
   return found;
 }
