@@ -400,6 +400,34 @@ fn a_new_runner_that_does_not_pair_is_taken_back_and_the_pool_stays_as_it_was() 
     );
 }
 
+/// **A pool's runner suspends after the pool's own time** (#3471): the runner made as it is
+/// added, and the one made beside it after an update.
+#[test]
+fn a_pools_runners_are_made_to_suspend_after_the_pools_own_time() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let twelve_hours = Set {
+        suspend_after: Some(std::time::Duration::from_secs(12 * 60 * 60)),
+        ..Set::default()
+    };
+    add(
+        config.path(),
+        &fake.docker(),
+        &pool("first", twelve_hours),
+        &ours,
+    )
+    .unwrap();
+    let said = |log: &str| log.matches("serve --suspends-unlinked=12h").count();
+    assert_eq!(said(&fake.file("log")), 1, "{}", fake.file("log"));
+
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    makes(&fake, &successor, NEW, &successor_answers());
+    follow(config.path(), &fake.docker(), "first", &new_image, &ours).unwrap();
+    assert_eq!(said(&fake.file("log")), 2, "{}", fake.file("log"));
+}
+
 #[test]
 fn only_a_draining_runner_is_drained_and_removing_the_pool_removes_every_runner_of_it() {
     let config = tempfile::tempdir().unwrap();

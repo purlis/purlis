@@ -5,7 +5,8 @@
 //!
 //! - **Adding a pool makes its one runner and pairs it at once** ([`add`]): the pool is recorded
 //!   ([`crate::runners::record_pool`]), its runner's container is made from the pool's image,
-//!   confined and held to its limits ([`crate::dockerpool::Docker::make`]), paired through the
+//!   suspending itself after the pool's time without a link (#3471), confined and held to its
+//!   limits ([`crate::dockerpool::Docker::make`]), paired through the
 //!   connector ([`crate::dockerpool::Docker::pair`]), and its device id and key kept once
 //!   ([`crate::runners::keep`]). Anything that fails takes back what this add made, the pool
 //!   included, and says what it could not.
@@ -48,7 +49,11 @@ pub fn add(
     let made = docker
         .declared(pool.image())
         .and_then(|(user, home)| Runner::new(pool.name(), pool.image().clone(), user, &home))
-        .map(|runner| runner.limited(pool.limits()))
+        .map(|runner| {
+            runner
+                .limited(pool.limits())
+                .suspending_after(pool.suspend_after())
+        })
         .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))));
     let made = match made {
         Ok(made) => made,
@@ -219,7 +224,11 @@ pub fn follow(
     let made = docker
         .declared(image)
         .and_then(|(user, home)| Runner::new(&successor, image.clone(), user, &home))
-        .map(|runner| runner.limited(pool.limits()))
+        .map(|runner| {
+            runner
+                .limited(pool.limits())
+                .suspending_after(pool.suspend_after())
+        })
         .and_then(|runner| docker.make_for(&runner, Some(&runners::desktop_label(config_root))))
         .map_err(|why| Refused::Other(why.0))?;
     let kept = docker
