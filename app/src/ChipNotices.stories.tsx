@@ -42,7 +42,16 @@ function TheWindow({
     {
       id: 1,
       kind: "info",
-      said: workspaceMade(hasNotice, LINES, { onAddVision: () => setSaid("Asked for a vision") }),
+      said:
+        hasNotice === OUTSIDE
+          ? {
+              from: "story",
+              refused: false,
+              title: "The plane root is up to date",
+              words: "Its layout was read again.",
+              workspace: OUTSIDE,
+            }
+          : workspaceMade(hasNotice, LINES, { onAddVision: () => setSaid("Asked for a vision") }),
     },
   ]);
   const projects = useMemo<SwitchProject[]>(
@@ -183,20 +192,24 @@ export const DotBesideTheCount: Story = {
   },
 };
 
-/** **At the window's edge**: the card shifts inward, never cut off, and its point stays on the
- *  chip it hangs from. */
+/** **At the window's edge**: a notice about the plane root, whose house stands just after the
+ *  project's name, too near the edge for a card centred under it. The card shifts inward and
+ *  is never cut off, and its point stays on the house. */
 export const AtTheWindowEdge: Story = {
-  args: { pins: ["3rd-try", "skills-studio"], width: "40rem" },
-  play: async () => {
-    const card = await waitFor(() => cardOf() as HTMLElement);
+  args: { hasNotice: OUTSIDE, width: "40rem" },
+  play: async ({ canvas }) => {
+    const card = await waitFor(
+      () => screen.queryByRole("region", { name: "Notices for Plane root" }) as HTMLElement,
+    );
     const surface = surfaceOf(card).getBoundingClientRect();
-    const chip = chipOf("3rd-try").getBoundingClientRect();
+    const house = canvas.getByRole("button", { name: "Plane root" }).getBoundingClientRect();
     await expect(surface.left).toBeGreaterThanOrEqual(8);
-    // Shifted: no longer centred on the chip, which is too near the edge for that.
-    await expect(centre(surface)).toBeGreaterThan(centre(chip) + 8);
+    // Shifted: centred, it would start left of the window.
+    await expect(centre(house) - surface.width / 2).toBeLessThan(8);
+    await expect(centre(surface)).toBeGreaterThan(centre(house));
     const point = surfaceOf(card).querySelector('[data-part="arrow"]') as HTMLElement;
     await expect(
-      Math.abs(centre(point.getBoundingClientRect()) - centre(chip)),
+      Math.abs(centre(point.getBoundingClientRect()) - centre(house)),
     ).toBeLessThanOrEqual(1);
   },
 };
