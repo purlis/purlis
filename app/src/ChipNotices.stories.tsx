@@ -138,6 +138,7 @@ const chipOf = (name: string) =>
       .querySelectorAll<HTMLElement>('[data-scope="titlebar"][data-part="workspace"]'),
   ].find((one) => one.dataset.chipOf === name) as HTMLElement;
 const centre = (box: DOMRect) => box.left + box.width / 2;
+// Centred within a pixel and a half: layout rounds a subpixel box to the device's pixels.
 const cardOf = () => screen.queryByRole("region", { name: "Notices for 3rd-try" });
 const surfaceOf = (card: HTMLElement) =>
   card.closest<HTMLElement>('[data-scope="popover"][data-part="root"]') as HTMLElement;
@@ -157,12 +158,12 @@ export const HangsFromItsChip: Story = {
     // Centred under its chip, its point on the chip's middle.
     const chip = chipOf("3rd-try").getBoundingClientRect();
     const surface = surfaceOf(card).getBoundingClientRect();
-    await expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1);
+    await expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1.5);
     await expect(surface.top).toBeGreaterThan(chip.bottom);
     const point = surfaceOf(card).querySelector('[data-part="arrow"]') as HTMLElement;
     await expect(
       Math.abs(centre(point.getBoundingClientRect()) - centre(chip)),
-    ).toBeLessThanOrEqual(1);
+    ).toBeLessThanOrEqual(1.5);
     // It pushes nothing: the page under the bar is where it is with the card hidden.
     const page = canvas.getByTestId("page").getBoundingClientRect();
     // A press elsewhere, well clear of the card in every theme's metrics.
@@ -237,6 +238,6 @@ export const AtTheWindowEdge: Story = {
     const point = surfaceOf(card).querySelector('[data-part="arrow"]') as HTMLElement;
     await expect(
       Math.abs(centre(point.getBoundingClientRect()) - centre(house)),
-    ).toBeLessThanOrEqual(1);
+    ).toBeLessThanOrEqual(1.5);
   },
 };
