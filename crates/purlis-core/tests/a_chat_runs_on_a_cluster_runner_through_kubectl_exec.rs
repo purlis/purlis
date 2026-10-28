@@ -6,8 +6,9 @@
 //! against the key the Pool names; a pairing over the desktop's own `kubectl exec` that must
 //! agree with it; then a link through `kubectl exec -i` and the runner's bridge, and a chat
 //! started, drawn and stopped on it, as on any host. A runner answering another key than the one
-//! vouched for, as one reached in another runner's place is, is refused. Everything it made is
-//! removed, whatever the outcome.
+//! vouched for, as one reached in another runner's place is, is refused. A kept claim's runner
+//! whose pod is lost is made again on its own volume and resumed with the pairing it had, its
+//! home as it was left (#2057). Everything it made is removed, whatever the outcome.
 //!
 //! It needs a cluster with purlis's cluster operator installed and the runner image of this
 //! build named by digest in `CLUSTER_POOL_TEST_IMAGE`, with the kubeconfig context in
@@ -20,7 +21,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use purlis_core::clusterpool::{self, Claimed, Kubectl, OperatorKey, Paired, Refused, Vouched};
+use purlis_core::clusterpool::{
+    self, Claimed, Keeping, Kubectl, OperatorKey, Paired, Refused, Vouched,
+};
 use purlis_host::CommandConnector;
 use purlis_session_protocol::hostlink::{
     self, Handshake, Identity, LinkKey, Linked, Liveness, Pinned,
@@ -70,10 +73,16 @@ fn eventually<T>(what: &str, mut check: impl FnMut() -> Option<T>) -> T {
     }
 }
 
-fn claimed(kubectl: &Kubectl, namespace: &str, name: &str, pool: &str) -> Claimed {
+fn claimed(
+    kubectl: &Kubectl,
+    namespace: &str,
+    name: &str,
+    pool: &str,
+    keeping: Keeping,
+) -> Claimed {
     let requester = kubectl.whoami().expect("who this kubeconfig is");
     let uid = kubectl
-        .claim(namespace, name, pool, &requester)
+        .claim(namespace, name, pool, &requester, keeping)
         .expect("the claim is made");
     Claimed {
         namespace: namespace.to_owned(),
@@ -169,8 +178,8 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
         kubectl.operator_key(&pool).ok()
     });
 
-    let first = claimed(&kubectl, &namespace, "ada-1", &pool);
-    let second = claimed(&kubectl, &namespace, "ada-2", &pool);
+    let first = claimed(&kubectl, &namespace, "ada-1", &pool, Keeping::Fresh);
+    let second = claimed(&kubectl, &namespace, "ada-2", &pool, Keeping::Fresh);
     let first_vouched = vouched(&kubectl, &operator, &first);
     let second_vouched = vouched(&kubectl, &operator, &second);
     assert_ne!(
@@ -267,4 +276,239 @@ fn a_chat_runs_on_a_cluster_runner_paired_with_the_key_the_operator_vouched_for(
     runtime.shutdown_timeout(Duration::from_secs(5));
     let _ = kubectl.delete_claim(&namespace, "ada-1");
     let _ = kubectl.delete_claim(&namespace, "ada-2");
+}
+
+/// Starts `/bin/sh -c command` on the runner `client` is linked to, and answers what it drew
+/// once that holds `until`.
+async fn ran(client: &Client, views: &mut Acceptor, command: &str, until: &str) -> String {
+    let chat = client
+        .start_program(StartProgram {
+            launch: Some(Launch {
+                program: "/bin/sh".into(),
+                args: vec!["-c".into(), command.into()],
+                cwd: None,
+                set: Vec::new(),
+                strip: Vec::new(),
+                pass: Vec::new(),
+                declared: Vec::new(),
+                harness: None,
+                git_hooks: None,
+                reporting: None,
+                confinement: None,
+            }),
+            ..StartProgram::of(PROJECT, ProgramKind::Shell)
+        })
+        .await
+        .expect("the chat starts on the runner");
+    client
+        .attach_view(&chat, ViewKind::Terminal)
+        .await
+        .expect("the runner opens its view");
+    let stream = tokio::time::timeout(PATIENCE, views.accept())
+        .await
+        .expect("a view within the test's patience")
+        .expect("a view");
+    let Opened::View(mut reader) = Viewer::default().accept_any(stream).await.unwrap() else {
+        panic!("a code stream, where a view was meant");
+    };
+    let mut drawn = Vec::new();
+    while !String::from_utf8_lossy(&drawn).contains(until) {
+        let chunk = tokio::time::timeout(PATIENCE, reader.next())
+            .await
+            .expect("the chat draws")
+            .expect("the view is open")
+            .unwrap();
+        let bytes = match chunk {
+            Chunk::Snapshot(bytes) | Chunk::Live(bytes) => bytes,
+        };
+        drawn.extend_from_slice(&bytes);
+        reader.ack(bytes.len()).await.expect("acknowledged");
+    }
+    client.stop(&chat).await.expect("the chat stops");
+    String::from_utf8_lossy(&drawn).into_owned()
+}
+
+/// What kubectl prints for `jsonpath` of the object `kind`/`name` in `namespace`, if it is there.
+fn field(
+    kubectl: &Kubectl,
+    namespace: &str,
+    kind: &str,
+    name: &str,
+    jsonpath: &str,
+) -> Option<String> {
+    kubectl
+        .run(
+            &kubectl.args(&[
+                "get",
+                kind,
+                name,
+                "--namespace",
+                namespace,
+                "--output",
+                &format!("jsonpath={jsonpath}"),
+            ]),
+            None,
+            64 * 1024,
+        )
+        .ok()
+        .map(|printed| printed.trim().to_owned())
+        .filter(|printed| !printed.is_empty())
+}
+
+#[test]
+#[ignore = "needs a cluster with purlis's cluster operator: operator/e2e/kind.sh"]
+fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_again() {
+    purlis_core::unsteered!();
+    let image = std::env::var("CLUSTER_POOL_TEST_IMAGE")
+        .expect("CLUSTER_POOL_TEST_IMAGE names the runner image by digest");
+    let context = std::env::var("CLUSTER_POOL_TEST_CONTEXT")
+        .expect("CLUSTER_POOL_TEST_CONTEXT names the cluster's kubeconfig context");
+    let kubectl = Kubectl::at("kubectl").with_context(&context);
+    let suffix = ulid::Ulid::generate().to_string().to_lowercase();
+    let namespace = format!("e2e-kept-{}", &suffix[..10]);
+    let pool = format!("e2e-kept-{}", &suffix[..10]);
+    let _removes = Removes {
+        kubectl: kubectl.clone(),
+        namespace: namespace.clone(),
+        pool: pool.clone(),
+    };
+    kubectl
+        .run(
+            &kubectl.args(&["create", "namespace", &namespace]),
+            None,
+            64 * 1024,
+        )
+        .expect("a namespace of the test's own");
+    let definition = serde_json::json!({
+        "apiVersion": "runners.purlis.dev/v1alpha1",
+        "kind": "Pool",
+        "metadata": { "name": pool },
+        "spec": { "image": image, "keptVolume": { "size": "1Gi" } },
+    });
+    kubectl
+        .run(
+            &kubectl.args(&["apply", "--filename", "-"]),
+            Some(&definition.to_string()),
+            64 * 1024,
+        )
+        .expect("the pool");
+    let operator = eventually("the pool names the operator's key", || {
+        kubectl.operator_key(&pool).ok()
+    });
+
+    let kept = claimed(&kubectl, &namespace, "ada-kept", &pool, Keeping::Kept);
+    let vouched_first = vouched(&kubectl, &operator, &kept);
+    assert_eq!(
+        vouched_first.pod, "ada-kept",
+        "a kept claim's runner is its own, cold"
+    );
+    let volume = eventually("the claim's own volume", || {
+        field(
+            &kubectl,
+            &namespace,
+            "persistentvolumeclaim",
+            "purlis-kept-ada-kept",
+            "{.metadata.uid}",
+        )
+    });
+
+    let ours = Identity {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::generate().unwrap(),
+    };
+    let desktop = Pinned {
+        device: ours.device.clone(),
+        key: ours.key.public(),
+    };
+    let paired = clusterpool::pair(&kubectl, &kept, &vouched_first, &desktop)
+        .expect("the vouched runner is paired");
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let identity = || Identity {
+        device: ours.device.clone(),
+        key: ours.key.clone(),
+    };
+    runtime.block_on(async {
+        let (client, mut views) = linked(&kubectl, &operator, &paired, identity()).await;
+        client
+            .hold_project(PROJECT, "")
+            .await
+            .expect("the runner holds the project where it keeps it");
+        ran(
+            &client,
+            &mut views,
+            "echo 'the conversation so far' > \"$HOME/conversation\" && echo written; exec sleep 120",
+            "written",
+        )
+        .await;
+    });
+
+    // The pod is lost: upstream makes it again, under the same name, on the same volume.
+    let first_pod = field(&kubectl, &namespace, "pod", "ada-kept", "{.metadata.uid}")
+        .expect("the runner's pod");
+    kubectl
+        .run(
+            &kubectl.args(&[
+                "delete",
+                "pod",
+                "ada-kept",
+                "--namespace",
+                &namespace,
+                "--wait=true",
+            ]),
+            None,
+            64 * 1024,
+        )
+        .expect("the runner's pod deleted");
+    eventually("the runner's pod made again and ready", || {
+        let uid = field(&kubectl, &namespace, "pod", "ada-kept", "{.metadata.uid}")?;
+        let ready = field(
+            &kubectl,
+            &namespace,
+            "pod",
+            "ada-kept",
+            "{.status.conditions[?(@.type==\"Ready\")].status}",
+        )?;
+        (uid != first_pod && ready == "True").then_some(())
+    });
+    assert_eq!(
+        field(
+            &kubectl,
+            &namespace,
+            "persistentvolumeclaim",
+            "purlis-kept-ada-kept",
+            "{.metadata.uid}"
+        ),
+        Some(volume),
+        "the same volume"
+    );
+    // The operator vouches for the same runner: the key it was paired with.
+    let again = eventually("the operator vouches for the runner again", || {
+        let now = clusterpool::vouched_for(&kubectl, &operator, &kept).ok()??;
+        (clusterpool::held_to(&paired, &now).is_ok()).then_some(now)
+    });
+    assert_eq!(again.key, paired.pinned.key);
+
+    // Resumed with the pairing it had, never paired again: its home is as it was left.
+    runtime.block_on(async {
+        let (client, mut views) = linked(&kubectl, &operator, &paired, identity()).await;
+        client
+            .hold_project(PROJECT, "")
+            .await
+            .expect("the runner holds the project where it keeps it");
+        let drawn = ran(
+            &client,
+            &mut views,
+            "cat \"$HOME/conversation\"; echo done; exec sleep 120",
+            "done",
+        )
+        .await;
+        assert!(drawn.contains("the conversation so far"), "{drawn}");
+    });
+    runtime.shutdown_timeout(Duration::from_secs(5));
+    let _ = kubectl.delete_claim(&namespace, "ada-kept");
 }

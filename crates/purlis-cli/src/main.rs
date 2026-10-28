@@ -149,6 +149,10 @@ enum Command {
         /// With --make-key: where the public half is written, for the cluster to show.
         #[arg(long, requires = "make_key", value_name = "FILE", hide = true)]
         publish: Option<std::path::PathBuf>,
+        /// With --make-key: the runner's home on its pod's volume, made from this HOME the
+        /// first time; a home that keeps the runner's pairing keeps its key (#2057).
+        #[arg(long, requires = "make_key", value_name = "DIR", hide = true)]
+        home: Option<std::path::PathBuf>,
     },
     /// Scaffold a fresh control plane here: charter.toml, baseline dirs, .gitignore.
     ///
@@ -4381,11 +4385,12 @@ fn main() -> ExitCode {
         key_made_at_start,
         make_key,
         publish,
+        home,
     } = &cli.command
     {
         #[cfg(not(unix))]
         {
-            let _ = (pair, key_made_at_start, make_key, publish);
+            let _ = (pair, key_made_at_start, make_key, publish, home);
             return bridge();
         }
         #[cfg(unix)]
@@ -4393,6 +4398,7 @@ fn main() -> ExitCode {
             (Some(handoff), Some(published)) => bridge::Asked::MakeKey {
                 handoff: handoff.clone(),
                 published: published.clone(),
+                home: home.clone(),
             },
             _ if *pair => bridge::Asked::Pair {
                 key_made_at_start: key_made_at_start.clone(),
