@@ -150,6 +150,30 @@ pub fn status_of_objects_held_by_refused_claims(
     }
 }
 
+/// A Claim's status while it, or its `pool`, is stopped (#2058): `Ready` is `False` with the
+/// reason `Stopped`, saying which is stopped, and no key is vouched for: its runner is
+/// suspended, or not made yet.
+pub fn status_of_a_stopped_claim(claim: &Claim, pool: &Pool) -> ClaimStatus {
+    let message = if claim.spec.stopped {
+        "This claim is stopped: its runner is suspended, a kept claim's volume kept, or not made \
+         yet, until the claim's stopped is false."
+            .to_owned()
+    } else {
+        format!(
+            "The pool {} is stopped: this claim's runner is suspended, a kept claim's volume \
+             kept, or not made yet, until the pool's stopped is false.",
+            pool.name_any()
+        )
+    };
+    ClaimStatus {
+        link_key: None,
+        conditions: vec![
+            condition("False", "Stopped", message),
+            Vouching::Refused("its runner is stopped".into()).condition(),
+        ],
+    }
+}
+
 /// `next`, with each condition's transition time kept from `previous` while its status has not
 /// changed, which is when Kubernetes' conventions say the time moves. A status that says the same
 /// thing as before is then equal to it, and is not written again.
@@ -235,7 +259,8 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             let pool_object = upstream::name_for(&pool.name_any());
             let template_held = templates.get_opt(&pool_object).await?.map(meta);
             let warm_full = warm_pools.get_opt(&pool_object).await?;
-            let replicas = upstream::replicas_held(warm_full.as_ref());
+            // None while the pool is stopped; otherwise as many as it holds (#2058).
+            let replicas = upstream::replicas_kept(&pool, warm_full.as_ref());
             let warm_held = warm_full.map(meta);
             let claim_full = upstream_claims.get_opt(&name).await?;
             // The volume an upstream claim was made with stays as it is: upstream never changes
@@ -270,8 +295,10 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
             warm.metadata.resource_version = warm_held
                 .as_ref()
                 .and_then(|held| held.resource_version.clone());
-            // The runners it keeps warm stay as many as it holds (#2057, until #2058).
+            // The runners it keeps warm stay as many as it holds (#2057), none while the pool is
+            // stopped (#2058).
             warm.spec.replicas = replicas;
+            let stopped = upstream::is_stopped(&claim, &pool);
             // Who holds an object in the way: Claims the operator made it for and now refuses,
             // or none it knows of.
             let holders = |held: &Option<ObjectMeta>| {
@@ -318,6 +345,14 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 write_status(client, &claim, &namespace, status).await?;
                 return Ok(Action::await_change());
             }
+            // A stopped claim that has no runner yet is not given one until it runs (#2058).
+            if stopped && claim_found == Found::Nothing {
+                write_ours(&templates, template, template_found).await?;
+                write_ours(&warm_pools, warm, warm_found).await?;
+                let status = status_of_a_stopped_claim(&claim, &pool);
+                write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
+                return Ok(Action::await_change());
+            }
             let written: Result<_, Error> = async {
                 let template_now = write_ours(&templates, template, template_found).await?;
                 write_ours(&warm_pools, warm, warm_found).await?;
@@ -347,6 +382,14 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                     return Err(error);
                 }
             };
+            let sandbox = sandbox_of(client, &namespace, &applied).await?;
+            set_operating_mode(client, &claim, &pool, &applied, sandbox.as_ref()).await?;
+            if stopped {
+                let status = status_of_a_stopped_claim(&claim, &pool);
+                write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
+                // Looked at again now and then, so a sandbox made since is suspended too.
+                return Ok(Action::requeue(vouch::RECHECK));
+            }
             let (vouching, pod) = vouch_for(
                 client,
                 &context.signing,
@@ -354,6 +397,7 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
                 &pool,
                 &applied,
                 &template_now,
+                sandbox.map(|sandbox| sandbox.metadata),
             )
             .await?;
             if let Vouching::Refused(why) = &vouching {
@@ -373,8 +417,64 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
     Ok(Action::await_change())
 }
 
-/// **The operator's word on `claim`'s runner's link key** (#2056): the sandbox its upstream
-/// claim names and the pod of that sandbox's name, read, then [`vouch::vouch`]; and the pod.
+/// The sandbox `upstream`, a Claim's upstream claim, names in its status, if there is one.
+async fn sandbox_of(
+    client: &Client,
+    namespace: &str,
+    upstream: &SandboxClaim,
+) -> Result<Option<Sandbox>, Error> {
+    let Some(named) = upstream
+        .status
+        .as_ref()
+        .and_then(|status| status.sandbox.as_ref())
+    else {
+        return Ok(None);
+    };
+    Ok(Api::<Sandbox>::namespaced(client.clone(), namespace)
+        .get_opt(&named.name)
+        .await?)
+}
+
+/// **A stopped claim's runner suspended, and run again once it is not** (#2058): `sandbox`'s
+/// operating mode applied as [`upstream::operating_mode_for`] says, only where the sandbox is
+/// the one `upstream`, the claim's upstream claim, controls by uid. Its mode is the one field
+/// the operator writes on it.
+async fn set_operating_mode(
+    client: &Client,
+    claim: &Claim,
+    pool: &Pool,
+    upstream: &SandboxClaim,
+    sandbox: Option<&Sandbox>,
+) -> Result<(), Error> {
+    let Some(sandbox) = sandbox else {
+        return Ok(());
+    };
+    if !vouch::controlled_by(
+        &sandbox.metadata,
+        "extensions.agents.x-k8s.io",
+        "SandboxClaim",
+        &upstream.metadata,
+    ) {
+        return Ok(());
+    }
+    let Some(mode) = upstream::operating_mode_for(claim, pool, sandbox) else {
+        return Ok(());
+    };
+    let (name, namespace) = (sandbox.name_any(), sandbox.namespace().unwrap_or_default());
+    tracing::info!(claim = %claim.name_any(), %namespace, sandbox = %name, %mode, "the runner's mode set");
+    Api::<Sandbox>::namespaced(client.clone(), &namespace)
+        .patch(
+            &name,
+            &PatchParams::apply(FIELD_MANAGER).force(),
+            &Patch::Apply(&upstream::sandbox_in_mode(&name, &namespace, mode)),
+        )
+        .await?;
+    Ok(())
+}
+
+/// **The operator's word on `claim`'s runner's link key** (#2056): the pod `sandbox`, the one
+/// its upstream claim names, records ([`vouch::pod_name_of`]), read, then [`vouch::vouch`]; and
+/// the pod.
 async fn vouch_for(
     client: &Client,
     signing: &SigningKey,
@@ -382,24 +482,16 @@ async fn vouch_for(
     pool: &Pool,
     upstream: &SandboxClaim,
     template: &SandboxTemplate,
+    sandbox: Option<ObjectMeta>,
 ) -> Result<(Vouching, Option<Pod>), Error> {
     let namespace = claim.namespace().unwrap_or_default();
-    let named = upstream
-        .status
-        .as_ref()
-        .and_then(|status| status.sandbox.as_ref())
-        .map(|sandbox| sandbox.name.clone());
-    let (sandbox, pod) = match &named {
-        Some(name) => (
-            Api::<Sandbox>::namespaced(client.clone(), &namespace)
-                .get_metadata_opt(name)
-                .await?
-                .map(|held| held.metadata),
+    let pod = match &sandbox {
+        Some(sandbox) => {
             Api::<Pod>::namespaced(client.clone(), &namespace)
-                .get_opt(name)
-                .await?,
-        ),
-        None => (None, None),
+                .get_opt(&vouch::pod_name_of(sandbox))
+                .await?
+        }
+        None => None,
     };
     let wanted = upstream::template_for(pool, &namespace, Vec::new())
         .spec

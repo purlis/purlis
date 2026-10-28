@@ -213,6 +213,7 @@ spec:
   keptVolume:              # optional; these are the defaults
     size: 10Gi
     # storageClassName: fast   # the cluster's default class unless named
+  stopped: false           # optional; true suspends every runner of the pool
 ---
 apiVersion: runners.purlis.dev/v1alpha1
 kind: Claim
@@ -223,6 +224,7 @@ spec:
   pool: team
   requester: ada@example.com
   kept: true               # optional; false (fresh) unless set
+  stopped: false           # optional; true suspends this claim's runner
 ```
 
 - **A Pool** is cluster-wide, defined once for the team. Its `image` is a runner image named
@@ -231,8 +233,9 @@ spec:
   (`Mi`, `Gi` or `Ti`, 10Gi unless set) and `storageClassName` (the cluster's default class
   unless set). A change to it applies to kept Claims made after it: a kept Claim keeps the
   volume it was made with. A change to it, as to `image`, also changes the pool's template, so
-  a fresh Claim's runner made before it, warm or running, is no longer vouched for; make its
-  Claim again.
+  a fresh Claim's running runner made before it is no longer vouched for; make its Claim again.
+  A runner kept warm from the earlier template is replaced by one of the new (#2058): upstream
+  deletes it, and a fresh Claim never takes it.
 - **A Claim is kept or fresh** (#2057), and its `kept` never changes after it is made: the other
   kind is another Claim.
   - **A kept Claim** (`kept: true`) gets a runner of its own, started cold, whose home is a
@@ -267,6 +270,17 @@ spec:
   (`kubectl auth whoami`): the policy refuses a Claim whose `requester` is anyone else, in words
   that name the right one, and it never changes after. The operator vouches for it with the
   runner's link key. purlis fills it in when it claims a runner.
+- **`stopped` suspends, and never destroys** (#2058). Set on a Pool or a Claim from kubectl
+  (`kubectl patch pool team --type merge -p '{"spec":{"stopped":true}}'`), it suspends every
+  runner of the pool, or the Claim's runner: the operator puts each runner's upstream sandbox in
+  upstream's `Suspended` mode, which ends its pod and keeps its volumes, so a kept Claim's home,
+  its work and its pairing stay. A fresh Claim's runner keeps nothing past its pod, as ever. The
+  Claim's `Ready` is `False` with the reason `Stopped`, saying whether the Claim or its pool is
+  stopped, and no key is vouched for. A Claim made while stopped gets no runner yet. A stopped
+  pool keeps no runner warm. Set back to `false` (the default), each runner the operator
+  suspended runs again: a kept Claim's pod is made again on its volume, paired as it was. A
+  runner someone suspended by hand is left suspended. A stopped pool's warm pool keeps no runner
+  warm after it runs again until a team admin scales it again.
 - **Deleting a Claim** deletes its runner.
 - **Deleting a Pool stops nothing that runs.** A Claim whose runner was asked for keeps it,
   running as the pool last defined it, until the Claim is deleted: its `Ready` is still what
@@ -375,7 +389,7 @@ For a Claim in namespace `ns` on Pool `p`, the operator makes, and then applies 
 | Upstream object | Name | What it holds |
 |---|---|---|
 | `SandboxTemplate` | `purlis-pool-p` in `ns` | the runner's pod: its first step, `link-key`, making the runner's home and its link key (above), then one container running the pool's image with its own entrypoint (`purlis serve`), both as a user who is not root, every capability dropped, no privilege escalation, the runtime's default seccomp profile, no Kubernetes credential mounted and no service addresses in their environment. The runner's `HOME` is `/var/lib/purlis/home`, on the volume `purlis-kept` mounted at `/var/lib/purlis`: a folder of the node's in the template, which a kept Claim's own volume takes the place of. The pod's group (`fsGroup` 10001) may write that volume. A claim may add a volume of its own (`volumeClaimTemplatesPolicy: Allowed`) |
-| `SandboxWarmPool` | `purlis-pool-p` in `ns` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n ns --replicas=<n>` keeps `n` runners warm for fresh Claims until pools scale on their own (#2058) |
+| `SandboxWarmPool` | `purlis-pool-p` in `ns` | no runner kept warm when it is made; after that, as many as it holds, so `kubectl scale sandboxwarmpool purlis-pool-p -n ns --replicas=<n>` keeps `n` runners warm for fresh Claims, none while the pool is `stopped`. Its update strategy is upstream's `Recreate`, so a warm runner made from an earlier template is deleted and made again, and never handed to a fresh Claim (#2058) |
 | `SandboxClaim` | the Claim's own name in `ns` | the claim on that warm pool; a kept Claim's carries the volume `purlis-kept` its Pool's `keptVolume` asks for, so upstream makes its runner cold and its PersistentVolumeClaim `purlis-kept-<claim>` |
 
 The upstream claim belongs to the Claim, and the template and the warm pool in a namespace to
@@ -406,13 +420,17 @@ it holds:
 | `runners.purlis.dev` | `claims/status` | patch |
 | `runners.purlis.dev` | `pools/status` | patch |
 | core | `pods` | get |
-| `agents.x-k8s.io` | `sandboxes` | get |
+| `agents.x-k8s.io` | `sandboxes` | get, patch |
 | `admissionregistration.k8s.io` | `validatingadmissionpolicybindings`, only `purlis-claims-use-their-pool` | get, list, watch |
 | `extensions.agents.x-k8s.io` | `sandboxclaims`, `sandboxtemplates`, `sandboxwarmpools` | create, get, list, patch, watch |
 
 It holds no right to `exec`, `attach` or port-forward to a pod and none to read a Secret, and it
 reads a sandbox and a pod only by name: a Claim's, which upstream made, to follow the claim to
-its runner and read the key it vouches for. It never lists, makes, changes or deletes a pod. Its own signing key is the
+its runner and read the key it vouches for. The pod is the one the sandbox records: upstream's
+`agents.x-k8s.io/pod-name` annotation where it carries one (a runner adopted from a warm pool
+before upstream made warm runners whole sandboxes), the sandbox's own name otherwise, and still
+held to being the pod that sandbox controls. It patches a sandbox only in its operating mode,
+and only one its Claim's upstream claim controls, to suspend a stopped runner and run it again. It never lists, makes, changes or deletes a pod. Its own signing key is the
 Secret you made at install, which the kubelet mounts in its pod. Its Kubernetes client is built
 without the websocket support `exec` would need.
 `operator/tests/the_install_manifests.rs` holds these rules, and the kind tests ask the cluster

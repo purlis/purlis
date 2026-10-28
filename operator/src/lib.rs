@@ -43,7 +43,7 @@ pub use admission::{Admission, POLICY, SETTLE, admission};
 pub use reconcile::{
     FIELD_MANAGER, LinkKeyIs, claims_kept_as_owners, claims_that_vouch, claims_woken_by,
     pool_status_names, retry_after_conflict, run, settled, status_of, status_of_a_deleted_pool,
-    status_of_a_missing_pool, status_of_an_object_in_the_way,
+    status_of_a_missing_pool, status_of_a_stopped_claim, status_of_an_object_in_the_way,
     status_of_objects_held_by_refused_claims, status_patch, status_withdrawn,
 };
 pub use resources::{

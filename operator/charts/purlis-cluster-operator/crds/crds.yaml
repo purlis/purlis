@@ -59,6 +59,14 @@ spec:
                     nullable: true
                     type: string
                 type: object
+              stopped:
+                default: false
+                description: |-
+                  Whether the pool is stopped (#2058): every runner of its Claims is suspended, never
+                  destroyed (its pod ends; a kept Claim's volume, its home, stays), no runner is kept warm
+                  for it, and a Claim made meanwhile gets no runner, until it is false again. False unless
+                  set.
+                type: boolean
             required:
             - image
             type: object
@@ -146,6 +154,13 @@ spec:
                 x-kubernetes-validations:
                 - message: A claim's requester cannot change.
                   rule: self == oldSelf
+              stopped:
+                default: false
+                description: |-
+                  Whether the claim is stopped (#2058): its runner is suspended, never destroyed (its pod
+                  ends; a kept claim's volume, its home, stays), or not made yet, until it is false again.
+                  Its pool's `stopped` stops it too. False unless set.
+                type: boolean
             required:
             - pool
             - requester

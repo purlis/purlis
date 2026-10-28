@@ -21,6 +21,7 @@ fn claim(namespace: &str, name: &str, pool: &str) -> Arc<Claim> {
             pool: pool.into(),
             requester: "ada@example.com".into(),
             kept: false,
+            stopped: false,
         },
         status: None,
     })
