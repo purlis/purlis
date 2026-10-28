@@ -33,7 +33,7 @@ import { ask } from "../switching.js";
  * beside its first chat, both of the task's chats started from that tab on the stand-in harness,
  * the second one briefed with what the first one recorded, and **Show its diff** for each.
  *
- * `crates/purlis-cli/tests/first_task_script.rs` runs the same script through the core's paths.
+ * `crates/purlis-cli/tests/it/first_task_script.rs` runs the same script through the core's paths.
  * What only a window can show is the tab's own path: the press that approves and starts each
  * chat, the task typed into it and not sent, each chat on a branch of its own, the second
  * chat's briefing as its harness received it, and the shell tab each diff opens.
