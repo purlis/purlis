@@ -36,6 +36,9 @@ import { drawnFont, inForce, terminalFont, xtermLook, xtermTheme, type Theme } f
 /** What a read-only screen says of itself when its owner says nothing more. */
 export const READ_ONLY_SAID = "Read-only: it takes no input.";
 
+/** What the screen says of a copy the clipboard refused, as a chat's pane says it. */
+export const COPY_REFUSED = "The selection could not be put on the clipboard.";
+
 /** Where a copy is written: the page's clipboard, as the Brief's Copy and a Notice's are. */
 export type ClipboardOut = Pick<Clipboard, "writeText">;
 
@@ -62,6 +65,11 @@ export interface ReadOnlyTerminalProps {
   /** A hook for its frame in a view, and for the tests that find it. Never its look. */
   className?: string;
   "data-testid"?: string;
+  /**
+   * A picture that is never read in place (the theme specimen): drawn and its text laid out the
+   * same, but no Tab stop, no find and no copy.
+   */
+  still?: boolean;
   /** Where a copy goes: the page's clipboard unless a test says otherwise. */
   clipboard?: ClipboardOut;
 }
@@ -76,7 +84,8 @@ export function linesOf(pane: Terminal): string[] {
   for (let at = 0; at < buffer.length; at += 1) {
     const row = buffer.getLine(at);
     if (!row) continue;
-    const text = row.translateToString(true);
+    // Untrimmed, so a space a row wrapped on stays between the words either side of it.
+    const text = row.translateToString(false);
     if (row.isWrapped && lines.length > 0) lines[lines.length - 1] += text;
     else lines.push(text);
   }
@@ -103,12 +112,15 @@ export function ReadOnlyTerminal({
   className,
   "data-testid": testId,
   clipboard,
+  still = false,
 }: ReadOnlyTerminalProps) {
   const noteId = useId();
   const holder = useRef<HTMLDivElement>(null);
   const region = useRef<HTMLElement>(null);
   const drawn = useRef<{ pane: Terminal; search: SearchAddon } | null>(null);
   const [lines, setLines] = useState<string[]>([]);
+  // What a copy the clipboard refused says, under the screen.
+  const [copy, setCopy] = useState<string>();
   const [finding, setFinding] = useState<{ search: SearchAddon; asked: number } | null>(null);
   // Read once, as it is drawn: a later write of the same screen is the same picture.
   const told = useRef(onWriting);
@@ -138,7 +150,7 @@ export function ReadOnlyTerminal({
       allowProposedApi: true,
     });
     const search = new SearchAddon();
-    pane.loadAddon(search);
+    if (!still) pane.loadAddon(search);
     pane.open(where);
     // xterm's own text box is never a Tab stop: the screen's region is.
     pane.textarea?.setAttribute("tabindex", "-1");
@@ -158,7 +170,7 @@ export function ReadOnlyTerminal({
       setFinding(null);
       pane.dispose();
     };
-  }, [screen, cols, rows, theme, fontSize]);
+  }, [screen, cols, rows, theme, fontSize, still]);
 
   const keys = (event: KeyboardEvent<HTMLElement>) => {
     const now = drawn.current;
@@ -171,11 +183,18 @@ export function ReadOnlyTerminal({
       event.preventDefault();
       now.pane.selectAll();
     } else if (chord(event, "c", mac)) {
-      // Text a reader selected in the screen's lines is copied as the page copies any text.
-      const picked = window.getSelection()?.toString() ?? "";
-      if (picked !== "" || !now.pane.hasSelection()) return;
+      // Text a reader selected in the screen's own lines is copied as the page copies any text.
+      const picked = window.getSelection();
+      const inHere =
+        picked !== null &&
+        picked.toString() !== "" &&
+        region.current?.contains(picked.anchorNode) === true;
+      if (inHere || !now.pane.hasSelection()) return;
       event.preventDefault();
-      void (clipboard ?? navigator.clipboard)?.writeText(now.pane.getSelection());
+      const out = clipboard ?? navigator.clipboard;
+      setCopy(undefined);
+      // A clipboard that refuses the words is said, never left silent.
+      out.writeText(now.pane.getSelection()).catch(() => setCopy(COPY_REFUSED));
     }
   };
   const closeFind = () => {
@@ -200,8 +219,8 @@ export function ReadOnlyTerminal({
           className="read-only-terminal-screen"
           aria-label={label}
           aria-describedby={noteId}
-          tabIndex={0}
-          onKeyDown={keys}
+          tabIndex={still ? undefined : 0}
+          onKeyDown={still ? undefined : keys}
         >
           {/* What a sighted person sees; its text is the list beside it. A click in it hands the
             keyboard back to the screen, so the keys stay the screen's. */}
@@ -226,6 +245,12 @@ export function ReadOnlyTerminal({
           />
         )}
       </div>
+      {!still && (
+        // Always there, so a screen reader hears a refused copy as it comes.
+        <p className="read-only-terminal-said ui-text-secondary" role="status">
+          {copy ?? ""}
+        </p>
+      )}
     </div>
   );
 }

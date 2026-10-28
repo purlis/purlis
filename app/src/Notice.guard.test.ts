@@ -442,6 +442,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". Also a save's own output, line by line: what the last press answered, not a standing line",
   },
+  "ReadOnlyTerminal.tsx": {
+    count: 1,
+    why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
+  },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
   "SessionPane.tsx": {
     count: 1,

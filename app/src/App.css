@@ -876,6 +876,14 @@ body {
   margin: 0;
 }
 
+.read-only-terminal-said:empty {
+  display: none;
+}
+
+.read-only-terminal-said {
+  margin: 0;
+}
+
 .read-only-terminal-frame {
   position: relative;
   min-inline-size: 0;

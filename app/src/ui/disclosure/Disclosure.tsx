@@ -54,6 +54,10 @@ export function Twist({ open }: { open?: boolean }) {
   );
 }
 
+/** The panel's attributes: a group or a region, never a live one. */
+const panelOf = (role: "group" | "region") =>
+  ({ role, "data-scope": "disclosure", "data-part": "panel" }) as const;
+
 /** Heading levels a trigger's row may stand in, where the fold heads a section of a page. */
 type Level = 2 | 3 | 4 | 5 | 6;
 
@@ -145,9 +149,7 @@ export function Disclosure({
               </Button>
               {trail}
             </Row>
-            <AriaDisclosurePanel role={panelRole} data-scope="disclosure" data-part="panel">
-              {children}
-            </AriaDisclosurePanel>
+            <AriaDisclosurePanel {...panelOf(panelRole)}>{children}</AriaDisclosurePanel>
           </>
         );
       }}

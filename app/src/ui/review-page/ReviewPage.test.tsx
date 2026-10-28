@@ -106,6 +106,26 @@ describe("a review page", () => {
     }
   });
 
+  it("presses a main action that says so by ⌘⏎, as a dialog's", () => {
+    const start = vi.fn();
+    render(
+      <Plan
+        main={{
+          children: "Start grading · 12 chats",
+          byReturn: false,
+          byChord: true,
+          onPress: start,
+        }}
+      />,
+    );
+    const box = screen.getByRole("textbox", { name: "At most, in dollars" });
+    const mac = navigator.platform.startsWith("Mac");
+    act(() => {
+      fireEvent.keyDown(box, { key: "Enter", metaKey: mac, ctrlKey: !mac });
+    });
+    expect(start).toHaveBeenCalledOnce();
+  });
+
   it("keeps an unavailable main action a Tab stop that says why", () => {
     render(
       <Plan

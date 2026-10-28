@@ -9,7 +9,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { ReadOnlyTerminal, READ_ONLY_SAID } from "./ReadOnlyTerminal";
+import { COPY_REFUSED, ReadOnlyTerminal, READ_ONLY_SAID } from "./ReadOnlyTerminal";
 
 afterEach(cleanup);
 
@@ -85,6 +85,29 @@ describe("a read-only terminal", () => {
         .getAllByRole("listitem")
         .map((one) => one.textContent),
     ).toEqual(["x".repeat(25)]);
+  });
+
+  it("keeps the space a row wrapped on between the words either side of it", async () => {
+    const region = await drawn({ screen: "deploy123 failed", cols: 10 });
+    expect(
+      within(region)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["deploy123 failed"]);
+  });
+
+  it("says a copy the clipboard refused", async () => {
+    const writeText = vi.fn<(text: string) => Promise<void>>(async () => {
+      throw new Error("refused");
+    });
+    const region = await drawn({ clipboard: { writeText } });
+    act(() => {
+      fireEvent.keyDown(region, chord("a"));
+    });
+    act(() => {
+      fireEvent.keyDown(region, chord("c"));
+    });
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(COPY_REFUSED));
   });
 
   it("opens the find bar on its find key, and Esc there brings the keyboard back", async () => {

@@ -38,12 +38,14 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from "react";
 import { DialogAnswerRow, returnFinds, type DialogAction } from "../dialog/Dialog";
 import { Reserved } from "../dialog/Reserved";
 import { Form } from "../field/Field";
+import { submits as chordSends } from "../field/submitKey";
 
 export interface ReviewPageProps {
   /** What the body is named by, as a region: "Install deploy from Anthropic's skills". */
@@ -87,11 +89,32 @@ function useScrollStop(body: RefObject<HTMLDivElement | null>): boolean {
     const measure = () =>
       setStop(at.scrollHeight > at.clientHeight && at.querySelector(REACHABLE) === null);
     measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const watch = new ResizeObserver(measure);
-    watch.observe(at);
-    for (const child of at.children) watch.observe(child);
-    return () => watch.disconnect();
+    // What it holds comes and goes (a list that arrives, a button that appears): each change is
+    // measured again, and each new child watched for its size.
+    const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    const follow = () => {
+      watch?.disconnect();
+      watch?.observe(at);
+      for (const child of at.children) watch?.observe(child);
+    };
+    follow();
+    const held =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(() => {
+            follow();
+            measure();
+          });
+    held?.observe(at, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled", "tabindex"],
+    });
+    return () => {
+      watch?.disconnect();
+      held?.disconnect();
+    };
   }, [body]);
   return stop;
 }
@@ -118,6 +141,21 @@ export function ReviewPage({
     event.preventDefault();
     if (main !== undefined && returnFinds(main) && !main.isDisabled) main.onPress?.();
   };
+  // ⌘⏎ (Ctrl+Enter off macOS) presses a main action that says so, as a dialog's does: never a
+  // grant, never what cannot be taken back, never one that cannot be pressed now.
+  const chord = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (!chordSends(event.nativeEvent) || !event.currentTarget.contains(event.target as Node))
+      return;
+    if (
+      main?.byChord !== true ||
+      main.isDisabled === true ||
+      main.variant === "grants" ||
+      main.variant === "danger"
+    )
+      return;
+    event.preventDefault();
+    main.onPress?.();
+  };
   const described = main && {
     ...main,
     "aria-describedby": [summaryId, main["aria-describedby"]].filter(Boolean).join(" "),
@@ -129,6 +167,7 @@ export function ReviewPage({
       data-scope="review-page"
       data-part="root"
       onSubmit={submit}
+      onKeyDown={chord}
     >
       <div
         ref={body}

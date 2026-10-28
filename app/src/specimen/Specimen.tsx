@@ -70,6 +70,7 @@ function SpecimenTerminal({
       screen={lines.join("\r\n")}
       label={label}
       noteShown={false}
+      still
       cols={72}
       rows={lines.length + 1}
       theme={theme}
