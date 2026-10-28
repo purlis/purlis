@@ -27,8 +27,18 @@ export function tokensSaid(tokens: number): string {
   return counted(whole, "token", "tokens", whole.toLocaleString("en-US"));
 }
 
-/** How a grade that ended is said, in one line. */
+/** How a grade that ended is said, in one line, with the chats that asked you something
+ *  (SK-59): a grade's chat waits on nobody, so the grade says it, not a notice on a chat nobody
+ *  can see. */
 export function endedSaid(step: SkillGradeStep): string {
+  const said = endSaid(step);
+  if (step.asked === 0 || step.ended === "failed") return said;
+  const them = step.asked === 1 ? "it" : "them";
+  return `${said} ${counted(step.asked, "chat", "chats")} asked you something, and purlis ended ${them} there without counting ${them}: the grade's scorecard opens each.`;
+}
+
+/** How a grade that ended is said, before what its chats asked. */
+function endSaid(step: SkillGradeStep): string {
   const chats = counted(step.ran, "chat", "chats");
   const spent = step.tokens === null ? "" : `, having spent ${tokensSaid(step.tokens)}`;
   switch (step.ended) {
@@ -64,7 +74,9 @@ export function costSaid(plan: SkillGradePlan): string {
       : estimate.same_profile === false
         ? ` on another profile, ${estimate.profile}`
         : ` on ${estimate.profile}`;
-  const ran = `${on}${estimate.harness === null ? "" : ` (${estimate.harness})`}, ${estimate.ts.slice(0, 10)}`;
+  // The model its chats reported (SK-60): a grade on another model spends otherwise.
+  const ranOn = [estimate.harness, estimate.model].filter((one) => one !== null).join(", ");
+  const ran = `${on}${ranOn === "" ? "" : ` (${ranOn})`}, ${estimate.ts.slice(0, 10)}`;
   if (estimate.chats_then === 0)
     return `Its last grade${ran}, ran no chat, so purlis cannot say yet what a grade spends. Each chat is one turn, and ends once the skill starts.`;
   if (estimate.tokens === null && estimate.cost_usd === null)
@@ -113,16 +125,19 @@ export function SkillGrade({
   const [asking, setAsking] = useState(false);
   const [profiles, setProfiles] = useState<readonly ProfileRow[]>([]);
   const [profile, setProfile] = useState(DEFAULT);
+  // The model the chats run on (SK-60): the profile's own where none is picked.
+  const [model, setModel] = useState(DEFAULT);
   const [step, setStep] = useState<SkillGradeStep>();
   const [said, setSaid] = useState<{ tone: "news" | "trouble"; text: string }>();
   const running = step !== undefined && step.ended === null;
   const picked = profile === DEFAULT ? null : profile;
+  const pickedModel = model === DEFAULT ? null : model;
 
   // A grade still running from before this tab was drawn is shown, with its Stop: the app's
   // word, never this tab's memory of it (the review of #3229).
   useEffect(() => {
     let live = true;
-    void commands.skillGradePlan(plane, level, name, null).then((answer) => {
+    void commands.skillGradePlan(plane, level, name, null, null).then((answer) => {
       if (!live || answer.status !== "ok" || answer.data.running === null) return;
       const grade = answer.data.running;
       setStep(
@@ -135,6 +150,7 @@ export function SkillGrade({
             of: answer.data.chats,
             tokens: null,
             cap: answer.data.token_cap,
+            asked: 0,
             ended: null,
             said: null,
           },
@@ -161,8 +177,8 @@ export function SkillGrade({
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane, name, onGraded]);
 
-  const read = (on: string | null) =>
-    void commands.skillGradePlan(plane, level, name, on).then((answer) => {
+  const read = (on: string | null, onModel: string | null) =>
+    void commands.skillGradePlan(plane, level, name, on, onModel).then((answer) => {
       if (answer.status === "ok") {
         setPlan(answer.data);
         setRefused(undefined);
@@ -172,7 +188,7 @@ export function SkillGrade({
   const open = () => {
     setAsking(true);
     setSaid(undefined);
-    void commands.skillGradePlan(plane, level, name, picked).then((answer) => {
+    void commands.skillGradePlan(plane, level, name, picked, pickedModel).then((answer) => {
       if (answer.status === "ok") {
         setPlan(answer.data);
         setRefused(undefined);
@@ -188,7 +204,7 @@ export function SkillGrade({
 
   const start = () => {
     void commands
-      .skillGradeStart(plane, level, name, picked, plan?.consent ?? "")
+      .skillGradeStart(plane, level, name, picked, pickedModel, plan?.consent ?? "")
       .then((answer) => {
         if (answer.status === "ok") {
           setAsking(false);
@@ -200,6 +216,7 @@ export function SkillGrade({
             of: plan?.chats ?? 0,
             tokens: null,
             cap: plan?.token_cap ?? 0,
+            asked: 0,
             ended: null,
             said: null,
           });
@@ -264,18 +281,27 @@ export function SkillGrade({
           name={name}
           plan={plan}
           onCap={(tokens) =>
-            void commands.skillGradeSetCap(plane, level, name, picked, tokens).then((answer) => {
-              if (answer.status === "ok") {
-                setPlan(answer.data);
-                setSaid(undefined);
-              } else setSaid({ tone: "trouble", text: answer.error });
-            })
+            void commands
+              .skillGradeSetCap(plane, level, name, picked, pickedModel, tokens)
+              .then((answer) => {
+                if (answer.status === "ok") {
+                  setPlan(answer.data);
+                  setSaid(undefined);
+                } else setSaid({ tone: "trouble", text: answer.error });
+              })
           }
           profiles={profiles}
           profile={profile}
           onProfile={(to) => {
+            // Another profile may be another program, whose models are its own.
             setProfile(to);
-            read(to === DEFAULT ? null : to);
+            setModel(DEFAULT);
+            read(to === DEFAULT ? null : to, null);
+          }}
+          model={model}
+          onModel={(to) => {
+            setModel(to);
+            read(picked, to === DEFAULT ? null : to);
           }}
           onStart={start}
           onCancel={() => setAsking(false)}
@@ -293,6 +319,8 @@ function GradePlan({
   profiles,
   profile,
   onProfile,
+  model,
+  onModel,
   onStart,
   onCancel,
 }: {
@@ -302,12 +330,19 @@ function GradePlan({
   profiles: readonly ProfileRow[];
   profile: string;
   onProfile: (to: string) => void;
+  /** The model picked for the chats (SK-60), {@link DEFAULT} for the profile's own. */
+  model: string;
+  onModel: (to: string) => void;
   onStart: () => void;
   onCancel: () => void;
 }) {
   const options = [
     { value: DEFAULT, label: "The project's default" },
     ...profiles.map((one) => ({ value: one.name, label: one.name })),
+  ];
+  const models = [
+    { value: DEFAULT, label: "The profile's own model" },
+    ...plan.models.map((one) => ({ value: one, label: one })),
   ];
   const nothing = plan.tests.length === 0;
   const [cap, setCap] = useState(String(plan.token_cap ?? 0));
@@ -340,7 +375,7 @@ function GradePlan({
             {counted(plan.chats, "chat", "chats")} × {plan.chat_minutes} min. {costSaid(plan)} It
             stops once its chats have spent {tokensSaid(plan.token_cap ?? 0)}
             {plan.cap_set_here ? ", the cap you set on this machine" : ", the default cap"}, or cost{" "}
-            {limitSaid(plan)}. The chats run on the profile you pick
+            {limitSaid(plan)}. The chats run on the profile and model you pick
             {plan.sandbox === null ? "" : `, in the project's ${plan.sandbox}`}, with none of your
             own Allows and no tools but purlis's that only read, and its account pays for them as
             for any chat.
@@ -403,6 +438,15 @@ function GradePlan({
               options={options}
               onValueChange={onProfile}
             />
+            {plan.models.length > 0 && (
+              <Select
+                size="sm"
+                aria-label={`Model ${name}'s grade runs on`}
+                value={model}
+                options={models}
+                onValueChange={onModel}
+              />
+            )}
             <Button
               size="sm"
               variant="primary"

@@ -134,6 +134,34 @@ pub struct ChatSkills {
     /// Why the chat gets no skills, where its harness is a declared one skills are not supported
     /// on (SK-30): said in place of the words for a tool purlis does not know.
     pub not_supported: Option<String>,
+    /// How its router extension did at its start (SK-15b): null for a chat routed by the
+    /// built-in router, which is asked nothing.
+    pub routing: Option<SkillRouting>,
+}
+
+/// **How a chat's router extension did at its start** (SK-15b, ADR 0102 §6): the core's routing
+/// record, as the chat's tab and the studio say it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct SkillRouting {
+    /// The router asked, by its extension's id.
+    pub router: String,
+    /// How long its question took, in milliseconds.
+    pub ms: u32,
+    /// Whether the chat lists what the built-in router shows instead.
+    pub fell_back: bool,
+    /// What a person is told of it, in the core's words.
+    pub said: String,
+}
+
+impl From<&purlis_core::skills::router::Routed> for SkillRouting {
+    fn from(routed: &purlis_core::skills::router::Routed) -> SkillRouting {
+        SkillRouting {
+            router: routed.record.router.clone(),
+            ms: u32::try_from(routed.record.ms).unwrap_or(u32::MAX),
+            fell_back: routed.record.fell_back.is_some(),
+            said: routed.said(),
+        }
+    }
 }
 
 impl ChatSkills {
@@ -146,6 +174,7 @@ impl ChatSkills {
             budget: None,
             repos: Vec::new(),
             not_supported: None,
+            routing: None,
         }
     }
 }
@@ -249,6 +278,7 @@ pub(crate) fn shown(skills: Option<&purlis_core::skills::ChatSkills>) -> ChatSki
         }),
         repos: Vec::new(),
         not_supported: None,
+        routing: None,
     }
 }
 
@@ -276,6 +306,7 @@ pub(crate) async fn chat_skills(
         );
         if shown.known {
             shown.repos = repos_of_the_chat(&held, &chat);
+            shown.routing = chat.start.routed.as_ref().map(Into::into);
         } else {
             shown.not_supported = chat.not_supported.clone();
         }

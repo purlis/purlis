@@ -1240,6 +1240,11 @@ fn estimate_said(estimate: Option<&purlis_core::skills::grades::Estimate>) -> St
         (None, Some(harness)) => format!(" on {}", purlis_core::skilluse::harness_title(harness)),
         (None, None) => String::new(),
     };
+    // The model its chats reported (SK-60): a grade on another model spends otherwise.
+    let on = match &estimate.model {
+        Some(model) => format!("{on} on {model}"),
+        None => on,
+    };
     if estimate.chats_then == 0 {
         return format!(
             "Its last grade{on}, {when}, ran no chat, so what a grade spends is not known yet.\n"
@@ -1357,8 +1362,17 @@ fn grade_said(
                 )
         };
         let (passed, of) = one.report.passed_with();
+        // The chats that asked the person something (SK-59): ended there, and said here.
+        let asked = match one.report.asked() {
+            0 => String::new(),
+            asked => format!(
+                "  {} asked you something, and purlis ended {them} there without counting {them}",
+                counted(asked, "chat", "chats"),
+                them = if asked == 1 { "it" } else { "them" }
+            ),
+        };
         text.push_str(&format!(
-            "  {}  {}  {passed} of {} passed  with {}  without {}{}  ({})\n",
+            "  {}  {}  {passed} of {} passed  with {}  without {}{}{asked}  ({})\n",
             purlis_core::skills::review::escaped_line(&one.ts),
             one.commit.as_deref().map_or("uncommitted", history::short),
             counted(of, "test", "tests"),
@@ -1368,7 +1382,11 @@ fn grade_said(
                 .delta
                 .map(|delta| format!("  difference {:+.0} points", delta * 100.0))
                 .unwrap_or_default(),
-            counted(one.spent.chats, "chat", "chats"),
+            match &one.model {
+                // The model its chats reported (SK-60): a model's id, which the record checks.
+                Some(model) => format!("{} on {model}", counted(one.spent.chats, "chat", "chats")),
+                None => counted(one.spent.chats, "chat", "chats"),
+            },
         ));
     }
     text

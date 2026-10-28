@@ -49,16 +49,24 @@ fn planned(query: &str) -> Planned {
     }
 }
 
+/// Where a grade's chats run in a test: on `work`, checked as `checked`, priced at `priced`, its
+/// harness offering Claude Code's three models and none picked.
+fn on(checked: Result<String, String>, priced: grading::Priced) -> On {
+    On {
+        profile: Some("work".into()),
+        checked,
+        priced,
+        models: ["opus", "sonnet", "haiku"].map(str::to_owned).to_vec(),
+        model: None,
+    }
+}
+
 #[test]
 fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     let plan = SkillGradePlan::of(
         &planned("ship it\u{202e}now"),
         None,
-        (
-            Some("work".into()),
-            Ok("full sandbox".into()),
-            grades::price::of_model(None),
-        ),
+        on(Ok("full sandbox".into()), grades::price::of_model(None)),
     );
     assert_eq!(plan.chats, 6);
     assert_eq!(plan.runs, 3);
@@ -99,8 +107,7 @@ fn the_plan_shows_each_query_as_the_chat_reads_it_and_what_is_left_out() {
     let refused = SkillGradePlan::of(
         &planned("ship it"),
         None,
-        (
-            Some("work".into()),
+        on(
             Err("the sandbox is off".into()),
             grades::price::of_model(None),
         ),
@@ -118,8 +125,7 @@ fn the_plan_says_the_limit_at_the_price_of_the_model_its_chats_run_on() {
     let plan = SkillGradePlan::of(
         &planned("ship it"),
         None,
-        (
-            Some("work".into()),
+        on(
             Ok("full sandbox".into()),
             grades::price::of_model(Some("claude-sonnet-4-6")),
         ),
@@ -173,4 +179,138 @@ fn a_grade_that_panics_ends_as_failed_and_is_not_running_after() {
         assert_eq!(failed.get(), panics, "{grade}");
         assert_eq!(running_of(&plane, "deploy"), None, "{grade} is not running");
     }
+}
+
+/// SK-60 (#3240): the plan offers the models the profile's harness can run, and says the one
+/// picked.
+#[test]
+fn the_plan_offers_the_models_the_profiles_harness_can_run() {
+    let plan = SkillGradePlan::of(
+        &planned("ship it"),
+        None,
+        On {
+            model: Some("sonnet".into()),
+            ..on(
+                Ok("full sandbox".into()),
+                grades::price::of_model(Some("sonnet")),
+            )
+        },
+    );
+    assert_eq!(plan.models, ["opus", "sonnet", "haiku"]);
+    assert_eq!(plan.model.as_deref(), Some("sonnet"));
+    assert_eq!(plan.priced.model.as_deref(), Some("sonnet"));
+}
+
+/// SK-59 (#3239): a grade's scorecard has each trigger test once, with each arm's runs and each
+/// of its chats, the ones this machine kept marked so the window opens them, and the asks said.
+#[test]
+fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
+    use purlis_core::skills::grade::{ArmScore, GradeEnd, GradeReport, TriggerScore};
+    let score = |arm: Arm, chats: &[&str], asked: u32| TriggerScore {
+        query: "ship it\u{202e}".into(),
+        should_trigger: true,
+        arm,
+        runs: 3 - asked,
+        triggered: 1,
+        rate: Some(1.0 / f64::from(3 - asked)),
+        pass: Some(false),
+        chats: chats.iter().map(|chat| Some((*chat).to_owned())).collect(),
+        asked,
+    };
+    let graded = Graded {
+        v: grades::VERSION,
+        grade: "01GRADE".into(),
+        skill: "deploy".into(),
+        level: Some("skills".into()),
+        tree: "uncommitted".into(),
+        commit: None,
+        harness: Some("claude".into()),
+        profile: Some("work".into()),
+        ts: "2026-10-28T10:00:00+00:00".into(),
+        runs: 3,
+        report: GradeReport {
+            grader: grading::BUILT_IN.into(),
+            triggers: vec![
+                score(Arm::With, &["01A", "01B", "01C"], 0),
+                score(Arm::Without, &["01D", "01E", "01F"], 1),
+            ],
+            arms: vec![ArmScore {
+                arm: Arm::With,
+                pass_rate: None,
+                tokens: None,
+                seconds: None,
+                chats: 3,
+                not_run: 0,
+            }],
+            delta: Some(0.333),
+            ended: GradeEnd::Whole,
+            not_started: None,
+            cap: None,
+            spent_tokens: None,
+            cost_cap_usd: None,
+            spent_usd: None,
+            counted_usd: None,
+            priced: None,
+        },
+        spent: Spent::default(),
+        plugins_off: None,
+        model: Some("claude-sonnet-4-5".into()),
+    };
+    let card = GradeScorecard::of(&graded, |chat| chat != "01B");
+    assert_eq!(card.ran_on, "Claude Code · claude-sonnet-4-5");
+    assert_eq!(card.version, "Changes not saved");
+    assert_eq!(card.ended, "Finished");
+    assert_eq!(card.delta, Some(33.0));
+    assert_eq!(card.asked, 1);
+    let [test] = card.tests.as_slice() else {
+        panic!("{:?}", card.tests);
+    };
+    assert_eq!(test.query, "ship it⟦U+202E⟧");
+    assert_eq!(
+        test.arms.iter().map(|arm| arm.arm).collect::<Vec<_>>(),
+        [ScoredArm::With, ScoredArm::Without]
+    );
+    assert_eq!(
+        test.arms[0].chats,
+        [
+            ScoredChat {
+                id: "01A".into(),
+                run: 1,
+                kept: true
+            },
+            ScoredChat {
+                id: "01B".into(),
+                run: 2,
+                kept: false
+            },
+            ScoredChat {
+                id: "01C".into(),
+                run: 3,
+                kept: true
+            },
+        ]
+    );
+    assert_eq!(test.arms[1].asked, 1);
+}
+
+/// The review of #3239: a host sends a view's snapshot in pieces, after a reset where the view is
+/// not its first, so the screen kept is every piece until the view is quiet.
+#[test]
+fn a_screen_sent_in_pieces_is_kept_whole() {
+    let (send, pieces) = std::sync::mpsc::channel();
+    for piece in ["", "\u{1b}c", "first half, ", "second half"] {
+        send.send(piece.to_owned()).unwrap();
+    }
+    assert_eq!(
+        gathered(&pieces, Instant::now()).as_deref(),
+        Some("\u{1b}cfirst half, second half")
+    );
+    let (send, nothing) = std::sync::mpsc::channel::<String>();
+    send.send(String::new()).unwrap();
+    drop(send);
+    assert_eq!(
+        gathered(&nothing, Instant::now()),
+        None,
+        "nothing was shown"
+    );
 }

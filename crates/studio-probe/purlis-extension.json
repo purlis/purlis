@@ -2,7 +2,7 @@
   "version": 3,
   "id": "studio-probe",
   "name": "Studio probe",
-  "capabilities": ["skill-source", "skill-lint", "skill-template", "studio-panel", "cli"],
+  "capabilities": ["skill-source", "skill-lint", "skill-template", "studio-panel", "skill-router", "cli"],
   "state": "state",
   "hosts": [
     "probe.invalid",
@@ -20,6 +20,7 @@
     "studio-panel": [
       { "id": "probe", "title": "Probe" }
     ],
+    "skill-router": { "title": "Probe router" },
     "cli": [
       { "name": "try", "title": "Try one thing from inside the sandbox, and say what happened", "writes": false }
     ]

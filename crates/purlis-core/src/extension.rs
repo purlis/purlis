@@ -1579,6 +1579,15 @@ fn views_of(value: &serde_json::Value, program: Option<&str>) -> Result<Vec<View
     Ok(views)
 }
 
+/// **Whether `id` is an extension's id** as a manifest's is read ([`parse_knowing`]'s checks):
+/// letters, digits, `-`, `_` and `.`, starting with a letter or a digit, one path segment. What a
+/// written choice of an extension (a chat's router, SK-15b) is held to before it is looked up.
+pub(crate) fn an_id(id: &str) -> bool {
+    crate::contain::segment_ok(id)
+        && id.chars().all(ok_in_an_id)
+        && id.starts_with(|c: char| c.is_ascii_alphanumeric())
+}
+
 /// Whether `id` may name a part of an extension — a view, an action, a palette command: one
 /// segment of letters, digits, '-' and '_', starting with a letter or a digit.
 fn ok_in_a_part_id(id: &str) -> bool {

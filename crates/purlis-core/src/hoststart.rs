@@ -153,22 +153,27 @@ pub fn plane_skills_laid_out(
     kit: &Kit,
     harness: Harness,
 ) -> Option<PathBuf> {
-    laid_out_on(on, root, workspace, persona, kit, harness, &[])
+    let at = on.then_some(crate::skills::PlaneSkills {
+        plane: root,
+        workspace,
+        repo: &[],
+        routed: None,
+    });
+    laid_out_on(at, persona, kit, harness)
 }
 
-/// [`plane_skills_laid_out`] for a chat on `harness`, with `repo` the repo skills of the clone
-/// it works in (SK-6): a plane skill a narrower repo copy hides is not laid out.
+/// [`plane_skills_laid_out`] for a chat on `harness` whose plane skills come from `at`, with the
+/// repo skills of the clone it works in (SK-6) and its router's answer (SK-15b): a plane skill a
+/// narrower repo copy hides, or its router hid, is not laid out. `None` where they do not reach
+/// it.
 fn laid_out_on(
-    on: bool,
-    root: &Path,
-    workspace: Option<&str>,
+    at: Option<crate::skills::PlaneSkills<'_>>,
     persona: Option<&str>,
     kit: &Kit,
     harness: Harness,
-    repo: &[crate::skills::OutsideSkill],
 ) -> Option<PathBuf> {
     let own_names = harness.skills().names_built_ins_its_own();
-    if !on && !own_names {
+    if at.is_none() && !own_names {
         return None;
     }
     let Some(sets) = kit.skill_sets.as_deref() else {
@@ -181,15 +186,7 @@ fn laid_out_on(
         return None;
     };
     let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
-    crate::skills::lay_out_for_chat(
-        on.then_some(root),
-        workspace,
-        persona,
-        built_in.as_deref(),
-        sets,
-        harness,
-        repo,
-    )
+    crate::skills::lay_out_for_chat(at, persona, built_in.as_deref(), sets, harness)
 }
 
 /// **Where a chat's plane skills come from, read once at its start** (#3234): what arms it
@@ -211,6 +208,9 @@ pub struct ChatSkills {
     /// The repo skills of the clone the chat works in (SK-6), as its harness reads them:
     /// nothing where the plane's skills do not reach it, or it works in no clone.
     pub repo: Vec<crate::skills::OutsideSkill>,
+    /// What its router extension made of its set at its start (SK-15b, [`Self::routed_by`]):
+    /// `None` for a chat routed by the built-in router, which is asked nothing.
+    pub routed: Option<crate::skills::router::Routed>,
 }
 
 impl ChatSkills {
@@ -250,7 +250,54 @@ impl ChatSkills {
             workspace,
             persona,
             repo,
+            routed: None,
         }
+    }
+
+    /// **These skills, routed by the router the chat's persona or workspace chose** (SK-15b,
+    /// ADR 0102 §5, §6): where it is an extension's, `asker` asks it once, now, within
+    /// [`crate::extension::studio::ROUTER_DEADLINE`], which of the set's skills to hide, and the
+    /// answer or the built-in router's fallback is kept as [`Self::routed`], what every later
+    /// routing of the chat's set applies. Nothing is asked where the plane's skills do not reach
+    /// the chat, for a Try it's scratch chat, or where the built-in router is the one chosen.
+    #[must_use]
+    pub fn routed_by(
+        self,
+        built_in: Option<&Path>,
+        harness: Option<Harness>,
+        asker: Option<&std::sync::Arc<dyn crate::skills::router::AskRouter>>,
+    ) -> Self {
+        let Some(harness) = harness.filter(|_| self.on && !self.tried) else {
+            return self;
+        };
+        let chosen = crate::skills::router::chosen(
+            &self.root,
+            self.workspace.as_deref(),
+            self.persona.as_deref(),
+        );
+        if chosen == Ok(crate::skills::router::Chosen::BuiltIn) {
+            return self;
+        }
+        let (set, pins) = crate::skills::unrouted(
+            built_in,
+            crate::skills::PlaneSkills {
+                plane: &self.root,
+                workspace: self.workspace.as_deref(),
+                repo: &self.repo,
+                routed: None,
+            },
+            self.persona.as_deref(),
+            harness,
+        );
+        let routed = crate::skills::router::at_start(
+            &set,
+            chosen,
+            harness.skill_budget(),
+            &pins,
+            asker,
+            crate::extension::studio::ROUTER_DEADLINE,
+        );
+        Self { routed, ..self }
     }
 }
 
@@ -295,12 +342,38 @@ where
     }
 }
 
+/// The host's [`Beside`] as two calls and what asks a chat's router extension at its start
+/// (SK-15b).
+impl<C, R> Beside for (C, R, std::sync::Arc<dyn crate::skills::router::AskRouter>)
+where
+    C: Fn(&session::ConfinePlan) -> Result<session::Confined, String>,
+    R: Fn(serde_json::Value) -> Result<(), String>,
+{
+    fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String> {
+        (self.0)(plan)
+    }
+
+    fn record(&self, entry: serde_json::Value) -> Result<(), String> {
+        (self.1)(entry)
+    }
+
+    fn router(&self) -> Option<std::sync::Arc<dyn crate::skills::router::AskRouter>> {
+        Some(std::sync::Arc::clone(&self.2))
+    }
+}
+
 /// What the host does beside a start it composes: what [`compose`] asks of it.
 pub trait Beside {
     /// The confinement `plan` plans, started by the host as the program's own.
     fn confine(&self, plan: &session::ConfinePlan) -> Result<session::Confined, String>;
     /// Writes `entry` in the host's event log, durably, or says why not.
     fn record(&self, entry: serde_json::Value) -> Result<(), String>;
+    /// What asks a chat's router extension at its start (SK-15b): `None` where this host asks
+    /// none, so a chat whose workspace or persona chose one is routed by the built-in router,
+    /// and its routing record says why.
+    fn router(&self) -> Option<std::sync::Arc<dyn crate::skills::router::AskRouter>> {
+        None
+    }
 }
 
 /// A start, as the host hands it to be composed.
@@ -432,8 +505,10 @@ pub fn compose_ready(
             tracing::warn!("purlis: a sandboxed chat's start was not noted for its skills ({why})");
         }
     }
-    // Read once `armed` has checked the start is not refused (#3461).
+    // Read once `armed` has checked the start is not refused (#3461), and routed by the router
+    // its persona or workspace chose (SK-15b).
     let skills = std::cell::LazyCell::new(|| {
+        let built_in = kit.plugin.as_deref().and_then(crate::skills::in_bundle);
         ChatSkills::read(
             crate::skills::reach_chats_here(root),
             root,
@@ -441,6 +516,7 @@ pub fn compose_ready(
             Some(&cwd),
             persona.as_deref(),
         )
+        .routed_by(built_in.as_deref(), ready.harness, beside.router().as_ref())
     });
     let armed = armed(&Arming {
         root,
@@ -523,6 +599,14 @@ pub fn compose_ready(
         beside,
     ) {
         tracing::warn!("purlis: a composed chat's run was not written ({why})");
+    }
+    // Its routing record, under the run just begun, where its arming asked a router extension
+    // (SK-15b).
+    if let Some(routed) =
+        std::cell::LazyCell::get(&skills).and_then(|skills| skills.routed.as_ref())
+        && let Err(why) = routed_recorded(starting, &routed.record, beside)
+    {
+        tracing::warn!("purlis: a composed chat's routing record was not written ({why})");
     }
     if let Some(counted) = counted
         && let Err(why) = crate::sandbox::local::count(root, counted)
@@ -608,6 +692,23 @@ fn persona_of(env: &[(String, String)], root: &Path) -> Option<String> {
         .find(|(name, _)| name == crate::active::PERSONA_ENV)
         .map(|(_, persona)| persona.clone())
         .or_else(|| crate::start::persona_for_a_new_chat(root))
+}
+
+/// Writes chat `starting`'s routing `record` in the host's event log (SK-15b), after its run's
+/// `run.started`.
+fn routed_recorded(
+    starting: &Starting<'_>,
+    record: &crate::skills::router::Record,
+    beside: &dyn Beside,
+) -> Result<(), String> {
+    let entry = crate::eventlog::Entry::SkillRouted {
+        plane: starting.root.to_path_buf(),
+        number: starting.number,
+        record: record.clone(),
+    };
+    serde_json::to_value(entry)
+        .map_err(|why| why.to_string())
+        .and_then(|entry| beside.record(entry))
 }
 
 /// **Writes the run `starting` begins** in the host's event log, as the window writes a run of
@@ -934,20 +1035,14 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
     } else {
         plugins
     };
-    let linked = laid_out_on(
-        on,
-        skills_root,
-        workspace,
-        skills.persona.as_deref(),
-        kit,
-        harness,
-        &skills.repo,
-    );
-    let skills = on.then_some(crate::skills::PlaneSkills {
+    let at = on.then_some(crate::skills::PlaneSkills {
         plane: skills_root,
         workspace,
         repo: &skills.repo,
+        routed: skills.routed.as_ref(),
     });
+    let linked = laid_out_on(at, skills.persona.as_deref(), kit, harness);
+    let skills = at;
     let armed = crate::harness::Kit {
         binary,
         plugin: kit.plugin.as_deref(),

@@ -1984,24 +1984,32 @@ export const commands = {
 	 */
 	skillLevelAccept: (plane: PlaneId, folder: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_level_accept", { plane, folder })),
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
-	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile })),
+	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
 	/**
 	 *  **Grades the copy of `skill` at `level`**, on `profile` (the project's default where none
-	 *  is picked): its chats run one at a time behind the window, which is told each step
-	 *  ([`EVENT`]). The answer is the grade's id. Refused while a grade runs in the project.
+	 *  is picked) and `model` (the profile's own where none is, SK-60): its chats run one at a time
+	 *  behind the window, which is told each step ([`EVENT`]). The answer is the grade's id.
+	 *  Refused while a grade runs in the project.
 	 */
-	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, consent })),
+	skillGradeStart: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, consent: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_start", { plane, level, skill, profile, model, consent })),
 	/**
 	 *  **Stops the grade `grade`**: the chat it runs now is ended, no other starts, and what ran is
 	 *  scored and recorded.
 	 */
 	skillGradeStop: (plane: PlaneId, grade: string) => typedError<null, string>(__TAURI_INVOKE("skill_grade_stop", { plane, grade })),
+	/**  **The scorecard of `skill`'s grade `grade`** (SK-59, #3239), as the eval record holds it. */
+	skillGradeScorecard: (plane: PlaneId, skill: string, grade: string) => typedError<GradeScorecard, string>(__TAURI_INVOKE("skill_grade_scorecard", { plane, skill, grade })),
+	/**
+	 *  **What chat `chat` of `skill`'s grade `grade` showed as it ended** (SK-59, #3239): its screen
+	 *  and scrollback as the escape sequences that draw them, for a tab that shows it read-only.
+	 */
+	skillGradeChat: (plane: PlaneId, skill: string, grade: string, chat: string) => typedError<string, string>(__TAURI_INVOKE("skill_grade_chat", { plane, skill, grade, chat })),
 	/**
 	 *  **Sets the token cap a grade in the project is held to**, on this machine (#2779; the
 	 *  operator's ruling of 2026-10-26): the person who pays for the chats sets it, and the plan shows
 	 *  it before Grade is pressed. The answer is the plan of `skill` at `level` again, with it.
 	 */
-	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, profile, tokens })),
+	skillGradeSetCap: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null, tokens: number | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_set_cap", { plane, level, skill, profile, model, tokens })),
 	/**  The project's skill sources. */
 	skillSources: (plane: PlaneId) => typedError<SkillSource[], string>(__TAURI_INVOKE("skill_sources", { plane })),
 	/**
@@ -5353,6 +5361,11 @@ export type ChatSkills = {
 	 *  on (SK-30): said in place of the words for a tool purlis does not know.
 	 */
 	not_supported: string | null,
+	/**
+	 *  How its router extension did at its start (SK-15b): null for a chat routed by the
+	 *  built-in router, which is asked nothing.
+	 */
+	routing: SkillRouting | null,
 };
 
 /**  One step of one chat's stop, as the window is told it. */
@@ -7207,6 +7220,8 @@ export type GradeEstimate = {
 	ts: string,
 	profile: string | null,
 	harness: string | null,
+	/**  The model its chats reported (SK-60): a grade on another model spends otherwise. */
+	model: string | null,
 	/**  Whether it ran on the profile this grade runs on, or `None` where that is not known. */
 	same_profile: boolean | null,
 };
@@ -7237,6 +7252,29 @@ export type GradeQuery = {
 	should_trigger: boolean,
 	/**  Whether it holds a character no reader would see. */
 	hides: boolean,
+};
+
+/**
+ *  **A grade's scorecard** (SK-59, #3239; spec #2762 decision 43): the grade as its row in the
+ *  Grades panel says it, then each trigger test in each arm, with each of its chats one click
+ *  away where this machine kept it.
+ */
+export type GradeScorecard = {
+	grade: string,
+	skill: string,
+	/**
+	 *  When it ran, the version it graded, what its chats ran on and how it ended, as its row
+	 *  says each.
+	 */
+	graded: string,
+	version: string,
+	ran_on: string,
+	ended: string,
+	/**  The difference the skill made, in points, where both arms ran. */
+	delta: number | null,
+	/**  How many of its chats asked the person something and were ended there. */
+	asked: number,
+	tests: ScoredTest[],
 };
 
 /**  Who a grant is for, as the window sends it ([`sandbox::grant::Level`]). */
@@ -11087,6 +11125,42 @@ export type Scope =
 /**  A tab's menu: every line's figure, each task's time, and the total. */
 "menu";
 
+/**  **A grade's arm, as its scorecard says it.** */
+export type ScoredArm = "with" | "without" | "previous";
+
+/**
+ *  **One chat of a grade's trigger test**, as its scorecard offers it (SK-59, #3239): its id, and
+ *  whether this machine kept what it showed, which is what opens it.
+ */
+export type ScoredChat = {
+	id: string,
+	/**  Which of its test's runs in its arm it was, from 1. */
+	run: number,
+	kept: boolean,
+};
+
+/**  **One trigger test in one arm of a grade**, as its scorecard shows it. */
+export type ScoredRuns = {
+	arm: ScoredArm,
+	/**  The runs that ran, and of those the ones that started the skill. */
+	runs: number,
+	triggered: number,
+	/**  Whether it passed there, where anything ran. */
+	pass: boolean | null,
+	/**  Its chats that asked the person something and were ended there: no run. */
+	asked: number,
+	/**  Each chat it ran, in run order, where one started. */
+	chats: ScoredChat[],
+};
+
+/**  **One trigger test of a grade**, in each arm. */
+export type ScoredTest = {
+	/**  The query as its chats read it, each character no reader would see marked. */
+	query: string,
+	should_trigger: boolean,
+	arms: ScoredRuns[],
+};
+
 /**  Why a page of a search ended. */
 export type SearchEnd = 
 /**  The whole scope is searched. */
@@ -11771,6 +11845,12 @@ export type SkillGradePlan = {
 	 *  grade can run on it (the operator's ruling of 2026-10-26).
 	 */
 	profile: string | null,
+	/**
+	 *  **The models its chats can be picked to run on** (SK-60, #3240), as the profile's harness
+	 *  offers them, and the one picked: `None` is the profile's own model.
+	 */
+	models: string[],
+	model: string | null,
 	sandbox: string | null,
 	refused: string | null,
 	/**
@@ -11793,6 +11873,11 @@ export type SkillGradeStep = {
 	/**  What its chats have spent so far, where they said, and the cap it is held to. */
 	tokens: number | null,
 	cap: number | null,
+	/**
+	 *  How many of its chats asked the person something and were ended there (SK-59, #3239):
+	 *  said in the grade, as none of them is a run.
+	 */
+	asked: number,
 	/**  How it ended, once it has. */
 	ended: GradeEnded | null,
 	/**
@@ -11830,7 +11915,9 @@ export type SkillHiddenOn = {
 /**  Why a router hid a skill: the core's `HiddenWhy`. */
 export type SkillHiddenWhy = 
 /**  The chat's skills are past its budget, and this one is not pinned. */
-"over-budget";
+"over-budget" | 
+/**  An extension router hid it, with its own one line (SK-15b). */
+{ "by-router": string };
 
 /**
  *  A level of the project's, as the studio names one: the project's root, a workspace's or a
@@ -11925,7 +12012,24 @@ export type SkillPinsTogether = {
 /**  A skill router (SK-15, ADR 0102): the core's `Router`. */
 export type SkillRouter = 
 /**  purlis's own. */
-"built-in";
+"built-in" | 
+/**  An extension that declares `skill-router`, by its id (SK-15b). */
+{ extension: string };
+
+/**
+ *  **How a chat's router extension did at its start** (SK-15b, ADR 0102 §6): the core's routing
+ *  record, as the chat's tab and the studio say it.
+ */
+export type SkillRouting = {
+	/**  The router asked, by its extension's id. */
+	router: string,
+	/**  How long its question took, in milliseconds. */
+	ms: number,
+	/**  Whether the chat lists what the built-in router shows instead. */
+	fell_back: boolean,
+	/**  What a person is told of it, in the core's words. */
+	said: string,
+};
 
 /**  A skill source as the studio shows and adds one. */
 export type SkillSource = {
@@ -12343,6 +12447,11 @@ export type Studio = {
 	 *  and the harnesses' list says why in one line.
 	 */
 	not_supported: StudioNotSupported[],
+	/**
+	 *  The router its chats are routed by, and how it did at each one's start (SK-15b). Null
+	 *  while the studio is off.
+	 */
+	router: StudioRouter | null,
 };
 
 /**
@@ -12418,6 +12527,30 @@ export type StudioNotSupported = {
 	title: string,
 	/**  Why its chats get no skills, in one line. */
 	said: string,
+};
+
+/**  One chat a router extension was asked about at its start. */
+export type StudioRouted = {
+	session: number,
+	routing: SkillRouting,
+};
+
+/**
+ *  **The router a studio's chats are routed by** (SK-15b, ADR 0102 §5, §6), and how it did at
+ *  the start of each such chat open here.
+ */
+export type StudioRouter = {
+	/**  Which router, in a sentence; or why the one chosen is not one, where it is not. */
+	said: string,
+	/**  Whether the choice names no router, so its chats are routed by the built-in one. */
+	problem: boolean,
+	/**  The extension's id, where an extension's router is chosen. */
+	extension: string | null,
+	/**
+	 *  Each chat open here that its start routed by an extension, by its number, with how
+	 *  that went: its timing, and whether it fell back on the built-in router.
+	 */
+	chats: StudioRouted[],
 };
 
 /**

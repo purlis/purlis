@@ -1073,7 +1073,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "show_window_holding",
     "skill_details",
     "skill_diff",
+    // A grade's kept chat and its scorecard (SK-59, #3239): read only.
+    "skill_grade_chat",
     "skill_grade_plan",
+    "skill_grade_scorecard",
     "skill_lint",
     "skill_move_needs_grant",
     "skill_panels",

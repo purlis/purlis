@@ -300,6 +300,11 @@ impl HarnessAdapter for Codex {
         Err("purlis cannot hold a Codex chat to a grade's limits or read what it spent yet".into())
     }
 
+    /// `--model <model>`, as `codex --help` names it (`-m, --model`).
+    fn model_words(&self, model: &str) -> Vec<String> {
+        vec!["--model".to_owned(), model.to_owned()]
+    }
+
     /// The wrap's program first, with the profile written for where the chat opens, then the
     /// chat's whole line, with the flags that turn Codex's own sandbox off last among its flags
     /// and in front of the subcommand, session id and first message that end the line. Its

@@ -1255,6 +1255,7 @@ fn a_repo_skill_named_as_a_built_in_one_never_replaces_it_on_codex_and_is_anothe
                 plane: &plane,
                 workspace: Some("alpha"),
                 repo: &repo,
+                routed: None,
             }),
             None,
             route,
@@ -1902,13 +1903,16 @@ fn a_repo_skills_folder_purlis_could_not_list_leaves_the_plane_skills_out_of_a_c
     let sets = tmp.path().join("sets");
     let lay_out = |repo: &[OutsideSkill]| {
         lay_out_for_chat(
-            Some(&plane),
-            Some("alpha"),
+            Some(crate::skills::PlaneSkills {
+                plane: &plane,
+                workspace: Some("alpha"),
+                repo,
+                routed: None,
+            }),
             None,
             None,
             &sets,
             Harness::Codex,
-            repo,
         )
     };
 

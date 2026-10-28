@@ -598,28 +598,32 @@ pub fn start_sent(
     size: Size,
     why: SentFor,
 ) -> Result<StartedTyped, String> {
-    sent(held, chat, size, why, |_| {})
+    sent(held, chat, size, why, None, |_| {})
 }
 
 /// **Opens a grade's chat started on its trigger test's query** ([`SentFor::Grade`]): as
 /// [`start_sent`] does, with `before` told the chat's number before it starts, so the grade
 /// watches it from its first hook and the window is kept from drawing it (`crate::skillgrade`).
-/// Its skill runs are the grade's ([`purlis_core::skills::runs::StartedBy::Grade`]).
+/// Its skill runs are the grade's ([`purlis_core::skills::runs::StartedBy::Grade`]). It runs on
+/// `model` where the person picked one (SK-60, #3240), else on the profile's own.
 pub fn start_graded(
     held: &Arc<Held>,
     chat: ChatTyped,
     size: Size,
+    model: Option<&str>,
     before: impl FnOnce(u32),
 ) -> Result<StartedTyped, String> {
-    sent(held, chat, size, SentFor::Grade, before)
+    sent(held, chat, size, SentFor::Grade, model, before)
 }
 
-/// [`start_sent`] and [`start_graded`]: `before` is told the number before the chat starts.
+/// [`start_sent`] and [`start_graded`]: `before` is told the number before the chat starts, and
+/// a grade's chat runs on `model` where one was picked.
 fn sent(
     held: &Arc<Held>,
     chat: ChatTyped,
     size: Size,
     why: SentFor,
+    model: Option<&str>,
     before: impl FnOnce(u32),
 ) -> Result<StartedTyped, String> {
     if let Some(bad) = purlis_core::handoff::bad_message(&chat.prompt) {
@@ -644,7 +648,7 @@ fn sent(
         made: purlis_core::sandbox::Made::Window,
     };
     let ready = match why {
-        SentFor::Grade => purlis_core::skills::grades::ready_to_grade(&start, &root),
+        SentFor::Grade => purlis_core::skills::grades::ready_to_grade_on(&start, &root, model),
         SentFor::FixASave => purlis_core::start::ready(&start, &root),
     }
     .and_then(|ready| crate::handoff::told_first(ready, &chat.profile, &chat.prompt))?;

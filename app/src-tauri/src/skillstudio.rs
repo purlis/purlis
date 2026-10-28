@@ -120,33 +120,41 @@ pub struct StudioSkill {
 }
 
 /// A skill router (SK-15, ADR 0102): the core's `Router`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillRouter {
     /// purlis's own.
     BuiltIn,
+    /// An extension that declares `skill-router`, by its id (SK-15b).
+    Extension(String),
 }
 
 impl From<purlis_core::skills::Router> for SkillRouter {
     fn from(router: purlis_core::skills::Router) -> SkillRouter {
         match router {
             purlis_core::skills::Router::BuiltIn => SkillRouter::BuiltIn,
+            purlis_core::skills::Router::Extension(id) => SkillRouter::Extension(id),
         }
     }
 }
 
 /// Why a router hid a skill: the core's `HiddenWhy`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum SkillHiddenWhy {
     /// The chat's skills are past its budget, and this one is not pinned.
     OverBudget,
+    /// An extension router hid it, with its own one line (SK-15b).
+    ByRouter(String),
 }
 
 impl From<purlis_core::skills::HiddenWhy> for SkillHiddenWhy {
     fn from(why: purlis_core::skills::HiddenWhy) -> SkillHiddenWhy {
         match why {
             purlis_core::skills::HiddenWhy::OverBudget => SkillHiddenWhy::OverBudget,
+            purlis_core::skills::HiddenWhy::ByRouter(line) => {
+                SkillHiddenWhy::ByRouter(line.as_str().to_owned())
+            }
         }
     }
 }
@@ -163,8 +171,8 @@ pub struct SkillHidden {
 impl From<&purlis_core::skills::Hidden> for SkillHidden {
     fn from(hidden: &purlis_core::skills::Hidden) -> SkillHidden {
         SkillHidden {
-            router: hidden.router.into(),
-            why: hidden.why.into(),
+            router: hidden.router.clone().into(),
+            why: hidden.why.clone().into(),
             said: hidden.to_string(),
         }
     }
@@ -495,6 +503,9 @@ pub struct Studio {
     /// The declared harnesses skills are not supported on (SK-30): each skill's badge names them,
     /// and the harnesses' list says why in one line.
     pub not_supported: Vec<StudioNotSupported>,
+    /// The router its chats are routed by, and how it did at each one's start (SK-15b). Null
+    /// while the studio is off.
+    pub router: Option<StudioRouter>,
 }
 
 /// **A declared harness skills are not supported on** (SK-30, #2985): the core's
@@ -515,6 +526,60 @@ impl From<purlis_core::skills::NotSupported> for StudioNotSupported {
             title: one.title,
             said: one.said,
         }
+    }
+}
+
+/// **The router a studio's chats are routed by** (SK-15b, ADR 0102 §5, §6), and how it did at
+/// the start of each such chat open here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioRouter {
+    /// Which router, in a sentence; or why the one chosen is not one, where it is not.
+    pub said: String,
+    /// Whether the choice names no router, so its chats are routed by the built-in one.
+    pub problem: bool,
+    /// The extension's id, where an extension's router is chosen.
+    pub extension: Option<String>,
+    /// Each chat open here that its start routed by an extension, by its number, with how
+    /// that went: its timing, and whether it fell back on the built-in router.
+    pub chats: Vec<StudioRouted>,
+}
+
+/// One chat a router extension was asked about at its start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct StudioRouted {
+    pub session: u32,
+    pub routing: crate::useskill::SkillRouting,
+}
+
+/// The router chats in `workspace` as `persona` of the project at `root` are routed by.
+fn router_of(
+    root: &std::path::Path,
+    workspace: Option<&str>,
+    persona: Option<&str>,
+) -> StudioRouter {
+    use purlis_core::skills::router::{Chosen, chosen};
+    let (said, problem, extension) = match chosen(root, workspace, persona) {
+        Ok(Chosen::BuiltIn) => (
+            "Chats here are routed by the built-in router.".to_owned(),
+            false,
+            None,
+        ),
+        Ok(Chosen::Extension(id)) => (
+            format!(
+                "Chats here are routed by {}, asked at each chat's start; the rows show what \
+                 the built-in router would hide.",
+                purlis_core::skills::Router::Extension(id.clone()).shown()
+            ),
+            false,
+            Some(id),
+        ),
+        Err(why) => (format!("{why}."), true, None),
+    };
+    StudioRouter {
+        said,
+        problem,
+        extension,
+        chats: Vec::new(),
     }
 }
 
@@ -576,6 +641,7 @@ pub(crate) fn studio(
             first: StudioFirst::default(),
             pins_refused: None,
             not_supported: Vec::new(),
+            router: None,
         };
     }
     let off = workspace
@@ -611,6 +677,7 @@ pub(crate) fn studio(
     let workspaces = purlis_core::workspaces::Plane::open(root)
         .workspaces()
         .unwrap_or_default();
+    let router = router_of(root, workspace.as_deref(), persona.as_deref());
     Studio {
         on,
         workspace,
@@ -623,6 +690,7 @@ pub(crate) fn studio(
         first,
         pins_refused,
         not_supported: not_supported.into_iter().map(Into::into).collect(),
+        router: Some(router),
     }
 }
 
@@ -1102,14 +1170,28 @@ pub(crate) async fn skill_studio(
     crate::off_the_window("reading the project's skills", move || {
         let built_in =
             crate::bundled_plugin_here().and_then(|plugin| purlis_core::skills::in_bundle(&plugin));
-        Ok(studio(
+        let mut studio = studio(
             held.root(),
             built_in.as_deref(),
             purlis_core::skills::studio_on_here(),
             workspace.as_deref(),
             persona.as_deref(),
             &purlis_core::harness_plugin::Env::of(&[]),
-        ))
+        );
+        // How the router did at the start of each chat open here in the studio's scope (SK-15b).
+        if let Some(router) = studio.router.as_mut() {
+            router.chats = held
+                .chats()
+                .routings()
+                .into_iter()
+                .filter(|one| one.workspace == workspace && one.persona == persona)
+                .map(|one| StudioRouted {
+                    session: one.session,
+                    routing: (&one.routed).into(),
+                })
+                .collect();
+        }
+        Ok(studio)
     })
     .await
 }

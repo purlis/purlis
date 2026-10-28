@@ -9,7 +9,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { attentionPanels, Panels } from "./Panels";
 import { HeadActions } from "./viewHead";
-import { ChatsHere, fixedChats, nothingKnown } from "./chatState";
+import { ChatsHere, fixedChats, nothingKnown, type State } from "./chatState";
 import { drawnWith } from "./cascade.testkit";
 import { ReadOnlySaid } from "./ReadOnlyLine";
 import { wears } from "./textRoles.testkit";
@@ -540,8 +540,10 @@ describe("charter's own panels", () => {
     // default persona keeps its star beside the name, and the word is the row's hover.
     draw();
 
-    const rows = within(screen.getByTestId("panel-personas")).getAllByRole("row");
-    const [devops, steward] = rows;
+    // The rows, and not the names of the groups they are under (#3483).
+    const personas = within(screen.getByTestId("panel-personas"));
+    const devops = personas.getByRole("row", { name: "devops" });
+    const steward = personas.getByRole("row", { name: "steward" });
     expect(devops).toHaveTextContent(/^devops$/);
     expect(steward).toHaveTextContent(/^steward$/);
     expect(within(screen.getByTestId("panel-personas")).queryByText(/memories/)).toBeNull();
@@ -1442,5 +1444,73 @@ describe("the right side's rows on the frame (#3341)", () => {
     expect(
       screen.getByRole("row", { name: /devops/ }).querySelector(".persona-at-work"),
     ).toBeNull();
+  });
+});
+
+describe("the Personas view's groups (#3483, the prototype's Q1 A)", () => {
+  const personas = personasPanel(["devops", "ops", "release", "steward"], "steward");
+  /** A session record of `persona` in the focused workspace: who has worked here. */
+  const record = (persona: string) => ({
+    path: `workspaces/alpha/sessions/2026-10-27-1000-${persona}.md`,
+    title: `${persona}'s work`,
+    when: "2026-10-27 10:00",
+    persona,
+    harness: null,
+    resumable: false,
+  });
+  const drawn = (bySession: Record<number, State>, workingHere = new Set<string>()) => (
+    <ChatsHere.Provider value={fixedChats({ ...nothingKnown, bySession, needsYou: [] })}>
+      <Panels
+        view="personas"
+        workspace="alpha"
+        state={state({
+          panels: { ...PANELS, sessions: [record("devops")], contributed: [personas] },
+        })}
+        offers={new Map()}
+        onPress={() => {}}
+        contributed={[]}
+        shownRow={undefined}
+        onShowRow={() => {}}
+        personaChats={
+          new Map([
+            ["steward", [7]],
+            ["release", [8]],
+          ])
+        }
+        chatPersonasHere={workingHere}
+      />
+    </ChatsHere.Provider>
+  );
+  /** Each group's name and its rows' names, in the order they are drawn. */
+  const groups = () =>
+    screen.getAllByRole("rowgroup").map((group) => ({
+      name: within(group).getByRole("rowheader").firstElementChild?.textContent,
+      count: group.querySelector('[data-part="header"] [data-count]')?.textContent,
+      rows: [...group.querySelectorAll('[data-part="root"] .row-text')].map(
+        (row) => row.textContent,
+      ),
+    }));
+
+  it("draws Working now, In this workspace and On the plane, each with its count", () => {
+    render(drawn({ 7: "running" }, new Set(["ops"])));
+
+    expect(groups()).toEqual([
+      { name: "Working now", count: "1", rows: ["steward"] },
+      // Who has a record here (devops) or a chat at rest here (ops).
+      { name: "In this workspace", count: "2", rows: ["devops", "ops"] },
+      // release's chat is at rest, and not in this workspace.
+      { name: "On the plane", count: "1", rows: ["release"] },
+    ]);
+  });
+
+  it("moves a persona to Working now when one of its chats starts, and back when they rest", () => {
+    const { rerender } = render(drawn({}));
+    expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
+
+    rerender(drawn({ 8: "running" }));
+    expect(groups()[0]).toEqual({ name: "Working now", count: "1", rows: ["release"] });
+
+    rerender(drawn({ 8: "done" }));
+    expect(groups().map((group) => group.name)).toEqual(["In this workspace", "On the plane"]);
   });
 });

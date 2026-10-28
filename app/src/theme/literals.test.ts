@@ -449,8 +449,9 @@ describe("the stylesheet and the vocabulary agree", () => {
    *   stylesheet that is built once for every target.
    *
    * - `--dialog-height`: the height a dialog of the family is given by its call site
-   *   (`ui/dialog/Dialog.tsx`, `height`, #2910), at most the window's less 48 px. It differs from
-   *   dialog to dialog.
+   *   (`ui/dialog/Dialog.tsx`, `height`, #2910), at most the room between the dialog's fixed top
+   *   (6vh, never under 24 px) and 24 px above the window's bottom. It differs from dialog to
+   *   dialog.
    * - `--tree-depth`: how deep a tree's row is, its level less one (`ui/tree/Tree.tsx`, #2911),
    *   which React Aria knows once it has built the collection. It differs from row to row.
    *

@@ -61,6 +61,10 @@ pub const SKILLS_PINNED: &str = "pinned";
 /// The keys a workspace's [`SKILLS`] holds, each a list of skill names.
 const SKILLS_KEYS: [&str; 2] = [SKILLS_OFF, SKILLS_PINNED];
 
+/// The key in [`SKILLS`] that names the router the workspace's chats are routed by (SK-15b, ADR
+/// 0102 §5): `built-in` or an extension's id, one string.
+pub const SKILLS_ROUTER: &str = "router";
+
 /// The table that holds what a workspace's sends to a pool's runner leave out besides what a
 /// save to the forge refuses (#2046, the operator's ruling of 2026-10-25):
 /// `settings.runners.leave_out`, a list of files and folders, each relative to the top of the
@@ -340,7 +344,7 @@ pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
     };
     let shape = format!(
         "a workspace's {SKILLS} are {{\"{SKILLS_OFF}\": [\"<skill>\", …], \"{SKILLS_PINNED}\": \
-         [\"<skill>\", …]}}"
+         [\"<skill>\", …], \"{SKILLS_ROUTER}\": \"<router>\"}}"
     );
     let Some(table) = table.as_table() else {
         return vec![Refusal::at(
@@ -351,7 +355,15 @@ pub fn skills_refused(top: &toml::Table, file: &str) -> Vec<Refusal> {
     table
         .iter()
         .filter_map(|(key, value)| {
-            let why = if !SKILLS_KEYS.contains(&key.as_str()) {
+            let why = if key == SKILLS_ROUTER {
+                if value.is_str() {
+                    return None;
+                }
+                format!(
+                    "{KEY}.{SKILLS}.{key} in {file} is not a router's name, so its chats are \
+                     routed by the built-in router — {shape}"
+                )
+            } else if !SKILLS_KEYS.contains(&key.as_str()) {
                 format!("{KEY}.{SKILLS}.{key} in {file} is not read — {shape}")
             } else if !value
                 .as_array()
