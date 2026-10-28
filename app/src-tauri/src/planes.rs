@@ -850,8 +850,16 @@ impl Held {
         // get ids of their own before any of them starts, and are written with them once
         // they are back, so no two clones ever hold one chat's id.
         let record = record.map(|record| {
+            let was = record.clone_seat.clone();
             let (arrival, record) =
                 reopen::arrive(record, &self.records.clone_seat, || self.records.known());
+            // A project that moved keeps its own app state under its new clone key (#3718), before
+            // any chat is put back; a copy starts with none of it, as its chats get new ids.
+            if arrival == reopen::Arrival::Moved
+                && let Some(was) = &was
+            {
+                let _ = purlis_core::appstate::follow_move(&self.root, was);
+            }
             if arrival == reopen::Arrival::Copied {
                 tracing::info!(
                     "purlis: plane {} is a copy of another clone; its chats get new ids",
@@ -2783,6 +2791,10 @@ impl Planes {
         let _opening = self.opening(&id);
         if !self.map().contains_key(&id) {
             (self.sweep)(&root);
+            // The app's own state an older purlis kept in the plane's state folder moves to the
+            // data home, once (#3718): before any chat is put back, so what arms them reads it
+            // there, and outside the registry's lock, as the sweep is.
+            let _ = purlis_core::appstate::move_out_of_the_plane(&root);
         }
 
         let mut open = self.map();
@@ -2801,9 +2813,6 @@ impl Planes {
         if let Err(why) = purlis_core::wscmd::rename::kept_reports_follow(&root) {
             tracing::warn!("purlis: reports kept for a renamed workspace were not moved ({why})");
         }
-        // The app's own state an older purlis kept in the plane's state folder moves to the
-        // data home, once (#3718): before any chat is put back, so what arms them reads it there.
-        let _ = purlis_core::appstate::move_out_of_the_plane(&root);
         // And a dispatch whose persona chat that record does not bring back has ended (#1452).
         // It first makes an older build's handoff that still owes a report the task it now is
         // (#1519): before any chat is put back, so what puts them back reads the newer shape.

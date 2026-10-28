@@ -182,3 +182,143 @@ fn the_older_state_folder_s_copies_move_too() {
     );
     assert!(!root.join(".charter/skill-grade-after-edit.json").exists());
 }
+
+#[cfg(unix)]
+#[test]
+fn a_folder_already_there_is_made_private_and_a_link_is_refused() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let tmp = project();
+    let root = tmp.path();
+    let dir = dir(root).unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+    for folder in [&dir, &dir.parent().unwrap().to_path_buf()] {
+        std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    made(root).unwrap();
+    for folder in [&dir, &dir.parent().unwrap().to_path_buf()] {
+        let mode = std::fs::metadata(folder).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700, "{}", folder.display());
+    }
+    // The project's folder as a link to another is refused, and nothing is written through it.
+    let other = tempfile::tempdir().unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    std::os::unix::fs::symlink(other.path(), &dir).unwrap();
+    assert!(made(root).is_err());
+    assert!(!other.path().join(ROOT_FILE).exists());
+    std::fs::remove_file(&dir).unwrap();
+}
+
+#[test]
+fn carrying_again_after_a_removal_that_failed_adds_nothing_twice() {
+    let from = tempfile::tempdir().unwrap();
+    let to = tempfile::tempdir().unwrap();
+    let into = to.path().join("skill-grades");
+    write(
+        &from.path().join("2026-10.jsonl"),
+        "{\"row\":1}\n{\"row\":2}\n",
+    );
+    write(&into.join("2026-10.jsonl"), "{\"row\":0}\n");
+    assert!(carry(from.path(), &into, true).is_empty());
+    // The source was not removed: the next open carries it again.
+    assert!(carry(from.path(), &into, true).is_empty());
+    assert_eq!(
+        std::fs::read_to_string(into.join("2026-10.jsonl")).unwrap(),
+        "{\"row\":0}\n{\"row\":1}\n{\"row\":2}\n"
+    );
+    // No file is left half written beside its place.
+    let names: Vec<String> = std::fs::read_dir(&into)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names, ["2026-10.jsonl"]);
+}
+
+#[test]
+fn a_store_not_carried_whole_stays_in_the_plane_and_is_said() {
+    let tmp = project();
+    let root = tmp.path();
+    let into = made(root).unwrap();
+    write(&into.join("skill-drafts/abc/draft.json"), "{\"theirs\":1}");
+    let state = root.join(".purlis");
+    write(&state.join("skill-drafts/abc/draft.json"), "{\"mine\":1}");
+    write(&state.join("skill-drafts/def/draft.json"), "{}");
+    let moved = move_out_of_the_plane(root);
+    assert_eq!(moved.left.len(), 1, "{:?}", moved.left);
+    assert!(state.join("skill-drafts/abc/draft.json").is_file(), "kept");
+    assert_eq!(
+        std::fs::read_to_string(into.join("skill-drafts/abc/draft.json")).unwrap(),
+        "{\"theirs\":1}"
+    );
+    // Not marked as moved: the next open tries again.
+    assert!(!into.join(MOVED_MARK).exists());
+}
+
+/// A project at `old` with app state of its own, as the clone it was: drafts, a grade row, kept
+/// chats, an opt-in and levels records.
+fn moved_from(old: &Path) -> crate::reopen::CloneSeat {
+    let was = made(old).unwrap();
+    write(&was.join("skill-drafts/abc/draft.json"), "{}");
+    write(&was.join("skill-grades/2026-10.jsonl"), "{\"row\":1}\n");
+    write(&was.join("skill-grade-chats/deploy/g/c.screen"), "screen");
+    write(&was.join("skill-grade-after-edit.json"), "{\"v\":1}");
+    write(&was.join("skill-levels/unaccepted.json"), "{\"levels\":[]}");
+    crate::reopen::CloneSeat::of(old, None)
+}
+
+fn moved_to() -> tempfile::TempDir {
+    let tmp = project();
+    std::fs::create_dir_all(tmp.path().join("workspaces/ops")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("personas/steward")).unwrap();
+    tmp
+}
+
+#[test]
+fn a_moved_project_keeps_its_drafts_and_grades_and_is_asked_about_its_folders_again() {
+    let old = project();
+    let was = moved_from(old.path());
+    let new = moved_to();
+    let root = new.path();
+    let moved = follow_move(root, &was);
+    assert!(moved.left.is_empty(), "{:?}", moved.left);
+    let here = dir(root).unwrap();
+    assert!(here.join("skill-drafts/abc/draft.json").is_file());
+    assert_eq!(
+        std::fs::read_to_string(here.join("skill-grades/2026-10.jsonl")).unwrap(),
+        "{\"row\":1}\n"
+    );
+    assert!(here.join("skill-grade-chats/deploy/g/c.screen").is_file());
+    // Never the opt-in, nor the levels records: every folder waits for the person's Accept.
+    assert!(!here.join("skill-grade-after-edit.json").exists());
+    let held = crate::skills::levels::made_since(root);
+    for owner in ["workspaces/ops", "personas/steward"] {
+        assert!(held(&root.join(owner)).is_some(), "{owner} is not held");
+    }
+    assert!(
+        !dir(old.path()).unwrap().exists(),
+        "the old folder is removed"
+    );
+}
+
+#[test]
+fn a_move_whose_old_folder_names_another_project_carries_nothing() {
+    let old = project();
+    let mut was = moved_from(old.path());
+    // The record names a root the old key's folder does not say it is.
+    let elsewhere = tempfile::tempdir().unwrap();
+    was.root = elsewhere.path().canonicalize().unwrap();
+    let new = moved_to();
+    let root = new.path();
+    let moved = follow_move(root, &was);
+    assert_eq!(moved, Moved::default());
+    let here = dir(root).unwrap();
+    for name in [
+        "skill-drafts",
+        "skill-grades",
+        "skill-grade-chats",
+        "skill-grade-after-edit.json",
+        "skill-levels",
+    ] {
+        assert!(!here.join(name).exists(), "{name} was carried");
+    }
+    assert!(dir(old.path()).unwrap().exists(), "left where it was");
+}

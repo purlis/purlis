@@ -147,12 +147,17 @@ pub fn note(root: &Path, id: &str, name: &str) -> Result<(), String> {
 
 /// The records of the chats the app lists as open in the plane at `root`.
 fn open_records(root: &Path) -> Vec<(String, Record)> {
+    match crate::appstate::dir(root) {
+        Some(state) => records_in(&state),
+        None => Vec::new(),
+    }
+}
+
+/// The records in the app state `state`.
+fn records_in(state: &Path) -> Vec<(String, Record)> {
     // Every record there is, whether or not its chat is still on the app's record: one whose chat
     // closed holds until the app's sweep moves what it could have made to the folders not
     // accepted yet ([`sweep`]), so no moment between the two lets such a folder through.
-    let Some(state) = crate::appstate::dir(root) else {
-        return Vec::new();
-    };
     let Ok(entries) = std::fs::read_dir(state.join(DIR)) else {
         return Vec::new();
     };
@@ -166,7 +171,7 @@ fn open_records(root: &Path) -> Vec<(String, Record)> {
                 .filter(|id| an_id(id))
                 .map(str::to_owned)
         })
-        .filter_map(|id| read(&state, &id).map(|one| (id, one)))
+        .filter_map(|id| read(state, &id).map(|one| (id, one)))
         .collect();
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
@@ -181,11 +186,30 @@ pub type MadeSince = Box<dyn Fn(&Path) -> Option<String> + Sync>;
 /// chat could have made, or one a closed chat could have, that the person has not accepted. It
 /// stays left out until the person accepts it in the Skill studio ([`accept`]), whether or not
 /// the chat has closed.
+///
+/// **Where this machine keeps no app state** (no data home, or one in a project or a git work
+/// tree, `crate::appstate::dir`), no record of a sandboxed chat's start could be kept, so every
+/// workspace and persona folder is left out, with a reason that says how to keep one.
 pub fn made_since(root: &Path) -> MadeSince {
-    let records = open_records(root);
-    let held = crate::appstate::dir(root)
-        .map(|state| unaccepted(&state))
-        .unwrap_or_default();
+    made_since_in(root, crate::appstate::dir(root))
+}
+
+/// What a skill of a level is left out with where this machine keeps no app state.
+const NO_RECORD: &str = "purlis keeps no record here of which chats could have made its \
+     folder: set PURLIS_DATA_HOME to a folder outside any project";
+
+/// [`made_since`], with `state` the project's app state, or `None` where there is none.
+fn made_since_in(root: &Path, state: Option<PathBuf>) -> MadeSince {
+    let Some(state) = state else {
+        let root = root.to_path_buf();
+        return Box::new(move |owner: &Path| {
+            rel_in(&root, owner)
+                .filter(|rel| an_owner(rel))
+                .map(|_| NO_RECORD.to_owned())
+        });
+    };
+    let records = records_in(&state);
+    let held = unaccepted(&state);
     let root = root.to_path_buf();
     Box::new(move |owner: &Path| {
         let rel = rel_in(&root, owner)?;
@@ -348,6 +372,17 @@ pub(crate) fn ask_again(root: &Path) -> Result<(), String> {
         return Ok(());
     }
     write_unaccepted(&state, &now)
+}
+
+/// **A sandboxed chat whose start could not be noted** ([`note`]) still leaves no folder it makes
+/// reaching chats unasked: every workspace and persona folder of the project waits for the
+/// person's Accept ([`ask_again`]). Where this machine keeps no app state, [`made_since`] already
+/// leaves every one out. Refused only where neither can hold.
+pub fn fail_closed(root: &Path) -> Result<(), String> {
+    if crate::appstate::dir(root).is_none() {
+        return Ok(());
+    }
+    ask_again(root)
 }
 
 /// Removes the record of `id` from `state`, through its folder's handle: a name this module made.

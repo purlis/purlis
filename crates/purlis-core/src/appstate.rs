@@ -20,6 +20,8 @@
 //!   store an older purlis kept in the plane's state folder is moved here or discarded, the copy
 //!   in the plane is removed, and [`MOVED_MARK`] says so. Nothing reads the plane's copy after
 //!   that.
+//! - **It follows the project** ([`follow_move`]): a project that moved, as its record of open
+//!   chats says (V43), keeps its drafts and grades under its new clone key.
 
 use std::path::{Path, PathBuf};
 
@@ -34,9 +36,9 @@ const FENCED_DATA: &str = "purlis-fenced-data";
 pub const NO_DATA_HOME: &str = "purlis has no data folder on this machine, so the Skill \
      studio's state is not kept: set PURLIS_DATA_HOME to a folder outside any project";
 
-/// `<data>` for the app's state: the data home, or, in a fenced build whose data home is outside
-/// its fence, a folder of the temporary directory.
-fn data_home() -> Option<PathBuf> {
+/// `<data>` for the app's state, as named: the data home, or, in a fenced build whose data home is
+/// outside its fence, a folder of the temporary directory. Not yet asked whether it may hold it.
+fn named_data_home() -> Option<PathBuf> {
     if crate::fence::FENCED {
         let named = crate::datahome::root_in(&crate::envvar::var);
         return match named {
@@ -47,8 +49,32 @@ fn data_home() -> Option<PathBuf> {
     crate::datahome::root()
 }
 
+/// `<data>` for the app's state, where it may hold it: none in a project or a git work tree
+/// (ADR 0075 §6). Asked of the disk once per data home in a process, so a chat's open adds no
+/// walk of its folders.
+fn data_home() -> Option<PathBuf> {
+    let data = named_data_home()?;
+    usable(&data).then_some(data)
+}
+
+/// Whether `data` may be the data home ([`crate::datahome::refusal`]), remembered for the process.
+fn usable(data: &Path) -> bool {
+    static SEEN: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<PathBuf, bool>>> =
+        std::sync::OnceLock::new();
+    let seen = SEEN.get_or_init(Default::default);
+    if let Some(ok) = seen.lock().ok().and_then(|seen| seen.get(data).copied()) {
+        return ok;
+    }
+    let ok = crate::datahome::refusal(data).is_none();
+    if let Ok(mut seen) = seen.lock() {
+        seen.insert(data.to_path_buf(), ok);
+    }
+    ok
+}
+
 /// **The folder of the app's state of the project at `root`**: `<data>/app-state/<clone key>`.
-/// `None` where this machine has no data home. Nothing is read or made.
+/// `None` where this machine has no data home, or one in a project or a git work tree. Nothing is
+/// made.
 pub fn dir(root: &Path) -> Option<PathBuf> {
     Some(in_data(&data_home()?, root))
 }
@@ -59,23 +85,61 @@ pub fn in_data(data: &Path, root: &Path) -> PathBuf {
         .join(crate::plane::CloneKey::of(root).as_str())
 }
 
-/// **[`dir`], made**: `<data>/app-state` and the project's folder in it, each private and refused
-/// where it is a link or not a folder. Refused where there is no data home, or the data home is in
-/// a project or a git work tree (ADR 0075 §6).
+/// The file in a project's app state that names the project's root, as the kernel names it: what
+/// a move of the project is checked against ([`follow_move`]).
+pub const ROOT_FILE: &str = "root";
+
+/// **[`dir`], made**: `<data>/app-state` and the project's folder in it, each a folder of its own
+/// (never a link), this user's, and `0700`, which a folder already there is made too; and the
+/// project's [`ROOT_FILE`]. Refused where there is no data home, or the data home is in a project
+/// or a git work tree.
 pub fn made(root: &Path) -> Result<PathBuf, String> {
-    let data = data_home().ok_or_else(|| NO_DATA_HOME.to_owned())?;
+    let data = named_data_home().ok_or_else(|| NO_DATA_HOME.to_owned())?;
     if let Some(why) = crate::datahome::refusal(&data) {
         return Err(why);
     }
     let all = data.join(DIR);
     let mine = in_data(&data, root);
     for folder in [&all, &mine] {
-        crate::profiletrust::private_dir(folder).map_err(|why| why.to_string())?;
-        if !std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()) {
-            return Err(format!("{} is not a folder of its own", folder.display()));
-        }
+        held_private(folder).map_err(|why| format!("{}: {why}", folder.display()))?;
+    }
+    let named = mine.join(ROOT_FILE);
+    if std::fs::symlink_metadata(&named).is_err() {
+        let real = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+        let text = real
+            .to_str()
+            .ok_or_else(|| "the project's root is not text".to_owned())?;
+        crate::plane::write_private(&mine, &named, text.as_bytes())
+            .map_err(|why| why.to_string())?;
     }
     Ok(mine)
+}
+
+/// `folder` made private where it is not there; where it is, held to a folder of its own (no
+/// link), this user's, and made `0700`.
+fn held_private(folder: &Path) -> std::io::Result<()> {
+    let meta = match std::fs::symlink_metadata(folder) {
+        Ok(meta) => meta,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {
+            crate::profiletrust::private_dir(folder)?;
+            std::fs::symlink_metadata(folder)?
+        }
+        Err(why) => return Err(why),
+    };
+    if !meta.is_dir() {
+        return Err(std::io::Error::other("it is not a folder of its own"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        if meta.uid() != rustix::process::geteuid().as_raw() {
+            return Err(std::io::Error::other("it is another user's"));
+        }
+        if meta.mode() & 0o777 != 0o700 {
+            std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o700))?;
+        }
+    }
+    Ok(())
 }
 
 /// What [`move_out_of_the_plane`] does with one store an older purlis kept in the plane's state.
@@ -120,9 +184,11 @@ pub const MOVED_MARK: &str = "moved-from-the-plane";
 
 /// **Moves the app's state an older purlis kept in the plane's state folder of the project at
 /// `root` into the app's state** ([`STORES`]), once: what a project's open does, before any chat
-/// of it starts. Each spelling of the state folder is looked at, and the one `$PURLIS_HOME`
-/// names. Once every store is moved or removed, [`MOVED_MARK`] is written, and every later open
-/// looks at that one name and nothing in the plane. Nothing at all where there is no data home.
+/// of it starts. Both spellings of the plane's own state folder are looked at, and nothing else: a
+/// folder `$PURLIS_HOME` names may be shared by several clones, so its stores are left where they
+/// are, and read no more. Once every store is moved or removed, [`MOVED_MARK`] is written, and
+/// every later open looks at that one name and nothing in the plane. Nothing at all where there is
+/// no data home.
 pub fn move_out_of_the_plane(root: &Path) -> Moved {
     let Ok(into) = made(root) else {
         return Moved::default();
@@ -131,14 +197,10 @@ pub fn move_out_of_the_plane(root: &Path) -> Moved {
     if std::fs::symlink_metadata(&mark).is_ok() {
         return Moved::default();
     }
-    let mut states: Vec<PathBuf> = crate::names::STATE_DIR
+    let states: Vec<PathBuf> = crate::names::STATE_DIR
         .spellings()
         .map(|state| root.join(state))
         .collect();
-    let named = crate::plane::state_dir(root);
-    if !states.contains(&named) {
-        states.push(named);
-    }
     let moved = move_from(root, &states, &into);
     if moved.left.is_empty()
         && let Err(why) = crate::plane::write_private(&into, &mark, b"")
@@ -149,7 +211,8 @@ pub fn move_out_of_the_plane(root: &Path) -> Moved {
 }
 
 /// [`move_out_of_the_plane`] from the state folders `states`, into the project's app state
-/// `into`.
+/// `into`. A store is removed only once all of it is carried: one that is not stays where it is,
+/// said in [`Moved::left`], and the next open carries it again, adding nothing twice.
 pub fn move_from(root: &Path, states: &[PathBuf], into: &Path) -> Moved {
     let mut out = Moved::default();
     for state in states {
@@ -163,13 +226,15 @@ pub fn move_from(root: &Path, states: &[PathBuf], into: &Path) -> Moved {
             };
             let keeps = matches!(carried, Carried::Moved | Carried::Appended);
             // A store kept is carried only where it is a folder of its own, never through a link.
-            if keeps
-                && meta.is_dir()
-                && let Err(why) = carry(&old, &into.join(name), carried == Carried::Appended)
-            {
-                out.left
-                    .push(format!("{name} was left in the plane ({why})"));
-                continue;
+            if keeps && meta.is_dir() {
+                let missed = carry(&old, &into.join(name), carried == Carried::Appended);
+                if !missed.is_empty() {
+                    out.left.push(format!(
+                        "{name} was left in the plane: {}",
+                        missed.join("; ")
+                    ));
+                    continue;
+                }
             }
             if carried == Carried::AskedAgain
                 && let Err(why) = crate::skills::levels::ask_again(root)
@@ -192,6 +257,103 @@ pub fn move_from(root: &Path, states: &[PathBuf], into: &Path) -> Moved {
     out
 }
 
+/// The stores a move of the project carries to its new clone key ([`follow_move`]): the person's
+/// own work and records. Nothing that holds the person's word is carried: the grade-after-edit
+/// opt-ins are turned on again from a plan, and the levels records are asked about again.
+pub const CARRIED_ON_A_MOVE: [(&str, Carried); 3] = [
+    (crate::skills::verbs::drafts::DRAFTS_DIR, Carried::Moved),
+    (crate::skills::grades::LOCAL_DIR, Carried::Appended),
+    (crate::skills::grades::kept::DIR_NAME, Carried::Moved),
+];
+
+/// The most bytes of a [`ROOT_FILE`] read.
+const MOST_ROOT_BYTES: u64 = 4096;
+
+/// The root `folder`'s [`ROOT_FILE`] names, read following no link.
+fn recorded_root(folder: &Path) -> Option<String> {
+    use std::io::Read as _;
+    let path = folder.join(ROOT_FILE);
+    let meta = std::fs::symlink_metadata(&path).ok()?;
+    if !meta.is_file() || meta.len() > MOST_ROOT_BYTES {
+        return None;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    let mut text = String::new();
+    crate::contain::nofollow(&mut options)
+        .open(&path)
+        .ok()?
+        .take(MOST_ROOT_BYTES)
+        .read_to_string(&mut text)
+        .ok()?;
+    Some(text)
+}
+
+/// **The app's state of the project at `root` follows it from where it was** (#3718): what a
+/// project's open does when its record of open chats says the project moved
+/// (`reopen::Arrival::Moved`, V43), with `was` the clone the record names. Only where the old
+/// clone key's folder says it is that clone's own (its [`ROOT_FILE`] names `was.root`): its
+/// drafts, local grades and kept grade chats are carried ([`CARRIED_ON_A_MOVE`]); its opt-ins and
+/// levels records are not, and where it held levels records every workspace and persona folder of
+/// the project waits for the person's Accept again. The old folder is removed once all of it is
+/// carried. Nothing for any other folder, and nothing where there is no data home.
+pub fn follow_move(root: &Path, was: &crate::reopen::CloneSeat) -> Moved {
+    let mut out = Moved::default();
+    let Some(data) = data_home() else {
+        return out;
+    };
+    let old = data.join(DIR).join(was.key.as_str());
+    let here = in_data(&data, root);
+    if old == here || !std::fs::symlink_metadata(&old).is_ok_and(|meta| meta.is_dir()) {
+        return out;
+    }
+    if was.root.to_str() != recorded_root(&old).as_deref() {
+        tracing::warn!(target: "purlis::appstate", "purlis: the app state of {} names another project, so nothing was carried", was.root.display());
+        return out;
+    }
+    let into = match made(root) {
+        Ok(into) => into,
+        Err(why) => {
+            out.left.push(format!("nothing was carried ({why})"));
+            return out;
+        }
+    };
+    if std::fs::symlink_metadata(old.join(crate::skills::levels::DIR)).is_ok() {
+        if let Err(why) = crate::skills::levels::ask_again(root) {
+            out.left.push(format!(
+                "{} was not asked about again ({why})",
+                crate::skills::levels::DIR
+            ));
+        } else {
+            out.done
+                .push((crate::skills::levels::DIR.to_owned(), Carried::AskedAgain));
+        }
+    }
+    for (name, carried) in CARRIED_ON_A_MOVE {
+        let from = old.join(name);
+        if !std::fs::symlink_metadata(&from).is_ok_and(|meta| meta.is_dir()) {
+            continue;
+        }
+        let missed = carry(&from, &into.join(name), carried == Carried::Appended);
+        if missed.is_empty() {
+            out.done.push((name.to_owned(), carried));
+        } else {
+            out.left
+                .push(format!("{name} was not carried: {}", missed.join("; ")));
+        }
+    }
+    if out.left.is_empty()
+        && let Err(why) = removed(&old)
+    {
+        out.left
+            .push(format!("the old app state was not removed ({why})"));
+    }
+    for line in &out.left {
+        tracing::warn!(target: "purlis::appstate", "purlis: {line}");
+    }
+    out
+}
+
 /// `path` removed, a folder with all it holds, never through a link: a link is removed itself.
 fn removed(path: &Path) -> std::io::Result<()> {
     let meta = std::fs::symlink_metadata(path)?;
@@ -205,68 +367,165 @@ fn removed(path: &Path) -> std::io::Result<()> {
 /// The deepest a carried store's folders go: past any store's.
 const DEEPEST: usize = 16;
 
-/// **The folder `from` carried to `to`**, which is made where it is not: each entry `to` does not
-/// have yet is moved in, and, where `append`, each file it has is added to. Links, and what is
-/// neither a file nor a folder, are left behind.
-fn carry(from: &Path, to: &Path, append: bool) -> std::io::Result<()> {
-    carry_at(from, to, append, 0)
+/// The most bytes of one carried file: past any store's.
+const MOST_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// The end of the name a carried file is written under beside its place, before it is renamed in.
+const CARRYING: &str = ".carrying";
+
+/// **The folder `from` carried to `to`**, which is made where it is not, and what of it was not
+/// (empty when all of it was). Each file `to` does not have is written in; one it has with the
+/// same bytes is carried already; and, where `append`, each line of a file it has that the file
+/// does not hold yet is added to it, so carrying twice adds nothing. A file is written beside its
+/// place and renamed in, so none is ever found half written. A link, what is neither a file nor a
+/// folder, a folder past [`DEEPEST`], a file past [`MOST_FILE_BYTES`] and a name `to` holds
+/// otherwise are each not carried, and said.
+fn carry(from: &Path, to: &Path, append: bool) -> Vec<String> {
+    let mut missed = Vec::new();
+    carry_at(from, to, append, 0, &mut missed);
+    missed
 }
 
-fn carry_at(from: &Path, to: &Path, append: bool, depth: usize) -> std::io::Result<()> {
+fn carry_at(from: &Path, to: &Path, append: bool, depth: usize, missed: &mut Vec<String>) {
     if depth > DEEPEST {
-        return Ok(());
+        missed.push(format!("{} is deeper than purlis carries", from.display()));
+        return;
     }
-    crate::profiletrust::private_dir(to)?;
-    if !std::fs::symlink_metadata(to)?.is_dir() {
-        return Err(std::io::Error::other("its place is not a folder"));
+    if let Err(why) = held_private(to) {
+        missed.push(format!("{}: {why}", to.display()));
+        return;
     }
-    for entry in std::fs::read_dir(from)?.filter_map(Result::ok) {
+    let entries = match std::fs::read_dir(from) {
+        Ok(entries) => entries,
+        Err(why) => {
+            missed.push(format!("{}: {why}", from.display()));
+            return;
+        }
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(why) => {
+                missed.push(format!("{}: {why}", from.display()));
+                continue;
+            }
+        };
         let name = entry.file_name();
         let (old, new) = (from.join(&name), to.join(&name));
-        let Ok(kind) = entry.file_type() else {
-            continue;
-        };
+        let kind = std::fs::symlink_metadata(&old).map(|meta| meta.file_type());
         let there = std::fs::symlink_metadata(&new).ok();
-        if kind.is_dir() {
-            match there {
-                None => carry_at(&old, &new, append, depth + 1)?,
-                Some(meta) if meta.is_dir() && append => {
-                    carry_at(&old, &new, append, depth + 1)?;
+        let said = match kind {
+            Ok(kind) if kind.is_dir() => match there {
+                Some(meta) if !meta.is_dir() => Err("its place holds something else".to_owned()),
+                _ => {
+                    carry_at(&old, &new, append, depth + 1, missed);
+                    Ok(())
                 }
-                Some(_) => {}
-            }
-        } else if kind.is_file() {
-            match there {
-                None => copied(&old, &new, false)?,
-                Some(meta) if meta.is_file() && append => copied(&old, &new, true)?,
-                Some(_) => {}
-            }
+            },
+            Ok(kind) if kind.is_file() => carried_file(&old, &new, there.as_ref(), append),
+            Ok(_) => Err("it is a link, or not a file".to_owned()),
+            Err(why) => Err(why.to_string()),
+        };
+        if let Err(why) = said {
+            missed.push(format!("{} was not carried ({why})", old.display()));
         }
     }
-    Ok(())
 }
 
-/// The file `from` written to `to`, private, opened following no link: made new, or, where
-/// `append`, added to the end of the one there.
-fn copied(from: &Path, to: &Path, append: bool) -> std::io::Result<()> {
-    use std::io::Write as _;
-    let mut reading = std::fs::OpenOptions::new();
-    reading.read(true);
-    let mut source = crate::contain::nofollow(&mut reading).open(from)?;
-    let mut options = std::fs::OpenOptions::new();
-    if append {
-        options.append(true);
-    } else {
-        options.write(true).create_new(true);
+/// The file `from` carried to `to`, which `there` says what is in its place.
+fn carried_file(
+    from: &Path,
+    to: &Path,
+    there: Option<&std::fs::Metadata>,
+    append: bool,
+) -> Result<(), String> {
+    let bytes = read_plain(from)?;
+    let now = match there {
+        None => bytes,
+        Some(meta) if !meta.is_file() => return Err("its place holds something else".into()),
+        Some(_) => {
+            let was = read_plain(to)?;
+            if was == bytes {
+                return Ok(());
+            }
+            if !append {
+                return Err("its place holds another file of that name".into());
+            }
+            let Some(joined) = lines_added(&was, &bytes) else {
+                return Ok(());
+            };
+            joined
+        }
+    };
+    written_in(to, &now).map_err(|why| why.to_string())
+}
+
+/// `was` with each line of `more` it does not hold added at its end, or `None` where it holds
+/// every one.
+fn lines_added(was: &[u8], more: &[u8]) -> Option<Vec<u8>> {
+    let held: std::collections::HashSet<&[u8]> = was.split(|b| *b == b'\n').collect();
+    let mut out = was.to_vec();
+    let mut added = false;
+    for line in more.split(|b| *b == b'\n') {
+        if line.is_empty() || held.contains(line) {
+            continue;
+        }
+        if !out.is_empty() && !out.ends_with(b"\n") {
+            out.push(b'\n');
+        }
+        out.extend_from_slice(line);
+        out.push(b'\n');
+        added = true;
     }
+    added.then_some(out)
+}
+
+/// The bytes of the plain file `path`, read following no link, at most [`MOST_FILE_BYTES`].
+fn read_plain(path: &Path) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+    let meta = std::fs::symlink_metadata(path).map_err(|why| why.to_string())?;
+    if !meta.is_file() {
+        return Err("it is not a file of its own".into());
+    }
+    if meta.len() > MOST_FILE_BYTES {
+        return Err("it is larger than purlis carries".into());
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    let mut bytes = Vec::new();
+    crate::contain::nofollow(&mut options)
+        .open(path)
+        .and_then(|file| file.take(MOST_FILE_BYTES).read_to_end(&mut bytes))
+        .map_err(|why| why.to_string())?;
+    Ok(bytes)
+}
+
+/// `bytes` written to `to`, private, beside it first and renamed into its place.
+fn written_in(to: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let name = to
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("no name"))?
+        .to_string_lossy();
+    let beside = to.with_file_name(format!(".{name}{CARRYING}"));
+    let _ = std::fs::remove_file(&beside);
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt as _;
         options.mode(0o600);
     }
-    let mut target = crate::contain::nofollow(&mut options).open(to)?;
-    std::io::copy(&mut source, &mut target)?;
-    target.flush()
+    let written = (|| {
+        let mut file = crate::contain::nofollow(&mut options).open(&beside)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        std::fs::rename(&beside, to)
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&beside);
+    }
+    written
 }
 
 /// **A test's seam: the app state's `name` of the project at `root` moved to where an older purlis
@@ -274,7 +533,7 @@ fn copied(from: &Path, to: &Path, append: bool) -> std::io::Result<()> {
 #[cfg(test)]
 pub(crate) fn put_in_the_plane(root: &Path, name: &str) -> PathBuf {
     let from = dir(root).expect("a fenced build has one").join(name);
-    let state = crate::plane::state_dir(root);
+    let state = crate::names::state(root);
     std::fs::create_dir_all(&state).expect("a state folder");
     let to = state.join(name);
     std::fs::rename(&from, &to).expect("moved into the plane");

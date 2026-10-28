@@ -252,3 +252,27 @@ fn records_in_the_plane_s_state_folder_are_never_read() {
     std::fs::write(old.join(UNACCEPTED), r#"{"levels":["workspaces/ops"]}"#).unwrap();
     assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
 }
+
+#[test]
+fn with_no_app_state_every_workspace_and_persona_folder_is_left_out() {
+    // #3718: no record of a sandboxed chat's start can be kept, so none is trusted.
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    let held = made_since_in(root, None);
+    for owner in ["workspaces/ops", "personas/steward"] {
+        assert!(held(&root.join(owner)).is_some(), "{owner}");
+    }
+    assert_eq!(held(&root.join("skills")), None, "the project's own level");
+}
+
+#[test]
+fn a_start_that_could_not_be_noted_holds_every_folder_until_it_is_accepted() {
+    let tmp = plane(&[]);
+    let root = tmp.path();
+    fail_closed(root).unwrap();
+    for owner in ["workspaces/ops", "personas/steward"] {
+        assert!(made_since(root)(&root.join(owner)).is_some(), "{owner}");
+    }
+    accept(root, "workspaces/ops").unwrap();
+    assert_eq!(made_since(root)(&root.join("workspaces/ops")), None);
+}
