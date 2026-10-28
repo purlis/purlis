@@ -169,37 +169,142 @@ fn moving() -> crate::host::Moving {
     }
 }
 
-#[test]
-fn a_move_keeps_its_profile_on_the_runner_before_its_conversation_goes() {
-    let did = Mutex::new(Vec::new());
-    to_a_runner(
-        "builds",
-        &moving(),
-        &|pool, profile| {
-            lock(&did).push(format!("kept {profile} on {pool}"));
-            Ok(())
-        },
-        &|| {
-            lock(&did).push("moved".to_owned());
-            Ok(())
-        },
-    )
-    .unwrap();
-    assert_eq!(*lock(&did), vec!["kept work on builds", "moved"]);
+/// What a move asked of its profile on a pool, and what it answers (#2049).
+#[derive(Default)]
+struct ProfilesOnAPool {
+    asked: Mutex<Vec<(std::path::PathBuf, String, String)>>,
+    refusing: Mutex<Option<String>>,
+}
+
+impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
+    fn ready(&self, _: &std::path::Path, _: &str, _: &str) -> Result<(), String> {
+        Err("asked as a start, where a move was meant".into())
+    }
+
+    fn ready_to_move(
+        &self,
+        root: &std::path::Path,
+        pool: &str,
+        profile: &str,
+    ) -> Result<(), String> {
+        lock(&self.asked).push((root.to_path_buf(), pool.to_owned(), profile.to_owned()));
+        match lock(&self.refusing).clone() {
+            Some(why) => Err(why),
+            None => Ok(()),
+        }
+    }
+}
+
+const PROJECT: &str = "/planes/a";
+
+/// Chats on a host that runs nothing, readying their profiles on pools through `on_pools`.
+fn chats_readying(
+    on_pools: &Arc<ProfilesOnAPool>,
+) -> (crate::chats::Chats, crate::host::pretend::Pretend) {
+    let host = crate::host::pretend::Pretend::default();
+    let mut chats = crate::chats::Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(host.clone()),
+        std::path::PathBuf::from(PROJECT),
+    );
+    chats.readying_profiles_on_pools(Arc::clone(on_pools) as _);
+    (chats, host)
 }
 
 #[test]
-fn a_profile_the_runner_does_not_keep_moves_nothing() {
-    let moved = Mutex::new(false);
-    let refused = to_a_runner(
-        "builds",
-        &moving(),
-        &|_, _| Err("the profile 'work' is not signed in on pool builds".into()),
-        &|| {
-            *lock(&moved) = true;
-            Ok(())
-        },
+fn a_move_keeps_its_profile_on_the_runner_before_its_work_and_conversation_go() {
+    let on_pools = Arc::new(ProfilesOnAPool::default());
+    let (chats, host) = chats_readying(&on_pools);
+
+    move_to_a_runner(&chats, "builds", &moving()).unwrap();
+    assert_eq!(
+        *lock(&on_pools.asked),
+        vec![(PROJECT.into(), "builds".to_owned(), "work".to_owned())]
     );
-    assert!(refused.is_err());
-    assert!(!*lock(&moved), "nothing moved before the profile was kept");
+    assert_eq!(
+        host.moved(),
+        vec![("in", "builds".to_owned(), "app".to_owned())]
+    );
+}
+
+#[test]
+fn a_profile_the_runner_does_not_keep_moves_nothing_there() {
+    let on_pools = Arc::new(ProfilesOnAPool::default());
+    *lock(&on_pools.refusing) = Some("the profile 'work' is not signed in on pool builds".into());
+    let (chats, host) = chats_readying(&on_pools);
+
+    assert!(move_to_a_runner(&chats, "builds", &moving()).is_err());
+    assert!(
+        host.moved().is_empty(),
+        "nothing moved before the profile was kept"
+    );
+}
+
+#[test]
+fn a_moves_preparation_keeps_its_profile_before_it_sends_anything_ahead() {
+    let on_pools = Arc::new(ProfilesOnAPool::default());
+    let (chats, host) = chats_readying(&on_pools);
+    prepare_on_a_runner(&chats, "builds", "app", "work").unwrap();
+    assert_eq!(lock(&on_pools.asked).len(), 1);
+    assert_eq!(
+        host.moved(),
+        vec![("ahead", "builds".to_owned(), "app".to_owned())]
+    );
+
+    let refusing = Arc::new(ProfilesOnAPool::default());
+    *lock(&refusing.refusing) = Some("pool builds's runner did not keep the profile 'work'".into());
+    let (chats, host) = chats_readying(&refusing);
+    assert!(prepare_on_a_runner(&chats, "builds", "app", "work").is_err());
+    assert!(host.moved().is_empty(), "nothing went ahead");
+}
+
+#[test]
+fn ready_profile_on_asks_the_pools_readiness_for_this_project_and_nothing_without_one() {
+    let on_pools = Arc::new(ProfilesOnAPool::default());
+    let (chats, _) = chats_readying(&on_pools);
+    chats.ready_profile_on("builds", "work").unwrap();
+    assert_eq!(
+        *lock(&on_pools.asked),
+        vec![(PROJECT.into(), "builds".to_owned(), "work".to_owned())]
+    );
+
+    let bare = crate::chats::Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(crate::host::pretend::Pretend::default()),
+        std::path::PathBuf::from(PROJECT),
+    );
+    assert_eq!(bare.ready_profile_on("builds", "work"), Ok(()));
+}
+
+#[test]
+fn a_chat_moves_only_to_a_runner_shown_to_be_the_persons_own_and_says_why_not() {
+    assert_eq!(goes_to_a_runner_of_yours("builds", || Ok(bound())), Ok(()));
+    let refused = goes_to_a_runner_of_yours("far", || {
+        Err("Docker's engine here is tcp://10.0.0.4:2375, not a socket on this machine".into())
+    })
+    .expect_err("a pool not shown to be yours is moved to by no chat");
+    assert!(refused.contains("pool far"), "{refused}");
+    assert!(refused.contains("not known to be yours"), "{refused}");
+}
+
+#[test]
+fn a_move_that_did_not_start_and_could_not_set_its_workspace_back_says_where_the_chat_runs() {
+    let to: Place = Some("builds".into());
+    let put_back = did_not_start_said("the runner refused it.", Ok(()), &None, &to, "app");
+    assert!(
+        put_back.contains("runs on this machine as before"),
+        "{put_back}"
+    );
+    assert!(!put_back.contains("Runs on"), "{put_back}");
+
+    let stuck = did_not_start_said(
+        "the runner refused it.",
+        Err("machine.json could not be written".into()),
+        &None,
+        &to,
+        "app",
+    );
+    assert!(stuck.contains("runs on this machine as before"), "{stuck}");
+    assert!(stuck.contains("still set to run on pool builds"), "{stuck}");
+    assert!(stuck.contains("set Runs on to this machine"), "{stuck}");
 }

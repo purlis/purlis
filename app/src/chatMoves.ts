@@ -3,7 +3,14 @@
 
 import { useEffect, useSyncExternalStore } from "react";
 import { listen } from "./here";
-import { commands, type ChatMove, type MoveTold, type OpenChat, type PlaneId } from "./bindings";
+import {
+  commands,
+  type ChatMove,
+  type MoveTold,
+  type OpenChat,
+  type PlaneId,
+  type PoolsShown,
+} from "./bindings";
 import type { State } from "./chatState";
 
 /**
@@ -145,6 +152,16 @@ export function moveSaid(one: ChatMove): { words: string; trouble: boolean } {
         trouble: true,
       };
   }
+}
+
+/**
+ * **The pools a chat may move to** (D-2048-13): every pool this machine keeps, where its runners
+ * are shown to be the person's own (a Docker pool on this machine's own engine, until a pool can
+ * be marked as yours, #2561), and none otherwise. A chat's conversation and work go nowhere else.
+ */
+export function poolsToMoveTo(shown: Pick<PoolsShown, "pools" | "yours"> | undefined): string[] {
+  if (shown === undefined || shown.yours !== true) return [];
+  return shown.pools.map((pool) => pool.name);
 }
 
 /**

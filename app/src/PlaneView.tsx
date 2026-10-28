@@ -464,6 +464,7 @@ import {
   heardMove,
   moveOffers,
   movesDue,
+  poolsToMoveTo,
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
@@ -5756,8 +5757,7 @@ export const PlaneView = memo(function PlaneView({
   const chatMoves = useChatMoves(plane);
   const poolsHeld = usePools();
   const poolNames = useMemo(
-    () =>
-      poolsHeld.read.state === "read" ? poolsHeld.read.shown.pools.map((pool) => pool.name) : [],
+    () => poolsToMoveTo(poolsHeld.read.state === "read" ? poolsHeld.read.shown : undefined),
     [poolsHeld],
   );
   const movesTo = useCallback(

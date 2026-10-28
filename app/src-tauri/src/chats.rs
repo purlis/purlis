@@ -1385,7 +1385,7 @@ impl Chats {
     /// where this machine keeps no pool to ready it on.
     pub fn ready_profile_on(&self, pool: &str, profile: &str) -> Result<(), String> {
         match &self.profiles_on_pools {
-            Some(on_pools) => on_pools.ready(&self.project, pool, profile),
+            Some(on_pools) => on_pools.ready_to_move(&self.project, pool, profile),
             None => Ok(()),
         }
     }

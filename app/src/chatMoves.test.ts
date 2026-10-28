@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import type { ChatMove } from "./bindings";
+import type { ChatMove, PoolsShown } from "./bindings";
 import type { State } from "./chatState";
-import { moveOffers, moveSaid, movesDue } from "./chatMoves";
+import { moveOffers, moveSaid, movesDue, poolsToMoveTo } from "./chatMoves";
 
 const ready = (session: number, to: string | null = "builds"): ChatMove => ({
   session,
@@ -56,5 +56,13 @@ describe("Move to runner and Move here (#2048)", () => {
       trouble: true,
     });
     expect(moveSaid(ready(1, null)).words).toBe("Moves to this machine at its next pause.");
+  });
+
+  it("offers to move only to pools whose runners are shown to be the person's own (D-2048-13)", () => {
+    const pools = [{ name: "builds" }, { name: "big" }] as unknown as PoolsShown["pools"];
+    expect(poolsToMoveTo({ pools, yours: true })).toEqual(["builds", "big"]);
+    expect(poolsToMoveTo({ pools, yours: false })).toEqual([]);
+    expect(poolsToMoveTo({ pools })).toEqual([]);
+    expect(poolsToMoveTo(undefined)).toEqual([]);
   });
 });

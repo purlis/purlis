@@ -45,6 +45,10 @@ pub struct PoolRow {
 pub struct PoolsShown {
     pub pools: Vec<PoolRow>,
     pub defaults: PoolLimitsShown,
+    /// Whether this machine's pools' runners are shown to be the person's own (D-2050-4): their
+    /// engine is a local socket on this machine. A chat moves only to such a pool (#2048).
+    #[specta(optional)]
+    pub yours: Option<bool>,
 }
 
 /// A pool as the person typed it: each limit left empty takes the default.
@@ -181,6 +185,7 @@ pub fn pools_on(config: &std::path::Path) -> Result<PoolsShown, String> {
             .map(row)
             .collect(),
         defaults: shown(Limits::default()),
+        yours: Some(crate::poolprofiles::owned().is_ok()),
     })
 }
 

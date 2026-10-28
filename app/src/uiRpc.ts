@@ -7731,6 +7731,11 @@ export type PoolVersion = {
 export type PoolsShown = {
 	pools: PoolRow[],
 	defaults: PoolLimitsShown,
+	/**
+	 *  Whether this machine's pools' runners are shown to be the person's own (D-2050-4): their
+	 *  engine is a local socket on this machine. A chat moves only to such a pool (#2048).
+	 */
+	yours?: boolean | null,
 };
 
 /**

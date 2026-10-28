@@ -248,19 +248,76 @@ pub(crate) fn brings_work_back(
     })
 }
 
-/// **Moves `chat` to pool `pool`'s runner** (#2048, #2049): its profile kept on the runner
-/// first (`ready`, `poolprofiles::keep_on` through the start's own readiness check), so its
-/// conversation is written into a folder of a profile the runner keeps, and only then its work
-/// and conversation (`move_in`). Nothing moves where the profile is not kept or not signed in
-/// there.
-pub(crate) fn to_a_runner(
+/// **Readies pool `pool`'s runner for a chat of `workspace` on `profile` to move there**
+/// (#2048, #2049): the profile kept on the runner, signed in there, first, then the project held
+/// there and each clone's branch sent ahead. Nothing is sent ahead where the profile is not kept.
+pub(crate) fn prepare_on_a_runner(
+    chats: &crate::chats::Chats,
+    pool: &str,
+    workspace: &str,
+    profile: &str,
+) -> Result<(), String> {
+    chats.ready_profile_on(pool, profile)?;
+    chats.sessions().move_ahead(pool, workspace)
+}
+
+/// **Moves `chat` to pool `pool`'s runner** (#2048, #2049), at its pause: its profile kept on
+/// the runner again first, so its conversation is written into a folder of a profile the runner
+/// keeps, and only then its work and conversation. Nothing moves where the profile is not kept
+/// or not signed in there.
+pub(crate) fn move_to_a_runner(
+    chats: &crate::chats::Chats,
     pool: &str,
     chat: &crate::host::Moving,
-    ready: &dyn Fn(&str, &str) -> Result<(), String>,
-    move_in: &dyn Fn() -> Result<(), String>,
 ) -> Result<(), String> {
-    ready(pool, &chat.profile)?;
-    move_in()
+    chats.ready_profile_on(pool, &chat.profile)?;
+    chats.sessions().move_in(pool, chat)
+}
+
+/// **Whether a chat may move to pool `pool`'s runner** (D-2048-13, the steward's decision of
+/// 2026-10-28): only to a runner shown to be the person's own, by the check Move here is held to
+/// (the person's ruling of 2026-10-27) and browser logins and tools use (`read`,
+/// `poollogins::Bound::read`): until a pool can be marked as yours (#2561), a Docker pool on this
+/// machine's own engine. A chat's conversation and work go nowhere else. Refused, in a sentence
+/// that says why.
+pub(crate) fn goes_to_a_runner_of_yours(
+    pool: &str,
+    read: impl FnOnce() -> Result<purlis_core::poollogins::Bound, String>,
+) -> Result<(), String> {
+    read().map(|_| ()).map_err(|_| {
+        format!(
+            "This chat does not move to pool {pool}: its runner is not known to be yours, and a \
+             chat's conversation and work go only to a Docker pool on this machine's own engine, \
+             until a pool can be marked as yours."
+        )
+    })
+}
+
+/// **What a chat's pane says when it did not start where it moved** (#2048): that it runs where
+/// it was, and why. Where the workspace's setting could not be put back as well (`put_back`), the
+/// setting names the other place while the chat runs here, so the pane says where it really
+/// runs, and how to set the workspace back, so its next chat starts with it.
+pub(crate) fn did_not_start_said(
+    why: &str,
+    put_back: Result<(), String>,
+    from: &Place,
+    to: &Place,
+    workspace: &str,
+) -> String {
+    let place = |place: &Place| match place {
+        Some(pool) => format!("pool {pool}"),
+        None => "this machine".to_owned(),
+    };
+    let (from, to) = (place(from), place(to));
+    match put_back {
+        Ok(()) => format!("It did not start on {to}, so it runs on {from} as before: {why}"),
+        Err(back) => format!(
+            "It did not start on {to}, so it runs on {from} as before: {why} And workspace \
+             {workspace}'s chats are still set to run on {to}, since that could not be set back \
+             ({back}): set Runs on to {from} in the workspace's settings, so its next chat starts \
+             where this one runs."
+        ),
+    }
 }
 
 /// **What a chat's tab says of what came back with it** (the person's ruling of 2026-10-27):
@@ -376,7 +433,9 @@ impl crate::planes::Held {
             let config = self.chats().pools_in().ok_or_else(|| {
                 "This machine keeps no pool, so the chat was not moved.".to_owned()
             })?;
-            purlis_core::runners::runner_for(&config, pool).map_err(|why| format!("{why}."))?;
+            goes_to_a_runner_of_yours(pool, || {
+                purlis_core::poollogins::Bound::read(&config, pool)
+            })?;
             // Its conversation is found before anything moves: a harness whose conversations do
             // not move says so now.
             purlis_core::conversationmove::OfAChat {
@@ -404,10 +463,7 @@ impl crate::planes::Held {
                     let held = held
                         .upgrade()
                         .ok_or_else(|| "The project was closed, so nothing moved.".to_owned())?;
-                    // Its profile is kept on the runner first (#2049), so a profile the runner
-                    // cannot keep, or one not signed in there, is said before anything moves.
-                    held.chats().ready_profile_on(&pool, &profile)?;
-                    held.chats().sessions().move_ahead(&pool, &workspace)
+                    prepare_on_a_runner(held.chats(), &pool, &workspace, &profile)
                 })
             }
             None => Box::new(|| Ok(())),
@@ -463,12 +519,11 @@ impl crate::planes::Held {
         let sessions = self.chats().sessions();
         let came = match (&one.from, &one.to) {
             (None, Some(pool)) => {
-                to_a_runner(
-                    pool,
-                    &mover.chat,
-                    &|pool, profile| self.chats().ready_profile_on(pool, profile),
-                    &|| sessions.move_in(pool, &mover.chat),
-                )?;
+                // Asked again at the switch: a pool may have changed since the move was asked.
+                goes_to_a_runner_of_yours(pool, || {
+                    purlis_core::poollogins::Bound::read(&config, pool)
+                })?;
+                move_to_a_runner(self.chats(), pool, &mover.chat)?;
                 Vec::new()
             }
             (Some(pool), None) => {
@@ -490,16 +545,13 @@ impl crate::planes::Held {
                 self.in_its_place_after_a_move(session, started);
                 Ok(started)
             }
-            Err(why) => {
-                if let Err(back) = runs_on(&one.from) {
-                    tracing::warn!(
-                        "purlis: where the workspace's chats run was not put back: {back}"
-                    );
-                }
-                Err(format!(
-                    "It did not start where it moved, so it stays: {why}"
-                ))
-            }
+            Err(why) => Err(did_not_start_said(
+                &why,
+                runs_on(&one.from),
+                &one.from,
+                &one.to,
+                &mover.chat.workspace,
+            )),
         }
     }
 }
