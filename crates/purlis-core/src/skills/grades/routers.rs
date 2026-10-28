@@ -429,11 +429,7 @@ fn dir(root: &Path) -> PathBuf {
 /// This machine's folder of routers' grades of a library with a copy of its own, in its app state
 /// of the project (`crate::appstate`): `None` where this machine has no data home.
 fn local_dir(root: &Path) -> Option<PathBuf> {
-    Some(
-        crate::appstate::dir(root)?
-            .join(super::LOCAL_DIR)
-            .join(DIR),
-    )
+    Some(crate::appstate::dir(root)?.join(super::LOCAL_DIR).join(DIR))
 }
 
 /// **Appends `graded` to this month's file** of the project at `root`: the committed record, or,

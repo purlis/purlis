@@ -286,7 +286,10 @@ fn a_grade_of_a_library_with_a_copy_of_this_machine_s_own_stays_here() {
     let planned = planned(root, Some("ops"), None, "relevance").unwrap();
     let row = graded("01LOCAL", "2026-10-02T10:00:00Z");
     let path = record(root, &planned.copies, &row, "device").expect("recorded");
-    assert!(path.starts_with(crate::appstate::dir(root).unwrap()), "{path:?}");
+    assert!(
+        path.starts_with(crate::appstate::dir(root).unwrap()),
+        "{path:?}"
+    );
     assert!(!root.join("personas/_grades/routers").exists());
     assert_eq!(grades_of(root, "relevance", Some("ops"), None), [row]);
 }
