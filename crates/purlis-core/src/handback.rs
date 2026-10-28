@@ -1721,6 +1721,37 @@ mod tests {
             };
             assert!(!sealed(root, &moved), "{folder}");
         }
+        // A seal made with the plane's key itself, rather than the key derived for seals.
+        let ctx = crate::secrets::Ctx::new(root, crate::secrets::Env::from_process());
+        let raw = crate::secrets::key_file(
+            ctx.trust(),
+            &crate::secrets::fingerprint::key_path(&ctx),
+            crate::secrets::fingerprint::KEY_BYTES,
+        )
+        .unwrap();
+        let report: Handback = serde_json::from_str(&text).unwrap();
+        let body = serde_json::to_string(&report).unwrap();
+        let raw_seal = {
+            use hmac::{KeyInit as _, Mac as _};
+            let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(&raw).unwrap();
+            for part in [SEALED_FOR, "chat-3", name.as_str(), body.as_str()] {
+                mac.update(part.as_bytes());
+                mac.update(b"\0");
+            }
+            mac.finalize()
+                .into_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        let mut value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        value["seal"] = serde_json::Value::String(raw_seal);
+        let with_the_raw_key = Waiting {
+            folder: "chat-3".to_owned(),
+            name: name.clone(),
+            text: value.to_string(),
+        };
+        assert!(!sealed(root, &with_the_raw_key));
         // A seal that is not one.
         let forged = Waiting {
             folder: "chat-3".to_owned(),
