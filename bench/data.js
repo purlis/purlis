@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793205980983,
+  "lastUpdate": 1793207603244,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28476,6 +28476,48 @@ window.BENCHMARK_DATA = {
             "value": 101.550625,
             "unit": "ms",
             "extra": "median of 5 runs: 100.640, 100.768, 101.551, 103.093, 103.551 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5a6a178b619d4e4c570c7eb89281b647a2b847d6",
+          "message": "Runners: kept and fresh claims, operator and core (#2057) (#3710)\n\n* Runners: kept and fresh claims, and a cold claim's stages (#2057)\n\nA Claim says whether it is kept (`spec.kept`, never changed), and a\nPool how big a kept Claim's volume is (`spec.keptVolume`, 10Gi). A\nkept Claim's runner starts cold with its own PersistentVolumeClaim,\n`purlis-kept-<claim>`, which holds its home: when its pod is made\nagain, its first step finds the pairing there and publishes the key\nthe runner was paired with, so the desktop links to the same runner.\nThe statement is `purlis runner link key v2`: it names the claim and\nthe pod by name, no longer the pod's uid (ruled 2026-10-28, amending\nD-2056-7). A fresh Claim takes a warm runner. While a runner starts,\nits Claim's Ready says Scheduling, Pulling or Starting. The core\nchooses kept or fresh for a chat, with the Keep this runner's work\noverride.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: a kept claim's volume stays as made, statements expire (#2057)\n\nReview round: a kept claim keeps the volume its upstream claim was\nmade with when its Pool's keptVolume changes, and a statement goes when\nwhat its claim asks for cannot be applied. A statement now names until\nwhen it holds (ten minutes, signed again in its last five), and the\ndesktop refuses one past it. A kept home is made for one claim, marked\nwith its upstream claim's uid, and an image HOME that holds the\nrunner's home is refused. A pod waiting for its volume says Starting,\nnot Pulling. A warm runner's pool label must be its own pool's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T16:25:08Z",
+          "tree_id": "c44aa562e808142bb61ff094c8814b0ca74bdcce",
+          "url": "https://github.com/purlis/purlis/commit/5a6a178b619d4e4c570c7eb89281b647a2b847d6"
+        },
+        "date": 1793207594672,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.428759,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.417, 0.420, 0.429, 0.449, 0.485 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6720665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.487, 16.643, 16.672, 16.736, 17.218 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1428435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.395, 101.895, 102.143, 102.249, 103.119 ms"
           }
         ]
       }
