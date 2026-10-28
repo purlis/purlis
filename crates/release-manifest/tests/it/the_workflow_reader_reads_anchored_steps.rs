@@ -6,7 +6,7 @@
 //! bare `steps:` line, so every test that walks a job's steps saw none in that job and passed
 //! over it (#1023).
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{job_named, jobs, read, step_uses, workflows_dir};
 

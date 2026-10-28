@@ -19,7 +19,7 @@
 //! - `main` is tagged only when `tools/image-registry.mjs order` says it moves forward;
 //! - each base image is pinned by digest, and each image's user is a number other than 0.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, job_named, jobs, read, run_lines, step_uses, step_value, workflows_dir};
 

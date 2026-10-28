@@ -16,7 +16,7 @@
 //!   `[dev-dependencies]`, which `cargo build` does not unify);
 //! - a crate's `default` feature list names it.
 
-mod workflow;
+use crate::workflow;
 
 use std::path::PathBuf;
 

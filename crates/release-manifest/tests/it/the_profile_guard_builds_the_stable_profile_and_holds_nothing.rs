@@ -13,7 +13,7 @@
 //! `a_dev_channel_build_is_lighter_and_a_stable_build_is_not.rs`. This file holds what the
 //! guard may reach.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, job, release_jobs, run_lines, step_uses};
 

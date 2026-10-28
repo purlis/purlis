@@ -16,7 +16,7 @@
 //! job restores no cache, as the release jobs that hold a key do not (ADR 0042). Unprovisioned, a
 //! job says so and stops, green. The job that keeps the nightly's issue holds no secret.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, job_named, jobs, read, run_lines, step_uses, step_value, workflows_dir};
 

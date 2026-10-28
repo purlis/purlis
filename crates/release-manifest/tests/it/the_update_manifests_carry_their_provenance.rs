@@ -13,7 +13,7 @@
 //! last. The attestation's bundle goes up beside the builds as `purlis.intoto.jsonl`, so a
 //! person, or a scanner, finds the provenance on the release page.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, job, release_jobs, run_lines, step_uses, step_value};
 

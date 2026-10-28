@@ -14,7 +14,7 @@
 //!
 //! The workflow is read by `workflow/mod.rs`, which the pinning and environment tests share.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{
     Job, downloads_by_name, job, release_jobs, run_lines, step_uses, workflow_permissions,

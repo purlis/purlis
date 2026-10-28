@@ -15,7 +15,7 @@
 //! check, over fc7131dd, which predates the notices, and `grep` found no file. `plan` now
 //! builds nothing when the two `release.yml`s differ.
 
-mod workflow;
+use crate::workflow;
 
 use std::path::PathBuf;
 

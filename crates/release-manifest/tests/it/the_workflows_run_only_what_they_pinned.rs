@@ -16,7 +16,7 @@
 //! ./.github/actions/<name>`, #1625): the action is pinned by the checkout, but the actions it
 //! runs and the caches it restores are as much the job's as its own steps.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{
     Job, action_steps, local_action, local_action_files, release_jobs, step_uses, uses_value,

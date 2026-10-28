@@ -11,7 +11,7 @@
 //! answer, after the bundle's seal is verified, in both signing modes, on every macOS build
 //! (the nightly profile guard's too, so a break is found on a night and not on a tag).
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, job, release_jobs, run_lines};
 

@@ -16,7 +16,7 @@
 //!
 //! The workflow is read by `workflow/mod.rs`, which the other workflow tests share.
 
-mod workflow;
+use crate::workflow;
 
 use std::path::PathBuf;
 

@@ -13,7 +13,7 @@
 //!
 //! The workflow is read by `workflow/mod.rs`, which the other workflow tests share.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, job_named, jobs, read, step_uses, step_value, workflows_dir};
 

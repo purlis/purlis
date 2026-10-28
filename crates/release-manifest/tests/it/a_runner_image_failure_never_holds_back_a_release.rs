@@ -6,7 +6,7 @@
 //! still published: its manifest names no `runnerImage`, and every pool stays on the runner it
 //! has. So the jobs after the image's ask for what they need by name, and never for the image.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, job, release_jobs, run_lines, step_value};
 

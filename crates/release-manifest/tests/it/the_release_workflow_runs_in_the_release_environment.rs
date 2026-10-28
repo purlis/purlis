@@ -12,7 +12,7 @@
 //!
 //! The workflow is read by `workflow/mod.rs`, which the pinning and cache tests share.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, release_jobs};
 

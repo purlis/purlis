@@ -15,7 +15,7 @@
 //!   GitHub-hosted runner, before the run can succeed;
 //! - `release.yml`'s call grants the attestation scope the called workflow needs.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, job_named, jobs, read, run_lines, step_uses, step_value, workflows_dir};
 

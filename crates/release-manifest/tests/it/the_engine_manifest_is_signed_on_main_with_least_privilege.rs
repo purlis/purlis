@@ -11,7 +11,7 @@
 //! credentials, and what it publishes is first verified against the trusted root the builds ship
 //! as exactly the identity they accept.
 
-mod workflow;
+use crate::workflow;
 
 use workflow::{Job, job_named, jobs, read, run_lines, step_uses, step_value, workflows_dir};
 

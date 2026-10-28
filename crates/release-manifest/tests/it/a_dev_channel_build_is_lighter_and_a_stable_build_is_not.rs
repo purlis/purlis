@@ -15,7 +15,7 @@
 //! (`the_release_workflow_runs_in_the_release_environment.rs`,
 //! `the_workflows_run_only_what_they_pinned.rs`).
 
-mod workflow;
+use crate::workflow;
 
 use std::path::PathBuf;
 
