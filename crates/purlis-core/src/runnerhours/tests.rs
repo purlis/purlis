@@ -107,6 +107,51 @@ fn a_container_started_again_outside_purlis_ends_the_run_kept_at_its_last_finish
     );
 }
 
+/// Two runs between two reads, both outside purlis: Docker gives only the newer run's times, so
+/// when the older one ended is not seen. It is closed where the record last saw it, its start,
+/// and the gap up to the newer start counts nothing (#3720).
+#[test]
+fn a_run_whose_end_docker_no_longer_says_counts_no_gap_up_to_the_next() {
+    let first = MONDAY + HOUR;
+    let again = MONDAY + 5 * HOUR;
+    let stopped = MONDAY + 6 * HOUR;
+    let lines = after(&[
+        (running(first), first + 10),
+        (ended(again, stopped), stopped + 10),
+    ]);
+    assert_eq!(
+        events(&lines),
+        [
+            (first, Event::Start),
+            (first, Event::Stop),
+            (again, Event::Start),
+            (stopped, Event::Stop)
+        ]
+    );
+    assert_eq!(ran_since(&lines, "builds", "builds", MONDAY, None), HOUR);
+}
+
+/// Started again, with no last finish Docker says: the run kept is closed at its start, not at
+/// the new one (#3720).
+#[test]
+fn a_container_started_again_with_no_finish_said_counts_no_gap() {
+    let first = MONDAY + HOUR;
+    let again = MONDAY + 3 * HOUR;
+    let lines = after(&[(running(first), first + 10), (running(again), again + 10)]);
+    assert_eq!(
+        events(&lines),
+        [
+            (first, Event::Start),
+            (first, Event::Stop),
+            (again, Event::Start)
+        ]
+    );
+    assert_eq!(
+        ran_since(&lines, "builds", "builds", MONDAY, Some(again + HOUR)),
+        HOUR
+    );
+}
+
 #[test]
 fn a_whole_run_between_two_reads_is_recorded() {
     let start = MONDAY + HOUR;

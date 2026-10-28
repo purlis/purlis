@@ -12,6 +12,9 @@
 //! - **A run counts once it has a start** ([`ran_since`]): a stop with no start before it counts
 //!   nothing, and a start with no stop after it counts up to now only while Docker says the
 //!   container runs.
+//! - **A gap the record cannot see counts nothing** ([`after_seen`], #3720): where a run kept
+//!   open has ended and Docker no longer says when (two runs between two reads, both started
+//!   outside purlis), it is closed at its start, never at the next run's.
 //! - **This week** is the ISO week in this machine's local time, from Monday 00:00
 //!   ([`week_began`]).
 //! - **Bounded** ([`pruned`]): each write drops the runs older than [`KEPT_FOR`], keeping each
@@ -144,21 +147,25 @@ pub fn after_seen(lines: &[Line], pool: &str, runner: &str, ran: Ran, now: u64) 
     match (ran.running, open) {
         (true, false) => added.push(line(ran.started.unwrap_or(now), Event::Start)),
         (true, true) => {
-            // Started again since the start kept: the run that start began has ended, at the
-            // latest when this one started.
+            // Started again since the start kept: the run that start began has ended, when
+            // Docker says it last finished. Where Docker does not say, the record never saw it
+            // end, and it is closed at its start: a gap the record cannot see counts nothing
+            // (#3720).
             if let Some(started) = ran.started.filter(|started| *started > floor) {
                 let ended = ran
                     .finished
                     .filter(|ended| (floor..=started).contains(ended))
-                    .unwrap_or(started);
+                    .unwrap_or(floor);
                 added.push(line(ended, Event::Stop));
                 added.push(line(started, Event::Start));
             }
         }
         (false, true) => match ran.started.filter(|started| *started > floor) {
-            // It ran again, and stopped, since the start kept.
+            // It ran again, and stopped, since the start kept. Docker says only the newer run's
+            // times, so when the kept run ended is not seen: it is closed at its start, and the
+            // gap up to the newer start counts nothing (#3720).
             Some(started) => {
-                added.push(line(started, Event::Stop));
+                added.push(line(floor, Event::Stop));
                 added.push(line(started, Event::Start));
                 added.push(line(ran.finished.unwrap_or(started), Event::Stop));
             }
