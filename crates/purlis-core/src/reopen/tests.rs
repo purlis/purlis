@@ -2769,3 +2769,101 @@ fn a_record_written_before_the_studio_flag_reads_as_not_known_3466() {
     assert_eq!(back.chats.len(), 1, "{back:?}");
     assert_eq!(back.chats[0].plane_skills, None);
 }
+
+/// A routing kept from a chat's start that asked the router `relevance`, which hid `skill-02`.
+fn kept_routing() -> crate::skills::router::Kept {
+    use crate::skills::router::{Kept, Record, RecordHidden, Routed};
+    Kept::Asked(Routed {
+        record: Record {
+            routing: "01HZY3M6S4K9Q2W7E8R5T1Y6V0".to_owned(),
+            router: "relevance".to_owned(),
+            ms: 34,
+            fell_back: None,
+            error: None,
+            hidden: vec![RecordHidden {
+                skill: "skill-02".to_owned(),
+                why: "not relevant here".to_owned(),
+            }],
+        },
+        answer: Some(vec![(
+            "skill-02".to_owned(),
+            purlis_skills::Line::new("not relevant here").unwrap(),
+        )]),
+    })
+}
+
+#[test]
+fn the_routing_a_chat_started_with_is_recorded_and_read_back_3578() {
+    let plane = tempfile::tempdir().unwrap();
+    let asked = Chat {
+        routing: Some(kept_routing()),
+        ..claude("ide.7", None)
+    };
+    let built_in = Chat {
+        routing: Some(crate::skills::router::Kept::BuiltIn),
+        ..claude("ide.8", Some(ID))
+    };
+    let unknown = claude("ide.9", None);
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![asked.clone(), built_in.clone(), unknown],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let text = fs::read_to_string(path(plane.path())).unwrap();
+    assert_eq!(text.matches("\"routing\": {").count(), 2, "{text}");
+    let back = read(plane.path());
+    assert_eq!(back.chats[0], asked);
+    assert_eq!(back.chats[1], built_in);
+    assert_eq!(back.chats[2].routing, None);
+}
+
+#[test]
+fn a_routing_that_does_not_read_whole_reads_as_not_known_3578() {
+    let plane = tempfile::tempdir().unwrap();
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![Chat {
+                routing: Some(kept_routing()),
+                ..claude("ide.7", Some(ID))
+            }],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let text = fs::read_to_string(path(plane.path())).unwrap();
+    // A record written before the routing was kept still reattaches, and asks again.
+    let before = text.replacen("\"routing\":", "\"not_routing\":", 1);
+    for spoiled in [
+        before,
+        text.replacen("not relevant here", "two\\nlines", 1),
+        // The answer's own line alone, the last one the record holds.
+        {
+            let at = text.rfind("not relevant here").unwrap();
+            format!(
+                "{}two\\nlines{}",
+                &text[..at],
+                &text[at + "not relevant here".len()..]
+            )
+        },
+        text.replacen("01HZY3M6S4K9Q2W7E8R5T1Y6V0", "not-a-ulid", 1),
+        text.replacen("\"relevance\"", "\"../relevance\"", 1),
+        text.replacen("\"by\": \"extension\"", "\"by\": \"someone\"", 1),
+        // An answer beside a fallback, a router named by nothing, a skill no reader sees whole.
+        text.replacen("\"fell_back\": null", "\"fell_back\": \"slow\"", 1),
+        text.replacen("\"router\": \"relevance\"", "\"router\": \"\"", 1),
+        text.replacen("\"skill\": \"skill-02\"", "\"skill\": \"skill\\u0007\"", 1),
+    ] {
+        fs::write(path(plane.path()), &spoiled).unwrap();
+        let back = read(plane.path());
+        assert_eq!(
+            back.chats.len(),
+            1,
+            "the record still reads whole: {spoiled}"
+        );
+        assert_eq!(back.chats[0].routing, None, "{spoiled}");
+    }
+}
