@@ -553,3 +553,54 @@ fn the_claim_variable_is_the_one_the_operators_template_sets() {
     // operator/src/upstream.rs CLAIM_VAR names the same variable.
     assert_eq!(CLAIM_VAR, "PURLIS_CLAIM_UID");
 }
+
+#[test]
+fn a_home_made_warm_before_any_claim_is_made_again_for_the_claim_that_took_it() {
+    let image = tempfile::tempdir().unwrap();
+    std::fs::write(image.path().join(".profile"), "image").unwrap();
+    let volume = tempfile::tempdir().unwrap();
+    let home = volume.path().join("home");
+    // Made warm: no claim yet.
+    seed_home(&home, Some(image.path()), "").unwrap();
+    std::fs::write(home.join("left"), "by the warm runner").unwrap();
+    // Its pod's sandbox made again once a claim took it: the claim makes the home its own.
+    seed_home(&home, Some(image.path()), CLAIM).unwrap();
+    assert!(!home.join("left").exists());
+    assert!(home.join(".profile").is_file());
+    assert_eq!(
+        std::fs::read_to_string(volume.path().join(CLAIM_MARKER)).unwrap(),
+        format!("{CLAIM}\n")
+    );
+    seed_home(&home, Some(image.path()), CLAIM).expect("then it is its own");
+}
+
+#[test]
+fn a_claims_mark_is_never_read_or_written_through_a_link() {
+    let volume = tempfile::tempdir().unwrap();
+    let elsewhere = volume.path().join("elsewhere");
+    std::os::unix::fs::symlink(&elsewhere, volume.path().join(CLAIM_MARKER)).unwrap();
+    assert!(seed_home(&volume.path().join("home"), None, CLAIM).is_err());
+    assert!(!elsewhere.exists(), "nothing written through the link");
+    // A home whose mark is a link is refused, whatever the link names.
+    std::fs::create_dir(volume.path().join("home")).unwrap();
+    std::fs::write(&elsewhere, format!("{CLAIM}\n")).unwrap();
+    assert!(seed_home(&volume.path().join("home"), None, CLAIM).is_err());
+}
+
+#[test]
+fn an_image_home_that_reaches_the_runners_home_through_a_link_or_dots_is_refused() {
+    let volume = tempfile::tempdir().unwrap();
+    let home = volume.path().join("home");
+    let images = tempfile::tempdir().unwrap();
+    let linked = images.path().join("home");
+    std::os::unix::fs::symlink(volume.path(), &linked).unwrap();
+    std::fs::create_dir(volume.path().join("tools")).unwrap();
+    for image in [linked, volume.path().join("tools").join("..")] {
+        let refused = seed_home(&home, Some(&image), CLAIM).unwrap_err();
+        assert!(
+            refused.contains("runner image contract"),
+            "{image:?}: {refused}"
+        );
+        assert!(!home.exists());
+    }
+}

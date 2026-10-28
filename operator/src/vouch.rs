@@ -54,9 +54,10 @@ pub struct About<'a> {
 /// at again (stopped, or unable to apply what its claim asks) stops vouching soon.
 pub const VALID_FOR: std::time::Duration = std::time::Duration::from_secs(600);
 
-/// How near its end a statement is signed again: five minutes, so a desktop whose clock is up
-/// to five minutes ahead of the cluster's still reads it as holding. Every vouched claim is
-/// looked at again each [`RECHECK`], well within it.
+/// How near its end a statement is signed again: five minutes. Every vouched claim is looked
+/// at again each [`RECHECK`], so a statement on a claim has about four minutes left at least,
+/// less a late pass, and a desktop whose clock is up to about four minutes ahead of the
+/// cluster's still reads it as holding.
 pub const RENEW_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// The `until` line of a statement's `text`, if it has one purlis reads.
@@ -613,6 +614,18 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &Signi
     }
     if let Err(why) = labelled_as_ours(&pod.metadata, &held.upstream.metadata) {
         return Vouching::Refused(why);
+    }
+    // A kept claim's pod is made cold for it, and upstream names the claim on it from the
+    // start: its first step makes the home on the claim's volume for that claim alone.
+    if held.claim.spec.kept
+        && pod
+            .metadata
+            .labels
+            .as_ref()
+            .and_then(|labels| labels.get(CLAIM_UID_LABEL))
+            != held.upstream.metadata.uid.as_ref()
+    {
+        return Vouching::Refused("a kept claim's pod does not name its claim".into());
     }
     if let Err(why) = warm_from(&pod.metadata, &held.upstream.spec.warm_pool_ref.name) {
         return Vouching::Refused(why);
