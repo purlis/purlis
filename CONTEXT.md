@@ -312,7 +312,8 @@ _Avoid_: host (that is `purlisd`, the process), machine (in UI text), node
 **Devices**:
 The window's view tab of every device this machine knows: itself and each runner it keeps, each
 with its chats and browsers, its version, how it is and when it last answered, and each pool's
-use per person (runners running and suspended, the CPUs and memory they request). Money shows
+use per person (runners running and suspended, the CPUs and memory they request, the hours they
+ran this week). Money shows
 only where a pool declares a price per hour. It replaces the **Runners** view tab ADR 0089 §12
 named, and is offered only once this machine keeps a pool. It belongs to **Project**, with the
 devices it lists (spec #2041, #2052).

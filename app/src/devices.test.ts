@@ -14,6 +14,7 @@ import {
   arranged,
   contactSaid,
   healthSaid,
+  hoursSaid,
   runningSaid,
   usageOf,
   versionSaid,
@@ -48,6 +49,7 @@ const answered = (
   state: "running" | "suspended",
   open: number[] = [],
   browsersOpen: string[] = [],
+  ranThisWeek: number | null = 0,
 ): RunnerAsked => ({
   standing: { state },
   link: state === "running" ? { state: "linked" } : null,
@@ -59,10 +61,16 @@ const answered = (
     chats: 0,
     browsers: 0,
   },
+  ran_this_week: ranThisWeek,
 });
 
 const LIMITS = { cpus: "1.5", memory_mib: 2048, processes: 512, tmp_mib: 512 };
-const pool = (name: string): PoolRequests => ({ pool: name, limits: LIMITS, millicpus: 1500 });
+const pool = (name: string, removedRan = 0): PoolRequests => ({
+  pool: name,
+  limits: LIMITS,
+  millicpus: 1500,
+  removed_ran_this_week: removedRan,
+});
 
 const shownWith = (placement: Partial<DevicesShown["placement"]>): DevicesShown => ({
   version: "0.9.0",
@@ -254,8 +262,20 @@ describe("usageOf", () => {
         cpus: "3",
         memoryMib: 4096,
         asking: 0,
+        ranThisWeek: 0,
+        hoursNotKnown: 0,
       },
-      { pool: "qa", person: "You", running: 0, suspended: 1, cpus: "0", memoryMib: 0, asking: 0 },
+      {
+        pool: "qa",
+        person: "You",
+        running: 0,
+        suspended: 1,
+        cpus: "0",
+        memoryMib: 0,
+        asking: 0,
+        ranThisWeek: 0,
+        hoursNotKnown: 0,
+      },
     ]);
   });
 
@@ -282,5 +302,37 @@ describe("usageOf", () => {
     expect(use[0]).toMatchObject({ running: 1, cpus: "1.5", memoryMib: 2048, asking: 1 });
     expect(runningSaid(use[0])).toBe("1, 1 not answered yet");
     expect(runningSaid({ running: 2, asking: 0 })).toBe("2");
+  });
+
+  it("adds a pool's hours this week over its runners and those no longer kept", () => {
+    const use = usageOf(
+      [pool("builds", 1800)],
+      [runner("builds", "builds"), runner("builds", "b2")],
+      {
+        "builds/builds": answered("running", [], [], 3 * 3600),
+        "builds/b2": answered("suspended", [], [], 5400),
+      },
+      true,
+    );
+    // Three hours, an hour and a half, and half an hour of a runner removed since.
+    expect(use[0]).toMatchObject({ ranThisWeek: 5 * 3600, hoursNotKnown: 0 });
+    expect(hoursSaid(use[0])).toBe("5.0");
+  });
+
+  it("says hours to the tenth, and the runners whose hours are not known yet apart", () => {
+    const use = usageOf(
+      [pool("builds")],
+      [runner("builds", "builds"), runner("builds", "b2"), runner("builds", "b3")],
+      {
+        "builds/builds": answered("running", [], [], 4500),
+        "builds/b2": "asking",
+        "builds/b3": answered("suspended", [], [], null),
+      },
+      true,
+    );
+    expect(use[0]).toMatchObject({ ranThisWeek: 4500, hoursNotKnown: 2 });
+    expect(hoursSaid(use[0])).toBe("1.3, 2 not answered yet");
+    expect(hoursSaid({ ranThisWeek: 0, hoursNotKnown: 0 })).toBe("0.0");
+    expect(hoursSaid({ ranThisWeek: 100 * 3600 - 1, hoursNotKnown: 0 })).toBe("100.0");
   });
 });

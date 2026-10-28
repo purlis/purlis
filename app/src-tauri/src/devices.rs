@@ -154,6 +154,9 @@ pub struct PoolRequests {
     pub limits: PoolLimitsShown,
     /// Its CPUs in thousandths, to be added up.
     pub millicpus: u32,
+    /// The seconds its runners no longer kept ran this week (#3492): a runner's own are in
+    /// what it answers ([`RunnerAsked::ran_this_week`]).
+    pub removed_ran_this_week: u32,
 }
 
 /// **What the Devices view draws first** (#2052): this machine's version, where everything the
@@ -751,6 +754,9 @@ pub struct RunnerAsked {
     pub contacted: Option<u32>,
     /// What it holds, set against what the window has open.
     pub holds: NotOpenHere,
+    /// The seconds it ran this week (the ISO week in local time), as this machine recorded it
+    /// (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
+    pub ran_this_week: Option<u32>,
 }
 
 /// **Everything the window has open**, in one walk of the projects it holds: each chat and
@@ -842,7 +848,7 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
     let Some(config) = purlis_core::machine::config_root() else {
         return Ok((Vec::new(), Vec::new(), false));
     };
-    let kept = purlis_core::runners::read(&config)
+    let kept: Vec<KeptRunner> = purlis_core::runners::read(&config)
         .map_err(|why| why.to_string())?
         .iter()
         .map(|one| KeptRunner {
@@ -851,6 +857,8 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
             draining: one.draining,
         })
         .collect();
+    let hours = purlis_core::runnerhours::read(&config);
+    let week = purlis_core::runnerhours::this_week_began();
     let pools = purlis_core::runners::pools(&config)
         .map_err(|why| why.to_string())?
         .iter()
@@ -858,6 +866,7 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
             pool: pool.name().to_owned(),
             limits: crate::dockerpools::shown(pool.limits()),
             millicpus: pool.limits().millicpus(),
+            removed_ran_this_week: removed_ran(&hours, pool.name(), &kept, week),
         })
         .collect();
     // As the pool logins decide it (D-2050-4): a local socket on this machine.
@@ -865,6 +874,27 @@ fn kept_here() -> Result<(Vec<KeptRunner>, Vec<PoolRequests>, bool), String> {
         purlis_core::poollogins::owned(purlis_core::dockerpool::Docker::engine_on_this_machine())
             .is_ok();
     Ok((kept, pools, owned))
+}
+
+/// **The seconds `pool`'s runners that `kept` no longer lists ran from `since`** (#3492): a
+/// removed runner's run was stopped as it was removed, so only whole runs count.
+#[cfg(unix)]
+pub fn removed_ran(
+    hours: &[purlis_core::runnerhours::Line],
+    pool: &str,
+    kept: &[KeptRunner],
+    since: u64,
+) -> u32 {
+    let ran: u64 = purlis_core::runnerhours::runners_of(hours, pool)
+        .iter()
+        .filter(|runner| {
+            !kept
+                .iter()
+                .any(|one| one.pool == pool && one.runner == **runner)
+        })
+        .map(|runner| purlis_core::runnerhours::ran_since(hours, pool, runner, since, None))
+        .sum();
+    u32::try_from(ran).unwrap_or(u32::MAX)
 }
 
 /// No Docker pool is kept but on macOS and Linux: this machine is the only device.
@@ -918,6 +948,7 @@ pub fn unanswered(last: Option<u64>) -> RunnerAsked {
         version: None,
         contacted: last.and_then(|at| u32::try_from(at).ok()),
         holds: NotOpenHere::default(),
+        ran_this_week: None,
     }
 }
 
@@ -943,7 +974,7 @@ fn ask_runner(
         .find(|one| one.pool() == pool && one.name() == runner)
         .ok_or_else(|| format!("No runner {runner} of pool {pool} is on this machine."))?;
     let asked = answered(
-        machine.docker.running(&kept.made).map_err(|why| why.0),
+        machine.running(&kept).map_err(|why| why.0),
         || {
             // As it is: a runner is never woken to be asked.
             let to = crate::runnerlinks::ToARunner::of_kept(&machine, &kept)
@@ -957,7 +988,18 @@ fn ask_runner(
     if let Some(at) = asked.contacted {
         contacts().answered(name, at);
     }
+    // After its container was read, which wrote when it ran (#3492): an open run counts up to
+    // now only while Docker says it runs.
+    let now = crate::sandboxing::now_secs();
+    let ran = purlis_core::runnerhours::ran_since(
+        &purlis_core::runnerhours::read(&config),
+        pool,
+        runner,
+        purlis_core::runnerhours::this_week_began(),
+        (asked.standing == RunnerStanding::Running).then_some(now),
+    );
     Ok(RunnerAsked {
+        ran_this_week: Some(u32::try_from(ran).unwrap_or(u32::MAX)),
         holds: not_open_here(&asked.holds, open, pool),
         standing: asked.standing,
         link: asked.link,

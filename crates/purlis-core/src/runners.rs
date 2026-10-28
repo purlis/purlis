@@ -590,8 +590,26 @@ pub fn remove_locked(
     let kept = named(config_root, name)?
         .ok_or_else(|| Refused::Other(format!("no runner named {name} is kept on this machine")))?;
     let peer = unpair.map(|unpair| unpair(&kept));
+    // When it ran, as Docker last says, before its container goes (#3492).
+    if let Ok(ran) = docker.ran(&kept.made) {
+        record_hours(crate::runnerhours::seen(
+            config_root,
+            kept.pool(),
+            name,
+            ran,
+            now(),
+        ));
+    }
     let (container, volume) = docker.remove_each(&kept.made);
     let forgotten = container.is_ok() && volume.is_ok();
+    if container.is_ok() {
+        record_hours(crate::runnerhours::stopped(
+            config_root,
+            kept.pool(),
+            name,
+            now(),
+        ));
+    }
     if forgotten {
         forget_locked(config_root, name, locked)?;
     }
@@ -796,6 +814,13 @@ fn pool_from_row(row: &serde_json::Value) -> Option<Pool> {
         tmp_mib: count(fields.get("tmp"))?,
     };
     Pool::new(text("name")?, Image::pinned(text("image")?).ok()?, set).ok()
+}
+
+/// A runner's hours not written are said, and change nothing else (#3492).
+fn record_hours(written: Result<(), String>) {
+    if let Err(why) = written {
+        tracing::warn!("purlis: {why}");
+    }
 }
 
 fn now() -> u64 {

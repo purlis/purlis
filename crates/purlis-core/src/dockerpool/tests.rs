@@ -2028,7 +2028,44 @@ fn a_suspended_runner_not_as_it_was_made_is_never_started() {
 #[test]
 fn a_running_runner_is_only_checked() {
     let fake = FakeDocker::new(&inspected());
-    assert_eq!(fake.docker().resumed(&made()), Ok(()));
+    assert_eq!(
+        fake.docker()
+            .resumed(&made())
+            .map(|resumed| resumed.started),
+        Ok(false)
+    );
     assert!(fake.docker().running(&made()).unwrap());
     assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
+}
+
+/// What Docker says of a container's latest run is read in seconds (#3492): a time Docker never
+/// set (`0001-01-01T00:00:00Z`, a container never started) is no time, and so is one it did not
+/// write as RFC 3339.
+#[test]
+fn a_containers_latest_run_is_read_in_seconds_and_an_unset_time_is_none() {
+    let mut running = inspected();
+    running[0]["State"]["StartedAt"] = "2026-10-26T09:00:00.123456789Z".into();
+    running[0]["State"]["FinishedAt"] = "0001-01-01T00:00:00Z".into();
+    assert_eq!(
+        ran(&running),
+        Ran {
+            running: true,
+            started: Some(1_793_005_200),
+            finished: None,
+        }
+    );
+    let mut stopped = inspected();
+    stopped[0]["State"] = serde_json::json!({
+        "Running": false,
+        "StartedAt": "2026-10-26T11:00:00+02:00",
+        "FinishedAt": "yesterday",
+    });
+    assert_eq!(
+        ran(&stopped),
+        Ran {
+            running: false,
+            started: Some(1_793_005_200),
+            finished: None,
+        }
+    );
 }

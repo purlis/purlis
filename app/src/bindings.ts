@@ -9661,6 +9661,11 @@ export type PoolRequests = {
 	limits: PoolLimitsShown,
 	/**  Its CPUs in thousandths, to be added up. */
 	millicpus: number,
+	/**
+	 *  The seconds its runners no longer kept ran this week (#3492): a runner's own are in
+	 *  what it answers ([`RunnerAsked::ran_this_week`]).
+	 */
+	removed_ran_this_week: number,
 };
 
 /**  One pool, as its row draws it. */
@@ -10826,6 +10831,11 @@ export type RunnerAsked = {
 	contacted: number | null,
 	/**  What it holds, set against what the window has open. */
 	holds: NotOpenHere,
+	/**
+	 *  The seconds it ran this week (the ISO week in local time), as this machine recorded it
+	 *  (#3492, [`purlis_core::runnerhours`]); none where it was not answered in time.
+	 */
+	ran_this_week: number | null,
 };
 
 /**  One runner of a project, as the away summary reads it. */

@@ -324,13 +324,18 @@ export type PoolUse = {
   memoryMib: number;
   /** How many of its runners have not answered yet: its counts are not whole until none. */
   asking: number;
+  /** The seconds its runners ran this week, those no longer kept included (#3492). */
+  ranThisWeek: number;
+  /** How many of its runners' hours this week are not known yet: not answered, or not in time. */
+  hoursNotKnown: number;
 };
 
 /**
  * **Each pool's use per person** (#2052, story 55): its runners that run and that are suspended,
  * and the CPUs and memory those that run request (a runner requests its pool's limits). A Docker
  * pool on this machine's own engine is the person's (`owned`, D-2050-4), so its one row is
- * "You"; one on an engine elsewhere is not known to be anyone's in particular. Money is never
+ * "You"; one on an engine elsewhere is not known to be anyone's in particular. Its hours this
+ * week are its runners' as each answers, and its runners' no longer kept (#3492). Money is never
  * shown: no pool declares a price per hour yet, and a cost is never guessed.
  */
 export function usageOf(
@@ -349,6 +354,7 @@ export function usageOf(
     });
     const running = standing.filter((one) => one === "running").length;
     const millicpus = running * pool.millicpus;
+    const ran = of.map((one) => answerOf(asked[runnerKey(one)])?.ran_this_week ?? null);
     return {
       pool: pool.pool,
       person: owned ? "You" : NOT_KNOWN_TO_BE_YOURS,
@@ -357,6 +363,8 @@ export function usageOf(
       cpus: cpusSaid(millicpus),
       memoryMib: running * pool.limits.memory_mib,
       asking: standing.filter((one) => one === "asking").length,
+      ranThisWeek: ran.reduce<number>((sum, one) => sum + (one ?? 0), pool.removed_ran_this_week),
+      hoursNotKnown: ran.filter((one) => one === null).length,
     };
   });
 }
@@ -364,6 +372,16 @@ export function usageOf(
 /** What a use row's Running cell says: the count, and those not answered yet apart. */
 export function runningSaid(use: Pick<PoolUse, "running" | "asking">): string {
   return use.asking === 0 ? `${use.running}` : `${use.running}, ${use.asking} not answered yet`;
+}
+
+/**
+ * What a use row's Hours this week cell says (#3492): the hours to the tenth, and those of runners
+ * not known yet apart.
+ */
+export function hoursSaid(use: Pick<PoolUse, "ranThisWeek" | "hoursNotKnown">): string {
+  const tenths = Math.round(use.ranThisWeek / 360);
+  const hours = `${Math.floor(tenths / 10)}.${tenths % 10}`;
+  return use.hoursNotKnown === 0 ? hours : `${hours}, ${use.hoursNotKnown} not answered yet`;
 }
 
 /** `millicpus`, as a number of CPUs to the thousandth: `2`, `1.5`. */

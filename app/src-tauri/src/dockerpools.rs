@@ -281,7 +281,7 @@ pub async fn docker_pool_link(name: String) -> Result<PoolLink, String> {
             let machine = Machine::here(&config_root()?)?;
             let kept = purlis_core::runners::runner_for(&machine.config, &name)
                 .map_err(|why| why.to_string())?;
-            if matches!(machine.docker.running(&kept.made), Ok(false)) {
+            if matches!(machine.running(&kept), Ok(false)) {
                 return Ok(PoolLink::Suspended);
             }
             crate::runnerlinks::link_state(&ToARunner::of_kept(&machine, &kept)?)

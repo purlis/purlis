@@ -401,6 +401,11 @@ pub const PEERS_FILE: &str = "peers.json";
 pub const RUNNERS_FILE: &str = "runners.json";
 pub const RUNNERS_LOCK: &str = "runners.json.lock";
 
+/// When each runner ran, inside [`dir`] (`crate::runnerhours`, #3492), and the lock its one
+/// read-modify-write takes.
+pub const RUNNER_HOURS_FILE: &str = "runner-hours.jsonl";
+pub const RUNNER_HOURS_LOCK: &str = "runner-hours.jsonl.lock";
+
 /// The session host's folder's old name inside [`dir`] (`names::DAEMON_DIR`).
 pub const DAEMON_DIR: &str = "charterd";
 

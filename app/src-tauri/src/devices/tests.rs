@@ -697,3 +697,34 @@ fn a_user_and_password_joined_to_a_path_by_a_hidden_character_are_hidden() {
         "see path/…@build.example"
     );
 }
+
+/// A pool's hours this week include its runners no longer kept (#3492): a draining runner
+/// removed once its chats ended still ran for its pool. A kept runner's hours are in its own
+/// answer, so they are not counted here twice.
+#[test]
+fn a_pools_removed_runners_hours_this_week_are_counted_and_its_kept_ones_are_not() {
+    use purlis_core::runnerhours::{Event, Line};
+    const HOUR: u64 = 3600;
+    let week = 1_792_972_800;
+    let line = |at, pool: &str, runner: &str, event| Line {
+        at,
+        pool: pool.into(),
+        runner: runner.into(),
+        event,
+    };
+    let hours = vec![
+        line(week - 3 * HOUR, "builds", "builds", Event::Start),
+        line(week + HOUR, "builds", "builds", Event::Stop),
+        line(week + 2 * HOUR, "builds", "builds-1a2b3c4d", Event::Start),
+        line(week + 5 * HOUR, "builds", "builds-1a2b3c4d", Event::Stop),
+        line(week + 2 * HOUR, "tests", "tests", Event::Start),
+        line(week + 9 * HOUR, "tests", "tests", Event::Stop),
+    ];
+    // `builds` was removed; its successor is kept.
+    let kept = [runner("builds", "builds-1a2b3c4d", false)];
+    assert_eq!(
+        removed_ran(&hours, "builds", &kept, week),
+        u32::try_from(HOUR).unwrap()
+    );
+    assert_eq!(removed_ran(&hours, "other", &kept, week), 0);
+}
