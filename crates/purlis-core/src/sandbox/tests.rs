@@ -1169,11 +1169,14 @@ fn a_chat_never_reads_or_writes_the_forge_answers_the_humans_token_fetched() {
             std::path::PathBuf::from("/home/op/.config/purlis/peers.json"),
             // The runners this desktop pinned (#2525).
             std::path::PathBuf::from("/home/op/.config/purlis/runners.json"),
+            // When each of them ran (#3492).
+            std::path::PathBuf::from("/home/op/.config/purlis/runner-hours.jsonl"),
             std::path::PathBuf::from("/home/op/.config/purlis/forge-etags"),
             std::path::PathBuf::from("/home/op/.config/charter/purlisd"),
             std::path::PathBuf::from("/home/op/.config/charter/charterd"),
             std::path::PathBuf::from("/home/op/.config/charter/peers.json"),
             std::path::PathBuf::from("/home/op/.config/charter/runners.json"),
+            std::path::PathBuf::from("/home/op/.config/charter/runner-hours.jsonl"),
             std::path::PathBuf::from("/home/op/.config/charter/forge-etags"),
             // This machine's profiles' folders (#2034).
             Homes::charter_data(&machine(Os::Linux))

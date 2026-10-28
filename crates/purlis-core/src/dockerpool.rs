@@ -599,9 +599,44 @@ pub fn check_on(
     checked_on(inspected, made, engine, true)
 }
 
+/// What [`Docker::resumed`] did: what it read of the container first, and whether it started it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Resumed {
+    pub before: Ran,
+    pub started: bool,
+}
+
 /// Whether `inspected`, what `docker inspect <container>` printed, says the container runs.
 pub fn is_running(inspected: &serde_json::Value) -> bool {
     inspected.pointer("/0/State/Running") == Some(&serde_json::Value::Bool(true))
+}
+
+/// **What Docker says of a container's latest run** (#3492): whether it runs, when it started,
+/// and when its last run ended, each in seconds since the epoch and `None` where Docker gives
+/// no time (a container never started says `0001-01-01T00:00:00Z`). The runner hours record
+/// is written from these ([`crate::runnerhours::seen`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ran {
+    pub running: bool,
+    pub started: Option<u64>,
+    pub finished: Option<u64>,
+}
+
+/// [`Ran`], from what `docker inspect <container>` printed.
+pub fn ran(inspected: &serde_json::Value) -> Ran {
+    let at = |key: &str| {
+        inspected
+            .pointer(&format!("/0/State/{key}"))
+            .and_then(serde_json::Value::as_str)
+            .and_then(|text| chrono::DateTime::parse_from_rfc3339(text).ok())
+            .and_then(|time| u64::try_from(time.timestamp()).ok())
+            .filter(|secs| *secs > 0)
+    };
+    Ran {
+        running: is_running(inspected),
+        started: at("StartedAt"),
+        finished: at("FinishedAt"),
+    }
 }
 
 /// [`check_on`], the container's running held to it only where `running` says so: a suspended
@@ -1859,38 +1894,56 @@ impl Docker {
 
     /// **Whether `made`'s container runs** (#2051): one a runner suspended stopped itself.
     pub fn running(&self, made: &Made) -> Result<bool, Refused> {
+        self.ran(made).map(|ran| ran.running)
+    }
+
+    /// **[`Ran`] of `made`'s container** (#3492): [`Docker::running`], with when it started and
+    /// last stopped. Read once, as [`Docker::running`] is.
+    pub fn ran(&self, made: &Made) -> Result<Ran, Refused> {
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        Ok(is_running(&inspected))
+        Ok(ran(&inspected))
     }
 
     /// **[`Docker::check`], a suspended runner started again first** (#2051): a runner left a
     /// day without a link stops its own container, keeping its home volume; the next link to it
     /// starts that container again, once it is checked as it was made, and checks it whole once
     /// it runs. A container that runs is only checked.
-    pub fn resumed(&self, made: &Made) -> Result<(), Refused> {
+    ///
+    /// It answers what it read of the container before anything was started ([`Ran`]), and
+    /// whether it started it, so the runner hours record has both (#3492).
+    pub fn resumed(&self, made: &Made) -> Result<Resumed, Refused> {
         let engine = self.check_daemon()?;
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
             "docker container inspect",
         )?;
-        if is_running(&inspected) {
-            return self.check(made);
+        let before = ran(&inspected);
+        if before.running {
+            return self.check(made).map(|()| Resumed {
+                before,
+                started: false,
+            });
         }
         checked_on(&inspected, made, engine, false)?;
         let id = made.container.as_str().to_owned();
         self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED)?;
         // Started here and not as it was made once it runs: it is stopped again, and not linked.
-        self.check(made).inspect_err(|_| {
-            if let Err(why) = self.run(&["stop".to_owned(), id], None, MOST_INSPECTED) {
-                tracing::warn!(
-                    "purlis: a runner's container started again and refused its check was not \
+        self.check(made)
+            .map(|()| Resumed {
+                before,
+                started: true,
+            })
+            .inspect_err(|_| {
+                if let Err(why) = self.run(&["stop".to_owned(), id], None, MOST_INSPECTED) {
+                    tracing::warn!(
+                        "purlis: a runner's container started again and refused its check was not \
                      stopped: {why}"
-                );
-            }
-        })
+                    );
+                }
+            })
     }
 
     /// Pair `made`'s runner with `desktop`, once its container passes the check: the runner's

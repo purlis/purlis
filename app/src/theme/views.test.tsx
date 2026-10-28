@@ -1169,6 +1169,8 @@ const DEVICES_SHOWN = {
       pool: "builds",
       limits: { cpus: "2", memory_mib: 4096, processes: 1024, tmp_mib: 1024 },
       millicpus: 2000,
+      removed_ran_this_week: 0,
+      price: null,
     },
   ],
 };
@@ -1180,6 +1182,7 @@ const DEVICE_ANSWERS = {
   version: "0.8.1",
   contacted: 1_800_000_000,
   holds: { open: [], browsers_open: [], chats: 2, browsers: 1 },
+  ran_this_week: 7200,
 };
 
 /** A runner's answer in each other state a Devices row draws. */
