@@ -47,7 +47,7 @@ function TheWindow({
           ? {
               from: "story",
               refused: false,
-              title: "The plane root is up to date",
+              title: "The root's layout is up to date",
               words: "Its layout was read again.",
               workspace: OUTSIDE,
             }
