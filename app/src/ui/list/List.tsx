@@ -44,7 +44,7 @@ import {
   useMemo,
   useState,
   type CSSProperties,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type Ref,
 } from "react";
@@ -110,7 +110,7 @@ export function useSaidOnRow(name: string, value: string) {
  */
 function useFoldKeys(folds: Map<string, ((open: boolean) => void) | undefined>) {
   const { direction } = useLocale();
-  return (event: KeyboardEvent<HTMLElement>) => {
+  return (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const row = event.target;
     if (!(row instanceof HTMLElement) || row.getAttribute("role") !== "row") return;

@@ -37,14 +37,22 @@ const NEEDS: Skill[] = [
 ];
 
 const IN_THIS_CHAT: Skill[] = [
-  { name: "deploy", level: "project", says: "Deploys a service with the checks the team agreed on." },
+  {
+    name: "deploy",
+    level: "project",
+    says: "Deploys a service with the checks the team agreed on.",
+  },
   { name: "review-pr", level: "project", says: "Reviews a pull request against REVIEW.md." },
 ];
 
 const BUILT_IN: Skill[] = [
   { name: "browser", level: "built-in", says: "Drives a real browser for a task that needs one." },
   { name: "handoff", level: "built-in", says: "Moves work into a new chat you'll read yourself." },
-  { name: "secrets", level: "built-in", says: "Uses a vault credential without showing its value." },
+  {
+    name: "secrets",
+    level: "built-in",
+    says: "Uses a vault credential without showing its value.",
+  },
   { name: "compact", level: "built-in", says: "Compacts a workspace's or persona's memory." },
 ];
 
@@ -82,11 +90,7 @@ function SkillGroups() {
   return (
     <div style={{ inlineSize: "260px", background: "var(--surface-base)" }}>
       <ListFilter noun={SKILL} total={9} query={query} onQuery={setQuery} />
-      <List
-        aria-label="Skills"
-        size="sm"
-        onAction={(key) => setSaid(`Opened ${String(key)}`)}
-      >
+      <List aria-label="Skills" size="sm" onAction={(key) => setSaid(`Opened ${String(key)}`)}>
         {/* Needs you is drawn only while it holds something. */}
         {needs.length > 0 && (
           <ListFoldSection id="needs" title="Needs you" count={needs.length} tone="waiting">
@@ -180,7 +184,9 @@ export const SkillsViewGroups: Story = {
     await waitFor(() => expect(row("browser")).toBeVisible());
     await expect(row("review-pr").getBoundingClientRect().top).toBe(above);
     await expect(
-      within(list).getByRole("row", { name: "They ship with purlis: they can't be edited or turned off." }),
+      within(list).getByRole("row", {
+        name: "They ship with purlis: they can't be edited or turned off.",
+      }),
     ).toBeVisible();
     await untilFocused(() => line, "Groups: the keyboard stays on the quiet line");
     await userEvent.keyboard(" ");

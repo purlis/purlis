@@ -79,9 +79,7 @@ export function ListCardRow<T extends object>({
           {menu !== undefined && <RowMenuButton name={textValue} />}
         </RowTrail>
       )}
-      {says !== undefined && (
-        <RowSummary tone={reason?.tone ?? "description"}>{says}</RowSummary>
-      )}
+      {says !== undefined && <RowSummary tone={reason?.tone ?? "description"}>{says}</RowSummary>}
       {fix !== undefined && <RowActions>{fix}</RowActions>}
     </ListRow>
   );

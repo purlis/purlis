@@ -132,7 +132,9 @@ export const SkillsViewCards: Story = {
     await untilFocused(() => grilling, "Cards: Tab lands on the first card");
     await userEvent.keyboard("{Escape}{Enter}");
     await waitFor(() =>
-      expect(canvas.getByRole("status")).toHaveTextContent("Opened the studio at Library › grilling"),
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "Opened the studio at Library › grilling",
+      ),
     );
     await userEvent.keyboard("{ArrowRight}");
     await untilFocused(
@@ -164,10 +166,9 @@ export const SkillsViewCards: Story = {
     await expect(summary.clientHeight, "Cards: two lines of the description").toBeLessThanOrEqual(
       Math.ceil(line * 2) + 1,
     );
-    await expect(
-      summary.scrollHeight,
-      "Cards: the rest of the description is cut",
-    ).toBeGreaterThan(summary.clientHeight);
+    await expect(summary.scrollHeight, "Cards: the rest of the description is cut").toBeGreaterThan(
+      summary.clientHeight,
+    );
     await waitFor(() => expect(screen.getByRole("tooltip")).toHaveTextContent(LONG));
     // Its menu, from the keys, and back.
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");

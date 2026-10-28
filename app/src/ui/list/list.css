@@ -147,15 +147,19 @@
   white-space: normal;
 }
 
-:is([data-scope="list"][data-part="header"][data-fold], [data-scope="list"][data-part="run"])[
-    data-hovered
-  ] {
+/* Under the pointer, a fold's row takes the pill; a run's closing line, which holds its own
+   button, keeps the list's ground. */
+:is(
+  [data-scope="list"][data-part="header"][data-fold],
+  [data-scope="list"][data-part="run"]:not([data-end])
+)[data-hovered] {
   background-color: var(--surface-hover);
 }
 
-:is([data-scope="list"][data-part="header"][data-fold], [data-scope="list"][data-part="run"])[
-    data-focus-visible
-  ] {
+:is(
+  [data-scope="list"][data-part="header"][data-fold],
+  [data-scope="list"][data-part="run"]
+)[data-focus-visible] {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-inset);
 }
