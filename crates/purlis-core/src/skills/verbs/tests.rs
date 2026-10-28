@@ -5,7 +5,7 @@
 //! back through the skill set the studio shows, and, on a plane that is a git repository, as one
 //! commit of exactly its own paths.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::testgit::run;
@@ -1489,4 +1489,216 @@ fn a_skills_copies_come_in_the_one_order_its_tab_shows_them() {
     );
     assert!(copies[0].1.ends_with("skills/deploy"));
     assert!(Level::copies_of(root, "nothing").next().is_none());
+}
+
+/// The folder of this machine's kept deletes in the plane at `root`.
+fn kept_deletes(root: &Path) -> PathBuf {
+    crate::plane::state_dir(root).join(DELETED_DIR)
+}
+
+/// The names of the kept deletes in the plane at `root`, sorted.
+fn kept_names(root: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(kept_deletes(root))
+        .unwrap()
+        .map(|one| one.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
+}
+
+/// Gives the one kept delete of `folder` the stamp `stamp`, as if it had been deleted then.
+fn deleted_at(root: &Path, folder: &str, stamp: u128) -> String {
+    let dir = kept_deletes(root);
+    let was = kept_names(root)
+        .into_iter()
+        .find(|name| name.ends_with(&format!("-{folder}")))
+        .unwrap();
+    let now = format!("{stamp}-{folder}");
+    std::fs::rename(dir.join(&was), dir.join(&now)).unwrap();
+    now
+}
+
+/// Long enough ago that a kept delete is past its time: a day more than it is kept for.
+fn long_ago() -> u128 {
+    (std::time::SystemTime::now() - KEPT_HERE_FOR - std::time::Duration::from_secs(DAY))
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_skill_kept_deleted_past_its_time_is_removed_and_a_newer_copy_of_it_is_kept() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    skill(root, "skills/deploy", "deploy", "Ships it again.");
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "release")).unwrap();
+    let young = kept_names(root)
+        .into_iter()
+        .filter(|name| *name != old)
+        .collect::<Vec<_>>();
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert_eq!(
+        expired,
+        Expired {
+            removed: vec![old],
+            ..Expired::default()
+        }
+    );
+    assert_eq!(
+        kept_names(root),
+        young,
+        "the newer copy and the other skill stay"
+    );
+    let listed = deleted(root);
+    assert_eq!(listed.len(), 2, "{listed:?}");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert_eq!(
+        listed[0].stays(now),
+        "kept on this machine for 30 more days"
+    );
+    assert!(
+        root.join("skills").is_dir() && root.join("charter.toml").is_file(),
+        "nothing outside the kept deletes is touched"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn an_expiry_follows_no_link_out_of_the_kept_deletes() {
+    let tmp = plane();
+    let root = tmp.path();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("precious"), "keep me").unwrap();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    let kept = kept_deletes(root).join(&old);
+    // Inside the deleted skill's folder: a link out, to a folder and to a file.
+    std::os::unix::fs::symlink(outside.path(), kept.join("deploy/out")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("precious"),
+        kept.join("deploy/precious"),
+    )
+    .unwrap();
+    // Beside it, a link named as a kept delete is, past its time, to a folder outside.
+    std::os::unix::fs::symlink(outside.path(), kept_deletes(root).join("1000-outside")).unwrap();
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert_eq!(expired.removed, vec![old], "{expired:?}");
+    assert!(!kept.exists());
+    assert!(kept_deletes(root).join("1000-outside").is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(outside.path().join("precious")).unwrap(),
+        "keep me"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn kept_deletes_that_are_a_link_are_never_expired() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    // The kept deletes moved elsewhere, and a link left in their place.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let moved = elsewhere.path().join("kept");
+    std::fs::rename(kept_deletes(root), &moved).unwrap();
+    std::os::unix::fs::symlink(&moved, kept_deletes(root)).unwrap();
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert_eq!(expired, Expired::default());
+    assert!(moved.join(&old).join("deploy/SKILL.md").is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_kept_delete_holding_what_no_delete_puts_there_is_left_whole_and_said() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let old = deleted_at(root, "deploy", long_ago());
+    let kept = kept_deletes(root).join(&old);
+    std::fs::write(kept.join("notes.txt"), "mine").unwrap();
+    // Named as no delete names its folder: a `..` and a name with no stamp.
+    for name in ["1000-..", "deploy", "1000-"] {
+        std::fs::create_dir_all(kept_deletes(root).join(name)).unwrap();
+    }
+
+    let expired = expire(root, std::time::SystemTime::now());
+
+    assert!(expired.removed.is_empty(), "{expired:?}");
+    assert_eq!(expired.failed.len(), 1, "{expired:?}");
+    assert_eq!(expired.failed[0].0, old);
+    assert!(expired.failed[0].1.contains("notes.txt"));
+    assert!(kept.join("deploy/SKILL.md").is_file());
+    assert!(kept.join(KEPT_FROM).is_file());
+    for name in ["1000-..", "deploy", "1000-"] {
+        assert!(kept_deletes(root).join(name).is_dir());
+    }
+}
+
+#[test]
+fn a_kept_deletes_name_is_a_stamp_and_one_plain_folder_name() {
+    assert_eq!(
+        kept_name("1761000000000-deploy"),
+        Some((1_761_000_000_000, "deploy"))
+    );
+    assert_eq!(kept_name("1-my-skill"), Some((1, "my-skill")));
+    for not_one in [
+        "1-..",
+        "1-.",
+        "1-",
+        "-deploy",
+        "x1-deploy",
+        "1-a/b",
+        "1-a\\b",
+        "deploy",
+    ] {
+        assert_eq!(kept_name(not_one), None, "{not_one}");
+    }
+}
+
+#[test]
+fn a_deleted_skill_says_how_long_it_stays() {
+    let here = |at: u64| Deleted {
+        name: "deploy".to_owned(),
+        level: Level::project(),
+        folder: "deploy".to_owned(),
+        kept: Kept(Source::Here(format!("{}-deploy", at * 1000))),
+        at,
+    };
+    let at = 1_761_000_000;
+    let kept_for = KEPT_HERE_FOR.as_secs();
+    assert_eq!(here(at).stays(at), "kept on this machine for 30 more days");
+    assert_eq!(
+        here(at).stays(at + kept_for - DAY - 1),
+        "kept on this machine for 2 more days"
+    );
+    assert_eq!(
+        here(at).stays(at + kept_for - 60),
+        "kept on this machine for 1 more day"
+    );
+    assert_eq!(
+        here(at).stays(at + kept_for + 1),
+        "removed from this machine soon"
+    );
+    let in_git = Deleted {
+        kept: Kept(Source::Commit("abc".to_owned())),
+        ..here(at)
+    };
+    assert_eq!(
+        in_git.stays(at + 10 * kept_for),
+        "kept in the project's history"
+    );
 }

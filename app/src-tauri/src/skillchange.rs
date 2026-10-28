@@ -184,6 +184,9 @@ pub struct DeletedSkill {
     pub level: SkillLevel,
     /// Its level as a person reads it: `project`, `local workspace ops`.
     pub label: String,
+    /// How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
+    /// in the project's history` (SK-33).
+    pub stays: String,
 }
 
 /// A level a skill can be moved to or made at, and its words.
@@ -548,6 +551,8 @@ pub(crate) fn cut_short(root: &std::path::Path) -> DeletesCutShort {
         by: By::Window,
         say: &mut say,
     });
+    // The skills this machine kept deleted past their time (SK-33).
+    verbs::expire_now(root);
     ended
 }
 
@@ -561,10 +566,14 @@ pub(crate) async fn skills_deleted(
     let held = planes.held(&plane)?;
     crate::off_the_window("reading the deleted skills", move || {
         flag_on()?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |at| at.as_secs());
         verbs::deleted(held.root())
             .into_iter()
             .map(|one| {
                 Ok(DeletedSkill {
+                    stays: one.stays(now),
                     id: serde_json::to_string(&one)
                         .map_err(|_| format!("{} could not be listed to restore", one.name))?,
                     label: one.level.to_string(),

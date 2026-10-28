@@ -3677,6 +3677,11 @@ export type DeletedSkill = {
 	level: SkillLevel,
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
+	/**
+	 *  How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
+	 *  in the project's history` (SK-33).
+	 */
+	stays: string,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */

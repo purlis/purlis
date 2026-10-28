@@ -957,6 +957,100 @@ impl Deleted {
     pub fn kept(&self) -> &Kept {
         &self.kept
     }
+
+    /// **How long it stays, in a phrase** (SK-33): one git keeps stays in the project's history;
+    /// one this machine keeps stays [`KEPT_HERE_FOR`] after its delete, and the phrase counts the
+    /// days left at `now`, in seconds since the epoch.
+    pub fn stays(&self, now: u64) -> String {
+        match &self.kept.0 {
+            Source::Commit(_) => "kept in the project's history".to_owned(),
+            Source::Here(_) => {
+                let until = self.at.saturating_add(KEPT_HERE_FOR.as_secs());
+                let days = until.saturating_sub(now).div_ceil(DAY);
+                match days {
+                    0 => "removed from this machine soon".to_owned(),
+                    1 => "kept on this machine for 1 more day".to_owned(),
+                    days => format!("kept on this machine for {days} more days"),
+                }
+            }
+        }
+    }
+}
+
+/// A day, in seconds.
+const DAY: u64 = 24 * 60 * 60;
+
+/// **How long a skill deleted on this machine is kept in its [`DELETED_DIR`]** before
+/// [`expire`] removes it (SK-33): 30 days after its delete, as a desktop's trash or a mail
+/// folder's deleted items keep theirs. A skill whose delete was a commit is never removed: git
+/// keeps it.
+pub const KEPT_HERE_FOR: std::time::Duration = std::time::Duration::from_secs(30 * DAY);
+
+/// What one [`expire`] did: the kept deletes it removed, by their folder's name, and each it
+/// could not, with why.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Expired {
+    pub removed: Vec<String>,
+    pub failed: Vec<(String, String)>,
+}
+
+/// **Removes the skills this machine kept deleted for longer than [`KEPT_HERE_FOR`]** (SK-33):
+/// each kept delete in the state folder's [`DELETED_DIR`] whose stamp, the time of its delete,
+/// is that long before `now`. One deleted later, or with a stamp after `now`, is kept, so each
+/// copy, the newest of a skill's included, stays its whole time.
+///
+/// **Only what a delete made is removed, by the names it gives it**: a folder named
+/// `<stamp>-<folder>`, holding nothing but `from`, the skill's folder `<folder>` and the
+/// `<folder>.toml` beside it. A kept delete holding anything else is left whole, and said. The
+/// state folder, [`DELETED_DIR`] and each folder in it are opened as folders themselves
+/// (`O_NOFOLLOW`) and everything is removed relative to them, so no link is followed, even one
+/// put in place after a check: a link inside the skill's folder is removed as a link, and
+/// nothing outside [`DELETED_DIR`] is ever reached. Off Unix nothing is removed, as nothing is
+/// kept there.
+pub fn expire(plane: &Path, now: std::time::SystemTime) -> Expired {
+    let state = crate::plane::state_dir(plane);
+    let now_ms = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|at| at.as_millis())
+        .unwrap_or_default();
+    store::expire(
+        &state,
+        DELETED_DIR,
+        KEPT_FROM,
+        now_ms,
+        KEPT_HERE_FOR.as_millis(),
+    )
+}
+
+/// [`expire`] in `plane` at this moment, each removal and each failure said in the log: what
+/// the Skill studio does as it opens, and `purlis skill` before a change.
+pub fn expire_now(plane: &Path) {
+    let expired = expire(plane, std::time::SystemTime::now());
+    let days = KEPT_HERE_FOR.as_secs() / DAY;
+    for kept in &expired.removed {
+        tracing::info!(
+            "purlis: removed the deleted skill kept as {kept}: it was deleted over {days} days ago"
+        );
+    }
+    for (kept, why) in &expired.failed {
+        tracing::warn!(
+            "purlis: the deleted skill kept as {kept} is past its {days} days but was not \
+             removed ({why}); it is tried again next time"
+        );
+    }
+}
+
+/// The stamp and the skill's folder name of a kept delete named `<stamp>-<folder>`, where its
+/// name is one a delete gives ([`keep_here`]): digits, a `-`, and one plain folder name.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn kept_name(name: &str) -> Option<(u128, &str)> {
+    let (stamp, folder) = name.split_once('-')?;
+    let digits = !stamp.is_empty() && stamp.bytes().all(|b| b.is_ascii_digit());
+    let plain = !matches!(folder, "" | "." | "..") && !folder.contains(['/', '\\', '\0']);
+    if !(digits && plain) {
+        return None;
+    }
+    Some((stamp.parse().ok()?, folder))
 }
 
 /// `git <args>` in the plane: its stdout, or what it said.
@@ -1801,6 +1895,73 @@ pub(in crate::skills) mod store {
         out
     }
 
+    /// **[`super::expire`] through handles**: every kept delete in `dir` under `state` older than
+    /// `keep_ms` at `now_ms`, removed. `state` and `dir` are opened as folders themselves, so a
+    /// link at either keeps everything.
+    pub(super) fn expire(
+        state: &Path,
+        dir: &str,
+        from: &str,
+        now_ms: u128,
+        keep_ms: u128,
+    ) -> super::Expired {
+        let mut expired = super::Expired::default();
+        let Ok(state_dir) = openat(rustix::fs::CWD, state, FOLDER, Mode::empty()) else {
+            return expired;
+        };
+        let Ok(kept) = openat(&state_dir, dir, FOLDER, Mode::empty()) else {
+            return expired;
+        };
+        for name in names_in(&kept, FileType::Directory) {
+            let Some((stamp, folder)) = super::kept_name(&name) else {
+                continue;
+            };
+            if stamp > now_ms || now_ms - stamp <= keep_ms {
+                continue;
+            }
+            if let Err(why) = remove_kept(&kept, &name, folder, from) {
+                expired.failed.push((name, why));
+                continue;
+            }
+            expired.removed.push(name);
+        }
+        expired
+    }
+
+    /// Removes the kept delete `name` in `kept`, whose skill's folder is `folder`: only where it
+    /// holds nothing but `from`, that folder and the file beside it. `from` goes first, so a
+    /// removal cut short leaves nothing Restore would offer half there.
+    fn remove_kept(kept: &OwnedFd, name: &str, folder: &str, from: &str) -> Result<(), String> {
+        use crate::skills::at;
+        let one = openat(kept, name, FOLDER, Mode::empty()).map_err(|why| why.to_string())?;
+        let toml = format!("{folder}.toml");
+        let entries = at::entries(&one).map_err(|why| why.to_string())?;
+        let ours = |entry: &at::Entry| {
+            (entry.name == folder && entry.kind == FileType::Directory)
+                || ((entry.name == from || entry.name == toml)
+                    && entry.kind == FileType::RegularFile)
+        };
+        if let Some(theirs) = entries.iter().find(|entry| !ours(entry)) {
+            return Err(format!(
+                "it holds {:?}, which no delete puts there, so it was left as it is",
+                theirs.name
+            ));
+        }
+        for entry in &entries {
+            if entry.name == from {
+                at::remove_file_in(&one, from).map_err(|why| why.to_string())?;
+            }
+        }
+        for entry in &entries {
+            if entry.kind == FileType::Directory {
+                at::remove_tree_in(&one, &entry.name).map_err(|why| why.to_string())?;
+            } else if entry.name != from {
+                at::remove_file_in(&one, &entry.name).map_err(|why| why.to_string())?;
+            }
+        }
+        at::remove_empty_folder_in(kept, name).map_err(|why| why.to_string())
+    }
+
     /// Takes away the kept delete `kept` in `dir` under `state` once its skill went back: its
     /// `from` file, then the folder, which must be empty by then.
     pub(super) fn put_away(state: &Path, dir: &str, kept: &str, from: &str) {
@@ -1836,6 +1997,10 @@ mod store {
     }
 
     pub(super) fn put_away(_: &Path, _: &str, _: &str, _: &str) {}
+
+    pub(super) fn expire(_: &Path, _: &str, _: &str, _: u128, _: u128) -> super::Expired {
+        super::Expired::default()
+    }
 
     // A delete's note where no folder can be held open: by path, written whole under a dot-name
     // and renamed into place already locked, as on Unix, and opened without following a link

@@ -438,8 +438,10 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
         say: &mut said,
     };
     // A delete a crash or a quit cut short is finished or undone before any change (SK-35).
+    // And the skills this machine kept deleted past their time are removed (SK-33).
     if writes {
         verbs::interrupted(&mut cx);
+        verbs::expire_now(root);
     }
     // The studio's own list (SK-34, #3008): the plane's skills, and each harness's, the same
     // call the window makes.
@@ -682,8 +684,11 @@ pub fn run(root: &Path, command: SkillCommand) -> Result<Code, String> {
             if deleted.is_empty() {
                 println!("No deleted skill can be restored here.");
             }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |at| at.as_secs());
             for one in deleted {
-                println!("{}", restorable(&one.name, &one.level));
+                println!("{}", restorable(&one.name, &one.level, &one.stays(now)));
             }
             Ok(0)
         }
@@ -1082,8 +1087,13 @@ fn already_in(name: &str, lifecycle: &Lifecycle) -> Markup {
         .own(".")
 }
 
-fn restorable(name: &str, level: &Level) -> Markup {
-    Markup::new().text(name).own("  ").text(level)
+fn restorable(name: &str, level: &Level, stays: &str) -> Markup {
+    Markup::new()
+        .text(name)
+        .own("  ")
+        .text(level)
+        .own(" · ")
+        .text(stays)
 }
 
 /// What `skill uses` says of `name`: each skill it names, as its text says it, then each skill
