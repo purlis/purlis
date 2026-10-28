@@ -407,7 +407,17 @@ fn a_chat_cannot_plant_a_purlis_state_folder_beside_charters() {
     let denied = Denied::of(plane.path(), &machine(Os::Linux));
     let write = paths(&denied, Class::Integrity, Access::Write);
     assert!(write.contains(&plane.path().join(".purlis")), "{write:?}");
-    assert!(!write.contains(&plane.path().join(".charter")), "{write:?}");
+    // The one there is held as an entry alone, never with what is below it.
+    let charter = plane.path().join(".charter");
+    assert!(
+        denied
+            .paths
+            .iter()
+            .filter(|it| it.path == charter)
+            .all(|it| it.reach == Reach::Itself),
+        "{:?}",
+        denied.paths
+    );
 }
 
 #[test]
@@ -1091,7 +1101,10 @@ fn the_messages_between_chats_wait_inside_the_store_that_denial_names() {
     // denies it: the hook that takes the message there can still read and remove it.
     let classes = Denied::of(plane.path(), &machine(Os::MacOs));
     assert!(
-        !classes.paths.iter().any(|it| file.starts_with(&it.path)),
+        !classes
+            .paths
+            .iter()
+            .any(|it| it.reach == Reach::AndBelow && file.starts_with(&it.path)),
         "{}",
         file.display()
     );
