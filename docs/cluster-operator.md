@@ -267,6 +267,12 @@ rules:
 
 Who may create a Claim, and in which namespace, is RBAC on `claims` as usual.
 
+**A runner from a pool is had only through a Claim.** The same policy refuses an upstream
+`SandboxClaim` on one of a pool's warm pools, and an upstream `SandboxWarmPool` of one of a
+pool's templates (both named `purlis-pool-<pool>`, below), made or moved there by anyone but
+the operator, the cluster admin included: such a runner would skip the checks above. Upstream's
+own objects that are not a pool's are left to upstream.
+
 ## Who the runner is
 
 A desktop links to a runner over ADR 0078's encrypted link, and links only to the runner it

@@ -20,6 +20,9 @@
 # A Claim's pool never changes after it is made (crds.yaml), so creating one is the only time
 # this is asked. operator/tests/the_install_manifests.rs holds it, and the kind tests check that
 # the cluster refuses a Claim from someone who may not use its pool.
+#
+# Upstream's claims on a purlis pool's warm pool, and warm pools of its template, are made by
+# the operator alone, so a runner from a pool is had only through a Claim (#2055).
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
 # Copyright 2026 Purlis
@@ -43,8 +46,15 @@ spec:
         apiVersions: ["*"]
         operations: [CREATE]
         resources: [claims]
+      # Upstream's objects, so that a runner from a purlis pool is had only through a Claim
+      # (#2055): its warm pools and claims, on purlis's templates and warm pools.
+      - apiGroups: [extensions.agents.x-k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [sandboxclaims, sandboxwarmpools]
   validations:
     - expression: >-
+        request.resource.group != 'runners.purlis.dev' ||
         authorizer.group('runners.purlis.dev').resource('pools')
         .name(object.spec.pool).check('use').allowed()
       messageExpression: >-
@@ -53,9 +63,33 @@ spec:
     # Who asked for a claim is stamped on it, as the cluster signed them in, and never changes
     # (crds.yaml): the operator vouches for it with the runner's link key (#2056).
     - expression: >-
+        request.resource.group != 'runners.purlis.dev' ||
         object.spec.requester == request.userInfo.username
       messageExpression: >-
         'A claim names who makes it: set spec.requester to ' + request.userInfo.username + '.'
+      reason: Forbidden
+    # An upstream claim on a purlis pool's warm pool, or a warm pool of a purlis pool's template,
+    # is made by the operator alone, for a Claim it acts on: one made directly would have a
+    # runner without the checks above. Purlis's names start purlis-pool- (operator/src/upstream.rs).
+    - expression: >-
+        request.resource.resource != 'sandboxclaims' ||
+        request.userInfo.username == 'system:serviceaccount:purlis-system:purlis-cluster-operator' ||
+        !object.spec.warmPoolRef.name.startsWith('purlis-pool-') ||
+        (request.operation == 'UPDATE' &&
+        oldObject.spec.warmPoolRef.name == object.spec.warmPoolRef.name)
+      messageExpression: >-
+        'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev), not with an
+        upstream claim on its warm pool ' + object.spec.warmPoolRef.name + '.'
+      reason: Forbidden
+    - expression: >-
+        request.resource.resource != 'sandboxwarmpools' ||
+        request.userInfo.username == 'system:serviceaccount:purlis-system:purlis-cluster-operator' ||
+        !object.spec.sandboxTemplateRef.name.startsWith('purlis-pool-') ||
+        (request.operation == 'UPDATE' &&
+        oldObject.spec.sandboxTemplateRef.name == object.spec.sandboxTemplateRef.name)
+      messageExpression: >-
+        'Runners from a purlis pool are claimed with a Claim (runners.purlis.dev), not from a
+        warm pool of its template ' + object.spec.sandboxTemplateRef.name + '.'
       reason: Forbidden
 ---
 # Source: purlis-cluster-operator/templates/policy.yaml
