@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793190040783,
+  "lastUpdate": 1793203228905,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "stress (macos-latest)": [
@@ -8294,6 +8294,42 @@ window.BENCHMARK_DATA = {
             "value": 440,
             "unit": "MB",
             "extra": "median of 6 samples: 432.1, 437.7, 438.8, 441.1, 442.2, 601.3 MB; window 245.7 MB, session host 194.3 MB"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "346892f4e664e6a9ee0ec529817272ac4af848a1",
+          "message": "Skills: a reattached chat keeps its router's answer from its start (#3578) (#3599)\n\n* Skills: a reattached chat keeps its router's answer from its start (#3578)\n\nThe window's start keeps how it routed a chat's skills in the reopen\nrecord (chats[].routing): the built-in router, or the routing record and\nthe router's answer. A chat reattached from the session host routes its\nset by it, so Use skill..., the arming and the restart stamp say what its\nstart's answer hid, and its router is not asked again. A record without\nit, or one that does not read whole, asks again as before. A kept answer\nis applied as data: it hides only what the set still has for a router to\nhide.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skills: a kept routing is read back whole, and kept beside its start's flag (#3578)\n\nFrom the review: a routing is kept only beside the Skill studio flag its\nstart took, and a chat that did not start at a launch keeps both as its\nrecord had them. A kept routing is applied only on a harness purlis knows.\nRead back, its answer must sit beside a routing that did not fall back,\nits router must be named exactly where one was chosen, and its skill\nnames must read whole. The reattached chat's kept routing is moved into\nits start rather than cloned. The as-built ADR no longer says a\nreattached chat asks again.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T14:33:46Z",
+          "tree_id": "730df5b7ed3b7b821f724528cdd201e7895bf893",
+          "url": "https://github.com/purlis/purlis/commit/346892f4e664e6a9ee0ec529817272ac4af848a1"
+        },
+        "date": 1793203222208,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "M2 web content at fifty hot chats (footprint peak)",
+            "value": 648,
+            "unit": "MB",
+            "extra": "median of 3 samples: 604, 648, 719 MB"
+          },
+          {
+            "name": "M3 native side with no chats (window + session host, resident)",
+            "value": 437.3,
+            "unit": "MB",
+            "extra": "median of 6 samples: 428.4, 434.8, 436, 438.6, 439.7, 575 MB; window 246.8 MB, session host 189.9 MB"
           }
         ]
       }
