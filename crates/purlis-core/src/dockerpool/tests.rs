@@ -148,6 +148,21 @@ fn how_a_runner_was_made_to_suspend_is_read_from_its_containers_command() {
         with_cmd(serde_json::json!(["serve", "--suspends-unlinked=soon"])),
         None
     );
+    // A time `purlis serve` refuses, outside a pool's bounds, is not a time it suspends after.
+    for refused in ["30s", "721h"] {
+        assert_eq!(
+            with_cmd(serde_json::json!([
+                "serve",
+                format!("--suspends-unlinked={refused}")
+            ])),
+            None,
+            "{refused}"
+        );
+    }
+    assert_eq!(
+        with_cmd(serde_json::json!(["serve", "--suspends-unlinked=720h"])),
+        Some(MadeSuspending::After(MOST_SUSPEND_AFTER))
+    );
 }
 
 #[test]

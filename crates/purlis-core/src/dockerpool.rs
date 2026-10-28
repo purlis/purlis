@@ -653,7 +653,7 @@ pub enum MadeSuspending {
 
 /// [`MadeSuspending`], from the command `docker inspect <container>` says it was made with
 /// (`Config.Cmd`, as [`Runner::create_args`] gives it); `None` where that is not a runner's
-/// `serve` as purlis makes one.
+/// `serve` as purlis makes one, a time outside [`suspend_after`]'s bounds included.
 pub fn made_suspending(inspected: &serde_json::Value) -> Option<MadeSuspending> {
     let words: Vec<&str> = inspected
         .pointer("/0/Config/Cmd")?
@@ -666,7 +666,10 @@ pub fn made_suspending(inspected: &serde_json::Value) -> Option<MadeSuspending> 
         ["serve", "--suspends-unlinked"] => Some(MadeSuspending::After(SUSPEND_AFTER)),
         ["serve", flag] => {
             let after = flag.strip_prefix("--suspends-unlinked=")?;
+            // Held to the bounds `purlis serve` holds it to: a time it refuses is none it
+            // suspends after.
             crate::spelledtime::read(after, crate::spelledtime::UP_TO_HOURS)
+                .filter(|after| suspend_after(*after).is_ok())
                 .map(MadeSuspending::After)
         }
         _ => None,
