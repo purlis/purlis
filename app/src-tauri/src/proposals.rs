@@ -447,6 +447,7 @@ pub fn applied(held: &Held, id: u32, from: From) -> Result<String, String> {
     ) {
         Ok(said) => {
             held.proposals().take(id);
+            crate::oldplugins::purlis_change_applied(root, &one);
             for session in held.proposals().others_stale(&one.path) {
                 tell(
                     held,
@@ -606,6 +607,7 @@ pub async fn dismiss_proposed_change(
 /// [`dismiss_proposed_change`]'s work, for project `held`.
 pub fn dismissed(held: &Held, id: u32) -> Result<(), String> {
     let one = held.proposals().take(id).ok_or(WAITS_NO_MORE)?;
+    crate::oldplugins::purlis_change_dismissed(held.root(), &one);
     // A stale one was told stale already; one put away fresh is the person's no.
     if !one.stale {
         tell(

@@ -12,4 +12,5 @@
 - **Old `[harness_plugins]` keys are ignored, and said once.** A project that still holds them
   starts as any other. One ask in the Inbox names the files, and its Remove shows the change that takes the
   keys out for you to apply, a workspace's `workspace.json` included; nothing is rewritten until
-  you do (#3467, #3486).
+  you do (#3467, #3486). If a file changes before you apply its change, dismissing that stale
+  change brings the ask back, with Remove, while the file still holds the keys (#3569).

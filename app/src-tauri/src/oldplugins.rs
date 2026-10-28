@@ -9,13 +9,19 @@
 //!
 //! - **One Ask in the Inbox** ([`notice_of`], drawn by `asking::old_harness_plugins`, so it
 //!   costs a project switch no read of its own) says which files hold them, until the person
-//!   answers it once: **Remove** or **Dismiss**. The answer is kept in this machine's state for
-//!   the project, where no chat writes, so the Ask never comes back for it.
+//!   answers it once: the Ask's **Dismiss**, or an **Apply** or a **Dismiss** on a change its
+//!   Remove held. The answer is kept in this machine's state for the project, where no chat
+//!   writes, so the Ask never comes back for it.
 //! - **Remove is an edit the person approves** ([`remove_old_harness_plugins`]): each file that
 //!   holds them, the project's two and each workspace's manifest (#3486), gets a proposed change
 //!   that takes the table out, held as purlis's own ([`crate::proposals::BY_PURLIS`]) and drawn,
 //!   shown whole and applied as a chat's proposal is. Nothing is written until the person
 //!   presses Apply on it, and a manifest is then written by its own writer, keeping its stamp.
+//!   While one of those changes waits, the Ask stays out of the Inbox: the change is what is
+//!   asked.
+//! - **A change that went stale asks again** (#3569): one whose file moved before Apply, or that
+//!   can no longer be made, is no answer. Once it is dismissed, the Ask comes back with Remove
+//!   while its file still holds the keys ([`purlis_change_dismissed`]).
 
 use std::path::{Path, PathBuf};
 
@@ -23,7 +29,7 @@ use purlis_core::harness_plugin::old;
 use purlis_core::proposed::{Change, base_of};
 
 use crate::planes::{Held, PlaneId, Planes};
-use crate::proposals::{BY_PURLIS, Proposals};
+use crate::proposals::{BY_PURLIS, Proposal, Proposals};
 
 /// The Ask about the old keys, as the Inbox draws it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -43,13 +49,22 @@ fn answered_at(root: &Path) -> PathBuf {
         .join("old-harness-plugins-answered")
 }
 
-/// The Ask for the project at `root`, or none: no file holds the keys, or it was answered.
-pub fn notice_of(root: &Path) -> Option<OldHarnessPlugins> {
+/// The Ask for the project at `root`, or none: no file holds the keys, it was answered, or a
+/// change purlis proposed for one of them is among the project's `waiting` proposals.
+pub fn notice_of(root: &Path, waiting: &[Proposal]) -> Option<OldHarnessPlugins> {
     if answered_at(root).exists() {
         return None;
     }
     let found = old::found(root);
     if found.is_empty() {
+        return None;
+    }
+    let held = |file: &str| {
+        waiting
+            .iter()
+            .any(|one| one.session == BY_PURLIS && one.path == file)
+    };
+    if found.iter().any(|one| held(&one.file)) {
         return None;
     }
     Some(OldHarnessPlugins {
@@ -71,6 +86,49 @@ fn answer(root: &Path) -> Result<(), String> {
     keep().map_err(|e| format!("purlis could not keep your answer ({e})"))
 }
 
+/// Forgets that the project's Ask was answered, so it is said again.
+fn unanswer(root: &Path) {
+    match std::fs::remove_file(answered_at(root)) {
+        Ok(()) => {}
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+        Err(why) => tracing::warn!(
+            "purlis: the old harness plugin keys' Ask could not be offered again ({why})"
+        ),
+    }
+}
+
+/// **purlis's own change `one` was applied** in the project at `root`: the person's yes, which
+/// answers the Ask.
+pub fn purlis_change_applied(root: &Path, one: &Proposal) {
+    if one.session != BY_PURLIS {
+        return;
+    }
+    if let Err(why) = answer(root) {
+        tracing::warn!("purlis: {why}");
+    }
+}
+
+/// **purlis's own change `one` was dismissed** in the project at `root` (#3569). One that
+/// still applied is the person's no, which answers the Ask. One that went stale or can no
+/// longer be made is no answer: where its file still holds the keys, the Ask is offered again,
+/// with Remove.
+pub fn purlis_change_dismissed(root: &Path, one: &Proposal) {
+    if one.session != BY_PURLIS {
+        return;
+    }
+    let applied_still = matches!(
+        crate::proposals::now_of(root, one),
+        crate::proposals::Now::Made { .. }
+    );
+    if applied_still {
+        if let Err(why) = answer(root) {
+            tracing::warn!("purlis: {why}");
+        }
+    } else if old::found(root).iter().any(|found| found.file == one.path) {
+        unanswer(root);
+    }
+}
+
 /// One change Remove held: its proposal's id, and the file it changes.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct HeldRemoval {
@@ -80,8 +138,9 @@ pub struct HeldRemoval {
 
 /// **Remove**'s work in the project at `root`: a proposed change per file that holds the keys
 /// (its own two, then each workspace's manifest), held in `proposals` at `now` as purlis's, in
-/// file order. A file that cannot be made without them is left out, and the Ask is answered only
-/// once a change is held, so it never goes with nothing to apply.
+/// file order. A file that cannot be made without them is left out. The Ask is not answered
+/// here: it stays out of the Inbox while a change waits ([`notice_of`]), and is answered by what
+/// the person does with the change.
 pub fn removal_held(
     root: &Path,
     proposals: &Proposals,
@@ -101,7 +160,6 @@ pub fn removal_held(
     if held.is_empty() {
         return Err("purlis found no change to propose, so nothing waits for you".to_owned());
     }
-    answer(root)?;
     Ok(held)
 }
 
