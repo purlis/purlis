@@ -1,0 +1,197 @@
+<title>Skill page</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: frame A (page navigation | Library list | the skill's page). The skill's page is the subject; three variants.
+   PROTOTYPE for "Prototype: one skill's page" (purlis#3630): throwaway, fake data. */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --panel2:#eef0f3; --line:#dde1e7; --fg:#1d2330; --muted:#5d6676;
+  --accent:#5b4fd6; --accent-soft:#e9e6fb; --warn:#a15c00; --warn-soft:#fbefdc; --bad:#b4232c; --bad-soft:#fbe5e6;
+  --ok:#21724a; --ok-soft:#e2f3ea; --tag:#e7eaf0; --add:#e3f4e8; --del:#fbe8e8; --shadow:0 10px 30px rgba(20,24,40,.14);
+  --sans:"IBM Plex Sans",-apple-system,"Segoe UI",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --add:#16301f; --del:#3a1c1f; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#17191f; --panel:#1e2129; --panel2:#252933; --line:#323744; --fg:#e4e7ee; --muted:#98a0b0;
+  --accent:#a69cff; --accent-soft:#2e2a52; --warn:#f0b25c; --warn-soft:#3a2d17; --bad:#ff8a90; --bad-soft:#3d1f23;
+  --ok:#6fd19c; --ok-soft:#173326; --tag:#2b303b; --add:#16301f; --del:#3a1c1f; --shadow:0 10px 30px rgba(0,0,0,.5); color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:13px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 72px;box-sizing:border-box}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:4px}
+.note{max-width:1400px;margin:0 auto 10px;color:var(--muted);font-size:12px}.note b{color:var(--fg)}
+.win{max-width:1400px;margin:0 auto;height:calc(100% - 30px);min-height:600px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
+.tabs{display:flex;gap:2px;padding:6px 8px 0;background:var(--panel2);border-bottom:1px solid var(--line)}
+.tabs span{padding:6px 12px;border-radius:7px 7px 0 0;color:var(--muted)}
+.tabs span.on{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-bottom-color:var(--panel);margin-bottom:-1px}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.bar .crumb{color:var(--muted)}.bar .crumb b{color:var(--fg);font-weight:500}
+.nav2{display:flex;gap:2px}.nav2 button{width:26px;height:24px;border-radius:5px;border:1px solid var(--line)}
+.studio{flex:1;display:grid;grid-template-columns:160px 250px minmax(0,1fr);min-height:0}
+.snav{border-right:1px solid var(--line);padding:8px 6px;display:flex;flex-direction:column;gap:1px}
+.snav span{padding:5px 9px;border-radius:6px;display:flex;justify-content:space-between;color:var(--muted)}
+.snav span.on{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.snav .sep{height:1px;background:var(--line);margin:8px 4px;padding:0}
+.list{overflow:auto;border-right:1px solid var(--line)}
+.lrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.lrow:hover{background:var(--panel2)}.lrow.on{background:var(--accent-soft)}
+.lrow .nm{font-family:var(--mono);font-size:12.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .ds{grid-column:1/-1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.tag{font-size:10.5px;padding:0 6px;border-radius:9px;background:var(--tag);color:var(--muted);white-space:nowrap}
+.mark{font-size:10.5px;padding:0 6px;border-radius:9px;white-space:nowrap}
+.mark.warn{background:var(--warn-soft);color:var(--warn)}.mark.bad{background:var(--bad-soft);color:var(--bad)}.mark.acc{background:var(--accent-soft);color:var(--accent)}.mark.ok{background:var(--ok-soft);color:var(--ok)}
+.detail{overflow:auto;min-width:0;background:var(--panel)}
+.btn{border:1px solid var(--line);border-radius:6px;padding:4px 10px;background:var(--panel);white-space:nowrap}
+.btn:hover{background:var(--panel2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.dh{padding:16px 22px 12px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.dh h1{margin:0;font-family:var(--mono);font-size:19px;font-weight:500;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dh p{margin:0;color:var(--muted);max-width:70ch}
+.acts{display:flex;gap:6px;flex-wrap:wrap;position:relative;align-items:center}
+.menu{position:absolute;top:30px;right:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);padding:4px;min-width:210px;z-index:5}
+.menu button{display:block;width:100%;text-align:left;padding:6px 10px;border-radius:5px}.menu button:hover{background:var(--panel2)}.menu button.danger{color:var(--bad)}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 12px;border-radius:8px;border:1px solid var(--line)}
+.banner.warn{background:var(--warn-soft);border-color:transparent}.banner.bad{background:var(--bad-soft);border-color:transparent}.banner.acc{background:var(--accent-soft);border-color:transparent}
+.banner span{flex:1 1 260px}
+.dtabs{display:flex;gap:2px;padding:0 22px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.dtabs button{padding:8px 4px;margin-right:12px;color:var(--muted);border-bottom:2px solid transparent}
+.dtabs button.on{color:var(--fg);border-bottom-color:var(--accent)}
+.dtabs button .n{font-size:11px;color:var(--muted);margin-left:4px}
+.dbody{padding:16px 22px;display:grid;gap:18px;max-width:860px}
+.sec h2{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.kv{display:grid;grid-template-columns:140px minmax(0,1fr);gap:6px 16px;margin:0}
+.kv dt{color:var(--muted)}.kv dd{margin:0;min-width:0}
+code{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+.why{font-size:15px;line-height:1.5;max-width:62ch}
+.hz{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
+.hz div{border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+.hz div b{display:block;font-weight:500;margin-bottom:2px}
+.hz .none{color:var(--muted)}
+pre,.ed{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px;margin:0;white-space:pre-wrap;overflow:auto}
+.ed{width:100%;min-height:300px;color:var(--fg);resize:vertical}
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.render h3{margin:0 0 6px;font-size:15px}.render ol{margin:0;padding-left:18px}.render p{margin:0 0 8px}
+.diff div{font-family:var(--mono);font-size:12px;padding:1px 8px;white-space:pre-wrap}.diff .a{background:var(--add)}.diff .d{background:var(--del)}
+table{border-collapse:collapse;width:100%}
+td,th{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);font-weight:400;vertical-align:top}
+th{color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+td.num{font-variant-numeric:tabular-nums}
+.bar2{height:8px;border-radius:4px;background:var(--tag);position:relative;min-width:80px}
+.bar2 i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--accent)}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:0;min-height:100%}
+.rail{border-left:1px solid var(--line);padding:16px;display:grid;gap:16px;align-content:start;background:var(--panel)}
+.rail .fact{display:grid;gap:2px}.rail .fact small{color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+.vtabs{display:grid;grid-template-columns:130px minmax(0,1fr)}
+.vtabs nav{border-right:1px solid var(--line);padding:10px 6px;display:flex;flex-direction:column;gap:1px}
+.vtabs nav button{text-align:left;padding:6px 10px;border-radius:6px;color:var(--muted)}
+.vtabs nav button.on{background:var(--panel2);color:var(--fg);font-weight:500}
+.muted{color:var(--muted)}
+.dialogwrap{position:fixed;inset:0;background:rgba(10,12,20,.35);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);width:min(440px,100%);padding:18px}
+.dialog h2{margin:0 0 6px;font-size:15px}.dialog p{margin:0 0 14px;color:var(--muted)}.dialog .row{display:flex;gap:8px;justify-content:flex-end}
+.switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));background:#11131a;color:#f2f3f7;border-radius:24px;padding:6px 8px;display:flex;align-items:center;gap:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);z-index:30;font-size:12.5px;max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+.switcher button{color:#f2f3f7;border-radius:16px;padding:4px 10px}.switcher button:hover{background:#2a2e3a}
+.switcher .lbl{padding:0 6px;font-weight:600}.switcher .st{color:#aab0c0;padding:0 6px;font-size:11.5px}
+@media (max-width:1000px){.studio{grid-template-columns:minmax(0,1fr)}.snav,.list{display:none}.grid2{grid-template-columns:minmax(0,1fr)}.rail{border-left:0;border-top:1px solid var(--line)}.split{grid-template-columns:minmax(0,1fr)}.vtabs{grid-template-columns:minmax(0,1fr)}.vtabs nav{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+
+<div class="note"><b>Prototype, fake data.</b> One skill's page inside the studio frame that won (A). Three variants of the page; flip with the bar or ← →. Pick skills in the list to see each state: an ordinary skill, one that is off, one that needs review, one with an update, one the router hides, a built-in one. Try Edit and the “…” menu. Nothing is saved.</div>
+<div id="app"></div>
+
+<script>
+const K=[
+ {n:"deploy",lv:"project",d:"Deploys a service to staging or production with the checks the team agreed on: tests green, changelog entry, a tag.",st:"on",owner:"platform team",path:"skills/deploy/SKILL.md",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:{with:86,without:68,prev:80,when:"28 Oct",model:"sonnet",usd:"1.92"},runs:41,hist:3},
+ {n:"lint-rs",lv:"workspace smart-ide",d:"Runs clippy with the workspace's flags and explains each warning in one line.",st:"off",why:"It is off in smart-ide, so steward 5 doesn't get it.",fix:"Turn on in smart-ide",owner:"smart-ide",path:"workspaces/smart-ide/skills/lint-rs/SKILL.md",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:{with:74,without:69,prev:null,when:"20 Oct",model:"haiku",usd:"0.41"},runs:12,hist:2},
+ {n:"grilling",lv:"persona steward",d:"Interviews the person about a plan until every branch of the design tree is settled.",st:"review",why:"A chat changed it on 28 Oct. Chats keep the last version you accepted until you review this one.",fix:"Review the change",owner:"steward",path:"personas/steward/skills/grilling/SKILL.md",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:{with:90,without:71,prev:88,when:"27 Oct",model:"sonnet",usd:"2.30"},runs:22,hist:5},
+ {n:"brainstorming",lv:"project",d:"Turns a loose idea into a short design before any code is written.",st:"upd",why:"Superpowers has a newer version (4 lines changed). Nothing changes until you accept it.",fix:"Review the update",owner:"installed from Superpowers at 3f2a1c9",path:"skills/brainstorming/SKILL.md",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:null,runs:9,hist:1},
+ {n:"figma-handoff",lv:"project",d:"Checks a Figma frame against the built page and lists every gap.",st:"out",why:"The router hid it at steward 5's start: the chat's list was over budget and this skill scored lowest for the work.",fix:"Pin it to smart-ide",owner:"design",path:"skills/figma-handoff/SKILL.md",works:{"Claude Code":"full",Codex:"none",opencode:"none"},grade:{with:61,without:57,prev:null,when:"14 Oct",model:"haiku",usd:"0.33"},runs:3,hist:2},
+ {n:"browser",lv:"built-in",d:"Drives a real browser for a task that needs one, with credentials pulled from a vault.",st:"builtin",owner:"purlis",path:"ships with purlis",works:{"Claude Code":"full",Codex:"full",opencode:"full"},grade:null,runs:88,hist:0},
+];
+const V={a:"A · Facts first",b:"B · The answer first",c:"C · Text with a facts rail"};
+const S={v:(location.hash||"#a").slice(1),sel:"deploy",tab:"overview",edit:false,menu:false,dlg:null,diff:false};
+if(!V[S.v])S.v="a";
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const mk=k=>({off:["Off","warn"],out:["Left out","bad"],review:["Needs review","warn"],upd:["Update available","acc"],builtin:null,on:null})[k.st];
+const cur=()=>K.find(k=>k.n===S.sel);
+const TEXT=k=>`---\nname: ${k.n}\ndescription: ${k.d}\n---\n\n# ${k.n}\n\n1. Read the request and the project's conventions.\n2. Check the preconditions before doing anything.\n3. Do the work in small, checked steps.\n4. Say what changed and what to check next.\n`;
+function banner(k){
+  if(k.st==="on"||k.st==="builtin")return "";
+  const cls=k.st==="out"?"bad":k.st==="upd"?"acc":"warn";
+  return `<div class="banner ${cls}"><span>${esc(k.why)}</span><button class="btn ${k.st==="review"||k.st==="upd"?"primary":""}" data-a="fix">${esc(k.fix)}</button></div>`}
+function header(k,compact){
+  const m=mk(k), bi=k.st==="builtin";
+  const acts=bi?`<button class="btn primary">Use in this chat</button><span class="muted">Ships with purlis; it can't be edited, moved or turned off.</span>`:
+   `${k.st==="on"||k.st==="review"||k.st==="upd"?`<button class="btn primary">Use in this chat</button>`:""}<button class="btn" data-a="edit">${S.edit?"Stop editing":"Edit"}</button><button class="btn" data-a="grade">Grade</button><button class="btn" data-a="menu" aria-haspopup="menu" aria-label="More actions">…</button>
+   ${S.menu?`<div class="menu" role="menu"><button data-d="Rename">Rename…</button><button data-d="Move to another level">Move to another level…</button><button data-d="Deprecate">Deprecate…</button><button data-d="Archive">Archive…</button><button data-d="Open the file">Open the file</button><button class="danger" data-d="Delete">Delete…</button></div>`:""}`;
+  return `<div class="dh"><h1>${esc(k.n)} <span class="tag">${esc(k.lv)}</span>${m?`<span class="mark ${m[1]}">${m[0]}</span>`:""}</h1>${compact?"":`<p>${esc(k.d)}</p>`}<div class="acts">${acts}</div>${banner(k)}</div>`}
+function works(k){return `<div class="hz">${Object.entries(k.works).map(([h,v])=>`<div class="${v==="none"?"none":""}"><b>${h}</b>${v==="full"?"Gets it as written":v==="none"?"Can't take it: no skill format":"Partly"}</div>`).join("")}</div>`}
+function gradeLine(k){if(!k.grade)return k.st==="builtin"?"Built-in skills are graded by purlis's own tests.":"Not graded yet. <button class='btn' data-a='grade'>Grade</button>";
+  const g=k.grade;return `${g.with}% with it, ${g.without}% without${g.prev?`, ${g.prev}% on the previous version`:""} · ${g.when}, ${g.model}, $${g.usd}`}
+function tabBody(k){
+  if(S.tab==="text"){
+    if(S.edit)return `<textarea class="ed" id="ed" aria-label="SKILL.md">${esc(TEXT(k))}</textarea><div class="acts"><button class="btn primary" data-a="save">Save</button><button class="btn" data-a="edit">Discard</button><span class="muted">Saving makes a new version; chats started after it get it.</span></div>`;
+    if(S.v==="b")return `<div class="split"><div class="render"><h3>${esc(k.n)}</h3><p class="muted">${esc(k.d)}</p><ol><li>Read the request and the project's conventions.</li><li>Check the preconditions before doing anything.</li><li>Do the work in small, checked steps.</li><li>Say what changed and what to check next.</li></ol></div><pre>${esc(TEXT(k))}</pre></div>`;
+    return `<pre>${esc(TEXT(k))}</pre>`}
+  if(S.tab==="history"){if(!k.hist)return `<p class="muted">Built-in skills change with purlis itself; see the release notes.</p>`;
+    return `<table><tr><th>Saved</th><th>By</th><th>Change</th><th>Grade</th><th></th></tr>
+     ${k.st==="review"?`<tr><td>28 Oct</td><td>chat steward 3</td><td>Asks one question at a time <span class="mark warn">Not accepted</span></td><td>—</td><td><button class="btn primary" data-a="fix">Review</button></td></tr>`:""}
+     <tr><td>27 Oct</td><td>you</td><td>Tighter steps for rollbacks</td><td class="num">${k.grade?k.grade.with+"%":"—"}</td><td><button class="btn" data-a="diff">Diff</button></td></tr>
+     <tr><td>21 Oct</td><td>you</td><td>First version</td><td class="num">${k.grade&&k.grade.prev?k.grade.prev+"%":"—"}</td><td><button class="btn" data-d="Revert to this version">Revert to this…</button></td></tr></table>
+     ${S.diff?`<div class="diff" style="margin-top:10px"><div class="d">- 3. Do the work.</div><div class="a">+ 3. Do the work in small, checked steps.</div><div class="a">+ 4. Say what changed and what to check next.</div></div>`:""}`}
+  if(S.tab==="grades"){if(!k.grade)return `<p class="muted">${k.st==="builtin"?"Built-in skills aren't graded here.":"Not graded yet."}</p>${k.st==="builtin"?"":`<button class="btn primary" data-a="grade">Grade ${esc(k.n)}</button>`}`;
+    const g=k.grade;const row=(w,l)=>`<div style="display:grid;grid-template-columns:150px minmax(0,1fr) 44px;gap:10px;align-items:center"><span class="muted">${l}</span><div class="bar2"><i style="width:${w}%"></i></div><span class="num">${w}%</span></div>`;
+    return `<div class="sec"><h2>Latest · ${g.when} · ${g.model} · $${g.usd}</h2><div style="display:grid;gap:6px">${row(g.with,"With it")}${row(g.without,"Without it")}${g.prev?row(g.prev,"Previous version"):""}</div></div>
+     <table><tr><th>When</th><th>Model</th><th>With</th><th>Without</th><th>Spent</th><th></th></tr><tr><td>${g.when}</td><td>${g.model}</td><td class="num">${g.with}%</td><td class="num">${g.without}%</td><td class="num">$${g.usd}</td><td><button class="btn">Scorecard</button></td></tr></table>
+     <label class="muted"><input type="checkbox"> Grade after each edit (shows what each edit may spend before it turns on)</label>`}
+  if(S.tab==="runs")return k.runs?`<table><tr><th>Chat</th><th>When</th><th>How it went</th></tr><tr><td>steward 5</td><td>today 14:02</td><td>finished</td></tr><tr><td>reviewer 2</td><td>yesterday 17:40</td><td>finished</td></tr><tr><td>steward 3</td><td>26 Oct</td><td>stopped by the person</td></tr></table><p class="muted">${k.runs} runs in the last 30 days.</p>`:`<p class="muted">No chat has run it yet.</p>`;
+  // overview
+  const who=k.st==="on"||k.st==="builtin"?"Every chat in smart-ide gets it, steward 5 included.":k.why;
+  if(S.v==="b")return `<div class="why">${esc(who)}</div>${works(k)}
+    <div class="sec"><h2>How it scores</h2><div>${gradeLine(k)}</div></div>
+    <div class="sec"><h2>About</h2><dl class="kv"><dt>Where it lives</dt><dd><code>${esc(k.path)}</code></dd><dt>Owner</dt><dd>${esc(k.owner)}</dd><dt>Runs</dt><dd>${k.runs} in the last 30 days</dd></dl></div>`;
+  return `<dl class="kv"><dt>Who gets it</dt><dd>${esc(who)}</dd><dt>Where it lives</dt><dd><code>${esc(k.path)}</code></dd><dt>Owner</dt><dd>${esc(k.owner)}</dd><dt>Grade</dt><dd>${gradeLine(k)}</dd><dt>Runs</dt><dd>${k.runs} in the last 30 days</dd></dl><div class="sec"><h2>Works on</h2>${works(k)}</div>`}
+function tabs(k,vertical){
+  const t=[["overview","Overview"],["text","Text"],["history","History",k.hist||""],["grades","Grades",k.grade?1:""],["runs","Runs",k.runs||""]];
+  const b=t.map(([id,l,n])=>`<button class="${S.tab===id?"on":""}" data-t="${id}">${l}${n!==""&&n!==undefined?`<span class="n">${n}</span>`:""}</button>`).join("");
+  return vertical?`<nav aria-label="Skill sections">${b}</nav>`:`<div class="dtabs" role="tablist">${b}</div>`}
+function page(){const k=cur();
+  if(S.v==="c"){ // header compact, vertical sections, a facts rail
+    const facts=`<div class="rail"><div class="fact"><small>Who gets it</small>${esc(k.st==="on"||k.st==="builtin"?"Every chat in smart-ide":k.why)}</div><div class="fact"><small>Works on</small>${Object.entries(k.works).map(([h,v])=>`${h}: ${v==="full"?"yes":"no"}`).join("<br>")}</div><div class="fact"><small>Grade</small>${k.grade?`${k.grade.with}% with · ${k.grade.without}% without`:"Not graded"}</div><div class="fact"><small>Lives in</small><code>${esc(k.path)}</code></div><div class="fact"><small>Owner</small>${esc(k.owner)}</div></div>`;
+    if(S.tab==="overview")S.tab="text";
+    return header(k,false)+`<div class="grid2"><div class="vtabs">${tabs(k,true).replace(/<button class="[^"]*" data-t="overview">Overview<\/button>/,"")}<div class="dbody">${tabBody(k)}</div></div>${facts}</div>`}
+  return header(k,false)+tabs(k,false)+`<div class="dbody">${tabBody(k)}</div>`}
+function render(){
+  const k=cur();
+  document.getElementById("app").innerHTML=`<div class="win"><div class="tabs"><span>steward 5</span><span class="on">Skill studio</span></div>
+  <div class="bar"><div class="nav2"><button aria-label="Back">‹</button><button aria-label="Forward">›</button></div><span class="crumb">Library › <b>${esc(k.n)}</b>${S.tab!=="overview"?` › ${S.tab}`:""}</span></div>
+  <div class="studio"><div class="snav"><span class="on">Library</span><span>Needs you <b style="font-weight:400;color:var(--warn)">2</b></span><span>Drafts</span><span>Sources</span><span>Deleted</span><span class="sep"></span><span>Harness skills</span><span>Routing</span></div>
+  <div class="list">${K.map(x=>{const m=mk(x);return `<div class="lrow ${x.n===S.sel?"on":""}" data-s="${x.n}" tabindex="0"><span class="nm">${esc(x.n)}</span><span>${m?`<span class="mark ${m[1]}">${m[0]}</span>`:`<span class="tag">${esc(x.lv.split(" ")[0])}</span>`}</span><span class="ds">${esc(x.d)}</span></div>`}).join("")}</div>
+  <div class="detail">${page()}</div></div></div>
+  ${S.dlg?`<div class="dialogwrap" data-a="close"><div class="dialog" role="dialog" aria-modal="true"><h2>${esc(S.dlg)}${S.dlg==="Open the file"?"":" "+esc(k.n)+"?"}</h2><p>${({Delete:"It moves to Deleted for 30 days, where you can bring it back. Chats started after this don't get it.",Rename:"Chats started after this see the new name. Pins and grades move with it.","Move to another level":"Pick where it lives: the project, a workspace, a persona or this machine only. Who gets it changes with the level.",Deprecate:"Chats still get it, with a line that points them to what replaces it.",Archive:"It stays here but no chat loads it until you unarchive it.","Revert to this version":"This saves a new version with the old text; history keeps both.","Open the file":"SKILL.md opens in an editor tab, like any file."})[S.dlg]||""}</p><div class="row"><button class="btn" data-a="close">Cancel</button><button class="btn ${S.dlg==="Delete"?"danger":"primary"}" data-a="close">${esc(S.dlg==="Open the file"?"Open":S.dlg.split(" ")[0])}</button></div></div></div>`:""}
+  <div class="switcher" role="toolbar" aria-label="Prototype switcher"><button data-a="prev" aria-label="Previous variant">←</button><span class="lbl">${V[S.v]}</span><button data-a="next" aria-label="Next variant">→</button><span class="st">${esc(k.n)} · ${S.tab}${S.edit?" · editing":""}</span></div>`}
+document.addEventListener("click",e=>{const t=e.target.closest("[data-a],[data-s],[data-t],[data-d]");if(!t)return;const d=t.dataset;
+  if(d.s){S.sel=d.s;S.edit=false;S.menu=false;S.diff=false;if(S.v!=="c")S.tab="overview";render();return}
+  if(d.t){S.tab=d.t;render();return}
+  if(d.d){S.dlg=d.d;S.menu=false;render();return}
+  const a=d.a;
+  if(a==="menu")S.menu=!S.menu;
+  else if(a==="edit"){S.edit=!S.edit;S.tab="text"}
+  else if(a==="save")S.edit=false;
+  else if(a==="grade")S.tab="grades";
+  else if(a==="fix"){if(cur().st==="review"||cur().st==="upd"){S.tab="history";S.diff=true}}
+  else if(a==="diff")S.diff=!S.diff;
+  else if(a==="close"){if(e.target!==t&&t.classList.contains("dialogwrap"))return;S.dlg=null}
+  else if(a==="prev"||a==="next"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(a==="next"?1:2))%3];S.tab=S.v==="c"?"text":"overview";try{history.replaceState(null,"","#"+S.v)}catch(_){}}
+  render()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){S.dlg=null;S.menu=false;render();return}
+  if(e.target.closest&&e.target.closest("input,textarea,select,[contenteditable]"))return;
+  if(e.key==="ArrowLeft"||e.key==="ArrowRight"){const ks=Object.keys(V);S.v=ks[(ks.indexOf(S.v)+(e.key==="ArrowRight"?1:2))%3];S.tab=S.v==="c"?"text":"overview";try{history.replaceState(null,"","#"+S.v)}catch(_){}render()}
+  if(e.key==="Enter"&&e.target.dataset&&e.target.dataset.s)e.target.click()});
+render();
+</script>
