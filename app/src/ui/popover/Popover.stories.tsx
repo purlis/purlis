@@ -16,6 +16,7 @@ import { Button } from "../button/Button";
 import { InlineMenu, MenuItem } from "../menu/Menu";
 import {
   AnchoredPopover,
+  HeldPopover,
   PopoverDialog,
   PopoverFilter,
   PopoverFooter,
@@ -211,5 +212,62 @@ export const ARefusalBesideItsField: Story = {
     // It took no keyboard.
     await expect(box).toHaveFocus();
     expectFocusInSight();
+  },
+};
+
+/** A panel list's row with its card held open beside it, on the side it opens from, with the
+ *  point it takes from the row, as `PanelList`'s row card is drawn. */
+function HeldRowCard() {
+  const row = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(true);
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", inlineSize: "40rem" }}>
+      <button
+        ref={row}
+        type="button"
+        className="ui-row"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((was) => !was)}
+      >
+        steward 4
+      </button>
+      <HeldPopover
+        triggerRef={row}
+        isOpen={open}
+        onOpenChange={setOpen}
+        className="row-card"
+        side="left"
+        align="start"
+        offset={6}
+        arrow
+        aria-label="steward 4"
+      >
+        <p style={{ margin: 0 }}>Running in alpha, on claude.</p>
+      </HeldPopover>
+    </div>
+  );
+}
+
+/**
+ * **A held card's point** (#3648's review): the SVG triangle in the surface's own ground, and
+ * nothing behind it. The notice card's point is a part of its own (`point`), so no rule of it
+ * reaches this one: no box, no edge and no turn.
+ */
+export const AHeldCardsPoint: Story = {
+  render: () => <HeldRowCard />,
+  play: async () => {
+    const card = await screen.findByRole("dialog", { name: "steward 4" });
+    const surface = card.closest<HTMLElement>('[data-scope="popover"][data-part="root"]');
+    const arrow = surface?.querySelector<HTMLElement>('[data-scope="popover"][data-part="arrow"]');
+    await expect(arrow?.querySelector("svg")).not.toBeNull();
+    const drawn = getComputedStyle(arrow as HTMLElement);
+    // No fill: its colour's alpha is nothing, however the engine writes "transparent".
+    const alpha = Number(drawn.backgroundColor.match(/[\d.]+/g)?.[3] ?? 1);
+    await expect(alpha).toBe(0);
+    await expect(drawn.borderTopStyle).toBe("none");
+    await expect(drawn.rotate).toBe("none");
+    // What it says is drawn whole beside its point.
+    await expect(within(card).getByText("Running in alpha, on claude.")).toBeVisible();
   },
 };

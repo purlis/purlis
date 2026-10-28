@@ -243,7 +243,7 @@
   margin-block-start: -1px;
 }
 
-[data-scope="popover"][data-part="arrow"] {
+[data-scope="popover"][data-part="point"] {
   display: block;
   box-sizing: border-box;
   inline-size: 11px;
@@ -256,10 +256,10 @@
 
 /* Its centre on the card's edge: the half that points at what it hangs from is shown. Moved,
    not laid out: the box it is in stays where React Aria put it. */
-[data-scope="popover"][data-of="notice"][data-placement="bottom"] > [data-part="arrow"] {
+[data-scope="popover"][data-of="notice"][data-placement="bottom"] > [data-part="point"] {
   translate: 0 3.5px;
 }
 
-[data-scope="popover"][data-of="notice"][data-placement="top"] > [data-part="arrow"] {
+[data-scope="popover"][data-of="notice"][data-placement="top"] > [data-part="point"] {
   translate: 0 -5.5px;
 }

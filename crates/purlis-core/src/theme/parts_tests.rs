@@ -1382,7 +1382,7 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     assert_eq!(
         names(&popover, "parts"),
         [
-            "root", "filter", "rule", "list", "header", "footer", "key", "arrow"
+            "root", "filter", "rule", "list", "header", "footer", "key", "point"
         ]
     );
     assert_eq!(names(&popover, "variants"), ["popover", "menu", "notice"]);

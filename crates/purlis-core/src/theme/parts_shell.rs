@@ -560,7 +560,8 @@ pub(super) const TITLEBAR: Family = Family {
         ("dot", "surface.base"),
     ],
     corner_most: None,
-    around: &[],
+    // A chip's notice dot is the chip's sibling in its slot (#3648), drawn around the chip.
+    around: &["dot"],
     // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
     fills: &[("count", "wash.warning"), ("dot", "accent.base")],
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface

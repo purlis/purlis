@@ -159,6 +159,8 @@ export function TitleBarSwitch({
   // **The chip a card hangs from** (#3648): found in the strip as it is drawn, so a chip drawn
   // again, or scrolled, is still the one the card points at.
   const cardOn = notices?.open;
+  /** The chip whose dot was pressed: its card takes the keyboard as it comes (#3648's review). */
+  const [handTo, setHandTo] = useState<string>();
   const anchor = useMemo(
     () => ({
       get current(): Element | null {
@@ -333,7 +335,14 @@ export function TitleBarSwitch({
             workspace={workspace === OUTSIDE ? OUTSIDE_TITLE : workspace}
             count={shows.count}
             kind={shows.kind}
-            onPress={() => notices.show(workspace)}
+            // The house is no strip's: its dot is a Tab stop of its own.
+            stop={workspace === OUTSIDE}
+            onPress={() => {
+              // A press is the person asking for it: the keyboard goes to the card, since the
+              // dot it was on goes as the card comes (WCAG 2.4.3).
+              setHandTo(workspace);
+              notices.show(workspace);
+            }}
           />
         )}
         {withMenu(workspace, drawn)}
@@ -381,6 +390,7 @@ export function TitleBarSwitch({
             ref={house}
             name={OUTSIDE_TITLE}
             current={focused === OUTSIDE}
+            notices={noticesOn(OUTSIDE)}
             onPress={() => goTo(OUTSIDE)}
           />,
         )}
@@ -427,6 +437,8 @@ export function TitleBarSwitch({
             notices={card}
             anchor={anchor}
             does={notices}
+            takesKeyboard={handTo === cardOn}
+            onKeyboardTaken={() => setHandTo(undefined)}
           />
         )}
       {open === "workspaces" && (

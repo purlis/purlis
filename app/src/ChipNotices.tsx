@@ -1,7 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useMemo, useState, type KeyboardEvent, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 import type { Said } from "./actions";
 import { ActionResultNotice } from "./ActionResultNotice";
 import type { KeptResult } from "./keptResults";
@@ -77,23 +85,34 @@ export function useChipNotices({
     }
     return by;
   }, [kept, plane, chips]);
-  const [up, setUp] = useState<{ open: string | undefined; seen: Said | undefined }>({
-    open: undefined,
-    seen: said,
-  });
+  // **Which card is up, and in which project** (#3648's review): a card is up only in the
+  // project whose result brought it up, and a project brought to the front brings none up.
+  const [up, setUp] = useState<{
+    open: string | undefined;
+    on: string | undefined;
+    seen: Said | undefined;
+    in: string | undefined;
+  }>({ open: undefined, on: plane, seen: said, in: plane });
   let open = up.open;
-  if (said !== up.seen) {
-    // By what it is about, not by the chips drawn now: a workspace just made is said before
-    // the title bar has heard of its chip, and its card comes up as the chip does.
-    const about = said === undefined ? undefined : aboutOf(said);
-    open = about !== undefined && "workspace" in about ? about.workspace : open;
-    setUp({ open, seen: said });
+  let openIn = up.on;
+  if (said !== up.seen || plane !== up.in) {
+    if (plane === up.in) {
+      // A new result in the project in front. By what it is about, not by the chips drawn now:
+      // a workspace just made is said before the title bar has heard of its chip, and its card
+      // comes up as the chip does. A result about no workspace takes the card down.
+      const about = said === undefined ? undefined : aboutOf(said);
+      open = about !== undefined && "workspace" in about ? about.workspace : undefined;
+      openIn = plane;
+    }
+    // Another project in front: what it said while it was behind stays behind its dots.
+    setUp({ open, on: openIn, seen: said, in: plane });
   }
+  const shown = openIn === plane ? open : undefined;
   return {
     on,
     // A card with nothing left on it is down.
-    open: open !== undefined && on.has(open) ? open : undefined,
-    show: (workspace) => setUp((was) => ({ ...was, open: workspace })),
+    open: shown !== undefined && on.has(shown) ? shown : undefined,
+    show: (workspace) => setUp((was) => ({ ...was, open: workspace, on: plane })),
     hide: () => setUp((was) => ({ ...was, open: undefined })),
     dismiss: drop,
     onSettings,
@@ -122,7 +141,13 @@ export function ChipCard({
   notices,
   anchor,
   does,
+  takesKeyboard = false,
+  onKeyboardTaken,
 }: {
+  /** Brought back by a press of its dot: the keyboard goes into it as it comes, which no notice
+   *  coming of itself ever does. */
+  takesKeyboard?: boolean;
+  onKeyboardTaken?: () => void;
   workspace: string;
   /** What the workspace is called: its name, or the plane root's (`OUTSIDE_TITLE`). */
   named: string;
@@ -131,6 +156,28 @@ export function ChipCard({
   anchor: RefObject<Element | null>;
   does: ChipNotices;
 }) {
+  const region = useRef<HTMLDivElement>(null);
+  const handed = useRef({ takesKeyboard, onKeyboardTaken });
+  useLayoutEffect(() => {
+    handed.current = { takesKeyboard, onKeyboardTaken };
+  });
+  // Once React Aria has placed it (it is drawn hidden until then), a frame or a few later.
+  useEffect(() => {
+    if (!takesKeyboard) return;
+    let frames = 0;
+    let asked = 0;
+    const land = () => {
+      const at = region.current;
+      at?.focus({ preventScroll: true });
+      if ((at !== null && document.activeElement === at) || ++frames > 10) {
+        handed.current.onKeyboardTaken?.();
+        return;
+      }
+      asked = requestAnimationFrame(land);
+    };
+    asked = requestAnimationFrame(land);
+    return () => cancelAnimationFrame(asked);
+  }, [takesKeyboard]);
   const escape = (event: KeyboardEvent) => {
     if (event.key !== "Escape") return;
     event.stopPropagation();
@@ -140,6 +187,7 @@ export function ChipCard({
   return (
     <HungPopover triggerRef={anchor} isOpen onHide={does.hide} className="chip-card">
       <div
+        ref={region}
         role="region"
         aria-label={`Notices for ${named}`}
         tabIndex={-1}

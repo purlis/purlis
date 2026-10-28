@@ -289,61 +289,87 @@ describe("the ready notice hangs from its chip (#3648)", () => {
   });
 });
 
-describe("a notice about the plane root (the dispatcher's ruling on #3648)", () => {
-  /** The title bar alone, with a notice about the plane root, its card up or hidden. */
-  function Bar({ startOpen }: { startOpen: boolean }) {
-    const [open, setOpen] = useState<string | undefined>(startOpen ? OUTSIDE : undefined);
-    const said: Said = {
-      from: "x",
-      refused: false,
-      title: "The root moved",
-      words: "",
-      workspace: OUTSIDE,
-    };
-    return (
-      <TitleBarSwitch
-        projects={[
-          {
-            plane: PLANE,
-            name: "one",
-            waiting: 0,
-            workspaces: { names: ["alpha"], pins: ["alpha"], focused: "alpha", waiting: {} },
-          },
-        ]}
-        inFront={PLANE}
-        railShown
-        does={{
-          go: () => undefined,
-          choose: () => undefined,
-          pin: () => undefined,
-          create: () => undefined,
-        }}
-        notices={{
-          on: new Map([[OUTSIDE, [{ id: 1, kind: "info", said }]]]),
-          open,
-          show: setOpen,
-          hide: () => setOpen(undefined),
-          dismiss: () => undefined,
-          onSettings: () => undefined,
-        }}
-      />
-    );
-  }
+/** The title bar alone, with one notice about `on` (a pin, or the plane root), its card up or
+ *  hidden, as the window holds it. */
+function Bar({ on, startOpen }: { on: string; startOpen: boolean }) {
+  const [open, setOpen] = useState<string | undefined>(startOpen ? on : undefined);
+  const said: Said = {
+    from: "x",
+    refused: false,
+    title: on === OUTSIDE ? "The root moved" : `About ${on}`,
+    words: "",
+    workspace: on,
+  };
+  return (
+    <TitleBarSwitch
+      projects={[
+        {
+          plane: PLANE,
+          name: "one",
+          waiting: 0,
+          workspaces: { names: ["alpha"], pins: ["alpha"], focused: "alpha", waiting: {} },
+        },
+      ]}
+      inFront={PLANE}
+      railShown
+      does={{
+        go: () => undefined,
+        choose: () => undefined,
+        pin: () => undefined,
+        create: () => undefined,
+      }}
+      notices={{
+        on: new Map([[on, [{ id: 1, kind: "info", said }]]]),
+        open,
+        show: setOpen,
+        hide: () => setOpen(undefined),
+        dismiss: () => undefined,
+        onSettings: () => undefined,
+      }}
+    />
+  );
+}
 
+describe("a dot pressed from the keyboard (#3648's review, WCAG 2.4.3)", () => {
+  it("hands the keyboard to the card it brings back, not to the page", async () => {
+    render(<Bar on="alpha" startOpen={false} />);
+    const dot = screen.getByRole("button", { name: "Show the notice on alpha" });
+    dot.focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await screen.findByRole("region", { name: "Notices for alpha" });
+    await waitFor(() => expect(card).toHaveFocus());
+  });
+});
+
+describe("a notice about the plane root (the dispatcher's ruling on #3648)", () => {
   it("hangs from the root's house chip, outside the strip", async () => {
-    render(<Bar startOpen />);
+    render(<Bar on={OUTSIDE} startOpen />);
     const card = await screen.findByRole("region", { name: "Notices for Plane root" });
     expect(card).toHaveTextContent("The root moved");
     expect(card).toHaveAttribute("data-chip", OUTSIDE);
   });
 
   it("leaves its dot on the house chip, which brings the card back", async () => {
-    render(<Bar startOpen={false} />);
+    render(<Bar on={OUTSIDE} startOpen={false} />);
     const dot = screen.getByRole("button", { name: "Show the notice on Plane root" });
     expect(screen.getByRole("toolbar", { name: "Pinned workspaces" }).contains(dot)).toBe(false);
     await userEvent.click(dot);
     expect(
       await screen.findByRole("region", { name: "Notices for Plane root" }),
     ).toBeInTheDocument();
+  });
+
+  it("is a Tab stop of its own on the house, which says it has a notice", async () => {
+    render(<Bar on={OUTSIDE} startOpen={false} />);
+    const dot = screen.getByRole("button", { name: "Show the notice on Plane root" });
+    // Outside the strip, no arrow walk reaches it: it is a Tab stop, as the house is.
+    expect(dot).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("button", { name: "Plane root" })).toHaveAccessibleDescription(
+      "1 notice",
+    );
+    dot.focus();
+    await userEvent.keyboard("{Enter}");
+    const card = await screen.findByRole("region", { name: "Notices for Plane root" });
+    await waitFor(() => expect(card).toHaveFocus());
   });
 });

@@ -160,7 +160,7 @@ export const HangsFromItsChip: Story = {
     const surface = surfaceOf(card).getBoundingClientRect();
     await expect(Math.abs(centre(surface) - centre(chip))).toBeLessThanOrEqual(1.5);
     await expect(surface.top).toBeGreaterThan(chip.bottom);
-    const point = surfaceOf(card).querySelector('[data-part="arrow"]') as HTMLElement;
+    const point = surfaceOf(card).querySelector('[data-part="point"]') as HTMLElement;
     await expect(
       Math.abs(centre(point.getBoundingClientRect()) - centre(chip)),
     ).toBeLessThanOrEqual(1.5);
@@ -235,7 +235,7 @@ export const AtTheWindowEdge: Story = {
     // Shifted: centred, it would start left of the window.
     await expect(centre(house) - surface.width / 2).toBeLessThan(8);
     await expect(centre(surface)).toBeGreaterThan(centre(house));
-    const point = surfaceOf(card).querySelector('[data-part="arrow"]') as HTMLElement;
+    const point = surfaceOf(card).querySelector('[data-part="point"]') as HTMLElement;
     await expect(
       Math.abs(centre(point.getBoundingClientRect()) - centre(house)),
     ).toBeLessThanOrEqual(1.5);

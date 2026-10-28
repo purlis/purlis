@@ -73,6 +73,22 @@ describe("a chip's notice dot (#3648)", () => {
     expect(pressed).toBe(1);
   });
 
+  it("is reached by its own attributes, beside the chip and not in it, as a theme's rule is", () => {
+    // The engine writes `titlebar.dot.*` around the chip (`TITLEBAR.around`, #3648's review):
+    // `:where([data-scope="titlebar"][data-part="dot"])`, which must be the dot drawn.
+    render(
+      <ChipSlot>
+        <NoticeDot workspace="gamma" count={1} kind="info" onPress={() => undefined} />
+        <WorkspaceChip name="gamma" />
+      </ChipSlot>,
+    );
+    const matched = document.querySelectorAll(':where([data-scope="titlebar"][data-part="dot"])');
+    expect([...matched]).toEqual([
+      screen.getByRole("button", { name: "Show the notice on gamma" }),
+    ]);
+    expect(matched[0].closest('[data-part="workspace"]')).toBeNull();
+  });
+
   it("says how many it shows", () => {
     render(<NoticeDot workspace="gamma" count={3} kind="info" onPress={() => undefined} />);
     expect(screen.getByRole("button", { name: "Show the 3 notices on gamma" })).toBeInTheDocument();

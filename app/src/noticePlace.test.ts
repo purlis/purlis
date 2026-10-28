@@ -45,7 +45,7 @@ describe("where a notice is drawn (spec #3647, the one test seam)", () => {
     [
       "about a workspace while the plane root is in front and nothing is pinned",
       ABOUT_GAMMA,
-      [],
+      [ROOT],
       { at: "centre", open: "gamma" },
     ],
     [

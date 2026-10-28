@@ -186,11 +186,14 @@ export function NoticeDot({
   workspace,
   count,
   kind,
+  stop = false,
   onPress,
 }: {
   workspace: string;
   count: number;
   kind: NoticeKind;
+  /** A Tab stop of its own, where no strip's arrows walk to it: the plane root's house's. */
+  stop?: boolean;
   onPress: () => void;
 }) {
   const marked = useMarked({ onClick: onPress }, false);
@@ -199,7 +202,7 @@ export function NoticeDot({
     <button
       type="button"
       {...marked}
-      tabIndex={-1}
+      tabIndex={stop ? 0 : -1}
       aria-label={
         count === 1
           ? `Show the notice on ${workspace}`
@@ -224,6 +227,7 @@ export function NoticeDot({
 export function RootChip({
   name,
   current,
+  notices,
   onPress,
   ref,
   ...handed
@@ -232,6 +236,8 @@ export function RootChip({
   name: string;
   /** The plane root is in front. */
   current: boolean;
+  /** The notices about the root its dot shows (#3648), said in its description. */
+  notices?: { count: number; kind: NoticeKind };
   onPress: () => void;
   ref?: Ref<HTMLButtonElement>;
   /** `data-*` attributes reach the element as they are. */
@@ -239,6 +245,8 @@ export function RootChip({
 }) {
   // What a context menu around it hands it (`asChild`) reaches the button with the press.
   const marked = useMarked({ ...handed, onClick: onPress }, current);
+  const said = useId();
+  const shows = notices !== undefined && notices.count > 0;
   return (
     <Tooltip tip={name}>
       <button
@@ -248,12 +256,25 @@ export function RootChip({
         // A Tab stop of its own, before the strip's one (it is not in the strip).
         tabIndex={0}
         aria-label={name}
+        aria-describedby={
+          [
+            (handed as { "aria-describedby"?: string })["aria-describedby"],
+            shows ? said : undefined,
+          ]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
         aria-current={current ? "true" : undefined}
         data-scope="titlebar"
         data-part="workspace"
         data-variant="root"
       >
         <House aria-hidden="true" />
+        {shows && (
+          <span id={said} hidden>
+            {noticesSaid(notices.count)}
+          </span>
+        )}
       </button>
     </Tooltip>
   );

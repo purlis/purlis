@@ -7,6 +7,9 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+/// <reference types="node" />
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { useRef, useState } from "react";
 import { InlineMenu, MenuItem } from "../menu/Menu";
 import { AnchoredPopover, HungPopover, PopoverFilter, PopoverFooter, PopoverList } from "./Popover";
@@ -91,7 +94,9 @@ describe("a popover hung from what it is about (#3648)", () => {
       .closest('[data-scope="popover"][data-part="root"]');
     expect(root).toHaveAttribute("data-variant", "notice");
     expect(root).toHaveAttribute("data-placement", "bottom");
-    expect(root?.querySelector('[data-part="arrow"]')).not.toBeNull();
+    // Its point is a part of its own: the SVG arrow a held popover draws is not it.
+    expect(root?.querySelector('[data-scope="popover"][data-part="point"]')).not.toBeNull();
+    expect(root?.querySelector('[data-part="arrow"]')).toBeNull();
   });
 
   it("takes no keyboard as it comes", () => {
@@ -111,9 +116,36 @@ describe("a popover hung from what it is about (#3648)", () => {
     expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
   });
 
+  it("stays up while what it hangs from scrolls, as a strip brings a new chip into view", () => {
+    // React Aria closes a popover that is not modal when an ancestor of its trigger scrolls; a
+    // chip's card is not taken down by its strip scrolling the chip into sight (R104).
+    render(
+      <div data-testid="strip" style={{ overflowX: "auto" }}>
+        <Hung />
+      </div>,
+    );
+    fireEvent.scroll(screen.getByTestId("strip"));
+    expect(screen.getByRole("region", { name: "Notices for gamma" })).toBeInTheDocument();
+  });
+
   it("is hidden by a press on what it hangs from, too", () => {
     render(<Hung />);
     fireEvent.pointerDown(screen.getByRole("button", { name: "gamma" }));
     expect(screen.queryByRole("region", { name: "Notices for gamma" })).toBeNull();
+  });
+});
+
+describe("the family's stylesheet (#3648's review)", () => {
+  const css = readFileSync(join(process.cwd(), "src/ui/popover/popover.css"), "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  it("draws a held popover's SVG arrow by its path alone, and the notice's point apart", () => {
+    // A box, an edge or a turn on the arrow would draw a diamond behind a held popover's triangle.
+    const arrow = [...css.matchAll(/([^{}]*\[data-part="arrow"\][^{}]*)\{([^}]*)\}/g)];
+    expect(arrow.map(([, selector]) => selector.trim())).toEqual([
+      '[data-scope="popover"][data-part="arrow"] svg',
+    ]);
+    expect(css).toContain('[data-scope="popover"][data-part="point"] {');
   });
 });

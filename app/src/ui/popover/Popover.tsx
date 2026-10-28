@@ -261,6 +261,8 @@ export function Surface({
   onOpenChange?: (isOpen: boolean) => void;
   shouldFlip?: boolean;
   shouldCloseOnInteractOutside?: (element: Element) => boolean;
+  /** Along the side it opens on, in px: a notice card's nudge that places it again (#3648). */
+  crossOffset?: number;
   children: ReactNode;
 }) {
   const shown = useProjectShown();
@@ -466,6 +468,11 @@ export function HeldPopover({
  *   inside it: a card's Esc dismisses what it says, and Esc anywhere else is not the card's (a
  *   terminal's Esc is the chat's).
  * - **No timer** takes it down (WCAG 2.2.1).
+ * - **What it hangs from scrolling moves it, never takes it down** (#3648's review): React Aria
+ *   closes a popover that is not modal when an ancestor of its trigger scrolls, but a strip
+ *   scrolling a chip into sight (R104) is no reason to hide that chip's card. The scroll is
+ *   followed instead: a nudge of a hundredth of a pixel along its side is what asks React Aria
+ *   to place it again.
  */
 export function HungPopover({
   triggerRef,
@@ -482,22 +489,42 @@ export function HungPopover({
   children: ReactNode;
 }) {
   useClosedFromOutside({ isOpen, close: onHide, triggerRef, opener: "none", escape: false });
+  const [nudge, setNudge] = useState(0);
+  useEffect(() => {
+    if (!isOpen) return;
+    let asked = 0;
+    const scrolled = (event: Event) => {
+      const on = event.target;
+      const trigger = triggerRef.current;
+      if (!(on instanceof Node) || trigger === null || !on.contains(trigger)) return;
+      cancelAnimationFrame(asked);
+      asked = requestAnimationFrame(() => setNudge((was) => (was === 0 ? 0.01 : 0)));
+    };
+    window.addEventListener("scroll", scrolled, true);
+    return () => {
+      window.removeEventListener("scroll", scrolled, true);
+      cancelAnimationFrame(asked);
+    };
+  }, [isOpen, triggerRef]);
   return (
     <Surface
       {...surface}
       side={side}
       align="center"
       offset={offset}
+      crossOffset={nudge}
       isNonModal
       kind="notice"
       triggerRef={triggerRef}
       isOpen={isOpen}
-      onOpenChange={(next) => !next && onHide()}
+      // React Aria's only close of a popover that is not modal is its scroll's (above): ignored.
+      onOpenChange={() => undefined}
     >
       {/* Its point: a box of the surface's own ground and edge, turned and half shown, which a
-          theme reaches as the `arrow` part; React Aria keeps it on what the card hangs from. */}
+          theme reaches as the `point` part (never the `arrow` a held popover draws); React Aria
+          keeps it on what the card hangs from. */}
       <OverlayArrow data-scope="popover" data-of="notice">
-        <span data-scope="popover" data-part="arrow" />
+        <span data-scope="popover" data-part="point" />
       </OverlayArrow>
       {children}
     </Surface>

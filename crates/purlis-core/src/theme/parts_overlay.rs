@@ -66,10 +66,10 @@ pub(super) const POPOVER: Family = Family {
             properties: &[Prop::Fill, Prop::Text, Prop::CornerRadius],
         },
         Part {
-            name: "arrow",
+            name: "point",
             since: super::NEXT,
             description: "The point a notice's card takes from what it hangs from: its ground \
-                          and its edge.",
+                          and its edge, in every variant and state alike.",
             properties: &[Prop::Fill, Prop::BorderColour],
         },
     ],
@@ -109,7 +109,8 @@ pub(super) const POPOVER: Family = Family {
     // (`popover.css`), read on that cap (#3099).
     words: &[("footer", "text.quiet"), ("key", "text.secondary")],
     corner_most: None,
-    around: &[],
+    // The notice card's point is beside the surface's root, not inside it (`HungPopover`).
+    around: &["point"],
     fills: &[("key", "surface.raised")],
     under: &[],
 };
