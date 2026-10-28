@@ -12,7 +12,7 @@ use purlis_session_protocol::link::{self, LinkError};
 use purlis_session_protocol::version::{self, HANDSHAKE_TIMEOUT, Refused, Speaks, Version};
 use tokio::io::duplex;
 
-mod common;
+use crate::common;
 use common::{HELD, read_frame, write_frame};
 
 fn v1() -> Speaks {

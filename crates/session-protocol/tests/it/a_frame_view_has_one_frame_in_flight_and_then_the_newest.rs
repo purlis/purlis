@@ -19,7 +19,7 @@ use tokio::io::duplex;
 use tokio::sync::watch;
 use tokio::time::timeout;
 
-mod common;
+use crate::common;
 use common::HELD;
 
 async fn linked() -> (Link, Link) {

@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use purlis_session_protocol::session::{self, Client, Command, Launch, ProgramKind, StartProgram};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
-mod common;
+use crate::common;
 use common::hosts::{Board, CHAT, HOST_A, a_as_pinned, b_as_pinned, host_a, serve_b};
 
 #[tokio::test]

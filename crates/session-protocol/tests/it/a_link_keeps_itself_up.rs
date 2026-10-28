@@ -15,7 +15,7 @@ use purlis_session_protocol::link::Link;
 use purlis_session_protocol::session::Client;
 use tokio::time::Instant;
 
-mod common;
+use crate::common;
 use common::hosts::{Board, CHAT, Cable, ToB, a_as_pinned, b_as_pinned, host_a, serve_b};
 
 fn keep(to_b: &ToB, liveness: Liveness) -> Links {

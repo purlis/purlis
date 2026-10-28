@@ -10,7 +10,7 @@ use purlis_session_protocol::version::{self, HANDSHAKE_TIMEOUT, Refused, Speaks,
 use tokio::io::{AsyncWriteExt, duplex};
 use tokio::time::Instant;
 
-mod common;
+use crate::common;
 use common::HELD;
 
 fn v1() -> Speaks {

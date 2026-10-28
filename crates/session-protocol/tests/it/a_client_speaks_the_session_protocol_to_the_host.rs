@@ -13,7 +13,7 @@ use purlis_session_protocol::session::{
 };
 use tokio::io::duplex;
 
-mod common;
+use crate::common;
 use common::HELD;
 
 /// A host that answers from a fixed board, and keeps every command it was sent.

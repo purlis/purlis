@@ -12,7 +12,7 @@ use purlis_session_protocol::version::{Speaks, Version};
 use purlis_session_protocol::view::{self, Attacher, Chunk, Epoch, Limits, ViewId, Viewer};
 use tokio::io::duplex;
 
-mod common;
+use crate::common;
 use common::HELD;
 
 pub async fn linked() -> (Link, Link) {

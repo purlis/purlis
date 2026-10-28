@@ -9,7 +9,7 @@ use purlis_session_protocol::hostlink::{self, Handshake, LinkRefused, Liveness};
 use serde_json::json;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, duplex};
 
-mod common;
+use crate::common;
 use common::hosts::{a_as_pinned, b_as_pinned, host_a, host_b};
 
 async fn write_hello(io: &mut (impl AsyncWrite + Unpin), json: &serde_json::Value) {

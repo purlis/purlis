@@ -28,7 +28,7 @@ use purlis_session_protocol::view::{Attachment, Chunk, Source, Viewer};
 use tokio::sync::watch;
 use tokio::time::{Instant, sleep};
 
-mod common;
+use crate::common;
 use common::HELD;
 use common::netsim::{self, END_PIPE, Shape};
 

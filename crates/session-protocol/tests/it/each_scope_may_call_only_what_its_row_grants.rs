@@ -14,7 +14,7 @@ use purlis_session_protocol::session::{
 };
 use tokio::io::duplex;
 
-mod common;
+use crate::common;
 use common::HELD;
 
 const CHAT: &str = "01J9ZQ3V7K8M2N4P6R8T0V2X4Z";

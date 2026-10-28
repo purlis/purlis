@@ -20,7 +20,7 @@ use purlis_session_protocol::view::{Attacher, Chunk, Feed, Limits, ViewId, Viewe
 use tokio::io::duplex;
 use tokio::sync::mpsc;
 
-mod common;
+use crate::common;
 use common::HELD;
 
 fn event(seq: u64, kind: &str) -> Event {

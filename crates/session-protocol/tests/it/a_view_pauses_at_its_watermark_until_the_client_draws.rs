@@ -16,7 +16,7 @@ use purlis_session_protocol::view::{self, Attacher, Chunk, Limits, ViewId, Viewe
 use tokio::io::duplex;
 use tokio::time::timeout;
 
-mod common;
+use crate::common;
 use common::HELD;
 
 async fn linked() -> (Link, Link) {

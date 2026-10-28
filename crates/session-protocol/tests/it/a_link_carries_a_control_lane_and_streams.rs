@@ -10,7 +10,7 @@ use purlis_session_protocol::link::{self, LinkError};
 use purlis_session_protocol::version::{Refused, Speaks, Version};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
-mod common;
+use crate::common;
 use common::HELD;
 
 fn v1() -> Speaks {

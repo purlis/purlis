@@ -28,7 +28,7 @@ use purlis_session_protocol::version::{Speaks, Version};
 use purlis_session_protocol::view::{Attacher, Chunk, Limits, ViewId, Viewer};
 use tokio::net::{UnixListener, UnixStream};
 
-mod common;
+use crate::common;
 use common::HELD;
 
 const FLOODING: u32 = 10;

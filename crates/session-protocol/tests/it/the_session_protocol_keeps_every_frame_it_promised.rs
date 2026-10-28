@@ -52,10 +52,10 @@ use purlis_session_protocol::session::{
 use serde_json::{Value, json};
 use tokio::io::duplex;
 
-mod common;
+use crate::common;
 use common::HELD;
 
-const RECORDED: &str = include_str!("fixtures/session-protocol.jsonl");
+const RECORDED: &str = include_str!("../fixtures/session-protocol.jsonl");
 
 fn recorded() -> Vec<Value> {
     RECORDED

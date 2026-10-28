@@ -30,7 +30,7 @@ use tokio::net::UnixListener;
 use tokio::process::{Child, ChildStdout, Command as Process};
 use tokio::time::timeout;
 
-mod common;
+use crate::common;
 use common::HELD;
 use common::programs::{Program, Snapshot};
 

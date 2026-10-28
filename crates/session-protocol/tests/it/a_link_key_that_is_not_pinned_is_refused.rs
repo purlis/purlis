@@ -11,7 +11,7 @@ use purlis_session_protocol::hostlink::{
 };
 use tokio::io::duplex;
 
-mod common;
+use crate::common;
 use common::hosts::{HOST_B, a_as_pinned, b_as_pinned, host_a, host_b, identity, pinned};
 
 fn hex(key: &PublicKey) -> String {

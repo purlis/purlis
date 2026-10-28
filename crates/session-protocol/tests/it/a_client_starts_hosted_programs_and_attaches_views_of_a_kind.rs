@@ -21,7 +21,7 @@ use tokio::io::duplex;
 use tokio::sync::Notify;
 use tokio::time::timeout;
 
-mod common;
+use crate::common;
 use common::HELD;
 use common::programs::{Program, Snapshot};
 

@@ -17,7 +17,7 @@ use purlis_session_protocol::session::{
 use tokio::io::duplex;
 use tokio::sync::mpsc;
 
-mod common;
+use crate::common;
 use common::HELD;
 
 const DEVICE: &str = "01J9DEVCE00000000000000000";

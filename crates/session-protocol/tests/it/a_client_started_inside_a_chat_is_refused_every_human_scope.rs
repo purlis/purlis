@@ -23,7 +23,7 @@ use purlis_session_protocol::local::{Chats, Listener};
 use purlis_session_protocol::version::{Refused, Speaks, Version};
 use tokio::net::UnixListener;
 
-mod common;
+use crate::common;
 use common::HELD;
 
 const PEER: &str = env!("CARGO_BIN_EXE_charter-session-peer");

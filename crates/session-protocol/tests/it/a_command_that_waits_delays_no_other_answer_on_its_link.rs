@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use tokio::io::duplex;
 use tokio::sync::{Semaphore, mpsc};
 
-mod common;
+use crate::common;
 use common::HELD;
 
 const ONE: &str = "01J9ZQ3V7K8M2N4P6R8T0V2X4Z";

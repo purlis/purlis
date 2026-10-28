@@ -17,7 +17,7 @@ use purlis_session_protocol::view::{Chunk, Epoch, Limits, Reader, Viewer, Views}
 use tokio::io::duplex;
 use tokio::time::timeout;
 
-mod common;
+use crate::common;
 use common::HELD;
 use common::programs::{Program, Snapshot};
 

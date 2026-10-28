@@ -10,7 +10,7 @@
 
 use purlis_session_protocol::session::VERSION;
 
-const SOURCE: &str = include_str!("../src/session.rs");
+const SOURCE: &str = include_str!("../../src/session.rs");
 
 /// Minors no change added: their numbers were passed over.
 const PASSED_OVER: &[u16] = &[12, 19, 20];
