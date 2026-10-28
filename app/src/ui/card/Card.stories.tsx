@@ -3,15 +3,20 @@
 
 /**
  * **The card family** (#2912): a card with a title and its words, and an ask that holds Allow
- * beside Keep blocked, walked by the keyboard, on the panel's ground it stands on. Each held to
- * axe and compared with its baseline (`docs/component-stories.md`).
+ * beside Keep blocked, walked by the keyboard, on the panel's ground it stands on; a skill's
+ * Overview facts, the grade plan's four totals, wide and narrow, and a running grade's counts,
+ * which change without moving a tile (#3673). Each held to axe and compared with its baseline
+ * (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
-import { expect, waitFor } from "storybook/test";
-import { expectFocusInSight } from "../../stories.testkit";
+import { expect, waitFor, within } from "storybook/test";
+import { expectFocusInSight, untilFocused } from "../../stories.testkit";
+import { Badge } from "../badge/Badge";
 import { Button, ButtonRow } from "../button/Button";
 import { Card, CardTitle } from "./Card";
+import { Fact, Facts } from "./Facts";
+import { Tile, Totals } from "./Totals";
 
 /** A side panel's ground, which a card stands one step off. */
 function OnAPanel({ children }: { children: React.ReactNode }) {
@@ -83,5 +88,172 @@ export const Raised: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.getByText("The sample project saved")).toBeInTheDocument();
     await expect(canvas.queryByRole("button")).toBeNull();
+  },
+};
+
+/** **A skill's Overview** (#3673): who gets it, with its fix where it is left out, and the rest. */
+function Overview({ inlineSize }: { inlineSize: string }) {
+  const [said, setSaid] = useState("Nothing granted yet");
+  return (
+    <div style={{ inlineSize, maxInlineSize: "100%" }}>
+      <Facts aria-label="About deploy">
+        <Fact label="Who gets it">
+          Left out of steward 5: its persona has no grant for it.
+          <Button size="sm" onPress={() => setSaid("Granted to steward")}>
+            Grant it to steward
+          </Button>
+        </Fact>
+        <Fact label="Where it lives">
+          <code>.claude/skills/deploy/SKILL.md</code>
+        </Fact>
+        <Fact label="Owner">you</Fact>
+        <Fact label="Grade">
+          86% with it, 68% without <Badge variant="accent">sonnet</Badge>
+        </Fact>
+        <Fact label="Runs">14 in the last 30 days</Fact>
+      </Facts>
+      <p role="status" style={{ marginBlockStart: "var(--space-5)" }}>
+        {said}
+      </p>
+    </div>
+  );
+}
+
+/** Whether each fact's label stands beside its value (wide) or over it (narrow). */
+async function expectFactsBeside(canvas: HTMLElement, beside: boolean) {
+  const terms = within(canvas).getAllByRole("term");
+  const values = within(canvas).getAllByRole("definition");
+  for (const [at, term] of terms.entries()) {
+    const label = term.getBoundingClientRect();
+    const value = values[at].getBoundingClientRect();
+    if (beside) await expect(value.left).toBeGreaterThan(label.right);
+    else await expect(value.top).toBeGreaterThanOrEqual(label.bottom - 1);
+  }
+}
+
+/**
+ * **A skill's Overview facts** (#3673): each label beside its value in one column of labels; a
+ * value holds a badge, a path and one fix, which the keyboard reaches and presses.
+ */
+export const OverviewFacts: Story = {
+  render: () => <Overview inlineSize="40rem" />,
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    await expect(canvas.getAllByRole("term").map((one) => one.textContent)).toEqual([
+      "Who gets it",
+      "Where it lives",
+      "Owner",
+      "Grade",
+      "Runs",
+    ]);
+    await expectFactsBeside(canvasElement, true);
+    // One label column: every value starts where the first does.
+    const starts = canvas.getAllByRole("definition").map((one) => one.getBoundingClientRect().left);
+    for (const start of starts) await expect(Math.abs(start - starts[0])).toBeLessThan(1);
+    await userEvent.tab();
+    const fix = canvas.getByRole("button", { name: "Grant it to steward" });
+    await untilFocused(() => fix, "Overview facts: Tab lands on the fix");
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Granted"));
+  },
+};
+
+/** **The same facts where they are narrow** (#3673): each label over its value. */
+export const OverviewFactsNarrow: Story = {
+  render: () => <Overview inlineSize="18rem" />,
+  play: async ({ canvasElement }) => {
+    await expectFactsBeside(canvasElement, false);
+  },
+};
+
+/** **The grade plan's four totals** (#3673). */
+function GradePlan({ inlineSize }: { inlineSize: string }) {
+  return (
+    <div style={{ inlineSize, maxInlineSize: "100%" }}>
+      <Totals aria-label="What the grade may spend">
+        <Tile label="Chats" value="36" line="12 tests × 3 × 1 arm" />
+        <Tile label="At most" value="$3.00" line="then it stops" />
+        <Tile label="Estimate" value="$2.88" line="$0.08 a chat" />
+        <Tile label="Runs on" value="Claude Code" line="sonnet" />
+      </Totals>
+    </div>
+  );
+}
+
+/** The tiles' boxes, in their order. */
+const tilesOf = (canvas: HTMLElement) =>
+  [...canvas.querySelectorAll('[data-scope="card"][data-part="tile"]')].map((one) =>
+    one.getBoundingClientRect(),
+  );
+
+/**
+ * **The grade plan's totals, wide** (#3673): four tiles share the row, each as wide as the next,
+ * their values a size larger in figures of one width.
+ */
+export const PlanTotals: Story = {
+  render: () => <GradePlan inlineSize="48rem" />,
+  play: async ({ canvas, canvasElement }) => {
+    await expect(canvas.getByRole("group", { name: "What the grade may spend" })).toBeVisible();
+    const tiles = tilesOf(canvasElement);
+    await expect(tiles).toHaveLength(4);
+    for (const tile of tiles) {
+      await expect(Math.abs(tile.top - tiles[0].top)).toBeLessThan(1);
+      await expect(Math.abs(tile.width - tiles[0].width)).toBeLessThan(1);
+    }
+  },
+};
+
+/** **The same totals where they are narrow** (#3673): the tiles wrap to more rows, never sideways. */
+export const PlanTotalsNarrow: Story = {
+  render: () => <GradePlan inlineSize="24rem" />,
+  play: async ({ canvasElement }) => {
+    const tiles = tilesOf(canvasElement);
+    await expect(tiles[3].top).toBeGreaterThan(tiles[0].bottom - 1);
+    const row = canvasElement.querySelector('[data-part="totals"]') as HTMLElement;
+    await expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+  },
+};
+
+/** **A running grade's counts** (#3673): a chat further on changes them, live. */
+function RunningCounts() {
+  const [done, setDone] = useState(3);
+  return (
+    <div style={{ inlineSize: "40rem", maxInlineSize: "100%" }}>
+      <Totals live aria-label="Grading deploy">
+        <Tile label="Chats" value={`${done} of 36`} line="3 at a time" />
+        <Tile label="Spent" value={`$${(done * 0.08).toFixed(2)}`} line="of at most $3.00" />
+        <Tile label="Tokens" value={`${done * 9}k`} line="of 400k" />
+      </Totals>
+      <p style={{ marginBlockStart: "var(--space-5)" }}>
+        <Button onPress={() => setDone((now) => now + 7)}>Run seven chats</Button>
+      </p>
+    </div>
+  );
+}
+
+/**
+ * **Running's counts change without moving a tile** (#3673): seven chats on, each tile keeps
+ * its box, and the change is said once, politely.
+ */
+export const RunningTotals: Story = {
+  render: () => <RunningCounts />,
+  play: async ({ canvas, canvasElement, userEvent }) => {
+    const before = tilesOf(canvasElement);
+    await userEvent.tab();
+    const run = canvas.getByRole("button", { name: "Run seven chats" });
+    await untilFocused(() => run, "Running totals: Tab lands on Run seven chats");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByText("10 of 36")).toBeVisible());
+    const after = tilesOf(canvasElement);
+    for (const [at, tile] of after.entries()) {
+      await expect(Math.abs(tile.width - before[at].width)).toBeLessThan(1);
+      await expect(Math.abs(tile.height - before[at].height)).toBeLessThan(1);
+      await expect(Math.abs(tile.left - before[at].left)).toBeLessThan(1);
+    }
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "Chats 10 of 36, Spent $0.80, Tokens 90k",
+      ),
+    );
   },
 };

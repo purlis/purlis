@@ -721,7 +721,7 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
 
 | Family | Wrapper | Parts | Variants |
 | --- | --- | --- | --- |
-| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`) | `root`, `title` | `raised`, `ask` |
+| Card | `Card` (as a `div`, `li`, `p`, `section` or `article`), `CardTitle` (`ui/card/Card.tsx`); `Facts`, `Fact` (`Facts.tsx`); `Totals`, `Tile` (`Totals.tsx`) | `root`, `title`; `facts-label`, `facts-value`, `tile`, `tile-value` | `raised`, `ask` |
 | Notice | `Notice`, `NoticeList`, `NoticePaneRow` (`src/Notice.tsx`), drawn through `ui/notice/Notice.tsx` | `root`, `message`, `whose`, and `under` (what a way out opened) | `news`, `trouble` |
 | Badge | `Badge`, `HostStatus` (`ui/badge/Badge.tsx`) | `root` | `neutral`, `accent`, `waiting`, `ok` |
 | Count | `Count`, `CountGroup` (`ui/badge/Badge.tsx`) | `root`, `group` | `neutral`, `accent`, `waiting`, `hot` |
@@ -733,6 +733,19 @@ ADR 0104), each one wrapper under `app/src/ui/` and its own lint rule at error
   `card.root.border-width: 0`); Classic on its raised ground with the subtle hairline. **An ask
   keeps its waiting edge in every theme** (ADR 0097 §6): no theme can take it away, as no theme
   can take Allow's.
+- **Facts, as label and value** (`Facts`, #3673): what a screen knows about one thing, read only,
+  a fact a line (a skill's Overview, a source's header, what a grade may spend). A `dl`, each fact
+  its label and value, so a reader hears them together; one label column in the secondary tier
+  (`card.facts-label`) and the value in the primary (`card.facts-value`), which may hold a badge,
+  a link or one button (a fix). Where its own room is under 24rem, each label stands over its
+  value. No screen writes its own `dl` grid.
+- **A row of totals tiles** (`Totals`, `Tile`, #3673): a tile's label in the label role, in
+  capitals; its value a size larger in figures of one width (`card.tile-value`); an optional
+  line under it in the quiet tier. The tiles share the row (each at least about 170px) and wrap
+  to more rows, never sideways; a tile is edged as a card is, with no ground of its own
+  (`card.tile`). A value that changes keeps its tile's size, and `live` totals say their
+  changes politely (`role="status"`), at most once a second (`ui/said.ts`). Facts and tiles stand
+  on a page as often as in a card, so a theme reaches them by their own attributes.
 - **A Notice is drawn by the notice family and is a Notice by `Notice.tsx`.** Its box is the
   family's `root`, its tone the variant and where it stands its `data-placement`: `pane` (its
   pane's row; in a chat's pane the band draws it as a washed card with its mark and no edge,
