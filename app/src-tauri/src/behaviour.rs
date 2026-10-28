@@ -3364,8 +3364,9 @@ on_every_target!(
 /// sandbox as every sandboxed runner chat is, tries what would reach past it from in there, with
 /// a browser of its project running beside it: the engine's data folder (the cookies and
 /// storage of every site it opened), the engine's memory, the pipe the host drives the engine
-/// over, the runner's link key in the host's own folder, and the host's socket's folder. Each is
-/// refused; reading its project is not.
+/// over, the runner's link key in the host's own folder, the host's socket's folder, and a
+/// namespace of its own, which only the engine may make there (D-2050-25). Each is refused;
+/// reading its project is not.
 ///
 /// The paths and process ids it tries are found first, as the runner's own user, outside the
 /// sandbox, and each must be found, so no try passes by naming nothing: the engine is one whose
@@ -3458,6 +3459,7 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
              try HOST-PIPE 'exec 3<> /proc/{host}/fd/{pipe}'\n\
              try HOST-KEY 'cat {key}'\n\
              try HOST-SOCKET 'ls {socket}'\n\
+             try NAMESPACE 'unshare --user true'\n\
              printf 'TRIED.\\n'\n\
              read line\n"
         ),
@@ -3483,6 +3485,8 @@ printf 'folder=%s\nengine=%s\nhost=%s\npipe=%s\nsocket=%s\nkey=%s\n' "$folder" "
         "HOST-PIPE no.",
         "HOST-KEY no.",
         "HOST-SOCKET no.",
+        // Only the browser engine may make namespaces on a runner (D-2050-25).
+        "NAMESPACE no.",
     ] {
         pane.shows(said);
     }

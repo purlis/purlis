@@ -908,7 +908,8 @@ fn serve(suspends_unlinked: bool) -> ExitCode {
                     purlis_host::Hosting::kept(
                         &place.credentials,
                         Composes(purlis_core::hoststart::Kit::installed_beside_this_binary()),
-                        purlis_host::Terminals,
+                        // On a runner only the browser engine may make namespaces (D-2050-25).
+                        serve_terminals(),
                         // Each held project's hooks, heard as the window's own host hears them
                         // (#2447).
                         purlis_core::hookchannel::HookChannels::keeping(log.clone()),
@@ -949,6 +950,55 @@ fn bridge(asked: bridge::Asked) -> ExitCode {
 fn bridge() -> ExitCode {
     voice::err("a runner's bridge runs on macOS and Linux only");
     ExitCode::FAILURE
+}
+
+/// **The terminals `purlis serve` starts each program in** (#3298, D-2050-25): on Linux, each
+/// program is started through `purlis _no-namespaces`, so it, and all it starts, can make no
+/// namespace. A Docker pool's runner lets the browser engine's sandbox make user, process and
+/// network namespaces (ADR 0089 as amended 2026-10-28), and the engine, which the host starts
+/// itself and never in a terminal, is the only one that may: a chat, sandboxed or not, a shell
+/// and a harness's own sandbox may not. A harness's own sandbox that needs them does not start,
+/// and its chat is refused, never run without it (Claude Code's is compiled so).
+#[cfg(unix)]
+fn serve_terminals() -> impl purlis_host::Run {
+    #[cfg(target_os = "linux")]
+    return WithoutNamespaces(purlis_host::Terminals);
+    #[cfg(not(target_os = "linux"))]
+    return purlis_host::Terminals;
+}
+
+/// [`purlis_host::Terminals`], each program started through `purlis _no-namespaces`.
+#[cfg(target_os = "linux")]
+struct WithoutNamespaces(purlis_host::Terminals);
+
+#[cfg(target_os = "linux")]
+impl purlis_host::Run for WithoutNamespaces {
+    fn run(
+        &self,
+        spec: purlis_core::session::Spec,
+    ) -> Result<std::sync::Arc<dyn purlis_host::Running>, String> {
+        self.0.run(without_namespaces(spec)?)
+    }
+
+    fn end_what_was_left(&self, left: &purlis_host::Started) {
+        self.0.end_what_was_left(left);
+    }
+}
+
+/// `spec`, its program started by this `purlis` through `_no-namespaces`: the same process, its
+/// arguments and environment as they were.
+#[cfg(target_os = "linux")]
+fn without_namespaces(
+    mut spec: purlis_core::session::Spec,
+) -> Result<purlis_core::session::Spec, String> {
+    let me = std::env::current_exe().map_err(|why| {
+        format!("purlis could not name its own program to start this with: {why}")
+    })?;
+    let program = std::mem::take(&mut spec.program);
+    let args = std::mem::take(&mut spec.args);
+    spec.args = purlis_linux_sandbox::no_namespaces_line(program, args);
+    spec.program = me.into_os_string();
+    Ok(spec)
 }
 
 /// **How `purlis serve` composes each start** (#2174, #2171): a launch by its words, or, for a

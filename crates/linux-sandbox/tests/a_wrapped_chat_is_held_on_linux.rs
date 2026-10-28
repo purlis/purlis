@@ -440,12 +440,43 @@ fn a_thread_with_its_own_descriptors_is_judged_by_its_own_socket() {
     );
 }
 
-/// A chat makes no namespace, whatever its machine lets a program make: on a runner the
-/// browser engine may make one, and a sandboxed chat beside it may not (#3298).
+/// A program a runner's host starts through `_no-namespaces` makes no namespace, whatever its
+/// machine lets a program make, and neither does what it starts: on a runner only the browser
+/// engine may (#3298, D-2050-25). It still runs as it was asked to.
 #[test]
-fn a_chat_makes_no_user_namespace() {
-    let mut p = project();
-    assert_eq!(p.run(&["user-namespace"]), "EPERM");
+fn a_program_started_without_namespaces_makes_none() {
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            PROBE.into(),
+            vec!["user-namespace".into()],
+        ))
+        .output()
+        .expect("the probe ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EPERM",
+        "{out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            "/bin/sh".into(),
+            vec!["-c".into(), format!("{PROBE} user-namespace")],
+        ))
+        .output()
+        .expect("the shell ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EPERM",
+        "{out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            PROBE.into(),
+            vec!["read".into(), "/etc/passwd".into()],
+        ))
+        .output()
+        .expect("the probe ran");
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok", "{out:?}");
 }
 
 /// A port free on this machine now.

@@ -1127,9 +1127,9 @@ fn is_containers_default(profile: &str) -> bool {
 ///   (`CLONE_NEWNS`, `CLONE_NEWCGROUP`, `CLONE_NEWUTS` and `CLONE_NEWIPC` refused), and `chroot`:
 ///   the browser engine's own sandbox makes them as it starts, and ends without them (measured
 ///   2026-10-28; ruled that day, ADR 0089). `chroot` reaches nothing outside a user namespace a
-///   process made itself, since the kernel still asks for `CAP_SYS_CHROOT`. A chat in purlis's
-///   own Linux sandbox is refused the namespace calls by that sandbox's filter
-///   (`purlis_linux_sandbox`).
+///   process made itself, since the kernel still asks for `CAP_SYS_CHROOT`. Only the browser engine
+///   may make namespaces on a runner: its host starts everything else unable to
+///   (`purlis_linux_sandbox::NO_NAMESPACES`).
 ///
 /// Nothing else differs from Docker's default.
 pub const SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp.json");
