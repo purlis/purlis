@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793221382859,
+  "lastUpdate": 1793223385248,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28896,6 +28896,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1452055,
             "unit": "ms",
             "extra": "median of 5 runs: 100.773, 101.667, 102.145, 102.199, 102.268 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8e253ea46d8aea8862dbb0b865f7aa456528a1a8",
+          "message": "Runners: hours cap order, no unseen gap, and a row's real suspend time (#3723, #3720, #3717) (#3748)\n\n* Runner hours: the size cap drops runs by when they ended (#3723)\n\nOver 48 KiB, the record now drops whole runs by when they ended,\nearliest first, and a run still open last. A run that ended before this\nweek began, which counts nothing toward it, so goes before any run that\ndoes. Before, it dropped runs in file order, by their start, so a long\nrun that counts this week could go while an old one stayed.\n\nThe module doc and docs/plane-format.md say the cap drops whole runs, in\nthat order.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runner hours: never count a gap the record cannot see (#3720)\n\nTwo runs between two reads, both started outside purlis: Docker gives\nonly the newer run's times. The run kept open was closed at the newer\nstart, so the gap between its unseen end and that start counted as\nrunning time, and as money for a priced pool. It is now closed at its\nown start. The same holds where a container runs again and Docker says\nno last finish. An undercount, never a guessed cost.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: a pool's row says how its runner was made to suspend (#3717)\n\nThe row's \"Suspends after\" line came from the pool's suspendAfter in\nrunners.json. A runner made before #2051 was made with `serve` alone and\nnever suspends, and one made before #3471 keeps the time it was made\nwith, so the row could say what the runner does not do.\n\npurlis_core::dockerpool::made_suspending reads the container's command\n(Config.Cmd, as create_args gives it) back as Never or After(duration).\nThe pool's version answer, which already reads the runner for its row,\ncarries it as `suspends`, and the row says \"Never suspends: its runner\nwas made before purlis suspended runners\", or the time it was made with\nwhere that is not the pool's. Where it cannot be read, the row says the\npool's time, as before. No new surface: it is the row's existing line.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runner hours: say the unseen gap is where Docker gives no end (#3720)\n\nThe changelog entry and the module doc said a gap the record cannot see\nnever counts. That holds where Docker does not say when the kept run\nended. A run Docker's last finish ends is still closed at that finish,\nand with a further run started and stopped outside purlis between two\nreads, that finish is the further run's. No read can tell that apart.\nWording and a comment only; the code is unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: a runner's own suspend time is held to serve's bounds (#3717)\n\nmade_suspending now refuses a time outside suspend_after's bounds (a\nminute to 30 days), as `purlis serve` does, so a container made by hand\nwith one reads as unknown and its row says the pool's time.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-28T20:43:59Z",
+          "tree_id": "5286505bb0672bc91e84870e00206f167bdbb075",
+          "url": "https://github.com/purlis/purlis/commit/8e253ea46d8aea8862dbb0b865f7aa456528a1a8"
+        },
+        "date": 1793223379377,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.539481,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.535, 0.536, 0.539, 0.550, 0.563 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4733425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.931, 16.459, 16.473, 16.476, 16.502 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.320141,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.226, 102.103, 102.320, 102.495, 103.901 ms"
           }
         ]
       }
