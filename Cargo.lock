@@ -5651,7 +5651,6 @@ dependencies = [
  "p256",
  "png 0.18.1",
  "psl",
- "purlis-browser-engine",
  "purlis-same-user",
  "ring",
  "serde",

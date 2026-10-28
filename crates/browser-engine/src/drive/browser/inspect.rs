@@ -156,7 +156,6 @@ pub(crate) const HOSTED: &str = r"JSON.stringify({
   hosted: (() => { try { const h = globalThis.InspectorFrontendHost; return h && typeof h.isHostedMode === 'function' ? h.isHostedMode() : null; } catch (e) { return 'threw'; } })()
 })";
 
-#[cfg(feature = "test-support")]
 /// The function that copies its argument as a page's own Copy does, in the page it runs in: a
 /// constant, the text its argument.
 pub(crate) const COPY_AS_A_PAGE: &str = r"function (text) {
@@ -556,7 +555,7 @@ impl Browser {
 
     /// **For the tests: copies `text` as the person's copy in DevTools does** (#2028), in a page
     /// of a browser context of DevTools' own, thrown away after: whether it was copied.
-    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
     pub fn copy_in_a_context_of_devtools(&self, text: &str) -> bool {
         self.inner.copy_apart(text)
     }
@@ -847,7 +846,6 @@ impl Inner {
 
     /// Copies `text` in a blank page of a context of DevTools' own, thrown away after: whether
     /// it was copied.
-    #[cfg(feature = "test-support")]
     pub(crate) fn copy_apart(&self, text: &str) -> bool {
         let mut copied = false;
         if self.ended() {

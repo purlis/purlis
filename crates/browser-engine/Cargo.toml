@@ -58,13 +58,7 @@ purlis-same-user.workspace = true
 # version purlis-same-user already links, so the tree gains no crate.
 nix = { version = "0.31", default-features = false, features = ["fs", "process", "signal"] }
 
-[features]
-# What only the crate's own tests reach (#2028): never built into purlis.
-test-support = []
-
 [dev-dependencies]
-# The crate's own tests build it with what only they reach.
-purlis-browser-engine = { path = ".", features = ["test-support"] }
 tempfile.workspace = true
 minisign = "0.10"
 stand-in.workspace = true
