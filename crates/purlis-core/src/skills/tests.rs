@@ -325,6 +325,7 @@ fn a_host_on(tmp: &Path) -> (PathBuf, crate::hoststart::Kit) {
         plugin: Some(plugin),
         git_hooks: None,
         skill_sets: Some(root.join("data").join(crate::hoststart::SKILL_SETS)),
+        chat_settings: None,
     };
     (plane, kit)
 }
@@ -2084,6 +2085,7 @@ fn a_chats_tab_says_what_the_repo_skills_it_was_armed_with_leave_out_and_reads_t
         plugin: None,
         git_hooks: None,
         skill_sets: None,
+        chat_settings: None,
     };
     let read =
         crate::hoststart::ChatSkills::read(true, &plane, Some(Harness::Codex), Some(&api), None);
