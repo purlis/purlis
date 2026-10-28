@@ -42,9 +42,9 @@ be confirmed**, and carries the number its D-line has in the pull request.
 5. **Nothing DevTools set outlasts Done** (D-2028-5). DevTools close as the person hands the
    browser back: their sessions are detached, which undoes what they set for themselves (a
    breakpoint, an override, throttling, emulation, blocked requests), and their context, with
-   all it kept, is thrown away. purlis's own worlds in every page are made afresh, and the
-   engine's clipboard is emptied. What DevTools changed in a page itself (its markup, its
-   storage) is the person's change to the page, kept as item 6 says.
+   all it kept, is thrown away. purlis's own worlds in every page are made afresh. What
+   DevTools changed in a page itself (its markup, its storage) is the person's change to the
+   page, kept as item 6 says.
 6. **What DevTools wrote is kept out as the person's typing is** (D-2028-6). At the hand-back
    after DevTools were open, however they ended: every field of every page, of every editable
    kind, is read from the field and kept out; each text DevTools sent the page in a write (a
@@ -82,3 +82,10 @@ be confirmed**, and carries the number its D-line has in the pull request.
     DevTools address is given the engine's embedder interface. The real-engine test asks the
     front end how it runs once it has loaded, and holds that the interface is out of its reach
     and that it runs as a hosted front end.
+12. **The engine's clipboard** (D-2028-12). On a real engine, on CI's macOS and Linux runners,
+    the engine's clipboard is apart from the machine's (a copy in a page does not reach the
+    machine's own clipboard), and it is one for all the engine's browser contexts: what is
+    copied in DevTools' own context is what a paste in the agent's page gets. purlis does not
+    empty it (a write meant to was found not to take the copied text's place), and touches the
+    machine's clipboard never. Instead, once DevTools were open on a browser, the agent's paste
+    chords are refused in words for as long as that browser lives.
