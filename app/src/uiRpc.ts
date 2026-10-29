@@ -1024,11 +1024,6 @@ export const commands = {
 	 *  manifest.
 	 */
 	skillRouters: (plane: PlaneId) => typedError<SkillRouterOffer[], string>(__TAURI_INVOKE("skill_routers", { plane })),
-	/**
-	 *  **Chooses the router a workspace's or a persona's chats are routed by**, or takes the choice
-	 *  out (`router` null), from the Skill studio's Routing page (#3692). One commit; chats started
-	 *  after it are routed by it.
-	 */
 	skillRouterChoose: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
