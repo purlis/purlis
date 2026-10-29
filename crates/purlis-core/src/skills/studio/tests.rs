@@ -360,7 +360,7 @@ fn the_grades_panel_shows_one_copys_grades_alone() {
         format!("{}\n", row("shared-one", &shared)),
     )
     .unwrap();
-    let mine = crate::appstate::dir(root)
+    let mine = crate::appstate::made(root)
         .unwrap()
         .join(super::super::grades::LOCAL_DIR);
     std::fs::create_dir_all(&mine).unwrap();
