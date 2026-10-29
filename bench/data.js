@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793236601367,
+  "lastUpdate": 1793237909182,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29022,6 +29022,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6668455,
             "unit": "ms",
             "extra": "median of 5 runs: 100.490, 101.004, 101.667, 102.132, 102.413 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "385009e6e96f93211c5d35b530e993aff0cdda00",
+          "message": "Overlay focus: a submenu pick and a collection-row opener hand the keyboard back at once (#3642) (#3755)\n\n* Overlay focus: a submenu pick and a collection-row opener hand the keyboard back at once (#3642)\n\nTwo paths still waited for React Aria's frame-late hand-back, where a\ndialog opened less than half a second earlier could take the keyboard.\n\n- A row picked in a submenu takes the whole menu away in one commit. The\n  submenu is drawn into the root menu's wrapper, beside the root's\n  surface, and its nodes go before the root's hand-back runs. A surface\n  drawn inside another now tells the one around it, in that same commit,\n  that the keyboard was in it; the outer one then hands it back to its\n  own opener.\n- A row of a React Aria collection stops the restore event and focuses\n  the row only on a render of its own, a task later. The hand-back now\n  focuses the row itself while it still stands for the item it stood\n  for as the surface opened (its data-key).\n\nDialog.test.tsx holds the dialog's 500 ms timer and every frame for both\npaths; each failed before its half of the fix.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Overlay focus: key a collection opener on the item it stands in (#3642 review)\n\n- HandsBack's collection fast path compared the opener's own data-key,\n  so an opener with none (a table row's ⋯) matched null to null and\n  bypassed the guard. It now keys on the nearest data-key around the\n  opener, captured at open, and requires one: the ⋯ keeps its fast path,\n  and an opener in no item, or in one since drawn another item, is left\n  to the collection.\n- Tests: a table row's ⋯ menu in a dialog hands the keyboard back at\n  once; a ⋯ whose row was drawn another item is left to the table; the\n  submenu test asserts the trigger has the keyboard right after the pick.\n- holdTheDialogsWait runs the held timer inside act again, and holds only\n  React Aria's dialog's 500 ms wait (a tooltip's close waits 500 ms too).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Dialog test: name the table fixture by a persona, not a host (CodeQL)\n\nCodeQL read the row lookup by `startsWith(\"pypi.org\")` as incomplete URL\nsanitization. The fixture is a persona table now; nothing else changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T00:55:51Z",
+          "tree_id": "e7bae442c40ec56da47d46578d54924be974cba3",
+          "url": "https://github.com/purlis/purlis/commit/385009e6e96f93211c5d35b530e993aff0cdda00"
+        },
+        "date": 1793237904253,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.527319,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.508, 0.525, 0.527, 0.532, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.300760500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.280, 16.283, 16.301, 16.320, 16.413 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.446813,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.752, 100.950, 101.447, 102.028, 103.555 ms"
           }
         ]
       }
