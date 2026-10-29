@@ -10173,7 +10173,7 @@ fn telling_every_task_with_none_still_working_is_refused() {
     );
 
     assert!(
-        matches!(&said, Answer::No { why } if why.contains("no task still working")),
+        matches!(&said, Answer::No { why } if why.contains("Nothing was sent")),
         "{said:?}"
     );
     assert!(dispatchtalk::take(held.root(), task).is_empty());

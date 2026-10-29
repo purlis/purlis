@@ -744,25 +744,38 @@ enum Fate {
 /// **One message handed to the app**: queued first where this process may write the queue,
 /// then delivered by the app (#3902); asked live where it may not.
 fn sent(what: What, queued: Queued) -> Result<Fate, String> {
+    sent_on(&mut None, what, queued)
+}
+
+/// [`sent`], asked on `on` where the caller holds a connection to the app already, and on a
+/// new one held there otherwise: a question and the wait for its answer are asked on one.
+fn sent_on(
+    on: &mut Option<(purlis_core::hookwire::Asking, u32)>,
+    what: What,
+    queued: Queued,
+) -> Result<Fate, String> {
     use purlis_core::hookwire::{CHAT_ENV, ChatToken, SOCKET_ENV};
+    const WITHIN: std::time::Duration = crate::handoff::A_TICKET_TAKES_AT_MOST;
     let socket = purlis_core::envvar::var_os(SOCKET_ENV).filter(|s| !s.is_empty());
     let chat = purlis_core::envvar::var(CHAT_ENV).and_then(|chat| chat.parse::<u32>().ok());
     let (Some(socket), Some(chat), Some(token)) = (socket, chat, ChatToken::from_env()) else {
-        return asked(what, crate::handoff::A_TICKET_TAKES_AT_MOST).map(Fate::Answered);
+        return match on.as_mut() {
+            Some((asking, chat)) => answered(asking, *chat, what, WITHIN).map(Fate::Answered),
+            None => asked(what, WITHIN).map(Fate::Answered),
+        };
     };
     let socket = std::path::PathBuf::from(socket);
     let now = chrono::Utc::now().timestamp();
-    let unqueued = match purlis_core::dispatchqueue::queue(&socket, chat, &token, queued, now) {
+    let queued = purlis_core::dispatchqueue::queue(&socket, chat, &token, queued, now);
+    if on.is_none() {
+        *on = the_app();
+    }
+    let unqueued = match queued {
         Ok(id) => {
-            let Some((mut asking, chat)) = the_app() else {
+            let Some((asking, chat)) = on.as_mut() else {
                 return Ok(Fate::Queued);
             };
-            return match ask_app(
-                &mut asking,
-                chat,
-                What::Deliver { id },
-                crate::handoff::A_TICKET_TAKES_AT_MOST,
-            ) {
+            return match ask_app(asking, *chat, What::Deliver { id }, WITHIN) {
                 Ok(Answered::Queued {
                     delivered: false, ..
                 })
@@ -783,19 +796,12 @@ fn sent(what: What, queued: Queued) -> Result<Fate, String> {
         }
         Err(unqueued) => unqueued,
     };
-    match the_app() {
-        Some((mut asking, chat)) => {
-            match ask_app(
-                &mut asking,
-                chat,
-                what,
-                crate::handoff::A_TICKET_TAKES_AT_MOST,
-            ) {
-                Ok(answered) => Ok(Fate::Answered(answered)),
-                Err(Failed::Refused(why)) => Err(why),
-                Err(Failed::NoAnswer) => Err(not_queued(&unqueued)),
-            }
-        }
+    match on.as_mut() {
+        Some((asking, chat)) => match ask_app(asking, *chat, what, WITHIN) {
+            Ok(answered) => Ok(Fate::Answered(answered)),
+            Err(Failed::Refused(why)) => Err(why),
+            Err(Failed::NoAnswer) => Err(not_queued(&unqueued)),
+        },
         None => Err(not_queued(&unqueued)),
     }
 }
@@ -990,7 +996,8 @@ pub fn note(text: Option<&str>, ack: Option<u32>) -> Result<String, String> {
 pub fn ask(question: &str, within: Option<u32>) -> Result<String, String> {
     let text = message(question)?;
     let within = dispatched::wait_secs(within.unwrap_or(dispatched::WAITS_BY_DEFAULT));
-    if the_app().is_none() && purlis_core::hookwire::ChatToken::from_env().is_none() {
+    let mut on = the_app();
+    if on.is_none() && purlis_core::hookwire::ChatToken::from_env().is_none() {
         return Err(format!(
             "{SAYS} no purlis app answered this call, so nothing was sent. A question goes \
              back only from a chat a dispatch started."
@@ -998,7 +1005,7 @@ pub fn ask(question: &str, within: Option<u32>) -> Result<String, String> {
     }
     let asked_text = text.clone();
     let queued = Queued::Question { text: text.clone() };
-    let asker = match sent(What::Question { text }, queued)? {
+    let asker = match sent_on(&mut on, What::Question { text }, queued)? {
         Fate::Answered(Answered::Sent { to, .. }) => purlis_core::personas::one_line(&to),
         // Queued (#3902): the question is asked when the app takes it, and this chat is paused
         // on it from now, as on one asked.
@@ -1021,8 +1028,8 @@ pub fn ask(question: &str, within: Option<u32>) -> Result<String, String> {
          This chat is paused on that question: do not guess, and end this turn now. The answer \
          is handed to this chat's next turn as context, quoted as data."
     );
-    // The question is asked: the wait is on a connection of its own.
-    let Some((mut asking, chat)) = the_app() else {
+    // The question is asked, and the wait is on the connection it was asked on.
+    let Some((mut asking, chat)) = on else {
         return Ok(paused);
     };
     let replied = answered(

@@ -1448,7 +1448,8 @@ fn sound(read: &str) -> Option<Message> {
         from: sender(&message.from)?,
         chat: message.chat,
         text: crate::handoff::report_summary(&message.text).ok()?,
-        instruction: None,
+        // A number, and nothing a number could carry (#3904).
+        instruction: message.instruction,
     })
 }
 
