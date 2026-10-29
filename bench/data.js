@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793309574679,
+  "lastUpdate": 1793310996715,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30114,6 +30114,48 @@ window.BENCHMARK_DATA = {
             "value": 101.87977450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.381, 101.634, 101.880, 102.060, 103.462 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fe5658bd29e27e4ab6290486dbaa73e3c1efaab7",
+          "message": "Skills design 03: a skill's page inside the studio (#3682) (#3782)\n\n* Skill studio: a skill's page inside the studio\n\nChoosing a skill in the Library opens its page beside the list, or alone\nwith a way back where the tab is narrow: its name, skill level and state,\nUse in this chat, Edit, Grade and a \"...\" menu (Rename, Move to another\nlevel, Deprecate, Archive, Open the file, Delete). A banner says why the\nskill isn't plainly on and offers the one fix. Its tabs, Overview, Text,\nHistory, Grades and Runs, carry their counts, and each read is said in\nplace with Try again where it fails. A built-in skill's page says it\ncan't be edited, moved or turned off.\n\nThe skill's own view tab is retired: a run's chip opens its Runs in the\nstudio with the run marked, a Skills view row opens its page, and a skill\ntab kept from an earlier launch comes back as it. The old row controls\nshown as facts move to the banner, Overview, the menu and its dialogs.\nPinned view tabs put back from a launch are no longer re-keyed as the\nstudio's.\n\nCloses #3682\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill page: review fixes, and the theme guards meet the page\n\nThe \"...\" menu always holds the way back from a lifecycle state (Undo\ndeprecation, Unarchive), whatever the banner says first, and Overview\nkeeps the workspace switch and Accept its folder whatever the banner\nleads with. The unused-for-60-days line shows only for a skill in use.\nEdit opens the editor only if the person is still on that skill when its\ntext comes back. An installed skill's source is asked once per page,\nnever on each change on disk. A skill this page can't change says whose\nit is, or where it is changed instead, in plain words.\n\nThe theme guards draw the skill's page where they drew its old tab, and\nknow the page's two dialogs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill page: the scenario specs meet the studio's page\n\nThe run chip's scenario now finds the run marked on the skill's Runs in\nthe Skill studio's one tab, where the skill's own tab used to open; the\nskill-details spec no longer imports what it does not use.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill page: scenario and story fixes\n\nThe scenario's \"...\" menu helper presses again until the menu is up, as\na press landing while the page redraws opens none; the repo clash is\nfound on the page's banner. The Off story's skill is a project skill, as\nonly a project skill is turned off in a workspace, and finds the\nbanner's fix first of the two Turn on buttons.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill page: a disabled Use is not drawn as the suggested action\n\nUse in this chat is drawn filled only while it can be taken, and a\nbuilt-in skill's page says once that it ships with purlis and can't be\nedited, moved or turned off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill page: story pictures\n\nThe skill page's stories in every pictured theme cell, and the studio's\nWide story, which now shows the chosen skill's page beside the Library.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill page test: Runs' totals are read once the table fills its rows\n\nThe table draws its rows after its first draw, so each read of the\ntotals waits for them (the race #3750 fixed elsewhere).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Skill page: story pictures with the built-in fold and Make my own copy\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T21:18:10Z",
+          "tree_id": "06ad6f7ddf5ac6fd893922c300de47a7b1886cbc",
+          "url": "https://github.com/purlis/purlis/commit/fe5658bd29e27e4ab6290486dbaa73e3c1efaab7"
+        },
+        "date": 1793310992285,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6625085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.640, 0.645, 0.663, 0.663, 0.673 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.372168000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.320, 16.358, 16.372, 16.425, 16.739 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.85146,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.442, 101.478, 101.851, 101.876, 102.394 ms"
           }
         ]
       }
