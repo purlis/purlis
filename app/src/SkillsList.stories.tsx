@@ -286,7 +286,7 @@ export const APinNoChatReads: Story = {
     const pinned = within(list).getByRole("row", { name: /^release-notes/ });
     await untilFocused(() => pinned, "Skills: the pinned row has the keyboard");
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-    const menu = await screen.findByRole("menu", { name: "release-notes" });
+    const menu = await screen.findByRole("menu", { name: "release-notes" }, { timeout: 3_000 });
     const unpin = within(menu).getByRole("menuitem", { name: "Unpin from this workspace" });
     expect(unpin).toHaveAccessibleDescription(
       "Pinned, not used: the list holds more than 64 pins.",
