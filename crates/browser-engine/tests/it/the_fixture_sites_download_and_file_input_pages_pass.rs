@@ -109,7 +109,7 @@ fn a_download_sent_as_an_attachment_is_held_under_the_engines_name_and_told_by_t
     assert_eq!(done.received, REPORT.len() as u64);
     assert_eq!(done.total, Some(REPORT.len() as u64));
     // In the holding folder under the engine's own name, never the page's, and nothing else.
-    assert_eq!(files_in(&held), [done.file.clone()]);
+    assert_eq!(files_in(&held), std::slice::from_ref(&done.file));
     assert_ne!(done.file, EXPORTED_AS);
     assert_eq!(std::fs::read(held.join(&done.file)).unwrap(), REPORT);
     // Listed whole as it is.
@@ -134,7 +134,7 @@ fn a_download_a_page_makes_from_a_blob_is_held_and_from_the_pages_origin() {
         "a blob has no web address: the page's origin"
     );
     assert_eq!(done.received, MADE.len() as u64);
-    assert_eq!(files_in(&held), [done.file.clone()]);
+    assert_eq!(files_in(&held), std::slice::from_ref(&done.file));
     assert_eq!(std::fs::read(held.join(&done.file)).unwrap(), MADE);
 }
 
