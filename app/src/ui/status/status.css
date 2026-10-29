@@ -264,3 +264,41 @@ footer[data-scope="status-bar"] {
 [data-scope="status-item"][data-part="root"][data-arrived] {
   animation: charter-appear var(--motion-duration-enter) var(--motion-easing-enter);
 }
+
+/* ---------------------------------------------------------------------------------------------
+   The Notices item's notice dot (#3653, spec #3647): the title-bar chip's dot (`titlebar.dot`),
+   on the Notices item's leading corner while a project's or the app's result is hidden behind it.
+   The same 16px shape, ringed in the bar's own ground, which is the title bar's, so its colour is
+   read on that one ground (`accent.base` on `surface.deep`, D-3648-6). It stands inside the bar's
+   padding, which clips what leaves it.
+   --------------------------------------------------------------------------------------------- */
+
+[data-part="dot"][data-scope="status-item"] {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: calc(var(--space-2) * -1);
+  inset-inline-start: calc(var(--space-2) * -1);
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  inline-size: 16px;
+  block-size: 16px;
+  padding: 0;
+  border: 2px solid var(--surface-deep);
+  border-radius: var(--radius-full);
+  color: var(--surface-base);
+  background-color: var(--accent-base);
+  cursor: default;
+  appearance: none;
+}
+
+/* Its shape, filled: a disc 6px across for news, in the middle of the dot. */
+[data-part="dot"][data-scope="status-item"] svg {
+  inline-size: 6px;
+  block-size: 6px;
+}
+
+[data-part="dot"][data-scope="status-item"][data-focus-visible] {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}

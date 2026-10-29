@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { Said } from "./actions";
 
 /** At most this many results are kept: the newest, as a log would. */
@@ -10,7 +10,7 @@ export const KEPT_RESULTS = 20;
 /** **A line about something still under way**, not a result: that the core has not answered a
  *  command yet (`answer.late.*`), which goes when the answer comes, or a `progress` line
  *  ("Cloning 2 repo(s)…") that the result replaces. It is never kept. */
-function passing(said: Said): boolean {
+export function passing(said: Said): boolean {
   return said.progress === true || said.from.startsWith("answer.late.");
 }
 
@@ -52,7 +52,9 @@ export function useKeptResults(said: Said | undefined, plane: string | undefined
     list = keep(list, said, plane, kept.next);
     setKept({ list, next: kept.next + 1, last: said });
   }
-  const drop = (id: number) =>
-    setKept((was) => ({ ...was, list: was.list.filter((one) => one.id !== id) }));
+  const drop = useCallback(
+    (id: number) => setKept((was) => ({ ...was, list: was.list.filter((one) => one.id !== id) })),
+    [],
+  );
   return { kept: list, drop };
 }

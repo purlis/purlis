@@ -649,3 +649,24 @@ fn a_notice_card_s_point_is_its_own_part_and_leaves_every_other_popover_s_arrow_
         );
     }
 }
+
+#[test]
+fn the_notices_item_s_dot_is_reached_by_its_own_attributes_not_inside_an_item() {
+    // The status bar's dot (#3653) is the Notices item's sibling over its corner, as a chip's is
+    // in its slot: drawn around the item, in no variant and no state of it.
+    let sheet = sheet_of(json!({ "status-item.dot.fill": "accent.base" }));
+    assert!(
+        sheet.contains(
+            ":where([data-scope=\"status-item\"][data-part=\"dot\"]) { background-color: var(--accent-base); }"
+        ),
+        "{sheet}"
+    );
+    let loaded = load(&with_parts(json!({ "status-item.dot.bar.hover.fill": "accent.base" })));
+    assert!(
+        said(&loaded)
+            .iter()
+            .any(|one| one.contains("parts.status-item.dot.bar.hover.fill is not")),
+        "{:?}",
+        said(&loaded)
+    );
+}

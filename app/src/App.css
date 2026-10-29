@@ -3949,6 +3949,14 @@ body {
   margin: 0;
 }
 
+/* **The status bar's Notices item and its dot** (`StatusLine.tsx`, #3653): the item's box, which
+   the dot stands over the leading corner of, so the dot coming or going moves nothing. */
+.status-notices {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
 .chip-card [data-f6-card] {
   border-radius: var(--radius-lg);
   outline: none;

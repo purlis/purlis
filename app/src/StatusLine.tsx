@@ -1,7 +1,9 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+import { useRef, useState, type Ref } from "react";
 import { Bell, FolderRoot } from "lucide-react";
+import { AT_STATUS, ChipCard, mostUrgent, type ChipNotices } from "./ChipNotices";
 import type { WorkspaceState } from "./workspaceState";
 import { Health, type DoctorState } from "./Doctor";
 import { PinItem } from "./Updates";
@@ -10,6 +12,7 @@ import { ago } from "./ChangesView";
 import { StatusBar, type StatusContribution } from "./ui/status/StatusBar";
 import { StatusCell, StatusItem } from "./ui/status/StatusItem";
 import { hideStatusItem, useHiddenStatusItems } from "./statusBarPrefs";
+import { NoticeDot } from "./ui/titlebar/TitleBarWorkspaces";
 
 /**
  * **charter's status line**: one line at the very bottom of the window, under everything.
@@ -129,7 +132,14 @@ export function StatusLine({
   pin,
   badges,
   factNotes,
+  notices,
 }: {
+  /**
+   * **The notices that pop from the Notices item** (#3653, spec #3647): a project's or the app's
+   * results, the window's one store of them, as the title bar's chips have theirs. Its card while
+   * it is up, else its dot. Absent draws neither: a project not in front shows no card.
+   */
+  notices?: ChipNotices;
   /** The project's root directory — the path that used to sit in the top-right corner. */
   plane: string;
   /**
@@ -312,7 +322,7 @@ export function StatusLine({
     // The one item that always stays: the keyboard always has an item on the bar to open the
     // bar's menu from, and so a way back to every item hidden.
     hideable: false,
-    item: <AlertsButton alerts={alerts} />,
+    item: <NoticesItem alerts={alerts} notices={notices} project={projectName(plane)} />,
   });
   if (doctor)
     items.push({
@@ -417,12 +427,13 @@ export type Alerts = {
  * - **No Inbox wired** — disabled and said, rather than a control that answers a press with
  *   nothing. The window always wires one; this is a status line drawn on its own.
  */
-function AlertsButton({ alerts }: { alerts?: Alerts }) {
+function AlertsButton({ alerts, ref }: { alerts?: Alerts; ref?: Ref<HTMLButtonElement> }) {
   if (alerts === undefined) {
     return (
       // Disabled with a hint, so still a Tab stop that does nothing (#1700, #2908): Notices is
       // the item the bar always keeps, the one its menu opens from by the keyboard.
       <StatusItem
+        ref={ref}
         data-testid="status-alerts"
         isDisabled
         aria-label="Notices — nothing to open here"
@@ -437,6 +448,7 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
   const { count } = alerts;
   return (
     <StatusItem
+      ref={ref}
       data-testid="status-alerts"
       data-count={count ?? "unknown"}
       // There are Notices: the bell takes the colour purlis's footer gives a warning, so the one
@@ -457,6 +469,62 @@ function AlertsButton({ alerts }: { alerts?: Alerts }) {
     >
       Notices
     </StatusItem>
+  );
+}
+
+/**
+ * **The Notices item, and the notices that pop from it** (#3653, spec #3647): a project's or the
+ * app's result (a refused pin) is the same card a workspace's notice is on its chip, hung above
+ * the item and pointing down at it, over the window, so nothing in the page moves. A press
+ * elsewhere hides it and leaves the same dot, on the item's leading corner, whose press brings it
+ * back with the keyboard in it; × dismisses one, Esc all of them, here and in the Notices centre.
+ * The slot is the item's box: the dot coming or going moves nothing on the bar.
+ */
+function NoticesItem({
+  alerts,
+  notices,
+  project,
+}: {
+  alerts?: Alerts;
+  notices?: ChipNotices;
+  /** The project's name, which names the card. */
+  project: string;
+}) {
+  const item = useRef<HTMLButtonElement>(null);
+  /** The dot was pressed: the card takes the keyboard as it comes (WCAG 2.4.3). */
+  const [handTo, setHandTo] = useState(false);
+  const on = notices?.on.get(AT_STATUS);
+  const up = notices !== undefined && on !== undefined && notices.open === AT_STATUS;
+  return (
+    <span className="status-notices">
+      {notices !== undefined && on !== undefined && !up && (
+        <NoticeDot
+          scope="status-item"
+          workspace="the status bar"
+          count={on.length}
+          kind={mostUrgent(on)}
+          // No strip's arrows walk to it: a Tab stop of its own, before the item.
+          stop
+          onPress={() => {
+            setHandTo(true);
+            notices.show(AT_STATUS);
+          }}
+        />
+      )}
+      <AlertsButton alerts={alerts} ref={item} />
+      {up && (
+        <ChipCard
+          workspace={AT_STATUS}
+          named={project}
+          notices={on}
+          anchor={item}
+          does={notices}
+          side="top"
+          takesKeyboard={handTo}
+          onKeyboardTaken={() => setHandTo(false)}
+        />
+      )}
+    </span>
   );
 }
 

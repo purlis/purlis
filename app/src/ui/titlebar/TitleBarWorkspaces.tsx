@@ -187,13 +187,19 @@ export function NoticeDot({
   count,
   kind,
   stop = false,
+  scope = "titlebar",
   onPress,
 }: {
+  /** What it is on, as its name says it: a workspace, or the status bar's Notices. */
   workspace: string;
   count: number;
   kind: NoticeKind;
-  /** A Tab stop of its own, where no strip's arrows walk to it: the plane root's house's. */
+  /** A Tab stop of its own, where no strip's arrows walk to it: the plane root's house's, and
+   *  the status bar's. */
   stop?: boolean;
+  /** The family it is a part of: a title-bar chip's, or the status bar's Notices item's
+   *  (`status-item.dot`, #3653), the same dot on the same ground. */
+  scope?: "titlebar" | "status-item";
   onPress: () => void;
 }) {
   const marked = useMarked({ onClick: onPress }, false);
@@ -208,7 +214,7 @@ export function NoticeDot({
           ? `Show the notice on ${workspace}`
           : `Show the ${count} notices on ${workspace}`
       }
-      data-scope="titlebar"
+      data-scope={scope}
       data-part="dot"
       data-kind={kind}
     >

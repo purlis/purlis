@@ -198,6 +198,14 @@ const DRAWN: &[Drawn] = &[
         around: &[],
         on: None,
     },
+    Drawn {
+        family: "status-item",
+        part: "dot",
+        css: include_str!("../../../../app/src/ui/status/status.css"),
+        own: &["[data-part=\"dot\"][data-scope=\"status-item\"]"],
+        around: &[],
+        on: None,
+    },
 ];
 
 /// A theme over Purlis Classic that sets `tokens` and `parts`, as read.
