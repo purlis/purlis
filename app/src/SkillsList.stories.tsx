@@ -286,7 +286,9 @@ export const APinNoChatReads: Story = {
     const pinned = within(list).getByRole("row", { name: /^release-notes/ });
     await untilFocused(() => pinned, "Skills: the pinned row has the keyboard");
     // The row has drawn the keyboard's arrival (its tooltip) before its menu is asked for.
-    await waitFor(() => expect(screen.getByRole("tooltip")).toHaveTextContent("release-notes"));
+    await waitFor(() =>
+      expect(screen.getByRole("tooltip")).toHaveTextContent(/^Hidden by the built-in router/),
+    );
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     const menu = await screen.findByRole("menu", { name: "release-notes" }, { timeout: 3_000 });
     const unpin = within(menu).getByRole("menuitem", { name: "Unpin from this workspace" });
