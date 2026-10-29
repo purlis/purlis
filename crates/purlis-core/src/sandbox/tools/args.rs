@@ -203,9 +203,7 @@ pub fn refused_forge(names: &[&Path], args: &[String]) -> Option<String> {
         .find_map(|name| Forge::of(&name))?;
     let terminal = "run it in your own terminal, where purlis limits nothing";
     let name = forge.name();
-    let Some(first) = args.first() else {
-        return None;
-    };
+    let first = args.first()?;
     if first.starts_with('-') {
         if args.iter().all(|arg| ONLY_PRINTS.contains(&arg.as_str())) {
             return None;
