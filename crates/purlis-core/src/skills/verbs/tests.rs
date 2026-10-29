@@ -247,7 +247,8 @@ fn a_rename_takes_its_pins_with_it_in_their_place_and_who_uses_it_names_them() {
         &lines,
         |line| matches!(line, Say::Done(text) if text == "workspace ops pins ship now")
     ));
-    assert!(users(root, &Level::project(), "ship").unwrap().pinned_by.len() == 2);
+    let followed = users(root, &Level::project(), "ship").unwrap();
+    assert_eq!(followed.pinned_by, [ops, steward]);
 }
 
 #[test]
