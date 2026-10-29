@@ -11,9 +11,14 @@
 //!
 //! - **update**: fetch the base's remote, bring the base up to it where that is a fast-forward
 //!   nothing has checked out ([`crate::worktree::fresh`]), and rebase the piece onto the base:
-//!   the one named, or the one recorded when the piece was cut. A rebase stops on a conflict and
-//!   names the files; `--continue` stages exactly the files git named, once resolved, each as
-//!   the one file on disk with one name as a save does (`planegit::ondisk`), and goes on;
+//!   the one named, a remote-tracking branch among them (`origin/main`), or the one recorded
+//!   when the piece was cut. **Only the piece's own commits move** (#3836): those after where
+//!   it left the base it was recorded as cut from, so a piece cut from a base that had moved
+//!   apart from its remote leaves that base's commits behind, as `git rebase --onto <new>
+//!   <old>` would, and a base named in place of the recorded one is recorded. A rebase stops on
+//!   a conflict and names the files; `--continue` stages exactly the files git named, once
+//!   resolved, each as the one file on disk with one name as a save does (`planegit::ondisk`),
+//!   and goes on;
 //!   `--abort` puts the branch back. **A move that cannot finish does not start**: for a
 //!   sandboxed chat, the rebase is judged by the clone guard's own rules first
 //!   ([`crate::cloneupdate::judged`]) and refused where it would write a file the chat's
@@ -317,19 +322,46 @@ fn start(
             "{base} is the folder's own branch: name the branch it is to be brought up to"
         ));
     }
-    if let Some(remote) = remote_of(&here.clone, &base) {
+    let named = worktree::fresh::named(&here.clone, &base).map_err(|e| e.to_string())?;
+    if named.branch == here.branch {
+        return Err(format!(
+            "{base} follows the folder's own branch: name the branch it is to be brought up to"
+        ));
+    }
+    let remote = match &named.tracking {
+        Some((remote, _)) => Some(remote.clone()),
+        None => remote_of(&here.clone, &named.branch),
+    };
+    if let Some(remote) = remote {
         crate::repocmd::sync::fetch_remote(piece.root, &here.clone, &remote, reach.hosts)
             .map_err(|why| format!("{why}. Nothing was moved"))?;
     }
-    let fresh = worktree::fresh::bring_up(&here.clone, &base).map_err(|e| e.to_string())?;
+    let fresh = worktree::fresh::bring_up_named(&here.clone, &named).map_err(|e| e.to_string())?;
     for note in fresh.notes {
         say(Say::Warn(note.into()));
     }
     // The base, or its remote-tracking branch where the base is behind it and checked out.
-    let onto = fresh.instead.clone().unwrap_or_else(|| name::as_ref(&base));
+    let onto = fresh
+        .instead
+        .clone()
+        .unwrap_or_else(|| name::as_ref(&named.branch));
+    let recorded = worktree::recorded_base(&here.clone, &here.branch);
+    // A base named in place of the recorded one is recorded once the piece is on it.
+    let new_base =
+        (recorded.as_deref() != Some(named.branch.as_str())).then(|| named.branch.clone());
+    let own = Own {
+        recorded: recorded.as_deref(),
+        new_base: new_base.clone(),
+    };
     let label = &here.label;
-    match rebased(piece.root, here, &onto, reach, say)? {
-        Moved::Already => say(Say::Done(format!("{label} is already on {base}").into())),
+    let base = &named.branch;
+    match rebased(piece.root, here, &onto, own, reach, say)? {
+        Moved::Already => {
+            if let Some(base) = &new_base {
+                rerecord(here, base, say);
+            }
+            say(Say::Done(format!("{label} is already on {base}").into()));
+        }
         Moved::Stopped(code) => return Ok(code),
         Moved::Forward | Moved::Rebased => {
             let moved = match (&fresh.moved_to, onto.strip_prefix("refs/remotes/")) {
@@ -375,7 +407,7 @@ fn start_clone(
         ));
     }
     let shown = up.strip_prefix("refs/remotes/").unwrap_or(&up).to_owned();
-    match rebased(at.root, here, &up, reach, say)? {
+    match rebased(at.root, here, &up, Own::default(), reach, say)? {
         Moved::Already => say(Say::Done(
             format!("{label} is already up to date with {shown}").into(),
         )),
@@ -443,13 +475,23 @@ enum Moved {
     Stopped(u8),
 }
 
+/// Which of a branch folder's commits are its own (#3836): the base it was recorded as cut
+/// from, and the base to record for it once rebased, where that is a new one. A clone's is
+/// neither, and its branch's commits after `onto` are its own.
+#[derive(Default)]
+struct Own<'a> {
+    recorded: Option<&'a str>,
+    new_base: Option<String>,
+}
+
 /// The folder's branch rebased onto `onto`: judged first for a sandboxed chat, refused where
-/// it would overwrite a file on disk that the current commit does not track, and run on the two
-/// ids read once, whatever a ref names by the time git runs.
+/// it would overwrite a file on disk that the current commit does not track, and run on the
+/// ids read once, whatever a ref names by the time git runs. Only its own commits move.
 fn rebased(
     root: &Path,
     here: &Here,
     onto: &str,
+    own: Own<'_>,
     reach: &Reach,
     say: &mut dyn FnMut(Say),
 ) -> Result<Moved, String> {
@@ -460,7 +502,8 @@ fn rebased(
         .ok_or_else(|| format!("{onto} names no commit here, so nothing was moved"))?;
     let head_id = commit_of(&here.folder, "HEAD")
         .ok_or_else(|| format!("{label} has no commit, so nothing was moved"))?;
-    if is_ancestor(&here.folder, &onto_id, &head_id)? {
+    let from_id = own_commits_after(&here.folder, own.recorded, &onto_id, &head_id)?;
+    if from_id == onto_id && is_ancestor(&here.folder, &onto_id, &head_id)? {
         return Ok(Moved::Already);
     }
     let forward = is_ancestor(&here.folder, &head_id, &onto_id)?;
@@ -475,9 +518,10 @@ fn rebased(
         };
         let folder = here.folder.to_string_lossy();
         // Judged for the two ids the rebase is handed, never for what HEAD names by then.
-        if let Some(why) = crate::cloneupdate::judged_rebase(
+        if let Some(why) = crate::cloneupdate::judged_rebase_from(
             &folder,
             &onto_id,
+            &from_id,
             &head_id,
             &place,
             &crate::cloneupdate::Asked,
@@ -494,6 +538,7 @@ fn rebased(
     let record = Record {
         branch: here.branch.clone(),
         head: head_id.clone(),
+        base: own.new_base,
     };
     record.write(&here.git_dir)?;
     let mut args: Vec<&str> = REBASE.to_vec();
@@ -502,7 +547,7 @@ fn rebased(
         "--no-autostash",
         "--onto",
         &onto_id,
-        &onto_id,
+        &from_id,
         &head_id,
     ]);
     // Untimed: a rebase checks trees out, and one killed halfway is left half done.
@@ -511,10 +556,55 @@ fn rebased(
         return Ok(Moved::Stopped(stopped_said(here, &went.err, say)));
     }
     finish(here, &record)?;
+    if let Some(base) = &record.base {
+        rerecord(here, base, say);
+    }
     Ok(if forward {
         Moved::Forward
     } else {
         Moved::Rebased
+    })
+}
+
+/// `base` recorded as the branch the folder's branch was cut from, now that it is on it
+/// (#3836); said where git did not write it, since the branch is moved either way.
+fn rerecord(here: &Here, base: &str, say: &mut dyn FnMut(Say)) {
+    if let Err(why) = worktree::record_base(&here.clone, &here.branch, base) {
+        say(Say::Warn(
+            format!(
+                "{} is on {base}, and purlis could not record that as its base ({why}): its \
+                 Changes and merge still count from the base recorded before",
+                here.branch
+            )
+            .into(),
+        ));
+    }
+}
+
+/// The commit after which the piece's own commits start, as a rebase's upstream (#3836):
+/// where `head` left the base it was recorded as cut from, where that is not already in
+/// `onto`; otherwise `onto` itself, as a plain rebase onto it. A piece cut from a base whose
+/// commits `onto` does not have (a clone's branch that moved apart from its remote, or another
+/// branch) carries only the commits after it, as `git rebase --onto <onto> <old base>` would.
+fn own_commits_after(
+    folder: &Path,
+    recorded: Option<&str>,
+    onto_id: &str,
+    head_id: &str,
+) -> Result<String, String> {
+    let Some(old) = recorded.and_then(|base| commit_of(folder, &name::as_ref(base))) else {
+        return Ok(onto_id.to_owned());
+    };
+    let fork =
+        git::run(folder, &["merge-base", &old, head_id], git::READ).map_err(|e| e.to_string())?;
+    let fork = fork.line().trim();
+    if fork.is_empty() || !full_id(fork) {
+        return Ok(onto_id.to_owned());
+    }
+    Ok(if is_ancestor(folder, fork, onto_id)? {
+        onto_id.to_owned()
+    } else {
+        fork.to_owned()
     })
 }
 
@@ -651,6 +741,9 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
         return Ok(stopped_said(here, &went.err, say));
     }
     finish(here, &record)?;
+    if let Some(base) = &record.base {
+        rerecord(here, base, say);
+    }
     say(Say::Done(format!("{label} is rebased").into()));
     Ok(0)
 }
@@ -670,10 +763,12 @@ const MOVED: &str = "the folder's branch moved while purlis worked on it, so it 
      it is. Run the update again";
 
 /// What an update purlis started records in the folder's own git directory, which no chat
-/// writes: the branch it rebases, and the commit that branch was at when it was judged.
+/// writes: the branch it rebases, the commit that branch was at when it was judged, and the
+/// base to record for it once rebased, where that is a new one (#3836).
 struct Record {
     branch: String,
     head: String,
+    base: Option<String>,
 }
 
 /// The file [`Record`] is kept in while an update is under way.
@@ -685,9 +780,13 @@ const UPDATED: &str = "purlis-updated";
 
 impl Record {
     fn write(&self, git_dir: &Path) -> Result<(), String> {
+        let base = self
+            .base
+            .as_deref()
+            .map_or(String::new(), |base| format!("{base}\n"));
         std::fs::write(
             git_dir.join(UNDER_WAY),
-            format!("{}\n{}\n", self.branch, self.head),
+            format!("{}\n{}\n{base}", self.branch, self.head),
         )
         .map_err(|why| format!("purlis could not note the update it starts: {why}"))
     }
@@ -710,7 +809,15 @@ impl Record {
         let text = std::fs::read_to_string(git_dir.join(UNDER_WAY)).ok()?;
         let mut lines = text.lines();
         let (branch, head) = (lines.next()?.to_owned(), lines.next()?.to_owned());
-        (name::branch_name_ok(&branch).is_ok() && full_id(&head)).then_some(Self { branch, head })
+        let base = lines
+            .next()
+            .map(str::to_owned)
+            .filter(|base| name::branch_name_ok(base).is_ok());
+        (name::branch_name_ok(&branch).is_ok() && full_id(&head)).then_some(Self {
+            branch,
+            head,
+            base,
+        })
     }
 }
 

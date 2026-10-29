@@ -971,9 +971,22 @@ pub fn judged_rebase(
     place: &Place<'_>,
     asks: &dyn Asks,
 ) -> Option<String> {
+    judged_rebase_from(top, onto, onto, head, place, asks)
+}
+
+/// [`judged_rebase`], for `git rebase --onto <onto> <upstream> <head>` (#3836): what it replays
+/// is each commit `head` has and `upstream` lacks.
+pub fn judged_rebase_from(
+    top: &str,
+    onto: &str,
+    upstream: &str,
+    head: &str,
+    place: &Place<'_>,
+    asks: &dyn Asks,
+) -> Option<String> {
     let (Some(mut paths), Some(replayed)) = (
         asks.differ(top, head, onto),
-        asks.replayed_from(top, onto, head),
+        asks.replayed_from(top, upstream, head),
     ) else {
         return Some(said_unread("rebase", NO_ANSWER));
     };

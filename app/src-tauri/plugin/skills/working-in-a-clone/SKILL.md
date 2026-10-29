@@ -69,6 +69,9 @@ purlis worktree done                   # finished; or: purlis worktree abandon "
 
 - `add` takes `--base <branch>` to start from something other than the default branch. Exit 2
   means the piece name is already claimed, so pick another name.
+- `--base origin/main` (a remote-tracking branch) works for `add` and `update` when the clone's
+  own `main` is stale. `update --base <branch>` moves the piece onto it carrying only the
+  piece's own commits.
 - Run `commit`, `update`, `push`, `done` and `abandon` from inside the piece. In a sandboxed
   chat the app runs them outside the sandbox, and it goes by the folder the chat was started
   in, not the one it `cd`'d into. A chat started above the piece names it instead:
