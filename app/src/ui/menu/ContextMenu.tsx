@@ -19,7 +19,9 @@ import {
   cloneElement,
   isValidElement,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
@@ -78,6 +80,9 @@ export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: Contex
   // The element it was opened on, as the event that opened it found it.
   const [on, setOn] = useState<Element | null>(null);
   const trigger = useMemo(() => ({ current: on }), [on]);
+  // Where it stood as it was opened: a scroll that has not moved it closes nothing.
+  const placed = useRef<DOMRect | null>(null);
+  const shown = useClosedOnlyByAMove(state, on, placed);
   useRightClickElsewhere(state.isOpen, state.close);
   useNotTheOpeningRelease(state.isOpen && pressed, () => setPressed(false));
   return {
@@ -89,6 +94,7 @@ export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: Contex
         if (event.nativeEvent.defaultPrevented) return;
         event.preventDefault();
         setOn(event.currentTarget);
+        placed.current = event.currentTarget.getBoundingClientRect();
         setPressed(!FROM_THE_KEYS.has(event.nativeEvent));
         state.setPoint({ x: event.clientX, y: event.clientY });
         // From the keys, on its first row; from the pointer (or a program's own way in, as a
@@ -98,7 +104,7 @@ export function useContextMenu({ menu, onAsked, onOpenChange, onClosed }: Contex
     },
     menu: (
       <OpenMenu
-        state={state}
+        state={shown}
         triggerRef={trigger}
         // From the pointer, the menu itself takes the keyboard and no row is chosen yet.
         autoFocus={state.focusStrategy ?? true}
@@ -180,6 +186,56 @@ export function ContextMenu({
       {cloneElement(child, joined)}
       {drawn}
     </>
+  );
+}
+
+type MenuState = ReturnType<typeof useMenuTriggerState>;
+
+/**
+ * **A scroll that has not moved what the menu was opened on does not close it** (#3797). React
+ * Aria closes a menu that is not modal when a scrolled region around its opener scrolls, so the
+ * menu is never left behind by what it belongs to. But the keyboard's arrival on a row scrolls
+ * its list to it, and that scroll's event comes a frame later: a Shift+F10 within that frame
+ * opened the menu where the row now stands, and the late event closed it again at once, so the
+ * press seemed to do nothing. Heard first (on the window, as it is captured), a scroll that left
+ * the opener where it was placed holds back every close until it has been heard; one that moved
+ * it closes the menu, as before.
+ */
+function useClosedOnlyByAMove(
+  state: MenuState,
+  on: Element | null,
+  placed: { current: DOMRect | null },
+): MenuState {
+  const still = useRef(false);
+  // Before React Aria's own listeners, which its popover adds in an effect: the first on the
+  // window is the first a scroll reaches.
+  useLayoutEffect(() => {
+    if (!state.isOpen || on === null) return;
+    let done = 0;
+    const scrolled = () => {
+      const was = placed.current;
+      const now = on.getBoundingClientRect();
+      if (was === null || Math.abs(now.left - was.left) >= 1 || Math.abs(now.top - was.top) >= 1)
+        return;
+      still.current = true;
+      window.clearTimeout(done);
+      done = window.setTimeout(() => (still.current = false));
+    };
+    window.addEventListener("scroll", scrolled, true);
+    return () => {
+      window.removeEventListener("scroll", scrolled, true);
+      window.clearTimeout(done);
+      still.current = false;
+    };
+  }, [state.isOpen, on, placed]);
+  return useMemo(
+    () => ({
+      ...state,
+      close: () => {
+        if (!still.current) state.close();
+      },
+    }),
+    [state],
   );
 }
 
