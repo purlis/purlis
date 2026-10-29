@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793297277280,
+  "lastUpdate": 1793298482713,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29862,6 +29862,48 @@ window.BENCHMARK_DATA = {
             "value": 102.18907300000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.707, 102.164, 102.189, 102.348, 103.395 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d4d6c6bf68f2be6af7d6a8b1e63c9a47176602b3",
+          "message": "Card row: Classic's cards stand apart from their side panel, held by the check (#3774) (#3839)\n\n* Card row: stand on a control's ground, held apart from its side panel (#3774)\n\nIn Purlis Classic dark a card row's raised ground was 1.02:1 from the side\npanel's, so its cards read as plain rows. The list family's card row now\nstands on control.base (control.hover under the pointer), which every\nbuilt-in draws 1.09:1 or more from both the window and a panel. Purlis keeps\nits cards on surface.base over its raised panels, its disabled card too.\n\nThe theme check reports a card row whose fill steps under 1.05:1 from the\nside panel's (as the theme's parts draw both) and that draws no hairline\nedge there: a report-only finding (card-not-apart), never a pair of PAIRS,\nso no consent floor, tier walk or person's colour acts on it (#3735).\n\nThe card row and fold stories now stand on a side panel's own ground.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Card row: Classic's on its sunken ground; hold only what parts choose (#3774)\n\nA card row on control.base put Classic's buttons on their own fill, which\nthe parts check reads as an edge-only button under 3:1, and listing the\ncontrol grounds as button grounds rippled through the consent families.\nInstead the family default stays raised and Classic names its card row's\nground: surface.sunken, 1.07:1 from its panel in dark and light.\n\nThe card-not-apart finding is held where a theme's parts choose a card\nrow's or a panel's look, as a meter's fill on its track is; a palette\nalone waits for #3735's report-only pair, so imports and probes with\nraised equal to base are not reported.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Card row check: review fixes (#3774)\n\n- An edge is laid over the card's own fill, as CSS draws a border.\n- A width a rule sets is read as the parts check reads one (has_border).\n- The gate counts only a side panel's fill, and says parts may be inherited;\n  its test now shows a palette alone unreported and a Classic child held.\n- One name for the panel's fill (ground), expect() in the file's style,\n  the guard lists surface.sunken, and the docs and note reworded.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Stories: the fold story's pictures on the side panel; redraw the card row's (#3774)\n\nThe fold story's pictures, taken from its stories run. The card row's\nbaselines are removed so the next run draws them: Classic's new card ground\nis under the screenshot comparison's colour tolerance, so the old pictures\nstill passed while showing the old ground.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Stories: the card row's pictures on the side panel's ground (#3774)\n\nDrawn by the stories run: Classic's cards on the sunken ground, Purlis's\non the window's ground over its raised panel.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T17:42:50Z",
+          "tree_id": "bb6900a548a72c13b135a42095600f94cd0672dc",
+          "url": "https://github.com/purlis/purlis/commit/d4d6c6bf68f2be6af7d6a8b1e63c9a47176602b3"
+        },
+        "date": 1793298477593,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.675195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.643, 0.649, 0.675, 0.680, 0.686 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5512405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.471, 16.482, 16.551, 16.588, 16.621 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.394509,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.686, 102.173, 102.395, 102.668, 102.938 ms"
           }
         ]
       }
