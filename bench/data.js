@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793243490597,
+  "lastUpdate": 1793265763687,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29232,6 +29232,48 @@ window.BENCHMARK_DATA = {
             "value": 102.01449249999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.508, 101.721, 102.014, 102.281, 102.474 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fb17fea3d8a9839621f741110f6f71579f75a73e",
+          "message": "Runners: a pool's browser frame limits are its own settings (#3297) (#3677)\n\n* Runners: a view on the runner never widens what crosses the link (#3297)\n\nThe engine is asked for frames no wider than the narrowest view held to a\nwidth, so a view on the runner's own host no longer widens the frames a\nview over the link is sent past the link's 1280 pixels (which the window\ndrops as too wide). The bounds on what waits for an absent desktop stay\npurlis's own, never a pool's settings (D-2050-14).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: a pool's browser frame limits are its own settings (#3297)\n\nA Docker pool may set the most frames a second (1 to 60) and the widest\nframe (320 to 3840 pixels) its runner's browsers are watched at over the\nlink, kept as runners.json's pool keys `frames` and `width`; one that sets\nneither keeps 15 and 1280. The window gives them with each browser's start\non the runner (session protocol 1.47, `link_frames`), the runner holds that\nbrowser's views over the link to them, and the window holds what it draws\nto the more of the pool's and the defaults. Add a Docker pool has a box for\neach.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: the window's hold on a runner browser's frames reads its pace from its limits alone (#3297)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: a browser's doc names no test-only constructor (#3297)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: the pool dialog's words as prettier lays them out (#3297)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: the new pool test ends its sign-in dialog as the first does (#3297)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: a pool's frame limits are read as a person's choices are, held to a test's fence (#3297)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n* Runners: the review's small fixes to a pool's frame limits (#3297)\n\n- No KNOWS_LINK_FRAMES: every runner is given link_frames, and one before\n  1.47 ignores it, as the version's doc says.\n- A runner browser's hold is let go with the browser, as its origin is.\n- A runner browser the window did not start is held to its pool's limits\n  as this machine keeps them, not the defaults.\n- Add a Docker pool's frame boxes show the core's defaults.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5X4WTJ152CPAEGM6QTS0RZP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T09:01:17Z",
+          "tree_id": "2fe6f0b598faad13b8a755cdd85faf44c0a8ddc4",
+          "url": "https://github.com/purlis/purlis/commit/fb17fea3d8a9839621f741110f6f71579f75a73e"
+        },
+        "date": 1793265758484,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6745185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.654, 0.669, 0.675, 0.688, 0.691 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.606714,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.299, 16.369, 16.607, 16.716, 16.832 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.7372365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.065, 102.726, 102.737, 103.119, 103.473 ms"
           }
         ]
       }
