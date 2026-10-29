@@ -1127,8 +1127,8 @@ pub const WORKTREE_COMMIT_ALLOW: [&str; 1] = ["Bash(purlis worktree commit *)"];
 /// **Each spelling by name, and no bare trailing wildcard.** `purlis dispatch *` would also
 /// allow every subcommand `dispatch` grows later, which nobody has ruled on: a new one is added
 /// here by name when it lands. A flag-first line cannot reach a subcommand (the command's
-/// arguments and its subcommands exclude each other), so these four are the task and the
-/// report and nothing else. An operator's own `ask` or `deny` still wins, as for
+/// arguments and its subcommands exclude each other), so these five are the task, by
+/// each of its four leading flags, and the report, and nothing else. An operator's own `ask` or `deny` still wins, as for
 /// [`SMART_CLOSE_ALLOW`].
 ///
 /// **A line may open with where the task works** (#3903): `--in worktree:<repo>` is the

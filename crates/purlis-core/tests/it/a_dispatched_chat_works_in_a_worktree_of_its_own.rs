@@ -1296,6 +1296,13 @@ fn a_task_asked_for_from_a_workspace_s_folder_is_cut_as_purlis_worktree_add_cuts
         "brought up to the remote"
     );
     assert!(
+        !cut.notes
+            .iter()
+            .any(|note| matches!(note, worktree::Note::FromHead { .. })),
+        "{:?}",
+        cut.notes
+    );
+    assert!(
         !cut.path.join("someones-work").exists(),
         "not the clone's HEAD"
     );
@@ -1308,6 +1315,48 @@ fn a_task_asked_for_from_a_workspace_s_folder_is_cut_as_purlis_worktree_add_cuts
     assert_eq!(
         worktree::locate(&f.plane, &cut.path).map(|found| found.piece),
         Some(cut.piece.clone())
+    );
+}
+
+#[test]
+fn a_task_from_a_workspace_s_folder_whose_clone_has_no_remote_is_cut_from_head_and_says_so() {
+    purlis_core::unsteered!();
+    // #3903 review: `purlis worktree add` cuts from HEAD where no default branch of the remote
+    // can be read. A dispatch does the same, and the asking chat is told.
+    let f = support::plane_with_clone("api");
+    support::git(&f.clone, &["checkout", "-q", "-b", "someones-branch"]);
+    f.commit(&f.clone, "someones-work");
+
+    let repo = asked_from(&f, &f.workspace());
+    let cut = dispatchplace::cut(
+        &f.plane,
+        &repo,
+        "check the queue",
+        &dispatchrecord::mint(),
+        &Isolated::default(),
+    )
+    .expect("the worktree is cut");
+
+    assert_eq!(
+        cut.base,
+        worktree::Base::Branch("someones-branch".to_owned()),
+        "the clone's HEAD"
+    );
+    assert!(cut.path.join("someones-work").is_file());
+    assert!(
+        cut.notes.contains(&worktree::Note::FromHead {
+            repo: "api".to_owned()
+        }),
+        "{:?}",
+        cut.notes
+    );
+    assert_eq!(
+        worktree::Note::FromHead {
+            repo: "api".to_owned()
+        }
+        .in_window(),
+        "purlis could not read which branch api's remote names its default, so the new branch \
+         starts from the commit the clone is on."
     );
 }
 

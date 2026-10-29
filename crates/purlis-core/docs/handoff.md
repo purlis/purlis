@@ -455,9 +455,11 @@ The new chat works in the asking chat's folder unless the dispatch says one word
   cuts from the workspace's one clone; where it holds several, the refusal names them and
   `--in worktree:<repo>` picks one. A chat in one clone may name another clone of its
   workspace the same way. Such a worktree is cut as `purlis worktree add` cuts one: from the
-  branch the remote names its default, brought up to the remote, else from the clone's
-  current commit. It is a branch folder like any other, claimed by the task, so the task
-  commits, updates and pushes it with `purlis worktree commit`, `update` and `push`.
+  branch the remote names its default, moved up to the clone's copy of the remote as the last
+  `purlis sync` left it (nothing is fetched for the cut). Where no default can be read, it is
+  cut from the clone's current commit, and the asking chat is told so. It is a branch folder
+  like any other, claimed by the task, so the task commits, updates and pushes it with
+  `purlis worktree commit`, `update` and `push`.
 - **A persona whose definition says `dispatch-isolation: worktree`** gets a worktree by
   default, when the dispatch names no place. Where the asking chat works in no repo, that
   default gives way to the asking chat's folder and the command says so. `--in` wins over it.

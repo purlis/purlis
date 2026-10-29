@@ -344,11 +344,9 @@ pub fn send(
         ticket,
     }));
     // A worktree is cut before the chat starts: a checkout, which on a large repo takes far
-    // longer than a start alone.
-    let cuts_a_worktree = matches!(
-        purlis_core::dispatchplace::asked(options.place),
-        Ok(Some(purlis_core::dispatchplace::Where::Worktree(_)))
-    );
+    // longer than a start alone, and from a workspace's folder a question to the remote too.
+    let persona = to.map(str::to_owned).or_else(|| here.active_persona(None));
+    let cuts_a_worktree = may_cut_a_worktree(here.plane.root(), options.place, persona.as_deref());
     let within = if cuts_a_worktree {
         A_WORKTREE_TAKES_AT_MOST
     } else {
@@ -432,6 +430,19 @@ pub fn send(
             | Answer::Task(_),
         )
         | Err(_) => Err(no_answer(&ask_name(&ask), cuts_a_worktree)),
+    }
+}
+
+/// Whether the app may cut a worktree for this dispatch, and so is given the longer wait
+/// ([`A_WORKTREE_TAKES_AT_MOST`]): `--in worktree` or `--in worktree:<repo>`, or no `--in` to
+/// a persona whose definition says `dispatch-isolation: worktree` (#3903), whose cut asks the
+/// remote for its default branch where the asking chat stands in a workspace's own folder.
+fn may_cut_a_worktree(root: &std::path::Path, place: Option<&str>, persona: Option<&str>) -> bool {
+    use purlis_core::dispatchplace::{Where, asked, isolates};
+    match asked(place) {
+        Ok(Some(Where::Worktree(_))) => true,
+        Ok(None) => persona.is_some_and(|persona| isolates(root, persona)),
+        Ok(Some(Where::Workspace(_))) | Err(_) => false,
     }
 }
 
@@ -1236,6 +1247,38 @@ mod tests {
             );
         }
         assert!(A_WORKTREE_TAKES_AT_MOST > crate::handoff::AN_OPEN_TAKES_AT_MOST);
+    }
+
+    #[test]
+    fn a_persona_that_isolates_by_default_is_given_the_worktree_s_wait() {
+        // #3903: its default cut may ask the remote for its default branch, so it is waited
+        // on as `--in worktree` is.
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("personas/web")).expect("a persona folder");
+        std::fs::write(
+            root.join("personas/web/persona.md"),
+            "---\nname: web\ndescription: the site\ndispatch-isolation: worktree\n---\n# web\n",
+        )
+        .expect("its definition");
+        std::fs::create_dir_all(root.join("personas/ops")).expect("a persona folder");
+        std::fs::write(
+            root.join("personas/ops/persona.md"),
+            "---\nname: ops\ndescription: the servers\n---\n# ops\n",
+        )
+        .expect("its definition");
+
+        assert!(may_cut_a_worktree(root, None, Some("web")));
+        assert!(!may_cut_a_worktree(root, None, Some("ops")));
+        assert!(!may_cut_a_worktree(root, None, None));
+        assert!(may_cut_a_worktree(root, Some("worktree"), None));
+        assert!(may_cut_a_worktree(root, Some("worktree:api"), Some("ops")));
+        // A place that names another workspace is never a worktree, whatever the persona says.
+        assert!(!may_cut_a_worktree(
+            root,
+            Some("workspace:beta"),
+            Some("web")
+        ));
     }
 
     #[test]
