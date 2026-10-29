@@ -310,7 +310,15 @@ class Reader {
   /** One pass over every file, with each component's `children` places from the pass before. */
   read(): void {
     const fresh = new Map<string, Unit[]>();
-    for (const file of this.files) {
+    for (const [source, held] of this.parsed()) this.readFile(source, held, fresh);
+    this.units.clear();
+    fresh.forEach((units, name) => this.units.set(name, units));
+  }
+
+  /** Each file, parsed with its variables once for every pass. */
+  private parsedFiles?: [ts.SourceFile, Held][];
+  private parsed(): [ts.SourceFile, Held][] {
+    this.parsedFiles ??= this.files.map((file) => {
       const source = ts.createSourceFile(
         file.name,
         file.text,
@@ -318,13 +326,12 @@ class Reader {
         true,
         ts.ScriptKind.TSX,
       );
-      this.readFile(source, fresh);
-    }
-    this.units.clear();
-    fresh.forEach((units, name) => this.units.set(name, units));
+      return [source, new Held(source)];
+    });
+    return this.parsedFiles;
   }
 
-  private readFile(source: ts.SourceFile, into: Map<string, Unit[]>): void {
+  private readFile(source: ts.SourceFile, held: Held, into: Map<string, Unit[]>): void {
     // The family's members this file names: imported from the family's module, or its own.
     const own = /(^|\/)ui\/button\/Button\.tsx$/.test(source.fileName);
     for (const statement of source.statements) {
@@ -338,7 +345,6 @@ class Reader {
             this.family.add(`${source.fileName}:${one.name.text}`);
     }
     if (own) for (const name of FAMILY) this.family.add(`${source.fileName}:${name}`);
-    const held = new Held(source);
     const unitOf = (node: ts.Node): string | undefined => {
       if (ts.isFunctionDeclaration(node) && node.name) return node.name.text;
       if (
@@ -594,35 +600,65 @@ function isPropertyName(node: ts.Identifier): boolean {
   const parent = node.parent;
   if (ts.isPropertyAccessExpression(parent)) return parent.name === node;
   if (ts.isQualifiedName(parent)) return parent.right === node;
+  if (ts.isBindingElement(parent) || ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent))
+    return parent.name === node || parent.propertyName === node;
   if (
     ts.isPropertyAssignment(parent) ||
     ts.isJsxAttribute(parent) ||
     ts.isPropertyDeclaration(parent) ||
     ts.isPropertySignature(parent) ||
-    ts.isMethodDeclaration(parent)
+    ts.isMethodDeclaration(parent) ||
+    ts.isMethodSignature(parent) ||
+    ts.isGetAccessorDeclaration(parent) ||
+    ts.isSetAccessorDeclaration(parent) ||
+    ts.isEnumMember(parent)
   )
     return parent.name === node;
-  return ts.isBindingElement(parent);
+  return (
+    ts.isLabeledStatement(parent) ||
+    ts.isBreakOrContinueStatement(parent) ||
+    ts.isJsxNamespacedName(parent)
+  );
+}
+
+/** The nearest scope around `node`, `node` itself not counted; or with `hoisted`, the nearest
+ *  function or file, where a `var` is seen. */
+function scopeAround(node: ts.Node, hoisted = false): ts.Node {
+  let at = node.parent;
+  while (!(hoisted ? ts.isSourceFile(at) || ts.isFunctionLike(at) : isScope(at))) at = at.parent;
+  return at;
 }
 
 /**
  * **Each variable of one file, in the scope it is declared in** (#3783): a name is read as the
  * variable the nearest scope around it declares, so a component's `said` is never another's,
- * and a parameter of the same name hides what is outside it.
+ * and a parameter, a function, a class or an import of the same name hides what is outside it.
  */
 class Held {
   private readonly scopes = new Map<ts.Node, Map<string, Value | null>>();
-  private readonly jsx = new Set<ts.Node>();
+  /** Each variable declaration with a value, by its node. */
+  private readonly declared = new Map<ts.Node, Value>();
 
   constructor(source: ts.SourceFile) {
     const visit = (node: ts.Node) => {
       if (ts.isVariableDeclaration(node)) {
+        const list = node.parent;
+        const scope = scopeAround(
+          node,
+          ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.BlockScoped) === 0,
+        );
         if (ts.isIdentifier(node.name) && node.initializer !== undefined) {
-          const jsx = hasJsx(node.initializer);
-          if (jsx) this.jsx.add(node);
-          this.declare(node, node.name.text, { jsx, value: node.initializer });
-        } else this.shadow(node, node.name);
-      } else if (ts.isParameter(node)) this.shadow(node, node.name);
+          const value = { jsx: hasJsx(node.initializer), value: node.initializer };
+          this.declared.set(node, value);
+          this.declare(scope, node.name.text, value);
+        } else this.shadow(scope, node.name);
+      } else if (ts.isParameter(node)) this.shadow(node.parent, node.name);
+      else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name)
+        this.declare(scopeAround(node), node.name.text, null);
+      else if ((ts.isFunctionExpression(node) || ts.isClassExpression(node)) && node.name)
+        this.declare(node, node.name.text, null);
+      else if (ts.isImportClause(node) || ts.isNamespaceImport(node) || ts.isImportSpecifier(node))
+        if (node.name !== undefined) this.declare(source, node.name.text, null);
       ts.forEachChild(node, visit);
     };
     visit(source);
@@ -630,7 +666,7 @@ class Held {
 
   /** Whether `node` declares a variable whose value is JSX, which is read where it is placed. */
   isJsx(node: ts.Node): boolean {
-    return this.jsx.has(node);
+    return this.declared.get(node)?.jsx === true;
   }
 
   /** The value of the variable `name` reads, if it reads one this file gives a value. */
@@ -643,21 +679,18 @@ class Held {
     return undefined;
   }
 
-  private declare(node: ts.Node, name: string, value: Value | null): void {
-    let scope = node.parent;
-    // A parameter is seen in its function; a declaration in the block around it.
-    if (!ts.isParameter(node)) while (!isScope(scope)) scope = scope.parent;
+  private declare(scope: ts.Node, name: string, value: Value | null): void {
     const names = this.scopes.get(scope) ?? new Map<string, Value | null>();
     names.set(name, value);
     this.scopes.set(scope, names);
   }
 
   /** Each name a parameter or a destructuring declares, with no value to follow. */
-  private shadow(node: ts.Node, name: ts.BindingName): void {
-    if (ts.isIdentifier(name)) this.declare(node, name.text, null);
+  private shadow(scope: ts.Node, name: ts.BindingName): void {
+    if (ts.isIdentifier(name)) this.declare(scope, name.text, null);
     else
       for (const element of name.elements)
-        if (!ts.isOmittedExpression(element)) this.shadow(node, element.name);
+        if (!ts.isOmittedExpression(element)) this.shadow(scope, element.name);
   }
 }
 
@@ -958,6 +991,50 @@ describe("the grounds a button is drawn on", () => {
       ),
     );
     expect(found).toEqual(["surface.base", "surface.raised"]);
+  });
+
+  it("never follow a name a function, a property or a getter of the same name hides (#3783)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "F.tsx",
+          `const said = <button className="ui-button" />;
+           export function Menu() { return <div className="raised">{said}</div>; }
+           export function Badge() {
+             function said() { return "x"; }
+             return <span className="badge">{said()}</span>;
+           }
+           export function Tag() {
+             return <span className="badge">{f({ said: 1 })}{f({ get said() { return 1; } })}</span>;
+           }`,
+        ),
+      ],
+      css(
+        `.raised { background: var(--surface-raised); } .badge { background: var(--accent-surface); }`,
+      ),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised"]);
+  });
+
+  it("still follow a value read in a default, and a var in its whole function (#3783)", () => {
+    const found = buttonGrounds(
+      [
+        file(
+          "V.tsx",
+          `const more = <button className="ui-button" />;
+           export function Card({ icon = more }) { return <div>{icon}</div>; }
+           export function Page() { return <section className="sunken"><Card /></section>; }
+           export function Menu({ open }) {
+             if (open) { var shown = <button className="ui-button" />; }
+             return <div className="raised">{shown}</div>;
+           }`,
+        ),
+      ],
+      css(
+        `.raised { background: var(--surface-raised); } .sunken { background: var(--surface-sunken); }`,
+      ),
+    );
+    expect(found).toEqual(["surface.base", "surface.raised", "surface.sunken"]);
   });
 
   it("look a class list up in its own component too (#3783)", () => {
