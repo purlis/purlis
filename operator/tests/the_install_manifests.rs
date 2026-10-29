@@ -303,12 +303,28 @@ fn the_operators_signing_key_is_mounted_from_its_secret_by_the_kubelet() {
     assert_eq!(mounts.len(), 1);
     assert_eq!(mounts[0]["name"], volumes[0]["name"]);
     assert_eq!(mounts[0]["readOnly"], true);
-    let path = format!(
-        "{}/{}",
-        mounts[0]["mountPath"].as_str().unwrap(),
-        secret["items"][0]["path"].as_str().unwrap()
+    // The whole Secret, so next.pem comes and goes with a roll, refreshed by the kubelet: a
+    // subPath mount or `items` naming a key would not be (#3305).
+    assert!(secret.get("items").is_none(), "{secret:?}");
+    assert!(mounts[0].get("subPath").is_none());
+    assert_eq!(
+        mounts[0]["mountPath"],
+        purlis_cluster_operator::vouch::SIGNING_KEY_DIR
     );
-    assert_eq!(path, purlis_cluster_operator::vouch::SIGNING_KEY_PATH);
+    assert_eq!(
+        format!(
+            "{}/key.pem",
+            purlis_cluster_operator::vouch::SIGNING_KEY_DIR
+        ),
+        purlis_cluster_operator::vouch::SIGNING_KEY_PATH
+    );
+    assert_eq!(
+        format!(
+            "{}/next.pem",
+            purlis_cluster_operator::vouch::SIGNING_KEY_DIR
+        ),
+        purlis_cluster_operator::vouch::NEXT_SIGNING_KEY_PATH
+    );
 }
 
 #[test]

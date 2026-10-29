@@ -11,13 +11,16 @@
 use k8s_openapi::api::authorization::v1::{
     ResourceAttributes, SubjectAccessReview, SubjectAccessReviewSpec,
 };
-use k8s_openapi::api::core::v1::{Namespace, Pod};
+use k8s_openapi::api::core::v1::{Namespace, Pod, Secret};
 use kube::api::{
     Api, DeleteParams, ListParams, LogParams, ObjectMeta, Patch, PatchParams, PostParams,
 };
 use kube::{Client, ResourceExt};
 use purlis_cluster_operator::{Claim, ClaimSpec, Pool, PoolSpec};
 use std::time::{Duration, Instant};
+
+/// The Secret holding the operator's signing keys, as docs/cluster-operator.md makes it.
+const SIGNING_KEY_SECRET: &str = "purlis-cluster-operator-signing-key";
 
 const SERVICE_ACCOUNT: &str = "system:serviceaccount:purlis-system:purlis-cluster-operator";
 
@@ -269,6 +272,20 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
             .strip_prefix("ed25519:")
             .expect("an Ed25519 key"),
     );
+    // The pool names its cluster too: the uid of kube-system (#3305).
+    let cluster = Api::<Namespace>::all(client.clone())
+        .get("kube-system")
+        .await
+        .expect("kube-system")
+        .uid()
+        .expect("its uid");
+    let named = eventually(
+        "the pool names its cluster",
+        Duration::from_secs(60),
+        || async { pools.get("e2e-vouch").await.ok()?.status?.cluster },
+    )
+    .await;
+    assert_eq!(named, cluster);
     let claims = claims_in(&client, &scratch.name);
     let made = claims
         .create(&PostParams::default(), &claim("ada-1", "e2e-vouch"))
@@ -310,6 +327,7 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
         .expect("the pod's first step published its key");
     let expected =
         purlis_cluster_operator::vouch::statement(&purlis_cluster_operator::vouch::About {
+            cluster: &cluster,
             namespace: &scratch.name,
             claim: "ada-1",
             claim_uid: &made.uid().expect("its uid"),
@@ -334,6 +352,135 @@ async fn a_runners_link_key_is_vouched_for_with_the_key_its_pool_names() {
         (vouched.status.as_str(), vouched.reason.as_str()),
         ("True", "Vouched")
     );
+
+    // The roll (#3305): next.pem added to the Secret beside key.pem. The kubelet refreshes the
+    // mounted Secret, and the operator, not restarted, names the next key on the pool with its
+    // current key's word for it, and signs the claim's statement with both.
+    let secrets = Api::<Secret>::namespaced(client.clone(), "purlis-system");
+    let held = secrets
+        .get(SIGNING_KEY_SECRET)
+        .await
+        .expect("the signing key's Secret");
+    let first_pem = held
+        .data
+        .as_ref()
+        .and_then(|data| data.get("key.pem"))
+        .cloned()
+        .expect("key.pem");
+    let next_pkcs8 =
+        ring::signature::Ed25519KeyPair::generate_pkcs8(&ring::rand::SystemRandom::new())
+            .expect("a next key");
+    let next_pem = {
+        use base64::Engine;
+        format!(
+            "{}\n{}\n{}\n",
+            purlis_cluster_operator::vouch::PEM_BEGIN,
+            base64::engine::general_purpose::STANDARD.encode(next_pkcs8.as_ref()),
+            purlis_cluster_operator::vouch::PEM_END
+        )
+    };
+    let next = purlis_cluster_operator::vouch::SigningKey::from_pem(&next_pem)
+        .expect("the next key")
+        .public();
+    let next_public = unhex(next.strip_prefix("ed25519:").expect("an Ed25519 key"));
+    let data = |pem: &str| {
+        use base64::Engine;
+        serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(pem))
+    };
+    let set = |data: serde_json::Value| {
+        let secrets = secrets.clone();
+        async move {
+            secrets
+                .patch(
+                    SIGNING_KEY_SECRET,
+                    &PatchParams::default(),
+                    &Patch::Merge(serde_json::json!({ "data": data })),
+                )
+                .await
+                .expect("the Secret changed")
+        }
+    };
+    set(serde_json::json!({ "next.pem": data(&next_pem) })).await;
+    let rolling = eventually(
+        "the pool names the next key and the current key's word for it",
+        Duration::from_secs(300),
+        || async {
+            let status = pools.get("e2e-vouch").await.ok()?.status?;
+            (status.next_signing_key.as_deref() == Some(next.as_str())).then_some(status)
+        },
+    )
+    .await;
+    let word = rolling
+        .next_signing_key_vouch
+        .expect("the current key's word");
+    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &public)
+        .verify(word.statement.as_bytes(), &unhex(&word.signature))
+        .expect("the word is signed by the current key");
+    let until = purlis_cluster_operator::vouch::until_of(&word.statement).expect("its until");
+    assert_eq!(
+        Some(word.statement.clone()),
+        purlis_cluster_operator::vouch::roll_statement(&cluster, &signing_key, &next, until)
+    );
+    let both = eventually(
+        "the claim's statement is signed by both keys",
+        Duration::from_secs(120),
+        || async {
+            let link_key = claims.get("ada-1").await.ok()?.status?.link_key?;
+            link_key.next_signature.is_some().then_some(link_key)
+        },
+    )
+    .await;
+    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &next_public)
+        .verify(
+            both.statement.as_bytes(),
+            &unhex(both.next_signature.as_deref().unwrap_or_default()),
+        )
+        .expect("signed by the next key too");
+
+    // The roll over: next.pem moved to key.pem. The pool names the new key alone.
+    set(serde_json::json!({ "key.pem": data(&next_pem), "next.pem": null })).await;
+    eventually(
+        "the pool names the new key alone",
+        Duration::from_secs(300),
+        || async {
+            let status = pools.get("e2e-vouch").await.ok()?.status?;
+            (status.signing_key.as_deref() == Some(next.as_str())
+                && status.next_signing_key.is_none()
+                && status.next_signing_key_vouch.is_none())
+            .then_some(())
+        },
+    )
+    .await;
+    let after = eventually(
+        "the claim's statement is signed by the new key",
+        Duration::from_secs(120),
+        || async {
+            let link_key = claims.get("ada-1").await.ok()?.status?.link_key?;
+            let new =
+                ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &next_public)
+                    .verify(link_key.statement.as_bytes(), &unhex(&link_key.signature))
+                    .is_ok();
+            (new && link_key.next_signature.is_none()).then_some(link_key)
+        },
+    )
+    .await;
+    assert!(after.statement.contains(&format!("cluster: {cluster}\n")));
+
+    // The first key back, so the tests after this one meet the key the install made.
+    let first = {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(&first_pem.0)
+    };
+    set(serde_json::json!({ "key.pem": first })).await;
+    eventually(
+        "the pool names the first key again",
+        Duration::from_secs(300),
+        || async {
+            let status = pools.get("e2e-vouch").await.ok()?.status?;
+            (status.signing_key.as_deref() == Some(signing_key.as_str())).then_some(())
+        },
+    )
+    .await;
 
     let _ = claims.delete("ada-1", &DeleteParams::foreground()).await;
     let _ = pools.delete("e2e-vouch", &DeleteParams::default()).await;
