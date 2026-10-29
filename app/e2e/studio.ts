@@ -70,11 +70,24 @@ export async function studioSkill(name: string) {
  * level…, Delete…, each the start of what it changes.
  */
 export async function studioMore(name: string, said: string) {
-  const more = await $(`button[aria-label="More for ${name}"]`);
-  await more.waitForClickable({ timeout: 20_000 });
-  await more.click();
+  const more = `button[aria-label="More for ${name}"]`;
   const menu = `[role="menu"][aria-label="More for ${name}"]`;
-  await $(menu).waitForExist({ timeout: 20_000, timeoutMsg: `${name}'s menu never opened` });
+  await $(more).waitForExist({ timeout: 20_000 });
+  // Pressed again until its menu is up: a press that lands while the page redraws opens none.
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (button: string, opened: string) => {
+          if (document.querySelector(opened) !== null) return true;
+          const one = document.querySelector<HTMLElement>(button);
+          if (one !== null && one.getAttribute("aria-disabled") !== "true") one.click();
+          return false;
+        },
+        more,
+        menu,
+      ),
+    { timeout: 20_000, interval: 500, timeoutMsg: `${name}'s menu never opened` },
+  );
   await browser.waitUntil(
     async () =>
       browser.execute(

@@ -34,15 +34,12 @@ const DEPLOY = skill("deploy", {
     "Deploys a service to staging or production with the checks the team agreed on: tests green, a changelog entry and a tag.",
 });
 const LINT = skill("lint-rs", {
-  level: "workspace",
-  label: "workspace smart-ide",
   on: false,
   turned_off: true,
   left_out: "turned off in smart-ide",
-  grant: null,
-  granted: null,
+  grant: "all",
+  granted: { to: "all" },
   description: "Runs clippy with the workspace's flags and explains each warning in one line.",
-  folder: "workspaces/smart-ide/skills/lint-rs",
 });
 const BROWSER = skill("browser", {
   level: "built-in",
@@ -218,7 +215,8 @@ export const Off: Story = {
     await expect(await canvas.findByTestId("skill-banner-off")).toHaveTextContent(
       "It is off in smart-ide",
     );
-    const fix = canvas.getByRole("button", { name: "Turn on in smart-ide" });
+    // The banner's fix comes first; Overview holds the same switch.
+    const [fix] = canvas.getAllByRole("button", { name: "Turn on in smart-ide" });
     await tabInto(() => fix);
     expectFocusInSight();
   },
