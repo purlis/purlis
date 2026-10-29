@@ -986,7 +986,7 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
     let border = declared(surface, "border")
         .and_then(|it| it.split_whitespace().last())
         .expect("the surface's border");
-    for variant in ["popover", "menu"] {
+    for variant in ["popover", "menu", "notice"] {
         for state in [&[][..], &[Hover][..]] {
             assert_eq!(
                 parts::look_of("popover", variant, state).map(str::to_owned),
@@ -1409,9 +1409,11 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     assert_eq!(popover["since"], 6);
     assert_eq!(
         names(&popover, "parts"),
-        ["root", "filter", "rule", "list", "header", "footer", "key"]
+        [
+            "root", "filter", "rule", "list", "header", "footer", "key", "point"
+        ]
     );
-    assert_eq!(names(&popover, "variants"), ["popover", "menu"]);
+    assert_eq!(names(&popover, "variants"), ["popover", "menu", "notice"]);
     let menu = family("menu");
     assert_eq!(menu["since"], 6);
     assert_eq!(

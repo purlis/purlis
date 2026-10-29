@@ -3938,6 +3938,27 @@ body {
   margin: var(--space-3) var(--space-5) 0;
 }
 
+/* **A chip's card** (`ChipNotices.tsx`, #3648): the popover family's notice surface, 360px at
+   most, its notices the card Notices of what an action answered, standing in it with no margin
+   of their own. F6 lands on it (`regionCycle.CARD_STOP`): the ring says so. */
+.chip-card {
+  inline-size: min(360px, calc(100vw - 16px));
+}
+
+.chip-card .action-result {
+  margin: 0;
+}
+
+.chip-card [data-f6-card] {
+  border-radius: var(--radius-lg);
+  outline: none;
+}
+
+.chip-card [data-f6-card]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-width) * -1);
+}
+
 /* A kept result's notice is drawn in the Results list's place; its keyboard handler is no box. */
 .action-result-kept {
   display: contents;

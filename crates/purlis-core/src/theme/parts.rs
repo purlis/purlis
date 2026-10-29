@@ -2164,7 +2164,12 @@ fn lowest(theme: &ResolvedTheme, on: &[String], fill: &str, front: &str) -> Opti
 /// **The parts whose words are a mark, not words** (#3099): a tab's ×, and the title bar's ⌄
 /// and pin, each a glyph to be told apart, held at 3:1 (WCAG 1.4.11) in the faint tier
 /// ([`super::check::FAINT`]), as an icon and a select's chevron are.
-const MARK_WORDS: &[(&str, &str)] = &[("tabs", "closer"), ("titlebar", "all"), ("titlebar", "pin")];
+const MARK_WORDS: &[(&str, &str)] = &[
+    ("tabs", "closer"),
+    ("titlebar", "all"),
+    ("titlebar", "pin"),
+    ("titlebar", "dot"),
+];
 
 /// Whether `part` of `family` draws a mark rather than words: an icon, the chevron of a select
 /// or a combobox, or one of [`MARK_WORDS`].
