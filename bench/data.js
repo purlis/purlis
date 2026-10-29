@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793267161366,
+  "lastUpdate": 1793268702391,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29316,6 +29316,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2037625,
             "unit": "ms",
             "extra": "median of 5 runs: 101.792, 102.012, 102.204, 102.231, 102.901 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "03c5c6d5a68fa337b884e8f6a3668b7f9d62c750",
+          "message": "Pools and Devices: reads held to a time, more address spellings, a chat's project (#3546, #3592, #3534) (#3767)\n\n* Pools: every read-only docker run is held to a time (#3546)\n\nEvery docker run that only reads (an inspect, an info, a list, a runner's\nversion, the check before a link) is now held to 20 seconds in the core's\nDocker, on every pool surface, not only in Devices. A run still going then\nis ended and refused with words that say docker did not answer. A pull, a\nmake, a start and a removal still take as long as they take.\n\nA bounded run given a time now also writes its input beside the clock,\nwaits on what it said no longer than its time, and reaps a child it could\nnot look at.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Devices: the window's sanitiser reads more address spellings (#3592)\n\nThe one sanitiser for text from Docker and runners (devices::shown_safely)\nnow also reads a word written in percent escapes as it would be written\nunescaped, and an address that a blank parts across two or more words.\nEach loses its user and password. A host and a port, a digest and an\nimage name still show as they are, with a test for each spelling.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Devices: each chat names its project when more than one is open (#3534)\n\nDevicesShown now says how many projects the window holds. With more than\none, each chat row and each browser's \"Of ...\" line in Devices, the\nsection for a pool no longer kept included, says the project it is in,\nby the name its tab on the title bar says. With one project the rows are\nas they were.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T09:49:52Z",
+          "tree_id": "ccab1f437883b8b4072c077bb92d5f860838e034",
+          "url": "https://github.com/purlis/purlis/commit/03c5c6d5a68fa337b884e8f6a3668b7f9d62c750"
+        },
+        "date": 1793268697896,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6646505,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.647, 0.647, 0.665, 0.678, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.487224499999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.387, 16.401, 16.487, 16.502, 16.733 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0106695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.533, 101.753, 102.011, 102.015, 102.286 ms"
           }
         ]
       }
