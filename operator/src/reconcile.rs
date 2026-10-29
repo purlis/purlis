@@ -2,28 +2,38 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The control loop: each Claim, whenever it, its upstream claim, its pool's template or warm
-//! pool in its namespace, its Pool or the policy's binding changes, is brought to what
-//! [`crate::upstream`] says it asks for, and its status to what upstream says of it. A Claim
-//! not admitted under the policy ([`crate::admission`]) is never acted on: only its status says
-//! why.
+//! pool in its requester's runner namespace, its Pool or the policy's binding changes, is
+//! brought to what [`crate::upstream`] says it asks for, and its status to what upstream says of
+//! it. A Claim not admitted under the policy ([`crate::admission`]) is never acted on: only its
+//! status says why.
+//!
+//! A Claim's runner runs in its requester's runner namespace ([`crate::person`], #2055), which
+//! the operator makes with the requester's role binding and quota; the Claim carries
+//! [`person::FINALIZER`], and what the operator made for it there goes before it does
+//! ([`cleanup`]).
 //!
 //! It changes only upstream objects it made ([`upstream::made_for`],
-//! [`upstream::made_for_pool`]). Each is read first: one it did not make is left as it is, and
+//! [`upstream::made_for_claim`]). Each is read first: one it did not make is left as it is, and
 //! nothing is written for the Claim until that object is gone.
 
-use crate::admission::{Admission, POLICY, admission};
+use crate::admission::{POLICY, RUNNER_NAMESPACES_POLICY, admission, in_force_since};
+use crate::person::{self, QUOTA, Quota, RunnerNamespace};
 use crate::resources::{Claim, ClaimStatus, Pool, READY, condition};
 use crate::stage;
 use crate::upstream::{
     self, Found, Sandbox, SandboxClaim, SandboxTemplate, SandboxWarmPool, Suspension, made_for,
-    made_for_pool, owners_with, sandbox_claim_for, template_for, warm_pool_for,
+    made_for_claim, runner_owner, sandbox_claim_for, template_for, warm_pool_for,
 };
 use crate::vouch::{self, SigningKey, Vouching};
 use futures::StreamExt;
 use k8s_openapi::api::admissionregistration::v1::ValidatingAdmissionPolicyBinding;
-use k8s_openapi::api::core::v1::Pod;
-use kube::api::{Api, ObjectMeta, PartialObjectMeta, Patch, PatchParams, PostParams};
+use k8s_openapi::api::core::v1::{Namespace, Pod, ResourceQuota};
+use k8s_openapi::api::rbac::v1::RoleBinding;
+use kube::api::{
+    Api, DeleteParams, ObjectMeta, PartialObjectMeta, Patch, PatchParams, PostParams, Preconditions,
+};
 use kube::runtime::controller::{Action, Controller};
+use kube::runtime::finalizer::{self, Event, finalizer};
 use kube::runtime::reflector::{ObjectRef, Store};
 use kube::runtime::{WatchStreamExt, watcher};
 use kube::{Client, Resource, ResourceExt};
@@ -37,6 +47,10 @@ use std::time::Duration;
 /// Who the operator's server-side applies are from.
 pub const FIELD_MANAGER: &str = "purlis-cluster-operator";
 
+/// How soon a Claim over its requester's quota is looked at again: the quota frees as their
+/// other Claims go, which the operator does not watch for.
+pub const OVER_QUOTA_AGAIN: Duration = Duration::from_secs(30);
+
 /// Why a Claim could not be brought to what it asks for. It is tried again.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -46,6 +60,21 @@ pub enum Error {
     NoNamespace(String),
     #[error("the upstream object {0} was not made by the operator")]
     InTheWay(String),
+    #[error("the claim's finalizer could not be read: {0}")]
+    Finalizer(String),
+}
+
+impl Error {
+    /// The error a pass under the Claim's finalizer ended with, as the operator's own.
+    fn of_finalizer(error: finalizer::Error<Error>) -> Error {
+        match error {
+            finalizer::Error::ApplyFailed(error) | finalizer::Error::CleanupFailed(error) => error,
+            finalizer::Error::AddFinalizer(error) | finalizer::Error::RemoveFinalizer(error) => {
+                Error::Kube(error)
+            }
+            other => Error::Finalizer(other.to_string()),
+        }
+    }
 }
 
 /// A Claim's status from its upstream claim: `Ready` is upstream's `Ready`, with upstream's own
@@ -109,42 +138,18 @@ pub fn status_of_a_deleted_pool(claim: &Claim, upstream: &SandboxClaim) -> Claim
 }
 
 /// A Claim's status when an upstream object the operator would make or change, the `kind` named
-/// `name` in the Claim's namespace, is one it did not make: it is left as it is, and the Claim
-/// waits until it is removed or renamed.
-pub fn status_of_an_object_in_the_way(kind: &str, name: &str) -> ClaimStatus {
+/// `name` in its requester's runner namespace `namespace`, is one it did not make for this
+/// Claim: it is left as it is, and the Claim waits until it is removed or renamed.
+pub fn status_of_an_object_in_the_way(kind: &str, name: &str, namespace: &str) -> ClaimStatus {
     ClaimStatus {
         link_key: None,
         conditions: vec![condition(
             "False",
             "UpstreamObjectInTheWay",
             format!(
-                "The {kind} {name} in this namespace was not made by purlis's cluster operator, \
-                 so it is left as it is. Remove or rename it, and this claim goes on."
-            ),
-        )],
-    }
-}
-
-/// A Claim's status when its pool's `kind` named `name` in its namespace has `holders`, and
-/// only them, as its owners: Claims the operator knows there on that pool, made it for and now
-/// refuses, since they were made before the policy on claims was in force
-/// ([`upstream::claims_holding`]). It is left as it is, and goes once they are deleted. An object
-/// with any other owner gets [`status_of_an_object_in_the_way`] instead.
-pub fn status_of_objects_held_by_refused_claims(
-    kind: &str,
-    name: &str,
-    holders: &[String],
-) -> ClaimStatus {
-    ClaimStatus {
-        link_key: None,
-        conditions: vec![condition(
-            "False",
-            "HeldByClaimsMadeBeforePolicy",
-            format!(
-                "The {kind} {name} in this namespace belongs to claims made before the policy on \
-                 claims was in force ({}), so it is left as it is. Delete them, or wait for them \
-                 to end, and this claim goes on.",
-                holders.join(", ")
+                "The {kind} {name} in the runner namespace {namespace} was not made by purlis's \
+                 cluster operator for this claim, so it is left as it is. Remove or rename it, \
+                 and this claim goes on."
             ),
         )],
     }
@@ -267,14 +272,21 @@ struct Context {
     client: Client,
     /// What the operator signs each runner's link key with.
     signing: Arc<SigningKey>,
-    /// Every Claim, as the operator's own watch holds them: the Claims a pool's template or
-    /// warm pool may be owned by.
+    /// What each person's runners may hold at once, in their runner namespace's quota.
+    quota: Quota,
+    /// Every Claim, as the operator's own watch holds them: whether a Claim being deleted is the
+    /// last of its requester's on its pool.
     claims: Store<Claim>,
     /// How many times in a row each Claim met an object changed under it.
     conflicts: Mutex<HashMap<ObjectRef<Claim>, u32>>,
+    /// Since when each Claim has waited for its requester's quota to count.
+    uncounted: Mutex<HashMap<ObjectRef<Claim>, std::time::Instant>>,
     /// How many times in a row each stopped Claim's runner was found still being suspended.
     suspending: Mutex<HashMap<ObjectRef<Claim>, u32>>,
 }
+
+/// How long a Claim waits for its requester's quota to count before it says so.
+pub const UNCOUNTED_FOR: Duration = Duration::from_secs(60);
 
 /// One pass over `claim`. Whenever it ends without an error, the Claim's run of conflicts is
 /// over, and the counts of Claims that are gone are dropped.
@@ -301,225 +313,480 @@ async fn reconcile_claim(claim: Arc<Claim>, context: Arc<Context>) -> Result<Act
     let namespace = claim
         .namespace()
         .ok_or_else(|| Error::NoNamespace(name.clone()))?;
-    let binding = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone())
-        .get_opt(POLICY)
-        .await?;
-    let admitted = admission(&claim, binding.as_ref());
-    if let Some(refused) = admitted.status() {
-        admitted.log(&name, &namespace);
-        write_status(client, &claim, &namespace, refused).await?;
-        return Ok(Action::await_change());
+    // A Claim being deleted has what was made for it removed, whatever the policy now says of
+    // it: a Claim made before the policy was in force never had anything made.
+    if claim.metadata.deletion_timestamp.is_none() {
+        let binding = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone())
+            .get_opt(POLICY)
+            .await?;
+        let admitted = admission(&claim, binding.as_ref());
+        if let Some(refused) = admitted.status() {
+            admitted.log(&name, &namespace);
+            write_status(client, &claim, &namespace, refused).await?;
+            return Ok(Action::await_change());
+        }
     }
+    let claims = Api::<Claim>::namespaced(client.clone(), &namespace);
+    finalizer(&claims, person::FINALIZER, claim, |event| async move {
+        match event {
+            Event::Apply(claim) => apply(claim, &context, &namespace).await,
+            Event::Cleanup(claim) => cleanup(&claim, &context).await,
+        }
+    })
+    .await
+    .map_err(Error::of_finalizer)
+}
+
+/// **`requester`'s runner namespace**, as the cluster holds it and as the policy on runner
+/// namespaces lets the operator take it ([`person::runner_namespace_of`]), and when that policy
+/// is in force from.
+async fn runner_namespace_held(
+    client: &Client,
+    requester: &str,
+) -> Result<(RunnerNamespace, Option<k8s_openapi::jiff::Timestamp>), Error> {
+    let binding = Api::<ValidatingAdmissionPolicyBinding>::all(client.clone())
+        .get_opt(RUNNER_NAMESPACES_POLICY)
+        .await?;
+    let since = in_force_since(binding.as_ref(), RUNNER_NAMESPACES_POLICY);
+    let held = Api::<Namespace>::all(client.clone())
+        .get_opt(&person::runner_namespace(requester))
+        .await?;
+    let now = k8s_openapi::jiff::Timestamp::now();
+    Ok((
+        person::runner_namespace_of(held, requester, since, now),
+        since,
+    ))
+}
+
+/// **`requester`'s runner namespace, made ready** (#2055): made where there is none, with the
+/// role binding that gives them alone [`person::OWNER_ROLE`] and the quota `quota` asks for,
+/// each made or brought back to what it should say. The quota as the cluster holds it, with
+/// what it counts, comes back with the namespace; what keeps the operator from acting there
+/// comes back instead when anything does.
+async fn runner_namespace_ready(
+    client: &Client,
+    requester: &str,
+    quota: &Quota,
+) -> Result<Result<(Namespace, ResourceQuota), RunnerNamespace>, Error> {
+    let runner = match runner_namespace_held(client, requester).await? {
+        (RunnerNamespace::Theirs(runner), _) => *runner,
+        // Made, not applied: a namespace someone made under the name since is refused, and the
+        // next pass finds it in the way. What was made is acted in only once it reads as theirs.
+        (RunnerNamespace::Missing, since) => {
+            let made = Api::<Namespace>::all(client.clone())
+                .create(
+                    &PostParams {
+                        field_manager: Some(FIELD_MANAGER.to_owned()),
+                        ..PostParams::default()
+                    },
+                    &person::namespace_for(requester),
+                )
+                .await?;
+            match person::runner_namespace_of(
+                Some(made),
+                requester,
+                since,
+                k8s_openapi::jiff::Timestamp::now(),
+            ) {
+                RunnerNamespace::Theirs(runner) => *runner,
+                refused => return Ok(Err(refused)),
+            }
+        }
+        (refused, _) => return Ok(Err(refused)),
+    };
+    let name = runner.name_any();
+    let wanted = person::owner_binding(&name, requester);
+    made_or_applied(
+        &Api::<RoleBinding>::namespaced(client.clone(), &name),
+        wanted.clone(),
+        |held| person::binding_says(held, &wanted),
+    )
+    .await?;
+    // Applied server-side from the first, so a key later left out of perPerson.quota is taken
+    // out of every quota the operator applied it to.
+    let wanted = person::quota_for(&name, quota);
+    let api = Api::<ResourceQuota>::namespaced(client.clone(), &name);
+    let held = match api.get_opt(QUOTA).await? {
+        Some(held) if person::quota_says(&held, &wanted) => held,
+        _ => {
+            api.patch(
+                QUOTA,
+                &PatchParams::apply(FIELD_MANAGER).force(),
+                &Patch::Apply(&wanted),
+            )
+            .await?
+        }
+    };
+    Ok(Ok((runner, held)))
+}
+
+/// `wanted` as the cluster holds it: made where nothing holds its name, applied server-side
+/// where what is held does not say what it should (`says`), and otherwise left as it is. For an
+/// object whose fields are all atomic, as a role binding's are.
+async fn made_or_applied<K>(api: &Api<K>, wanted: K, says: impl Fn(&K) -> bool) -> Result<K, Error>
+where
+    K: Resource + Clone + DeserializeOwned + Serialize + Debug,
+{
+    let name = wanted.name_any();
+    match api.get_opt(&name).await? {
+        None => Ok(api
+            .create(
+                &PostParams {
+                    field_manager: Some(FIELD_MANAGER.to_owned()),
+                    ..PostParams::default()
+                },
+                &wanted,
+            )
+            .await?),
+        Some(held) if says(&held) => Ok(held),
+        Some(_) => Ok(api
+            .patch(
+                &name,
+                &PatchParams::apply(FIELD_MANAGER).force(),
+                &Patch::Apply(&wanted),
+            )
+            .await?),
+    }
+}
+
+/// **A pass over a Claim the operator acts on**, under its finalizer: its runner made, or kept,
+/// in its requester's runner namespace, and its status written.
+async fn apply(claim: Arc<Claim>, context: &Context, namespace: &str) -> Result<Action, Error> {
+    let client = &context.client;
+    let name = claim.name_any();
+    let requester = &claim.spec.requester;
     let pool = Api::<Pool>::all(client.clone())
         .get_opt(&claim.spec.pool)
         .await?;
-    let status = match pool {
+    let Some(pool) = pool else {
         // The runner it was given, if any, keeps running: the operator changes nothing for it,
         // and says what upstream says of it.
-        None => {
-            let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &namespace);
-            match upstream_claims.get_opt(&name).await? {
-                Some(held)
-                    if matches!(made_for(Some(held.meta()), &*claim), Found::Ours { .. }) =>
-                {
-                    // Still stopped by its own claim (#2058).
-                    let sandbox = sandbox_of(client, &namespace, &held).await?;
-                    set_operating_mode(client, &claim, None, &held, sandbox.as_ref()).await?;
-                    if upstream::is_stopped(&claim, None) {
-                        let (suspension, again) = suspension_seen(
-                            &context,
-                            &claim,
-                            upstream::suspension_of(sandbox.as_ref()),
-                        );
-                        let status = status_of_a_stopped_claim(&claim, None, suspension);
-                        write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said)
-                            .await?;
-                        return Ok(Action::requeue(again));
-                    }
-                    let suspended = sandbox.as_ref().is_some_and(|sandbox| {
-                        sandbox.spec.operating_mode.as_deref() == Some(upstream::SUSPENDED)
-                    });
-                    if suspended {
-                        status_of_a_suspended_runner_of_a_deleted_pool(&claim)
-                    } else {
-                        status_of_a_deleted_pool(&claim, &held)
-                    }
-                }
-                _ => status_of_a_missing_pool(&claim),
+        let held = match runner_namespace_held(client, requester).await?.0 {
+            RunnerNamespace::Theirs(runner) => {
+                let upstream_claims =
+                    Api::<SandboxClaim>::namespaced(client.clone(), &runner.name_any());
+                upstream_claims.get_opt(&name).await?.filter(|held| {
+                    matches!(
+                        made_for_claim(Some(held.meta()), &runner, &claim),
+                        Found::Ours { .. }
+                    )
+                })
             }
-        }
-        Some(pool) => {
-            let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &namespace);
-            let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &namespace);
-            let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &namespace);
-            // All three are looked at before any is written: one in the way stops them all.
-            let mut wanted = sandbox_claim_for(&claim, &pool.spec.kept_volume);
-            let pool_object = upstream::name_for(&pool.name_any());
-            let template_held = templates.get_opt(&pool_object).await?.map(meta);
-            let warm_full = warm_pools.get_opt(&pool_object).await?;
-            // None while the pool is stopped; otherwise as many as it holds (#2058).
-            let replicas = upstream::replicas_kept(&pool, warm_full.as_ref());
-            let warm_held = warm_full.map(meta);
-            let claim_full = upstream_claims.get_opt(&name).await?;
-            // The volume an upstream claim was made with stays as it is: upstream never changes
-            // it, and refuses an apply that does (#2057).
-            upstream::keep_volumes_held(&mut wanted, claim_full.as_ref());
-            let claim_held = claim_full.as_ref().map(|held| meta(held.clone()));
-            // Only a Claim it acts on proves an object is the operator's; once it is, every
-            // Claim on the pool there that already owns it stays an owner.
-            let vouch = claims_that_vouch(context.claims.state(), &claim, binding.as_ref());
-            let vouch: Vec<&Claim> = vouch.iter().map(|known| &**known).collect();
-            let kept = claims_kept_as_owners(context.claims.state(), &claim);
-            let kept: Vec<&Claim> = kept.iter().map(|known| &**known).collect();
-            let template_found = made_for_pool(template_held.as_ref(), &pool, &vouch);
-            let warm_found = made_for_pool(warm_held.as_ref(), &pool, &vouch);
-            let claim_found = made_for(claim_held.as_ref(), &*claim);
-            // The pool's two objects are shared by its Claims in the namespace, each adding
-            // itself as an owner: each is applied only to the version read, so a Claim that
-            // added itself in the meantime is never dropped.
-            let mut template = template_for(
-                &pool,
-                &namespace,
-                owners_with(template_held.as_ref(), &claim, &kept),
-            );
-            template.metadata.resource_version = template_held
-                .as_ref()
-                .and_then(|held| held.resource_version.clone());
-            let mut warm = warm_pool_for(
-                &pool,
-                &namespace,
-                owners_with(warm_held.as_ref(), &claim, &kept),
-            );
-            warm.metadata.resource_version = warm_held
-                .as_ref()
-                .and_then(|held| held.resource_version.clone());
-            // The runners it keeps warm stay as many as it holds (#2057), none while the pool is
-            // stopped (#2058).
-            warm.spec.replicas = replicas;
-            let stopped = upstream::is_stopped(&claim, Some(&pool));
-            // Who holds an object in the way: Claims the operator made it for and now refuses,
-            // or none it knows of.
-            let holders = |held: &Option<ObjectMeta>| {
-                held.as_ref()
-                    .map(|held| upstream::claims_holding(held, &pool, &kept))
-                    .unwrap_or_default()
-            };
-            let in_the_way = [
-                (
-                    &template_found,
-                    SandboxTemplate::kind(&()),
-                    template.name_any(),
-                    holders(&template_held),
-                ),
-                (
-                    &warm_found,
-                    SandboxWarmPool::kind(&()),
-                    warm.name_any(),
-                    holders(&warm_held),
-                ),
-                (
-                    &claim_found,
-                    SandboxClaim::kind(&()),
-                    wanted.name_any(),
-                    Vec::new(),
-                ),
-            ]
-            .into_iter()
-            .find(|(found, _, _, _)| **found == Found::InTheWay);
-            if let Some((_, kind, object, holders)) = in_the_way {
-                // A runner its claim already has is still suspended or run again, whatever is
-                // in the way of the rest (#2058).
-                if let (Found::Ours { .. }, Some(held)) = (&claim_found, claim_full.as_ref()) {
-                    let sandbox = sandbox_of(client, &namespace, held).await?;
-                    set_operating_mode(client, &claim, Some(&pool), held, sandbox.as_ref()).await?;
+            _ => None,
+        };
+        let status = match held {
+            Some(held) => {
+                // Still stopped by its own claim (#2058).
+                let runner = held.namespace().unwrap_or_default();
+                let sandbox = sandbox_of(client, &runner, &held).await?;
+                set_operating_mode(client, &claim, None, &held, sandbox.as_ref()).await?;
+                if upstream::is_stopped(&claim, None) {
+                    let (suspension, again) =
+                        suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
+                    let status = status_of_a_stopped_claim(&claim, None, suspension);
+                    write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+                    return Ok(Action::requeue(again));
                 }
-                let status = if holders.is_empty() {
-                    tracing::warn!(
-                        claim = %name, %namespace, %kind, %object,
-                        "left as it is: an upstream object the operator did not make has the name it would use"
-                    );
-                    status_of_an_object_in_the_way(&kind, &object)
+                let suspended = sandbox.as_ref().is_some_and(|sandbox| {
+                    sandbox.spec.operating_mode.as_deref() == Some(upstream::SUSPENDED)
+                });
+                if suspended {
+                    status_of_a_suspended_runner_of_a_deleted_pool(&claim)
                 } else {
+                    status_of_a_deleted_pool(&claim, &held)
+                }
+            }
+            None => status_of_a_missing_pool(&claim),
+        };
+        write_status(client, &claim, namespace, status).await?;
+        return Ok(Action::await_change());
+    };
+    let (runner, quota) = match runner_namespace_ready(client, requester, &context.quota).await? {
+        Ok(ready) => ready,
+        // The policy's binding is settling: nothing is made, and the claim is looked at again
+        // once it is in force.
+        Err(RunnerNamespace::Settling { until }) => {
+            let wait = until
+                .duration_since(k8s_openapi::jiff::Timestamp::now())
+                .unsigned_abs()
+                .min(vouch::RECHECK);
+            tracing::info!(claim = %name, %namespace, ?wait, "waiting for the policy on runner namespaces to be in force");
+            return Ok(Action::requeue(wait.max(Duration::from_secs(1))));
+        }
+        Err(refused) => {
+            let runner = person::runner_namespace(requester);
+            let status = match refused {
+                RunnerNamespace::InTheWay { made_before_policy } => {
                     tracing::warn!(
-                        claim = %name, %namespace, %kind, %object, holders = %holders.join(","),
-                        "left as it is: the pool's object belongs to claims made before the policy"
+                        claim = %name, %namespace, runner_namespace = %runner, made_before_policy,
+                        "left as it is: the runner namespace's name is held by a namespace the operator may not use"
                     );
-                    status_of_objects_held_by_refused_claims(&kind, &object, &holders)
-                };
-                write_status(client, &claim, &namespace, status).await?;
-                return Ok(Action::await_change());
-            }
-            // A stopped claim that has no runner yet is not given one until it runs (#2058).
-            if stopped && claim_found == Found::Nothing {
-                write_ours(&templates, template, template_found).await?;
-                write_ours(&warm_pools, warm, warm_found).await?;
-                let status = status_of_a_stopped_claim(&claim, Some(&pool), Suspension::NotMade);
-                write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
-                return Ok(Action::await_change());
-            }
-            let written: Result<_, Error> = async {
-                let template_now = write_ours(&templates, template, template_found).await?;
-                write_ours(&warm_pools, warm, warm_found).await?;
-                let applied = write_ours(&upstream_claims, wanted, claim_found).await?;
-                Ok((template_now, applied))
-            }
-            .await;
-            let (template_now, applied) = match written {
-                Ok(written) => written,
-                // A statement the operator can no longer look at again goes (#2057): only a
-                // conflict, which is tried again at once, leaves it.
-                Err(error) => {
-                    if !is_conflict(&error) {
-                        let withdrawn = status_withdrawn(claim.status.as_ref(), &error.to_string());
-                        if let Err(unwritten) = write_status_saying(
-                            client,
-                            &claim,
-                            &namespace,
-                            withdrawn,
-                            LinkKeyIs::Said,
-                        )
-                        .await
-                        {
-                            tracing::warn!(claim = %name, %namespace, error = %unwritten, "the statement could not be taken away");
-                        }
-                    }
-                    return Err(error);
+                    person::status_of_a_namespace_in_the_way(&runner, made_before_policy)
+                }
+                _ => {
+                    tracing::warn!(
+                        claim = %name, %namespace, policy = RUNNER_NAMESPACES_POLICY,
+                        "not acted on: the policy on runner namespaces is not in force"
+                    );
+                    person::status_of_runner_namespaces_not_in_force()
                 }
             };
-            let sandbox = sandbox_of(client, &namespace, &applied).await?;
-            set_operating_mode(client, &claim, Some(&pool), &applied, sandbox.as_ref()).await?;
-            if stopped {
-                let (suspension, again) =
-                    suspension_seen(&context, &claim, upstream::suspension_of(sandbox.as_ref()));
-                let status = status_of_a_stopped_claim(&claim, Some(&pool), suspension);
-                write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
-                return Ok(Action::requeue(again));
-            }
-            let (vouching, pod) = vouch_for(
-                client,
-                &context.signing,
-                &claim,
-                &pool,
-                &applied,
-                &template_now,
-                sandbox.map(|sandbox| sandbox.metadata),
-            )
-            .await?;
-            if let Vouching::Refused(why) = &vouching {
-                tracing::warn!(claim = %name, %namespace, %why, "no link key vouched for");
-            }
-            // A runner not ready yet says its stage (#2057).
-            let mut status = stage::staged(status_of(Some(&applied)), pod.as_ref());
-            status.conditions.push(vouching.condition());
-            status.link_key = vouching.link_key();
-            write_status_saying(client, &claim, &namespace, status, LinkKeyIs::Said).await?;
-            // The pod is not watched: a claim waiting for its key is looked at again soon, and
-            // one vouched for or refused now and then, so a pod changed since is found.
-            return Ok(Action::requeue(vouching.again()));
+            write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+            // Namespaces and that binding are not watched: looked at again now and then.
+            return Ok(Action::requeue(vouch::RECHECK));
         }
     };
-    write_status(client, &claim, &namespace, status).await?;
+    let runner_name = runner.name_any();
+    let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runner_name);
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &runner_name);
+    let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &runner_name);
+    // All three are looked at before any is written: one in the way stops them all.
+    let mut wanted = sandbox_claim_for(&claim, &pool.spec.kept_volume, &runner);
+    let pool_object = upstream::name_for(&pool.name_any());
+    let template_held = templates.get_opt(&pool_object).await?.map(meta);
+    let warm_full = warm_pools.get_opt(&pool_object).await?;
+    // None while the pool is stopped; otherwise as many as it holds (#2058).
+    let replicas = upstream::replicas_kept(&pool, warm_full.as_ref());
+    let warm_held = warm_full.map(meta);
+    let claim_full = upstream_claims.get_opt(&name).await?;
+    // The volume an upstream claim was made with stays as it is: upstream never changes it, and
+    // refuses an apply that does (#2057).
+    upstream::keep_volumes_held(&mut wanted, claim_full.as_ref());
+    let claim_held = claim_full.as_ref().map(|held| meta(held.clone()));
+    let template_found = made_for(template_held.as_ref(), &runner);
+    let warm_found = made_for(warm_held.as_ref(), &runner);
+    let claim_found = made_for_claim(claim_held.as_ref(), &runner, &claim);
+    // The pool's two objects are shared by the requester's Claims on it: each is applied only to
+    // the version read, so a change made in the meantime is looked at again.
+    let mut template = template_for(&pool, &runner_name, runner_owner(&runner));
+    template.metadata.resource_version = template_held
+        .as_ref()
+        .and_then(|held| held.resource_version.clone());
+    let mut warm = warm_pool_for(&pool, &runner_name, runner_owner(&runner));
+    warm.metadata.resource_version = warm_held
+        .as_ref()
+        .and_then(|held| held.resource_version.clone());
+    // The runners it keeps warm stay as many as it holds (#2057), none while the pool is stopped
+    // (#2058).
+    warm.spec.replicas = replicas;
+    let stopped = upstream::is_stopped(&claim, Some(&pool));
+    let in_the_way = [
+        (
+            &template_found,
+            SandboxTemplate::kind(&()),
+            template.name_any(),
+        ),
+        (&warm_found, SandboxWarmPool::kind(&()), warm.name_any()),
+        (&claim_found, SandboxClaim::kind(&()), wanted.name_any()),
+    ]
+    .into_iter()
+    .find(|(found, _, _)| **found == Found::InTheWay);
+    if let Some((_, kind, object)) = in_the_way {
+        // A runner its claim already has is still suspended or run again, whatever is in the
+        // way of the rest (#2058).
+        if let (Found::Ours { .. }, Some(held)) = (&claim_found, claim_full.as_ref()) {
+            let sandbox = sandbox_of(client, &runner_name, held).await?;
+            set_operating_mode(client, &claim, Some(&pool), held, sandbox.as_ref()).await?;
+        }
+        tracing::warn!(
+            claim = %name, %namespace, runner_namespace = %runner_name, %kind, %object,
+            "left as it is: an upstream object the operator did not make has the name it would use"
+        );
+        let status = status_of_an_object_in_the_way(&kind, &object, &runner_name);
+        write_status(client, &claim, namespace, status).await?;
+        return Ok(Action::await_change());
+    }
+    // A stopped claim that has no runner yet is not given one until it runs (#2058).
+    if stopped && claim_found == Found::Nothing {
+        write_ours(&templates, template, template_found).await?;
+        write_ours(&warm_pools, warm, warm_found).await?;
+        let status = status_of_a_stopped_claim(&claim, Some(&pool), Suspension::NotMade);
+        write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+        return Ok(Action::await_change());
+    }
+    // A runner not asked for yet is asked for only within its requester's quota (#2055).
+    if claim_found == Found::Nothing {
+        let pod = template.spec.pod_template.spec.clone().unwrap_or_default();
+        let storage = claim
+            .spec
+            .kept
+            .then_some(pool.spec.kept_volume.size.as_str());
+        if let Some(why) = person::over_quota(&quota, &person::asks_of(&pod, storage)) {
+            return over_quota(client, &claim, namespace, &runner_name, &why).await;
+        }
+    }
+    let written: Result<_, Error> = async {
+        let template_now = write_ours(&templates, template, template_found).await?;
+        write_ours(&warm_pools, warm, warm_found).await?;
+        let applied = write_ours(&upstream_claims, wanted, claim_found).await?;
+        Ok((template_now, applied))
+    }
+    .await;
+    let (template_now, applied) = match written {
+        Ok(written) => {
+            context
+                .uncounted
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(&ObjectRef::from_obj(&*claim));
+            written
+        }
+        // A quota just made has not counted yet: looked at again soon, saying nothing new.
+        Err(Error::Kube(error)) if person::is_quota_not_counted_yet(&error) => {
+            let since = *context
+                .uncounted
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .entry(ObjectRef::from_obj(&*claim))
+                .or_insert_with(std::time::Instant::now);
+            if since.elapsed() >= UNCOUNTED_FOR {
+                let status = person::status_of_an_uncounted_quota(&runner_name);
+                write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+            }
+            return Ok(Action::requeue(vouch::KEY_WAIT));
+        }
+        Err(Error::Kube(error)) if person::is_over_quota(&error) => {
+            return over_quota(client, &claim, namespace, &runner_name, &error.to_string()).await;
+        }
+        // A statement the operator can no longer look at again goes (#2057): only a conflict,
+        // which is tried again at once, leaves it.
+        Err(error) => {
+            if !is_conflict(&error) {
+                let withdrawn = status_withdrawn(claim.status.as_ref(), &error.to_string());
+                if let Err(unwritten) =
+                    write_status_saying(client, &claim, namespace, withdrawn, LinkKeyIs::Said).await
+                {
+                    tracing::warn!(claim = %name, %namespace, error = %unwritten, "the statement could not be taken away");
+                }
+            }
+            return Err(error);
+        }
+    };
+    let sandbox = sandbox_of(client, &runner_name, &applied).await?;
+    set_operating_mode(client, &claim, Some(&pool), &applied, sandbox.as_ref()).await?;
+    if stopped {
+        let (suspension, again) =
+            suspension_seen(context, &claim, upstream::suspension_of(sandbox.as_ref()));
+        let status = status_of_a_stopped_claim(&claim, Some(&pool), suspension);
+        write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+        return Ok(Action::requeue(again));
+    }
+    let (vouching, pod) = vouch_for(
+        client,
+        &context.signing,
+        &claim,
+        &pool,
+        &applied,
+        &template_now,
+        sandbox.map(|sandbox| sandbox.metadata),
+    )
+    .await?;
+    if let Vouching::Refused(why) = &vouching {
+        tracing::warn!(claim = %name, %namespace, %why, "no link key vouched for");
+    }
+    // A runner not ready yet says its stage (#2057).
+    let mut status = stage::staged(status_of(Some(&applied)), pod.as_ref());
+    status.conditions.push(vouching.condition());
+    status.link_key = vouching.link_key();
+    write_status_saying(client, &claim, namespace, status, LinkKeyIs::Said).await?;
+    // The pod is not watched: a claim waiting for its key is looked at again soon, and one
+    // vouched for or refused now and then, so a pod changed since is found.
+    Ok(Action::requeue(vouching.again()))
+}
+
+/// `claim`'s status once its runner would take its requester over their quota in `runner`, and
+/// `why`: no statement, and looked at again soon.
+async fn over_quota(
+    client: &Client,
+    claim: &Claim,
+    namespace: &str,
+    runner: &str,
+    why: &str,
+) -> Result<Action, Error> {
+    tracing::info!(claim = %claim.name_any(), %namespace, runner_namespace = %runner, %why, "over its requester's quota");
+    let status = person::status_over_quota(runner, why);
+    write_status_saying(client, claim, namespace, status, LinkKeyIs::Said).await?;
+    Ok(Action::requeue(OVER_QUOTA_AGAIN))
+}
+
+/// Whether the objects of `claim`'s pool in its requester's runner namespace go with it: no other
+/// Claim among `watched`, the ones the operator's watch holds, by the same requester on the same
+/// pool is left, one being deleted aside. Two deleted at once both remove them.
+pub fn pool_objects_go_with(claim: &Claim, watched: impl IntoIterator<Item = Arc<Claim>>) -> bool {
+    !watched.into_iter().any(|other| {
+        other.uid() != claim.uid()
+            && other.metadata.deletion_timestamp.is_none()
+            && other.spec.requester == claim.spec.requester
+            && other.spec.pool == claim.spec.pool
+    })
+}
+
+/// **What a deleted Claim's finalizer removes** (#2055): in its requester's runner namespace, the
+/// upstream claim the operator made for it, which takes its runner with it, and, when it is the
+/// last of theirs on its pool ([`pool_objects_go_with`]), the pool's template and warm pool there.
+/// Each only when the operator made it, by uid. The namespace, its role binding and its quota
+/// stay for the person's next Claim.
+async fn cleanup(claim: &Claim, context: &Context) -> Result<Action, Error> {
+    let client = &context.client;
+    let held = Api::<Namespace>::all(client.clone())
+        .get_opt(&person::runner_namespace(&claim.spec.requester))
+        .await?;
+    // Only what the operator made, in a namespace marked for this requester, is deleted; with
+    // none there, the Claim goes and nothing else does.
+    let Some(runner) = person::runner_to_clean(held, &claim.spec.requester) else {
+        return Ok(Action::await_change());
+    };
+    let runner_name = runner.name_any();
+    let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &runner_name);
+    let held = upstream_claims
+        .get_metadata_opt(&claim.name_any())
+        .await?
+        .map(|held| held.metadata);
+    if let Found::Ours { uid } = made_for_claim(held.as_ref(), &runner, claim) {
+        delete_by_uid(&upstream_claims, &claim.name_any(), uid).await?;
+    }
+    // Every Claim known first, so one not read yet never lets the pool's objects go under it.
+    let _ = context.claims.wait_until_ready().await;
+    if pool_objects_go_with(claim, context.claims.state()) {
+        let object = upstream::name_for(&claim.spec.pool);
+        let templates = Api::<SandboxTemplate>::namespaced(client.clone(), &runner_name);
+        let held = templates
+            .get_metadata_opt(&object)
+            .await?
+            .map(|held| held.metadata);
+        if let Found::Ours { uid } = made_for(held.as_ref(), &runner) {
+            delete_by_uid(&templates, &object, uid).await?;
+        }
+        let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &runner_name);
+        let held = warm_pools
+            .get_metadata_opt(&object)
+            .await?
+            .map(|held| held.metadata);
+        if let Found::Ours { uid } = made_for(held.as_ref(), &runner) {
+            delete_by_uid(&warm_pools, &object, uid).await?;
+        }
+    }
+    tracing::info!(claim = %claim.name_any(), runner_namespace = %runner_name, "its runner removed");
     Ok(Action::await_change())
+}
+
+/// The object `name` deleted, only while it is the one of `uid`; one already gone is fine.
+async fn delete_by_uid<K>(api: &Api<K>, name: &str, uid: String) -> Result<(), Error>
+where
+    K: Resource + Clone + DeserializeOwned + Debug,
+{
+    let params = DeleteParams {
+        preconditions: Some(Preconditions {
+            uid: Some(uid),
+            resource_version: None,
+        }),
+        ..DeleteParams::background()
+    };
+    match api.delete(name, &params).await {
+        Ok(_) => Ok(()),
+        Err(kube::Error::Api(status)) if status.code == 404 => Ok(()),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// The sandbox `upstream`, a Claim's upstream claim, names in its status, if there is one.
@@ -589,7 +856,8 @@ async fn vouch_for(
     template: &SandboxTemplate,
     sandbox: Option<ObjectMeta>,
 ) -> Result<(Vouching, Option<Pod>), Error> {
-    let namespace = claim.namespace().unwrap_or_default();
+    // The runner is in its upstream claim's namespace, its requester's runner namespace.
+    let namespace = upstream.namespace().unwrap_or_default();
     let pod = match &sandbox {
         Some(sandbox) => {
             Api::<Pod>::namespaced(client.clone(), &namespace)
@@ -620,7 +888,7 @@ async fn vouch_for(
     Ok((vouching, pod))
 }
 
-/// An object's metadata, which is all [`made_for`] and [`made_for_pool`] read of it.
+/// An object's metadata, which is all [`made_for`] and [`made_for_claim`] read of it.
 fn meta<K: Resource>(object: K) -> ObjectMeta {
     object.meta().clone()
 }
@@ -660,43 +928,6 @@ where
     }
 }
 
-/// The Claims among `watched`, the ones the operator's watch holds, whose owner reference makes
-/// `claim`'s pool's template or warm pool count as the operator's: those in its namespace on its
-/// pool that the operator acts on under the policy's `binding`, and `claim` itself. A Claim the
-/// operator refused never vouches for an object.
-pub fn claims_that_vouch(
-    watched: impl IntoIterator<Item = Arc<Claim>>,
-    claim: &Arc<Claim>,
-    binding: Option<&ValidatingAdmissionPolicyBinding>,
-) -> Vec<Arc<Claim>> {
-    claims_kept_as_owners(watched, claim)
-        .into_iter()
-        .filter(|other| {
-            other.uid() == claim.uid() || admission(other, binding) == Admission::UnderPolicy
-        })
-        .collect()
-}
-
-/// The Claims among `watched` that stay owners of `claim`'s pool's template and warm pool once
-/// it is the operator's: every one in its namespace on its pool, refused ones too, and `claim`
-/// itself. A refused Claim's runner may still run, so the object, and what upstream makes of it
-/// for that runner's pod, stays while the Claim does.
-pub fn claims_kept_as_owners(
-    watched: impl IntoIterator<Item = Arc<Claim>>,
-    claim: &Arc<Claim>,
-) -> Vec<Arc<Claim>> {
-    watched
-        .into_iter()
-        .filter(|other| {
-            other.namespace() == claim.namespace()
-                && other.spec.pool == claim.spec.pool
-                && other.uid() != claim.uid()
-        })
-        .chain([claim.clone()])
-        .collect()
-}
-
-/// `status` written on the Claim, unless it says what the Claim already says.
 /// Whether a status written for a Claim says what becomes of its link key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LinkKeyIs {
@@ -818,8 +1049,9 @@ fn error_policy(claim: Arc<Claim>, error: &Error, context: Arc<Context>) -> Acti
 }
 
 /// The Claims to look at again when `object`, a template or warm pool, changes or goes: every
-/// Claim in its namespace on the pool it is named for, whoever made it. A Claim that still needs
-/// it then makes it again, and one it was in the way of goes on once it is gone.
+/// Claim on the pool it is named for whose requester's runner namespace it is in, whoever made
+/// it. A Claim that still needs it then makes it again, and one it was in the way of goes on
+/// once it is gone.
 pub fn claims_woken_by(
     object: &ObjectMeta,
     claims: impl IntoIterator<Item = Arc<Claim>>,
@@ -829,16 +1061,40 @@ pub fn claims_woken_by(
     };
     claims
         .into_iter()
-        .filter(|claim| claim.spec.pool == pool && claim.metadata.namespace == object.namespace)
+        .filter(|claim| {
+            claim.spec.pool == pool
+                && object.namespace.as_deref()
+                    == Some(person::runner_namespace(&claim.spec.requester).as_str())
+        })
+        .map(|claim| ObjectRef::from_obj(&*claim))
+        .collect()
+}
+
+/// The Claims to look at again when `object`, an upstream claim, changes or goes: those among
+/// `claims` of its name whose requester's runner namespace it is in. The one it was made for,
+/// and one of the same name from another namespace that it was in the way of, which goes on
+/// once it is gone.
+pub fn claims_of_upstream(
+    object: &ObjectMeta,
+    claims: impl IntoIterator<Item = Arc<Claim>>,
+) -> Vec<ObjectRef<Claim>> {
+    claims
+        .into_iter()
+        .filter(|claim| {
+            object.name.is_some()
+                && claim.metadata.name == object.name
+                && object.namespace.as_deref()
+                    == Some(person::runner_namespace(&claim.spec.requester).as_str())
+        })
         .map(|claim| ObjectRef::from_obj(&*claim))
         .collect()
 }
 
 /// Run the operator until the process is asked to stop (SIGTERM or Ctrl-C).
-pub async fn run(client: Client, signing: SigningKey) {
+pub async fn run(client: Client, signing: SigningKey, quota: Quota) {
     let signing = Arc::new(signing);
     tokio::select! {
-        () = run_claims(client.clone(), signing.clone()) => {}
+        () = run_claims(client.clone(), signing.clone(), quota) => {}
         () = publish_signing_key(client, signing) => {}
     }
     tracing::info!("stopped; upstream {} is pinned", upstream::VERSION);
@@ -885,7 +1141,7 @@ pub fn pool_status_names(pool: &Pool, public: &str) -> bool {
         == Some(public)
 }
 
-async fn run_claims(client: Client, signing: Arc<SigningKey>) {
+async fn run_claims(client: Client, signing: Arc<SigningKey>, quota: Quota) {
     let controller = Controller::new(
         Api::<Claim>::all(client.clone()),
         watcher::Config::default(),
@@ -893,6 +1149,7 @@ async fn run_claims(client: Client, signing: Arc<SigningKey>) {
     let claims = controller.store();
     let every_claim = controller.store();
     let known_claims = controller.store();
+    let by_upstream_claim = controller.store();
     let by_template = controller.store();
     let by_warm_pool = controller.store();
     // Upstream's objects are watched by their metadata alone, whoever made them: each wakes the
@@ -900,18 +1157,11 @@ async fn run_claims(client: Client, signing: Arc<SigningKey>) {
     // and one an object was in the way of goes on as soon as it is gone. The API server sends
     // only their metadata (`PartialObjectMeta`), so no one's pod template reaches the operator.
     controller
-        // A Claim's upstream claim has its name.
+        // A Claim's upstream claim has its name, in its requester's runner namespace.
         .watches(
             Api::<PartialObjectMeta<SandboxClaim>>::all(client.clone()),
             watcher::Config::default(),
-            |upstream| {
-                upstream
-                    .metadata
-                    .name
-                    .clone()
-                    .zip(upstream.metadata.namespace.clone())
-                    .map(|(name, namespace)| ObjectRef::new(&name).within(&namespace))
-            },
+            move |upstream| claims_of_upstream(&upstream.metadata, by_upstream_claim.state()),
         )
         .watches(
             Api::<PartialObjectMeta<SandboxTemplate>>::all(client.clone()),
@@ -955,9 +1205,11 @@ async fn run_claims(client: Client, signing: Arc<SigningKey>) {
             Arc::new(Context {
                 client,
                 signing,
+                quota,
                 claims: known_claims,
                 conflicts: Mutex::new(HashMap::new()),
                 suspending: Mutex::new(HashMap::new()),
+                uncounted: Mutex::new(HashMap::new()),
             }),
         )
         .for_each(|result| async move {

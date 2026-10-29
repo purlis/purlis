@@ -27,7 +27,9 @@ fn claim() -> Claim {
 }
 
 fn upstream_saying(status: Option<(&str, &str, &str)>) -> upstream::SandboxClaim {
-    let mut given = upstream::sandbox_claim_for(&claim(), &Default::default());
+    let mut runner = purlis_cluster_operator::person::namespace_for("ada@example.com");
+    runner.metadata.uid = Some("runner-uid".into());
+    let mut given = upstream::sandbox_claim_for(&claim(), &Default::default(), &runner);
     given.status = status.map(|(status, reason, message)| upstream::SandboxClaimStatus {
         sandbox: None,
         conditions: vec![Condition {

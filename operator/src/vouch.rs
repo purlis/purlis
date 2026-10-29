@@ -26,7 +26,8 @@ use ring::signature::{Ed25519KeyPair, KeyPair};
 /// The first line of every statement: what it is, and its version.
 /// `v2` since a kept claim's runner keeps its pairing through the loss of its pod (#2057, ruled
 /// 2026-10-28): the statement names the claim, the pod's name and the key, and no longer the
-/// pod's uid, which changes when the pod is made again.
+/// pod's uid, which changes when the pod is made again. v2 names the runner namespace the pod
+/// is in too, its requester's own (#2055, ruled 2026-10-29).
 pub const STATEMENT_HEADER: &str = "purlis runner link key v2";
 
 /// Where the operator's pod holds its signing key: a Secret the kubelet mounts there
@@ -36,9 +37,13 @@ pub const SIGNING_KEY_PATH: &str = "/var/run/purlis-cluster-operator/signing-key
 /// What a statement is about, each value one plain line.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct About<'a> {
+    /// The Claim's namespace.
     pub namespace: &'a str,
     pub claim: &'a str,
     pub claim_uid: &'a str,
+    /// The namespace the runner's pod is in: its requester's runner namespace
+    /// ([`crate::person::runner_namespace`]).
+    pub runner_namespace: &'a str,
     /// The pod's name, which the desktop execs into: a kept claim's pod is made again under
     /// the same name.
     pub pod: &'a str,
@@ -75,13 +80,14 @@ const MOST_VALUE: usize = 512;
 
 /// The statement's text, exactly as signed, or `None` when a value could not be one plain line
 /// (empty, longer than 512 bytes, padded, or holding a control character), a name is not one
-/// Kubernetes gives (a DNS-1123 label for the namespace, a subdomain for the claim and the pod),
+/// Kubernetes gives (a DNS-1123 label for each namespace, a subdomain for the claim and the pod),
 /// or a uid is not one.
 pub fn statement(about: &About<'_>) -> Option<String> {
     let lines = [
         ("namespace", about.namespace),
         ("claim", about.claim),
         ("claim uid", about.claim_uid),
+        ("runner namespace", about.runner_namespace),
         ("pod", about.pod),
         ("key", about.key),
         ("requester", about.requester),
@@ -90,6 +96,7 @@ pub fn statement(about: &About<'_>) -> Option<String> {
     let mut lines = lines.to_vec();
     lines.push(("until", until.as_str()));
     let named = is_label(about.namespace)
+        && is_label(about.runner_namespace)
         && is_subdomain(about.claim)
         && is_subdomain(about.pod)
         && is_uid(about.claim_uid);
@@ -565,7 +572,7 @@ pub struct Held<'a> {
     pub claim: &'a Claim,
     /// The claim's upstream claim, the operator's own.
     pub upstream: &'a SandboxClaim,
-    /// The pool's template in the claim's namespace, as the cluster holds it: its metadata, and
+    /// The pool's template in the runner namespace, as the cluster holds it: its metadata, and
     /// its pod template.
     pub template: Option<&'a ObjectMeta>,
     pub template_spec: Option<&'a PodTemplateSpec>,
@@ -581,6 +588,13 @@ pub struct Held<'a> {
 /// the key its first step published; then the statement, signed with `signing`.
 pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &SigningKey) -> Vouching {
     let not_yet = |why: &str| Vouching::Starting(why.to_owned());
+    if held.upstream.metadata.namespace.as_deref()
+        != Some(crate::person::runner_namespace(&held.claim.spec.requester).as_str())
+    {
+        return Vouching::Refused(
+            "its upstream claim is not in its requester's runner namespace".into(),
+        );
+    }
     let Some(named) = held
         .upstream
         .status
@@ -660,10 +674,13 @@ pub fn vouch(held: &Held<'_>, wanted_template: &PodTemplateSpec, signing: &Signi
     let (claim_name, claim_uid) = (claim.name_any(), claim.uid().unwrap_or_default());
     let pod_name = pod.name_any();
     let namespace = claim.namespace().unwrap_or_default();
+    // The pod is in its upstream claim's namespace, its requester's runner namespace (#2055).
+    let runner_namespace = held.upstream.namespace().unwrap_or_default();
     let about = About {
         namespace: &namespace,
         claim: &claim_name,
         claim_uid: &claim_uid,
+        runner_namespace: &runner_namespace,
         pod: &pod_name,
         key: &key,
         requester: &claim.spec.requester,

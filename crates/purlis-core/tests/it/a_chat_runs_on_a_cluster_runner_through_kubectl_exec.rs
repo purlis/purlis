@@ -106,7 +106,7 @@ async fn linked(
 ) -> (Client, Acceptor) {
     let connector = CommandConnector::new(
         kubectl.program(),
-        kubectl.connect_args(&paired.claimed.namespace, &paired.vouched.pod),
+        kubectl.connect_args(&paired.vouched.runner_namespace, &paired.vouched.pod),
         {
             let (kubectl, operator, paired) = (kubectl.clone(), operator.clone(), paired.clone());
             Arc::new(move || {
@@ -402,10 +402,13 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
         vouched_first.pod, "ada-kept",
         "a kept claim's runner is its own, cold"
     );
+    // Its runner, and its volume, are in its requester's own runner namespace (#2055).
+    let runner = clusterpool::runner_namespace(&kept.requester);
+    assert_eq!(vouched_first.runner_namespace, runner);
     let volume = eventually("the claim's own volume", || {
         field(
             &kubectl,
-            &namespace,
+            &runner,
             "persistentvolumeclaim",
             "purlis-kept-ada-kept",
             "{.metadata.uid}",
@@ -448,8 +451,8 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
     });
 
     // The pod is lost: upstream makes it again, under the same name, on the same volume.
-    let first_pod = field(&kubectl, &namespace, "pod", "ada-kept", "{.metadata.uid}")
-        .expect("the runner's pod");
+    let first_pod =
+        field(&kubectl, &runner, "pod", "ada-kept", "{.metadata.uid}").expect("the runner's pod");
     kubectl
         .run(
             &kubectl.args(&[
@@ -457,7 +460,7 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
                 "pod",
                 "ada-kept",
                 "--namespace",
-                &namespace,
+                &runner,
                 "--wait=true",
             ]),
             None,
@@ -465,10 +468,10 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
         )
         .expect("the runner's pod deleted");
     eventually("the runner's pod made again and ready", || {
-        let uid = field(&kubectl, &namespace, "pod", "ada-kept", "{.metadata.uid}")?;
+        let uid = field(&kubectl, &runner, "pod", "ada-kept", "{.metadata.uid}")?;
         let ready = field(
             &kubectl,
-            &namespace,
+            &runner,
             "pod",
             "ada-kept",
             "{.status.conditions[?(@.type==\"Ready\")].status}",
@@ -478,7 +481,7 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
     assert_eq!(
         field(
             &kubectl,
-            &namespace,
+            &runner,
             "persistentvolumeclaim",
             "purlis-kept-ada-kept",
             "{.metadata.uid}"
@@ -533,7 +536,7 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
     };
     stop(true);
     eventually("the stopped runner's pod ends", || {
-        field(&kubectl, &namespace, "pod", "ada-kept", "{.metadata.uid}")
+        field(&kubectl, &runner, "pod", "ada-kept", "{.metadata.uid}")
             .is_none()
             .then_some(())
     });

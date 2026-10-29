@@ -51,6 +51,10 @@ spec:
       containers:
         - name: operator
           image: {{ include "purlis-cluster-operator.image" . }}
+          env:
+            # What each person's runners may hold at once (#2055), as JSON.
+            - name: PURLIS_PER_PERSON_QUOTA
+              value: {{ .Values.perPerson.quota | toJson | quote }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

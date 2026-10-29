@@ -47,11 +47,25 @@ impl Operator {
     }
 }
 
+/// Ada's runner namespace: `purlis-runners-` and the first 16 hex digits of the SHA-256 of
+/// `ada@example.com`, as the operator works it out (#2055).
+const RUNNER_NAMESPACE: &str = "purlis-runners-b5fc85e55755f9e0";
+
+#[test]
+fn a_requesters_runner_namespace_is_worked_out_as_the_operator_does() {
+    assert_eq!(runner_namespace("ada@example.com"), RUNNER_NAMESPACE);
+    assert_eq!(
+        runner_namespace("kubernetes-admin"),
+        "purlis-runners-b2f220d99d68735b"
+    );
+}
+
 fn vouched(key: PublicKey) -> Vouched {
     Vouched {
         namespace: "ada".into(),
         claim: "ada-1".into(),
         claim_uid: claimed().uid,
+        runner_namespace: RUNNER_NAMESPACE.into(),
         pod: "ada-1".into(),
         key,
         requester: "ada@example.com".into(),
@@ -73,6 +87,7 @@ fn the_operators_worked_example_is_verified_and_read() {
         .expect("the operator's own example verifies");
     assert_eq!(read.namespace, "ada");
     assert_eq!(read.claim, "ada-1");
+    assert_eq!(read.runner_namespace, RUNNER_NAMESPACE);
     assert_eq!(read.pod, "ada-1");
     assert_eq!(read.requester, "ada@example.com");
     assert_eq!(read.until, 1_798_761_600);
@@ -132,6 +147,12 @@ fn a_statement_purlis_does_not_read_is_refused_even_when_signed() {
         good.replace("pod: ada-1", "pod: --server=https://elsewhere"),
         good.replace("pod: ada-1", "pod: Ada-1"),
         good.replace("namespace: ada", "namespace: a.b"),
+        good.replace(
+            &format!("runner namespace: {RUNNER_NAMESPACE}"),
+            "runner namespace: --all-namespaces",
+        ),
+        // A statement without its runner namespace is one purlis no longer reads (#2055).
+        good.replace(&format!("runner namespace: {RUNNER_NAMESPACE}\n"), ""),
         good.replace("claim uid: 6f1c2b8e", "claim uid: 6F1C2B8E"),
         good.replace(
             "claim uid: 6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60",
@@ -172,6 +193,15 @@ fn a_statement_about_another_claim_or_requester_is_refused() {
         },
         Vouched {
             requester: "grace@example.com".into(),
+            ..vouched(key)
+        },
+        // Its runner in any namespace but its requester's own (#2055).
+        Vouched {
+            runner_namespace: "ada".into(),
+            ..vouched(key)
+        },
+        Vouched {
+            runner_namespace: runner_namespace("grace@example.com"),
             ..vouched(key)
         },
     ];
@@ -236,6 +266,10 @@ fn a_statement_naming_another_pod_or_key_than_the_paired_ones_refuses_the_link()
             pod: "ada-2".into(),
             ..vouched(key)
         },
+        Vouched {
+            runner_namespace: "purlis-runners-0000000000000000".into(),
+            ..vouched(key)
+        },
         vouched(LinkKey::generate().unwrap().public()),
     ];
     for now in changed {
@@ -297,7 +331,7 @@ fn pairing_execs_into_the_vouched_pod_and_refuses_a_runner_answering_another_key
             "exec",
             "-i",
             "--namespace",
-            "ada",
+            RUNNER_NAMESPACE,
             "--container",
             "runner",
             "pod/ada-1",
