@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793231285093,
+  "lastUpdate": 1793236601367,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -28980,6 +28980,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2528785,
             "unit": "ms",
             "extra": "median of 5 runs: 102.043, 102.050, 102.253, 102.460, 104.339 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b6b102c2744fab4ff0c2d0af0bc4120d4d16a70c",
+          "message": "CI: four more crates' integration tests as one binary, and no zero-test filter passes (#3752) (#3757)\n\n* CI: the browser engine's integration tests build as one binary (#3752)\n\nEach crates/browser-engine/tests/*.rs was a test binary of its own that\nlinked the whole graph, 41 of them. They are now modules of\ntests/it/main.rs, as purlis-cli's (#3614) and purlis-core's (#3749).\nA host's part re-runs its test by its full libtest name. The one test\nthat leaves a descriptor open across exec in its process runs alone in\na child under cargo test (crate::alone).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* CI: the session protocol's integration tests build as one binary (#3752)\n\n35 of crates/session-protocol/tests/*.rs, each a test binary of its own\nthat linked the whole graph, are now modules of tests/it/main.rs. The\ntwo dhat tests stay binaries of their own: each installs a\n#[global_allocator] to measure its whole process's heap.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* CI: the session host's integration tests build as one binary (#3752)\n\nEach crates/host/tests/*.rs was a test binary of its own that linked\nthe whole graph, 32 of them. They are now modules of tests/it/main.rs.\nNone re-runs itself or changes process-wide state.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* CI: the release's guards build as one binary (#3752)\n\nEach crates/release-manifest/tests/*.rs was a test binary of its own\nthat linked the whole graph, the core's included, 19 of them. They are\nnow modules of tests/it/main.rs. Every one only reads files.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* CI: a step that picks tests by name fails when a name picks none (#3752)\n\nSince #3749 a step names a module inside the core's one test binary, and\ncargo test passes green when a name matches nothing, so a renamed file\nwould quietly stop running. tools/tests-ran.sh runs the command and\nfails when a name after its last `--` picked no test that ran (or, with\nno name, when nothing ran). It wraps the Seatbelt, recorded,\ndocker-pool-hosts, stress and kind steps; the parity step already has\nnextest's --no-tests fail, and forge-live already checks its count.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n* CI: say the scenario steps are wrapped by #3742's lane (#3752)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5QD10Y5H0WECQ02FDBJTG7Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T00:52:29Z",
+          "tree_id": "f7f65338d74e2f51f16a0a83ca546985592201c2",
+          "url": "https://github.com/purlis/purlis/commit/b6b102c2744fab4ff0c2d0af0bc4120d4d16a70c"
+        },
+        "date": 1793236595825,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.328739,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.322, 0.324, 0.329, 0.331, 0.331 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.544137,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.457, 16.529, 16.544, 16.560, 16.612 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6668455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.490, 101.004, 101.667, 102.132, 102.413 ms"
           }
         ]
       }
