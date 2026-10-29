@@ -289,8 +289,14 @@ export const APinNoChatReads: Story = {
     await waitFor(() =>
       expect(screen.getByRole("tooltip")).toHaveTextContent(/^Hidden by the built-in router/),
     );
-    await userEvent.keyboard("{Shift>}{F10}{/Shift}");
-    const menu = await screen.findByRole("menu", { name: "release-notes" }, { timeout: 3_000 });
+    // Shift+F10, again while no menu has come: about one cell a run drops the first (#3797).
+    const menu = await waitFor(
+      async () => {
+        if (screen.queryByRole("menu") === null) await userEvent.keyboard("{Shift>}{F10}{/Shift}");
+        return screen.getByRole("menu", { name: "release-notes" });
+      },
+      { timeout: 3_000, interval: 500 },
+    );
     const unpin = within(menu).getByRole("menuitem", { name: "Unpin from this workspace" });
     expect(unpin).toHaveAccessibleDescription(
       "Pinned, not used: the list holds more than 64 pins.",
