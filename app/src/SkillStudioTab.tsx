@@ -39,7 +39,7 @@ import { DraftPage, DraftsList } from "./SkillStudioDrafts";
 import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
 import { DRAFT_WITH_A_CHAT, NEW_SKILL, SkillStarts, type SkillStart } from "./SkillStarts";
 import { askDraft, useSkillDraftsRead } from "./skillDraftAsks";
-import { SkillSources } from "./SkillSources";
+import { SkillSourcesPage } from "./SkillSources";
 import { Select } from "./ui/select/Select";
 import { Choice, Field, SettingRow } from "./settings/components";
 import { labelOf, levelFrom, levelOf, levelsFor, sameLevel } from "./skillChanges";
@@ -72,6 +72,7 @@ import {
   studioHistoryOf,
   useStudioStart,
   whoseChats,
+  type SourcesAt,
   type StudioPage,
   type StudioPlace,
   type StudioScope,
@@ -92,6 +93,17 @@ type Doing =
   | { what: "moving"; skill: StudioSkill; from: SkillLevel }
   | { what: "move"; skill: StudioSkill; from: SkillLevel; to: SkillLevel }
   | { what: "delete"; skill: StudioSkill; level: SkillLevel; users: SkillUsers };
+
+/** **The path inside Sources** (#3687): the source, then the review, as the prototype names
+ *  them. Pressing the source goes to its page; the review is where the person is. */
+function sourcesPath(at: SourcesAt): Crumb[] {
+  const source = { id: "source", label: at.label };
+  if (at.at === "source") return [source];
+  return [
+    source,
+    { id: at.at, label: `${at.at === "install" ? "Install" : "Update"} ${at.skill}` },
+  ];
+}
 
 /** What a change in progress is called in the path. */
 const DOING_NAMES: Record<Doing["what"], string> = {
@@ -205,8 +217,10 @@ function Placeholders() {
  *   skill chosen opens its page beside the list (`SkillPage.tsx`, #3682), or alone with a way
  *   back where the tab is narrow.
  * - **Needs you** and **Drafts** are in the navigation only while they hold something.
- * - **Sources**, **Deleted**, **Harness skills** and **Routing** hold what the old page's
- *   sections held, each scrolling on its own, until their own tickets build them.
+ * - **Sources** is the person's sources and the ones offered, each source a page of its own and
+ *   each install or update a review page (#3687, `SkillSources.tsx`), each a step of the history.
+ * - **Deleted**, **Harness skills** and **Routing** hold what the old page's sections held, each
+ *   scrolling on its own, until their own tickets build them.
  *
  * Each change is one commit (the core's `skills::verbs`). **What it offers when it opens**
  * (SK-22, #2785; decision 42) is the core's (`skills::first_open`).
@@ -666,12 +680,14 @@ export function SkillStudioTab({
       {DRAFT_WITH_A_CHAT}
     </Button>
   );
+  const inSources = page === "sources" ? at.sources : undefined;
   const path: Crumb[] = [
     { id: page, label: STUDIO_PAGE_NAMES[page] },
     ...(chosen === undefined ? [] : [{ id: "skill", label: chosen.name }]),
     ...(chosen !== undefined && at.tab !== undefined && at.tab !== "overview"
       ? [{ id: "tab", label: SKILL_PAGE_TAB_NAMES[at.tab] }]
       : []),
+    ...(inSources === undefined ? [] : sourcesPath(inSources)),
     ...(doing === undefined ? [] : [{ id: "doing", label: DOING_NAMES[doing.what] }]),
   ];
   const restoring = said?.restore;
@@ -705,6 +721,12 @@ export function SkillStudioTab({
               ...(at.skill === undefined ? {} : { skill: at.skill }),
             });
           } else if (crumb.id === "tab") setDoing(undefined);
+          else if (crumb.id === "source" && inSources !== undefined)
+            go({
+              page,
+              scope,
+              sources: { at: "source", source: inSources.source, label: inSources.label },
+            });
         }}
       >
         {controls}
@@ -1076,20 +1098,21 @@ export function SkillStudioTab({
         />
       );
   } else if (page === "sources") {
-    list = pageList(
-      "Where skills are installed from: a git repository, reviewed before anything lands.",
-      held(() => (
-        /* Skill sources (SK-10): install from a git repository, and each newer commit's review. */
-        <SkillSources
-          plane={plane}
-          levels={levels}
-          start={start}
-          busy={busy}
-          change={change}
-          changed={changed + done}
-        />
-      )),
-    );
+    // Sources and the pages inside it (#3687): each heads itself, as a source's page and the
+    // reviews name what they are about, not the page they are on.
+    list = held(() => (
+      <SkillSourcesPage
+        plane={plane}
+        at={at.sources}
+        onGo={(sources) => go({ page: "sources", scope, ...(sources && { sources }) })}
+        onOpenSkill={(name) => go({ page: "library", scope, skill: skillRowNamed(name) })}
+        levels={levels}
+        start={start}
+        busy={busy}
+        change={change}
+        changed={changed + done}
+      />
+    ));
   } else if (page === "deleted") {
     /* Deleted (S9, #3691): the skills deleted in the last 30 days, and the one chosen beside. */
     const one = deleted.find((each) => each.id === at.item);

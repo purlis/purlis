@@ -121,7 +121,7 @@ describe("the Skill studio's first open", function () {
       /Nothing is installed until you review a skill from it\./,
     );
     await expect($("aria/Repository")).toHaveValue("https://github.com/anthropics/skills");
-    await (await $('form[aria-label="Add Anthropic\'s skills"]').$("button=Cancel")).click();
+    await (await $('[data-testid="skill-source-add"]').$("button=Cancel")).click();
     await expect($('[data-testid="skill-source-offered"]')).toExist();
   });
 });
