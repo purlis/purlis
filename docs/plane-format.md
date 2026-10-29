@@ -2547,6 +2547,7 @@ file `memstore.write` could have written in its new store.
 | `host` | string | required | short hostname, as a label: the file is named by the device id (FD-25) | stable | `charter/pieces.py:110` |
 | `persona` | string or null | required key | `persona.resolve_active()` | stable | `charter/pieces.py:111` |
 | `reason` | string | present only when given | a `done`/`abandoned` reason | stable | `charter/pieces.py:113` |
+| `chat` | string | present only where a chat speaks | the chat's stable id (ADR 0066): a `claimed` line with one names the branch folder's one live writer, and a `done`/`abandoned` with one releases only that chat's claim; a line of the person's or the window's has none (#3901) | stable | `pieces::record`, `piececlaim` |
 
 ### `workspaces/<ws>/pieces/seen/<repo>.json` and `pieces/seen/<repo>/<piece>.json`
 

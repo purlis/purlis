@@ -55,7 +55,36 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
         // no record is held as sandboxed here, where a chat with no sandbox is let reach more.
         unsandboxed: held.chats().started_unsandboxed(chat),
         config: held.config().map(std::path::Path::to_path_buf),
+        id: held.chats().id_of(chat),
+        live: Some(live_chats(held)),
     })
+}
+
+/// **The chats a branch folder's claim is judged against** (#3901): each open chat whose program
+/// still runs, and each that has not come back since the launch (restoring, or waiting to start
+/// again), whose liveness cannot be told yet. A chat in neither has ended, and its claim with it.
+pub(crate) fn live_chats(held: &Held) -> Vec<purlis_core::piececlaim::Live> {
+    let mut live: Vec<purlis_core::piececlaim::Live> = held
+        .chats()
+        .open_now()
+        .into_iter()
+        .filter(|open| crate::handoff::still_working(held, open.session))
+        .filter_map(|open| {
+            Some(purlis_core::piececlaim::Live {
+                id: held.chats().id_of(open.session)?,
+                chat: open.session,
+                back: true,
+            })
+        })
+        .collect();
+    live.extend(held.chats().not_back().into_iter().map(|(id, chat)| {
+        purlis_core::piececlaim::Live {
+            id,
+            chat,
+            back: false,
+        }
+    }));
+    live
 }
 
 /// Commits what `ask` names in the branch folder its chat stands in (#1055), or says why not.

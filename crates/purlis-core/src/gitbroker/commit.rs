@@ -202,6 +202,20 @@ fn commit(
     };
     let here = Here::of(root, Some(&folder))?;
     paced(root, asker.chat, now)?;
+    // One live writer per branch folder (#3901): a second chat's commit is refused, naming the
+    // chat that holds it; a chat committing where nobody live holds the folder takes it.
+    if let Some(at) = worktree::locate(root, &folder) {
+        crate::piececlaim::take(
+            root,
+            &at.workspace,
+            &at.repo,
+            &at.piece,
+            &super::who(asker),
+            asker.live.as_deref(),
+            "commit",
+            chrono::Utc::now(),
+        )?;
+    }
     // One commit at a time in a branch folder: a second ask waits for the first.
     let lock = lock_of(&here.git_dir);
     let _held = lock
