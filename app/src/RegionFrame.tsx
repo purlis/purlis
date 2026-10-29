@@ -50,7 +50,7 @@ import { useArrived } from "./lib/arrived";
 import { HeadActions } from "./viewHead";
 import { lastUsed, narrowed, narrowPicked, useNarrow } from "./narrowPanel";
 import { useSidesOfTheFront } from "./railRoom";
-import { cycleOf, stepped, STOPS, type Stop } from "./regionCycle";
+import { CARD_STOP, cycleOf, steppedWithCard, STOPS, type Stop } from "./regionCycle";
 import { pressed } from "./keys/registry";
 import { FOCUS_MODE, HIDDEN_IN_FOCUS } from "./keys/focusMode";
 import { moveAlong, sequenceIn } from "./tabSequence";
@@ -919,9 +919,21 @@ const REGION_OF: Record<Stop, string> = {
   "panel-right": '.panel-half[data-side="right"]:not([hidden])',
 };
 
-/** The keyboard to the region after the one holding it in `cycle`, or with `back` before. */
+/**
+ * The keyboard to the region after the one holding it in `cycle`, or with `back` before; while a
+ * chip's card is up over the window, to that card first (#3648, `steppedWithCard`).
+ */
 function stepIn(root: HTMLElement, cycle: readonly Stop[], back: boolean) {
-  landIn(root, stepped(drawnCycle(root, cycle), stopHolding(root, document.activeElement), back));
+  const on = document.activeElement;
+  const card = document.querySelector<HTMLElement>(`[${CARD_STOP}]`);
+  const to = steppedWithCard(
+    drawnCycle(root, cycle),
+    stopHolding(root, on),
+    card === null ? "none" : card.contains(on) ? "in" : "out",
+    back,
+  );
+  if (to === "card") card?.focus();
+  else landIn(root, to);
 }
 
 /**

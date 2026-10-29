@@ -460,12 +460,59 @@ pub fn render_entry(vault: Option<&str>, entry: &Value, approved: &BTreeSet<Stri
     Value::Object(out)
 }
 
+/// **The variables an entry's `env` writes out in full**, with their values (#3441): what an
+/// approved server's run starts with, as the person read them on its consent line. A value a
+/// harness expands (`${VAR}`, `${VAR:-default}`) takes its value from the environment that
+/// starts the server, which is the chat's, so it is not one the person approved, and neither
+/// is a value that is not a string: the run starts without either.
+pub fn written_out(env: &Map<String, Value>) -> Vec<(String, String)> {
+    env.iter()
+        .filter_map(|(name, value)| {
+            let value = value.as_str()?;
+            (!value.contains("${")).then(|| (name.clone(), value.to_owned()))
+        })
+        .collect()
+}
+
+/// The variables `entry`'s `env` sets that [`written_out`] leaves out.
+fn not_written_out(entry: &Value) -> Vec<String> {
+    let Some(env) = entry.get("env").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    let kept = written_out(env);
+    env.keys()
+        .filter(|name| !kept.iter().any(|(k, _)| k == *name))
+        .cloned()
+        .collect()
+}
+
+/// The variables `entry`'s `env` writes out that a brokered run is never handed
+/// ([`crate::secrets::brokered::may_hand_on`]): one that makes a program load code or dump its
+/// memory.
+fn never_handed(entry: &Value) -> Vec<String> {
+    entry
+        .get("env")
+        .and_then(Value::as_object)
+        .map(written_out)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(name, _)| !crate::secrets::brokered::may_hand_on(name))
+        .map(|(name, _)| name)
+        .collect()
+}
+
 /// One credentialed server: its name, entry, fingerprint and consent line —
 /// `persona.mcp_credentialed`'s tuple.
 pub struct Credentialed {
     pub server: String,
     pub fingerprint: Option<String>,
     pub line: String,
+    /// The variables its `env` sets that its approved run in a sandboxed chat starts without
+    /// for not being [`written_out`] (#3441).
+    pub unset: Vec<String>,
+    /// The variables its `env` writes out that such a run is never handed, whatever the line
+    /// says: one that makes a program load code or dump its memory.
+    pub refused: Vec<String>,
 }
 
 /// `persona.mcp_credentialed`: every server of `name` that would carry a credential, by
@@ -480,6 +527,8 @@ pub fn credentialed(root: &Path, name: &str) -> Vec<Credentialed> {
             server: server.clone(),
             fingerprint: fingerprint(vault.as_deref(), entry),
             line: describe(vault.as_deref(), entry),
+            unset: not_written_out(entry),
+            refused: never_handed(entry),
         })
         .collect();
     out.sort_by(|a, b| a.server.cmp(&b.server));

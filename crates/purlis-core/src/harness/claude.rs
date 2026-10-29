@@ -323,6 +323,35 @@ impl HarnessAdapter for ClaudeCode {
         Ok(())
     }
 
+    /// Claude Code's own `permission_mode` ([`crate::dispatchmode::Reported::of_claude_code`]).
+    fn reported_mode(
+        &self,
+        permission_mode: Option<&str>,
+    ) -> Option<crate::dispatchmode::Reported> {
+        crate::dispatchmode::Reported::of_claude_code(permission_mode)
+    }
+
+    /// `--permission-mode auto` at the classifier's level (#3787): one of 2.1.312's choices for
+    /// the flag. A flag rather than the session's `defaultMode`, which Claude Code does not let
+    /// every settings source grant as `auto`. Nothing where the profile's command names a
+    /// mode of its own: that is the person's declaration, and it stands.
+    fn task_mode_words(
+        &self,
+        level: crate::dispatchmode::Level,
+        command: &[String],
+    ) -> Vec<String> {
+        use crate::sandbox::codex::{is_flag, split};
+        let names_its_own = command
+            .iter()
+            .any(|word| is_flag(word) && split(word).0 == PERMISSION_MODE_FLAG);
+        match level {
+            crate::dispatchmode::Level::Classifier if !names_its_own => {
+                words([PERMISSION_MODE_FLAG, crate::dispatchmode::CLAUDE_CODE_AUTO])
+            }
+            _ => Vec::new(),
+        }
+    }
+
     /// The person's own settings that start every chat with its prompts off, or that purlis
     /// cannot read; a command that turns them off ([`crate::dispatchunattended::bypass_in`]);
     /// and a command that starts the chat in any mode but the two that ask (#3352), as the

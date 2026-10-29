@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Downloads</title></head>
+<body>
+  <h1>Downloads</h1>
+  <!-- Served with Content-Disposition: the name the engine is told is the header's, not the
+       address's. -->
+  <p><a href="export">Export the report</a></p>
+  <!-- Larger than a test's limit, sent slowly, with its size stated up front and not. -->
+  <p><a href="big-export">Export everything</a></p>
+  <p><a href="big-stream">Stream everything</a></p>
+  <!-- Made by the page from a blob: no web address of its own. -->
+  <button id="make">Make a file</button>
+  <script>
+    document.getElementById('make').addEventListener('click', () => {
+      const blob = new Blob(['made in the page\n'], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'made.txt';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    });
+  </script>
+</body></html>

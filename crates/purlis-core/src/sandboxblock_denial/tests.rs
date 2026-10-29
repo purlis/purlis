@@ -266,10 +266,15 @@ fn listening_on_a_port_is_a_port_of_this_mac_to_listen_on_and_never_a_host() {
         );
         assert_eq!(target.as_deref(), Some(port), "{line}");
     }
-    // Another machine's address, or no port: nothing to allow.
-    for line in [
-        "node(5) deny(1) network-bind 192.168.1.5:3000",
-        "node(5) deny(1) network-bind localhost:0",
+    // Another machine's address, or a port the system picks: no port to allow, a server that
+    // did not start. The port the system picks is named as such (#3396), so its Notice can say
+    // why; another machine's address names nothing.
+    for (line, named) in [
+        ("node(5) deny(1) network-bind 192.168.1.5:3000", None),
+        (
+            "node(5) deny(1) network-bind localhost:0",
+            Some(crate::sandbox::localport::PICKED),
+        ),
     ] {
         let (block, target) = Denial::of_line(line).unwrap().block(&place());
         assert_eq!(
@@ -277,7 +282,7 @@ fn listening_on_a_port_is_a_port_of_this_mac_to_listen_on_and_never_a_host() {
             (Operation::Listen, Kind::System),
             "{line}"
         );
-        assert_eq!(target, None, "{line}");
+        assert_eq!(target.as_deref(), named, "{line}");
     }
 }
 

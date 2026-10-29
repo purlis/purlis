@@ -224,6 +224,16 @@ impl Report {
                         )
                     }),
                 unattended: crate::floorguard::unattended(field("permission_mode").as_deref()),
+                // The mode as the chat's own harness names it (#3787): read by that harness's
+                // adapter alone, so a harness whose word is not read says nothing.
+                mode: chat_harness(env)
+                    .as_deref()
+                    .and_then(crate::harness::Harness::of_registry_or_kind)
+                    .and_then(|harness| {
+                        harness
+                            .adapter()
+                            .reported_mode(field("permission_mode").as_deref())
+                    }),
                 // Only a `Stop` of the chat's own can end its turn, so only there is it asked.
                 helpers_at_work: event == Event::Stop
                     && chat_harness(env).as_deref() == Some(BACKGROUND_TASKS_HARNESS)
@@ -4808,6 +4818,59 @@ mod tests {
             // And a report that does not say it writes the line it always wrote.
             assert!(!serde_json::to_string(&asks).unwrap().contains("unattended"));
         }
+    }
+
+    #[test]
+    fn the_mode_a_chat_s_own_harness_names_rides_every_report() {
+        // #3787: what a task the chat dispatches starts from. Read by the chat's harness's
+        // adapter alone: Codex names bypassPermissions for every chat, and is not read.
+        use crate::dispatchmode::Reported;
+        let payload = |mode: Option<&str>| {
+            let mut said = serde_json::json!({
+                "session_id": "11111111-2222-4333-8444-555555555555",
+            });
+            if let Some(mode) = mode {
+                said["permission_mode"] = mode.into();
+            }
+            said.to_string()
+        };
+        let on = |harness: &str| {
+            env_of(&[
+                (SOCKET_ENV, "/tmp/s.sock"),
+                (CHAT_ENV, "7"),
+                (HARNESS_ENV, harness),
+            ])
+        };
+        let claude = on("claude-code");
+        for (mode, reported) in [
+            (Some("auto"), Some(Reported::Classifier)),
+            (Some("bypassPermissions"), Some(Reported::PromptsOff)),
+            (Some("default"), Some(Reported::Asks)),
+            (Some("dontAsk"), Some(Reported::Asks)),
+            (None, None),
+        ] {
+            let report =
+                Report::read(Event::UserPromptSubmit, &payload(mode), &claude).expect("one");
+            assert_eq!(report.detail.mode, reported, "{mode:?}");
+            let written = serde_json::to_string(&report).expect("json");
+            let back: Report = serde_json::from_str(&written).expect("reads");
+            assert_eq!(back.detail.mode, reported, "{written}");
+        }
+        assert!(
+            !serde_json::to_string(&Report::read(Event::Stop, &payload(None), &claude).unwrap())
+                .unwrap()
+                .contains("\"mode\""),
+            "a report that names no mode writes the line it always wrote"
+        );
+        for other in ["codex", "opencode"] {
+            let report =
+                Report::read(Event::Stop, &payload(Some("auto")), &on(other)).expect("one");
+            assert_eq!(report.detail.mode, None, "{other}");
+        }
+        // And a chat whose harness is not named says nothing.
+        let unnamed = env_of(&[(SOCKET_ENV, "/tmp/s.sock"), (CHAT_ENV, "7")]);
+        let report = Report::read(Event::Stop, &payload(Some("auto")), &unnamed).expect("one");
+        assert_eq!(report.detail.mode, None);
     }
 
     #[test]
