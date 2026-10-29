@@ -139,6 +139,54 @@ pub(super) fn supervised() -> Result<Vec<libc::sock_filter>, String> {
         .collect())
 }
 
+/// Every flag of `clone` and `unshare` that makes a namespace, each the first argument's on the
+/// architectures purlis runs on.
+pub(super) const NAMESPACES: [i32; 7] = [
+    libc::CLONE_NEWNS,
+    libc::CLONE_NEWCGROUP,
+    libc::CLONE_NEWUTS,
+    libc::CLONE_NEWIPC,
+    libc::CLONE_NEWUSER,
+    libc::CLONE_NEWPID,
+    libc::CLONE_NEWNET,
+];
+
+/// **The filters that leave a program, and all it starts, no way to make a namespace** (#3298,
+/// D-2050-25): `clone` and `unshare` with any of [`NAMESPACES`] refused (`EPERM`, as a kernel
+/// that allows none answers), and `clone3`, whose flags are in memory a filter cannot read,
+/// answered as a kernel without it (`ENOSYS`), so a program falls back to `clone`, as it does
+/// under Docker's default profile. On x86-64, every call of the x32 ABI is refused too, so none
+/// goes round them by its other numbers. What a runner's host starts in a terminal is started
+/// under them (`purlis _no-namespaces`), so on a runner only the browser engine may make one.
+pub(super) fn namespaces_refused() -> Result<Vec<BpfProgram>, String> {
+    let mut out = Vec::new();
+    #[cfg(target_arch = "x86_64")]
+    out.push(x32_refused());
+    let namespaces = || {
+        NAMESPACES
+            .iter()
+            .map(|flag| {
+                let flag = u64::try_from(*flag).unwrap_or(u64::MAX);
+                when(vec![(0, Cmp::MaskedEq(flag), flag)])
+            })
+            .collect::<Result<Vec<_>, String>>()
+    };
+    let mut perm = BTreeMap::new();
+    perm.insert(libc::SYS_clone, namespaces()?);
+    perm.insert(libc::SYS_unshare, namespaces()?);
+    out.push(compiled(
+        perm,
+        SeccompAction::Errno(u32::try_from(libc::EPERM).unwrap_or(1)),
+    )?);
+    let mut nosys = BTreeMap::new();
+    nosys.insert(libc::SYS_clone3, Vec::new());
+    out.push(compiled(
+        nosys,
+        SeccompAction::Errno(u32::try_from(libc::ENOSYS).unwrap_or(38)),
+    )?);
+    Ok(out)
+}
+
 /// `BPF_RET | BPF_K`: the instruction that returns a constant action.
 const RET_K: u16 = 0x06;
 

@@ -166,6 +166,8 @@ mod probe {
                 word(1),
                 word(2).parse::<u16>().unwrap_or(0),
             ))),
+            // A user namespace of its own, as the browser engine's sandbox makes one (#3298).
+            "user-namespace" => nix(nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWUSER)),
             // A server on a unix socket at a path (#2019).
             "serve-at" => io(std::os::unix::net::UnixListener::bind(word(1))),
             // A server on an abstract unix socket: bound, then listening.

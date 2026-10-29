@@ -145,3 +145,84 @@ fn every_call_of_the_x32_abi_is_refused() {
     }
     assert_eq!(verdict(libc::SYS_read, [0; 6]), libc::SECCOMP_RET_ALLOW);
 }
+
+/// What the filters that leave a program no namespace return for a call (#3298, D-2050-25).
+fn without_namespaces(nr: i64, args: [u64; 6]) -> u32 {
+    let data = data(u32::try_from(nr).expect("a call number"), args);
+    namespaces_refused()
+        .expect("compiled")
+        .iter()
+        .map(|program| run(program, &data))
+        .min_by_key(|action| (*action & libc::SECCOMP_RET_ACTION_FULL) as i32)
+        .expect("a filter")
+}
+
+/// What a runner's host starts in a terminal makes no namespace of any kind, by `clone` or
+/// `unshare`, and `clone3`, whose flags a filter cannot read, is answered as a kernel without
+/// it: programs fall back to `clone` (#3298, D-2050-25). A thread, a process and a descriptor
+/// table of its own are made as before.
+#[test]
+fn a_program_without_namespaces_makes_none_and_still_makes_threads_and_processes() {
+    for flag in NAMESPACES {
+        let flag = u64::try_from(flag).expect("a flag");
+        for nr in [libc::SYS_clone, libc::SYS_unshare] {
+            assert_eq!(
+                without_namespaces(nr, [flag, 0, 0, 0, 0, 0]),
+                errno(libc::EPERM),
+                "call {nr} with {flag:#x}"
+            );
+        }
+    }
+    let user_and_net = u64::try_from(libc::CLONE_NEWUSER | libc::CLONE_NEWNET).expect("flags");
+    assert_eq!(
+        without_namespaces(libc::SYS_unshare, [user_and_net, 0, 0, 0, 0, 0]),
+        errno(libc::EPERM)
+    );
+    assert_eq!(
+        without_namespaces(libc::SYS_clone3, [0; 6]),
+        errno(libc::ENOSYS)
+    );
+
+    let thread = u64::try_from(
+        libc::CLONE_VM
+            | libc::CLONE_FS
+            | libc::CLONE_FILES
+            | libc::CLONE_SIGHAND
+            | libc::CLONE_THREAD
+            | libc::CLONE_SYSVSEM
+            | libc::CLONE_SETTLS
+            | libc::CLONE_PARENT_SETTID
+            | libc::CLONE_CHILD_CLEARTID,
+    )
+    .expect("flags");
+    let fork = u64::try_from(libc::SIGCHLD | libc::CLONE_CHILD_SETTID | libc::CLONE_CHILD_CLEARTID)
+        .expect("flags");
+    for flags in [thread, fork] {
+        assert_eq!(
+            without_namespaces(libc::SYS_clone, [flags, 0, 0, 0, 0, 0]),
+            libc::SECCOMP_RET_ALLOW,
+            "{flags:#x}"
+        );
+    }
+    let files = u64::try_from(libc::CLONE_FILES).expect("a flag");
+    assert_eq!(
+        without_namespaces(libc::SYS_unshare, [files, 0, 0, 0, 0, 0]),
+        libc::SECCOMP_RET_ALLOW
+    );
+    assert_eq!(
+        without_namespaces(libc::SYS_read, [0; 6]),
+        libc::SECCOMP_RET_ALLOW
+    );
+}
+
+/// The wrap's own filters leave namespaces as the machine leaves them (D-2050-16, as scoped back
+/// to runners): on a desktop a wrapped chat runs what it ran before.
+#[test]
+fn the_wraps_own_filters_leave_namespaces_to_the_machine() {
+    let user = u64::try_from(libc::CLONE_NEWUSER).expect("a flag");
+    assert_eq!(
+        verdict(libc::SYS_unshare, [user, 0, 0, 0, 0, 0]),
+        libc::SECCOMP_RET_ALLOW
+    );
+    assert_eq!(verdict(libc::SYS_clone3, [0; 6]), libc::SECCOMP_RET_ALLOW);
+}

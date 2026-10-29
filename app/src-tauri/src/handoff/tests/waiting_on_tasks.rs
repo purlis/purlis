@@ -776,12 +776,13 @@ fn reports_that_overlap_send_one_notification_when_the_session_is_done_with_them
 fn looking_at_one_failure_leaves_the_others_and_clears_by_its_record() {
     let (_plane, _host, _planes, id, held, steward, told) = a_steward_chat_telling();
     hears(&held, &told, steward, Event::UserPromptSubmit);
-    // Two tasks of one name: two records, two failures.
+    // Two tasks of one name: two records, two failures. The second is dispatched once the
+    // first has failed, as one open task's name is not dispatched again (#3788).
     let one = a_task_of(&held, &id, steward, "check prod");
-    let two = a_task_of(&held, &id, steward, "check prod");
     hears(&held, &told, one, Event::UserPromptSubmit);
-    hears(&held, &told, two, Event::UserPromptSubmit);
     reports_as(&held, &id, one, Outcome::Failed);
+    let two = a_task_of(&held, &id, steward, "check prod");
+    hears(&held, &told, two, Event::UserPromptSubmit);
     reports_as(&held, &id, two, Outcome::Failed);
     let failed = held.hooks().board().failed_tasks(steward);
     assert_eq!(failed.len(), 2, "{failed:?}");

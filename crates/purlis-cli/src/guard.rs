@@ -135,11 +135,8 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     if let Some(verdict) = toolgate::verdict(&call, plane.as_ref()) {
         return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
-    // Nothing refused. A dispatch or a handoff that shares its call with another command is
-    // asked about (D-1444-14), before the persona tool gate could allow the call whole.
-    if let Some(asked) = toolgate::asks(&call, plane.as_ref()) {
-        return crate::hooks::Answered::of(Answer::Say(asked.emitted()));
-    }
+    // Nothing refused: a dispatch or a handoff that writes and shares its call with another
+    // command was refused above (#3785), and nothing here asks the person.
     // Then the persona tool gate is asked. Its answer is an allow or nothing;
     // one it could not print is simply the ordinary prompt. It reads the command too, so a
     // reading of it nested too deep to read whole is the refusal the guards give (#1355).

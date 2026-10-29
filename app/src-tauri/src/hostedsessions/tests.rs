@@ -3217,3 +3217,31 @@ fn the_window_draws_a_runner_browsers_frames_only_within_the_links_caps() {
         "and the next within them"
     );
 }
+
+/// **A pool a chat ran on, or may have run on, without the sandbox is held untrusted by the
+/// window whatever its record answers** (D-2050-27, #3702): a record of runners that cannot be
+/// read is said, and the pool is still untrusted. A connection to this machine's host has no
+/// pool to untrust.
+#[test]
+fn a_pool_a_chat_ran_on_without_the_sandbox_is_untrusted_though_its_record_cannot_be_written() {
+    let config = tempfile::tempdir().unwrap();
+    let folder = purlis_core::machine::dir(config.path());
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join(purlis_core::machine::RUNNERS_FILE), "not json").unwrap();
+    let window = Arc::new(Connection::default());
+    window.runners_in(config.path().to_path_buf());
+    let ended = Arc::new(Mutex::new(Vec::<String>::new()));
+    window.ending_browsers_with({
+        let ended = Arc::clone(&ended);
+        Arc::new(move |pool: &str| ended.lock().unwrap().push(pool.to_owned()))
+    });
+
+    assert!(window.ran_unsandboxed().is_ok(), "no pool");
+    assert!(ended.lock().unwrap().is_empty());
+
+    let pool = window.to_a_pool("builds");
+    assert!(pool.ran_unsandboxed().is_err(), "its record cannot be read");
+    assert!(window.untrusts("builds") && pool.untrusts("builds"));
+    assert!(!window.untrusts("other"));
+    assert_eq!(*ended.lock().unwrap(), ["builds"]);
+}
