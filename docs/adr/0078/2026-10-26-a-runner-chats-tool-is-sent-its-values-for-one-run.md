@@ -72,3 +72,19 @@ D-2047-8 in the pull request). §7's table row for secrets stands, read as below
    drains, and with one draining it is sent no value. A move and a new chat go by the pool's own
    name, which reaches no draining runner. *Decided in implementation, to be confirmed*
    (D-3417-1, D-3417-2).
+10. **A runner chat's tool run is held to the chat's sandbox as it is now** (#3407). The
+    runner's record of the chat (item 6) keeps a reader of the chat's own confinement on the
+    runner, found in that host's hold by its id and the program that started it. Each run is
+    held to the sandbox as it was compiled at the start, plus the hosts that confinement's board
+    allows live now. So an Allow on a block's Notice for the chat reaches its tool's next run,
+    and a Forget narrows that run again, as `confines_now` holds a run on the desktop. Only the
+    window's answers change the board, so nothing else can widen a run. A confinement that has
+    ended, or one held under its id for another program, allows nothing live. *Decided in
+    implementation, to be confirmed* (D-3407-1, D-3407-2).
+11. **A runner chat's tool Ask goes once its command has gone** (#3408). An asker that hangs
+    up is told to the window (item 3). Beyond that, when the link to a runner goes down, the
+    runner lets go of every line it handed on, and the window ends each of that runner's
+    commands that wait on it (`link_down`). Their Asks go, no vault is read for them, and
+    nothing is sent. Values allowed for a command that went after the answer are never handed
+    on, and nothing is recorded as sent. *Decided in implementation, to be confirmed* (D-3408-1,
+    D-3408-2).
