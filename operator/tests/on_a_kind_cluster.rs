@@ -1101,11 +1101,17 @@ async fn a_runner_namespace_and_what_the_operator_binds_are_guarded_at_admission
                 serde_json::json!({ "apiGroup": "rbac.authorization.k8s.io", "kind": "User", "name": "system:kube-scheduler" }),
             ),
         ),
-        ("a Role", role),
     ] {
         let made = in_runners.create(&PostParams::default(), &wrong).await;
         assert!(refused_saying(&made, words), "{what}: {made:?}");
     }
+    // A Role of the role's name: refused, by RBAC itself where there is no such Role for the
+    // operator to bind, and by the policy where there is one.
+    let made = in_runners.create(&PostParams::default(), &role).await;
+    assert!(
+        matches!(&made, Err(kube::Error::Api(status)) if matches!(status.code, 403 | 404)),
+        "a Role: {made:?}"
+    );
     let quota: ResourceQuota = serde_json::from_value(serde_json::json!({
         "apiVersion": "v1", "kind": "ResourceQuota",
         "metadata": { "name": person::QUOTA, "namespace": scratch.name },
