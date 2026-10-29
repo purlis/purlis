@@ -172,7 +172,7 @@ fn list<'a>(payload: &'a serde_json::Value, key: &str) -> &'a [serde_json::Value
     payload
         .get(key)
         .and_then(serde_json::Value::as_array)
-        .map_or(&[], Vec::as_slice)
+        .map_or(&[] as &[serde_json::Value], Vec::as_slice)
 }
 
 /// **A five-field cron schedule**: minute, hour, day of the month, month, day of the week, each

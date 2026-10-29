@@ -421,9 +421,9 @@ function withOwnWork(
   const was = by[session];
   if (work === undefined) {
     if (was === undefined) return by;
-    const rest = { ...by };
-    delete rest[session];
-    return rest;
+    return Object.fromEntries(
+      Object.entries(by).filter(([one]) => Number(one) !== session),
+    ) as Record<number, OwnWork>;
   }
   return was !== undefined && sameOwnWork(was, work) ? by : { ...by, [session]: work };
 }

@@ -1474,7 +1474,7 @@ fn closes_with(held: &Held, chat: u32, from: &HandedFrom) -> ClosesWith {
             }
         }
         // Asked for its record, which only a chat whose program still runs can write.
-        None if matches!(state, State::Done | State::Failed) => ClosesWith::Stays,
+        None if matches!(glance.state, State::Done | State::Failed) => ClosesWith::Stays,
         None => ClosesWith::OnceRecorded,
     }
 }
