@@ -12,6 +12,7 @@ use std::path::Path;
 
 use purlis_core::hoststart::{self, Beside, Kit, Starting};
 use purlis_core::profiles;
+use purlis_core::sandbox::reach::{By, Decision};
 use purlis_session_protocol::session::{
     self, ConfinePlan, Confined, Launch, ProgramKind, StartProgram,
 };
@@ -538,7 +539,7 @@ impl Beside for LiveHost {
 }
 
 /// What a run of chat 3's tool here decides a connection to `host` on 443 by.
-fn its_tool_decides(project: &Project, host: &str) -> purlis_core::sandbox::reach::Decision {
+fn its_tool_decides(project: &Project, host: &str) -> Decision {
     purlis_core::hostedchats::asker(project.root(), 3)
         .expect("the host recorded the chat it composed")
         .confines
@@ -548,11 +549,11 @@ fn its_tool_decides(project: &Project, host: &str) -> purlis_core::sandbox::reac
 }
 
 /// #3407: a sandboxed chat the host composed runs its tool held to its confinement as it is now:
-/// a host the person allowed for the chat since it started is reached by the tool's next run, and
-/// one taken back again is not.
+/// a host the person allowed for the chat since it started is reached by the tool's next run as
+/// the chat's Allow, and one taken back again is not. The floor carries every host as Open, so
+/// what the Allow changes is the scope the run decides it by.
 #[test]
 fn a_composed_chats_tool_run_reaches_the_hosts_its_confinement_allows_live() {
-    use purlis_core::sandbox::reach::{By, Decision};
     purlis_core::unsteered!();
     let project = Project::on("codex");
     let host = LiveHost {
@@ -572,7 +573,7 @@ fn a_composed_chats_tool_run_reaches_the_hosts_its_confinement_allows_live() {
         "its own confinement"
     );
     let host_name = "pypi.example.com";
-    assert_eq!(its_tool_decides(&project, host_name), Decision::Ask);
+    assert_eq!(its_tool_decides(&project, host_name), Decision::Open);
     host.now.lock().unwrap().allowed_live = vec![session::Listed {
         host: host_name.into(),
         layer: session::Layer::Chat,
@@ -582,7 +583,7 @@ fn a_composed_chats_tool_run_reaches_the_hosts_its_confinement_allows_live() {
         Decision::Allowed(By::Chat)
     );
     host.now.lock().unwrap().allowed_live.clear();
-    assert_eq!(its_tool_decides(&project, host_name), Decision::Ask);
+    assert_eq!(its_tool_decides(&project, host_name), Decision::Open);
 }
 
 /// What a host that could not start a chat's confinement does.
