@@ -84,8 +84,8 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
     // Purlis Classic names only its tabs' strip look (#2914), its activity items' (#2917), and
     // what keeps it as it drew when the family defaults took Purlis's (#3177): its rail's 9px
     // corners, its title bar's 5px chips and its update pill's primary words; its resize
-    // handles' accent line (#3143); and its tables' rule between rows (#2911, #2804). Nothing it
-    // draws falls back.
+    // handles' accent line (#3143); its tables' rule between rows (#2911, #2804); and its card
+    // rows' ground (#3774). Nothing it draws falls back.
     for theme in built_ins() {
         assert!(
             theme.parts.keys().all(|key| {
@@ -99,6 +99,9 @@ fn a_theme_that_names_no_parts_draws_exactly_as_today() {
                 ]
                 .contains(&key.family)
                     || (key.family == "table" && key.part == "rule")
+                    // Its side views' card rows on the sunken ground, which steps from its
+                    // panels where the raised one barely does (#3774).
+                    || (key.family == "list" && key.variant == Some("card"))
             }),
             "{} names parts beyond what keeps it as it drew",
             theme.name
@@ -983,7 +986,7 @@ fn the_popover_and_menu_family_defaults_are_what_their_stylesheets_draw() {
     let border = declared(surface, "border")
         .and_then(|it| it.split_whitespace().last())
         .expect("the surface's border");
-    for variant in ["popover", "menu"] {
+    for variant in ["popover", "menu", "notice"] {
         for state in [&[][..], &[Hover][..]] {
             assert_eq!(
                 parts::look_of("popover", variant, state).map(str::to_owned),
@@ -1406,9 +1409,11 @@ fn the_manifest_lists_every_family_part_state_and_property_with_its_bounds() {
     assert_eq!(popover["since"], 6);
     assert_eq!(
         names(&popover, "parts"),
-        ["root", "filter", "rule", "list", "header", "footer", "key"]
+        [
+            "root", "filter", "rule", "list", "header", "footer", "key", "point"
+        ]
     );
-    assert_eq!(names(&popover, "variants"), ["popover", "menu"]);
+    assert_eq!(names(&popover, "variants"), ["popover", "menu", "notice"]);
     let menu = family("menu");
     assert_eq!(menu["since"], 6);
     assert_eq!(

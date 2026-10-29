@@ -24,8 +24,8 @@ import { projectInFront, runningIn } from "../running.js";
  * (`toolhooks` and `skills/verbs/drafts` tests), so the spec puts two drafts there as the app
  * keeps them. Then, in the studio:
  *
- * - each draft is listed, and **Changes** draws its file;
- * - **Reject** deletes one, and the project is untouched;
+ * - each draft is listed, and its page beside the list draws its file (S9, #3690);
+ * - **Discard** deletes one, and the project is untouched;
  * - **Try it** opens a scratch chat of its own in a throwaway folder, which is gone once that chat
  *   ends;
  * - **Accept** makes the other one a project skill, on disk, and the draft is gone;
@@ -113,24 +113,26 @@ describe("draft skills in the Skill studio", function () {
 
     const kept = await $(`[data-testid="draft-${ACCEPTED}"]`);
     await kept.waitForExist({ timeout: 20_000 });
-    await expect(kept).toHaveText(/a new skill/);
+    await expect(kept).toHaveText(/A new skill/);
     await expect($(`[data-testid="draft-${REJECTED}"]`)).toExist();
     // A draft is never a skill any chat gets, nor a file in the project.
     await expect($(`[data-testid="skill-${ACCEPTED}"]`)).not.toExist();
     expect(existsSync(join(root, "skills", ACCEPTED))).toBe(false);
 
-    await (await $(`aria/Changes in ${ACCEPTED}`)).click();
+    await kept.click();
     await expect(
-      $(`[data-testid="draft-${ACCEPTED}"] [data-testid="draft-file-SKILL.md"]`),
+      $(`[data-testid="skill-studio-draft"] [data-testid="draft-file-SKILL.md"]`),
     ).toExist();
 
-    await (await $(`aria/Reject ${REJECTED}`)).click();
+    await (await $(`[data-testid="draft-${REJECTED}"]`)).click();
+    await (await $(`aria/Discard ${REJECTED}`)).click();
     await $(`[data-testid="draft-${REJECTED}"]`).waitForExist({ reverse: true, timeout: 20_000 });
     expect(existsSync(join(state, "skill-drafts", REJECTED_ID))).toBe(false);
     expect(existsSync(join(root, "skills", REJECTED))).toBe(false);
 
     const triesBefore = tries(state);
-    await (await $(`aria/Try ${ACCEPTED}`)).click();
+    await (await $(`[data-testid="draft-${ACCEPTED}"]`)).click();
+    await (await $(`[data-testid="skill-studio-draft"]`).$("button=Try it")).click();
     await untilAChatStarts(plane, wereRunning, "Try it started no scratch chat");
     const laid = tries(state).filter((one) => !triesBefore.includes(one));
     expect(laid.length).toBe(1);
@@ -144,6 +146,7 @@ describe("draft skills in the Skill studio", function () {
     await runFromThePalette("Open Skill studio", "skills.studio");
     await studioPage("Drafts");
 
+    await (await $(`[data-testid="draft-${ACCEPTED}"]`)).click();
     await (await $(`aria/Accept ${ACCEPTED}`)).click();
     await $(`[data-testid="skill-${ACCEPTED}"]`).waitForExist({ timeout: 20_000 });
     expect(existsSync(join(root, "skills", ACCEPTED, "SKILL.md"))).toBe(true);

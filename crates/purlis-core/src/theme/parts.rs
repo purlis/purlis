@@ -2164,7 +2164,12 @@ fn lowest(theme: &ResolvedTheme, on: &[String], fill: &str, front: &str) -> Opti
 /// **The parts whose words are a mark, not words** (#3099): a tab's ×, and the title bar's ⌄
 /// and pin, each a glyph to be told apart, held at 3:1 (WCAG 1.4.11) in the faint tier
 /// ([`super::check::FAINT`]), as an icon and a select's chevron are.
-const MARK_WORDS: &[(&str, &str)] = &[("tabs", "closer"), ("titlebar", "all"), ("titlebar", "pin")];
+const MARK_WORDS: &[(&str, &str)] = &[
+    ("tabs", "closer"),
+    ("titlebar", "all"),
+    ("titlebar", "pin"),
+    ("titlebar", "dot"),
+];
 
 /// Whether `part` of `family` draws a mark rather than words: an icon, the chevron of a select
 /// or a combobox, or one of [`MARK_WORDS`].
@@ -3192,6 +3197,52 @@ fn fallback(family: &'static Family, variant: &'static str, state: Option<State>
 /// the floor: empty for a theme whose parts clear them all, and for one that names no parts.
 pub fn fallen(theme: &ResolvedTheme) -> Vec<Fell> {
     held_once(theme).1.clone()
+}
+
+/// **A side view's card row and the ground it stands on** (#3774), as `theme`'s parts draw them
+/// at rest once their floors are held: the card's fill, the edge it draws, and the side panel's
+/// fill. The check holds the card apart from that ground ([`super::check::CARD_STEP`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct CardOnSide {
+    /// The card row's fill at rest, a token or `transparent`.
+    pub card: &'static str,
+    /// Its edge, where it draws one: a colour token, at a width the stylesheet draws.
+    pub edge: Option<&'static str>,
+    /// The side panel's fill, the ground the card stands on: a token or `transparent`.
+    pub ground: &'static str,
+}
+
+/// What [`CardOnSide`] says of `theme`, where its parts, its own or inherited, choose a card
+/// row's look or a side panel's fill. As a meter's fill on its track is (#3674), a palette alone
+/// is not yet held (#3735): a theme that chooses neither draws its cards on the family's raised
+/// ground, wherever its palette puts it.
+pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
+    let chosen = theme.parts.keys().any(|key| {
+        (key.family == "list" && key.variant == Some("card"))
+            || (key.family == "panel"
+                && key.part == "root"
+                && key.property == Prop::Fill
+                && key.variant.is_none_or(|variant| variant == "side"))
+    });
+    if !chosen {
+        return None;
+    }
+    let held = held_once(theme);
+    let rules = &held.0;
+    let list = family("list").expect("the list family");
+    let panel = family("panel").expect("the panel family");
+    let card = drawn(rules, list, "card", &[]);
+    // A width a rule sets, as the parts check reads one, or else the family's own: none.
+    let edged = if drawn_at_rest(rules, list, "card", Prop::BorderWidth).is_some() {
+        has_border(rules, list, "card")
+    } else {
+        list.border_width > 0.0
+    };
+    Some(CardOnSide {
+        card: card.fill,
+        edge: (edged && card.border != TRANSPARENT).then_some(card.border),
+        ground: drawn(rules, panel, "side", &[]).fill,
+    })
 }
 
 /// The rules with the floors held, and what fell.

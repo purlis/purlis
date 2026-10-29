@@ -32,6 +32,8 @@ fn plane() -> tempfile::TempDir {
         "release",
         "Cuts a release, then skills:deploy.",
     );
+    // Its app state, made before purlis was used there (#3718): nothing waits for an Accept.
+    crate::appstate::made(root).unwrap();
     tmp
 }
 
@@ -1929,4 +1931,200 @@ fn a_skill_on_disk_named_as_a_built_in_one_is_a_clash_to_rename_at_every_level()
         .map(|one| one.name)
         .collect();
     assert_eq!(bare, ["secrets"]);
+}
+
+#[test]
+fn a_deleted_skill_counts_the_days_left_to_bring_it_back_wherever_it_is_kept() {
+    let here = |at: u64| Deleted {
+        name: "deploy".to_owned(),
+        level: Level::project(),
+        folder: "deploy".to_owned(),
+        kept: Kept(Source::Here(format!("{}-deploy", at * 1000))),
+        at,
+    };
+    let when = |secs: u64| std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+    let at = 1_761_000_000;
+    let kept_for = KEPT_HERE_FOR.as_secs();
+    assert_eq!(here(at).days_left(when(at)), 30);
+    assert_eq!(here(at).days_left(when(at + 3 * DAY)), 27);
+    assert_eq!(here(at).days_left(when(at + kept_for - 60)), 1);
+    assert_eq!(here(at).days_left(when(at + kept_for + 1)), 0);
+    assert_eq!(
+        here(at + 365 * DAY).days_left(when(at)),
+        30,
+        "never more than its time, whatever clock stamped it"
+    );
+    let in_git = Deleted {
+        kept: Kept(Source::Commit("abc".to_owned())),
+        ..here(at)
+    };
+    assert_eq!(in_git.days_left(when(at + 18 * DAY)), 12);
+    assert_eq!(in_git.days_left(when(at + 2 * kept_for)), 0);
+}
+
+#[test]
+fn a_skill_kept_deleted_on_this_machine_shows_its_last_text() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let listed = deleted(root);
+    let text = deleted_text(root, &listed[0]).unwrap();
+    assert!(text.contains("description: Ships it."), "{text}");
+}
+
+#[test]
+fn a_committed_skill_deleted_by_git_shows_its_last_text_from_the_commit() {
+    let tmp = committed_plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "release")).unwrap();
+    let listed = deleted(root);
+    let one = listed.iter().find(|one| one.name == "release").unwrap();
+    let text = deleted_text(root, one).unwrap();
+    assert!(text.contains("name: release"), "{text}");
+}
+
+#[test]
+fn the_last_text_of_a_record_the_project_does_not_list_is_refused_unread() {
+    let tmp = plane();
+    let root = tmp.path();
+    std::fs::write(root.join("secret.md"), "not a skill").unwrap();
+    let made_up = Deleted {
+        name: "deploy".to_owned(),
+        level: Level::project(),
+        folder: "../..".to_owned(),
+        kept: Kept(Source::Commit("HEAD".to_owned())),
+        at: 0,
+    };
+    let refused = deleted_text(root, &made_up).unwrap_err();
+    assert!(refused.contains("not a deleted skill"), "{refused}");
+}
+
+/// What a chat in `workspace` gets, by name, with the built-in skills in `built_in`.
+fn gets_with(root: &Path, built_in: &Path, workspace: Option<&str>) -> Vec<String> {
+    crate::skills::in_the_studio(Some(built_in), root, workspace, None)
+        .effective
+        .into_iter()
+        .map(|e| e.skill.name)
+        .collect()
+}
+
+#[test]
+fn my_own_copy_of_a_built_in_skill_lands_at_the_level_picked_under_its_new_name() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+    let was = std::fs::read_to_string(built_in.path().join("bundled/SKILL.md")).unwrap();
+
+    let (folder, lines) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::workspace("ops"), "my-bundled")
+    });
+
+    let folder = folder.unwrap();
+    assert_eq!(folder, root.join("workspaces/ops/skills/my-bundled"));
+    let text = std::fs::read_to_string(folder.join("SKILL.md")).unwrap();
+    assert_eq!(text, was.replace("name: bundled", "name: my-bundled"));
+    assert!(said(&lines, |line| matches!(line, Say::Done(done) if done
+        .contains("copied from the built-in skill bundled"))));
+    // The built-in skill is as it was, and a chat in the workspace gets both.
+    assert_eq!(
+        std::fs::read_to_string(built_in.path().join("bundled/SKILL.md")).unwrap(),
+        was
+    );
+    let got = gets_with(root, built_in.path(), Some("ops"));
+    assert_eq!(
+        got.iter().filter(|name| *name == "bundled").count(),
+        1,
+        "{got:?}"
+    );
+    assert_eq!(
+        got.iter().filter(|name| *name == "my-bundled").count(),
+        1,
+        "{got:?}"
+    );
+}
+
+#[test]
+fn my_own_copy_lands_at_every_level_and_a_project_copy_reaches_the_root() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        let to = format!(
+            "copy-{}",
+            every_level().iter().position(|one| *one == level).unwrap()
+        );
+        let folder = did(root, |cx| {
+            copy_built_in(cx, "bundled", &level, &to).map(|_| ())
+        });
+        // `did` has no built-in skills: nothing to copy from.
+        assert_eq!(
+            folder.unwrap_err(),
+            "bundled is no built-in skill, so there is nothing to copy"
+        );
+        let (made, _) = on(root, Some(built_in.path()), |cx| {
+            copy_built_in(cx, "bundled", &level, &to)
+        });
+        assert_eq!(made.unwrap(), root.join(at(&level, &to)), "{level}");
+    }
+    let got = gets_with(root, built_in.path(), None);
+    assert!(got.contains(&"copy-0".to_owned()), "{got:?}");
+    assert!(got.contains(&"bundled".to_owned()), "{got:?}");
+}
+
+#[test]
+fn my_own_copy_under_a_built_in_skills_name_is_refused_in_the_agreed_words() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        for name in RESERVED {
+            let (refused, _) = on(root, Some(built_in.path()), |cx| {
+                copy_built_in(cx, "bundled", &level, name)
+            });
+            assert_eq!(
+                refused.unwrap_err(),
+                crate::skills::NAME_RESERVED,
+                "{level} {name}"
+            );
+            assert!(!root.join(at(&level, name)).exists(), "{level} {name}");
+        }
+    }
+}
+
+#[test]
+fn my_own_copy_is_refused_for_a_skill_that_is_not_built_in_or_a_name_the_level_holds() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "deploy", &Level::project(), "my-deploy")
+    });
+    assert_eq!(
+        refused.unwrap_err(),
+        "deploy is no built-in skill, so there is nothing to copy"
+    );
+    assert!(!root.join("skills/my-deploy").exists());
+
+    let was = std::fs::read_to_string(root.join("skills/release/SKILL.md")).unwrap();
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "release")
+    });
+    assert!(
+        refused
+            .unwrap_err()
+            .contains("already have one named release"),
+        "a name the level holds"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("skills/release/SKILL.md")).unwrap(),
+        was
+    );
+
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "Not A Name")
+    });
+    assert!(refused.unwrap_err().contains("cannot be a skill's name"));
 }

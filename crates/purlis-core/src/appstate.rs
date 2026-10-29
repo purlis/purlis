@@ -222,6 +222,13 @@ fn made_in(data: &Path, root: &Path) -> Result<PathBuf, String> {
     made_locked(&mine, root, fresh)
 }
 
+/// **A test's seam: the project at `root`'s app state made in the data home `data`**, as its first
+/// write ([`made`]): for a test whose program is run with `$PURLIS_DATA_HOME` set to `data`.
+#[cfg(any(test, feature = "test-support"))]
+pub fn made_in_for_tests(data: &Path, root: &Path) -> Result<PathBuf, String> {
+    made_in(data, root)
+}
+
 /// How long a call waits for another to let go of a project's app state.
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 

@@ -30,7 +30,7 @@ export type ListedSkill = {
   program?: string;
   /** That program, by the word the project calls it, for a program's own skill. */
   harness?: HarnessKind;
-  /** Whether the chat in front has it, where its set was read (Only this chat's): `false` for
+  /** Whether the chat in front has it, where its set was read (the chat in front's): `false` for
    *  one it does not, which is listed under Not in this chat. */
   inChat?: boolean;
   /** Why a router hid it from the chat in front, where that chat's set was read: `null` for one
@@ -38,55 +38,18 @@ export type ListedSkill = {
   hiddenInChat?: SkillHidden | null;
 };
 
-/** The groups named by purlis's own word, each program's apart. */
-const OWN_GROUPS = [
-  "needs-you",
-  "built-in",
-  "project",
-  "workspace",
-  "personas",
-  "repo",
-  "local",
-  "not-in-chat",
-] as const;
+/** **The Skills view's groups** (spec #3679 S7), in their order, and the built-in skills' run
+ *  folded at the end of In this chat: what a kept fold names. */
+const GROUP_IDS = ["needs-you", "in-chat", "built-in", "left-out"] as const;
 
-/** **A group of the list**, in its order: what needs the person, each level, each program's own. */
-export type GroupId = (typeof OWN_GROUPS)[number] | `program:${string}`;
+/** **A group of the view**, or the built-in skills' run. */
+export type GroupId = (typeof GROUP_IDS)[number];
 
-/** The longest program's name a group is read back with: a title an adapter gives, not a path. */
-const MOST_PROGRAM = 64;
-
-/** **Whether `id` names a group**, as a kept fold is read back (`skillsViewPrefs.ts`). */
+/** **Whether `id` names a group**, as a kept fold is read back (`skillsViewPrefs.ts`): a name
+ *  an older purlis kept (a level's) is no group now. */
 export function isGroupId(id: unknown): id is GroupId {
-  if (typeof id !== "string") return false;
-  if ((OWN_GROUPS as readonly string[]).includes(id)) return true;
-  const program = id.startsWith("program:") ? id.slice("program:".length) : "";
-  return program.trim() !== "" && program.length <= MOST_PROGRAM;
+  return typeof id === "string" && (GROUP_IDS as readonly string[]).includes(id);
 }
-
-/**
- * **A group, under its heading.** Every heading is drawn as purlis's own words are, a program's
- * too (#3308): a program's title is the name purlis's adapter gives it (`Claude Code`), not data
- * a person wrote, so it heads its group as Built-in and Project do.
- */
-export type SkillGroup = {
-  id: GroupId;
-  title: string;
-  rows: ListedSkill[];
-};
-
-/** The groups of purlis's own words, in the order they are drawn; each program's own come after
- *  Local, and what a chat does not get last. */
-const TITLES: Record<Exclude<GroupId, `program:${string}`>, string> = {
-  "needs-you": "Needs you",
-  "built-in": "Built-in",
-  project: "Project",
-  workspace: "Workspace",
-  personas: "Personas",
-  repo: "Repo",
-  local: "Local",
-  "not-in-chat": "Not in this chat",
-};
 
 /** **The one state a row is marked with**, where it has one (the amendment's (b)). */
 export type SkillMark = "needs-review" | "off" | "left-out" | "hidden" | "lint";
@@ -165,71 +128,73 @@ export function tipOf(row: ListedSkill): string[] {
   ].filter((line) => line.trim() !== "");
 }
 
-/** The level group a row is listed under. */
-function levelGroup(row: ListedSkill): GroupId {
-  const { skill } = row;
-  if (skill.local && (skill.level === "project" || skill.level === "workspace")) return "local";
-  switch (skill.level) {
-    case "built-in":
-      return "built-in";
-    case "project":
-      return "project";
-    case "workspace":
-      return "workspace";
-    case "persona":
-      return skill.local ? "local" : "personas";
-    case "repo":
-      return "repo";
-    case "installed":
-      return `program:${row.program ?? ""}`;
-  }
-}
-
-/** **What the project's root lists** (the amendment's (g)): the project's and the personas'. */
-const AT_THE_ROOT: readonly GroupId[] = ["needs-you", "project", "personas", "local"];
-
 /**
- * **The list's groups, in their order, each with rows**: Needs you on top while it holds
- * anything, then Built-in, Project, Workspace, Personas, Repo, Local and each program's own. At
- * the project's root only the project's and the personas' are listed.
- *
- * **For one chat** (`chat`, the amendment's (c)), the rows are that chat's set, wherever it
- * works: what it does not get is kept, under one group at the end, each with its mark.
+ * **What the view draws, by group** (spec #3679 S7): Needs you (a change waiting for the
+ * person's review, or a lint), In this chat (the skills the chat gets, its built-in skills apart
+ * so they fold into one quiet line, S12), and Left out (off, left out, or hidden by the router),
+ * each in the order of `rows`.
  */
-export function groupsOf(
-  rows: readonly ListedSkill[],
-  at: { root: boolean; chat: boolean },
-): SkillGroup[] {
-  const by = new Map<GroupId, ListedSkill[]>();
-  const add = (id: GroupId, row: ListedSkill) => by.set(id, [...(by.get(id) ?? []), row]);
+export type SkillGroups = {
+  needs: ListedSkill[];
+  inChat: ListedSkill[];
+  builtIns: ListedSkill[];
+  leftOut: ListedSkill[];
+};
+
+/** **The view's groups**, from its rows. */
+export function groupsOf(rows: readonly ListedSkill[]): SkillGroups {
+  const groups: SkillGroups = { needs: [], inChat: [], builtIns: [], leftOut: [] };
   for (const row of rows) {
     const mark = markOf(row);
-    if (mark === "needs-review") add("needs-you", row);
-    else if (at.chat && (mark === "left-out" || mark === "off")) add("not-in-chat", row);
-    else add(levelGroup(row), row);
+    if (mark === "needs-review" || mark === "lint") groups.needs.push(row);
+    else if (mark === "left-out" || mark === "off" || mark === "hidden") groups.leftOut.push(row);
+    else if (row.skill.level === "built-in") groups.builtIns.push(row);
+    else groups.inChat.push(row);
   }
-  const programs = [...by.keys()].filter((id) => id.startsWith("program:"));
-  const order: GroupId[] = [
-    "needs-you",
-    "built-in",
-    "project",
-    "workspace",
-    "personas",
-    "repo",
-    "local",
-    ...programs,
-    "not-in-chat",
-  ];
-  return order
-    .filter((id) => at.chat || !at.root || AT_THE_ROOT.includes(id))
-    .flatMap((id): SkillGroup[] => {
-      const listed = by.get(id);
-      if (listed === undefined || listed.length === 0) return [];
-      const title = id.startsWith("program:")
-        ? id.slice("program:".length)
-        : TITLES[id as keyof typeof TITLES];
-      return [{ id, title, rows: listed }];
-    });
+  return groups;
+}
+
+/**
+ * **What a card says in place of its description** (S7), where it has a mark: why, in the
+ * core's words, in the waiting colour for what needs the person and the quiet tier for what is
+ * left out. Nothing for a skill the chat simply gets.
+ */
+export function cardReasonOf(
+  row: ListedSkill,
+): { says: string; tone: "warning" | "quiet" } | undefined {
+  const mark = markOf(row);
+  if (mark === undefined) return undefined;
+  const said = reasonOf(row);
+  const says =
+    said !== undefined && said.trim() !== ""
+      ? said
+      : mark === "needs-review"
+        ? "A change to it waits for your review."
+        : MARK_SAID[mark];
+  return { says, tone: mark === "needs-review" || mark === "lint" ? "warning" : "quiet" };
+}
+
+/** **A card's one fix** (S7): what it runs, and what it says. */
+export type SkillFix =
+  | { act: "turn"; label: string }
+  | { act: "review"; label: string }
+  | { act: "routing"; label: string };
+
+/** **The one fix a card offers**, where it has one: a change to review opens it in the studio, a
+ *  skill the workspace turned off is turned on there, and a skill the router hid says why. */
+export function fixOf(row: ListedSkill, workspace: string | undefined): SkillFix | undefined {
+  switch (markOf(row)) {
+    case "needs-review":
+      return { act: "review", label: "Review the change" };
+    case "off": {
+      const turn = turnOf(row.skill, workspace);
+      return "label" in turn && turn.on ? { act: "turn", label: turn.label } : undefined;
+    }
+    case "hidden":
+      return { act: "routing", label: "Why the router hid it" };
+    default:
+      return undefined;
+  }
 }
 
 /** A row's key: whose it is, its level, whether it is local, and its folder or its name. */
@@ -271,7 +236,7 @@ export function personaRowsOf(personas: readonly PersonaSkills[]): ListedSkill[]
 /**
  * **What the view lists from its two reads**: the studio's rows (`listedOf`), then every
  * persona's own (`personaRowsOf`), where that read was not refused. A studio read for a chat's
- * persona (Only this chat's, #3462) holds that persona's own too: they are listed once, as the
+ * persona (the chat in front's, #3462) holds that persona's own too: they are listed once, as the
  * persona's.
  */
 export function viewRowsOf(
@@ -317,7 +282,7 @@ function rowOfChat(skill: ChatSkill): StudioSkill {
 const PLANE_LEVELS: readonly string[] = ["built-in", "project", "workspace", "persona"];
 
 /**
- * **The rows narrowed to one chat** (Only this chat's): the plane's and the built-in skills by
+ * **The rows narrowed to one chat** (the chat in front, #3693): the plane's and the built-in skills by
  * the chat's real set (`chat_skills`, what Use skill… types from), each marked by whether the chat
  * has it, and another persona's own left out; the chat's own program's skills (`harness`) and
  * its clone's (`repos`, #3462) as the studio marks them for a chat as its persona, since the set
@@ -393,9 +358,10 @@ export function turnOf(skill: StudioSkill, workspace: string | undefined): Chang
     : { label: `Turn on in ${workspace}`, on: true, refused: "The skill was not turned on" };
 }
 
-/** What a row's menu can do: the amendment's (b). Delete, move, rename, grants and publish stay
- *  in the skill's tab. */
-export type SkillAct = "use" | "turn" | "pin" | "explorer";
+/** What a card's menu can do (spec #3679 S7): Use in this chat, the switch, the pin, Show in
+ *  the Explorer view, Open the file and Open in Skill studio. Delete, move, rename, grants and
+ *  publish are the studio's. */
+export type SkillAct = "use" | "turn" | "pin" | "explorer" | "file" | "studio";
 
 /** One row of a skill's menu: what it says, why it cannot run where it cannot, and what else
  *  is true of one that can, said under it (`note`). */
@@ -522,10 +488,36 @@ export type MenuAt = {
   pinsRefused?: SkillPinsRefused | null;
 };
 
+/** **Where Open the file opens a skill's `SKILL.md`**: one of the project's own files, by its
+ *  path, or a file of a workspace's clone; else why not. */
+export type FilePlace = { workspace: string; repo: string; path: string };
+
+/** **Where a skill's `SKILL.md` is**, as Open the file opens it: the project's own files for a
+ *  project, workspace or persona skill, its clone's for a repo skill. A built-in skill's and a
+ *  program's own are not the project's to open. */
+export function filePlaceOf(skill: StudioSkill): FilePlace | { reason: string } {
+  const { folder } = skill;
+  if (skill.level === "built-in") return { reason: BUILT_IN_FILE };
+  if (folder === "" || folder.startsWith("/")) return { reason: NOT_IN_THE_PROJECT };
+  if (skill.level === "project" || skill.level === "workspace" || skill.level === "persona")
+    return { workspace: "", repo: "", path: `${folder}/SKILL.md` };
+  if (skill.level !== "repo") return { reason: NOT_IN_THE_PROJECT };
+  const [top, workspace, repo, ...rest] = folder.split("/");
+  if (top !== "workspaces" || workspace === undefined || repo === undefined || rest.length === 0)
+    return { reason: NOT_IN_THE_PROJECT };
+  return { workspace, repo, path: `${rest.join("/")}/SKILL.md` };
+}
+
+/** Why a built-in skill's file is not opened: it ships with purlis. */
+const BUILT_IN_FILE = "It ships with purlis: Make my own copy in the Skill studio to edit one.";
+/** Why Use in this chat waits while no chat is in front. */
+const NO_CHAT = "No chat is in front to use it in.";
+
 /**
- * **A row's menu, in its order**: Use in this chat while a chat is in front (`chat`), the
- * switch, Pin to this workspace (Unpin while it pins it), and Show in Explorer. A row that cannot run says why: Use in this chat, on a skill
- * the chat does not get.
+ * **A card's menu, in its order** (S7): Use in this chat, the switch, Pin to this workspace
+ * (Unpin while it pins it), Show in the Explorer view, Open the file and Open in Skill studio.
+ * One that cannot run says why: Use in this chat while no chat is in front, or on a skill the
+ * chat does not get.
  */
 export function menuRowsOf(row: ListedSkill, at: MenuAt): SkillMenuRow[] {
   const { skill } = row;
@@ -533,19 +525,12 @@ export function menuRowsOf(row: ListedSkill, at: MenuAt): SkillMenuRow[] {
   const pin = pinOf(row, at.workspace, at.pinsRefused ?? null);
   const place = explorerPlaceOf(skill, at.explorer);
   const explorer = "reason" in place ? place.reason : "";
+  const file = filePlaceOf(skill);
   const mark = markOf(row);
   const usable = mark !== "left-out" && mark !== "off" && mark !== "needs-review";
+  const useWhy = !at.chat ? NO_CHAT : usable ? "" : NOT_THIS_CHATS;
   return [
-    ...(at.chat
-      ? [
-          {
-            act: "use" as const,
-            title: "Use in this chat",
-            available: usable,
-            reason: usable ? "" : NOT_THIS_CHATS,
-          },
-        ]
-      : []),
+    { act: "use", title: "Use in this chat", available: useWhy === "", reason: useWhy },
     changeRow("turn", turn, skill.on ? "Turn off" : "Turn on"),
     changeRow("pin", pin, PIN_HERE),
     {
@@ -554,5 +539,12 @@ export function menuRowsOf(row: ListedSkill, at: MenuAt): SkillMenuRow[] {
       available: explorer === "",
       reason: explorer,
     },
+    {
+      act: "file",
+      title: "Open the file",
+      available: !("reason" in file),
+      reason: "reason" in file ? file.reason : "",
+    },
+    { act: "studio", title: "Open in Skill studio", available: true, reason: "" },
   ];
 }

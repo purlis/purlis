@@ -6,10 +6,12 @@
 //!
 //! The engine sends every request to its reach proxy, so the site is served by a small proxy
 //! of the test's own on a loopback port: it answers `GET http://<host>/<path>` from
-//! `tests/fixtures/site/<host>/<path>`, whatever the host, and reaches nothing else. Three
-//! addresses are its own: `/slow-data` answers after a while (late-loading data), and
+//! `tests/fixtures/site/<host>/<path>`, whatever the host, and reaches nothing else. Some
+//! addresses are its own: `/slow-data` answers after a while (late-loading data);
 //! `/redirect-to-file` and `/redirect-to-app` redirect to a `file:` address and to an app's own
-//! scheme.
+//! scheme; and the download page's (#3747): `/export`, the report as an attachment under a name
+//! of the header's, and `/big-export` and `/big-stream`, [`BIG`] bytes sent slowly, with their
+//! size stated up front and not.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -24,6 +26,17 @@ use purlis_browser_engine::process::{Engine, Keeper};
 
 /// How long `/slow-data` takes to answer.
 pub const SLOW: Duration = Duration::from_millis(1500);
+
+/// The name `/export`'s `Content-Disposition` gives the report, which its address does not.
+pub const EXPORTED_AS: &str = "q3-report.csv";
+
+/// How many bytes `/big-export` and `/big-stream` send, a piece at a time.
+pub const BIG: usize = 4 * 1024 * 1024;
+
+/// One piece of [`BIG`], and how long the site waits after each: the whole takes some 6
+/// seconds, so a download purlis cancels is cancelled while it still downloads.
+const PIECE: usize = 64 * 1024;
+const BETWEEN_PIECES: Duration = Duration::from_millis(100);
 
 /// The engine to run, or why tests of a real engine do not run here.
 pub fn engine_program() -> Option<PathBuf> {
@@ -180,6 +193,24 @@ fn answer(stream: TcpStream, root: &Path, heard: &std::sync::Mutex<Vec<String>>)
                 b"",
             );
         }
+        // The report, as a site sends a file to save: an attachment, named by the header.
+        "export" => {
+            let body = std::fs::read(root.join(host).join("report.csv")).unwrap_or_default();
+            let named = format!("attachment; filename=\"{EXPORTED_AS}\"");
+            let _ = respond(
+                &mut out,
+                "200 OK",
+                "text/csv",
+                &[("Content-Disposition", named.as_str())],
+                &body,
+            );
+        }
+        "big-export" => {
+            let _ = slowly(&mut out, Some(BIG), "big.bin");
+        }
+        "big-stream" => {
+            let _ = slowly(&mut out, None, "big-stream.bin");
+        }
         _ => {
             let name = if path.is_empty() { "index.html" } else { path };
             let file = root.join(host).join(name);
@@ -199,6 +230,28 @@ fn answer(stream: TcpStream, root: &Path, heard: &std::sync::Mutex<Vec<String>>)
             }
         }
     }
+}
+
+/// [`BIG`] bytes as an attachment named `name`, a [`PIECE`] at a time, its length stated up front
+/// where `stated` is, else read until the connection closes. Ends as soon as the engine stops
+/// reading, as a cancelled download does.
+fn slowly(out: &mut TcpStream, stated: Option<usize>, name: &str) -> std::io::Result<()> {
+    let mut head = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: \
+         attachment; filename=\"{name}\"\r\nCache-Control: no-store\r\nConnection: close\r\n"
+    );
+    if let Some(length) = stated {
+        head.push_str(&format!("Content-Length: {length}\r\n"));
+    }
+    head.push_str("\r\n");
+    out.write_all(head.as_bytes())?;
+    let piece = vec![b'x'; PIECE];
+    for _ in 0..BIG / PIECE {
+        out.write_all(&piece)?;
+        out.flush()?;
+        thread::sleep(BETWEEN_PIECES);
+    }
+    Ok(())
 }
 
 fn respond(

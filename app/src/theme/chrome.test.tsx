@@ -33,6 +33,7 @@ import App from "../App";
 import { AboutCharter } from "../About";
 import { ENDS_IT, OUTSIDE } from "../actions";
 import { TitleBarSwitch, type SwitchDoes, type SwitchProject } from "../TitleBarSwitch";
+import { workspaceMade } from "../actionResult";
 import { InboxAlerts } from "../InboxAlerts";
 import { NoticeList } from "../Notice";
 import { AnswerPanel } from "../AnswerPanel";
@@ -76,6 +77,7 @@ import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
+import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
 import { StartChat } from "../StartChat";
@@ -547,6 +549,40 @@ const DIALOGS: Opened[] = [
       );
       await userEvent.click(screen.getByTestId("title-project"));
     },
+  },
+  {
+    name: "a title-bar chip's card of notices (#3648)",
+    file: "ChipNotices.tsx",
+    open: async () =>
+      render(
+        <TitleBarSwitch
+          projects={SWITCHING}
+          inFront="/home/dev/one"
+          railShown
+          does={SWITCHED}
+          notices={{
+            on: new Map([
+              [
+                "alpha",
+                [
+                  {
+                    id: 1,
+                    kind: "info",
+                    said: workspaceMade("alpha", ["✓ Workspace 'alpha' ready (LOCAL)"], {
+                      onAddVision: nothing,
+                    }),
+                  },
+                ],
+              ],
+            ]),
+            open: "alpha",
+            show: nothing,
+            hide: nothing,
+            dismiss: nothing,
+            onSettings: nothing,
+          }}
+        />,
+      ),
   },
   {
     name: "Answer",
@@ -1158,6 +1194,23 @@ const DIALOGS: Opened[] = [
           trouble="a vision has words: nothing was written"
           saving={false}
           onSave={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
+    name: "making your own copy of a built-in skill",
+    file: "SkillCopy.tsx",
+    open: async () =>
+      render(
+        <SkillCopy
+          builtIns={["browser", "secrets"]}
+          levels={[{ level: { at: "project", local: false }, label: "project" }]}
+          start={{ at: "project", local: false }}
+          busy={false}
+          refused="the project skills already have one named my-browser"
+          onEdit={nothing}
+          onCopy={nothing}
           onCancel={nothing}
         />,
       ),

@@ -345,3 +345,34 @@ fn runs_here_names_what_a_local_tool_runs_or_reads_as_its_settings() {
         assert!(!runs_here(path), "{path}");
     }
 }
+
+/// A clone made here while its chat ran on the runner is on this side only (#3454): Move here
+/// takes nothing of it and leaves it as it is, rather than refusing the move, and the next move
+/// to the runner carries it there whole.
+#[test]
+fn a_clone_only_here_stays_as_it_is_at_a_move_here_and_reaches_the_runner_at_the_next_move() {
+    let world = World::new();
+    let before = status(&world.desktop);
+    let head = git(&world.desktop, &["rev-parse", "HEAD"]);
+
+    let into = world.scratch("back").join("work.bundle");
+    let (heads, bundled) = give_work(&world.runner, &world.scratch("give"), &[], &into)
+        .expect("a runner with no copy says it has none");
+    assert!(heads.is_empty(), "{heads:?}");
+    assert_eq!(bundled, Bundled::Nothing);
+
+    assert_eq!(
+        world.move_here().expect("the move is not refused"),
+        Vec::<String>::new()
+    );
+    assert_eq!(status(&world.desktop), before, "its work tree is as it was");
+    assert_eq!(git(&world.desktop, &["rev-parse", "HEAD"]), head);
+
+    world
+        .move_to_runner()
+        .expect("it reaches the runner at the next move");
+    assert_eq!(
+        read(&world.runner, "new.txt").as_deref(),
+        Some("brand new\n")
+    );
+}

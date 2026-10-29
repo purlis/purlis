@@ -1950,6 +1950,13 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         for folder in engines {
             deny(Class::HumanPowers, folder, Access::Write);
         }
+        // The harness versions a runner installs for its profiles' pins (#3446): a chat writes
+        // nothing there, so none chooses the program the next chat runs.
+        deny(
+            Class::HumanPowers,
+            data.join(crate::profilestore::installs::DIR),
+            Access::Write,
+        );
     }
     // The session host's socket and its lock, in the folder it makes this user's alone under
     // the runtime or temporary directory (#1997, `hostsocket`): a chat neither reads nor

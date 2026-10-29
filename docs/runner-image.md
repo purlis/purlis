@@ -83,8 +83,8 @@ own, as long as it keeps the contract below.
   builds and checks it the same way, and pushes nothing.
 
 The image is Ubuntu 26.04 LTS (its base pinned by digest) with `ca-certificates`, `git` and
-`tini`, the `purlis` binary and purlis's plugin beside it, and one user, `purlis` (10001),
-who is not root. Its source is [`runner-image/Dockerfile`](../runner-image/Dockerfile).
+`tini`, the libraries and the font the browser engine needs (below), the `purlis` binary and
+purlis's plugin beside it, and one user, `purlis` (10001), who is not root. Its source is [`runner-image/Dockerfile`](../runner-image/Dockerfile).
 
 ## The contract
 
@@ -110,9 +110,9 @@ it starts the image's default command. It prints every problem it found, one to 
 | A user who is not root | `USER` is a user number other than 0 (`USER 10001:10001`), so a cluster can check `runAsNonRoot`. Inside the image, `id -u` is not 0. |
 | A home | `HOME` is an absolute path to a folder the user can write. purlis keeps its config and data under it, by the XDG base directory rules. On a Docker pool a volume of the runner's own is mounted there; on a cluster pool the runner's home is made on its pod's volume from it ([below](#on-a-cluster-pool)), so `HOME` is not `/` and does not hold `/var/lib/purlis`, through a link or otherwise. |
 | `/tmp` | Writable. The session host makes its socket's folder there (`/tmp/purlis-<uid>/`, closed to every other user) unless `XDG_RUNTIME_DIR` names a folder of the user's own. With a read-only root file system, mount a writable volume at `/tmp` and at `HOME`. A Docker pool runs every runner that way: a read-only root, its home on a volume of its own, and a `tmpfs` at `/tmp` mounted `noexec`, so nothing in the image may need to run a program from `/tmp`. |
-| The default command | `purlis serve`, run under an init that reaps processes (`tini`, `dumb-init`, `catatonit` or `docker-init`) as PID 1: `ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/purlis"]` and `CMD ["serve"]`. It prints `ready` within a minute. A Docker pool runs it as `purlis serve --suspends-unlinked`, so a runner left a day without a link from its desktop stops itself, keeping its home (#2051); a pool with its own time (`suspendAfter`, #3471) runs it as `purlis serve --suspends-unlinked=<duration>`, such as `=12h`, which only a purlis since #3471 takes. Its standard error is its log: purlis's own `info` lines and up, and a library's warnings, each redacted as the app's log is, kept by whatever keeps the container's log. |
+| The default command | `purlis serve`, run under an init that reaps processes (`tini`, `dumb-init`, `catatonit` or `docker-init`) as PID 1: `ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/purlis"]` and `CMD ["serve"]`. It prints `ready` within a minute. A Docker pool runs it as `purlis serve --suspends-unlinked`, so a runner left a day without a link from its desktop stops itself, keeping its home (#2051); a pool with its own time (`suspendAfter`, #3471) runs it as `purlis serve --suspends-unlinked=<duration>`, such as `=12h`, which only a purlis since #3471 takes. A Docker pool runs `/usr/local/bin/purlis` itself, whatever the image's entrypoint (`--entrypoint /usr/local/bin/purlis`), under the runtime's own init (`--init`): the `purlis` it asks of the image before the runner is made is the one that serves (#3702). Docker brings its init with it; Podman's is `catatonit`, which a machine running rootless Podman needs installed (its `catatonit` package, or Podman's `init_path`), or a pool's runner is not made there. Its standard error is its log: purlis's own `info` lines and up, and a library's warnings, each redacted as the app's log is, kept by whatever keeps the container's log. |
 | Tools | `git` and `bash` on `PATH`, and a certificate bundle at `/etc/ssl/certs/ca-certificates.crt`. |
-| No harness | No `claude`, `codex` or `opencode` on `PATH`. A runner gets exactly the harness version its profile pins (spec #2030). |
+| No harness | No `claude`, `codex` or `opencode` on `PATH`. A runner gets exactly the harness version its profile pins (spec #2030): as a chat first starts on it, purlis downloads that version from the harness's own release over https, checks it against the SHA-256 its vendor publishes, and keeps it in the runner's data home on its home volume (`<data>/harnesses/`, never `/tmp`), so a runner needs to reach `storage.googleapis.com` for Claude Code and `api.github.com` and `github.com` for Codex and opencode (#3446). |
 
 ### What the team keeps
 
@@ -142,8 +142,8 @@ needs:
 - for a chat's server to listen, `pidfd_open` and `pidfd_getfd` too: the supervisor makes a
   chat's `listen` on the chat's own socket, which it takes with them. Docker's default profile
   allows `pidfd_getfd` only with `CAP_SYS_PTRACE`, so a Docker pool makes each runner with its
-  own profile, Docker's default and that one call besides
-  (`crates/purlis-core/src/dockerpool/seccomp.json`). Where a runtime refuses it, no server a
+  own profile, Docker's default and that one call besides, with the browser engine's calls
+  (below; `crates/purlis-core/src/dockerpool/seccomp.json`). Where a runtime refuses it, no server a
   chat starts listens, and the refusal is told to the person as a blocked bind. That reaches
   further than servers: every program that listens on a socket of its own stops there too,
   unix sockets included, such as a `tmux` server, an `ssh` ControlMaster, `gpg-agent` or a
@@ -155,6 +155,32 @@ needs:
 
 On a kernel without it, a sandboxed chat is refused and the refusal says which version is
 needed.
+
+### What a browser on a runner needs
+
+A runner chat's browser runs on its runner, beside it (#2050). purlis's host downloads the
+pinned browser engine into its home on the first browser, checked, as on any machine, so the
+engine is not in the image. To start, the engine needs:
+
+- **its libraries and a font.** purlis's image carries them: the libraries the engine's own
+  `deb.deps` lists (NSS, ATK and AT-SPI, CUPS, D-Bus, DRM, GBM, GLib, Pango, Cairo, udev, X11
+  and XCB's client libraries, xkbcommon and ALSA) and `fonts-liberation`. A team's image adds
+  them too, or its runners' chats get no browser, and the person is told why.
+- **its own sandbox.** purlis never runs the engine without it. The sandbox makes a user, a
+  process and a network namespace and changes its root, so a Docker pool makes each runner
+  with a profile that allows exactly those calls besides Docker's default
+  (`crates/purlis-core/src/dockerpool/seccomp.json`, ruled 2026-10-28). Only the browser engine
+  may make namespaces on a runner: the runner's host starts everything else unable to. A
+  pool gives that profile only to an image whose `purlis` does so, asked of the image before
+  its runner is made; an image of an earlier `purlis` gets the earlier profile, and its
+  runners start no browser. A team's image starts browsers on its runners once it is rebuilt on
+  a purlis that does so and its pool is added again. A runner a chat ran on, or may have run
+  on, without the sandbox starts no browser and is filled no login until it is made again, and
+  the browsers already open on it end, their data with them; after an update, so does every
+  runner its pool still keeps. A runner made by a purlis from before this profile still links;
+  its browsers are refused, and the person is told to remove its pool and add it again.
+- **shared memory.** A Docker pool gives each runner a `/dev/shm` a quarter of its memory: the
+  engine shares its pages' memory there, and Docker's own 64 MiB is too little for a busy page.
 
 ## On a Docker pool
 

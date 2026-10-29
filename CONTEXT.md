@@ -530,13 +530,23 @@ One person's request for a runner from a pool, and the runner it is given. A **k
 storage of its own, its runner's home, and survives the loss of its runner's pod, its pairing
 with it: the pairing is the claim's (ADR 0078, amended 2026-10-28). A **fresh** one is given a
 ready runner and keeps nothing. purlis chooses which, and "Keep this runner's work" overrides it.
+A claim stays in the namespace it is made in; its runner runs in its requester's **runner
+namespace** (ADR 0089, amended 2026-10-29).
 _Avoid_: claimed (of a piece: that is the piece log's word), lease, reservation, sandbox
+
+**Runner namespace**:
+The namespace a cluster operator makes for one person, `purlis-runners-<hash>`, where every
+runner of their claims runs, within their quota, and where they alone may reach their runners
+(ADR 0089, amended 2026-10-29).
+_Avoid_: personal namespace, tenant, sandbox namespace
 
 **Cluster operator**:
 purlis's controller inside a cluster: it turns claims into runners, counts them per person,
 starts and stops pools, and says which runner a claim was given, vouching with its own signing
-key for the link key each runner made as it started (ADR 0078, amended 2026-10-26). In a
-sentence the app shows,
+key for the link key each runner made as it started (ADR 0078, amended 2026-10-26). A desktop
+pins that key and the cluster, the uid of its `kube-system` namespace, when it adds the pool; a
+team admin **rolls** the key, and a desktop that sees the current key vouch for the next one
+moves its pin (ADR 0089, amended 2026-10-29). In a sentence the app shows,
 "purlis in your cluster".
 _Avoid_: operator (unqualified, where the person could be meant), controller, manager, master
 
@@ -1705,7 +1715,10 @@ A skill that ships inside purlis itself, in its plugin (`skills/` in the bundle)
 every harness. It cannot be turned off or edited. Each harness is handed the built-in skills by
 its own route, for the chat alone: Claude Code loads the plugin, opencode is told the directory
 through the shim, and a Codex chat is **briefed** on them, a list of names, descriptions and
-`SKILL.md` paths at `SessionStart` (ADR 0063).
+`SKILL.md` paths at `SessionStart` (ADR 0063). Its name is reserved: no skill of the project may
+take it, so nothing stands in for one. A person who wants to change one uses **Make my own copy**:
+a skill of their own, under a new name at a skill level they pick, which chats get beside the
+built-in skill, never instead of it. The window folds the built-in skills into one quiet line.
 _Avoid_: purlis's skills (every skill a person makes is a skill in purlis too), system skill,
 "Claude Code skills" for these; a copy of them anywhere
 

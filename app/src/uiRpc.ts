@@ -672,8 +672,8 @@ export const commands = {
 	/**  **This project's chat moves** (#2048), as the window draws them when it is drawn anew. */
 	chatMoves: (plane: PlaneId) => typedError<ChatMove[], string>(__TAURI_INVOKE("chat_moves", { plane })),
 	/**
-	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten, and a failed
-	 *  one's reason is dismissed.
+	 *  **Puts chat `session`'s move away** (#2048): one still prepared is forgotten for every chat
+	 *  of it, and a failed one's reason is dismissed. One being made now is refused (#3814).
 	 */
 	putAwayChatMove: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("put_away_chat_move", { plane, session })),
 	/**
@@ -995,6 +995,7 @@ export const commands = {
 	skillText: (plane: PlaneId, level: SkillLevel, name: string) => typedError<string, string>(__TAURI_INVOKE("skill_text", { plane, level, name })),
 	skillSave: __WINDOW_ONLY_RESULT,
 	skillRename: __WINDOW_ONLY_RESULT,
+	skillCopy: __WINDOW_ONLY_RESULT,
 	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
 	skillMoveNeedsGrant: (from: SkillLevel, to: SkillLevel) => __TAURI_INVOKE<boolean>("skill_move_needs_grant", { from, to }),
 	skillMove: __WINDOW_ONLY_RESULT,
@@ -1002,8 +1003,16 @@ export const commands = {
 	skillUsers: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillUsers, string>(__TAURI_INVOKE("skill_users", { plane, level, name })),
 	skillDelete: __WINDOW_ONLY_RESULT,
 	skillDeletesCutShort: __WINDOW_ONLY_RESULT,
-	/**  The deleted skills Restore can bring back, newest first. */
+	/**
+	 *  **The deleted skills Bring back can bring back**, newest first: those deleted in the last 30
+	 *  days, each with its days left (S9, #3691).
+	 */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
+	/**
+	 *  **The last text of the deleted skill `id` names**: its `SKILL.md` as it was when it was
+	 *  deleted, for its page on Deleted (S9, #3691). Refused for one the project does not list.
+	 */
+	skillDeletedText: (plane: PlaneId, id: string) => typedError<string, string>(__TAURI_INVOKE("skill_deleted_text", { plane, id })),
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
@@ -1028,6 +1037,8 @@ export const commands = {
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
+	skillDraftRedo: __WINDOW_ONLY_RESULT,
+	skillDraftRedoIn: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	skillLevelsConfirm: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
@@ -1457,6 +1468,7 @@ export const commands = {
 	poolProfiles: __WINDOW_ONLY_RESULT,
 	devices: __WINDOW_ONLY_RESULT,
 	deviceRunner: __WINDOW_ONLY_RESULT,
+	devicesDisk: __WINDOW_ONLY_RESULT,
 	projectsNotHeld: __WINDOW_ONLY_RESULT,
 	chatsRunOn: __WINDOW_ONLY_RESULT,
 	applyRunnerWrite: __WINDOW_ONLY_RESULT,
@@ -3391,12 +3403,22 @@ export type ChatHeld = {
  */
 export type ChatMove = {
 	session: number,
+	/**
+	 *  The pool it runs on as it moves, or `null` for this machine (#3646): where it still runs
+	 *  where the move did not happen.
+	 */
+	from: string | null,
 	/**  The pool it moves to, or `null` for this machine. */
 	to: string | null,
-	/**  `preparing`, `ready` or `failed`. */
+	/**
+	 *  `preparing`, `ready`, `switching` (being made now, past cancelling), `failed`, or
+	 *  `over`: it moved or was put away, and the window forgets it (#3814).
+	 */
 	stage: string,
 	/**  Why it failed, in a sentence: where it is `failed`. */
 	why: string | null,
+	/**  The other chats of its workspace that move with it, by name (#3453). */
+	with: string[],
 };
 
 /**  **A chat's Network view** (#1662): what it can reach now and what it was refused. */
@@ -3756,10 +3778,15 @@ export type DeletedSkill = {
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
 	/**
-	 *  How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
-	 *  in the project's history` (SK-33).
+	 *  How many days are left to bring it back (S9, #3691): at least 1, as one past its 30 days
+	 *  is not listed.
 	 */
-	stays: string,
+	days_left: number,
+	/**
+	 *  Whether the project's history keeps it (its delete was a commit), so it is still there
+	 *  after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
+	 */
+	in_history: boolean,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -3792,6 +3819,15 @@ export type DevicesShown = {
 	 */
 	projects: number,
 };
+
+/**  **The disk each pool's runners hold**, as the use table says it (#3493). */
+export type DiskHeld = 
+/**  Each pool's, in the order the pools were added. */
+{ state: "read"; pools: PoolDisk[] } | 
+/**  Docker could not say, and why, in its words ([`shown_safely`]). */
+{ state: "not_read"; why: string } | 
+/**  It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]). */
+{ state: "unanswered" };
 
 /**  Why a grant the person accepted before waits for a yes again. */
 export type DispatchAgain = 
@@ -6289,12 +6325,13 @@ export type MouseButton = "none" | "left" | "middle" | "right";
 
 /**  What the window is told of a move it asked for to switch now. */
 export type MoveNow = {
-	/**  The chat moved, as the window draws it in its place; `null` where it did not move now. */
-	chat: OpenChat | null,
+	/**
+	 *  Each chat that moved, as the window draws it in its place (#3453): none where they did
+	 *  not move now.
+	 */
+	moved: MovedChat[],
 	/**  Why it did not move yet, in a sentence: it moves at a later pause. */
 	not_yet: string | null,
-	/**  What its tab says after the move: what came back that the person is to look at. */
-	notices: string[],
 };
 
 /**  **A move's stage as the window hears it** (#2048): `chat-move`'s payload. */
@@ -6391,6 +6428,15 @@ export type Moved = {
 	 *  or child its harness spawned, drawn under the chat. Empty for nearly every chat.
 	 */
 	children: ChildAgent[],
+};
+
+/**  One chat a move started where it went, in the place of the run it left. */
+export type MovedChat = {
+	/**  The run it left. */
+	was: number,
+	chat: OpenChat,
+	/**  What its tab says after the move: what came back that the person is to look at. */
+	notices: string[],
 };
 
 /**
@@ -6802,6 +6848,11 @@ export type OpenChat = {
 	 *  Move here, and a chat here Move to runner.
 	 */
 	pool?: string | null,
+	/**
+	 *  The workspace it works in, or `null` at the project's root (#3453): its tab's move names
+	 *  the other chats of its workspace, which move with it.
+	 */
+	workspace?: string | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -7766,6 +7817,24 @@ export type PoolAdding = {
 	frames: number | null,
 	/**  The widest frame its runner's browsers are watched at over the link, in pixels (#3297). */
 	width: number | null,
+};
+
+/**
+ *  **The disk one pool's runners hold** (#3493, spec #2041 story 55): their home volumes
+ *  together, a draining runner's included.
+ */
+export type PoolDisk = {
+	pool: string,
+	/**
+	 *  In kilobytes of 1000 bytes, as Docker says sizes, to the nearest; `u32` so it is a
+	 *  `number` in TypeScript, and held at its most (some 4 TB) rather than wrapped.
+	 */
+	kilobytes: number,
+	/**
+	 *  How many of its runners' homes Docker did not list: their disk is not known, and is
+	 *  said apart rather than counted as nothing.
+	 */
+	not_listed: number,
 };
 
 /**
@@ -10182,6 +10251,12 @@ export type SkillDraft = {
 	level: SkillLevel,
 	/**  The chat that wrote it last, by its number. */
 	chat: number | null,
+	/**
+	 *  Whether that chat is open now, for an out-of-date draft (false for any other): "Ask the
+	 *  chat to redo it" types into it ([`skill_draft_redo_in`]), where a closed one's opens a
+	 *  chat afresh ([`skill_draft_redo`]).
+	 */
+	chat_open: boolean,
 	/**  A new skill, rather than a change to one. */
 	new: boolean,
 	/**  A file it changes changed in the project since: Accept is refused. */

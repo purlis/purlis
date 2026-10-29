@@ -858,7 +858,10 @@ fn git_run_by_charter_never_fetches_an_object_it_lacks() {
     );
 }
 
-/// This process's resident memory, in bytes.
+/// This process's resident memory, in bytes. It counts every thread of the process, so a test
+/// that reads it runs [`crate::alone`]: under `cargo test` the ~2,000 other tests of this binary
+/// are threads of the same process, and what they hold made it grow by 124 MB (mutants run
+/// 40854378898, 2026-10-29).
 fn resident() -> u64 {
     memory_stats::memory_stats().map_or(0, |used| used.physical_mem as u64)
 }
@@ -867,6 +870,9 @@ fn resident() -> u64 {
 #[test]
 fn an_ignore_file_linked_to_an_endless_device_is_never_opened_and_never_swells_charter() {
     purlis_core::unsteered!();
+    if crate::alone() {
+        return;
+    }
     let f = support::plane_with_clone("thing");
     let piece = cut(&f, "piece");
     std::os::unix::fs::symlink("/dev/zero", piece.join(".gitignore")).unwrap();
@@ -942,6 +948,9 @@ fn a_fifo_named_as_an_ignore_file_times_the_read_out_and_other_branches_still_re
 #[test]
 fn many_reads_of_a_branch_with_many_untracked_files_leave_charters_memory_steady() {
     purlis_core::unsteered!();
+    if crate::alone() {
+        return;
+    }
     let f = support::plane_with_clone("thing");
     let piece = cut(&f, "piece");
     for folder in 0..100 {

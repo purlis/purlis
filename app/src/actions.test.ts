@@ -57,6 +57,7 @@ import {
   RESTART_NOTE,
   MOVE_HERE_NOTE,
   MOVE_TO_RUNNER_NOTE,
+  MOVE_TOGETHER_NOTE,
   noteOf,
   restartNoteNoState,
   titleOf,
@@ -3260,6 +3261,20 @@ describe("Move to runner and Move here on a chat's tab (#2048)", () => {
     });
     const none = catalogue(now({ tabs, movesTo: () => [] }));
     expect([...catalogued(none).keys()].filter((id) => id.startsWith("tab.move:"))).toEqual([]);
+  });
+
+  it("names the chats of its workspace that move with it, both ways (#3453)", () => {
+    const offers = catalogued(
+      catalogue(now({ tabs, movesTo: () => ["builds"], movesWith: () => ["two", "steward 1"] })),
+    );
+    expect(offers.get(`tab.move:${tab}:builds`)).toMatchObject({
+      title: "Move chat one with two and steward 1 to pool builds",
+      note: `${MOVE_TO_RUNNER_NOTE} ${MOVE_TOGETHER_NOTE}`,
+    });
+    const here = catalogued(
+      catalogue(now({ tabs, movesTo: () => [null], movesWith: () => ["two"] })),
+    );
+    expect(here.get(`tab.move:${tab}:`)?.title).toBe("Move chat one with two here");
   });
 });
 

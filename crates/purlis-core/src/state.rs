@@ -133,6 +133,14 @@ pub struct Detail {
     /// older hook's does, takes nothing away.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unattended: bool,
+    /// The permission mode the chat's own harness said it runs in, as that harness's adapter
+    /// reads the payload's `permission_mode` ([`crate::harness::HarnessAdapter::reported_mode`],
+    /// #3787): the app keeps the last one said as the chat's
+    /// [`crate::dispatchmode::Heard`], which a task it dispatches starts from. Absent where
+    /// the payload names none, from an older hook, and on a harness whose word is not read,
+    /// so the line is the one it always was and the record is left as it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<crate::dispatchmode::Reported>,
     /// On a `Stop`: the harness said helpers of the chat's own are still at work in the
     /// background and will wake it ([`crate::hookwire::helpers_at_work`], #1626), so the turn
     /// has not handed the chat to the person. Absent from an older hook, and from a harness

@@ -429,6 +429,40 @@ fn a_socket_never_bound_does_not_listen() {
     assert_eq!(p.run(&["listen-unbound", "6"]), "EACCES");
 }
 
+/// A test server asking for a port the system picks is refused, and told (#3396), so its chat
+/// gets a Notice that says what to do: the bind on port 0, as the address it asked for.
+#[test]
+fn a_bind_on_a_port_the_system_picks_is_refused_and_told() {
+    let p = project();
+    let told = p.tmp.join("told");
+    let port = free_port();
+    let words = purlis_linux_sandbox::line(
+        &p.profile_unserved(port),
+        PROBE.to_owned(),
+        vec!["serve-on".into(), "127.0.0.1".into(), "0".into()],
+    );
+    let out = wrap_with(
+        &words,
+        &[
+            ("TMPDIR".into(), p.tmp.clone().into()),
+            ("PROBE_TOLD".into(), told.clone().into()),
+        ],
+    )
+    .current_dir(&p.cwd)
+    .output()
+    .expect("the wrap ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EACCES",
+        "{out:?}"
+    );
+    let said = std::fs::read_to_string(&told).unwrap_or_default();
+    assert!(
+        said.lines().any(|line| line == "network-bind 127.0.0.1:0"),
+        "told: {said:?}"
+    );
+}
+
 /// A thread with a descriptor table of its own is judged by its own socket: its unbound one is
 /// refused, though the process's table holds a bound socket at the same number.
 #[test]
@@ -438,6 +472,56 @@ fn a_thread_with_its_own_descriptors_is_judged_by_its_own_socket() {
         p.run(&["listen-unshared", "purlis-probe-unshared"]),
         "EACCES"
     );
+}
+
+/// A program a runner's host starts through `_no-namespaces` makes no namespace, whatever its
+/// machine lets a program make, and neither does what it starts: on a runner only the browser
+/// engine may (#3298, D-2050-25). It still runs as it was asked to.
+#[test]
+fn a_program_started_without_namespaces_makes_none() {
+    // The same probe, not held: this machine lets it make one, so what is refused below is the
+    // filter's refusal.
+    let out = Command::new(PROBE)
+        .arg("user-namespace")
+        .output()
+        .expect("the probe ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "ok",
+        "this machine refuses a user namespace to anyone: {out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            PROBE.into(),
+            vec!["user-namespace".into()],
+        ))
+        .output()
+        .expect("the probe ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EPERM",
+        "{out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            "/bin/sh".into(),
+            vec!["-c".into(), format!("{PROBE} user-namespace").into()],
+        ))
+        .output()
+        .expect("the shell ran");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "EPERM",
+        "{out:?}"
+    );
+    let out = Command::new(PROBE)
+        .args(purlis_linux_sandbox::no_namespaces_line(
+            PROBE.into(),
+            vec!["read".into(), "/etc/passwd".into()],
+        ))
+        .output()
+        .expect("the probe ran");
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok", "{out:?}");
 }
 
 /// A port free on this machine now.

@@ -942,8 +942,9 @@ impl Supervisor {
     ///   `0.0.0.0`, `::`) is bound instead to that port's socket, `<port>.sock`, the same way: a
     ///   server started for a port, on whatever address, is served through the door. Any other
     ///   internet bind is refused, as the chat's Landlock layer refuses every TCP bind, and told,
-    ///   so a server that asks for a port raises the Ask to serve on it; a port of zero is not
-    ///   told, since no person allows one.
+    ///   so a server that asks for a port raises the Ask to serve on it. A port of zero, which a
+    ///   test server asks for so the system picks one, is refused and told too (#3396): no
+    ///   person allows one, and its Notice says what to do instead.
     /// - **A netlink socket (what `getifaddrs` binds) and an abstract or unnamed unix socket go
     ///   on in the kernel** ([`Answer::GoOn`]), as before; any other family is refused. Nothing
     ///   the chat changes after the address was read carries such a call further: the call the kernel
@@ -979,6 +980,7 @@ impl Supervisor {
             libc::AF_INET | libc::AF_INET6 => {
                 let local = ip_of(&bytes)?;
                 if local.port() == 0 {
+                    self.tell(chat, BIND, local.to_string());
                     return Err(REFUSED);
                 }
                 let wanted = format!("{}.sock", local.port());

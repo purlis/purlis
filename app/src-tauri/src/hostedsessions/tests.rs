@@ -777,8 +777,8 @@ fn heard_in_the_window() -> Heard {
 
 /// A window on `hosting`, over a link of its own, whose hooks for the project at `root` hear
 /// what the host hands on.
-fn a_window_of(
-    hosting: &Hosting,
+fn a_window_of<H: session::Host + Clone>(
+    hosting: &H,
     root: &std::path::Path,
     runtime: &tokio::runtime::Runtime,
 ) -> (
@@ -803,6 +803,96 @@ fn a_window_of(
     let sessions = HostedSessions::new(connection, root);
     sessions.hear_through(hooks.relayed_from_the_host().expect("relayed"));
     (link, hooks, sessions, moved)
+}
+
+/// Input that never ends while its sender is held: an asker that is still there.
+struct StillThere(std::sync::mpsc::Receiver<()>);
+
+impl std::io::Read for StillThere {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        let _ = self.0.recv();
+        Ok(0)
+    }
+}
+
+/// What a command's asker is written, as it comes.
+#[derive(Clone, Default)]
+struct Written(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for Written {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Written {
+    fn says(&self, text: &str) -> bool {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).contains(text)
+    }
+}
+
+/// #3408: a host this window's link reaches through a relay, which says the link to it went
+/// down, let go of every line it had handed on: a `secret exec` of it that waits here ends its
+/// input, whose asker is still there on that host's side, so whatever waits on it here hears it
+/// went.
+#[test]
+fn a_secret_exec_of_a_host_the_relay_lost_ends_here() {
+    use std::io::{BufRead, Write};
+    let runtime = a_runtime();
+    let runs = StandIns::default();
+    let channel = HooksHeard::default();
+    let hosting = Hosting::hearing_with(
+        crate::sessionhost::Composes::as_the_tests_ship(),
+        runs.clone(),
+        channel.clone(),
+    );
+    let between = Between::new(hosting.clone(), false);
+    let pushes = between.pushes.clone();
+    let (dir, root) = a_project();
+    let (link, hooks, sessions, _moved) = a_window_of(&between, &root, &runtime);
+    hooks.exec_secrets_with(Arc::new(|_ask, reader, mut writer, _told| {
+        let _ = writeln!(writer, "began");
+        for _ in reader.lines() {}
+        let _ = writeln!(writer, "its input ended");
+    }));
+    let chat = sessions
+        .open(None, &a_shell("true"), &|id| {
+            hooks.board().opened(id, None, None)
+        })
+        .expect("it starts");
+    let (_asker, still_there) = std::sync::mpsc::channel::<()>();
+    let written = Written::default();
+    std::thread::spawn({
+        let (hearing, written) = (channel.hearing(), written.clone());
+        move || {
+            (hearing.secret_exec)(
+                purlis_core::secrets::brokered::Ask {
+                    chat,
+                    ..Default::default()
+                },
+                Box::new(std::io::BufReader::new(StillThere(still_there))),
+                Box::new(written),
+            );
+        }
+    });
+    until("the command begins in the window", || written.says("began"));
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "the link to it ended".into(),
+            key_changed: false,
+        })
+        .unwrap();
+
+    until("its input ends in the window", || {
+        written.says("its input ended")
+    });
+    drop((link, dir));
 }
 
 impl Heard {
@@ -3126,4 +3216,32 @@ fn the_window_draws_a_runner_browsers_frames_only_within_the_links_caps() {
         held.draws(&a_jpeg_of(390, 844), later),
         "and the next within them"
     );
+}
+
+/// **A pool a chat ran on, or may have run on, without the sandbox is held untrusted by the
+/// window whatever its record answers** (D-2050-27, #3702): a record of runners that cannot be
+/// read is said, and the pool is still untrusted. A connection to this machine's host has no
+/// pool to untrust.
+#[test]
+fn a_pool_a_chat_ran_on_without_the_sandbox_is_untrusted_though_its_record_cannot_be_written() {
+    let config = tempfile::tempdir().unwrap();
+    let folder = purlis_core::machine::dir(config.path());
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join(purlis_core::machine::RUNNERS_FILE), "not json").unwrap();
+    let window = Arc::new(Connection::default());
+    window.runners_in(config.path().to_path_buf());
+    let ended = Arc::new(Mutex::new(Vec::<String>::new()));
+    window.ending_browsers_with({
+        let ended = Arc::clone(&ended);
+        Arc::new(move |pool: &str| ended.lock().unwrap().push(pool.to_owned()))
+    });
+
+    assert!(window.ran_unsandboxed().is_ok(), "no pool");
+    assert!(ended.lock().unwrap().is_empty());
+
+    let pool = window.to_a_pool("builds");
+    assert!(pool.ran_unsandboxed().is_err(), "its record cannot be read");
+    assert!(window.untrusts("builds") && pool.untrusts("builds"));
+    assert!(!window.untrusts("other"));
+    assert_eq!(*ended.lock().unwrap(), ["builds"]);
 }
