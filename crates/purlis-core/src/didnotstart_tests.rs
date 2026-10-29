@@ -85,6 +85,7 @@ const WAITING: Seen = Seen {
     heard: true,
     running: false,
     waiting: true,
+    own_work: false,
     asking: false,
     measured: true,
     interrupts: true,

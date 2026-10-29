@@ -24,6 +24,7 @@ fn a_chat(chat: u32, name: &str, persona: Option<&str>, workspace: &str) -> Know
         persona: persona.map(str::to_owned),
         workspace: Place::Workspace(workspace.to_owned()),
         state: State::Running,
+        own_work: false,
         started: at_time(12, 40),
         lineage: None,
         from: None,
@@ -832,6 +833,17 @@ fn every_turn_a_chat_with_open_tasks_is_shown_them_and_one_with_none_is_shown_no
         Some(roster),
         "every turn"
     );
+
+    // Waiting on work of its own, it says so: never idle, never waiting on nobody (#3878).
+    known[1].state = State::Waiting;
+    known[1].own_work = true;
+    let said = turn(&known, 1, &mut told).expect("lines");
+    assert!(
+        said.contains("chat 4 'check prod' waiting on its own work;"),
+        "{said}"
+    );
+    known[1].state = State::Running;
+    known[1].own_work = false;
 
     // Stopped on the person, it says so.
     known[1].asking = Some(Prompt::Permission);

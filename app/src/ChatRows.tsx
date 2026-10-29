@@ -5,7 +5,7 @@ import { SandboxMark, type SandboxSaid } from "./SandboxMark";
 import { memo, useMemo, type ReactNode } from "react";
 import { Hand, ListTodo, SquareTerminal } from "lucide-react";
 import { ChatMark, StoppingMark, WrappingUp } from "./NeedsYou";
-import { markOf, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
+import { markOf, ownWorkOf, useChatsHere, useChatsSelect, type ChatStates } from "./chatState";
 import { PlaneUpdatedMark, type PlaneUpdates } from "./PlaneUpdated";
 import { chatOf, contentsOf, panesOf, shownIn, type Tabs } from "./tabs";
 import { PersonaMark } from "./PersonaMark";
@@ -97,6 +97,7 @@ export const ChatShownState = memo(function ChatShownState({
         task: report === null ? null : { report, outcome, asking },
         harness,
         tasksAtWork: tasksAtWorkOf(states, below),
+        ownWork: ownWorkOf(states, session),
       }),
     sameShown,
   );
@@ -140,6 +141,7 @@ export const ChatPersonaState = memo(function ChatPersonaState({
         task: report === null ? null : { report, outcome, asking },
         harness,
         tasksAtWork: tasksAtWorkOf(states, below),
+        ownWork: ownWorkOf(states, session),
       }),
     sameShown,
   );
@@ -329,7 +331,13 @@ export function TabMarks({
 
 /** The states a persona's row tells, the strongest first (#3341): the person is asked for, then
  *  a question or a wait is open, then something is at work. A persona at rest tells none. */
-const AT_WORK: readonly Shown["kind"][] = ["needs-you", "asking", "waiting-on-tasks", "working"];
+const AT_WORK: readonly Shown["kind"][] = [
+  "needs-you",
+  "asking",
+  "waiting-on-tasks",
+  "waiting-on-own-work",
+  "working",
+];
 
 /** The strongest of `sessions`' states that tells a persona at work (#3341), or nothing for a
  *  persona whose chats all rest. The one reading both the row's mark and its group use (#3483),
@@ -342,6 +350,7 @@ function atWorkOf(states: ChatStates, sessions: readonly number[]): Shown | unde
       needsYou: states.needsYou.includes(session),
       task: null,
       harness: null,
+      ownWork: ownWorkOf(states, session),
     });
     if (one === undefined || !AT_WORK.includes(one.kind)) continue;
     if (best === undefined || AT_WORK.indexOf(one.kind) < AT_WORK.indexOf(best.kind)) best = one;

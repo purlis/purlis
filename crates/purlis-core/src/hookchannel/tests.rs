@@ -123,11 +123,13 @@ fn place_of(moved: &crate::state::Move) -> usize {
         Move::ReportedToItsAsker => 16,
         Move::CommitRefused { .. } => 17,
         Move::Closed => 18,
+        Move::OwnWorkLapsed { .. } => 19,
+        Move::BlockedWhileWaiting => 20,
     }
 }
 
 /// How many places [`place_of`] names.
-const EVERY_MOVE: usize = 19;
+const EVERY_MOVE: usize = 21;
 
 /// One of every move, in an order in which each moves something a reader can see: chat 1 takes
 /// them all, and chat 2 is opened only to be closed.
@@ -205,6 +207,52 @@ fn one_of_every_move() -> Vec<(u32, crate::state::Move)> {
             },
         ),
         (1, Move::Answered),
+        // A turn that ends on a background shell of its own, whose wait lapses (#3878).
+        (
+            1,
+            Move::Reported {
+                report: crate::hookwire::Report {
+                    detail: crate::state::Detail {
+                        own_work: crate::ownwork::Said {
+                            shells: 1,
+                            lapses_in: Some(3600),
+                            ..crate::ownwork::Said::default()
+                        },
+                        ..crate::state::Detail::default()
+                    },
+                    ..a_report(1, Event::Stop)
+                },
+                waits: Waits {
+                    now: 1_000,
+                    ..Waits::default()
+                },
+            },
+        ),
+        (
+            1,
+            Move::OwnWorkLapsed {
+                now: 4_600,
+                waits: Waits::default(),
+            },
+        ),
+        // One that ends on a monitor, whose sandbox blocks it while it waits.
+        (
+            1,
+            Move::Reported {
+                report: crate::hookwire::Report {
+                    detail: crate::state::Detail {
+                        own_work: crate::ownwork::Said {
+                            monitors: 1,
+                            ..crate::ownwork::Said::default()
+                        },
+                        ..crate::state::Detail::default()
+                    },
+                    ..a_report(1, Event::Stop)
+                },
+                waits: Waits::default(),
+            },
+        ),
+        (1, Move::BlockedWhileWaiting),
         (
             1,
             Move::Reported {
