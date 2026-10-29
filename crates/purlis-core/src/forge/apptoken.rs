@@ -477,10 +477,10 @@ pub fn token_for(
     drop(jwt);
     let minted = mint_over(&transport, &forge, &remotes, chat.here)?;
     tracing::info!(
-        "purlis: chat {} was handed a token of GitHub App {} for {} repo(s) of installation {}",
+        "purlis: chat {} was handed a token of GitHub App {} for {} of installation {}",
         chat.chat,
         mint.app,
-        minted.repos.len(),
+        crate::counts::counted(minted.repos.len(), "repo", "repos"),
         minted.installation
     );
     let until = Instant::now() + kept_for(minted.expires_at.as_deref(), now);
