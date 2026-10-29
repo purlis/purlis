@@ -506,6 +506,68 @@ fn an_approved_servers_run_starts_from_its_entrys_variables_and_no_other_of_the_
     );
 }
 
+/// A persona `devops` (vault `team`) declaring one credentialed server, `server`, running
+/// `script` with `env` as its entry's `env`, approved on this machine.
+fn an_approved_server_running(root: &Path, script: &str, env: serde_json::Value) {
+    let persona = root.join("personas/devops");
+    std::fs::create_dir_all(&persona).unwrap();
+    std::fs::write(
+        persona.join("persona.md"),
+        "---\nname: devops\nvault: team\ndelegate-when: deploys\n---\n# devops\n",
+    )
+    .unwrap();
+    let entry = serde_json::json!({
+        "type": "stdio",
+        "command": "/bin/sh",
+        "args": ["-c", script],
+        "env": env,
+        "secrets": {"X": "TOKEN"},
+    });
+    std::fs::write(
+        persona.join("mcp.json"),
+        serde_json::json!({"mcpServers": {"server": entry}}).to_string(),
+    )
+    .unwrap();
+    let fingerprint =
+        crate::personaverbs::mcp::fingerprint(Some("team"), &entry).expect("it needs consent");
+    crate::personaverbs::mcp::approve(
+        root,
+        &crate::personaverbs::state_dir(root),
+        "devops",
+        &[fingerprint],
+    )
+    .unwrap();
+}
+
+/// #3441: an approved server's environment values come from the person's approval. A value the
+/// chat sets for one of its entry's variables never reaches the run, which starts with the value
+/// approved; one the chat's environment lacks is set all the same; and one the harness expands
+/// (`${…}`) is no value the person read, so the run starts without it.
+#[test]
+fn an_approved_servers_environment_values_come_from_the_approval_not_the_chat() {
+    let project = project();
+    let root = project.path();
+    let script = r#"echo "[$SERVER_URL][$REGION][${TEAM:-}]""#;
+    an_approved_server_running(
+        root,
+        script,
+        serde_json::json!({
+            "SERVER_URL": "https://server.example.com",
+            "REGION": "eu",
+            "TEAM": "${TEAM}",
+        }),
+    );
+    let mut want = wanted(root, "team", sh(script));
+    want.env = vec!["X=TOKEN".into()];
+    want.environment
+        .push(("SERVER_URL".into(), "https://chat.example.com".into()));
+    want.environment
+        .push(("TEAM".into(), "the-chats-team".into()));
+    let frames = served_as_asked(&asker(root, Some("devops")), want);
+    assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert_eq!(stdout(&frames), "[https://server.example.com][eu][]\n");
+}
+
 /// #2047: a brokered tool's process keeps no core dump, which would hold its values. This
 /// covers the run's own limit (`no_core_files`, from #3405). It can go red only where each test
 /// has a process of its own, as under nextest on CI: under plain `cargo test` another test's

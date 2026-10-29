@@ -141,6 +141,17 @@ fn approve_in(
                 continue;
             };
             say(Say::Info(format!("  {label} → {}", c.line).into()));
+            if !c.unset.is_empty() {
+                say(Say::Warn(
+                    format!(
+                        "    {label} starts without {}: purlis sets its variables to the values \
+                         this line writes out, and a harness fills a `${{…}}` from the chat's \
+                         environment",
+                        c.unset.join(", ")
+                    )
+                    .into(),
+                ));
+            }
             if options.dry_run {
                 continue;
             }
@@ -257,6 +268,38 @@ mod tests {
 
     fn approved(plane: &Plane) -> Vec<String> {
         mcp::approved(&plane.state(), "ops").into_iter().collect()
+    }
+
+    /// #3441: an approved server's run takes its variables at the values its line shows, so the
+    /// person is told, under the line, of each it starts without: one the harness expands.
+    #[test]
+    fn a_variable_the_harness_expands_is_said_to_be_one_the_run_starts_without() {
+        let plane = Plane::daily_with_ops();
+        let mcp = crate::personaverbs::tests_plane::OPS_MCP.replacen(
+            "\"env\": {\"GRAFANA_URL\"",
+            "\"env\": {\"REGION\": \"${REGION}\", \"GRAFANA_URL\"",
+            1,
+        );
+        plane.write("personas/ops/mcp.json", &mcp);
+        let options = Options {
+            dry_run: true,
+            ..Options::default()
+        };
+        let (rc, heard) = run(&plane, &options, None);
+        assert_eq!(rc, 0, "{}", heard.err);
+        assert!(
+            heard.err.contains(
+                "    ops/grafana starts without REGION: purlis sets its variables to the values \
+                 this line writes out, and a harness fills a `${…}` from the chat's environment"
+            ),
+            "{}",
+            heard.err
+        );
+        assert!(
+            !heard.err.contains("ops/gsc starts without"),
+            "{}",
+            heard.err
+        );
     }
 
     #[test]

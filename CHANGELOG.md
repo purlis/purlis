@@ -319,6 +319,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **An approved MCP server's environment values come from the person's approval.** A persona's
+  credentialed MCP server approved with `purlis persona approve-mcp` now starts with each
+  variable its entry's `env` writes out, at the value its approved line shows. A value the
+  harness fills in (`${VAR}`) is not on the line, so the server starts without it, and
+  `approve-mcp` says so under the line (#3441).
 - **A project's per-chat files no longer pile up.** When the app opens a project, it removes
   the per-chat markers in `.charter/sessions/`, the chat traces in
   `.charter/persona-state/trace/` and the old report drafts in `.charter/reports/` that nothing
