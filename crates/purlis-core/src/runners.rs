@@ -1458,19 +1458,15 @@ pub fn forget_cluster_runner_locked(
     Ok(())
 }
 
-/// **The programs every cluster pool's kubectl runs** (#3292), by their real paths, each with
-/// the folder it is in: what a chat's sandbox holds for no chat to write. None where the file
-/// cannot be read.
+/// **The programs every cluster pool's kubectl runs** (#3292), each as named and by its real
+/// path, once: what a chat's sandbox holds whole, with the package each belongs to, for no chat
+/// to write. None where the file cannot be read.
 pub fn cluster_holds(config_root: &Path) -> Vec<std::path::PathBuf> {
     let mut held: Vec<std::path::PathBuf> = Vec::new();
     for pool in cluster_pools(config_root).unwrap_or_default() {
         for program in pool.holds() {
-            for path in
-                std::iter::once(program.clone()).chain(program.parent().map(Path::to_path_buf))
-            {
-                if !held.contains(&path) {
-                    held.push(path);
-                }
+            if !held.contains(program) {
+                held.push(program.clone());
             }
         }
     }

@@ -1084,11 +1084,55 @@ mod cluster {
         )
         .unwrap();
         let held = runners::cluster_holds(config.path());
+        assert!(held.contains(&plugin), "as named: {held:?}");
         assert!(held.contains(&plugin.canonicalize().unwrap()), "{held:?}");
         assert!(
             held.contains(&cluster.kubectl().real_program().unwrap()),
             "{held:?}"
         );
+    }
+
+    #[test]
+    fn a_removal_waits_for_an_add_of_the_pool_still_under_way() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        added(config.path(), &cluster);
+        // An add of it under way holds this until it ends.
+        let under_way = adding(config.path(), "team");
+        let (done, finished) = std::sync::mpsc::channel();
+        let (root, kubectl) = (config.path().to_path_buf(), cluster.kubectl());
+        let removing = std::thread::spawn(move || {
+            let left = remove_cluster(&root, Some(&kubectl), "team", Some(OURS), None);
+            done.send(()).unwrap();
+            left
+        });
+        assert!(
+            finished.recv_timeout(Duration::from_millis(300)).is_err(),
+            "the removal did not wait for the add"
+        );
+        drop(under_way);
+        finished.recv_timeout(Duration::from_secs(30)).unwrap();
+        assert_eq!(removing.join().unwrap().unwrap(), None);
+        assert!(runners::pool_names(config.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_removal_that_cannot_tell_which_claim_is_its_own_says_what_may_be_left() {
+        let (config, cluster) = (tempfile::tempdir().unwrap(), FakeCluster::new());
+        let pool = team(&cluster)
+            .kept_at(&runners::kubeconfig_kept_at(config.path(), "team"))
+            .holding(vec![cluster.kubectl().real_program().unwrap()])
+            .unwrap();
+        runners::record_cluster_pool_locked(config.path(), &pool, &runners::lock(config.path()))
+            .unwrap();
+        let left = remove_cluster(config.path(), Some(&cluster.kubectl()), "team", None, None)
+            .unwrap()
+            .expect("it says what may be left");
+        assert!(
+            left.contains("kubectl get claims.runners.purlis.dev"),
+            "{left}"
+        );
+        assert!(runners::pool_names(config.path()).unwrap().is_empty());
+        assert!(!deleted(&cluster));
     }
 
     #[test]

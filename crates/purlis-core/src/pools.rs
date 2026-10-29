@@ -341,6 +341,13 @@ pub fn claim_name(device: &str, pool: &str) -> String {
     format!("{pool}-{}", crate::clusterpool::desktop_label(device))
 }
 
+/// **The lock an add of the cluster pool `name` holds from start to end** (#3292): a removal of
+/// that pool takes it first, so it waits for the add to finish rather than meet a pool half
+/// made.
+fn adding(config_root: &Path, name: &str) -> crate::machine::Lock {
+    crate::machine::Lock::named(config_root, &format!("cluster-add-{name}.lock"))
+}
+
 /// How long adding a cluster pool waits for the cluster operator to vouch for its runner.
 pub const VOUCHED_WITHIN: std::time::Duration = std::time::Duration::from_secs(300);
 
@@ -348,25 +355,37 @@ pub const VOUCHED_WITHIN: std::time::Duration = std::time::Duration::from_secs(3
 pub const ASKED_EVERY: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// **The programs a pool's kubectl runs, as they are found now** (#3292): kubectl itself and each
-/// credential plugin `context` (the pool's context as JSON) names, each by its real path, links
-/// followed. Refused, with a sentence, for a plugin purlis does not find, and for a program it
-/// cannot hold for no chat to write ([`holdable`]).
+/// credential plugin `context` (the pool's context as JSON) names, each both as it is named (a
+/// link on the way among them) and by its real path, links followed. Refused, with a sentence,
+/// for a plugin purlis does not find, and for a program it cannot hold for no chat to write
+/// ([`holdable`]).
 fn programs_run(
     kubectl: &crate::clusterpool::Kubectl,
     context: &str,
 ) -> Result<Vec<std::path::PathBuf>, Refused> {
     let said = |why: crate::clusterpool::Refused| Refused::Other(why.to_string());
-    let mut programs = vec![kubectl.real_program().map_err(said)?];
+    let mut named = vec![kubectl.program().to_path_buf()];
     for command in crate::clusterpool::plugins_named(context).map_err(said)? {
-        let found = kubectl.plugin_at(&command).ok_or_else(|| {
+        named.push(kubectl.plugin_at(&command).ok_or_else(|| {
             Refused::Other(format!(
                 "the kubeconfig's context runs the credential plugin {command}, which purlis did \
                  not find beside kubectl or in this machine's own folders, so nothing was added; \
                  name it by its absolute path in the kubeconfig"
             ))
+        })?);
+    }
+    let mut programs: Vec<std::path::PathBuf> = Vec::new();
+    for program in named {
+        let real = program.canonicalize().map_err(|why| {
+            Refused::Other(format!(
+                "{} could not be read as a program ({why}), so nothing was added",
+                program.display()
+            ))
         })?;
-        if !programs.contains(&found) {
-            programs.push(found);
+        for path in [program, real] {
+            if !programs.contains(&path) {
+                programs.push(path);
+            }
         }
     }
     for program in &programs {
@@ -434,6 +453,7 @@ pub fn add_cluster(
     desktop: &Pinned,
     within: std::time::Duration,
 ) -> Result<runners::ClusterKept, Refused> {
+    let _adding = adding(config_root, pool.name());
     let taken_from = pool.kubectl(kubectl);
     let pin = pool.pin()?;
     let named = taken_from
@@ -575,6 +595,9 @@ pub fn remove_cluster(
     device: Option<&str>,
     unpair: Option<&UnpairCluster<'_>>,
 ) -> Result<Option<String>, Refused> {
+    // An add of it still under way finishes first.
+    runners::usable_pool_name(name).map_err(Refused::Other)?;
+    let _adding = adding(config_root, name);
     let pool = runners::cluster_pools(config_root)?
         .into_iter()
         .find(|pool| pool.name() == name)
@@ -621,7 +644,16 @@ fn claim_released(
     let (namespace, claim) = match (kept, device) {
         (Some(kept), _) => (kept.claimed.namespace.clone(), kept.claimed.name.clone()),
         (None, Some(device)) => (pool.namespace().to_owned(), claim_name(device, pool.name())),
-        (None, None) => return None,
+        (None, None) => {
+            return Some(format!(
+                "Pool {} was removed here, but a claim of it may still hold a runner in the \
+                 cluster (purlis could not read this desktop's device id, so it could not tell \
+                 which claim is its own); list them with kubectl get claims.runners.purlis.dev \
+                 --namespace {} and delete the one named after the pool.",
+                pool.name(),
+                pool.namespace()
+            ));
+        }
     };
     let left = |why: &str| {
         Some(format!(
