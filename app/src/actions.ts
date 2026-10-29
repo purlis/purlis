@@ -55,7 +55,6 @@ import {
   OPEN_SKILL_STUDIO,
   skillStudioAs,
   inWorkspace,
-  skillStudioTitle,
   skillStudioView,
 } from "./skillStudio";
 import { budgetSaid, budgetShort } from "./UseSkill";
@@ -2277,11 +2276,11 @@ export function catalogue(now: Now): Offer[] {
       offers.push({
         ...can(
           `${SKILL_STUDIO_IN}${workspace}`,
-          "Open in Skill studio",
+          OPEN_SKILL_STUDIO,
           {
             verb: "openView",
             view: skillStudioView(inWorkspace(workspace)),
-            title: skillStudioTitle(inWorkspace(workspace)),
+            title: SKILL_STUDIO_TITLE,
           },
           workspace,
         ),
@@ -2487,11 +2486,11 @@ export function catalogue(now: Now): Offer[] {
       offers.push({
         ...can(
           skillStudioAs(persona),
-          "Open in Skill studio",
+          OPEN_SKILL_STUDIO,
           {
             verb: "openView",
             view: skillStudioView(asPersona(persona)),
-            title: skillStudioTitle(asPersona(persona)),
+            title: SKILL_STUDIO_TITLE,
           },
           persona,
         ),

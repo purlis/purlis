@@ -1,13 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Terminal } from "@xterm/xterm";
+import { useEffect, useState } from "react";
 import { commands, type GradeScorecard, type ScoredRuns } from "./bindings";
 import type { ViewRef } from "./tabs";
 import { counted } from "./dispatches";
+import { ReadOnlyTerminal } from "./ReadOnlyTerminal";
 import { textSizes } from "./textSize";
-import { inForce, terminalFont, xtermLook, xtermTheme } from "./theme/theme";
 import { Button } from "./ui/button/Button";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 
@@ -206,7 +205,8 @@ export function GradeScorecardTab({
 
 /**
  * **One of a grade's chats, read-only** (SK-59, #3239): what its terminal showed as the grade
- * ended it, its scrollback with it, drawn by xterm from the theme's terminal tokens and taking
+ * ended it, its scrollback with it, drawn by the terminal's read-only mode (`ReadOnlyTerminal`,
+ * #3676) from the theme's terminal tokens, read as text by a screen reader, and taking
  * no input. The chat itself is gone: this is what it showed.
  */
 export function GradeChatTab({
@@ -249,36 +249,15 @@ export function GradeChatTab({
     );
   return (
     <div className="grade-chat" data-testid="grade-chat">
-      <p className="honest">
-        What this chat of {skill}'s grade showed when the grade ended it. It takes no input.
-      </p>
-      <ReadOnlyTerminal screen={screen} label={`A grade's chat of ${skill}`} />
+      <p className="honest">What this chat of {skill}'s grade showed when the grade ended it.</p>
+      <ReadOnlyTerminal
+        screen={screen}
+        label={`A grade's chat of ${skill}`}
+        note="It takes no input and can't be resumed."
+        cols={GRADE_CHAT_COLUMNS}
+        rows={GRADE_CHAT_ROWS}
+        fontSize={textSizes().terminal}
+      />
     </div>
   );
-}
-
-/** `screen` drawn by xterm, read-only: no cursor, no input. */
-function ReadOnlyTerminal({ screen, label }: { screen: string; label: string }) {
-  const holder = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const where = holder.current;
-    if (!where) return;
-    const theme = inForce();
-    const pane = new Terminal({
-      fontSize: textSizes().terminal,
-      fontFamily: terminalFont(),
-      theme: xtermTheme(theme),
-      ...xtermLook(theme),
-      cols: GRADE_CHAT_COLUMNS,
-      rows: GRADE_CHAT_ROWS,
-      cursorBlink: false,
-      disableStdin: true,
-      scrollback: 10_000,
-    });
-    pane.open(where);
-    // No cursor: the chat is over.
-    pane.write(`${screen}\u001b[?25l`);
-    return () => pane.dispose();
-  }, [screen]);
-  return <div className="grade-chat-terminal" ref={holder} aria-label={label} role="img" />;
 }

@@ -190,6 +190,13 @@ pub(super) const NOTICE: Family = Family {
             description: "Something went wrong. Its waiting edge stays.",
             consent: Some(Consent::Asks),
         },
+        Variant {
+            name: "attention",
+            since: super::NEXT,
+            description: "Nothing went wrong, but the person must decide: a change to review, a \
+                          draft out of date (#3678). Its waiting edge stays.",
+            consent: Some(Consent::Asks),
+        },
     ],
     // A pane's row on the base ground; the Inbox's side and a settings page, base or raised.
     grounds: &["surface.base", "surface.raised"],
@@ -210,12 +217,19 @@ pub(super) const NOTICE: Family = Family {
 };
 
 /// **A Notice's colours as `app/src/ui/notice/notice.css` draws them**: the raised ground edged in
-/// the waiting colour (purlis speaking, #1647), and trouble's danger ground and words.
+/// the waiting colour (purlis speaking, #1647), trouble's danger ground and words, and
+/// attention's own ground and words (#3678).
 pub(super) fn notice_look(variant: &str, _states: &[State]) -> Look {
     if variant == "trouble" {
         Look {
             fill: "danger.surface",
             text: "danger.text",
+            border: "state.waiting",
+        }
+    } else if variant == "attention" {
+        Look {
+            fill: "attention.surface",
+            text: "attention.text",
             border: "state.waiting",
         }
     } else {

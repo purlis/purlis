@@ -24,7 +24,7 @@ name: forge-live
 # fixture holds. A forge not yet provisioned says so in the run's summary and stops, green:
 # nothing about the forge was tested, nothing claims it, and the nightly's issue is left as is.
 #
-# `crates/release-manifest/tests/the_forge_nightly_runs_live_with_least_privilege.rs` holds this
+# `crates/release-manifest/tests/it/the_forge_nightly_runs_live_with_least_privilege.rs` holds this
 # file to those rules.
 
 on:

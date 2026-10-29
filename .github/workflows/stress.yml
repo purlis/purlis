@@ -339,7 +339,7 @@ jobs:
           shared-key: rust
           save-if: false
       - name: Pollers at once on a 300,000-file plane, with and without the shared standing
-        run: cargo test -p purlis-core --lib -- planegit::tests::pollers_at_once --test-threads 1 --nocapture
+        run: tools/tests-ran.sh -- cargo test -p purlis-core --lib -- planegit::tests::pollers_at_once --test-threads 1 --nocapture
         env:
           CHARTER_STANDING_FILES: "300000"
 
@@ -377,7 +377,7 @@ jobs:
       - name: ⌘P, ⌘⇧F and status on a generated repo
         shell: bash
         run: |
-          cargo test --release -p purlis-core --test it -- search_is_measured_on_large_repos:: --ignored --nocapture --test-threads=1 2>&1 | tee fm-12.log
+          tools/tests-ran.sh -- cargo test --release -p purlis-core --test it -- search_is_measured_on_large_repos:: --ignored --nocapture --test-threads=1 2>&1 | tee fm-12.log
         env:
           CHARTER_MEASURE_FILES: ${{ matrix.files }}
           CHARTER_MEASURE_BUDGETS: report

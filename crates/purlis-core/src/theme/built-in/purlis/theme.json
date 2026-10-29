@@ -61,7 +61,10 @@
     "dialog.root.border-width": 0,
     "popover.root.border-width": 0,
     "card.root.fill": "surface.base",
-    "card.root.border-width": 0
+    "card.root.border-width": 0,
+    "list.root.card.fill": "surface.base",
+    "list.root.card.hover.fill": "surface.hover",
+    "list.root.card.selected.fill": "list.selected"
   },
   "appearances": [
     {
@@ -111,6 +114,8 @@
         "danger.surface": "danger-surface",
         "danger.text": "danger-text",
         "danger.wash": "#f0a9a81f",
+        "attention.surface": "#2c2924",
+        "attention.text": "#f3dcb4",
         "wash.warning": "#e5c08a1f",
         "diff.deleted": "#f0a9a81f",
         "diff.inserted": "#8fc79a1f",
@@ -314,6 +319,8 @@
         "danger.surface": "#e1d4d9",
         "danger.text": "#351c1c",
         "danger.wash": "#fd04441f",
+        "attention.surface": "#e2ded7",
+        "attention.text": "#372501",
         "wash.warning": "#fdb0051f",
         "diff.deleted": "#fd04441f",
         "diff.inserted": "#01fd781f",
@@ -518,6 +525,8 @@
         "danger.surface": "danger-surface",
         "danger.text": "danger-text",
         "danger.wash": "#f0a9a81f",
+        "attention.surface": "#2c2924",
+        "attention.text": "#ffe8c2",
         "wash.warning": "#e5c08a24",
         "diff.deleted": "#f0a9a81f",
         "diff.inserted": "#8fc79a1f",

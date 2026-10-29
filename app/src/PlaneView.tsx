@@ -423,7 +423,20 @@ import type {
 } from "./bindings";
 import { AskFirst, runExtensionAction } from "./ExtensionAction";
 import { extensionsChanged, useExtensionsOn } from "./extensionsOn";
-import { skillStudioTitle, skillStudioView, useSkillStudioSaid } from "./skillStudio";
+import {
+  SKILL_STUDIO_ASKED,
+  SKILL_STUDIO_TITLE,
+  SKILL_STUDIO_VIEW,
+  isSkillStudio,
+  skillStudioAt,
+  skillStudioView,
+  type SkillStudioAsk,
+  studioHistoryOf,
+  studioOpening,
+  studioTabsGone,
+  useSkillStudioSaid,
+} from "./skillStudio";
+import { forgetViewHistory, openViewAt } from "./ui/panel/viewHistory";
 import { SkillRunsHere, skillView, useSkillRuns, type RunsOf } from "./skillRuns";
 import { projectThemeChanged, useProjectThemeKept } from "./projectTheme";
 import { inForce, isWorkspaceColour, onDrawn, tabTint } from "./theme/theme";
@@ -1492,7 +1505,12 @@ export const PlaneView = memo(function PlaneView({
             ),
           );
         }
-        setPinnedViews(back.filter((view) => view.pinned).map((view) => viewKey(refOf(view))));
+        // A studio tab an older launch kept per scope is pinned as the one studio tab (#3681).
+        setPinnedViews(
+          back
+            .filter((view) => view.pinned)
+            .map((view) => viewKey(studioOpening(refOf(view), () => true).tab)),
+        );
         const focusedBack = focusAnswer?.status === "ok" ? focusAnswer.data : null;
         if (focusedBack !== null && focusedBack !== undefined)
           setFocusedBranch({
@@ -1520,8 +1538,8 @@ export const PlaneView = memo(function PlaneView({
             (tabs, view) =>
               putViewBack(
                 tabs,
-                refOf(view),
-                view.title,
+                studioPutBack(plane, refOf(view)),
+                isSkillStudio(refOf(view)) ? SKILL_STUDIO_TITLE : view.title,
                 view.workspace ?? OUTSIDE,
                 view.at,
                 view.split ?? undefined,
@@ -3772,7 +3790,20 @@ export const PlaneView = memo(function PlaneView({
     [change, filedIn, focused],
   );
   const showView = useCallback(
-    (view: ViewRef, title: string, on?: string) => {
+    (asked: ViewRef, named: string, on?: string) => {
+      // **The Skill studio, opened at a place** (#3681): its one tab per project, gone to that
+      // place in its own history, so back returns to where the person was inside it.
+      let view = asked;
+      let title = named;
+      if (isSkillStudio(asked)) {
+        const opening = studioOpening(
+          asked,
+          (key) => findView(now.current, { ...SKILL_STUDIO_VIEW, key }) === undefined,
+        );
+        view = opening.tab;
+        title = SKILL_STUDIO_TITLE;
+        if (opening.place !== undefined) openViewAt(studioHistoryOf(plane, view), opening.place);
+      }
       present((tabs, strip) => openView(tabs, view, title, on ?? strip));
       // Opening Settings, or bringing it forward, is a way into it: the keyboard goes there too
       // (#1206, `settings/entering.ts`).
@@ -3859,6 +3890,14 @@ export const PlaneView = memo(function PlaneView({
     for (const program of was)
       if (!now.has(program)) void commands.browserViewed(plane, program, false);
     browsersBefore.current = tabs;
+  }, [tabs, plane]);
+
+  /** **A closed studio tab's history goes with it** (#3681), whichever way it was closed. */
+  const studiosBefore = useRef(tabs);
+  useEffect(() => {
+    for (const gone of studioTabsGone(studiosBefore.current, tabs))
+      forgetViewHistory(studioHistoryOf(plane, gone));
+    studiosBefore.current = tabs;
   }, [tabs, plane]);
 
   /**
@@ -7853,6 +7892,16 @@ export const PlaneView = memo(function PlaneView({
     window.addEventListener(SETTINGS_ACTION, asked);
     return () => window.removeEventListener(SETTINGS_ACTION, asked);
   }, [plane]);
+  /** A chat's skills notice's "Open Skill studio" (#3681): the studio at its page and scope. */
+  useEffect(() => {
+    const asked = (event: Event) => {
+      const wanted = (event as CustomEvent<SkillStudioAsk>).detail;
+      if (wanted.plane !== plane) return;
+      showView(skillStudioAt(wanted.scope, wanted.page), SKILL_STUDIO_TITLE);
+    };
+    window.addEventListener(SKILL_STUDIO_ASKED, asked);
+    return () => window.removeEventListener(SKILL_STUDIO_ASKED, asked);
+  }, [plane, showView]);
   /** Stop all tasks of a session, for its tab chip's menu (#1498): the catalogue's row, read
    *  as the menu is drawn, and one function for the life of the view. */
   const stopAllOf = useCallback((session: number) => byNow.current(stopAllId(session)), []);
@@ -9699,7 +9748,7 @@ export const PlaneView = memo(function PlaneView({
               onCancel={() => setUsingSkill(undefined)}
               onOpenStudio={(scope) => {
                 setUsingSkill(undefined);
-                showView(skillStudioView(scope), skillStudioTitle(scope));
+                showView(skillStudioView(scope), SKILL_STUDIO_TITLE);
               }}
             />
           )}
@@ -10512,4 +10561,15 @@ function useTurnsEnded(chats: ReturnType<typeof useChatsHere>, sessions: readonl
     return chats.store.subscribe(read);
   }, [chats, sessions]);
   return ended;
+}
+
+/**
+ * **A studio tab put back from the record** (#3681): an older launch kept a studio tab per scope,
+ * keyed by it; it comes back as the one studio tab, on that scope's Library.
+ */
+function studioPutBack(plane: string, view: ViewRef): ViewRef {
+  if (!isSkillStudio(view)) return view;
+  const opening = studioOpening(view, () => true);
+  if (opening.place !== undefined) openViewAt(studioHistoryOf(plane, opening.tab), opening.place);
+  return opening.tab;
 }

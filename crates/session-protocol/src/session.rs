@@ -311,9 +311,20 @@ use crate::view::{Limits, Views};
 /// host before 1.46 cannot read any of the three acts. The window sends the two that name a
 /// chat's folder only to its own host, which is its own build, and refuses them for a chat on a
 /// runner.
+///
+/// 1.48 added the runner a relayed link reached (#3417, ADR 0078 amended 2026-10-21): a host
+/// answers `relay_to` from a window of 1.48 or later with `relayed_to`, the runner it resolved
+/// the name to as `<pool>/<runner>`, a draining one too. A host before 1.48, or one answering a
+/// window before it, answers `done` and names none.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 46,
+    minor: 48,
+};
+
+/// The version that first answers `relay_to` with the runner the link reached (#3417).
+pub const KNOWS_RELAYED_TO: Version = Version {
+    major: 1,
+    minor: 48,
 };
 
 /// The version that first moves a chat's work tree and conversation (#2048): the window moves
@@ -1336,6 +1347,8 @@ pub enum Answer {
     Subscribed,
     /// Where the host's own event log ends: [`Command::LogEnd`] (1.41).
     LogEnd { device: String, seq: u64 },
+    /// The runner a relayed link reached, as `<pool>/<runner>`: [`Command::RelayTo`] (1.48).
+    RelayedTo { runner: String },
     /// Done, with nothing to say.
     Done,
 }
@@ -1814,6 +1827,7 @@ wire_words!(Answer {
     ProfileKept => "profile_kept",
     Subscribed => "subscribed",
     LogEnd => "log_end",
+    RelayedTo => "relayed_to",
     Done => "done",
 });
 
@@ -2895,12 +2909,19 @@ impl Client {
     }
 
     /// Ask the desktop's host to relay this link to the runner it keeps as `runner` (1.33,
-    /// #2679): the link's first command, before [`Client::subscribe`].
-    pub async fn relay_to(&self, runner: &str) -> Result<(), CallError> {
-        self.done(Command::RelayTo {
-            runner: runner.to_owned(),
-        })
-        .await
+    /// #2679): the link's first command, before [`Client::subscribe`]. Answers the runner it
+    /// reached, as `<pool>/<runner>` (1.48, #3417), or `None` from a host before 1.48.
+    pub async fn relay_to(&self, runner: &str) -> Result<Option<String>, CallError> {
+        match self
+            .call(Command::RelayTo {
+                runner: runner.to_owned(),
+            })
+            .await?
+        {
+            Answer::Done => Ok(None),
+            Answer::RelayedTo { runner } => Ok(Some(runner)),
+            other => Err(unexpected(&other)),
+        }
     }
 
     /// Have the host take into `repo` of `project` the refs `refs` names (1.34, #2046), from the

@@ -217,6 +217,11 @@ pub const PAIRS: &[Pair] = &[
     p("text.secondary", "surface.raised", 4.5),
     p("needs-you.text", "needs-you.base", 4.5),
     p("danger.text", "danger.surface", 4.5),
+    // What needs a decision (#3678): an attention Notice's words and mark on its own ground, and
+    // a card's title and sentence on it.
+    p("attention.text", "attention.surface", 4.5),
+    p("text.primary", "attention.surface", 4.5),
+    p("text.muted", "attention.surface", 4.5),
     p("terminal.foreground", "terminal.background", 4.5),
     // A find in a pane draws its matches as the cells' background, under the terminal's text.
     p("terminal.foreground", "terminal.find-match", 4.5),

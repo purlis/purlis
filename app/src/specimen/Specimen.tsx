@@ -18,7 +18,6 @@ import { useLayoutEffect, useRef } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { rust } from "@codemirror/lang-rust";
-import { Terminal } from "@xterm/xterm";
 import { Notice, NoticeList } from "../Notice";
 import {
   Choice,
@@ -30,7 +29,8 @@ import {
 } from "../settings/components";
 import { look } from "../editor/look";
 import { DEFAULT_TEXT } from "../textDefaults";
-import { drawnFont, xtermTheme, type Theme } from "../theme/theme";
+import type { Theme } from "../theme/theme";
+import { ReadOnlyTerminal } from "../ReadOnlyTerminal";
 import { CHAT_LINES, EDITOR_FILE, EDITOR_TEXT, TERMINAL_LINES } from "./fixture";
 import { Button } from "../ui/button/Button";
 import { submitKeySaid } from "../ui/field/submitKey";
@@ -48,7 +48,11 @@ const OPTIONS = [
   { value: "dense", label: "Dense", disabled: true, title: "Not offered by this theme" },
 ];
 
-/** A terminal of the specimen's, drawn by xterm from the theme's terminal tokens. */
+/**
+ * A terminal of the specimen's: the terminal's read-only mode (#3676), drawn by xterm from the
+ * theme's terminal tokens and read as text. The specimen is a photograph of a theme, so the words
+ * that say it is read-only are said and not drawn.
+ */
 function SpecimenTerminal({
   label,
   lines,
@@ -60,29 +64,20 @@ function SpecimenTerminal({
   theme: Theme;
   drawing: Drawing;
 }) {
-  const holder = useRef<HTMLDivElement>(null);
-  // A layout effect, so the terminal is opened and its lines handed over inside the commit the
-  // page renders in, and the page knows what to wait on before it says it is drawn.
-  useLayoutEffect(() => {
-    const where = holder.current;
-    if (!where) return;
-    const pane = new Terminal({
-      fontSize: DEFAULT_TEXT.terminal,
-      // The theme's own terminal font, as every pane of the window draws it (#2536).
-      fontFamily: drawnFont("terminal", theme) ?? "monospace",
-      theme: xtermTheme(theme),
-      cols: 72,
-      rows: lines.length + 1,
-      cursorBlink: false,
-      disableStdin: true,
-    });
-    pane.open(where);
-    // No cursor: the specimen is still.
-    const text = `\u001b[?25l${lines.join("\r\n")}`;
-    drawing.wait(new Promise<void>((written) => pane.write(text, written)));
-    return () => pane.dispose();
-  }, [lines, theme, drawing]);
-  return <div className="specimen-terminal" ref={holder} aria-label={label} role="img" />;
+  return (
+    <ReadOnlyTerminal
+      className="specimen-terminal"
+      screen={lines.join("\r\n")}
+      label={label}
+      noteShown={false}
+      still
+      cols={72}
+      rows={lines.length + 1}
+      theme={theme}
+      fontSize={DEFAULT_TEXT.terminal}
+      onWriting={(written) => drawing.wait(written)}
+    />
+  );
 }
 
 /** The specimen's editor: the light editor's look over a real grammar, read only. */

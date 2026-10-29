@@ -51,6 +51,10 @@ pub mod tokeyring;
 pub mod tty;
 pub mod vaultcmd;
 
+/// A value wiped from memory as it is dropped: what a vault value read for a run is held in
+/// (#3420), named here so every holder of one uses the one type.
+pub use zeroize::Zeroizing;
+
 /// Which kind of failure a vault operation met — `base.VaultError` and its subclasses.
 ///
 /// Kept because callers tell them apart: `1password`'s `set` treats a read-back that raised

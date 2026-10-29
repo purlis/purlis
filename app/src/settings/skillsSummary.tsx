@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { commands, type PlaneId } from "../bindings";
 import { counted } from "../dispatches";
 import { usePlaneChanged } from "../planeChanged";
-import { SKILL_STUDIO_IN } from "../skillStudio";
+import { OPEN_SKILL_STUDIO, SKILL_STUDIO_IN } from "../skillStudio";
 import type { LiveSetting, SettingsGroup } from "./groups";
 
 /**
@@ -21,7 +21,7 @@ export function workspaceSkillsGroup(plane: PlaneId, workspace: string): Setting
     label: "Skills",
     help: "The skills this workspace's chats get. They are chosen in the Skill studio.",
     settings: [summarySetting(plane, workspace)],
-    links: [{ label: "Open in Skill studio", action: `${SKILL_STUDIO_IN}${workspace}` }],
+    links: [{ label: OPEN_SKILL_STUDIO, action: `${SKILL_STUDIO_IN}${workspace}` }],
   };
 }
 

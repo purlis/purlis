@@ -49,7 +49,7 @@ Zed's, and it is the only one that can colour the terminal at all.
 ## The vocabulary
 
 `TOKENS` in `app/src/theme/theme.ts` is the list, with a comment on each group saying what it
-means. A hundred and twenty-one colour names in twenty-three groups, and the typed tokens below
+means. A hundred and thirty-two colour names in twenty-four groups, and the typed tokens below
 them:
 
 | group                                  | tokens                                                                                          | what it is                                                                                        |
@@ -64,6 +64,7 @@ them:
 | `tree.*`                               | `guide`                                                                                         | a tree's indent guides, one straight hairline per level                                           |
 | `needs-you.*`                          | `base` `text`                                                                                   | the one signal this app exists for                                                                |
 | `danger.*`                             | `base` `surface` `text` `wash`                                                                  | an answer that cannot be taken back                                                               |
+| `attention.*`                          | `surface` `text`                                                                                | what needs a decision where nothing went wrong (#3678): an attention Notice's ground, and its words and mark on it; trouble stays `danger.*`'s, for real failures |
 | `state.*`                              | `running` `waiting` `waiting-glow` `failed` `success` `unreadable`                              | what a chat, or a check on a branch, is doing                                                     |
 | `overlay.*`                            | `scrim` `shadow`                                                                                | what goes over the window when something is modal                                                 |
 | `terminal.*`                           | `background` `foreground` `cursor` `cursor-accent` `selection` `find-match` `find-match-active` | the two `find-*` are a find's matches in a pane, drawn under the text (`theme.searchDecorations`) |
