@@ -5,16 +5,19 @@
  * **The card family** (#2912): a card with a title and its words, and an ask that holds Allow
  * beside Keep blocked, walked by the keyboard, on the panel's ground it stands on; a skill's
  * Overview facts, the grade plan's four totals, wide and narrow, and a running grade's counts,
- * which change without moving a tile (#3673). Each held to axe and compared with its baseline
+ * which change without moving a tile (#3673); and a card pressed whole, the welcome's doors and a
+ * repo to get (#3655). Each held to axe and compared with its baseline
  * (`docs/component-stories.md`).
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
+import { CloudDownload, FolderOpen, FolderPlus } from "lucide-react";
 import { expect, waitFor, within } from "storybook/test";
 import { expectFocusInSight, untilFocused } from "../../stories.testkit";
 import { Badge } from "../badge/Badge";
 import { Button, ButtonRow } from "../button/Button";
 import { Card, CardTitle } from "./Card";
+import { CardButton } from "./CardButton";
 import { Fact, Facts } from "./Facts";
 import { Tile, Totals } from "./Totals";
 
@@ -255,5 +258,143 @@ export const RunningTotals: Story = {
         "Chats 10 of 36, Spent $0.80, Tokens 90k",
       ),
     );
+  },
+};
+
+/** **The welcome's doors** (#3655): three cards pressed whole, each a mark, a title and a line. */
+function Doors() {
+  const [said, setSaid] = useState("Nothing pressed yet");
+  const doors = [
+    {
+      title: "Create a project",
+      line: "On GitHub, on GitLab or only on this machine, with a template for its stack.",
+      Mark: FolderPlus,
+    },
+    {
+      title: "Get a project from your forge",
+      line: "Clone your team's project from GitHub or GitLab, from your repos or by its URL.",
+      Mark: CloudDownload,
+    },
+    {
+      title: "Open a folder on this machine…",
+      line: "Open a project you already have.",
+      Mark: FolderOpen,
+    },
+  ];
+  return (
+    <div style={{ inlineSize: "44rem", maxInlineSize: "100%" }}>
+      <ul
+        aria-label="Ways to start"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(12.5rem, 1fr))",
+          gap: "var(--space-5)",
+          margin: 0,
+          padding: 0,
+          listStyle: "none",
+        }}
+      >
+        {doors.map(({ title, line, Mark }) => (
+          <li key={title} style={{ display: "flex" }}>
+            <CardButton
+              title={title}
+              line={line}
+              mark={<Mark aria-hidden="true" />}
+              onPress={() => setSaid(`Pressed ${title}`)}
+            />
+          </li>
+        ))}
+      </ul>
+      <p role="status" style={{ marginBlockStart: "var(--space-5)" }}>
+        {said}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * **The doors** (#3655): Tab walks them in order, each in sight, named by its title and
+ * described by its line; Enter presses one and Space another.
+ */
+export const PressableDoors: Story = {
+  render: () => <Doors />,
+  play: async ({ canvas, userEvent }) => {
+    const names = [
+      "Create a project",
+      "Get a project from your forge",
+      "Open a folder on this machine…",
+    ];
+    for (const name of names) {
+      await userEvent.tab();
+      const door = canvas.getByRole("button", { name });
+      await untilFocused(() => door, `Doors: Tab lands on ${name}`);
+      await expect(door).toHaveAccessibleDescription(/\w/);
+      expectFocusInSight();
+    }
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent(
+        "Pressed Open a folder on this machine…",
+      ),
+    );
+    await userEvent.tab({ shift: true });
+    await userEvent.keyboard(" ");
+    await waitFor(() =>
+      expect(canvas.getByRole("status")).toHaveTextContent("Pressed Get a project from your forge"),
+    );
+  },
+};
+
+/** **Repos to get** (#3655): a pick a line of a list, one unavailable while another is on its way. */
+function Picks() {
+  const [got, setGot] = useState<string | undefined>(undefined);
+  const repos = [
+    { name: "purlis", owner: "purlis", project: true },
+    { name: "website", owner: "purlis", project: false },
+  ];
+  return (
+    <OnAPanel>
+      <ul aria-label="Your repos" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+        {repos.map(({ name, owner, project }) => (
+          <li key={name}>
+            <CardButton
+              variant="pick"
+              title={name}
+              isDisabled={got !== undefined && got !== name}
+              aria-label={`Get ${owner}/${name}${project ? ", a purlis project," : ""} from github.com as aaron`}
+              onPress={() => setGot(name)}
+            >
+              <span>{owner}</span>
+              {project && <Badge>purlis project</Badge>}
+            </CardButton>
+          </li>
+        ))}
+      </ul>
+      <p role="status" style={{ margin: 0 }}>
+        {got === undefined ? "Nothing to get yet" : `Getting ${got}`}
+      </p>
+    </OnAPanel>
+  );
+}
+
+/**
+ * **The picks** (#3655): Tab reaches each repo by its whole name; Enter gets one, and the other
+ * is unavailable while it comes, out of the tab sequence.
+ */
+export const PressablePicks: Story = {
+  render: () => <Picks />,
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.tab();
+    const first = canvas.getByRole("button", { name: /^Get purlis\/purlis, a purlis project,/ });
+    await untilFocused(() => first, "Picks: Tab lands on the first repo");
+    expectFocusInSight();
+    await userEvent.tab();
+    const second = canvas.getByRole("button", {
+      name: "Get purlis/website from github.com as aaron",
+    });
+    await untilFocused(() => second, "Picks: Tab lands on the second repo");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Getting website"));
+    await expect(first).toBeDisabled();
   },
 };

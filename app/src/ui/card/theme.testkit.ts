@@ -8,4 +8,12 @@
  *  holds to the button's grounds. */
 import type { FamilyTheme } from "../../theme/families.testkit";
 
-export default {} satisfies FamilyTheme;
+export default {
+  faint: [
+    // An unavailable pressed card's words, as a disabled button's (#3655).
+    '[data-scope="card"][data-part="pressable"][data-disabled]',
+  ],
+  // Of the family's parts, only its root is a ground a button stands on: a pressed card is
+  // itself the button, and holds no other (#3655).
+  groundParts: { card: ["root"] },
+} satisfies FamilyTheme;
