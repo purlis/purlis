@@ -43,10 +43,16 @@ const DRAFTS: SkillDraft[] = [
         before: null,
         after:
           "---\nname: release-checklist\ndescription: Walks a release.\n---\n\n1. Check the milestone is closed.\n2. Write the release notes.\n",
-        hunks: [],
+        hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 7 }],
         stale: false,
       },
-      { path: "scripts/tag.sh", before: null, after: 'git tag "$1"\n', hunks: [], stale: false },
+      {
+        path: "scripts/tag.sh",
+        before: null,
+        after: 'git tag "$1"\n',
+        hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 1 }],
+        stale: false,
+      },
     ],
   },
   {
@@ -57,7 +63,18 @@ const DRAFTS: SkillDraft[] = [
     chat_open: true,
     new: false,
     stale: true,
-    files: [{ path: "SKILL.md", before: BEFORE, after: AFTER, hunks: [], stale: true }],
+    files: [
+      {
+        path: "SKILL.md",
+        before: BEFORE,
+        after: AFTER,
+        hunks: [
+          { oldStart: 3, oldLines: 1, newStart: 3, newLines: 1 },
+          { oldStart: 7, oldLines: 1, newStart: 7, newLines: 2 },
+        ],
+        stale: true,
+      },
+    ],
   },
 ];
 
