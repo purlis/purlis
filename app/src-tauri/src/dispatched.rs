@@ -348,6 +348,7 @@ fn seen(held: &Held, chat: u32) -> Seen {
         // moves the board to waiting, with `asking` set until the turn ends.
         running: glance.state == State::Running,
         waiting: glance.state == State::Waiting,
+        own_work: glance.own_work,
         asking: glance.asking,
         measured: dispatched::told_by_a_line(held.chats().harness(chat)),
         interrupts: dispatched::interrupted_by_escape(held.chats().harness(chat)),
@@ -1315,10 +1316,18 @@ pub fn waits_as(held: &Held, chat: u32, turn_ends: bool) -> purlis_core::state::
             .tasks()
             .ledger()
             .line_coming(chat, seen(held, chat), turn_ends);
+    // A sandbox block's Notice raised in the turn that ends asks the person (#1663, #3878).
+    let on_a_notice = turn_ends && {
+        let glance = held.board().glance(chat);
+        held.chats()
+            .blocks()
+            .waits_on_a_notice(chat, glance.turns, true)
+    };
     purlis_core::state::Waits {
         tasks: u32::try_from(tasks).unwrap_or(u32::MAX),
         its_asker,
         line_coming,
+        on_a_notice,
     }
 }
 
@@ -1608,8 +1617,11 @@ pub fn heard(held: &Held, report: &Report) {
         Event::UserPromptSubmit => held.tasks().ledger().turn_began(report.chat),
         Event::Stop => {
             held.tasks().ledger().turn_ended(report.chat);
-            // The chat's own turn, and not one its helpers keep going (#1981).
-            if report.agent.is_none() && !report.detail.helpers_at_work {
+            // The chat's own turn, and not one that waits on work of its own (#1981, #3878).
+            if report.agent.is_none()
+                && !report.detail.helpers_at_work
+                && report.detail.own_work.is_nothing()
+            {
                 owing(held, report.chat);
             }
         }

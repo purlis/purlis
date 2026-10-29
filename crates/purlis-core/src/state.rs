@@ -147,6 +147,12 @@ pub struct Detail {
     /// that does not say, which reads as no: the end of the turn is the person's, as before.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub helpers_at_work: bool,
+    /// On a `Stop`: the work of its own the harness said the chat waits on, which wakes it
+    /// ([`crate::ownwork::read`], #3878), so its turn's end is waiting and not the person's.
+    /// Absent from an older hook, and from a harness that does not say, which reads as nothing
+    /// (or as [`Detail::helpers_at_work`] says, from an older hook).
+    #[serde(default, skip_serializing_if = "crate::ownwork::OwnWork::is_nothing")]
+    pub own_work: crate::ownwork::OwnWork,
     /// On a `Notification`: the harness said it is the nudge of a chat sitting idle at its
     /// prompt, and not a permission or a question (Claude Code's `notification_type` of
     /// `idle_prompt`, #1626). Absent from an older hook, which reads the nudge as an ask, as
@@ -349,7 +355,13 @@ impl Event {
                 Notified::Unsaid => Said::Ask(Ask::default()),
             },
             Self::SubagentStop => Said::Item(Item::ChildEnded),
-            Self::Stop if detail.helpers_at_work => Said::Turn(Turn::AwaitsItsHelpers),
+            Self::Stop if !detail.own_work.is_nothing() => {
+                Said::Turn(Turn::WaitsOnItsOwnWork(detail.own_work))
+            }
+            // An older hook's line, which said only that helpers were at work (#1626).
+            Self::Stop if detail.helpers_at_work => Said::Turn(Turn::WaitsOnItsOwnWork(
+                crate::ownwork::OwnWork::helpers_of_an_older_hook(),
+            )),
             Self::Stop => Said::Turn(Turn::Ended),
             Self::SessionEnd => Said::Session(match detail.ending {
                 Ending::Cleared => Session::ClearedAway,
@@ -408,6 +420,11 @@ pub struct Waits {
     /// harness has not yet said the turn began. The end of this turn is then not the person's:
     /// the next turn starts by itself, and its end is.
     pub line_coming: bool,
+    /// Whether its turn ended waiting on the person's answer to a sandbox block's Notice raised
+    /// in it (#1663): that is an ask, so a turn ended on work of its own is the person's at
+    /// once (#3878). Not something other than the person, so never [`Waits::on_something`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_a_notice: bool,
 }
 
 impl Waits {
@@ -585,6 +602,13 @@ pub struct Chat {
     /// needs-you item was raised for that end. Its next prompt clears it; [`Chat::rested`]
     /// turns it into the item when what it waited on is over and nothing will prompt it.
     held: bool,
+    /// **What it waits on of its own** (#3878): its turn ended while helpers, monitors or a
+    /// background command of its own were in flight, or a wake-up of its own was due
+    /// ([`Turn::WaitsOnItsOwnWork`]). It is waiting, and no needs-you item was raised for that
+    /// end. Its next turn, an ask and its end clear it; [`Chat::own_work_lapsed`] turns the end
+    /// into what it would have been once the wait's limit passes with no wake.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    own_work: Option<crate::ownwork::OwnWork>,
     /// The tasks it asked for that came to nothing and the person has not looked at yet
     /// ([`FailedTask`], #1491), oldest first. **Each is a needs-you item of its own kind, and
     /// its next prompt does not clear it**: the chat is typed a line when a report lands, so a
@@ -662,6 +686,7 @@ impl Chat {
             turns: 0,
             children: children::Children::default(),
             held: false,
+            own_work: None,
             failed: Vec::new(),
         }
     }
@@ -747,10 +772,12 @@ impl Chat {
     ///   says `waiting on n tasks`. A task paused on a question to the chat that dispatched it
     ///   waits on that chat's answer, and its row says `asking <chat>`. None of the three is
     ///   an item ([`Waits`], [`Chat::heard_while`]).
-    /// - **A turn that ends while the harness's own helpers work in the background is no end**
-    ///   (#1626): the harness said they will wake it ([`Turn::AwaitsItsHelpers`]), so the chat
-    ///   is still working and nothing is raised. The turn their end wakes is the one whose end
-    ///   is the person's. A harness that does not say hands the person every end, as before.
+    /// - **A turn that ends while work of its own is in flight is waiting** (#1626, #3878):
+    ///   helpers, monitors, a background command or a wake-up of its own wake it
+    ///   ([`Turn::WaitsOnItsOwnWork`]), so nothing is raised. The turn they wake is the one
+    ///   whose end may be the person's, and a wait whose limit passes with no wake is the
+    ///   person's then ([`Chat::own_work_lapsed`]). An ask ends the wait at once. A harness
+    ///   that does not say hands the person every end, as before.
     /// - **A chat that waited on its tasks becomes an item only once every one of them has
     ///   reported or ended and it has then stopped with nothing to do**: it is typed a line
     ///   when a report lands, reads it in a turn of its own, and that turn's end is the item.
@@ -826,7 +853,12 @@ impl Chat {
     /// held for, one that has begun a turn since, or one that reported to its asker. Answers
     /// whether anything a reader can see changed.
     pub fn rested(&mut self) -> bool {
-        if self.ended || !self.held || self.state != State::Waiting || self.reported {
+        if self.ended
+            || !self.held
+            || self.state != State::Waiting
+            || self.reported
+            || self.own_work.is_some()
+        {
             return false;
         }
         let was = self.seen();
@@ -844,7 +876,20 @@ impl Chat {
     /// it before and after. The turn count is not part of it, and [`Chat::asking`] only while
     /// the chat waits on its prompt (#1601): the end of that wait is a move even where the
     /// chat stays waiting, as at the end of the turn that asked.
-    fn seen(&self) -> (State, bool, bool, usize, usize, usize, usize, usize) {
+    #[allow(clippy::type_complexity)]
+    fn seen(
+        &self,
+    ) -> (
+        State,
+        bool,
+        bool,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        Option<crate::ownwork::OwnWork>,
+    ) {
         (
             self.state,
             self.needs_you(),
@@ -854,6 +899,7 @@ impl Chat {
             self.needs.len(),
             self.stopped.len(),
             self.failed.len(),
+            self.own_work,
         )
     }
 
@@ -973,6 +1019,7 @@ impl Chat {
             Said::Session(Session::Began(_)) => {
                 self.state = State::Waiting;
                 self.asking = false;
+                self.own_work = None;
             }
             // The turn that begins now is the one a waiting report is handed to, as context
             // (`handback`), so it is read and no longer waiting.
@@ -987,6 +1034,7 @@ impl Chat {
                 self.asking = false;
                 self.began_past_its_prompt = false;
                 self.held = false;
+                self.own_work = None;
                 self.turns = self.turns.saturating_add(1);
             }
             // The turn has not ended, but it cannot go on without an answer.
@@ -994,8 +1042,20 @@ impl Chat {
             // The nudge the harness says is one, of a chat sitting idle at its prompt: never a
             // question, even where its turn was last heard running (#1626). A prompt it asked
             // and still shows stands, as it does under any nudge.
+            //
+            // **The nudge says no agent of its is in flight** (#3878): Claude Code holds it back
+            // while background agents run (2.1.288), so a wait on helpers or workflows is over.
+            // Whether it is held for monitors, background shells or a wake-up is unmeasured, and
+            // a wait on those holds: they end it themselves, or at its limit.
             Said::Turn(Turn::SitsIdle) => {
                 self.state = State::Waiting;
+                if let Some(work) = self.own_work.as_mut() {
+                    work.helpers = 0;
+                    work.workflows = 0;
+                    if work.is_nothing() {
+                        self.own_work = None;
+                    }
+                }
                 self.nudged(waits);
             }
             // The falling edge: the agent has nothing more to do, so the next move is the
@@ -1018,24 +1078,30 @@ impl Chat {
             // and it has stopped with nothing to do.
             Said::Turn(Turn::Ended) => {
                 self.state = State::Waiting;
-                match (self.reported, waits.on_something()) {
-                    (true, _) => {}
-                    (false, true) => self.held = true,
-                    (false, false) => self.needs_you = true,
-                }
+                self.own_work = None;
+                self.turn_over(waits);
                 self.asking = false;
             }
-            // **Not the falling edge** (#1626): its helpers are still at work in the
-            // background and the harness wakes it when they finish, so it is working and the
-            // next move is nobody's yet. Nothing is raised and nothing it already needed the
-            // person for goes. The turn after their end is the one whose `Stop` is the edge,
-            // and a harness that wakes it on no such turn still nudges it once it sits idle
-            // ([`Turn::SitsIdle`]). A prompt it still shows (a helper's permission, say) is
-            // left standing: the person has it in front of them.
-            Said::Turn(Turn::AwaitsItsHelpers) => {
+            // **Not the falling edge: waiting** (#1626, #3878). Its turn has ended while work of
+            // its own is in flight, which wakes it, so the next move is nobody's yet: no item is
+            // raised, and nothing it already needed the person for goes. The turn that follows
+            // is the one whose `Stop` may be the edge, and the app ends the wait at its limit
+            // where none follows ([`Chat::own_work_lapsed`]). A prompt it still shows (a
+            // helper's permission, say) is left standing: the person has it in front of them.
+            //
+            // A sandbox block's Notice raised in the turn is an ask: the end is the person's.
+            Said::Turn(Turn::WaitsOnItsOwnWork(_)) if waits.on_a_notice => {
+                self.state = State::Waiting;
+                self.own_work = None;
+                self.turn_over(waits);
+                self.asking = false;
+            }
+            Said::Turn(Turn::WaitsOnItsOwnWork(work)) => {
                 if !self.waits_on_its_prompt() {
-                    self.state = State::Running;
+                    self.state = State::Waiting;
                     self.asking = false;
+                    self.held = false;
+                    self.own_work = Some(*work);
                 }
             }
             // Emphatically not `Stop`: a dispatched sub-agent finishing does not end the
@@ -1067,6 +1133,7 @@ impl Chat {
                 self.state = State::Done;
                 self.needs_you = false;
                 self.asking = false;
+                self.own_work = None;
             }
             // Neither is a state a reader is shown, at any level.
             Said::Plan(_) | Said::Usage(_) => {}
@@ -1078,12 +1145,46 @@ impl Chat {
     /// it asked mid-turn always needs the person. The nudge of a chat that reported to the chat
     /// that asked is not it waiting on the person (#1448), and neither is the nudge of one that
     /// waits on its tasks or on its asker's answer (#1491): that end is held.
+    ///
+    /// Nor is the nudge of one waiting on its own work (#3878): that wait holds until its work
+    /// wakes it or its limit passes.
     fn nudged(&mut self, waits: Waits) {
-        if self.asking || !(self.reported || waits.on_something()) {
+        if self.asking || !(self.reported || waits.on_something() || self.own_work.is_some()) {
             self.needs_you = true;
-        } else if !self.reported {
+        } else if !self.reported && self.own_work.is_none() {
             self.held = true;
         }
+    }
+
+    /// Its turn is over with nothing of its own in flight: the next move is the person's,
+    /// unless it reported to its asker in this turn (#1448) or waits on its tasks or its
+    /// asker's answer (#1491), whose end is held.
+    fn turn_over(&mut self, waits: Waits) {
+        match (self.reported, waits.on_something()) {
+            (true, _) => {}
+            (false, true) => self.held = true,
+            (false, false) => self.needs_you = true,
+        }
+    }
+
+    /// **What it waits on of its own** (#3878), while its turn's end waits on it.
+    pub fn own_work(&self) -> Option<crate::ownwork::OwnWork> {
+        self.own_work
+    }
+
+    /// **The wait on its own work has passed its limit at `now`** (seconds since 1970), and
+    /// nothing woke it (#3878): its turn's end is what it would have been with nothing in
+    /// flight, read with `waits`, what it waits on beside the person now. Nothing for a chat
+    /// that waits on nothing of its own, or whose wait has not lapsed. Answers whether
+    /// anything a reader can see changed.
+    pub fn own_work_lapsed(&mut self, now: i64, waits: Waits) -> bool {
+        if self.ended || !self.own_work.is_some_and(|work| work.lapsed_at(now)) {
+            return false;
+        }
+        let was = self.seen();
+        self.own_work = None;
+        self.turn_over(waits);
+        was != self.seen()
     }
 
     /// The chat, or its helper `helper`, asked: the turn has not ended, but it cannot go on
@@ -1101,11 +1202,14 @@ impl Chat {
         let was = self.seen();
         let fresh = !self.waits_on_its_prompt();
         let before = (self.prompt, self.askers.clone());
-        // Asked in the middle of a turn. After one has ended it is only a nudge.
-        if self.state == State::Running || !ask.prompt.is_unsaid() {
+        // Asked in the middle of a turn, or while it waits on its own work (#3878): the wait
+        // ends there, and the ask is the person's at once. After a turn has ended with
+        // nothing in flight it is only a nudge.
+        let at_work = self.state == State::Running || self.own_work.take().is_some();
+        if at_work || !ask.prompt.is_unsaid() {
             self.prompt = ask.prompt;
         }
-        self.asking = self.asking || self.state == State::Running;
+        self.asking = self.asking || at_work;
         self.state = State::Waiting;
         self.began_past_its_prompt = false;
         if fresh {
@@ -1251,6 +1355,7 @@ impl Chat {
         self.needs_you = false;
         self.asking = false;
         self.held = false;
+        self.own_work = None;
         self.ended = true;
         // Nothing will prompt it again, so nothing it was waiting to read is an item any more.
         self.reports.clear();
@@ -1631,6 +1736,35 @@ impl Board {
             .chats
             .get_mut(&number)
             .is_some_and(|tracked| tracked.chat.rested());
+        self.stamp(number, changed)
+    }
+
+    /// What chat `number` waits on of its own, while its turn's end waits on it
+    /// ([`Chat::own_work`], #3878).
+    pub fn own_work(&self, number: u32) -> Option<crate::ownwork::OwnWork> {
+        self.chats
+            .get(&number)
+            .and_then(|tracked| tracked.chat.own_work())
+    }
+
+    /// The chats waiting on their own work with a limit, each with when its wait lapses, in
+    /// seconds since 1970 (#3878): what a process that takes this board whole ends on time.
+    pub fn own_work_limits(&self) -> Vec<(u32, i64)> {
+        self.chats
+            .iter()
+            .filter_map(|(number, tracked)| Some((*number, tracked.chat.own_work()?.until?)))
+            .collect()
+    }
+
+    /// The wait of chat `number` on its own work has passed its limit at `now`, seconds since
+    /// 1970, read with `waits` ([`Chat::own_work_lapsed`], #3878). The app's clock says when:
+    /// the board reads none. Answers whether anything a reader can see changed.
+    pub fn own_work_lapsed(&mut self, number: u32, now: i64, waits: Waits) -> bool {
+        self.tell(number, || Move::OwnWorkLapsed { now, waits });
+        let changed = self
+            .chats
+            .get_mut(&number)
+            .is_some_and(|tracked| tracked.chat.own_work_lapsed(now, waits));
         self.stamp(number, changed)
     }
 
@@ -2226,15 +2360,17 @@ mod tests {
     }
 
     #[test]
-    fn a_stop_while_its_helpers_work_keeps_the_chat_working_and_keeps_what_it_needed() {
-        // #1626: the harness wakes it when its helpers finish, so this `Stop` is no edge.
+    fn a_stop_from_an_older_hook_saying_helpers_work_waits_and_keeps_what_it_needed() {
+        // #1626: the harness wakes it when its helpers finish, so this `Stop` is no edge. An
+        // older hook's line says only that much (#3878): one helper, with no limit.
         let helpers = Detail {
             helpers_at_work: true,
             ..Detail::default()
         };
+        let older = crate::ownwork::OwnWork::helpers_of_an_older_hook();
         assert_eq!(
             Event::Stop.said(helpers),
-            Said::Turn(Turn::AwaitsItsHelpers)
+            Said::Turn(Turn::WaitsOnItsOwnWork(older))
         );
         let mut chat = Chat::new();
         chat.reported(Event::UserPromptSubmit);
@@ -2242,15 +2378,149 @@ mod tests {
 
         chat.reported_from(Event::Stop, helpers);
 
-        assert_eq!(chat.state(), State::Running);
+        assert_eq!(chat.state(), State::Waiting);
+        assert_eq!(chat.own_work(), Some(older));
         assert!(
             chat.needs_you(),
             "what it already needed the person for went"
         );
         assert!(!chat.held());
         // The turn after its helpers' end ends, with nothing in flight: the person's move.
+        chat.reported(Event::UserPromptSubmit);
         chat.reported(Event::Stop);
         assert_eq!(chat.state(), State::Waiting);
+        assert_eq!(chat.own_work(), None);
+        assert!(chat.needs_you());
+    }
+
+    /// A `Stop` that says the chat waits on `work`.
+    fn waiting_on(work: crate::ownwork::OwnWork) -> Detail {
+        Detail {
+            own_work: work,
+            ..Detail::default()
+        }
+    }
+
+    /// One background command, whose wait lapses at 1000 seconds.
+    const A_SHELL: crate::ownwork::OwnWork = crate::ownwork::OwnWork {
+        helpers: 0,
+        workflows: 0,
+        monitors: 0,
+        shells: 1,
+        wakes_at: None,
+        until: Some(1000),
+    };
+
+    /// Two monitors, which hold the wait with no limit.
+    const TWO_MONITORS: crate::ownwork::OwnWork = crate::ownwork::OwnWork {
+        helpers: 0,
+        workflows: 0,
+        monitors: 2,
+        shells: 0,
+        wakes_at: None,
+        until: None,
+    };
+
+    #[test]
+    fn a_turn_that_ends_on_work_of_its_own_is_waiting_and_needs_nobody() {
+        let mut chat = Chat::new();
+        chat.reported(Event::UserPromptSubmit);
+
+        assert!(chat.reported_from(Event::Stop, waiting_on(TWO_MONITORS)));
+
+        assert_eq!(chat.state(), State::Waiting);
+        assert_eq!(chat.own_work(), Some(TWO_MONITORS));
+        assert!(!chat.needs_you());
+        // The idle nudge of a chat waiting on its own work is no hand either.
+        chat.reported_from(
+            Event::Notification,
+            Detail {
+                idle: true,
+                ..Detail::default()
+            },
+        );
+        assert!(!chat.needs_you());
+        // A wait with no limit never lapses.
+        assert!(!chat.own_work_lapsed(i64::MAX, Waits::default()));
+        // Its work woke it, and the turn after ends with nothing in flight: the person's.
+        chat.reported(Event::UserPromptSubmit);
+        assert_eq!(chat.own_work(), None);
+        chat.reported(Event::Stop);
+        assert!(chat.needs_you());
+    }
+
+    #[test]
+    fn a_wait_on_a_background_command_needs_the_person_once_its_limit_passes() {
+        let mut chat = Chat::new();
+        chat.reported(Event::UserPromptSubmit);
+        chat.reported_from(Event::Stop, waiting_on(A_SHELL));
+
+        assert!(!chat.own_work_lapsed(999, Waits::default()));
+        assert!(!chat.needs_you());
+
+        assert!(chat.own_work_lapsed(1000, Waits::default()));
+        assert_eq!(chat.own_work(), None);
+        assert!(chat.needs_you());
+        // Lapsed once: a second look changes nothing.
+        assert!(!chat.own_work_lapsed(2000, Waits::default()));
+    }
+
+    #[test]
+    fn a_lapsed_wait_of_a_chat_waiting_on_its_tasks_is_held_for_them() {
+        let mut chat = Chat::new();
+        chat.reported(Event::UserPromptSubmit);
+        chat.reported_from(Event::Stop, waiting_on(A_SHELL));
+        // Its tasks ended while it waited: nothing rests it while its own wait holds.
+        assert!(!chat.rested());
+
+        let tasks = Waits {
+            tasks: 2,
+            ..Waits::default()
+        };
+        assert!(chat.own_work_lapsed(1000, tasks));
+        assert!(!chat.needs_you());
+        assert!(chat.held());
+        // Its tasks over, it rests on the person.
+        assert!(chat.rested());
+        assert!(chat.needs_you());
+    }
+
+    #[test]
+    fn an_ask_while_waiting_on_its_own_work_needs_the_person_at_once() {
+        for ask in [
+            Notified::Asks(crate::harness::model::Prompt::Permission),
+            Notified::Asks(crate::harness::model::Prompt::Question),
+            Notified::Unsaid,
+        ] {
+            let mut chat = Chat::new();
+            chat.reported(Event::UserPromptSubmit);
+            chat.reported_from(Event::Stop, waiting_on(TWO_MONITORS));
+
+            chat.reported_from(
+                Event::Notification,
+                Detail {
+                    notified: ask,
+                    ..Detail::default()
+                },
+            );
+
+            assert!(chat.needs_you(), "{ask:?}");
+            assert!(chat.waits_on_its_prompt(), "{ask:?}");
+            assert_eq!(chat.own_work(), None, "{ask:?}");
+        }
+    }
+
+    #[test]
+    fn a_waiting_chat_s_end_ends_its_wait() {
+        let mut chat = Chat::new();
+        chat.reported(Event::UserPromptSubmit);
+        chat.reported_from(Event::Stop, waiting_on(A_SHELL));
+
+        assert!(chat.exited(Some(0)));
+
+        assert_eq!(chat.own_work(), None);
+        assert!(!chat.own_work_lapsed(1000, Waits::default()));
+        assert!(!chat.needs_you());
     }
 
     #[test]
@@ -4454,6 +4724,7 @@ mod tests {
             tasks,
             its_asker: false,
             line_coming: false,
+            on_a_notice: false,
         }
     }
 
@@ -4462,6 +4733,7 @@ mod tests {
         tasks: 0,
         its_asker: true,
         line_coming: false,
+        on_a_notice: false,
     };
 
     /// A chat a line of purlis's own is about to start a turn of.
@@ -4469,6 +4741,7 @@ mod tests {
         tasks: 0,
         its_asker: false,
         line_coming: true,
+        on_a_notice: false,
     };
 
     #[test]

@@ -548,6 +548,9 @@ pub struct Glance {
     pub turns: u32,
     /// The prompt it is stopped on in its terminal, where it is (#1691).
     pub prompt: Option<purlis_core::harness::model::Prompt>,
+    /// Whether its turn ended waiting on work of its own (#3878,
+    /// `purlis_core::state::Chat::own_work`): it is still at work through it.
+    pub own_work: bool,
 }
 
 impl Glance {

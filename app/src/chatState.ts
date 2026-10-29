@@ -20,6 +20,7 @@ import {
   type Moved,
   type Need,
   type OpenChat,
+  type OwnWork,
   type PlaneId,
 } from "./bindings";
 
@@ -103,6 +104,12 @@ export type ChatStates = {
    * it, and the one that says it got past its prompt, its turn ended or it ended takes it out.
    */
   readonly asking: Readonly<Record<number, true>>;
+  /**
+   * **What each chat waiting on its own work waits on** (#3878, `Moved.own_work`): its turn
+   * ended while helpers, monitors, a background command or a wake-up of its own were in flight.
+   * Such a chat is waiting, and not on the person. Under `heardAt`'s rule.
+   */
+  readonly ownWork: Readonly<Record<number, OwnWork>>;
 };
 
 /** One task that came to nothing, as its asking chat's item is told it (`Need`'s
@@ -130,6 +137,7 @@ export const nothingKnown: ChatStates = {
   failedTasks: {},
   children: {},
   asking: {},
+  ownWork: {},
 };
 
 /** The state of one chat, which is `unknown` until something says otherwise. */
@@ -393,7 +401,45 @@ export function moved(states: ChatStates, move: Moved): ChatStates {
     asking: newerChat
       ? withAsking(states.asking, move.session, move.asking === true)
       : states.asking,
+    ownWork: newerChat
+      ? withOwnWork(states.ownWork, move.session, move.own_work ?? undefined)
+      : states.ownWork,
   };
+}
+
+/** What `session` waits on of its own (#3878), or nothing for a chat that waits on none. */
+export function ownWorkOf(states: ChatStates, session: number): OwnWork | undefined {
+  return states.ownWork[session];
+}
+
+/** `work` as `session`'s entry, or none, and the same map where that is so already. */
+function withOwnWork(
+  by: Readonly<Record<number, OwnWork>>,
+  session: number,
+  work: OwnWork | undefined,
+): Readonly<Record<number, OwnWork>> {
+  const was = by[session];
+  if (work === undefined) {
+    if (was === undefined) return by;
+    const rest = { ...by };
+    delete rest[session];
+    return rest;
+  }
+  return was !== undefined && sameOwnWork(was, work) ? by : { ...by, [session]: work };
+}
+
+/** Whether two waits on a chat's own work say the same. */
+export function sameOwnWork(one: OwnWork | undefined, other: OwnWork | undefined): boolean {
+  return (
+    one === other ||
+    (one !== undefined &&
+      other !== undefined &&
+      one.helpers === other.helpers &&
+      one.workflows === other.workflows &&
+      one.monitors === other.monitors &&
+      one.shells === other.shells &&
+      (one.wakes_at ?? null) === (other.wakes_at ?? null))
+  );
 }
 
 /** `asking` with `session` in it or out of it, and the same map where that is so already. */

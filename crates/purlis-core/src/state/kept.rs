@@ -42,6 +42,8 @@ pub enum Move {
     Reported { report: Report, waits: Waits },
     /// [`Board::rested`].
     Rested,
+    /// [`Board::own_work_lapsed`].
+    OwnWorkLapsed { now: i64, waits: Waits },
     /// [`Board::task_failed`].
     TaskFailed { failed: FailedTask },
     /// [`Board::failures_seen`].
@@ -157,6 +159,7 @@ impl Board {
                 number == report.chat && self.reported_while(&report, waits)
             }
             Move::Rested => self.rested(number),
+            Move::OwnWorkLapsed { now, waits } => self.own_work_lapsed(number, now, waits),
             Move::TaskFailed { failed } => self.task_failed(number, failed),
             Move::FailuresSeen => self.failures_seen(number),
             Move::FailureCleared { id } => self.failure_cleared(number, &id),

@@ -134,12 +134,13 @@ pub async fn fix_stale_clone(
 }
 
 /// Whether a chat glanced as `glance` may be in a turn: running, asking something, stopped on a
-/// prompt in its terminal, or not yet heard from. A chat whose turn ended is not.
+/// prompt in its terminal, waiting on work of its own (#3878), or not yet heard from. A chat
+/// whose turn ended with nothing in flight is not.
 fn mid_turn(glance: &crate::host::Glance) -> bool {
     use purlis_core::state::State;
     match glance.state {
         State::Running | State::Unknown => true,
-        State::Waiting => glance.asking || glance.prompt.is_some(),
+        State::Waiting => glance.asking || glance.prompt.is_some() || glance.own_work,
         State::Done | State::Failed => false,
     }
 }
