@@ -403,7 +403,10 @@ export function SkillStudioTab({
     (why: string): void => {
       if (inHandNow.current?.doing === asked)
         setInHand((was) =>
-          was === undefined || was.doing !== asked || !("refused" in was.doing)
+          was === undefined ||
+          was.doing !== asked ||
+          was.doing.what === "new" ||
+          was.doing.what === "edit"
             ? was
             : { ...was, doing: { ...was.doing, refused: why } },
         );
@@ -412,7 +415,10 @@ export function SkillStudioTab({
   /** A field of the dialog in hand changed: the core's last refusal no longer stands. */
   const editedInDialog = () =>
     setInHand((was) =>
-      was === undefined || !("refused" in was.doing) || was.doing.refused === undefined
+      was === undefined ||
+      was.doing.what === "new" ||
+      was.doing.what === "edit" ||
+      was.doing.refused === undefined
         ? was
         : { ...was, doing: { ...was.doing, refused: undefined } },
     );
