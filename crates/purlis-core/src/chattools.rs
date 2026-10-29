@@ -734,20 +734,29 @@ pub static TOOLS: [Tool; 26] = [
     Tool {
         name: DISPATCH_TELL,
         description: "Send a follow-up to a task this chat dispatched that is still working, \
-                      quoted as data from this chat. A task at rest is started on it at once; \
-                      one mid-turn reads it when that turn ends. Refused, with the task's \
-                      state, once the task has finished.",
+                      quoted as data from this chat, or with `all` to every task of this chat \
+                      still working. A task at rest is started on it at once; one mid-turn \
+                      reads it when that turn ends. Refused, with the task's state, once the \
+                      task has finished. Each follow-up is an instruction with a number, which \
+                      a task acknowledges with dispatch_note's `ack`; dispatch_list shows which \
+                      tasks have. Where the app does not answer, it is queued and delivered \
+                      when it does.",
         schema: || {
             json!({
                 "type": "object",
                 "properties": {
                     "chat": a_task(),
+                    "all": {
+                        "type": "boolean",
+                        "description": "Send it to every task of this chat still working, \
+                                        instead of the one `chat` names.",
+                    },
                     "text": {
                         "type": "string",
                         "description": "What to add or correct, in a few lines.",
                     },
                 },
-                "required": ["chat", "text"],
+                "required": ["text"],
                 "additionalProperties": false,
             })
         },
@@ -840,7 +849,9 @@ pub static TOOLS: [Tool; 26] = [
     Tool {
         name: DISPATCH_NOTE,
         description: "From a dispatched task: send the chat that asked a progress note. It \
-                      reads it on its next turn, and nothing waits on it.",
+                      reads it on its next turn, and nothing waits on it. With `ack`, it \
+                      acknowledges that instruction (a follow-up's number) of the asking \
+                      chat's, and `text` may be left out.",
         schema: || {
             json!({
                 "type": "object",
@@ -849,8 +860,12 @@ pub static TOOLS: [Tool; 26] = [
                         "type": "string",
                         "description": "Where the task has got to, in a few lines.",
                     },
+                    "ack": {
+                        "type": "integer",
+                        "description": "The number of an instruction of the asking chat's \
+                                        this task has taken in.",
+                    },
                 },
-                "required": ["text"],
                 "additionalProperties": false,
             })
         },
@@ -1269,6 +1284,28 @@ pub fn dispatch_text(args: &Map<String, Value>, key: &str, tool: &str) -> Result
     match args.get(key) {
         Some(Value::String(text)) => Ok(text.clone()),
         _ => Err(format!("{tool} needs `{key}`, as text")),
+    }
+}
+
+/// A yes-or-no field of a dispatch tool's, `false` where it is left out (#3904).
+pub fn dispatch_flag(args: &Map<String, Value>, key: &str, tool: &str) -> Result<bool, String> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(false),
+        Some(Value::Bool(flag)) => Ok(*flag),
+        Some(_) => Err(format!("{tool}'s `{key}` is true or false")),
+    }
+}
+
+/// The instruction `dispatch_note` acknowledges, where it names one (#3904).
+pub fn dispatch_ack(args: &Map<String, Value>) -> Result<Option<u32>, String> {
+    match args.get("ack") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(n)) => n
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| "`ack` is an instruction's number".to_owned()),
+        Some(_) => Err("`ack` is an instruction's number".to_owned()),
     }
 }
 

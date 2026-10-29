@@ -93,14 +93,23 @@ shows who exists.
   `purlis dispatch` subcommand of the same name (`list`, `wait`, `tell`, `answer`, `cancel`,
   `read`, `close`) for a terminal.
 
+  **A rule that changes for every task goes to all of them at once**: `dispatch_tell` with
+  `all: true` (`purlis dispatch tell --all "<text>"`) sends one numbered instruction to every
+  task still working. Each task acknowledges it, and `dispatch_list` shows which have and which
+  have not: no coordination file, no asking each one. A message the app did not answer is
+  queued, not lost: it is said to be queued, and delivered in order when the app answers;
+  `dispatch_list` shows each message as queued, delivered or undeliverable. Do not send it again.
+
 - **When this chat is the task**, it owes the chat that dispatched it one report, and it can
   talk to that chat while it works, with `dispatch_note` (a note; nothing waits on it, so
   carry on), `dispatch_ask` (a question; this chat waits for the answer) and
-  `dispatch_report` (outcome `done`, `blocked` or `failed`, and what you found or did). In a
-  terminal:
+  `dispatch_report` (outcome `done`, `blocked` or `failed`, and what you found or did). A
+  follow-up says its instruction number: once you have taken it in, acknowledge it with
+  `dispatch_note`'s `ack`. In a terminal:
 
   ```bash
   purlis dispatch note "<progress>"       # a note; nothing waits on it, so carry on
+  purlis dispatch note --ack <n>          # instruction n taken in (add text to say more)
   purlis dispatch ask "<question>"        # a question; this chat waits for the answer
   purlis dispatch report --outcome done|blocked|failed "<what you found or did>"
   ```

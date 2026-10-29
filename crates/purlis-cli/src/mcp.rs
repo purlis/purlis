@@ -545,11 +545,13 @@ fn task_tool(name: &str) -> Option<TaskTool> {
                 dispatch_wait_seconds(args)?,
             )
         },
+        // `all` sends it to every task still working (#3904), and then names no `chat`.
         chattools::DISPATCH_TELL => |args| {
-            dispatch::tell(
-                dispatch_task(args, chattools::DISPATCH_TELL)?,
-                &dispatch_text(args, "text", chattools::DISPATCH_TELL)?,
-            )
+            let text = dispatch_text(args, "text", chattools::DISPATCH_TELL)?;
+            if chattools::dispatch_flag(args, "all", chattools::DISPATCH_TELL)? {
+                return dispatch::tell_all(&text);
+            }
+            dispatch::tell(dispatch_task(args, chattools::DISPATCH_TELL)?, &text)
         },
         chattools::DISPATCH_ANSWER => |args| {
             dispatch::answer(
@@ -563,9 +565,15 @@ fn task_tool(name: &str) -> Option<TaskTool> {
         chattools::DISPATCH_CLOSE => {
             |args| dispatch::close(dispatch_task(args, chattools::DISPATCH_CLOSE)?)
         }
-        chattools::DISPATCH_NOTE => {
-            |args| dispatch::note(&dispatch_text(args, "text", chattools::DISPATCH_NOTE)?)
-        }
+        // `ack` acknowledges an instruction (#3904), and then `text` may be left out.
+        chattools::DISPATCH_NOTE => |args| {
+            let ack = chattools::dispatch_ack(args)?;
+            let text = match (args.get("text"), ack) {
+                (None, Some(_)) => None,
+                _ => Some(dispatch_text(args, "text", chattools::DISPATCH_NOTE)?),
+            };
+            dispatch::note(text.as_deref(), ack)
+        },
         chattools::DISPATCH_ASK => |args| {
             dispatch::ask(
                 &dispatch_text(args, "question", chattools::DISPATCH_ASK)?,

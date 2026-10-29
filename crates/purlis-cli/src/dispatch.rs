@@ -19,8 +19,10 @@
 //! purlis dispatch cancel <chat>
 //!
 //! purlis dispatch tell <chat> "<text>"        (the asking chat, to a task still working)
+//! purlis dispatch tell --all "<text>"         (the asking chat, to every task still working)
 //! purlis dispatch answer <chat> "<text>"      (the asking chat, to a task's question)
 //! purlis dispatch note "<text>"               (a task, to its asking chat)
+//! purlis dispatch note --ack <n> ["<text>"]   (a task, acknowledging instruction n)
 //! purlis dispatch ask "<question>"            (a task, to its asking chat; it waits)
 //! ```
 //!
@@ -58,6 +60,17 @@
 //! and the text's bounds are the app's to judge ([`purlis_core::dispatchtalk`]); the text is
 //! checked here too, so an empty or oversized one is refused before anything is asked.
 //!
+//! **A message outlasts an app that does not answer** (#3902): it is queued first, durable,
+//! where this process may write purlis's queue ([`purlis_core::dispatchqueue`]), and the app is
+//! then asked to deliver it. An app that does not answer leaves it queued, and delivers it, in
+//! order and once, when it next hears from this chat; the sender is told it is queued, not yet
+//! delivered, and `list` shows where it stands. A sandbox that keeps this process from the
+//! queue leaves the live ask alone, and a failure of it is said as nothing queued.
+//!
+//! **One instruction to every task, and who took it in** (#3904): `tell --all` sends one
+//! follow-up to every task of this chat still working, numbered; a task acknowledges it with
+//! `note --ack <n>`, and `list` says which tasks have.
+//!
 //! **Nothing here decides.** The checks in front of the ask are the ones that need no app: a
 //! name purlis would draw, a brief that is there and carries no secret, a persona this project
 //! defines. The persona is asked again by the app, with everything else.
@@ -67,6 +80,7 @@ use std::process::ExitCode;
 
 use purlis_core::dispatchdecision::{self, Persona, Refused};
 use purlis_core::dispatched::{self, Answered, Asked, Reply, Waited, What};
+use purlis_core::dispatchqueue::Queued;
 use purlis_core::dispatchtalk::{self, Kind, Message};
 use purlis_core::handback::Outcome;
 use purlis_core::handoff;
@@ -144,13 +158,20 @@ pub enum DispatchCommand {
         chat: u32,
     },
     /// Send a follow-up to a task this chat dispatched that is still working, quoted as data
-    /// from this chat. A task at rest is started on it at once; one mid-turn reads it when that
-    /// turn ends. Refused, with the task's state, once the task has finished.
+    /// from this chat: `tell <chat> "<text>"`, or `tell --all "<text>"` for every task still
+    /// working. A task at rest is started on it at once; one mid-turn reads it when that turn
+    /// ends. Refused, with the task's state, once the task has finished. Each follow-up is an
+    /// instruction with a number, which a task acknowledges with `note --ack <number>`; `list`
+    /// shows which tasks have. Where the app does not answer, it is queued and delivered when
+    /// it does.
     Tell {
-        /// The task's chat, by its number in `purlis dispatch list`.
-        chat: u32,
-        /// What to add or correct, in a few lines.
-        text: String,
+        /// Send it to every task of this chat that is still working.
+        #[arg(long)]
+        all: bool,
+        /// The task's chat, by its number in `purlis dispatch list` (not with --all), then what
+        /// to add or correct, in a few lines.
+        #[arg(num_args = 1..=2, required = true, value_name = "CHAT> <TEXT")]
+        words: Vec<String>,
     },
     /// Answer the question a task this chat dispatched asked it. Only a question that task
     /// asked this chat can be answered: one it put to the person is the person's.
@@ -161,10 +182,14 @@ pub enum DispatchCommand {
         text: String,
     },
     /// From a dispatched task: send the chat that asked a progress note. It reads it on its
-    /// next turn, and nothing waits on it.
+    /// next turn, and nothing waits on it. With `--ack <number>`, it acknowledges that
+    /// instruction of the asking chat's, and the text may be left out.
     Note {
+        /// The number of an instruction (a follow-up) of the asking chat's this task has taken in.
+        #[arg(long)]
+        ack: Option<u32>,
         /// Where the task has got to, in a few lines.
-        text: String,
+        text: Option<String>,
     },
     /// From a dispatched task: ask the chat that asked a question, and wait for its answer.
     /// A question only the person can answer is not asked this way: ask them in this chat.
@@ -695,9 +720,9 @@ pub fn run(command: &DispatchCommand) -> ExitCode {
         DispatchCommand::Read { chat } => said(read(*chat)),
         DispatchCommand::Close { chat } => said(close(*chat)),
         DispatchCommand::Cancel { chat } => said(cancel(*chat)),
-        DispatchCommand::Tell { chat, text } => said(tell(*chat, text)),
+        DispatchCommand::Tell { all, words } => said(tell_words(*all, words)),
         DispatchCommand::Answer { chat, text } => said(answer(*chat, text)),
-        DispatchCommand::Note { text } => said(note(text)),
+        DispatchCommand::Note { ack, text } => said(note(text.as_deref(), *ack)),
         DispatchCommand::Ask { question, timeout } => said(ask(question, *timeout)),
     }
 }
@@ -707,43 +732,251 @@ fn message(text: &str) -> Result<String, String> {
     dispatchtalk::text(text).map_err(|why| format!("{SAYS} {why}"))
 }
 
-/// One message handed to the app, and what the app said became of it.
-fn sent(what: What) -> Result<(Kind, String), String> {
-    match asked(what, crate::handoff::A_TICKET_TAKES_AT_MOST)? {
-        Answered::Sent { kind, to } => Ok((kind, purlis_core::personas::one_line(&to))),
+/// What became of one message: the app's answer, or that it waits in this chat's queue.
+enum Fate {
+    Answered(Answered),
+    /// Queued, and not delivered yet: the app did not answer, or a limit holds it back.
+    Queued,
+    /// Delivered by another look of the app's at this chat's queue.
+    DeliveredEarlier,
+}
+
+/// **One message handed to the app**: queued first where this process may write the queue,
+/// then delivered by the app (#3902); asked live where it may not.
+fn sent(what: What, queued: Queued) -> Result<Fate, String> {
+    use purlis_core::hookwire::{CHAT_ENV, ChatToken, SOCKET_ENV};
+    let socket = purlis_core::envvar::var_os(SOCKET_ENV).filter(|s| !s.is_empty());
+    let chat = purlis_core::envvar::var(CHAT_ENV).and_then(|chat| chat.parse::<u32>().ok());
+    let (Some(socket), Some(chat), Some(token)) = (socket, chat, ChatToken::from_env()) else {
+        return asked(what, crate::handoff::A_TICKET_TAKES_AT_MOST).map(Fate::Answered);
+    };
+    let socket = std::path::PathBuf::from(socket);
+    let now = chrono::Utc::now().timestamp();
+    let unqueued = match purlis_core::dispatchqueue::queue(&socket, chat, &token, queued, now) {
+        Ok(id) => {
+            let Some((mut asking, chat)) = the_app() else {
+                return Ok(Fate::Queued);
+            };
+            return match ask_app(
+                &mut asking,
+                chat,
+                What::Deliver { id },
+                crate::handoff::A_TICKET_TAKES_AT_MOST,
+            ) {
+                Ok(Answered::Queued {
+                    delivered: false, ..
+                })
+                | Err(Failed::NoAnswer) => Ok(Fate::Queued),
+                Ok(Answered::Queued {
+                    delivered: true, ..
+                }) => Ok(Fate::DeliveredEarlier),
+                Ok(answered) => Ok(Fate::Answered(answered)),
+                Err(Failed::Refused(why)) => Err(why),
+            };
+        }
+        Err(purlis_core::dispatchqueue::Unqueued::Full) => {
+            return Err(format!(
+                "{SAYS} {}. The app has not answered for a while: `purlis dispatch list` shows \
+                 where this chat's messages stand.",
+                purlis_core::dispatchqueue::Unqueued::Full.say()
+            ));
+        }
+        Err(unqueued) => unqueued,
+    };
+    match the_app() {
+        Some((mut asking, chat)) => {
+            match ask_app(
+                &mut asking,
+                chat,
+                what,
+                crate::handoff::A_TICKET_TAKES_AT_MOST,
+            ) {
+                Ok(answered) => Ok(Fate::Answered(answered)),
+                Err(Failed::Refused(why)) => Err(why),
+                Err(Failed::NoAnswer) => Err(not_queued(&unqueued)),
+            }
+        }
+        None => Err(not_queued(&unqueued)),
+    }
+}
+
+/// What a sender is told where the app did not answer and the message could not be queued.
+fn not_queued(unqueued: &purlis_core::dispatchqueue::Unqueued) -> String {
+    format!(
+        "{SAYS} the purlis app did not answer, and {}. Nothing was sent. Send it again once the \
+         app answers, or with purlis's dispatch tool for it, which queues it.",
+        unqueued.say()
+    )
+}
+
+/// What a sender is told of a message that waits in its queue (#3902).
+fn queued_said(what: &str) -> String {
+    format!(
+        "{SAYS} {what} queued, not yet delivered: the purlis app did not take it yet. It waits \
+         in this chat's queue, and purlis delivers it, in order and once, when the app next \
+         hears from this chat. `purlis dispatch list` shows where it stands."
+    )
+}
+
+/// What a sender is told of a queued message another look of the app's delivered.
+fn delivered_earlier(what: &str) -> String {
+    format!(
+        "{SAYS} {what} delivered, with what this chat queued before it. `purlis dispatch list` \
+         shows where it stands."
+    )
+}
+
+/// The app's answer to a message it delivered, as `(kind, to, instruction)`.
+fn sent_to(answered: Answered) -> Result<(String, Option<u32>), String> {
+    match answered {
+        Answered::Sent {
+            to, instruction, ..
+        } => Ok((purlis_core::personas::one_line(&to), instruction)),
         _ => Err(format!(
             "{SAYS} the purlis app did not answer, so nothing was sent."
         )),
     }
 }
 
+/// `purlis dispatch tell`'s words, as clap hands them: `<chat> <text>`, or `--all <text>`.
+fn tell_words(all: bool, words: &[String]) -> Result<String, String> {
+    match (all, words) {
+        (true, [text]) => tell_all(text),
+        (true, _) => Err(format!(
+            "{SAYS} `tell --all` takes the text alone: `purlis dispatch tell --all \"<text>\"`. \
+             Nothing was sent."
+        )),
+        (false, [chat, text]) => match chat.parse::<u32>() {
+            Ok(chat) => tell(chat, text),
+            Err(_) => Err(format!(
+                "{SAYS} '{}' is not a task's chat number: `purlis dispatch list` shows them. \
+                 Nothing was sent.",
+                purlis_core::personas::one_line(chat)
+            )),
+        },
+        (false, _) => Err(format!(
+            "{SAYS} `tell` takes a task's chat number and the text: `purlis dispatch tell \
+             <chat> \"<text>\"`, or `--all \"<text>\"` for every task still working. Nothing \
+             was sent."
+        )),
+    }
+}
+
+/// How a task acknowledges instruction `number`, as a sender is told it.
+fn acknowledged_by(number: u32) -> String {
+    format!(
+        "It is instruction {number}: the task acknowledges it with `purlis dispatch note --ack \
+         {number}`, and `purlis dispatch list` shows which tasks have."
+    )
+}
+
 /// `purlis dispatch tell <chat> "<text>"`: a follow-up to a task this chat dispatched.
 pub fn tell(to: u32, text: &str) -> Result<String, String> {
     let text = message(text)?;
-    let (_, name) = sent(What::Tell { to, text })?;
+    let queued = Queued::Tell {
+        to,
+        text: text.clone(),
+    };
+    let answered = match sent(What::Tell { to, text }, queued)? {
+        Fate::Answered(answered) => answered,
+        Fate::Queued => return Ok(queued_said(&format!("follow-up to chat {to}"))),
+        Fate::DeliveredEarlier => return Ok(delivered_earlier(&format!("follow-up to chat {to}"))),
+    };
+    let (name, instruction) = sent_to(answered)?;
+    let number = instruction
+        .map(|number| format!(" {}", acknowledged_by(number)))
+        .unwrap_or_default();
     Ok(format!(
         "{SAYS} follow-up sent to '{name}' (chat {to}), quoted as data from this chat. If it is \
          at rest, purlis starts its turn on it now; if it is mid-turn, it reads it when that \
-         turn ends."
+         turn ends.{number}"
+    ))
+}
+
+/// `purlis dispatch tell --all "<text>"`: one follow-up to every task of this chat still
+/// working (#3904).
+pub fn tell_all(text: &str) -> Result<String, String> {
+    let text = message(text)?;
+    let queued = Queued::TellAll { text: text.clone() };
+    let answered = match sent(What::TellAll { text }, queued)? {
+        Fate::Answered(answered) => answered,
+        Fate::Queued => return Ok(queued_said("follow-up to every task still working")),
+        Fate::DeliveredEarlier => {
+            return Ok(delivered_earlier("follow-up to every task still working"));
+        }
+    };
+    let Answered::SentAll { instruction, to } = answered else {
+        return Err(format!(
+            "{SAYS} the purlis app did not answer, so nothing was sent."
+        ));
+    };
+    let each: Vec<String> = to
+        .iter()
+        .map(|to| {
+            format!(
+                "'{}' (chat {}) {}",
+                purlis_core::personas::one_line(&to.name),
+                to.chat,
+                to.state.say()
+            )
+        })
+        .collect();
+    Ok(format!(
+        "{SAYS} instruction {instruction} sent to every task of this chat still working, quoted \
+         as data: {}. Each task acknowledges it with `purlis dispatch note --ack \
+         {instruction}`, and `purlis dispatch list` shows which have.",
+        each.join("; ")
     ))
 }
 
 /// `purlis dispatch answer <chat> "<text>"`: the answer to a question a task asked this chat.
 pub fn answer(to: u32, text: &str) -> Result<String, String> {
     let text = message(text)?;
-    let (_, name) = sent(What::Answer { to, text })?;
+    let queued = Queued::Answer {
+        to,
+        text: text.clone(),
+    };
+    let answered = match sent(What::Answer { to, text }, queued)? {
+        Fate::Answered(answered) => answered,
+        Fate::Queued => return Ok(queued_said(&format!("answer to chat {to}"))),
+        Fate::DeliveredEarlier => return Ok(delivered_earlier(&format!("answer to chat {to}"))),
+    };
+    let (name, _) = sent_to(answered)?;
     Ok(format!(
         "{SAYS} answer sent to '{name}' (chat {to}), which carries on with it."
     ))
 }
 
-/// `purlis dispatch note "<text>"`: a progress note to the chat that dispatched this one.
-pub fn note(text: &str) -> Result<String, String> {
-    let text = message(text)?;
-    let (_, name) = sent(What::Note { text })?;
+/// `purlis dispatch note "<text>"`: a progress note to the chat that dispatched this one; with
+/// `ack`, the acknowledgement of that instruction of its (#3904), the text then optional.
+pub fn note(text: Option<&str>, ack: Option<u32>) -> Result<String, String> {
+    let text = match (text, ack) {
+        (Some(text), _) if ack.is_none() || !text.trim().is_empty() => message(text)?,
+        (_, Some(_)) => String::new(),
+        (None, None) => return Err(message("").expect_err("an empty message is refused")),
+    };
+    let queued = Queued::Note {
+        text: (!text.is_empty()).then(|| text.clone()),
+        ack,
+    };
+    let answered = match sent(What::Note { text, ack }, queued)? {
+        Fate::Answered(answered) => answered,
+        Fate::Queued => return Ok(queued_said("progress note")),
+        Fate::DeliveredEarlier => return Ok(delivered_earlier("progress note")),
+    };
+    if let Answered::Acknowledged { instruction, to } = answered {
+        return Ok(format!(
+            "{SAYS} instruction {instruction} acknowledged to '{}'.",
+            purlis_core::personas::one_line(&to)
+        ));
+    }
+    let (name, _) = sent_to(answered)?;
+    let acked = ack
+        .map(|number| format!(" It acknowledges instruction {number}."))
+        .unwrap_or_default();
     Ok(format!(
-        "{SAYS} progress note sent to '{name}'. It reads it on its next turn; nothing waits \
-         on it, so carry on."
+        "{SAYS} progress note sent to '{name}'.{acked} It reads it on its next turn; nothing \
+         waits on it, so carry on."
     ))
 }
 
@@ -756,21 +989,26 @@ pub fn note(text: &str) -> Result<String, String> {
 pub fn ask(question: &str, within: Option<u32>) -> Result<String, String> {
     let text = message(question)?;
     let within = dispatched::wait_secs(within.unwrap_or(dispatched::WAITS_BY_DEFAULT));
-    let Some((mut asking, chat)) = the_app() else {
+    if the_app().is_none() && purlis_core::hookwire::ChatToken::from_env().is_none() {
         return Err(format!(
             "{SAYS} no purlis app answered this call, so nothing was sent. A question goes \
              back only from a chat a dispatch started."
         ));
-    };
+    }
     let asked_text = text.clone();
-    let asker = match answered(
-        &mut asking,
-        chat,
-        What::Question { text },
-        crate::handoff::A_TICKET_TAKES_AT_MOST,
-    )? {
-        Answered::Sent { to, .. } => purlis_core::personas::one_line(&to),
-        _ => {
+    let queued = Queued::Question { text: text.clone() };
+    let asker = match sent(What::Question { text }, queued)? {
+        Fate::Answered(Answered::Sent { to, .. }) => purlis_core::personas::one_line(&to),
+        // Queued (#3902): the question is asked when the app takes it, and this chat is paused
+        // on it from now, as on one asked.
+        Fate::Queued | Fate::DeliveredEarlier => {
+            return Ok(format!(
+                "{} This chat is paused on that question: do not guess, and end this turn now. \
+                 The answer is handed to a later turn as context, quoted as data.",
+                queued_said("question")
+            ));
+        }
+        Fate::Answered(_) => {
             return Err(format!(
                 "{SAYS} the purlis app did not answer, so nothing was sent."
             ));
@@ -782,6 +1020,10 @@ pub fn ask(question: &str, within: Option<u32>) -> Result<String, String> {
          This chat is paused on that question: do not guess, and end this turn now. The answer \
          is handed to this chat's next turn as context, quoted as data."
     );
+    // The question is asked: the wait is on a connection of its own.
+    let Some((mut asking, chat)) = the_app() else {
+        return Ok(paused);
+    };
     let replied = answered(
         &mut asking,
         chat,
@@ -823,6 +1065,7 @@ pub fn ask(question: &str, within: Option<u32>) -> Result<String, String> {
                 from,
                 chat: 0,
                 text,
+                instruction: None,
             }))
         }
         Ok(Answered::Replied {
@@ -1004,20 +1247,41 @@ fn task_refused(why: &str) -> String {
     format!("{SAYS} {}", whole(why))
 }
 
+/// Why an ask after a task came back with no answer to use.
+enum Failed {
+    /// The app refused it, in this sentence.
+    Refused(String),
+    /// The app did not answer.
+    NoAnswer,
+}
+
+/// One ask after a task, answered: the app's answer, its refusal, or no answer.
+fn ask_app(
+    asking: &mut purlis_core::hookwire::Asking,
+    chat: u32,
+    what: What,
+    within: std::time::Duration,
+) -> Result<Answered, Failed> {
+    match asking.ask(&Ask::Task(Box::new(Asked { chat, what })), within) {
+        Ok(Answer::Task(answered)) => Ok(*answered),
+        Ok(Answer::No { why }) => Err(Failed::Refused(task_refused(&why))),
+        Ok(_) | Err(_) => Err(Failed::NoAnswer),
+    }
+}
+
 fn answered(
     asking: &mut purlis_core::hookwire::Asking,
     chat: u32,
     what: What,
     within: std::time::Duration,
 ) -> Result<Answered, String> {
-    match asking.ask(&Ask::Task(Box::new(Asked { chat, what })), within) {
-        Ok(Answer::Task(answered)) => Ok(*answered),
-        Ok(Answer::No { why }) => Err(task_refused(&why)),
-        Ok(_) | Err(_) => Err(format!(
+    ask_app(asking, chat, what, within).map_err(|failed| match failed {
+        Failed::Refused(why) => why,
+        Failed::NoAnswer => format!(
             "{SAYS} the purlis app did not answer. `purlis dispatch list` shows where this \
              chat's tasks stand."
-        )),
-    }
+        ),
+    })
 }
 
 /// `purlis dispatch wait <chat>`: the report of task `of`, as this chat's next turn would have
@@ -1082,6 +1346,7 @@ pub fn wait(of: u32, within: Option<u32>) -> Result<String, String> {
                     from: name,
                     chat: of,
                     text: question,
+                    instruction: None,
                 })
             )
         }
@@ -1098,7 +1363,10 @@ pub fn wait(of: u32, within: Option<u32>) -> Result<String, String> {
 /// `purlis dispatch list`: the tasks this chat dispatched.
 pub fn list() -> Result<String, String> {
     match asked(What::List, crate::handoff::A_TICKET_TAKES_AT_MOST)? {
-        Answered::Listed { rows } => Ok(dispatched::list_text(&rows)),
+        Answered::Listed { rows, messages } => Ok(match dispatchtalk::records_text(&messages) {
+            Some(messages) => format!("{}\n\n{messages}", dispatched::list_text(&rows)),
+            None => dispatched::list_text(&rows),
+        }),
         _ => Err(format!("{SAYS} the purlis app did not answer the list.")),
     }
 }
@@ -1122,7 +1390,22 @@ pub fn read(of: u32) -> Result<String, String> {
             name,
             finals,
             ran,
-        } => Ok(dispatched::output_text(&name, of, &finals, &ran)),
+        } => {
+            let output = dispatched::output_text(&name, of, &finals, &ran);
+            // And what became of this chat's messages to it (#3902, #3904): one more ask, and
+            // nothing said where the app does not answer it.
+            let messages = match asked(What::List, crate::handoff::A_TICKET_TAKES_AT_MOST) {
+                Ok(Answered::Listed { messages, .. }) => messages
+                    .into_iter()
+                    .filter(|record| record.to_all || record.to.iter().any(|to| to.chat == of))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            Ok(match dispatchtalk::records_text(&messages) {
+                Some(messages) => format!("{output}\n\n{messages}"),
+                None => output,
+            })
+        }
         _ => Err(format!("{SAYS} the purlis app did not answer the read.")),
     }
 }

@@ -1161,6 +1161,30 @@ mod tests {
     /// (`harness::claude::DISPATCH_TASK_ALLOW`), so each is held to the same rule: alone in
     /// its call it has no rider, and beside another command one that writes is refused and one
     /// that only looks is the harness's to judge (#3785).
+    /// `tell --all` and `note --ack <n>` (#3904) are spellings of the pre-allowed `tell` and
+    /// `note`, and alone in their call carry no rider, as every other spelling of them.
+    #[test]
+    fn telling_every_task_and_acknowledging_are_pre_allowed_as_tell_and_note_are() {
+        let pre_allowed = crate::harness::claude::DISPATCH_TASK_ALLOW;
+        for cmd in [
+            "purlis dispatch tell --all \"no PRs from builders\"",
+            "purlis dispatch note --ack 7",
+            "purlis dispatch note --ack 7 \"read it; switching now\"",
+        ] {
+            assert!(
+                pre_allowed.iter().any(|rule| {
+                    let glob = rule
+                        .strip_prefix("Bash(")
+                        .and_then(|rule| rule.strip_suffix(')'))
+                        .expect("a Bash rule");
+                    crate::pypath::fnmatch(cmd, glob)
+                }),
+                "{cmd:?} is not pre-allowed"
+            );
+            assert_eq!(rider(cmd), None, "{cmd:?}");
+        }
+    }
+
     #[test]
     fn every_pre_allowed_dispatch_subcommand_is_alone_or_refused_unless_it_looks() {
         let pre_allowed = crate::harness::claude::DISPATCH_TASK_ALLOW;

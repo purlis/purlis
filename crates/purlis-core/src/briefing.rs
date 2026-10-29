@@ -302,9 +302,10 @@ pub const ONE_ROUTE_IF: &str = "⬢ **If work has to go to another chat.**";
 /// served the same on every harness; the command stays for terminals and scripts.
 pub const ONE_ROUTE_TOOLS: &str = "Use purlis's tools for it first: `dispatch` starts a task; \
      `dispatch_list`, `dispatch_read`, `dispatch_wait`, `dispatch_tell`, `dispatch_answer`, \
-     `dispatch_cancel` and `dispatch_close` look after one; a task answers with `dispatch_note`, \
-     `dispatch_ask` and `dispatch_report`. They need no shell; the `purlis dispatch` command \
-     does the same, one call at a time.";
+     `dispatch_cancel` and `dispatch_close` look after one, and `dispatch_tell` with `all` tells \
+     every task still working at once; a task answers with `dispatch_note` (its `ack` \
+     acknowledges an instruction), `dispatch_ask` and `dispatch_report`. They need no shell; \
+     the `purlis dispatch` command does the same, one call at a time.";
 
 /// What stands after it: the route is for work that must come back as an answer and that
 /// another chat has to do, and says nothing about work this chat can do itself.

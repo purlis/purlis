@@ -1529,6 +1529,7 @@ fn the_messages_between_chats_wait_inside_the_store_that_denial_names() {
         from: "steward 3".to_owned(),
         chat: 3,
         text: "Also check staging.".to_owned(),
+        instruction: None,
     };
     let file = crate::dispatchtalk::leave(plane.path(), 9, &message).expect("left");
     assert!(
