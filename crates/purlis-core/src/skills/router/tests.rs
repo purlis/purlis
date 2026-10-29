@@ -840,12 +840,22 @@ fn choosing_a_router_is_refused_for_what_the_project_does_not_have_or_no_id_3692
     assert!(why.contains("is not an extension's id"), "{why}");
     assert!(!root.join("workspaces/smart-ide/workspace.json").exists());
 
-    assert!(
-        choose(
-            root,
-            &PinnedBy::Persona("nobody".to_owned()),
-            Some(&Chosen::BuiltIn)
-        )
-        .is_err()
-    );
+    for router in [Some(&Chosen::BuiltIn), None] {
+        let why = choose(root, &PinnedBy::Persona("nobody".to_owned()), router)
+            .expect_err("no such persona");
+        assert!(
+            why.contains("no persona") && why.contains("nobody"),
+            "{why}"
+        );
+    }
+}
+
+#[test]
+fn a_workspace_s_built_in_router_written_out_is_already_the_built_in_router_3692() {
+    let (tmp, _bundle) = a_plane_of(1);
+    let root = tmp.path();
+    workspace_skills(root, serde_json::json!({ "router": "built-in" }));
+    let ws = PinnedBy::Workspace("smart-ide".to_owned());
+    assert_eq!(choose(root, &ws, Some(&Chosen::BuiltIn)), Ok(false));
+    assert_eq!(choose(root, &ws, None), Ok(false));
 }

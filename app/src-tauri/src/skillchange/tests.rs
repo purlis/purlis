@@ -194,26 +194,30 @@ fn a_router_is_chosen_only_where_it_is_offered_and_taken_out_with_none_3692() {
     }];
     let manifest = root.join("workspaces/ops/workspace.json");
 
-    let why = route(root, &ops, Some("recent-first"), &offered).expect_err("not offered");
+    let why =
+        route(root, &ops, Some("recent-first"), || offered.to_vec()).expect_err("not offered");
     assert!(why.contains("'recent-first'"), "{why}");
     assert!(
         !manifest.exists(),
         "nothing is written for a router not offered"
     );
 
-    route(root, &ops, Some("relevance"), &offered).unwrap();
+    route(root, &ops, Some("relevance"), || offered.to_vec()).unwrap();
     assert_eq!(
         purlis_core::skills::router::chosen(root, Some("ops"), None),
         Ok(purlis_core::skills::router::Chosen::Extension(
             "relevance".to_owned()
         ))
     );
-    route(root, &ops, Some("built-in"), &[]).unwrap();
+    route(root, &ops, Some("built-in"), || {
+        unreachable!("no id to look up")
+    })
+    .unwrap();
     assert_eq!(
         purlis_core::skills::router::chosen(root, Some("ops"), None),
         Ok(purlis_core::skills::router::Chosen::BuiltIn)
     );
-    route(root, &ops, None, &[]).unwrap();
+    route(root, &ops, None, || unreachable!("no id to look up")).unwrap();
     assert_eq!(
         purlis_core::skills::router::written(root, &(&ops).into()),
         None

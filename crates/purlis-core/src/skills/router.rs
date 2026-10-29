@@ -142,8 +142,10 @@ pub(crate) fn choose(
                 ));
             }
             // A value that is no string is replaced, never taken for the router wanted.
+            // A `built-in` written out is the built-in router the key's absence is.
             let unchanged = match (written_in(plane, ws), &wanted) {
                 (None, None) => true,
+                (Some(Ok(now)), None) => now.trim() == BUILT_IN,
                 (Some(Ok(now)), Some(wanted)) => now.trim() == wanted,
                 _ => false,
             };
@@ -158,6 +160,9 @@ pub(crate) fn choose(
             )?;
         }
         super::PinnedBy::Persona(persona) => {
+            if let Some(refused) = crate::personas::name_refusal(plane, persona) {
+                return Err(refused);
+            }
             if crate::personaverbs::skill_router(plane, persona).map(|one| one.trim().to_owned())
                 == wanted
             {
@@ -500,7 +505,7 @@ fn clipped(why: &str) -> String {
     cut
 }
 
-fn capitalised(text: &str) -> String {
+pub(crate) fn capitalised(text: &str) -> String {
     let mut chars = text.chars();
     chars
         .next()

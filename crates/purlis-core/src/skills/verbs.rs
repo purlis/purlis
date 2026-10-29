@@ -1722,20 +1722,11 @@ pub fn route(
         };
         cx.done(format!(
             "{} started from now are routed by {by_what}",
-            capitalised(&whose)
+            super::router::capitalised(&whose)
         ));
         cx.commit(&[file], &format!("skill router for {whose}: {by_what}"));
     }
     Ok(changed)
-}
-
-/// `text` with its first letter upper-cased, to start a sentence.
-fn capitalised(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }
 
 /// **Share** (#2767): the local skill `name` at the project's root, in a workspace or of a

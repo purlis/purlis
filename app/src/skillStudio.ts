@@ -451,9 +451,9 @@ export function askSkillStudio(plane: string, scope: StudioScope, page: StudioPa
 
 /**
  * **A program's own skill, as a place on Harness skills names it** (#3692): its program, then
- * its row's id ({@link skillRowId}), which no other row of that program shares. What a
- * "Show in Harness skills" fix hands {@link skillStudioAt} as its `skill`, so the page opens at
- * that skill with its switch beside the list.
+ * its row's id ({@link skillRowId}), which no other row of that program shares. What a way in
+ * that names one skill (Needs you's "Show in Harness skills", #3689) hands {@link skillStudioAt}
+ * as its `skill`, so the page opens at that skill with its switch beside the list.
  */
 export function harnessSkillId(harness: string, skill: Parameters<typeof skillRowId>[0]): string {
   return `${harness}/${skillRowId(skill)}`;

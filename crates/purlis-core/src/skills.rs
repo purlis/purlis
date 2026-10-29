@@ -1638,13 +1638,24 @@ pub(super) fn set_names_in_settings(
     key: &str,
     names: Vec<String>,
 ) -> Result<(), String> {
+    let value = (!names.is_empty()).then_some(crate::settings::Value::List(names));
+    set_in_settings(plane, workspace, key, value)
+}
+
+/// The workspace `workspace`'s `settings.skills.<key>` set to `value`, or taken out for none,
+/// through the Workspace level's own save.
+fn set_in_settings(
+    plane: &Path,
+    workspace: &str,
+    key: &str,
+    value: Option<crate::settings::Value>,
+) -> Result<(), String> {
     let read = crate::settings::workspace::read_file(plane, workspace)?;
     let base = read.exists.then_some(read.text.as_str());
     let path = vec![
         crate::settings::Step::Key(crate::settings::workspace::SKILLS.to_owned()),
         crate::settings::Step::Key(key.to_owned()),
     ];
-    let value = (!names.is_empty()).then_some(crate::settings::Value::List(names));
     crate::settings::workspace::save(
         plane,
         workspace,
@@ -1663,23 +1674,12 @@ pub(super) fn set_text_in_settings(
     key: &str,
     text: Option<String>,
 ) -> Result<(), String> {
-    let read = crate::settings::workspace::read_file(plane, workspace)?;
-    let base = read.exists.then_some(read.text.as_str());
-    let path = vec![
-        crate::settings::Step::Key(crate::settings::workspace::SKILLS.to_owned()),
-        crate::settings::Step::Key(key.to_owned()),
-    ];
-    crate::settings::workspace::save(
+    set_in_settings(
         plane,
         workspace,
-        base,
-        &[crate::settings::Edit {
-            path,
-            value: text.map(crate::settings::Value::Text),
-        }],
+        key,
+        text.map(crate::settings::Value::Text),
     )
-    .map(|_| ())
-    .map_err(|why| why.join(" "))
 }
 
 fn no_project_skill(name: &str) -> String {

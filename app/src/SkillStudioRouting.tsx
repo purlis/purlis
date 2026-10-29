@@ -21,12 +21,16 @@ import { List, ListRow, type Selection } from "./ui/list/List";
 import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
 import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { routedChatId } from "./skillStudio";
+import { capitalised } from "./saving";
 
 /** The word a choice of the built-in router is written as (`purlis_core::skills::router`). */
 export const BUILT_IN_ROUTER = "built-in";
 
 /** What Change… sends for a persona's choice taken out: its chats take their workspace's. */
 const THE_WORKSPACES = "";
+
+/** What is chosen now where what is written is no router's name: no option is it. */
+const UNREADABLE = "\u0000";
 
 /** Whose chats a router is chosen for, as a sentence names them. */
 function whoseSaid(by: SkillPinner): string {
@@ -144,6 +148,7 @@ export function RoutingFacts({
           plane={plane}
           by={by}
           written={router.written}
+          unreadable={router.problem && router.written === null}
           onClose={() => setChanging(false)}
           onChoose={(chosen, said) => {
             setChanging(false);
@@ -165,6 +170,7 @@ export function RouterChange({
   plane,
   by,
   written,
+  unreadable = false,
   onClose,
   onChoose,
 }: {
@@ -172,6 +178,9 @@ export function RouterChange({
   by: SkillPinner;
   /** What the choice writes now, as written: null for none. */
   written: string | null;
+  /** What is written is no router's name at all (not a string): nothing is chosen now, so every
+   *  router is a change. */
+  unreadable?: boolean;
   onClose: () => void;
   /** The router chosen (`built-in`, an extension's id, or null to take the choice out), and
    *  what its result notice says. */
@@ -193,14 +202,19 @@ export function RouterChange({
     };
   }, [plane]);
   const persona = by.at === "persona";
-  const now = written ?? (persona ? THE_WORKSPACES : BUILT_IN_ROUTER);
+  const now = unreadable ? UNREADABLE : (written ?? (persona ? THE_WORKSPACES : BUILT_IN_ROUTER));
   const [picked, setPicked] = useState(now);
   const routers = offers.routers ?? [];
-  // A router written that is not offered here stays listed, so what is chosen now is seen.
+  // A router written that is not offered here stays listed, so what is chosen now is seen; while
+  // the offers are read it is listed without saying it is not offered.
   const unoffered =
-    now !== THE_WORKSPACES && now !== BUILT_IN_ROUTER && !routers.some((one) => one.id === now)
+    now !== THE_WORKSPACES &&
+    now !== BUILT_IN_ROUTER &&
+    now !== UNREADABLE &&
+    !routers.some((one) => one.id === now)
       ? now
       : undefined;
+  const loading = offers.routers === undefined && offers.refused === undefined;
   const whose = whoseSaid(by);
   const pickedSaid = picked === THE_WORKSPACES ? "their workspace's router" : routerSaid(picked);
   const after = `${capitalised(whose)} started after this are routed by ${pickedSaid}.`;
@@ -211,13 +225,15 @@ export function RouterChange({
       subtitle={`For ${whose}`}
       description="The router decides which skills a chat sees when its list is over the budget. It is asked once, at a chat's start."
       summary={
-        picked === now
-          ? `${capitalised(whose)} are routed by ${pickedSaid} now.`
-          : `${after} Chats open now keep theirs.`
+        picked === UNREADABLE
+          ? `What is chosen for ${whose} now names no router, so they are routed by the built-in router.`
+          : picked === now
+            ? `${capitalised(whose)} are routed by ${pickedSaid} now.`
+            : `${after} Chats open now keep theirs.`
       }
       main={{
         children: "Change router",
-        isDisabled: picked === now || offers.routers === undefined,
+        isDisabled: picked === now,
         onPress: () => onChoose(picked === THE_WORKSPACES ? null : picked, after),
       }}
       data-testid="router-change"
@@ -245,7 +261,11 @@ export function RouterChange({
         {unoffered !== undefined && (
           <Radio
             value={unoffered}
-            description="Not approved on this machine or not on in this project, so these chats fall back on the built-in router."
+            description={
+              loading
+                ? undefined
+                : "Not approved on this machine or not on in this project, so these chats fall back on the built-in router."
+            }
           >
             <code>{unoffered}</code>
           </Radio>
@@ -343,9 +363,4 @@ export function RoutedChatItem({ chat }: { chat: StudioRouted | undefined }) {
       </div>
     </div>
   );
-}
-
-/** `text` with its first letter upper-cased, to start a sentence. */
-function capitalised(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }

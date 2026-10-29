@@ -415,4 +415,49 @@ describe("the Routing page (#3692)", () => {
       ).toEqual([{ plane: "p", by: { at: "persona", name: "reviewer" }, router: null }]),
     );
   });
+
+  it("says an extension's newest grade beside the library's commit (SK-15e)", async () => {
+    const grade =
+      "Graded on the library at aaaaaaaaaaaa, 2026-10-02: 1 of 2 trigger tests pass with the router relevance, and 2 of 2 with the built-in router.";
+    core(() => studio([], { router: { ...RELEVANCE, grade } }));
+    renderStudio(inWorkspace("ops"), "routing");
+
+    expect(await screen.findByTestId("skill-studio-router-grade")).toHaveTextContent(grade);
+    expect(screen.getByRole("button", { name: "Grade the router…" })).toBeInTheDocument();
+  });
+
+  it("lets a router written as no router's name be replaced by the built-in one", async () => {
+    const asked = core(
+      () =>
+        studio([], {
+          router: {
+            ...BUILT_IN,
+            problem: true,
+            written: null,
+            said: "the workspace ops's settings.skills.router is not a router's name, so its chats are routed by the built-in router.",
+          },
+        }),
+      {
+        skill_routers: () => {
+          throw "purlis could not read this machine's extensions";
+        },
+        skill_router_choose: () => ({ notes: [] }),
+      },
+    );
+    const user = userEvent.setup();
+    renderStudio(inWorkspace("ops"), "routing");
+
+    await user.click(await screen.findByRole("button", { name: "Change…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change the router" });
+    expect(
+      await within(dialog).findByText(/purlis could not read the router extensions/),
+    ).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("radio", { name: "Built-in" }));
+    await user.click(within(dialog).getByRole("button", { name: "Change router" }));
+    await waitFor(() =>
+      expect(
+        asked.filter((one) => one.cmd === "skill_router_choose").map((one) => one.args),
+      ).toEqual([{ plane: "p", by: { at: "workspace", name: "ops" }, router: "built-in" }]),
+    );
+  });
 });

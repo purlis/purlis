@@ -817,7 +817,8 @@ pub(crate) async fn skill_routers(
     .await
 }
 
-/// **Chooses `router` for `by`'s chats** (#3692): `built-in`, an id among `offered`, or `None`
+/// **Chooses `router` for `by`'s chats** (#3692): `built-in`, an id among `offered` (read only
+/// for an id), or `None`
 /// to take the choice out (a persona's chats then take their workspace's router). An id that is
 /// not offered here is refused, writing nothing: a router not approved or not on would never be
 /// asked, and every chat would fall back. The core's `verbs::route`, one commit.
@@ -825,13 +826,13 @@ pub(crate) fn route(
     root: &std::path::Path,
     by: &SkillPinner,
     router: Option<&str>,
-    offered: &[SkillRouterOffer],
+    offered: impl FnOnce() -> Vec<SkillRouterOffer>,
 ) -> Result<SkillChanged, String> {
     use purlis_core::skills::router::{BUILT_IN, Chosen};
     let chosen = match router {
         None => None,
         Some(BUILT_IN) => Some(Chosen::BuiltIn),
-        Some(id) if offered.iter().any(|one| one.id == id) => {
+        Some(id) if offered().iter().any(|one| one.id == id) => {
             Some(Chosen::Extension(id.to_owned()))
         }
         Some(id) => {
@@ -862,8 +863,9 @@ pub(crate) async fn skill_router_choose(
     let executor = views.executor();
     crate::off_the_window("choosing the router", move || {
         flag_on()?;
-        let offered = routers_in(&executor, held.root());
-        route(held.root(), &by, router.as_deref(), &offered)
+        route(held.root(), &by, router.as_deref(), || {
+            routers_in(&executor, held.root())
+        })
     })
     .await
 }
