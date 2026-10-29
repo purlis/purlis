@@ -168,6 +168,9 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # A Claim's pool never changes after it is made (crds.yaml), so creating one is the only time
 # this is asked. operator/tests/the_install_manifests.rs holds it, and the kind tests check that
 # the cluster refuses a Claim from someone who may not use its pool.
+#
+# Upstream's claims on a purlis pool's warm pool, and warm pools of its template, are made by
+# the operator alone, so a runner from a pool is had only through a Claim (#2055).
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.

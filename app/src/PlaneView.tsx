@@ -9004,14 +9004,15 @@ export const PlaneView = memo(function PlaneView({
     </>
   );
 
-  /** **The chat in front, for the Skills view's Only this chat's** (#3266): the one shown in the
-   *  pane with the keyboard, never a shell's, which runs no tool with skills. */
+  /** **The chat in front, whose skills the Skills view shows** (#3266, #3693): the one shown in
+   *  the pane with the keyboard, never a shell's, which runs no tool with skills. */
   const frontWorkspace = frontSession === undefined ? undefined : filedIn(frontSession);
   const skillsChat: FrontChat | undefined =
     frontSession === undefined || shells.has(frontSession)
       ? undefined
       : {
           session: frontSession,
+          name: nameOf(frontSession),
           workspace: frontWorkspace === OUTSIDE ? undefined : frontWorkspace,
           persona: personaOf(frontSession),
           harness: harnessOf(frontSession),

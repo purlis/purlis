@@ -889,6 +889,161 @@ async fn a_claim_is_refused_to_someone_the_cluster_does_not_let_use_its_pool() {
     scratch.end().await;
 }
 
+/// The policy's refusal of `made`, in its own words, or a panic naming `what`.
+fn refused_in_words<T: std::fmt::Debug>(what: &str, made: Result<T, kube::Error>, words: &str) {
+    match &made {
+        Err(kube::Error::Api(status)) => {
+            assert_eq!(status.code, 403, "{what}: {status:?}");
+            assert!(status.message.contains(words), "{what}: {status:?}");
+        }
+        other => panic!("{what} was not refused: {other:?}"),
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs a kind cluster: operator/e2e/kind.sh"]
+async fn an_upstream_claim_on_a_purlis_pool_made_directly_is_refused() {
+    use purlis_cluster_operator::upstream::{
+        Reference, SandboxClaim, SandboxClaimSpec, SandboxWarmPool, SandboxWarmPoolSpec, name_for,
+    };
+    let client = Client::try_default().await.expect("the cluster");
+    let scratch = Scratch::new(&client, "e2e-direct").await;
+    // Even the cluster admin: a runner from a purlis pool is had only through a Claim.
+    let upstream_claims = Api::<SandboxClaim>::namespaced(client.clone(), &scratch.name);
+    let warm_pools = Api::<SandboxWarmPool>::namespaced(client.clone(), &scratch.name);
+    let claim_on = |name: &str, warm_pool: &str| {
+        SandboxClaim::new(
+            name,
+            SandboxClaimSpec {
+                warm_pool_ref: Reference {
+                    name: warm_pool.to_owned(),
+                },
+            },
+        )
+    };
+    let warm_pool_of = |name: &str, template: &str| {
+        SandboxWarmPool::new(
+            name,
+            SandboxWarmPoolSpec {
+                replicas: 0,
+                sandbox_template_ref: Reference {
+                    name: template.to_owned(),
+                },
+            },
+        )
+    };
+    let ours = name_for("e2e-direct");
+    refused_in_words(
+        "an upstream claim on a purlis warm pool",
+        upstream_claims
+            .create(&PostParams::default(), &claim_on("direct", &ours))
+            .await,
+        "are claimed with a Claim",
+    );
+    refused_in_words(
+        "a warm pool of a purlis template",
+        warm_pools
+            .create(&PostParams::default(), &warm_pool_of("direct", &ours))
+            .await,
+        "are claimed with a Claim",
+    );
+    // Upstream's own objects that are not purlis's are left to upstream.
+    let theirs_claim = upstream_claims
+        .create(&PostParams::default(), &claim_on("theirs", "a-team-pool"))
+        .await
+        .expect("an upstream claim on another warm pool is admitted");
+    let theirs = warm_pools
+        .create(
+            &PostParams::default(),
+            &warm_pool_of("theirs", "a-team-template"),
+        )
+        .await
+        .expect("a warm pool of another template is admitted");
+    // Nor can one be moved onto a purlis pool's objects once made.
+    let moved = |reference: &str, name: &str| {
+        Patch::Merge(serde_json::json!({ "spec": { reference: { "name": name } } }))
+    };
+    refused_in_words(
+        "an upstream claim moved onto a purlis warm pool",
+        upstream_claims
+            .patch(
+                &theirs_claim.name_any(),
+                &PatchParams::default(),
+                &moved("warmPoolRef", &ours),
+            )
+            .await,
+        "are claimed with a Claim",
+    );
+    refused_in_words(
+        "a warm pool moved onto a purlis template",
+        warm_pools
+            .patch(
+                &theirs.name_any(),
+                &PatchParams::default(),
+                &moved("sandboxTemplateRef", &ours),
+            )
+            .await,
+        "are claimed with a Claim",
+    );
+
+    // And what the operator made for a Claim cannot be moved off a purlis pool's objects.
+    let pools = Api::<Pool>::all(client.clone());
+    let pool = Pool::new(
+        "e2e-direct",
+        PoolSpec {
+            image: runner_image(),
+        },
+    );
+    pools
+        .patch(
+            "e2e-direct",
+            &PatchParams::apply("e2e").force(),
+            &Patch::Apply(&pool),
+        )
+        .await
+        .expect("the pool");
+    Api::<Claim>::namespaced(client.clone(), &scratch.name)
+        .create(&PostParams::default(), &claim("ada-1", "e2e-direct"))
+        .await
+        .expect("the claim");
+    eventually(
+        "the operator asks upstream for the claim's runner",
+        Duration::from_secs(120),
+        || async {
+            let claim = upstream_claims.get("ada-1").await.ok()?;
+            let warm_pool = warm_pools.get(&ours).await.ok()?;
+            (claim.spec.warm_pool_ref.name == ours
+                && warm_pool.spec.sandbox_template_ref.name == ours)
+                .then_some(())
+        },
+    )
+    .await;
+    refused_in_words(
+        "the operator's upstream claim moved off its warm pool",
+        upstream_claims
+            .patch(
+                "ada-1",
+                &PatchParams::default(),
+                &moved("warmPoolRef", "a-team-pool"),
+            )
+            .await,
+        "are claimed with a Claim",
+    );
+    refused_in_words(
+        "the operator's warm pool moved off its template",
+        warm_pools
+            .patch(
+                &ours,
+                &PatchParams::default(),
+                &moved("sandboxTemplateRef", "a-team-template"),
+            )
+            .await,
+        "are claimed with a Claim",
+    );
+    let _ = pools.delete("e2e-direct", &DeleteParams::default()).await;
+    scratch.end().await;
+}
+
 /// Whether the operator has asked upstream for a runner for any claim in `namespace`.
 async fn upstream_claims_in(client: &Client, namespace: &str) -> usize {
     Api::<purlis_cluster_operator::upstream::SandboxClaim>::namespaced(client.clone(), namespace)

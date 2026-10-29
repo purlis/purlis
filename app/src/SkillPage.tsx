@@ -51,6 +51,7 @@ import { Menu, MenuItem, MenuTrigger, MenuWords } from "./ui/menu/Menu";
 import { ViewPageHeader } from "./ui/panel/ViewFrame";
 import { PageTabs, type PageTab } from "./ui/tabs/PageTabs";
 import { SkillCompatBadges } from "./SkillCompatBadges";
+import { MAKE_MY_OWN_COPY } from "./SkillCopy";
 import {
   SkillHistory,
   SkillUses,
@@ -395,6 +396,7 @@ export function SkillPage({
   onMove,
   onDelete,
   onPersona,
+  onCopy,
   offerFor,
   onPress,
   onOpenView,
@@ -422,6 +424,8 @@ export function SkillPage({
   onMove: (level: SkillLevel) => void;
   onDelete: (level: SkillLevel) => void;
   onPersona: (who: string, written: string, how: "add" | "remove") => void;
+  /** Make my own copy, of a built-in skill (#3686): the studio's dialog. */
+  onCopy?: () => void;
   /** The catalogue, for the ways out its Runs offer (a new chat where it has none). */
   offerFor?: (id: string) => Offer | undefined;
   onPress?: (offer: Offer) => void;
@@ -563,6 +567,12 @@ export function SkillPage({
       >
         Use in this chat
       </Button>
+      {/* A built-in skill is never edited or replaced: the person makes their own (S12). */}
+      {builtIn && onCopy !== undefined && (
+        <Button isDisabled={busy} onPress={onCopy}>
+          {`${MAKE_MY_OWN_COPY}…`}
+        </Button>
+      )}
       {level !== null && (
         <>
           <Button

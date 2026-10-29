@@ -2540,6 +2540,21 @@ fn the_shipped_names_are_the_bundles_skills() {
     }
 }
 
+/// #3686: Make my own copy copies a built-in skill's `SKILL.md` alone, so every built-in skill
+/// is that one file. One that ships more files makes the copy carry them first.
+#[test]
+fn each_built_in_skill_is_its_skill_md_alone() {
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
+    for skill in crate::skills::read(&bundle) {
+        let folder = skill.path.parent().unwrap();
+        let held: Vec<String> = std::fs::read_dir(folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(held, ["SKILL.md"], "{}", skill.name);
+    }
+}
+
 #[test]
 fn a_built_in_skills_name_is_reserved_with_or_without_a_bundle() {
     let bundle = tempfile::tempdir().unwrap();

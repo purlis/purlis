@@ -206,10 +206,10 @@ mod workspace_remove_clears_only_its_own_exclude_lines;
 /// Set on the child [`alone`] starts.
 const ALONE: &str = "CORE_TEST_ALONE";
 
-/// For a test that changes what its whole process shares: the working directory, a resource
-/// limit, the forge sign-ins handed over, the mark that this process is the app. Whether it has
-/// just been run again in a process of its own, so that the caller has nothing left to do and
-/// returns.
+/// For a test that changes or measures what its whole process shares: the working directory, a
+/// resource limit, the forge sign-ins handed over, the mark that this process is the app, what the
+/// process holds in memory. Whether it has just been run again in a process of its own, so that
+/// the caller has nothing left to do and returns.
 ///
 /// Each of those tests was a binary of its own until #3613. nextest already runs every test in a
 /// process of its own, so there this answers `false` at once; `cargo test` runs this binary's

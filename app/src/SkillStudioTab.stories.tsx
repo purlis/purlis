@@ -147,10 +147,13 @@ export const Wide: Story = {
       "aria-current",
       "page",
     );
-    // Nothing wraps into a tall row: every row is the same height, its line under its name.
+    // Nothing wraps into a tall row: every skill's row is the same height, its line under its
+    // name. The built-in skills' quiet line is a row of its own, drawn lower (#3686).
     const heights = within(grid)
       .getAllByRole("row")
+      .filter((row) => !row.hasAttribute("data-fold"))
       .map((row) => Math.round(row.getBoundingClientRect().height));
+    await expect(heights.length).toBeGreaterThan(1);
     await expect(new Set(heights).size).toBe(1);
 
     await tabInto(() => canvas.getByRole("grid", { name: "Skills" }));
