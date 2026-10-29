@@ -162,29 +162,30 @@ export function moveChanges(
 
 /** Who uses the skill `name` at `level`, read as the dialog opens: the answer, or why not. */
 function useUsers(plane: string, level: SkillLevel, name: string) {
-  const [read, setRead] = useState<{ users?: SkillUsers; refused?: string }>({});
   const [asked, setAsked] = useState(0);
-  const key = `${levelKey(level)}\n${name}`;
+  const key = `${plane}\n${levelKey(level)}\n${name}\n${asked}`;
+  // What was read for another ask is not this one's: none until this one's is.
+  const [read, setRead] = useState<{ key: string; users?: SkillUsers; refused?: string }>();
   useEffect(() => {
     let live = true;
-    setRead({});
     void commands
       .skillUsers(plane, level, name)
       .then((answer) => {
         if (!live) return;
-        if (answer.status === "ok") setRead({ users: answer.data });
-        else setRead({ refused: answer.error });
+        if (answer.status === "ok") setRead({ key, users: answer.data });
+        else setRead({ key, refused: answer.error });
       })
       .catch((err: unknown) => {
-        if (live) setRead({ refused: String(err) });
+        if (live) setRead({ key, refused: String(err) });
       });
     return () => {
       live = false;
     };
     // `level` is read by its key: a new object of the same level is not a new read.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plane, key, asked]);
-  return { ...read, again: () => setAsked((n) => n + 1) };
+  }, [key]);
+  const now = read?.key === key ? read : undefined;
+  return { users: now?.users, refused: now?.refused, again: () => setAsked((n) => n + 1) };
 }
 
 /** A list of what the dialog says changes, under its heading, or the read on its way or failed. */
