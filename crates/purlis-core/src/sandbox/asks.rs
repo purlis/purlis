@@ -197,19 +197,27 @@ impl Asks {
         let named = host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase();
         let target = host_and_port(&named, port);
         let parsed = Host::parse(&target).ok();
-        // Allowed already, since the chat started: on at once, and carried from now on.
-        if let (Some(known), Some(host)) = (&self.known, &parsed)
-            && let Some(by) = known(host)
-        {
-            self.allow(host, by);
-            return Answer::Allowed(by);
-        }
+        // Read before the board is held: it reads files.
+        let known = match (&self.known, &parsed) {
+            (Some(known), Some(host)) => known(host),
+            _ => None,
+        };
         let mut state = self.state();
         if let Some(by) = allowed_in(&state, &named, port, defaults) {
             return Answer::Allowed(by);
         }
+        // The person's Keep blocked for this chat holds even for a host allowed already: the
+        // later answer wins.
         if kept_blocked(&state, parsed.as_ref(), &named, port) {
             return Answer::Refused;
+        }
+        // Allowed already, since the chat started: on at once, and carried from now on. Kept
+        // under the same hold, so a Keep blocked cannot come between.
+        if let (Some(by), Some(host)) = (known, &parsed) {
+            allow_in(&mut state, host, by);
+            drop(state);
+            self.changed.notify_all();
+            return Answer::Allowed(by);
         }
         if state.holding >= MOST_HELD {
             return Answer::Busy;
@@ -286,29 +294,7 @@ impl Asks {
     /// covers goes on now, and every later one is carried. Answers the hosts and ports that were
     /// held and gave up before this Allow, once each, which the chat is told to retry.
     pub fn allow(&self, host: &Host, by: By) -> Vec<String> {
-        let mut state = self.state();
-        let entry = host.to_string();
-        if !state
-            .live
-            .iter()
-            .any(|(one, kept)| *one == entry && *kept == by)
-        {
-            state.live.push((entry, by));
-            if state.live.len() > MOST_KEPT {
-                state.live.remove(0);
-            }
-        }
-        state.blocked.retain(|one| !host.covers(one));
-        let covered = |target: &String| Host::parse(target).is_ok_and(|one| host.covers(&one));
-        let retry: Vec<String> = state
-            .gave_up
-            .iter()
-            .filter(|t| covered(t))
-            .cloned()
-            .collect();
-        state.gave_up.retain(|target| !covered(target));
-        state.asked.retain(|target| !covered(target));
-        drop(state);
+        let retry = allow_in(&mut self.state(), host, by);
         self.changed.notify_all();
         retry
     }
@@ -341,12 +327,14 @@ impl Asks {
     /// **The person kept `host` blocked**, from the window: what is held on it is refused now,
     /// and so is every later connection to it, until an Allow. The later answer wins: an
     /// earlier live Allow on this board of a host it covers, or that covers it, ends with it,
-    /// as [`Self::allow`] ends a Keep blocked it covers.
-    pub fn keep_blocked(&self, host: &Host) {
+    /// as [`Self::allow`] ends a Keep blocked it covers. Whether it ended one.
+    pub fn keep_blocked(&self, host: &Host) -> bool {
         let mut state = self.state();
+        let before = state.live.len();
         state.live.retain(|(entry, _)| {
             Host::parse(entry).is_ok_and(|allowed| !host.covers(&allowed) && !allowed.covers(host))
         });
+        let ended = state.live.len() != before;
         if !state.blocked.contains(host) {
             state.blocked.push(host.clone());
             if state.blocked.len() > MOST_KEPT {
@@ -358,6 +346,7 @@ impl Asks {
         state.asked.retain(other);
         drop(state);
         self.changed.notify_all();
+        ended
     }
 
     /// The hosts allowed live on this board, as a grant writes each, with the scope each was
@@ -416,6 +405,34 @@ pub fn asks_about_among(asked: &[String], host: &Host) -> bool {
     asked
         .iter()
         .any(|target| Host::parse(target).is_ok_and(|one| host.covers(&one)))
+}
+
+/// **`host` allowed live at scope `by` in `state`** ([`Asks::allow`]): a Keep blocked it covers
+/// ends, and the hosts and ports held connections gave up on that it covers are answered, once
+/// each, for the chat to retry.
+fn allow_in(state: &mut State, host: &Host, by: By) -> Vec<String> {
+    let entry = host.to_string();
+    if !state
+        .live
+        .iter()
+        .any(|(one, kept)| *one == entry && *kept == by)
+    {
+        state.live.push((entry, by));
+        if state.live.len() > MOST_KEPT {
+            state.live.remove(0);
+        }
+    }
+    state.blocked.retain(|one| !host.covers(one));
+    let covered = |target: &String| Host::parse(target).is_ok_and(|one| host.covers(&one));
+    let retry: Vec<String> = state
+        .gave_up
+        .iter()
+        .filter(|t| covered(t))
+        .cloned()
+        .collect();
+    state.gave_up.retain(|target| !covered(target));
+    state.asked.retain(|target| !covered(target));
+    retry
 }
 
 /// The scope a live Allow in `state` carries `host` on `port` at.

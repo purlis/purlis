@@ -176,6 +176,7 @@ fn pool() -> Pool {
         PoolSpec {
             image: IMAGE.to_owned(),
             kept_volume: Default::default(),
+            stopped: false,
         },
     )
 }
@@ -324,6 +325,7 @@ fn a_pod_differing_from_the_template_in_anything_that_decides_what_runs_is_never
         PoolSpec {
             image: "ghcr.io/purlis/purlis-runner@sha256:3333333333333333333333333333333333333333333333333333333333333333".into(),
             kept_volume: Default::default(),
+            stopped: false,
         },
     );
     assert!(matches!(
@@ -619,6 +621,7 @@ fn claim() -> Claim {
             pool: "team".into(),
             requester: "ada@example.com".into(),
             kept: false,
+            stopped: false,
         },
     );
     claim.metadata.namespace = Some("ada".into());
@@ -1184,6 +1187,73 @@ fn the_mounted_keys_are_read_again_as_a_team_admin_rolls_them() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A folder as a kubelet mounts a Secret: each version in a folder of its own, `..data` linked
+/// to the current one, and each key a link through `..data`.
+#[cfg(unix)]
+fn kubelet_mounted(name: &str, version: &str, files: &[(&str, String)]) -> std::path::PathBuf {
+    let dir = mounted(name, &[]);
+    kubelet_writes(&dir, version, files);
+    for file in ["key.pem", "next.pem"] {
+        std::os::unix::fs::symlink(format!("..data/{file}"), dir.join(file)).unwrap();
+    }
+    dir
+}
+
+/// A new version of the Secret, written as the kubelet writes it: its own folder, then
+/// `..data` swapped to it in one rename.
+#[cfg(unix)]
+fn kubelet_writes(dir: &std::path::Path, version: &str, files: &[(&str, String)]) {
+    let folder = dir.join(version);
+    std::fs::create_dir_all(&folder).unwrap();
+    for (file, text) in files {
+        std::fs::write(folder.join(file), text).unwrap();
+    }
+    let staged = dir.join("..data_tmp");
+    let _ = std::fs::remove_file(&staged);
+    std::os::unix::fs::symlink(version, &staged).unwrap();
+    std::fs::rename(&staged, dir.join(vouch::KUBELET_DATA)).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn both_keys_are_read_from_one_version_of_the_secret_as_the_kubelet_swaps_it() {
+    let (key, next) = (
+        pem_of(&the_examples_key()),
+        pem_of(&the_examples_next_key()),
+    );
+    let dir = kubelet_mounted(
+        "snapshot",
+        "..2026_10_29_01",
+        &[("key.pem", key.clone()), ("next.pem", next.clone())],
+    );
+    let keys = MountedKeys::read(&dir).expect("the keys");
+    assert_eq!(
+        keys.now().next.as_ref().map(SigningKey::public).as_deref(),
+        Some(fixture("next-operator-key.txt").trim())
+    );
+    // The roll over, swapped in one step: the new key alone.
+    kubelet_writes(&dir, "..2026_10_29_02", &[("key.pem", next.clone())]);
+    let now = keys.now();
+    assert_eq!(
+        now.current.public(),
+        fixture("next-operator-key.txt").trim()
+    );
+    assert!(now.next.is_none());
+    // Both read under the version `..data` names, never through the folder's own links: a
+    // folder whose links say otherwise is read as `..data` says.
+    std::fs::remove_file(dir.join("key.pem")).unwrap();
+    std::fs::write(dir.join("key.pem"), &key).unwrap();
+    std::fs::remove_file(dir.join("next.pem")).unwrap();
+    std::fs::write(dir.join("next.pem"), &key).unwrap();
+    let now = keys.now();
+    assert_eq!(
+        now.current.public(),
+        fixture("next-operator-key.txt").trim()
+    );
+    assert!(now.next.is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn an_operator_starts_only_with_a_key_and_a_next_key_it_reads() {
     let key = pem_of(&the_examples_key());
@@ -1604,4 +1674,65 @@ fn a_statement_holds_ten_minutes_and_is_signed_again_in_its_last_five() {
         at(NOW + 10, &claim).link_key(),
         claim.status.as_ref().unwrap().link_key
     );
+}
+
+/// **An adopted warm runner's pod is found the way upstream records it** (#2058, from #2056):
+/// by the name its sandbox's `agents.x-k8s.io/pod-name` annotation gives, where a sandbox
+/// adopted before upstream's warm pool made whole sandboxes carries one, and by the sandbox's own
+/// name otherwise. The pod must still be the one that sandbox controls, of the pool's template.
+#[test]
+fn an_adopted_runners_pod_is_found_by_the_name_its_sandbox_records() {
+    let upstream = upstream_claim("ada-1");
+    let plain = sandbox(UPSTREAM_UID);
+    assert_eq!(vouch::pod_name_of(&plain), "ada-1");
+    let mut recorded = sandbox(UPSTREAM_UID);
+    recorded.annotations = Some(
+        [(
+            vouch::POD_NAME_ANNOTATION.to_owned(),
+            "warm-7x2k".to_owned(),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    assert_eq!(vouch::POD_NAME_ANNOTATION, "agents.x-k8s.io/pod-name");
+    assert_eq!(vouch::pod_name_of(&recorded), "warm-7x2k");
+    // An empty annotation names no pod: the sandbox's own name holds, as upstream reads it.
+    let mut empty = sandbox(UPSTREAM_UID);
+    empty.annotations = Some(
+        [(vouch::POD_NAME_ANNOTATION.to_owned(), String::new())]
+            .into_iter()
+            .collect(),
+    );
+    assert_eq!(vouch::pod_name_of(&empty), "ada-1");
+
+    let mut adopted = runner_pod(the_sandboxes());
+    adopted.metadata.name = Some("warm-7x2k".into());
+    let Vouching::Vouched(link_key) = vouching(&upstream, Some(&recorded), Some(&adopted), None)
+    else {
+        panic!("the adopted pod is not vouched for");
+    };
+    assert!(link_key.statement.contains("pod: warm-7x2k\n"));
+    // A pod of another name than the one recorded is never vouched for, even the sandbox's own.
+    let named_as_the_sandbox = runner_pod(the_sandboxes());
+    assert!(matches!(
+        vouching(
+            &upstream,
+            Some(&recorded),
+            Some(&named_as_the_sandbox),
+            None
+        ),
+        Vouching::Refused(_)
+    ));
+    // And the recorded pod must be the one the sandbox controls.
+    let mut squatted = runner_pod(owned_by(
+        "Sandbox",
+        "agents.x-k8s.io/v1beta1",
+        "ada-1",
+        POD_UID,
+    ));
+    squatted.metadata.name = Some("warm-7x2k".into());
+    assert!(matches!(
+        vouching(&upstream, Some(&recorded), Some(&squatted), None),
+        Vouching::Refused(_)
+    ));
 }

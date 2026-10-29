@@ -381,6 +381,9 @@ pub const PAIRS: &[Pair] = &[
     //   own ground it is ringed in, on a chip at rest, under the pointer and chosen alike; its
     //   shape on that fill is held below (`surface.base` on `accent.base`).
     p("accent.base", "surface.deep", 3.0),
+    // - A warning's dot (#3649): the waiting amber, told apart from the same ground; its
+    //   triangle on it is `surface.base` on `state.waiting`, held among the marks above.
+    p("state.waiting", "surface.deep", 3.0),
     // - The update pill's words in the accent's words on the accent's surface (#3177).
     p("accent.text", "accent.surface", TEXT),
     // - What an extension runs as you, said inside its approval dialog on the danger wash.
@@ -778,6 +781,9 @@ pub const PAIRS: &[Pair] = &[
     // A ticked box, a picked radio and a switch that is on (#2907): the tick, the dot and the
     // thumb in the window's colour on the accent's fill, a mark held to 3:1.
     p("surface.base", "accent.base", 3.0),
+    // A warning's notice dot (#3649): its triangle in the window's colour on the waiting amber, a
+    // mark held to 3:1.
+    p("surface.base", "state.waiting", 3.0),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.

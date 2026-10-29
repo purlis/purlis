@@ -25,18 +25,37 @@ export function copyNameOf(name: string): string {
   return `my-${name}`;
 }
 
+/** What the copy's description starts as (#3777): the built-in's, with a note that it is the
+ *  person's copy, so a chat that gets both, and a router, can tell the two apart. */
+export function copyDescriptionOf(name: string, description: string): string {
+  return `${description.trim()} (your copy of ${name})`;
+}
+
+/** Why the copy cannot keep the built-in's description word for word: the core's own sentence
+ *  (`skills::verbs::copy_built_in`), said here before the copy is asked for. */
+export function sameDescription(name: string): string {
+  return `the copy's description is ${name}'s word for word, so a chat could not tell them apart: say what your copy does differently`;
+}
+
 /**
  * **Make my own copy** (#3686, spec #3679 S12): a built-in skill copied to a skill level the
  * person picks, under a new name, as a skill of their own to edit. The built-in skill stays as it
  * is, and chats keep getting it beside the copy: a built-in skill is never replaced.
  *
  * A dialog, as a short choice is (S2): which built-in (where it was opened from the folded line,
- * not from one built-in's page), the new name, and where it lands. A name a built-in skill has is
- * refused as it is typed, in the core's words, and the core refuses it again when asked; what
- * the core refuses is said in place, beside the fields the person is still filling.
+ * not from one built-in's page), the new name, its description, and where it lands. A name a
+ * built-in skill has is refused as it is typed, in the core's words, and the core refuses it
+ * again when asked; what the core refuses is said in place, beside the fields the person is still
+ * filling.
+ *
+ * **The description is the copy's own** (#3777): a chat gets the copy beside the built-in, and
+ * two skills described alike cannot be told apart by it or by a router. It starts as the
+ * built-in's with a note that it is the person's copy, to be edited into what the copy does
+ * differently; the built-in's word for word is refused as it is typed, and by the core.
  */
 export function SkillCopy({
   builtIns,
+  descriptionOf,
   from,
   levels,
   start,
@@ -49,6 +68,8 @@ export function SkillCopy({
   /** Every built-in skill's name, in its order: what a copy can be made of, and the names it
    *  cannot take. */
   builtIns: readonly string[];
+  /** A built-in skill's description, which the copy's starts from. */
+  descriptionOf: (name: string) => string;
   /** The built-in it copies, where it was opened on one; else the person picks. */
   from?: string;
   /** The levels the copy can land at, by the core's words. */
@@ -60,16 +81,22 @@ export function SkillCopy({
   refused?: string;
   /** A field changed: a refusal of what was asked before no longer stands beside it. */
   onEdit: () => void;
-  onCopy: (name: string, level: SkillLevel, to: string) => void;
+  onCopy: (name: string, level: SkillLevel, to: string, description: string) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(from ?? builtIns[0] ?? "");
   const [to, setTo] = useState(copyNameOf(from ?? builtIns[0] ?? ""));
   const [toTyped, setToTyped] = useState(false);
+  const [description, setDescription] = useState(() =>
+    copyDescriptionOf(from ?? builtIns[0] ?? "", descriptionOf(from ?? builtIns[0] ?? "")),
+  );
+  const [descriptionTyped, setDescriptionTyped] = useState(false);
   const [level, setLevel] = useState<SkillLevel>(start);
   const wanted = to.trim();
   const reserved = builtIns.includes(wanted);
-  const ready = !busy && name !== "" && wanted !== "" && !reserved;
+  const describedAs = description.trim();
+  const same = name !== "" && describedAs === descriptionOf(name).trim();
+  const ready = !busy && name !== "" && wanted !== "" && !reserved && describedAs !== "" && !same;
   const levelPicker = picking(
     levels.map((one) => one.level),
     (one) => labelOf(levels, one),
@@ -96,7 +123,7 @@ export function SkillCopy({
         reserve: ["Make the copy", "Copying…"],
         isDisabled: !ready,
         onPress: () => {
-          if (ready) onCopy(name, level, wanted);
+          if (ready) onCopy(name, level, wanted, describedAs);
         },
       }}
       data-testid="skill-copy"
@@ -113,6 +140,7 @@ export function SkillCopy({
               onValueChange={(next) => {
                 setName(next);
                 if (!toTyped) setTo(copyNameOf(next));
+                if (!descriptionTyped) setDescription(copyDescriptionOf(next, descriptionOf(next)));
                 onEdit();
               }}
             />
@@ -138,6 +166,27 @@ export function SkillCopy({
       {reserved && (
         <p className="trouble" role="alert" data-testid="skill-copy-reserved">
           {NAME_RESERVED}
+        </p>
+      )}
+      <SettingRow
+        label="What it does and when to use it"
+        help={`One line: a chat reads it to know when the skill applies. Say how yours differs from ${name === "" ? "the built-in skill" : name}.`}
+        control={(ids) => (
+          <Field
+            kind="text"
+            ids={ids}
+            value={description}
+            onChange={(next) => {
+              setDescription(next);
+              setDescriptionTyped(true);
+              onEdit();
+            }}
+          />
+        )}
+      />
+      {same && (
+        <p className="trouble" role="alert" data-testid="skill-copy-same-description">
+          {sameDescription(name)}
         </p>
       )}
       <SettingRow

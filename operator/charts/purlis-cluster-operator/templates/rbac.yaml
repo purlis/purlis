@@ -35,10 +35,12 @@ rules:
     resources: [pods]
     verbs: [get]
   # The sandbox upstream made for a claim, read by its name, so a claim is followed to its pod
-  # by uid: the sandbox is the upstream claim's, and the pod the sandbox's.
+  # by uid: the sandbox is the upstream claim's, and the pod the sandbox's. Patched in its
+  # operating mode, to suspend a stopped claim's runner and run it again (#2058): RBAC cannot
+  # narrow this to that field, so the policy in sandbox-policy.yaml (policy.yaml) does.
   - apiGroups: [agents.x-k8s.io]
     resources: [sandboxes]
-    verbs: [get]
+    verbs: [get, patch]
   # The policies' bindings, by name only: the operator acts only on Claims admitted under the
   # policy on Claims, and in runner namespaces made under the policy on runner namespaces.
   - apiGroups: [admissionregistration.k8s.io]

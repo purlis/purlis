@@ -208,6 +208,15 @@ impl ServerHandler for Server {
         if name == chattools::DISPATCH {
             return Ok(done(blocking(move || dispatch(&args)).await));
         }
+        if name == chattools::WORKTREE_UPDATE {
+            return Ok(done(
+                blocking(move || {
+                    let step = chattools::worktree_update_args(&args)?;
+                    crate::piece::update_by_the_app(&crate::Here::read()?, &step)
+                })
+                .await,
+            ));
+        }
         if name == chattools::DISPATCH_LIST {
             return Ok(done(
                 blocking(|| crate::dispatch::list().map_err(|why| in_the_chat(&why))).await,

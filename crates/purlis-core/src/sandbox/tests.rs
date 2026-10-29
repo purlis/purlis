@@ -611,11 +611,7 @@ fn a_chat_never_reads_or_writes_any_chats_hook_spool_or_its_keys() {
                 .iter()
                 .find(|folder| file.starts_with(folder))
                 .expect("held above");
-            for named in both_firmlink_names(super::real(folder)) {
-                let rule = format!(
-                    "(deny file-read* file-write* file-link (subpath \"{}\"))",
-                    named.display()
-                );
+            for rule in held_rules(folder, Access::ReadWrite, os == Os::MacOs) {
                 assert!(profile.contains(&rule), "{rule} missing:\n{profile}");
             }
         }
@@ -683,11 +679,7 @@ fn every_harness_denies_a_chat_reading_or_writing_the_dispatch_records() {
     )
     .expect("a profile");
     for store in &stores {
-        for named in both_firmlink_names(super::real(store)) {
-            let rule = format!(
-                "(deny file-read* file-write* file-link (subpath \"{}\"))",
-                named.display()
-            );
+        for rule in held_rules(store, Access::ReadWrite, true) {
             assert!(profile.contains(&rule), "{rule} missing:\n{profile}");
         }
     }
@@ -1014,11 +1006,10 @@ fn every_harness_denies_a_chat_writing_the_persons_harness_approvals_or_the_decl
                 )
                 .expect("a profile");
                 for path in &held {
-                    for named in both_firmlink_names(super::real(path)) {
-                        let rule = format!(
-                            "(deny file-write* file-link (subpath \"{}\"))",
-                            named.display()
-                        );
+                    // What is in the state folder is held in every case on macOS.
+                    let in_state = path.starts_with(plane.path().join(".charter"))
+                        || path.starts_with(plane.path().join(".purlis"));
+                    for rule in held_rules(path, Access::Write, in_state) {
                         assert!(profile.contains(&rule), "{harness:?}: {rule} missing");
                     }
                 }
@@ -1177,6 +1168,273 @@ fn every_harness_denies_a_chat_writing_the_skill_studio_s_records() {
                                     !done(what, &below, Kind::Regular),
                                     "{harness:?} on {os:?}: {what:?} of {}",
                                     below.display()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(compiled_harnesses, 3, "Claude Code, Codex and opencode");
+}
+
+/// The Seatbelt rules that hold `path` with what is below it: under every spelling of its name
+/// where `any_case`, as macOS holds everything in the state folder ([`kept_by_purlis`]), and as
+/// spelled where not.
+fn held_rules(path: &std::path::Path, access: Access, any_case: bool) -> Vec<String> {
+    seatbelt::denial_rules(&Denial {
+        class: Class::Integrity,
+        path: path.to_path_buf(),
+        access,
+        named: None,
+        reach: Reach::AndBelow,
+        any_case,
+    })
+    .expect("rules")
+}
+
+/// purlis's older records in the state folder, as written out, each held from a chat's writes:
+/// the app's own folder, the theme drafts, what skill deletes keep, the reports waiting for a
+/// chat, the person's approvals and every chat's settings file.
+const STATE_RECORDS: [&str; 9] = [
+    "app",
+    "theme-drafts",
+    "skills-deleted",
+    "skills-deleting",
+    "handbacks",
+    "harness-profiles-launched.json",
+    "harness-declarations-approved.json",
+    "mcp-approved.json",
+    "chat-settings",
+];
+
+/// Those of [`STATE_RECORDS`] held where `$PURLIS_HOME` puts the state folder too.
+const STATE_RECORDS_IN_PURLIS_HOME: [&str; 5] = [
+    "theme-drafts",
+    "skills-deleted",
+    "skills-deleting",
+    "mcp-approved.json",
+    "chat-settings",
+];
+
+/// A machine of `os` whose `$PURLIS_HOME` is `state`, where one is given.
+fn machine_with_state(os: Os, state: Option<&str>) -> Machine {
+    let env: Vec<(&str, &str)> = state.map(|it| ("PURLIS_HOME", it)).into_iter().collect();
+    Machine {
+        env: crate::secrets::Env::of(&env),
+        home: Some(std::path::PathBuf::from("/home/op")),
+        os,
+    }
+}
+
+/// **Every row purlis holds for its own state is held under every spelling on macOS**, and as
+/// spelled on Linux, whose disks do not fold case: under both names of the state folder and
+/// where `$PURLIS_HOME` puts it, with what waits for a chat's next turn. On a case-folding disk
+/// a store not there yet is made under the name as typed, and purlis reads it under its own.
+#[test]
+fn every_row_purlis_holds_for_its_own_state_is_held_in_every_case_on_macos() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::create_dir(plane.path().join(".purlis")).expect("a state folder");
+    let elsewhere = plane.path().join("state-home");
+    let elsewhere_named = elsewhere.display().to_string();
+    for purlis_home in [None, Some(elsewhere_named.as_str())] {
+        let mut states: Vec<std::path::PathBuf> = [".charter", ".purlis"]
+            .iter()
+            .map(|state| plane.path().join(state))
+            .collect();
+        if purlis_home.is_some() {
+            states.push(elsewhere.clone());
+        }
+        for os in [Os::MacOs, Os::Linux] {
+            let machine = machine_with_state(os, purlis_home);
+            let denied = Denied::of(plane.path(), &machine).and_what_waits_for_a_chat(plane.path());
+            let held: Vec<&Denial> = denied
+                .paths
+                .iter()
+                .filter(|it| states.iter().any(|state| it.path.starts_with(state)))
+                .collect();
+            for state in &states[..2] {
+                for record in STATE_RECORDS {
+                    let path = state.join(record);
+                    assert!(
+                        held.iter().any(|it| it.path == path),
+                        "{} is not held",
+                        path.display()
+                    );
+                }
+            }
+            if purlis_home.is_some() {
+                for record in STATE_RECORDS_IN_PURLIS_HOME {
+                    let path = elsewhere.join(record);
+                    assert!(
+                        held.iter().any(|it| it.path == path),
+                        "{} is not held",
+                        path.display()
+                    );
+                }
+            }
+            for denial in &held {
+                if os == Os::MacOs {
+                    assert!(
+                        denial.any_case,
+                        "on macOS {} is held only as spelled",
+                        denial.path.display()
+                    );
+                } else if denial.reach == Reach::AndBelow {
+                    assert!(
+                        !denial.any_case,
+                        "on Linux {} is held in every case",
+                        denial.path.display()
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The same, as every harness's compiled sandbox holds it: **no chat makes one of purlis's
+/// older state records under another spelling of its name on macOS**, nor the state folder
+/// that is not there yet. Codex's and opencode's profile is read by the Linux supervisor's own
+/// reading of it, on macOS and on Linux; Claude Code's denials name each in either case.
+#[test]
+fn every_harness_denies_a_chat_making_purlis_s_state_records_under_another_spelling() {
+    let plane = tempfile::tempdir().expect("a plane");
+    // `.purlis` is there and `.charter` is not, so both kinds of state folder are held.
+    std::fs::create_dir(plane.path().join(".purlis")).expect("a state folder");
+    let elsewhere = plane.path().join("state-home");
+    let elsewhere_named = elsewhere.display().to_string();
+    let mut records: Vec<std::path::PathBuf> = [".charter", ".purlis"]
+        .iter()
+        .flat_map(|state| STATE_RECORDS.map(|record| plane.path().join(state).join(record)))
+        .collect();
+    records.extend(STATE_RECORDS_IN_PURLIS_HOME.map(|record| elsewhere.join(record)));
+    // Each record under the name as written and with its own name in upper case, and, for the
+    // state folder that is not there, with the folder's name in upper case too.
+    let spellings = |path: &std::path::Path| -> Vec<std::path::PathBuf> {
+        let name = path.file_name().expect("a name").to_string_lossy();
+        let mut out = vec![path.to_path_buf(), path.with_file_name(name.to_uppercase())];
+        if path.parent().and_then(std::path::Path::file_name) == Some(".charter".as_ref()) {
+            out.push(plane.path().join(".CHARTER").join(&*name));
+        }
+        out
+    };
+
+    let mut compiled_harnesses = 0;
+    for harness in Harness::ALL {
+        if compiler(harness).is_none() {
+            continue;
+        }
+        compiled_harnesses += 1;
+        for os in [Os::MacOs, Os::Linux] {
+            let applied = applied_for(
+                harness,
+                &policy_of(&[], false),
+                &Plane::of(None),
+                plane.path(),
+                &machine_with_state(os, Some(&elsewhere_named)),
+            )
+            .expect("compiles");
+            match applied.form() {
+                // Claude Code: its own sandbox's write denials, and its file tools', each in
+                // either case on macOS.
+                Form::ClaudeCode(settings) => {
+                    if os != Os::MacOs {
+                        continue;
+                    }
+                    let deny_write: Vec<&str> = settings.sandbox["filesystem"]["denyWrite"]
+                        .as_array()
+                        .expect("a list")
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .collect();
+                    for path in &records {
+                        let cased = claude::either_case(&super::real(path).display().to_string());
+                        assert!(deny_write.contains(&cased.as_str()), "{cased} missing");
+                        assert!(
+                            settings.deny.contains(&format!("Edit(/{cased}/**)")),
+                            "Edit(/{cased}/**) missing"
+                        );
+                    }
+                    // What waits for a chat's next turn is kept from its reads too, in either
+                    // case: its hooks run outside its sandbox.
+                    let deny_read: Vec<&str> = settings.sandbox["filesystem"]["denyRead"]
+                        .as_array()
+                        .expect("a list")
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .collect();
+                    for state in [".charter", ".purlis"] {
+                        let path = super::real(&plane.path().join(state).join("handbacks"));
+                        let cased = claude::either_case(&path.display().to_string());
+                        assert!(deny_read.contains(&cased.as_str()), "{cased} read");
+                        assert!(
+                            settings.deny.contains(&format!("Read(/{cased}/**)")),
+                            "Read(/{cased}/**) missing"
+                        );
+                    }
+                }
+                Form::Codex(_) | Form::Opencode(_) => {
+                    let profile = seatbelt::profile(
+                        applied.form().denied().expect("a wrap"),
+                        &seatbelt::Own::default(),
+                        plane.path(),
+                        std::path::Path::new("/private/tmp/chat"),
+                        &[4040],
+                        None,
+                    )
+                    .expect("a profile");
+                    let read = purlis_linux_sandbox::profile::Profile::parse(&profile)
+                        .expect("read whole");
+                    use purlis_linux_sandbox::profile::{FileOp, Kind};
+                    let done = |what, path: &std::path::Path, kind| {
+                        read.allows(&purlis_linux_sandbox::profile::Op::File { what, path, kind })
+                    };
+                    // The chat writes the project as it did.
+                    assert!(done(
+                        FileOp::Create,
+                        &super::real(plane.path()).join("notes.txt"),
+                        Kind::Regular
+                    ));
+                    for record in &records {
+                        let record = super::real(record);
+                        let held = if os == Os::MacOs {
+                            spellings(&record)
+                        } else {
+                            vec![record.clone()]
+                        };
+                        for path in &held {
+                            for kind in [Kind::Directory, Kind::Regular] {
+                                assert!(
+                                    !done(FileOp::Create, path, kind),
+                                    "{harness:?} on {os:?}: {kind:?} made at {}",
+                                    path.display()
+                                );
+                            }
+                            let below = path.join("01JZ0000000000000000000000.json");
+                            assert!(
+                                !done(FileOp::Create, &below, Kind::Regular),
+                                "{harness:?} on {os:?}: made {}",
+                                below.display()
+                            );
+                        }
+                    }
+                    // The app's own records, which it reads back as its own, under another
+                    // spelling of the app's folder on macOS.
+                    let app = super::real(&plane.path().join(".purlis")).join("app");
+                    let mut named = vec![app.clone()];
+                    if os == Os::MacOs {
+                        named.push(app.with_file_name("APP"));
+                        named.push(app.with_file_name("App"));
+                    }
+                    for app in named {
+                        for record in ["reopen.json", "app-state-id"] {
+                            let path = app.join(record);
+                            for what in [FileOp::Create, FileOp::WriteData] {
+                                assert!(
+                                    !done(what, &path, Kind::Regular),
+                                    "{harness:?} on {os:?}: {what:?} of {}",
+                                    path.display()
                                 );
                             }
                         }

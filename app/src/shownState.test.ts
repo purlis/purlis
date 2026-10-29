@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import type { OpenChat } from "./bindings";
+import type { OpenChat, OwnWork } from "./bindings";
+import { rankOf } from "./chatsList";
 import { rowFactsOf, shownState, taskFactsOf, type Facts, type TaskFacts } from "./shownState";
 import { taskBucketOf } from "./taskBuckets";
 import { TOKENS } from "./theme/theme";
@@ -375,5 +376,61 @@ describe("the four counts a session's tasks are summed into (#1488)", () => {
     expect(bucket({ board: "waiting", task: { ...OWED, asking: "steward 1" } })).toBe("working");
     expect(bucket({ board: "waiting", needsYou: true, task: OWED })).toBe("waiting");
     expect(bucket({ board: "waiting", task: OWED })).toBe("waiting");
+  });
+});
+
+describe("a chat whose turn has ended while work of its own is in flight (#3878)", () => {
+  const work = (more: Partial<OwnWork>): OwnWork => ({
+    helpers: 0,
+    workflows: 0,
+    monitors: 0,
+    shells: 0,
+    ...more,
+  });
+
+  it("says what it waits on, in the working colour and the hourglass, and raises no hand", () => {
+    expect(shownState(of({ board: "waiting", ownWork: work({ monitors: 2 }) }))).toMatchObject({
+      kind: "waiting-on-own-work",
+      word: "waiting on 2 monitors",
+      shape: "hourglass",
+      token: "state.running",
+    });
+    expect(said({ board: "waiting", ownWork: work({ helpers: 1, shells: 2 }) })).toBe(
+      "hourglass waiting on 1 helper and 2 background shells",
+    );
+    expect(
+      said({ board: "waiting", ownWork: work({ workflows: 1, monitors: 1, shells: 1 }) }),
+    ).toBe("hourglass waiting on 1 workflow, 1 monitor and 1 background shell");
+  });
+
+  it("says when its wake-up of its own is due, on the person's clock", () => {
+    const at = Date.UTC(2026, 9, 29, 10, 5) / 1000;
+    const clock = new Date(at * 1000).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    expect(said({ board: "waiting", ownWork: work({ wakes_at: at }) })).toBe(
+      `hourglass waiting on a wake-up at ${clock}`,
+    );
+    expect(said({ board: "waiting", ownWork: work({ monitors: 1, wakes_at: at }) })).toBe(
+      `hourglass waiting on 1 monitor and a wake-up at ${clock}`,
+    );
+  });
+
+  it("sits below needs you and waiting on its tasks, and is never idle", () => {
+    const own = work({ shells: 1 });
+    expect(said({ board: "waiting", needsYou: true, ownWork: own })).toBe("hand needs you");
+    expect(said({ board: "waiting", tasksAtWork: 2, ownWork: own })).toBe(
+      "hourglass waiting on 2 tasks",
+    );
+    expect(said({ board: "waiting", ownWork: own })).not.toBe("pause idle");
+    // Its next turn runs: working.
+    expect(said({ board: "running", ownWork: own })).toBe("ring working");
+  });
+
+  it("counts as at work, never as resting or waiting on the person", () => {
+    const shown = shownState(of({ board: "waiting", ownWork: work({ monitors: 1 }) }));
+    expect(taskBucketOf(shown?.kind)).toBe("working");
+    expect(rankOf(shown?.kind)).toBe(1);
   });
 });

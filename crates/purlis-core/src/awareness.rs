@@ -47,6 +47,9 @@ pub struct Known {
     pub workspace: Place,
     /// Its state on the app's board.
     pub state: State,
+    /// Whether its turn ended waiting on work of its own, which wakes it (#3878,
+    /// [`crate::state::Chat::own_work`]): at work through it, never idle.
+    pub own_work: bool,
     /// When its current run began, in seconds since 1970, where the app knows
     /// ([`run_started`]): this start of its program, not the chat's first.
     pub started: Option<i64>,
@@ -133,6 +136,9 @@ pub enum Doing {
     Running,
     /// It handed control back: it asked something, or its turn ended.
     Waiting,
+    /// Its turn ended while work of its own is in flight, which wakes it (#3878): helpers,
+    /// monitors, a background command or a wake-up it scheduled. At work through it.
+    WaitingOnItsOwnWork,
     /// It has sent its report, and is still open.
     Reported,
     /// Its program ended, content.
@@ -149,6 +155,7 @@ impl Doing {
             _ if known.from.as_ref().is_some_and(|from| from.reported) => Self::Reported,
             State::Unknown => Self::Open,
             State::Running => Self::Running,
+            State::Waiting if known.own_work => Self::WaitingOnItsOwnWork,
             State::Waiting => Self::Waiting,
         }
     }
@@ -159,6 +166,7 @@ impl Doing {
             Self::Open => "open",
             Self::Running => "running",
             Self::Waiting => "waiting",
+            Self::WaitingOnItsOwnWork => crate::dispatched::WAITING_ON_ITS_OWN_WORK,
             Self::Reported => "reported",
             Self::Ended => "ended",
             Self::Failed => "failed",
@@ -360,7 +368,9 @@ enum Stage {
 impl Stage {
     fn of(doing: Doing) -> Self {
         match doing {
-            Doing::Open | Doing::Running | Doing::Waiting => Self::Live,
+            Doing::Open | Doing::Running | Doing::Waiting | Doing::WaitingOnItsOwnWork => {
+                Self::Live
+            }
             Doing::Reported => Self::Reported,
             Doing::Ended => Self::Finished,
             Doing::Failed => Self::Failed,

@@ -887,7 +887,8 @@ pub fn keep_sandbox_block_for_tasks(
     reason: Option<String>,
 ) -> Result<Vec<u32>, String> {
     let held = planes.held(&plane)?;
-    keep_blocked(held.chats(), session, &seen, reason.as_deref())
+    let audit = held.audit_then_record(planes.network());
+    keep_blocked(held.chats(), session, &seen, reason.as_deref(), &audit)
 }
 
 /// [`keep_sandbox_block_for_tasks`] on `chats`.
@@ -896,6 +897,7 @@ pub fn keep_blocked(
     session: u32,
     seen: &[SeenBlock],
     reason: Option<&str>,
+    audit: crate::sandboxing::Audit<'_>,
 ) -> Result<Vec<u32>, String> {
     let (tasks, block) = reading(chats, |reading| checked(session, seen, reading))?;
     let_go(chats, seen, &tasks);
@@ -905,7 +907,7 @@ pub fn keep_blocked(
         && let Ok(host) = grant::host(&block.target)
     {
         for task in &tasks {
-            chats.keep_blocked_live(*task, &host);
+            chats.keep_blocked_live(*task, &host, audit);
         }
     }
     for task in &tasks {

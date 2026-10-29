@@ -44,6 +44,8 @@ describe("the window's lint on a screen (#3129)", () => {
     `<button type="button" className="welcome-door">x</button>`,
     `<button type="button" className="welcome-link repo-card">x</button>`,
     `<button type="button" className="plane-root">x</button>`,
+    // The card family's old class for a card pressed whole, now its own member (#3655).
+    `<button type="button" className="ui-card-control welcome-door">x</button>`,
   ])("refuses a raw button drawn by hand: %s", async (code) => {
     expect(await broken(`export const X = () => ${code};`)).toContain("purlis/button-family");
   });
@@ -59,8 +61,6 @@ describe("the window's lint on a screen (#3129)", () => {
   it.each([
     // The strip's own controls, by the tabs family's class (#3012).
     `<button type="button" className="ui-tabs-control closer">x</button>`,
-    // A card pressed whole, by the card family's (#3523).
-    `<button type="button" className="ui-card-control welcome-door">x</button>`,
   ])("lets another family's control through by that family's class: %s", async (code) => {
     expect(await broken(`export const X = () => ${code};`)).toEqual([]);
   });

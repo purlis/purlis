@@ -30,6 +30,7 @@ fn claim_made(time: Option<&str>) -> Claim {
             pool: "team".into(),
             requester: "ada@example.com".into(),
             kept: false,
+            stopped: false,
         },
         status: None,
     }

@@ -261,6 +261,14 @@ fn browsing_a_source_lists_its_skills_under_its_folder() {
     assert_eq!(names, ["deploy", "notify"]);
     assert_eq!(browse.skills[0].skill.folder, "skills/deploy");
     assert!(browse.skills.iter().all(|s| s.installed.is_empty()));
+    // Each is marked with what its files do, before any review.
+    let marks = |at: usize| browse.skills[at].marks.clone().unwrap();
+    assert!(
+        marks(0).contains(&"runs a script".to_owned()),
+        "{:?}",
+        marks(0)
+    );
+    assert!(marks(1).is_empty(), "{:?}", marks(1));
 }
 
 #[test]
@@ -1010,6 +1018,32 @@ fn reading_more_than_a_fetch_may_buffer_is_refused() {
     let tmp = plane();
     let why = browse(tmp.path(), &remote.source()).unwrap_err();
     assert!(why.contains("MiB of skills to read"), "{why}");
+}
+
+#[test]
+fn a_browse_marks_what_one_read_may_take_and_leaves_the_rest_to_their_reviews() {
+    // Its instructions fit one read; reading every skill's files again for its marks does not.
+    let remote = Upstream::new();
+    let entries: Vec<(&str, String, String)> = (0..40)
+        .map(|n| {
+            let name = format!("s{n:02}");
+            let mut skill = format!("---\nname: {name}\ndescription: x\n---\n").into_bytes();
+            skill.resize(1024 * 1024 - 1, b'x');
+            let one = remote.raw_tree(&[("100644", "SKILL.md", remote.blob(&skill))]);
+            ("40000", name, one)
+        })
+        .collect();
+    let entries: Vec<(&str, &str, String)> = entries
+        .iter()
+        .map(|(mode, name, tree)| (*mode, name.as_str(), tree.clone()))
+        .collect();
+    let skills = remote.raw_tree(&entries);
+    remote.commit(&remote.raw_tree(&[("40000", "skills", skills)]), None);
+    let tmp = plane();
+    let browse = browse(tmp.path(), &remote.source()).unwrap();
+    assert_eq!(browse.skills.len(), 40);
+    assert_eq!(browse.skills[0].marks.as_deref(), Some(&[][..]));
+    assert_eq!(browse.skills[39].marks, None);
 }
 
 #[test]

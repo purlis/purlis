@@ -3774,7 +3774,7 @@ pub mod resolve;
 mod update;
 pub use merging::{MergeState, Merging, Seen, changed_since};
 pub use prsave::{MergedAsItStands, settled_at, stamp_is_unusable};
-pub use update::{BY_HAND, Left, Moved, Updated, update};
+pub use update::{BY_HAND, Left, Moved, Updated, update, update_for_a_chat};
 
 pub use blockedby::{SecretAt, file_of as blocked_file};
 

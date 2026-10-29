@@ -67,6 +67,7 @@ import { NewPersona } from "../NewPersona";
 import { NewProject } from "../NewProject";
 import { PublishProject } from "../PublishProject";
 import { NewVault } from "../NewVault";
+import { AddSourceDialog } from "../SkillSources";
 import { NewWorkspace } from "../NewWorkspace";
 import { Palette } from "../Palette";
 import { PanelList } from "../PanelList";
@@ -77,6 +78,7 @@ import { RemoveFromWorkspace } from "../RemoveFromWorkspace";
 import { RemovePersona } from "../RemovePersona";
 import { RenameWorkspace } from "../RenameWorkspace";
 import { AddVision } from "../AddVision";
+import { DeprecateDialog, OwnersDialog } from "../SkillPage";
 import { SkillCopy } from "../SkillCopy";
 import { RequestMerge } from "../SavingMerge";
 import { SavingView } from "../SavingView";
@@ -1029,6 +1031,13 @@ const DIALOGS: Opened[] = [
       render(<PublishProject plane={PLANE} suggested="notebook" onClose={nothing} />),
   },
   {
+    name: "add a skill source",
+    file: "SkillSources.tsx",
+    open: async () => {
+      render(<AddSourceDialog busy={false} onCancel={nothing} onAdd={nothing} />);
+    },
+  },
+  {
     name: "a new vault",
     file: "NewVault.tsx",
     open: async () => {
@@ -1184,6 +1193,28 @@ const DIALOGS: Opened[] = [
       ),
   },
   {
+    name: "deprecating a skill, from its page's menu (#3682)",
+    file: "SkillPage.tsx",
+    open: async () =>
+      render(
+        <DeprecateDialog name="deploy" busy={false} onClose={nothing} onDeprecate={nothing} />,
+      ),
+  },
+  {
+    name: "naming who looks after a skill, from its page (#3682)",
+    file: "SkillPage.tsx",
+    open: async () =>
+      render(
+        <OwnersDialog
+          name="deploy"
+          owners={["alice"]}
+          busy={false}
+          onClose={nothing}
+          onSave={nothing}
+        />,
+      ),
+  },
+  {
     name: "adding a workspace's vision",
     file: "AddVision.tsx",
     open: async () =>
@@ -1205,6 +1236,7 @@ const DIALOGS: Opened[] = [
       render(
         <SkillCopy
           builtIns={["browser", "secrets"]}
+          descriptionOf={(name) => `What ${name} does.`}
           levels={[{ level: { at: "project", local: false }, label: "project" }]}
           start={{ at: "project", local: false }}
           busy={false}
