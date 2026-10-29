@@ -1258,3 +1258,18 @@ fn while_the_project_file_does_not_parse_no_private_key_is_handed_over_raw() {
         "plain-token-0a1b"
     );
 }
+
+#[test]
+fn while_the_project_file_does_not_parse_no_key_is_renamed() {
+    let plane = Plane::new(&[]);
+    std::fs::write(crate::names::manifest(plane.root()), "[sandbox\nbroken\n").unwrap();
+    plane.plain("forge", json!({"app-key": "the-app-key-9c2e"}));
+    let v = provider(&plane.ctx, "forge").unwrap();
+    let refused = rename(&plane.ctx, &v, "app-key", "loose").unwrap_err();
+    assert!(
+        refused.message.to_string().contains("renames no key"),
+        "{}",
+        refused.message
+    );
+    assert_eq!(keys(&plane.ctx, &v).unwrap(), ["app-key"]);
+}

@@ -12,8 +12,8 @@ use base64::Engine as _;
 use ring::signature::KeyPair as _;
 
 use super::{
-    For, MOST_REPOS, Remote, clone_of, held_from_chats, jwt, kept_for, mint_over, remotes_in,
-    remotes_of_workspace, token_for,
+    For, MOST_REPOS, Remote, clone_of, clones_now, held_from_chats, jwt, kept_for, mint_over,
+    remotes_in, remotes_of_workspace, token_for,
 };
 use crate::forge::recorded::Recorded;
 use crate::forge::{Forge, Kind};
@@ -383,7 +383,7 @@ fn only_clones_whose_git_directory_no_chat_writes_name_the_chat_s_repos() {
     assert_eq!(held_from_chats(repos, &[]).len(), 2);
 
     let remotes =
-        remotes_of_workspace(root, Some(&root.join("workspaces/ws")), &[granted]).unwrap();
+        remotes_of_workspace(root, Some(&root.join("workspaces/ws")), &[granted], None).unwrap();
     assert_eq!(
         remotes
             .iter()
@@ -408,7 +408,7 @@ fn a_clone_s_remotes_are_read_from_its_own_config_and_never_an_included_one() {
         &clone,
         &["config", "include.path", included.to_str().unwrap()],
     );
-    let remotes = remotes_of_workspace(root, Some(&root.join("workspaces/ws")), &[]).unwrap();
+    let remotes = remotes_of_workspace(root, Some(&root.join("workspaces/ws")), &[], None).unwrap();
     assert_eq!(
         remotes
             .iter()
@@ -448,6 +448,7 @@ fn a_run_in_a_clone_on_another_host_is_refused_naming_it_and_nothing_is_read() {
             folder: Some(&root.join("workspaces/ws")),
             here: Some(&clone),
             writes: &[],
+            started: None,
             on_a_runner: false,
         },
         &gh,
@@ -455,4 +456,46 @@ fn a_run_in_a_clone_on_another_host_is_refused_naming_it_and_nothing_is_read() {
     )
     .unwrap_err();
     assert!(said.contains("ghe.example.com is not github.com"), "{said}");
+}
+
+#[test]
+fn a_chat_s_tokens_cover_the_clones_its_workspace_had_when_it_started() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let api = a_clone(root, "api", "https://github.com/acme/api.git");
+    a_clone(root, "web", "https://github.com/acme/web.git");
+    let started = clones_now(root);
+    let ws = root.join("workspaces/ws");
+    let names = |started: &[super::Started]| -> Vec<String> {
+        remotes_of_workspace(root, Some(&ws), &[], Some(started))
+            .unwrap()
+            .into_iter()
+            .map(|remote| remote.name)
+            .collect()
+    };
+    assert_eq!(names(&started), ["api", "web"]);
+
+    // A clone that appears after the start is not one of them.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let late = elsewhere.path().join("late");
+    std::fs::create_dir_all(&late).unwrap();
+    git(&late, &["init", "-q"]);
+    git(
+        &late,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/late.git",
+        ],
+    );
+    std::fs::create_dir_all(ws.join("x")).unwrap();
+    std::fs::rename(late.join(".git"), ws.join("x/.git")).unwrap();
+    assert_eq!(names(&started), ["api", "web"]);
+
+    // Nor is one moved into the place of a clone that was there.
+    std::fs::rename(&api, ws.join("api-then")).unwrap();
+    let swapped = a_clone(root, "api", "https://github.com/acme/other.git");
+    assert_eq!(swapped, api);
+    assert_eq!(names(&started), ["web"]);
 }

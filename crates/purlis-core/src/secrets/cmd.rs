@@ -158,17 +158,26 @@ pub fn delete(ctx: &Ctx, v: &Vault, key: &str) -> Result<(), VaultError> {
 /// after the write succeeded, both keys hold the value and the error says so: a secret held
 /// twice is recoverable, and one held nowhere is not.
 pub fn rename(ctx: &Ctx, v: &Vault, from: &str, to: &str) -> Result<(), VaultError> {
-    // A GitHub App's key moved to a name no `mint` line names would no longer be marked
-    // (#2053): its line is changed first.
-    if matches!(
-        crate::sandbox::tools::mint::raw(&ctx.root, &v.name, from),
-        crate::sandbox::tools::mint::Raw::Refused(_)
-    ) {
-        return Err(VaultError::new(format!(
-            "'{from}' in vault '{}' is a GitHub App's key a persona's tool mints tokens with, so \
-             purlis does not rename it: change the tool's key in the project's settings first",
-            v.name
-        )));
+    // A GitHub App's key keeps its name (#2053): its line is changed first. While the project
+    // file cannot be read, no key is known to be unmarked, so none is renamed.
+    match crate::sandbox::tools::mint::raw(&ctx.root, &v.name, from) {
+        crate::sandbox::tools::mint::Raw::Taken => {}
+        crate::sandbox::tools::mint::Raw::Refused(_) => {
+            return Err(VaultError::new(format!(
+                "'{from}' in vault '{}' is a GitHub App's key a persona's tool mints tokens with, \
+                 so purlis does not rename it: change the tool's key in the project's settings \
+                 first",
+                v.name
+            )));
+        }
+        crate::sandbox::tools::mint::Raw::NotIfAKey => {
+            return Err(VaultError::new(format!(
+                "the project's settings file cannot be read, so purlis cannot tell whether \
+                 '{from}' in vault '{}' is a GitHub App's key, and renames no key until it reads \
+                 again",
+                v.name
+            )));
+        }
     }
     let held = keys(ctx, v)?;
     if !held.iter().any(|k| k == from) {

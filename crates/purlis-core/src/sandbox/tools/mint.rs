@@ -7,7 +7,8 @@
 //!
 //! ```toml
 //! [sandbox.personas.dev]
-//! tools = { gh = { vault = "forge", mint = "github-app", app = "Iv23liExample", key = "app-key" } }
+//! tools = { gh = { vault = "forge", mint = "github-app", app = "Iv23liExample",
+//!                  key = "app-key" } }
 //! ```
 //!
 //! `mint` makes the tool this kind, and `"github-app"` is the one value it takes. `app` is the
@@ -16,7 +17,7 @@
 //!
 //! **The key is never handed over raw** (E2): a key a `mint` line names, in that line's vault,
 //! is [`marked`], on any persona and whether or not the line is otherwise taken, and every read of
-//! a vault value but the mint's refuses it ([`refused_raw`], [`crate::secrets::cmd::get_value`]).
+//! a vault value but the mint's refuses it ([`raw`], [`crate::secrets::cmd::get_value`]).
 //! The mint itself is [`crate::forge::apptoken`].
 
 use std::path::Path;
@@ -145,16 +146,6 @@ pub fn raw(root: &Path, vault: &str, key: &str) -> Raw {
             Raw::Refused(refused_said(vault, key))
         }
         Some(_) => Raw::Taken,
-    }
-}
-
-/// **Why key `key` of vault `vault` is never handed over raw** in the project at `root`, if it is
-/// one a `mint` line marks (E2), or if the project file cannot be read to say it is not.
-pub fn refused_raw(root: &Path, vault: &str, key: &str) -> Option<String> {
-    match raw(root, vault, key) {
-        Raw::Taken => None,
-        Raw::Refused(why) => Some(why),
-        Raw::NotIfAKey => Some(unreadable_said()),
     }
 }
 

@@ -27,8 +27,8 @@ that mints with it marks it, so purlis never hands it over raw** (E2).
 - **What reaches the chat** is the minted token alone. It is the agent's own identity, limited
   to the chat's repos, and it lasts an hour. As with every tool, the chat's arguments are its
   own, so gh can show the token it holds. That is accepted for a token of this reach.
-- **The chat's repos** (E3) are the github.com remotes of the clones in the chat's workspace,
-  read when the token is minted, from each clone's own config with no included file, and only
+- **The chat's repos** (E3) are the github.com remotes of the clones the chat's workspace had
+  when the chat started, as they were then, read when the token is minted, from each clone's own config with no included file, and only
   of clones whose git directory is in no folder a chat may be granted. A token is minted for one
   installation, with `repositories` limited to those remotes, at most 500. The installation is
   the one the run's clone is on, or else the only one the remotes are on. A token is kept per

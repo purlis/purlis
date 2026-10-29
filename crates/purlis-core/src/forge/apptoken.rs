@@ -7,10 +7,11 @@
 //! A persona's tool declared with `mint = "github-app"` ([`crate::sandbox::tools::mint`]) is
 //! handed, at each run, a token minted here, in the app's process:
 //!
-//! 1. **the chat's repos** are the github.com remotes of the clones in the chat's workspace, read
-//!    at that run from each clone's own config alone, and only of clones whose git directory is
-//!    in no folder a chat may be granted ([`remotes_of_workspace`], E3). A GitHub Enterprise
-//!    Server is not minted for yet: a run in a clone of one is refused, naming it;
+//! 1. **the chat's repos** are the github.com remotes of the clones the chat's workspace had when
+//!    the chat started, read at that run from each clone's own config alone, and only of clones
+//!    whose git directory is in no folder a chat may be granted ([`remotes_of_workspace`], E3).
+//!    A GitHub Enterprise Server is not minted for yet: a run in a clone of one is refused,
+//!    naming it;
 //! 2. the App's key, read from its vault by the mint alone, signs a JWT of ten minutes at most
 //!    whose issuer is the App's client id ([`jwt`]), which is dropped once the token is minted;
 //! 3. each repo's installation is asked for (`GET /repos/{owner}/{repo}/installation`), and the
@@ -34,6 +35,11 @@ use super::transport::{Call, Field, Method, Transport};
 use super::{Forge, Kind};
 
 pub mod jwt_transport;
+
+/// What a mint is refused with where the chat's repos are on several installations and the run
+/// is in a clone of none of them.
+pub const SEVERAL_INSTALLATIONS: &str = "this chat's repos are on several installations of the \
+                                         GitHub App, so run the command in a clone of one of them";
 
 /// The one host a GitHub App's token is minted on (#2053, part 1). A GitHub Enterprise Server's
 /// comes later.
@@ -145,14 +151,78 @@ fn grantable_beside(root: &Path, writes: &[PathBuf]) -> Vec<PathBuf> {
     out
 }
 
+/// **One clone of a workspace as a chat started**: the clone, as the kernel names it, and its
+/// `.git` directory's identity then (device and inode, where the system has them).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Started {
+    pub clone: PathBuf,
+    pub git: Option<(u64, u64)>,
+}
+
+/// The identity of the directory at `path`: its device and inode, where the system has them.
+fn identity(path: &Path) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt as _;
+        let found = std::fs::symlink_metadata(path).ok()?;
+        found.is_dir().then(|| (found.dev(), found.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::symlink_metadata(path)
+            .ok()?
+            .is_dir()
+            .then_some((0, 0))
+    }
+}
+
+/// **Every clone of every workspace of the plane at `root`, now**, with its `.git`'s identity:
+/// what a chat's start records ([`crate::sandbox::Confines::clones`]).
+pub fn clones_now(root: &Path) -> Vec<Started> {
+    let plane = crate::workspaces::Plane::open(root.to_path_buf());
+    let Ok(workspaces) = plane.workspaces() else {
+        return Vec::new();
+    };
+    workspaces
+        .iter()
+        .filter_map(|workspace| crate::repos::clones(root, workspace).ok())
+        .flat_map(|clones| clones.repos)
+        .map(|repo| Started {
+            clone: crate::sandbox::real(&repo.path),
+            git: identity(&repo.path.join(".git")),
+        })
+        .collect()
+}
+
+/// **The clones of `repos` that were there, as they were, when the chat started**: each that
+/// `started` names, whose `.git` is the same directory it was then.
+pub fn there_at_start(
+    repos: Vec<crate::repos::Repo>,
+    started: &[Started],
+) -> Vec<crate::repos::Repo> {
+    repos
+        .into_iter()
+        .filter(|repo| {
+            let clone = crate::sandbox::real(&repo.path);
+            let git = identity(&repo.path.join(".git"));
+            git.is_some()
+                && started
+                    .iter()
+                    .any(|then| then.clone == clone && then.git == git)
+        })
+        .collect()
+}
+
 /// **The chat's repos** (E3): the GitHub remotes of the clones in the workspace that `folder`,
 /// the chat's folder, is in, in the project at `root`, read now from each clone's own config
 /// (`git config --local --no-includes`), of the clones [`held_from_chats`] keeps against
-/// `writes`, the chat's grants. Refused for a chat in no workspace.
+/// `writes`, the chat's grants, and, where `started` is given, of those the workspace had when
+/// the chat started ([`there_at_start`]). Refused for a chat in no workspace.
 pub fn remotes_of_workspace(
     root: &Path,
     folder: Option<&Path>,
     writes: &[PathBuf],
+    started: Option<&[Started]>,
 ) -> Result<Vec<Remote>, String> {
     let plane = crate::workspaces::Plane::open(root.to_path_buf());
     let Some(workspace) = folder.and_then(|folder| plane.workspace_of(folder)) else {
@@ -166,7 +236,11 @@ pub fn remotes_of_workspace(
     let known = super::known(root);
     let forge_of = |url: &str| super::resolve_in(url, &known);
     let mut out = Vec::new();
-    for repo in held_from_chats(clones.repos, &grantable_beside(root, writes)) {
+    let repos = match started {
+        Some(started) => there_at_start(clones.repos, started),
+        None => clones.repos,
+    };
+    for repo in held_from_chats(repos, &grantable_beside(root, writes)) {
         let Ok(run) = crate::worktree::git::run(
             &repo.path,
             &[
@@ -310,6 +384,8 @@ pub fn mint_over(
         .collect();
     distinct.sort_unstable();
     distinct.dedup();
+    // Deliberately conservative: every repo of the workspace counts here, whichever
+    // installation it is on, though the token names only one installation's.
     if distinct.len() > MOST_REPOS {
         return Err(format!(
             "this chat's workspace has {} GitHub repos, and a GitHub App's token is limited to \
@@ -371,13 +447,7 @@ pub fn mint_over(
         [one] => *one,
         _ => match installed.iter().find(|(_, remote)| in_here(remote)) {
             Some((id, _)) => *id,
-            None => {
-                return Err(
-                    "this chat's repos are on several installations of the GitHub App, so run \
-                     the command in a clone of one of them"
-                        .to_owned(),
-                );
-            }
+            None => return Err(SEVERAL_INSTALLATIONS.to_owned()),
         },
     };
     let mut repos: Vec<String> = installed
@@ -427,7 +497,9 @@ pub fn mint_over(
 
 /// **The chat a token is minted for**: the project, the app's number for the chat, its folder
 /// (which names its workspace), the folder the command runs in, the folders the chat may be
-/// granted, and whether it runs on a runner, whose folder is not one of this machine's.
+/// granted, the clones its workspace had when it started (none recorded for a runner chat,
+/// which writes no folder of this machine's), and whether it runs on a runner, whose folder is
+/// not one of this machine's.
 #[derive(Debug, Clone, Copy)]
 pub struct For<'a> {
     pub root: &'a Path,
@@ -435,6 +507,7 @@ pub struct For<'a> {
     pub folder: Option<&'a Path>,
     pub here: Option<&'a Path>,
     pub writes: &'a [PathBuf],
+    pub started: Option<&'a [Started]>,
     pub on_a_runner: bool,
 }
 
@@ -485,7 +558,7 @@ pub fn token_for(
     let (Some(mint), [value]) = (&tool.mint, tool.values.as_slice()) else {
         return Err(format!("{} mints no GitHub App token", tool.name));
     };
-    let all = remotes_of_workspace(chat.root, chat.folder, chat.writes)?;
+    let all = remotes_of_workspace(chat.root, chat.folder, chat.writes, chat.started)?;
     // github.com alone for now: a run in a clone on another host is refused, naming it.
     if let Some(clone) = clone_of(&all, chat.here)
         && let Some(other) = all
@@ -578,7 +651,7 @@ fn not_minted_on(host: &str) -> String {
 /// `why` a mint was refused, said for a runner chat where it asks for a clone to run in: a
 /// runner's folder is not one of this machine's, so it is told what to change instead.
 fn on_a_runner_said(why: String, on_a_runner: bool) -> String {
-    if on_a_runner && why.contains("several installations") {
+    if on_a_runner && why == SEVERAL_INSTALLATIONS {
         "this runner chat's repos are on several installations of the GitHub App, and on a \
          runner purlis mints for one alone: keep its workspace's clones on one installation"
             .to_owned()

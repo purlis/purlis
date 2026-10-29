@@ -169,10 +169,15 @@ tools = { gh = { vault = "forge", mint = "github-app", app = "Iv1.abc", key = "a
 "#,
     )
     .unwrap();
-    let refused = mint::refused_raw(dir.path(), "forge", "app-key").expect("refused");
+    let mint::Raw::Refused(refused) = mint::raw(dir.path(), "forge", "app-key") else {
+        panic!("the App's key is refused raw");
+    };
     assert!(refused.contains("never hands it over"), "{refused}");
-    assert_eq!(mint::refused_raw(dir.path(), "forge", "kubeconfig"), None);
-    assert_eq!(mint::refused_raw(dir.path(), "other", "app-key"), None);
+    assert_eq!(
+        mint::raw(dir.path(), "forge", "kubeconfig"),
+        mint::Raw::Taken
+    );
+    assert_eq!(mint::raw(dir.path(), "other", "app-key"), mint::Raw::Taken);
 }
 
 #[test]
@@ -184,7 +189,6 @@ fn a_project_file_that_does_not_parse_marks_nothing_as_unmarked() {
         mint::raw(dir.path(), "forge", "app-key"),
         mint::Raw::NotIfAKey
     );
-    assert!(mint::refused_raw(dir.path(), "forge", "anything").is_some());
     let armour = ["-----BEGIN ", "PRIVATE KEY-----"].concat();
     assert!(mint::a_private_key(&format!("{armour}\nMIIE\n")));
     assert!(!mint::a_private_key("ghp_notakey"));

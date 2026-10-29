@@ -2198,8 +2198,8 @@ pub(crate) fn serve_recorded(
         // A GitHub App's token, minted here from its key, which goes to nothing else (#2053, E2):
         // the tool's one key is answered with the token.
         (Some(_), _, Some(tool)) => {
-            // Only clones whose git directory is in none of the chat's grants name its repos:
-            // its own folder, where every `.git` is held from it, is not one of them.
+            // Only the clones its workspace had when the chat started, as they were then, and
+            // whose git directory is in none of its grants, name the chat's repos.
             let mut grants = confines.writable.clone();
             if let Some(caches) = &confines.widened.caches {
                 grants.extend(caches.trees.iter().chain(caches.bare.iter()).cloned());
@@ -2212,6 +2212,7 @@ pub(crate) fn serve_recorded(
                     folder: asker.folder.as_deref(),
                     here: wanted.cwd.as_deref(),
                     writes: &grants,
+                    started: Some(&confines.clones),
                     on_a_runner: false,
                 },
                 tool,

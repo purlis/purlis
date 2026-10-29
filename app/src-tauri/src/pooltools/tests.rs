@@ -538,6 +538,7 @@ fn a_github_app_tool_on_a_runner_is_sent_the_token_minted_for_it_as_its_key_s_va
         folder: None,
         here: None,
         writes: &[],
+        started: None,
         on_a_runner: true,
     };
     let sent: Vec<(String, String)> = minted(&ctx, &gh, &chat, &minted_for_chat_6)

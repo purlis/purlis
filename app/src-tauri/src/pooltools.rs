@@ -482,6 +482,8 @@ pub fn run_on_its_runner(
                 // workspace's clones here, of one installation.
                 here: None,
                 writes: &grants,
+                // A runner chat writes no folder of this machine's.
+                started: None,
                 on_a_runner: true,
             },
             &purlis_core::forge::apptoken::token_from_vault,

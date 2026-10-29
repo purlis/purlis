@@ -4,8 +4,8 @@
 //! The request budget meters what `forge::route::Resolver` resolves (FW-4), so a native transport
 //! built anywhere else would send with a sign-in token and spend the account's budget unseen.
 //! Outside tests, only `forge/route.rs` builds one, `forge/accounts.rs` for the one check a
-//! token sign-in makes before there is an account, and `forge/apptoken/jwt_transport.rs` for a GitHub App's
-//! mint, which sends no sign-in token: this walks every shipped source tree.
+//! token sign-in makes before there is an account, and `forge/apptoken/jwt_transport.rs` for a
+//! GitHub App's mint, which sends no sign-in token: this walks every shipped source tree.
 
 use std::path::{Path, PathBuf};
 
@@ -62,8 +62,9 @@ fn only_the_resolver_builds_the_native_transport() {
     builders.sort();
     // `forge/accounts.rs` checks a pasted token with its forge before any account exists
     // (ADR 0077 §4): one request, sent for no account the budget could count it against.
-    // `forge/apptoken/jwt_transport.rs` carries the mint of a chat's GitHub App token (#2053): its requests carry the
-    // organisation App's JWT, never a sign-in token, so no account's budget is theirs.
+    // `forge/apptoken/jwt_transport.rs` carries the mint of a chat's GitHub App token (#2053):
+    // its requests carry the organisation App's JWT, never a sign-in token, so no account's
+    // budget is theirs.
     assert_eq!(
         builders,
         [
