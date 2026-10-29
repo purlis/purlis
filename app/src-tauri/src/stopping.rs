@@ -264,6 +264,8 @@ impl Facts {
             heard: self.state != State::Unknown,
             running: self.state == State::Running,
             waiting: self.state == State::Waiting,
+            // Not read by `prompt_showing`.
+            own_work: false,
             asking: self.asking,
             measured: self.types,
             interrupts: self.interrupts,
@@ -2048,6 +2050,7 @@ pub(crate) fn task_ending_of(held: &Held, session: u32) -> Result<TaskEnding, St
         heard: board.state != State::Unknown,
         running: board.state == State::Running,
         waiting: board.state == State::Waiting,
+        own_work: board.own_work,
         asking: board.asking,
         measured: dispatched::told_by_a_line(held.chats().harness(session)),
         interrupts: dispatched::interrupted_by_escape(held.chats().harness(session)),

@@ -238,6 +238,18 @@ impl Report {
                 helpers_at_work: event == Event::Stop
                     && chat_harness(env).as_deref() == Some(BACKGROUND_TASKS_HARNESS)
                     && helpers_at_work(read.as_ref()),
+                // What it waits on of its own, read on the chat's own wall clock into seconds
+                // from now, which the app stamps on its own (#3878).
+                own_work: if event == Event::Stop
+                    && chat_harness(env).as_deref() == Some(BACKGROUND_TASKS_HARNESS)
+                {
+                    crate::harness::claude::ownwork::read(
+                        read.as_ref(),
+                        chrono::Local::now().naive_local(),
+                    )
+                } else {
+                    crate::ownwork::Said::default()
+                },
                 // Only a `Notification` is a nudge (#1626).
                 idle: event == Event::Notification
                     && field("notification_type").as_deref() == Some(IDLE_NUDGE),
@@ -393,24 +405,13 @@ fn notified(kind: Option<&str>) -> crate::state::Notified {
 /// 2.1.296; an empty array when nothing is in flight, absent from older versions). Each entry
 /// has a `type`, Claude Code's label for the kind of work, and a `status`.
 ///
-/// **Only agents count ([`HELPER_KINDS`]), and only while in flight ([`IN_FLIGHT`]).** A
-/// background `shell` or `monitor` may run for as long as the chat does (a dev server, a log
-/// tail), so a chat left with only those has stopped and the person has the next move. Anything
-/// not read as one of these is no helper at work, so a payload this cannot read hands the end
-/// of the turn to the person, as before.
+/// **Only agents count ([`HELPER_KINDS`]), and only while in flight ([`IN_FLIGHT`]).** Anything
+/// not read as one of these is no helper at work.
 ///
-/// **A chat's own scheduled wake-up is not read, and its turn's end stays "needs you"**
-/// (#1644, D-1644-1). The same input carries `session_crons` beside `background_tasks`: each
-/// session-scoped cron (`CronCreate`, `ScheduleWakeup`, `/loop`) that will wake the session
-/// later, with its `schedule` and whether it is `recurring` (read from the 2.1.296 schema). It
-/// is not read here, for three reasons. A recurring cron may not fire for hours or days, and a
-/// chat shown as working all that time would hide a turn that ended asking the person; only a
-/// one-shot wake-up is the chat working on its own. Shown as [`helpers_at_work`], it would say
-/// helpers are at work where none is; its own state, "waiting on itself", is a new turn in the
-/// chat's state model and a word in the window, which is a change of their own. And whether
-/// Claude Code's idle nudge ([`IDLE_NUDGE`]) is held back for a waiting cron, as it is for
-/// background agents, is unmeasured. Until then the turn's end hands the next move to the
-/// person, which fails toward telling them.
+/// **What else a chat waits on of its own is [`crate::harness::claude::ownwork::read`]**
+/// (#3878, superseding D-1644-1): its monitors, its background commands and its scheduled
+/// wake-ups make its turn's end **waiting**, a state of its own, where this says only whether
+/// helpers are at work. Kept for an app older than that reading, which reads this bit alone.
 pub fn helpers_at_work(payload: Option<&serde_json::Value>) -> bool {
     payload
         .and_then(|payload| payload.get("background_tasks"))

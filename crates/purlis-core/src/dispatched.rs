@@ -370,6 +370,8 @@ pub struct Seen {
     pub running: bool,
     /// Its turn has ended and it is waiting to be prompted.
     pub waiting: bool,
+    /// Its turn ended waiting on work of its own, which wakes it (#3878).
+    pub own_work: bool,
     /// It has shown the person a prompt this turn: a permission, or a question. The board
     /// keeps this until the turn ends, not until the prompt is answered.
     pub asking: bool,
@@ -432,6 +434,9 @@ pub enum State {
     Running,
     /// Its turn ended and it has not reported.
     Idle,
+    /// Its turn ended while work of its own is in flight, which wakes it (#3878): it is at
+    /// work through it, and has not reported. Never idle.
+    WaitingOnItsOwnWork,
     /// It is waiting on the person, in its own tab.
     NeedsThePerson,
     /// It asked its asking chat a question, and is paused until that chat answers.
@@ -443,11 +448,16 @@ pub enum State {
     Ended,
 }
 
+/// **What a chat waiting on its own work is said to be** (#3878), whoever is told: its task's
+/// list, its wait, and the roster of its asking chat ([`crate::awareness`]).
+pub const WAITING_ON_ITS_OWN_WORK: &str = "waiting on its own work";
+
 impl State {
     pub fn say(self) -> String {
         match self {
             Self::Running => "running".to_owned(),
             Self::Idle => "idle, with no report yet".to_owned(),
+            Self::WaitingOnItsOwnWork => WAITING_ON_ITS_OWN_WORK.to_owned(),
             // One word for it, whoever lists the task (#1443).
             Self::NeedsThePerson => crate::dispatchdecision::Standing::WaitingOnOperator
                 .word()
@@ -1751,6 +1761,8 @@ impl Ledger {
         } else if seen.prompt_showing() {
             // A window ask open counts, and a prompt answered there does not (#1525).
             State::NeedsThePerson
+        } else if seen.waiting && seen.own_work {
+            State::WaitingOnItsOwnWork
         } else if seen.waiting {
             State::Idle
         } else {
@@ -2057,6 +2069,7 @@ mod tests {
         heard: true,
         running: false,
         waiting: false,
+        own_work: false,
         asking: false,
         measured: true,
         interrupts: true,
@@ -2794,6 +2807,15 @@ mod tests {
         let from = dispatched_by(ASKER);
         assert_eq!(ledger.state(TASK, &from, RUNNING), State::Running);
         assert_eq!(ledger.state(TASK, &from, WAITING), State::Idle);
+        // Its turn ended on work of its own, which wakes it (#3878): never idle.
+        let on_its_own_work = Seen {
+            own_work: true,
+            ..WAITING
+        };
+        assert_eq!(
+            ledger.state(TASK, &from, on_its_own_work).say(),
+            "waiting on its own work"
+        );
         assert_eq!(ledger.state(TASK, &from, ASKING), State::NeedsThePerson);
         assert_eq!(ledger.state(TASK, &from, ENDED), State::Ended);
         // #1525: an ask open in the window is the person's to answer, though the harness said
@@ -3201,6 +3223,7 @@ mod tests {
         heard: false,
         running: false,
         waiting: false,
+        own_work: false,
         asking: false,
         measured: false,
         interrupts: false,

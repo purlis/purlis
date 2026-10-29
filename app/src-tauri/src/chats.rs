@@ -4537,10 +4537,10 @@ impl Chats {
 
     /// **Where chat `session` is working** (#1450): who asked for it, its sibling tasks and the
     /// other chats running as its persona, drawn from this app's own record of every chat it
-    /// has open in the project ([`purlis_core::awareness`]), with each one's state as
-    /// `state_of` has it on the board, and what each is stopped on for the person as
-    /// `asking_of` has it (a task of `session`'s that waits on the person is said once, at
-    /// its next turn). `tell` says whether the chat counts as told from now, which is kept
+    /// has open in the project ([`purlis_core::awareness`]), with each one's state, and whether
+    /// it waits on work of its own (#3878), as `state_of` has them on the board, and what each
+    /// is stopped on for the person as `asking_of` has it (a task of `session`'s that waits on
+    /// the person is said once, at its next turn). `tell` says whether the chat counts as told from now, which is kept
     /// here. `None` for a chat that is not open.
     ///
     /// Nothing but `session` comes from the chat that asks, and the answer has a chat's name,
@@ -4549,7 +4549,7 @@ impl Chats {
         &self,
         session: u32,
         tell: purlis_core::awareness::Tell,
-        state_of: &dyn Fn(u32) -> purlis_core::state::State,
+        state_of: &dyn Fn(u32) -> (purlis_core::state::State, bool),
         asking_of: &dyn Fn(u32) -> Option<purlis_core::awareness::Prompt>,
     ) -> Option<purlis_core::awareness::Working> {
         use purlis_core::awareness::{Asker, Known};
@@ -4565,6 +4565,7 @@ impl Chats {
                     purlis_core::active::Place::Workspace,
                 ),
                 state: purlis_core::state::State::Unknown,
+                own_work: false,
                 started: purlis_core::awareness::run_started(&one.chat.identity),
                 // The lineage it is in, as a dispatch counts it (#1455).
                 lineage: one
@@ -4583,7 +4584,7 @@ impl Chats {
             })
             .collect();
         for one in &mut known {
-            one.state = state_of(one.chat);
+            (one.state, one.own_work) = state_of(one.chat);
             one.asking = asking_of(one.chat);
         }
         // Only a chat that is open has anything kept of what it was told.
