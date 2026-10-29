@@ -49,6 +49,19 @@ pub mod verbs;
 use crate::harness::{Harness, Kit};
 
 pub mod levels;
+mod on_machine;
+pub mod persona;
+pub mod router;
+mod routing;
+
+pub use routing::{
+    PinnedBy, PinsHeld, PinsRefused, PinsTogether, pinners_of, pins_file, pins_refused,
+    pins_written,
+};
+pub(crate) use routing::{pin, pinners_of_a_chat, pins_or_none, pins_together};
+
+pub use on_machine::on_machine;
+pub(crate) use on_machine::{folders, skill_dirs};
 
 /// **The Skill studio's records in this machine's state folder**, each written by the app or the
 /// session host alone and read back as its own, so a chat's sandbox denies writing each, with
@@ -67,19 +80,6 @@ pub(crate) const KEPT_IN_STATE: [&str; 9] = [
     grades::after_edit::FILE,
     grades::after_edit::LOCK,
 ];
-mod on_machine;
-pub mod persona;
-pub mod router;
-mod routing;
-
-pub use routing::{
-    PinnedBy, PinsHeld, PinsRefused, PinsTogether, pinners_of, pins_file, pins_refused,
-    pins_written,
-};
-pub(crate) use routing::{pin, pinners_of_a_chat, pins_or_none, pins_together};
-
-pub use on_machine::on_machine;
-pub(crate) use on_machine::{folders, skill_dirs};
 
 /// The variable a chat whose harness cannot load its skills is started with: the directory of
 /// the built-in skills its set holds ([`SkillSet::built_in_dir`]), whose skills its `SessionStart` briefing then

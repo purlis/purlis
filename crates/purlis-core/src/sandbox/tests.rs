@@ -319,62 +319,45 @@ fn a_chat_never_writes_charters_integrity_state() {
     // Under both names of the state folder (RN-2a): the purlis one is read when it is there, so
     // a chat that could make `.purlis/app` would be writing the records charter reads next.
     let (plane, denied) = denied_with(None, Os::Linux);
-    assert_eq!(
-        paths(&denied, Class::Integrity, Access::Write),
-        [
-            plane.path().join(".purlis/app"),
-            // Every chat's theme drafts (#2332): only the app writes one, for the chat that asks.
-            plane.path().join(".purlis/theme-drafts"),
-            // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
-            plane.path().join(".purlis/skills-deleted"),
-            plane.path().join(".purlis/skills-deleting"),
-            // Every report a chat is handed: the app's alone to write.
-            plane.path().join(".purlis/handbacks"),
-            plane.path().join(".purlis/harness-profiles-launched.json"),
-            plane
-                .path()
-                .join(".purlis/harness-declarations-approved.json"),
-            plane.path().join(".purlis/mcp-approved.json"),
-            // Every chat's settings file (SK-9).
-            plane.path().join(".purlis/chat-settings"),
-            // The Skill studio's records (SK-9, SK-16, SK-58, SK-59).
-            plane.path().join(".purlis/skill-levels"),
-            plane.path().join(".purlis/skill-drafts"),
-            plane.path().join(".purlis/skill-tries"),
-            plane.path().join(".purlis/skill-grades"),
-            plane.path().join(".purlis/skill-grade-chats"),
-            plane.path().join(".purlis/grades-under-way"),
-            plane.path().join(".purlis/grades-under-way.lock"),
-            plane.path().join(".purlis/skill-grade-after-edit.json"),
-            plane.path().join(".purlis/skill-grade-after-edit.lock"),
-            plane.path().join(".charter/app"),
-            plane.path().join(".charter/theme-drafts"),
-            // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
-            plane.path().join(".charter/skills-deleted"),
-            plane.path().join(".charter/skills-deleting"),
-            plane.path().join(".charter/handbacks"),
-            plane.path().join(".charter/harness-profiles-launched.json"),
-            plane
-                .path()
-                .join(".charter/harness-declarations-approved.json"),
-            plane.path().join(".charter/mcp-approved.json"),
-            plane.path().join(".charter/chat-settings"),
-            plane.path().join(".charter/skill-levels"),
-            plane.path().join(".charter/skill-drafts"),
-            plane.path().join(".charter/skill-tries"),
-            plane.path().join(".charter/skill-grades"),
-            plane.path().join(".charter/skill-grade-chats"),
-            plane.path().join(".charter/grades-under-way"),
-            plane.path().join(".charter/grades-under-way.lock"),
-            plane.path().join(".charter/skill-grade-after-edit.json"),
-            plane.path().join(".charter/skill-grade-after-edit.lock"),
-            // Neither folder is there yet, so neither is the chat's to make (D-RN2a-7).
-            plane.path().join(".purlis"),
-            plane.path().join(".charter"),
-            // The folder chats' servers listen in (#2019).
-            door::root_in(None),
-        ]
-    );
+    let mut held = vec![
+        plane.path().join(".purlis/app"),
+        // Every chat's theme drafts (#2332): only the app writes one, for the chat that asks.
+        plane.path().join(".purlis/theme-drafts"),
+        // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
+        plane.path().join(".purlis/skills-deleted"),
+        plane.path().join(".purlis/skills-deleting"),
+        // Every report a chat is handed: the app's alone to write.
+        plane.path().join(".purlis/handbacks"),
+        plane.path().join(".purlis/harness-profiles-launched.json"),
+        plane
+            .path()
+            .join(".purlis/harness-declarations-approved.json"),
+        plane.path().join(".purlis/mcp-approved.json"),
+        // Every chat's settings file (SK-9).
+        plane.path().join(".purlis/chat-settings"),
+        plane.path().join(".charter/app"),
+        plane.path().join(".charter/theme-drafts"),
+        // A skill delete's kept skills and running deletes' notes (SK-7, SK-35).
+        plane.path().join(".charter/skills-deleted"),
+        plane.path().join(".charter/skills-deleting"),
+        plane.path().join(".charter/handbacks"),
+        plane.path().join(".charter/harness-profiles-launched.json"),
+        plane
+            .path()
+            .join(".charter/harness-declarations-approved.json"),
+        plane.path().join(".charter/mcp-approved.json"),
+        plane.path().join(".charter/chat-settings"),
+        // Neither folder is there yet, so neither is the chat's to make (D-RN2a-7).
+        plane.path().join(".purlis"),
+        plane.path().join(".charter"),
+        // The folder chats' servers listen in (#2019).
+        door::root_in(None),
+    ];
+    // The Skill studio's records (SK-9, SK-16, SK-58, SK-59), under both names.
+    for state in [".purlis", ".charter"] {
+        held.extend(SKILL_STUDIO_RECORDS.map(|record| plane.path().join(state).join(record)));
+    }
+    assert_eq!(paths(&denied, Class::Integrity, Access::Write), held);
 }
 
 /// #1458: the persona MCP approvals are read where `$PURLIS_HOME` puts the state folder, so
@@ -1122,25 +1105,73 @@ fn every_harness_denies_a_chat_writing_the_skill_studio_s_records() {
                     );
                 }
             }
-            // Codex and opencode: purlis's own wrap, whose profile a chat at the root runs in.
-            // A `subpath` holds the store as an entry and every record below it.
+            // Codex and opencode: purlis's own wrap, whose profile a chat at the root runs in,
+            // on macOS and on Linux, whose supervisor judges each call by the same profile.
             Form::Codex(_) | Form::Opencode(_) => {
-                let profile = seatbelt::profile(
-                    applied.form().denied().expect("a wrap"),
-                    &seatbelt::Own::default(),
-                    plane.path(),
-                    std::path::Path::new("/private/tmp/chat"),
-                    &[4040],
-                    None,
-                )
-                .expect("a profile");
-                for path in &records {
-                    for named in both_firmlink_names(super::real(path)) {
-                        let rule = format!(
-                            "(deny file-write* file-link (subpath \"{}\"))",
-                            named.display()
-                        );
-                        assert!(profile.contains(&rule), "{harness:?}: {rule} missing");
+                for os in [Os::MacOs, Os::Linux] {
+                    let applied = applied_for(
+                        harness,
+                        &policy_of(&[], false),
+                        &Plane::of(None),
+                        plane.path(),
+                        &machine(os),
+                    )
+                    .expect("compiles");
+                    let profile = seatbelt::profile(
+                        applied.form().denied().expect("a wrap"),
+                        &seatbelt::Own::default(),
+                        plane.path(),
+                        std::path::Path::new("/private/tmp/chat"),
+                        &[4040],
+                        None,
+                    )
+                    .expect("a profile");
+                    let read = purlis_linux_sandbox::profile::Profile::parse(&profile)
+                        .expect("read whole");
+                    let done = |what, path: &std::path::Path, kind| {
+                        read.allows(&purlis_linux_sandbox::profile::Op::File { what, path, kind })
+                    };
+                    use purlis_linux_sandbox::profile::{FileOp, Kind};
+                    // The chat writes the project as it did.
+                    assert!(done(
+                        FileOp::Create,
+                        &super::real(plane.path()).join("notes.txt"),
+                        Kind::Regular
+                    ));
+                    for path in &records {
+                        let path = super::real(path);
+                        let mut spellings = vec![path.clone()];
+                        // On macOS's case-folding disk, a record not there yet is made under the
+                        // name as typed.
+                        if os == Os::MacOs {
+                            let name = path.file_name().expect("a name").to_string_lossy();
+                            spellings.push(path.with_file_name(name.to_uppercase()));
+                        }
+                        for path in &spellings {
+                            // The store as an entry: neither made, removed nor moved away…
+                            for (what, kind) in [
+                                (FileOp::Create, Kind::Directory),
+                                (FileOp::Create, Kind::Regular),
+                                (FileOp::Unlink, Kind::Directory),
+                                (FileOp::Unlink, Kind::Regular),
+                                (FileOp::WriteData, Kind::Regular),
+                            ] {
+                                assert!(
+                                    !done(what, path, kind),
+                                    "{harness:?} on {os:?}: {what:?} of {}",
+                                    path.display()
+                                );
+                            }
+                            // …and every record below it.
+                            let below = path.join("01JZ0000000000000000000000.json");
+                            for what in [FileOp::Create, FileOp::WriteData, FileOp::Unlink] {
+                                assert!(
+                                    !done(what, &below, Kind::Regular),
+                                    "{harness:?} on {os:?}: {what:?} of {}",
+                                    below.display()
+                                );
+                            }
+                        }
                     }
                 }
             }

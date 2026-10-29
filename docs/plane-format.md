@@ -7360,6 +7360,7 @@ rewritten.
   no link (`grades::routers::record`), read beside the committed record, held to the same limits.
 - **Status:** **internal**, **experimental** behind the `skill-studio` flag.
 - **Tier:** Clone state — this machine's own; nothing rebuilds it.
+- **Held:** with [`skill-grades/`](#stateskill-gradesyyyy-mmjsonl), which holds it.
 ### `<state>/skill-grade-after-edit.json`
 - **Format:** one JSON object (SK-58, #3238; ADR 0105 as amended 2026-10-28): `v` (1) and
   `skills`, each copy the person turned **grading after each edit** on for, keyed by its level's
@@ -7496,7 +7497,8 @@ rewritten.
 - **Written by:** the session host as it starts a sandboxed chat (`skills::levels::note`); a
   restart keeps the record it has. A workspace or persona the person makes, in the window or from
   their own terminal, is added to every record (`skills::levels::vouch`); one the app makes on a
-  chat's request is not, and a sandboxed chat's own `purlis workspace create` writes no record. `unaccepted.json` beside the records
+  chat's request is not, and a sandboxed chat's own `purlis workspace create` writes no
+  record. `unaccepted.json` beside the records
   (`levels`, folders relative to the plane) keeps every folder a swept record's chat could have
   made, until the person accepts it in the Skill studio (`skills::levels::accept`).
 - **Read by:** every skill set: a workspace's or persona's skills whose folder is not in a record,
