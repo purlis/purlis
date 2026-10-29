@@ -649,6 +649,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "skill_draft_reject",
     "skill_draft_chat",
     "skill_draft_try",
+    // "Ask the chat to redo it" on an out-of-date draft (S9, #3690): the redo typed into the
+    // chat that drafted it as the person, or a chat started with it typed, as a draft chat is.
+    "skill_draft_redo",
+    "skill_draft_redo_in",
     // A grade of a skill started or stopped (SK-16, #2779): it runs chats on the person's
     // profile, each started on a trigger test's query, and records the grade in the project.
     // The person's own press in their window, after the plan showed what it costs.
@@ -1097,6 +1101,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "session_record",
     "set_dismissed",
     "show_window_holding",
+    // A deleted skill's last text, for its page on Deleted (S9, #3691): read only.
+    "skill_deleted_text",
     "skill_details",
     "skill_diff",
     // What a router's grade runs (SK-15e, #3233): read only.

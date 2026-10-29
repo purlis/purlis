@@ -147,6 +147,57 @@ fn an_allow_after_keep_blocked_lets_it_through() {
     );
 }
 
+/// The later answer wins: Keep blocked after an Allow of the same host ends the Allow for the
+/// chat's connections and for what a run for it is held to, at every scope.
+#[test]
+fn keep_blocked_after_an_allow_of_the_host_ends_the_allow() {
+    let (asks, _) = board(Duration::from_millis(100), Duration::from_millis(10));
+    asks.allow(&host("api.example.com"), By::Chat);
+    asks.allow(&host("api.example.com"), By::You);
+
+    asks.keep_blocked(&host("api.example.com"));
+
+    assert_eq!(asks.hold("api.example.com", 443, &[443]), Answer::Refused);
+    assert_eq!(asks.allows("api.example.com", 443, &[443]), None);
+    assert!(asks.allowed_live().is_empty(), "{:?}", asks.allowed_live());
+}
+
+/// Keep blocked of one host ends a broader Allow that covers it too, and an Allow of a host it
+/// does not touch stays.
+#[test]
+fn keep_blocked_ends_an_allow_that_covers_it_and_leaves_others() {
+    let (asks, _) = board(Duration::from_millis(100), Duration::from_millis(10));
+    asks.allow(&host("*.example.com"), By::Chat);
+    asks.allow(&host("other.example.org"), By::Chat);
+
+    asks.keep_blocked(&host("api.example.com"));
+
+    assert_eq!(asks.hold("api.example.com", 443, &[443]), Answer::Refused);
+    assert_eq!(
+        asks.allowed_live(),
+        [("other.example.org".to_owned(), By::Chat)]
+    );
+}
+
+/// And an Allow after Keep blocked wins again, for connections and runs alike.
+#[test]
+fn an_allow_after_keep_blocked_is_allowed_live_again() {
+    let (asks, _) = board(Duration::from_millis(100), Duration::from_millis(10));
+    asks.allow(&host("api.example.com"), By::Chat);
+    asks.keep_blocked(&host("api.example.com"));
+
+    asks.allow(&host("api.example.com"), By::Chat);
+
+    assert_eq!(
+        asks.hold("api.example.com", 443, &[443]),
+        Answer::Allowed(By::Chat)
+    );
+    assert_eq!(
+        asks.allowed_live(),
+        [("api.example.com".to_owned(), By::Chat)]
+    );
+}
+
 #[test]
 fn an_allow_held_to_a_port_lets_only_that_port_on() {
     let (asks, _) = board(Duration::from_millis(100), Duration::from_millis(10));

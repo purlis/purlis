@@ -1,0 +1,5 @@
+purlis cluster operator key roll v1
+cluster: 3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b
+from: ed25519:79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664
+to: ed25519:e7f162a10bec559afea195e4dce84b69568d5d2cb0963eb446c0685e2b17f2f0
+until: 1798761600

@@ -515,12 +515,14 @@ pub fn adopt_at_launch() -> Result<Adoption, String> {
     adopt(&config, &home, &crate::envvar::var)
 }
 
+pub mod installs;
 mod made;
 pub use made::*;
 
 pub mod onrunner;
 pub mod pin;
 pub mod sandbox_only;
+pub mod sent;
 pub mod sign_in;
 
 #[cfg(test)]

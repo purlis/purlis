@@ -1003,8 +1003,16 @@ export const commands = {
 	skillUsers: (plane: PlaneId, level: SkillLevel, name: string) => typedError<SkillUsers, string>(__TAURI_INVOKE("skill_users", { plane, level, name })),
 	skillDelete: __WINDOW_ONLY_RESULT,
 	skillDeletesCutShort: __WINDOW_ONLY_RESULT,
-	/**  The deleted skills Restore can bring back, newest first. */
+	/**
+	 *  **The deleted skills Bring back can bring back**, newest first: those deleted in the last 30
+	 *  days, each with its days left (S9, #3691).
+	 */
 	skillsDeleted: (plane: PlaneId) => typedError<DeletedSkill[], string>(__TAURI_INVOKE("skills_deleted", { plane })),
+	/**
+	 *  **The last text of the deleted skill `id` names**: its `SKILL.md` as it was when it was
+	 *  deleted, for its page on Deleted (S9, #3691). Refused for one the project does not list.
+	 */
+	skillDeletedText: (plane: PlaneId, id: string) => typedError<string, string>(__TAURI_INVOKE("skill_deleted_text", { plane, id })),
 	skillRestore: __WINDOW_ONLY_RESULT,
 	skillGrant: __WINDOW_ONLY_RESULT,
 	skillTurn: __WINDOW_ONLY_RESULT,
@@ -1021,7 +1029,7 @@ export const commands = {
 	 *  out (`router` null), from the Skill studio's Routing page (#3692). One commit; chats started
 	 *  after it are routed by it.
 	 */
-	skillRouterChoose: (plane: PlaneId, by: SkillPinner, router: string | null) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_router_choose", { plane, by, router })),
+	skillRouterChoose: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What a skill's tab shows beside its runs**: each copy's history, lifecycle state and
 	 *  owners, and the skills it names and that name it. Nothing while the flag is off.
@@ -1042,6 +1050,8 @@ export const commands = {
 	skillDraftReject: __WINDOW_ONLY_RESULT,
 	skillDraftChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
+	skillDraftRedo: __WINDOW_ONLY_RESULT,
+	skillDraftRedoIn: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
@@ -3780,10 +3790,15 @@ export type DeletedSkill = {
 	/**  Its level as a person reads it: `project`, `local workspace ops`. */
 	label: string,
 	/**
-	 *  How long it stays, as a person reads it: `kept on this machine for 12 more days`, `kept
-	 *  in the project's history` (SK-33).
+	 *  How many days are left to bring it back (S9, #3691): at least 1, as one past its 30 days
+	 *  is not listed.
 	 */
-	stays: string,
+	days_left: number,
+	/**
+	 *  Whether the project's history keeps it (its delete was a commit), so it is still there
+	 *  after its days, for `purlis skill restore`; else this machine keeps it, and removes it then.
+	 */
+	in_history: boolean,
 };
 
 /**  What became of the skill deletes a crash or a quit cut short, one line each (SK-35, #3013). */
@@ -10243,6 +10258,12 @@ export type SkillDraft = {
 	level: SkillLevel,
 	/**  The chat that wrote it last, by its number. */
 	chat: number | null,
+	/**
+	 *  Whether that chat is open now, for an out-of-date draft (false for any other): "Ask the
+	 *  chat to redo it" types into it ([`skill_draft_redo_in`]), where a closed one's opens a
+	 *  chat afresh ([`skill_draft_redo`]).
+	 */
+	chat_open: boolean,
 	/**  A new skill, rather than a change to one. */
 	new: boolean,
 	/**  A file it changes changed in the project since: Accept is refused. */
