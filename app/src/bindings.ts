@@ -4068,6 +4068,8 @@ export const SKILL_GRADE = "skill-grade" as const;
 
 export const SKILL_GRADE_AFTER_EDIT = "skill-grade-after-edit" as const;
 
+export const SKILL_NEEDS_IN = "skills.needs:" as const;
+
 export const SKILL_RUNS_PANEL = "runs" as const;
 
 export const SKILL_STUDIO_IN = "skills.studio:" as const;
