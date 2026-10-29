@@ -361,7 +361,9 @@ pub fn sent(repo: &Path, work: &Work) -> Result<(), Refused> {
 /// **What a runner gives of its work tree with its branches** (`give_code` with its work,
 /// #2048): every branch, and the snapshot of the work tree's own branch as
 /// `refs/purlis/snapshots/<branch>`, which both ends then agree on, bundled into `into` leaving
-/// out what `have` reaches. Answers the refs, and whether there was anything to send.
+/// out what `have` reaches. Answers the refs, and whether there was anything to send. Where the
+/// runner holds no repository there, a clone made on the desktop's side only (#3454), it answers
+/// no refs and nothing to send: the desktop's clone stays as it is ([`take_work_back`]).
 pub fn give_work(
     repo: &Path,
     scratch: &Path,
@@ -369,9 +371,7 @@ pub fn give_work(
     into: &Path,
 ) -> Result<(Vec<Ref>, super::Bundled), Refused> {
     if !repo.join(".git").exists() {
-        return Err(not_allowed(
-            "the runner holds no repository there, so there is no work to send",
-        ));
+        return Ok((Vec::new(), super::Bundled::Nothing));
     }
     let work = work_of(repo, scratch, &[])?;
     let kept = format!("{SNAPSHOTS}{}", work.branch);
@@ -525,7 +525,8 @@ pub fn receive_over(
 /// taken over onto the runner's work tree's branch, `heads`' snapshot (`refs/purlis/snapshots/
 /// <branch>`, exactly one), with the work in it ([`take_over`], `leave_out` as this clone's
 /// sends leave out). Refused whole, nothing of the work tree changed, where this clone changed
-/// since its work went to the runner.
+/// since its work went to the runner. Where the runner holds no copy of the clone (no refs at
+/// all, [`give_work`]), it was made on this side only, and stays as it is (#3454).
 pub fn take_work_back(
     repo: &Path,
     scratch: &Path,
@@ -534,6 +535,9 @@ pub fn take_work_back(
     bundle: Option<&Path>,
     heads: &[Ref],
 ) -> Result<Vec<String>, Refused> {
+    if heads.is_empty() && bundle.is_none() {
+        return Ok(Vec::new());
+    }
     let snapshots: Vec<&Ref> = heads
         .iter()
         .filter(|one| one.name.starts_with(SNAPSHOTS))

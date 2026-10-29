@@ -1001,6 +1001,136 @@ fn what_is_open(planes: &crate::planes::Planes) -> (Vec<Placed>, Vec<BrowserPlac
     (chats, browsers, open)
 }
 
+/// One runner's home, as the disk its pool holds is counted by (#3493).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HomeOf {
+    pub pool: String,
+    /// Its home's volume on this machine's Docker.
+    pub volume: String,
+}
+
+/// **The disk one pool's runners hold** (#3493, spec #2041 story 55): their home volumes
+/// together, a draining runner's included.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PoolDisk {
+    pub pool: String,
+    /// In kilobytes of 1000 bytes, as Docker says sizes, to the nearest; `u32` so it is a
+    /// `number` in TypeScript, and held at its most (some 4 TB) rather than wrapped.
+    pub kilobytes: u32,
+    /// How many of its runners' homes Docker did not list: their disk is not known, and is
+    /// said apart rather than counted as nothing.
+    pub not_listed: u32,
+}
+
+/// **The disk each pool's runners hold**, as the use table says it (#3493).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum DiskHeld {
+    /// Each pool's, in the order the pools were added.
+    Read { pools: Vec<PoolDisk> },
+    /// Docker could not say, and why, in its words ([`shown_safely`]).
+    NotRead { why: String },
+    /// It was not read within the time a second read of it waits ([`WAITS_AT_MOST`]).
+    Unanswered,
+}
+
+/// **[`DiskHeld`] of each of `pools`**, from the disk each volume holds as Docker read it
+/// (`held`, [`purlis_core::dockerpool::homes_held`]) and each kept runner's home (`homes`).
+pub fn disk_of(
+    pools: &[String],
+    homes: &[HomeOf],
+    held: Result<BTreeMap<String, u64>, String>,
+) -> DiskHeld {
+    let held = match held {
+        Ok(held) => held,
+        Err(why) => {
+            return DiskHeld::NotRead {
+                why: shown_safely(&why),
+            };
+        }
+    };
+    let pools = pools
+        .iter()
+        .map(|pool| {
+            let of: Vec<Option<u64>> = homes
+                .iter()
+                .filter(|home| home.pool == *pool)
+                .map(|home| held.get(&home.volume).copied())
+                .collect();
+            let bytes: u64 = of
+                .iter()
+                .flatten()
+                .fold(0, |sum, one| sum.saturating_add(*one));
+            PoolDisk {
+                pool: pool.clone(),
+                kilobytes: u32::try_from(bytes.saturating_add(500) / 1000).unwrap_or(u32::MAX),
+                not_listed: u32::try_from(of.iter().filter(|one| one.is_none()).count())
+                    .unwrap_or(u32::MAX),
+            }
+        })
+        .collect();
+    DiskHeld::Read { pools }
+}
+
+/// The reads of the disk held in flight: one at a time, as each runner is asked.
+fn reading_disk() -> &'static Joined<Result<DiskHeld, String>> {
+    static READING: std::sync::OnceLock<Joined<Result<DiskHeld, String>>> =
+        std::sync::OnceLock::new();
+    READING.get_or_init(Joined::default)
+}
+
+/// **The disk each pool's runners hold** (#3493): their home volumes, as `docker system df`
+/// says, which reads them and starts nothing, so **a suspended runner is never woken by it**.
+/// Read apart from [`devices`], so a Docker slow to count every volume holds up no other part
+/// of the view, and held to the time each read of Docker is.
+#[tauri::command]
+#[specta::specta]
+pub async fn devices_disk() -> Result<DiskHeld, String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("reading the disk this machine's runners hold", move || {
+            reading_disk().once("disk", WAITS_AT_MOST, read_disk, || {
+                Ok(DiskHeld::Unanswered)
+            })
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        Err("purlis keeps Docker pools on macOS and Linux only.".to_owned())
+    }
+}
+
+/// [`devices_disk`], read.
+#[cfg(unix)]
+fn read_disk() -> Result<DiskHeld, String> {
+    let config = purlis_core::machine::config_root()
+        .ok_or_else(|| "There is no config home on this machine.".to_owned())?;
+    let pools: Vec<String> = purlis_core::runners::pools(&config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .map(|pool| pool.name().to_owned())
+        .collect();
+    let homes: Vec<HomeOf> = purlis_core::runners::read(&config)
+        .map_err(|why| why.to_string())?
+        .iter()
+        .map(|one| HomeOf {
+            pool: one.pool().to_owned(),
+            volume: one.made.runner.volume(),
+        })
+        .collect();
+    if homes.is_empty() {
+        return Ok(disk_of(&pools, &homes, Ok(BTreeMap::new())));
+    }
+    // Held to a time as every read is ([`purlis_core::dockerpool::READS_WITHIN`]).
+    let docker = crate::runnerlinks::docker()?;
+    Ok(disk_of(
+        &pools,
+        &homes,
+        docker.homes_held().map_err(|why| why.0),
+    ))
+}
+
 /// **Every device and what runs on it** (#2052): this machine and every runner it keeps, each
 /// with the chats and browsers the window has open there, and each pool's limits.
 #[tauri::command]

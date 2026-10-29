@@ -190,6 +190,14 @@ const DRAWN: &[Drawn] = &[
         around: &[],
         on: Some("surface.overlay"),
     },
+    Drawn {
+        family: "titlebar",
+        part: "dot",
+        css: include_str!("../../../../app/src/ui/titlebar/titlebar.css"),
+        own: &["[data-part=\"dot\"][data-scope=\"titlebar\"]"],
+        around: &[],
+        on: None,
+    },
 ];
 
 /// A theme over Purlis Classic that sets `tokens` and `parts`, as read.

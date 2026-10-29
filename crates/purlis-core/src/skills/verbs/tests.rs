@@ -1930,3 +1930,133 @@ fn a_skill_on_disk_named_as_a_built_in_one_is_a_clash_to_rename_at_every_level()
         .collect();
     assert_eq!(bare, ["secrets"]);
 }
+
+/// What a chat in `workspace` gets, by name, with the built-in skills in `built_in`.
+fn gets_with(root: &Path, built_in: &Path, workspace: Option<&str>) -> Vec<String> {
+    crate::skills::in_the_studio(Some(built_in), root, workspace, None)
+        .effective
+        .into_iter()
+        .map(|e| e.skill.name)
+        .collect()
+}
+
+#[test]
+fn my_own_copy_of_a_built_in_skill_lands_at_the_level_picked_under_its_new_name() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+    let was = std::fs::read_to_string(built_in.path().join("bundled/SKILL.md")).unwrap();
+
+    let (folder, lines) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::workspace("ops"), "my-bundled")
+    });
+
+    let folder = folder.unwrap();
+    assert_eq!(folder, root.join("workspaces/ops/skills/my-bundled"));
+    let text = std::fs::read_to_string(folder.join("SKILL.md")).unwrap();
+    assert_eq!(text, was.replace("name: bundled", "name: my-bundled"));
+    assert!(said(&lines, |line| matches!(line, Say::Done(done) if done
+        .contains("copied from the built-in skill bundled"))));
+    // The built-in skill is as it was, and a chat in the workspace gets both.
+    assert_eq!(
+        std::fs::read_to_string(built_in.path().join("bundled/SKILL.md")).unwrap(),
+        was
+    );
+    let got = gets_with(root, built_in.path(), Some("ops"));
+    assert_eq!(
+        got.iter().filter(|name| *name == "bundled").count(),
+        1,
+        "{got:?}"
+    );
+    assert_eq!(
+        got.iter().filter(|name| *name == "my-bundled").count(),
+        1,
+        "{got:?}"
+    );
+}
+
+#[test]
+fn my_own_copy_lands_at_every_level_and_a_project_copy_reaches_the_root() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        let to = format!(
+            "copy-{}",
+            every_level().iter().position(|one| *one == level).unwrap()
+        );
+        let folder = did(root, |cx| {
+            copy_built_in(cx, "bundled", &level, &to).map(|_| ())
+        });
+        // `did` has no built-in skills: nothing to copy from.
+        assert_eq!(
+            folder.unwrap_err(),
+            "bundled is no built-in skill, so there is nothing to copy"
+        );
+        let (made, _) = on(root, Some(built_in.path()), |cx| {
+            copy_built_in(cx, "bundled", &level, &to)
+        });
+        assert_eq!(made.unwrap(), root.join(at(&level, &to)), "{level}");
+    }
+    let got = gets_with(root, built_in.path(), None);
+    assert!(got.contains(&"copy-0".to_owned()), "{got:?}");
+    assert!(got.contains(&"bundled".to_owned()), "{got:?}");
+}
+
+#[test]
+fn my_own_copy_under_a_built_in_skills_name_is_refused_in_the_agreed_words() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    for level in every_level() {
+        for name in RESERVED {
+            let (refused, _) = on(root, Some(built_in.path()), |cx| {
+                copy_built_in(cx, "bundled", &level, name)
+            });
+            assert_eq!(
+                refused.unwrap_err(),
+                crate::skills::NAME_RESERVED,
+                "{level} {name}"
+            );
+            assert!(!root.join(at(&level, name)).exists(), "{level} {name}");
+        }
+    }
+}
+
+#[test]
+fn my_own_copy_is_refused_for_a_skill_that_is_not_built_in_or_a_name_the_level_holds() {
+    let tmp = plane();
+    let root = tmp.path();
+    let built_in = bundle();
+
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "deploy", &Level::project(), "my-deploy")
+    });
+    assert_eq!(
+        refused.unwrap_err(),
+        "deploy is no built-in skill, so there is nothing to copy"
+    );
+    assert!(!root.join("skills/my-deploy").exists());
+
+    let was = std::fs::read_to_string(root.join("skills/release/SKILL.md")).unwrap();
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "release")
+    });
+    assert!(
+        refused
+            .unwrap_err()
+            .contains("already have one named release"),
+        "a name the level holds"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("skills/release/SKILL.md")).unwrap(),
+        was
+    );
+
+    let (refused, _) = on(root, Some(built_in.path()), |cx| {
+        copy_built_in(cx, "bundled", &Level::project(), "Not A Name")
+    });
+    assert!(refused.unwrap_err().contains("cannot be a skill's name"));
+}

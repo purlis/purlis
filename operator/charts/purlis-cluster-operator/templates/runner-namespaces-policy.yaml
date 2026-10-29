@@ -1,0 +1,110 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+{{/*
+Each person's runner namespace, purlis-runners-<hash> (#2055): only the cluster operator makes
+one, or changes who it is for; and the operator binds purlis-runner-owner, and caps a person
+with purlis-person, only there, for the one person the namespace is for. Kept when the release is uninstalled, as the
+policy on Claims is.
+*/ -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: purlis-runner-namespaces
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces, namespaces/status, namespaces/finalize, resourcequotas]
+      - apiGroups: [rbac.authorization.k8s.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [rolebindings]
+  variables:
+    - name: operator
+      expression: >-
+        request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:purlis-cluster-operator'
+    - name: runners
+      expression: >-
+        request.resource.resource == 'namespaces' ?
+        object.metadata.name.startsWith('purlis-runners-') :
+        request.namespace.startsWith('purlis-runners-')
+    # Who a runner namespace is for, by the marks the operator puts on it.
+    - name: marks
+      expression: >-
+        request.resource.resource != 'namespaces' ? [] :
+        [has(object.metadata.labels) && 'app.kubernetes.io/managed-by' in object.metadata.labels ?
+        object.metadata.labels['app.kubernetes.io/managed-by'] : '',
+        has(object.metadata.annotations) && 'runners.purlis.dev/requester' in object.metadata.annotations ?
+        object.metadata.annotations['runners.purlis.dev/requester'] : '']
+    - name: oldMarks
+      expression: >-
+        request.resource.resource != 'namespaces' || request.operation != 'UPDATE' ? [] :
+        [has(oldObject.metadata.labels) && 'app.kubernetes.io/managed-by' in oldObject.metadata.labels ?
+        oldObject.metadata.labels['app.kubernetes.io/managed-by'] : '',
+        has(oldObject.metadata.annotations) && 'runners.purlis.dev/requester' in oldObject.metadata.annotations ?
+        oldObject.metadata.annotations['runners.purlis.dev/requester'] : '']
+    # Who the runner namespace a role binding is made in is for: the one subject it may name.
+    - name: requester
+      expression: >-
+        request.resource.resource == 'rolebindings' && namespaceObject != null &&
+        has(namespaceObject.metadata.annotations) &&
+        'runners.purlis.dev/requester' in namespaceObject.metadata.annotations ?
+        namespaceObject.metadata.annotations['runners.purlis.dev/requester'] : ''
+  validations:
+    # A runner namespace is made by the operator alone, and who it is for is changed by no one
+    # else.
+    - expression: >-
+        request.resource.resource != 'namespaces' || variables.operator || !variables.runners ||
+        request.operation == 'UPDATE' && variables.marks == variables.oldMarks
+      messageExpression: >-
+        'Only the purlis cluster operator makes a runner namespace (purlis-runners-*), or changes who it is for.'
+      reason: Forbidden
+    # The operator makes no other namespace.
+    - expression: >-
+        request.resource.resource != 'namespaces' || !variables.operator || variables.runners
+      messageExpression: >-
+        'The purlis cluster operator makes runner namespaces (purlis-runners-*) alone.'
+      reason: Forbidden
+    # The operator binds one role, purlis-runner-owner, in a runner namespace alone, to the one
+    # person that namespace is for, who is not the operator itself.
+    - expression: >-
+        request.resource.resource != 'rolebindings' || !variables.operator ||
+        variables.runners && variables.requester != '' &&
+        variables.requester != 'system:serviceaccount:{{ .Release.Namespace }}:purlis-cluster-operator' &&
+        object.metadata.name == 'purlis-runner-owner' &&
+        object.roleRef.kind == 'ClusterRole' && object.roleRef.name == 'purlis-runner-owner' &&
+        has(object.subjects) && size(object.subjects) == 1 &&
+        (object.subjects[0].kind == 'User' && !object.subjects[0].name.startsWith('system:') &&
+        object.subjects[0].name == variables.requester ||
+        object.subjects[0].kind == 'ServiceAccount' && has(object.subjects[0].namespace) &&
+        'system:serviceaccount:' + object.subjects[0].namespace + ':' + object.subjects[0].name ==
+        variables.requester)
+      messageExpression: >-
+        'The purlis cluster operator binds purlis-runner-owner alone, in a runner namespace alone, to the one person it is for, who is not the operator.'
+      reason: Forbidden
+    # The operator caps a person in their runner namespace alone, with purlis-person.
+    - expression: >-
+        request.resource.resource != 'resourcequotas' || !variables.operator ||
+        variables.runners && object.metadata.name == 'purlis-person'
+      messageExpression: >-
+        'The purlis cluster operator makes the quota purlis-person, in a runner namespace alone.'
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: purlis-runner-namespaces
+  labels:
+    {{- include "purlis-cluster-operator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  policyName: purlis-runner-namespaces
+  validationActions: [Deny]
