@@ -115,6 +115,39 @@ pub const DISPATCH_NOTE: &str = "dispatch_note";
 /// `purlis dispatch ask`.
 pub const DISPATCH_ASK: &str = "dispatch_ask";
 
+/// The tool that brings the clone or branch folder this chat stands in up to its remote
+/// (#3831): the one operation `purlis worktree update` run there performs, which [`call`] does
+/// not answer either. The server hands it to the app that started the chat, which runs it
+/// outside the chat's sandbox after judging it; with no app, it runs nothing.
+pub const WORKTREE_UPDATE: &str = "worktree_update";
+
+/// What [`WORKTREE_UPDATE`] is asked to do: `start` (the default), `continue` or `abort`, and
+/// for a branch folder's start, the `base` branch.
+pub fn worktree_update_args(
+    args: &Map<String, Value>,
+) -> Result<crate::hookwire::UpdateStep, String> {
+    use crate::hookwire::UpdateStep;
+    let base = match args.get("base") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(base)) if !base.trim().is_empty() => Some(base.trim().to_owned()),
+        Some(_) => return Err("base is the name of a branch".to_owned()),
+    };
+    let step = match args.get("step") {
+        None | Some(Value::Null) => "start",
+        Some(Value::String(step)) => step.as_str(),
+        Some(_) => return Err("step is start, continue or abort".to_owned()),
+    };
+    match (step, base) {
+        ("start", base) => Ok(UpdateStep::Start { base }),
+        ("continue" | "abort", Some(_)) => {
+            Err("base is taken only when an update starts".to_owned())
+        }
+        ("continue", None) => Ok(UpdateStep::Continue),
+        ("abort", None) => Ok(UpdateStep::Abort),
+        _ => Err("step is start, continue or abort".to_owned()),
+    }
+}
+
 /// The tools a Claude Code chat runs without asking (V79, #1050, amending SI-8e in ADR 0064):
 /// the five that only read, [`PERSONA_WHERE`] (V98a, #1450), which reads the app's own
 /// record and answers names and states a chat is told at its start anyway, and
@@ -159,7 +192,7 @@ pub const PRE_ALLOWED: [&str; 14] = [
 /// Apart from [`PRE_ALLOWED`] on purpose: a grade's chat is served the reads alone (SK-16), and
 /// is handed none of these. Named one by one, so a tool added later is asked about until it is
 /// ruled in here; an operator's or a project's `ask` or `deny` for any of them still wins.
-pub const OWN_SCOPE_TOOLS: [&str; 7] = [
+pub const OWN_SCOPE_TOOLS: [&str; 8] = [
     "todo_add",
     "todo_done",
     "memory_add",
@@ -167,6 +200,8 @@ pub const OWN_SCOPE_TOOLS: [&str; 7] = [
     WORKSPACE_SECTION,
     WORKSPACE_VISION,
     ASK_OPERATOR,
+    // The update the app makes for the chat in its own clone, branch folder or root (#3831).
+    WORKTREE_UPDATE,
 ];
 
 /// The variables the server reads to find the chat's place, as a `charter` command in the chat
@@ -371,7 +406,7 @@ fn wait_seconds() -> Value {
 }
 
 /// Every tool, in the order a harness lists them.
-pub static TOOLS: [Tool; 25] = [
+pub static TOOLS: [Tool; 26] = [
     Tool {
         name: "todo_list",
         description: "List the open todos of the workspace this chat works in, oldest first, \
@@ -503,6 +538,36 @@ pub static TOOLS: [Tool; 25] = [
                     },
                 },
                 "required": ["title", "body"],
+                "additionalProperties": false,
+            })
+        },
+        read_only: false,
+    },
+    Tool {
+        name: WORKTREE_UPDATE,
+        description: "Bring the clone, branch folder or project root this chat stands in up \
+                      to date, as `purlis worktree update` there does: the app fetches, then \
+                      fast-forwards or rebases the folder's branch onto its remote (a clone), \
+                      its base (a branch folder), or runs the window's Update (the root). \
+                      Refused with uncommitted changes, or where it would overwrite a file that \
+                      is not committed. A conflict stops it and names the files: resolve them, \
+                      then call it with step continue, or abort.",
+        schema: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "step": {
+                        "type": "string",
+                        "enum": ["start", "continue", "abort"],
+                        "description": "start (the default), or continue or abort a rebase \
+                                        it stopped.",
+                    },
+                    "base": {
+                        "type": "string",
+                        "description": "A branch folder only, at start: the branch to rebase \
+                                        onto (default: the one it was cut from).",
+                    },
+                },
                 "additionalProperties": false,
             })
         },
@@ -883,6 +948,7 @@ pub fn call(
         DISPATCH_REPORT,
         DISPATCH_NOTE,
         DISPATCH_ASK,
+        WORKTREE_UPDATE,
     ]
     .contains(&tool)
     {

@@ -192,6 +192,13 @@ describe("Make my own copy", () => {
     expect(name).toHaveValue("my-secrets");
     await user.clear(name);
     await user.type(name, "vault-steps");
+    // The copy's own description starts as the built-in's, noted as the person's copy (#3777).
+    const described = within(dialog).getByRole("textbox", {
+      name: "What it does and when to use it",
+    });
+    expect(described).toHaveValue("What secrets does. (your copy of secrets)");
+    await user.clear(described);
+    await user.type(described, "Our vault steps, with the ops checklist.");
     await pickIn(selectNamed("Lands in", dialog), "1", user);
     await user.click(within(dialog).getByRole("button", { name: "Make the copy" }));
 
@@ -200,6 +207,7 @@ describe("Make my own copy", () => {
       name: "secrets",
       level: { at: "workspace", name: "ops", local: false },
       to: "vault-steps",
+      description: "Our vault steps, with the ops checklist.",
     });
     const copy = await screen.findByTestId("skill-studio-skill");
     await waitFor(() =>
@@ -229,6 +237,37 @@ describe("Make my own copy", () => {
     expect(within(dialog).getByRole("button", { name: "Make the copy" })).toBeDisabled();
   });
 
+  it("refuses the built-in's description word for word, or none, as it is typed (#3777)", async () => {
+    const asked = core();
+    const user = userEvent.setup();
+    renderStudio();
+    await screen.findByTestId("skill-deploy");
+    await user.click(quietLine(3));
+    await user.click(screen.getByRole("button", { name: "Make my own copy…" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Make my own copy of a built-in skill",
+    });
+    const described = within(dialog).getByRole("textbox", {
+      name: "What it does and when to use it",
+    });
+    const make = within(dialog).getByRole("button", { name: "Make the copy" });
+    await user.clear(described);
+    await user.type(described, "What browser does.");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "the copy's description is browser's word for word, so a chat could not tell them apart",
+    );
+    expect(make).toBeDisabled();
+    await user.clear(described);
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    expect(make).toBeDisabled();
+    // Typed, it is kept as the person wrote it when another built-in is picked.
+    await user.type(described, "Mine.");
+    await pickIn(selectNamed("Copy of", dialog), "handoff", user);
+    expect(described).toHaveValue("Mine.");
+    expect(make).toBeEnabled();
+    expect(asked.some((one) => one.cmd === "skill_copy")).toBe(false);
+  });
+
   it("from the folded line, picks the built-in to copy, and says the core's refusal in place", async () => {
     const asked = core(undefined, () => "the project skills already have one named my-browser");
     const user = userEvent.setup();
@@ -241,6 +280,10 @@ describe("Make my own copy", () => {
     });
     await pickIn(selectNamed("Copy of", dialog), "browser", user);
     expect(within(dialog).getByRole("textbox", { name: "New name" })).toHaveValue("my-browser");
+    // The proposed description follows the built-in picked, until the person types their own.
+    expect(
+      within(dialog).getByRole("textbox", { name: "What it does and when to use it" }),
+    ).toHaveValue("What browser does. (your copy of browser)");
     await user.click(within(dialog).getByRole("button", { name: "Make the copy" }));
     await waitFor(() =>
       expect(within(dialog).getByRole("alert")).toHaveTextContent(
@@ -251,6 +294,7 @@ describe("Make my own copy", () => {
       name: "browser",
       level: { at: "project", local: false },
       to: "my-browser",
+      description: "What browser does. (your copy of browser)",
     });
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });

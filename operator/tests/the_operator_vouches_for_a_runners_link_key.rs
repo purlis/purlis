@@ -1184,6 +1184,73 @@ fn the_mounted_keys_are_read_again_as_a_team_admin_rolls_them() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A folder as a kubelet mounts a Secret: each version in a folder of its own, `..data` linked
+/// to the current one, and each key a link through `..data`.
+#[cfg(unix)]
+fn kubelet_mounted(name: &str, version: &str, files: &[(&str, String)]) -> std::path::PathBuf {
+    let dir = mounted(name, &[]);
+    kubelet_writes(&dir, version, files);
+    for file in ["key.pem", "next.pem"] {
+        std::os::unix::fs::symlink(format!("..data/{file}"), dir.join(file)).unwrap();
+    }
+    dir
+}
+
+/// A new version of the Secret, written as the kubelet writes it: its own folder, then
+/// `..data` swapped to it in one rename.
+#[cfg(unix)]
+fn kubelet_writes(dir: &std::path::Path, version: &str, files: &[(&str, String)]) {
+    let folder = dir.join(version);
+    std::fs::create_dir_all(&folder).unwrap();
+    for (file, text) in files {
+        std::fs::write(folder.join(file), text).unwrap();
+    }
+    let staged = dir.join("..data_tmp");
+    let _ = std::fs::remove_file(&staged);
+    std::os::unix::fs::symlink(version, &staged).unwrap();
+    std::fs::rename(&staged, dir.join(vouch::KUBELET_DATA)).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn both_keys_are_read_from_one_version_of_the_secret_as_the_kubelet_swaps_it() {
+    let (key, next) = (
+        pem_of(&the_examples_key()),
+        pem_of(&the_examples_next_key()),
+    );
+    let dir = kubelet_mounted(
+        "snapshot",
+        "..2026_10_29_01",
+        &[("key.pem", key.clone()), ("next.pem", next.clone())],
+    );
+    let keys = MountedKeys::read(&dir).expect("the keys");
+    assert_eq!(
+        keys.now().next.as_ref().map(SigningKey::public).as_deref(),
+        Some(fixture("next-operator-key.txt").trim())
+    );
+    // The roll over, swapped in one step: the new key alone.
+    kubelet_writes(&dir, "..2026_10_29_02", &[("key.pem", next.clone())]);
+    let now = keys.now();
+    assert_eq!(
+        now.current.public(),
+        fixture("next-operator-key.txt").trim()
+    );
+    assert!(now.next.is_none());
+    // Both read under the version `..data` names, never through the folder's own links: a
+    // folder whose links say otherwise is read as `..data` says.
+    std::fs::remove_file(dir.join("key.pem")).unwrap();
+    std::fs::write(dir.join("key.pem"), &key).unwrap();
+    std::fs::remove_file(dir.join("next.pem")).unwrap();
+    std::fs::write(dir.join("next.pem"), &key).unwrap();
+    let now = keys.now();
+    assert_eq!(
+        now.current.public(),
+        fixture("next-operator-key.txt").trim()
+    );
+    assert!(now.next.is_none());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn an_operator_starts_only_with_a_key_and_a_next_key_it_reads() {
     let key = pem_of(&the_examples_key());

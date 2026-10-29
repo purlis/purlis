@@ -448,11 +448,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
   "SkillCopy.tsx": {
-    count: 2,
+    count: 3,
     why:
       "Make my own copy's refusals (#3686), beside the fields the person is still filling: a " +
-      "built-in skill's name, said as it is typed, and the core's sentence for the copy just " +
-      "asked for. Make the copy is the retry",
+      "built-in skill's name and the built-in's description word for word (#3777), each said " +
+      "as it is typed, and the core's sentence for the copy just asked for. Make the copy is " +
+      "the retry",
   },
   "SkillStudioTab.tsx": {
     count: 1,

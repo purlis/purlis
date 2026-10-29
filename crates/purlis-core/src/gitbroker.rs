@@ -85,6 +85,11 @@ fn isolated_answer(
             bound(root, asker.cwd.as_deref(), &ask.workspace)
                 .and_then(|()| at_or_above(root, asker.cwd.as_deref(), repo, piece))
         }
+        // The project root: only for the chat whose place it is.
+        GitWork::RootUpdate {} => at_the_root(root, asker.cwd.as_deref()),
+        // A clone's own checkout: the chat stands in it, or above it in its workspace.
+        GitWork::CloneUpdate { repo, .. } => bound(root, asker.cwd.as_deref(), &ask.workspace)
+            .and_then(|()| at_or_above_clone(root, asker.cwd.as_deref(), &ask.workspace, repo)),
         _ => bound(root, asker.cwd.as_deref(), &ask.workspace),
     };
     if let Err(why) = placed {
@@ -158,6 +163,42 @@ fn isolated_answer(
                 Ok(code) => code,
                 Err(NotRun::Repo(why)) => return no(why),
                 Err(NotRun::Folder(why)) => return no(why.to_string()),
+            }
+        }
+        GitWork::RootUpdate {} => {
+            // Placed at the root above, so its own folder is the root.
+            let chat_dir = asker.cwd.as_deref().unwrap_or(root);
+            let updated = crate::planegit::update_for_a_chat(root, chat_dir, &mut say);
+            let request = crate::forge::request_words_of(root, root).request_noun();
+            let said = updated.said(request);
+            if matches!(updated, crate::planegit::Updated::Left(_)) {
+                say(Say::Fail(said.into()));
+                1
+            } else {
+                say(Say::Done(said.into()));
+                0
+            }
+        }
+        GitWork::CloneUpdate { repo, step } => {
+            let sandboxed = match commit::sandboxed(root, asker) {
+                Ok(sandboxed) => sandboxed,
+                Err(why) => return no(why),
+            };
+            let reach = crate::pieceupdate::Reach {
+                hosts: hosts.as_deref(),
+                sandboxed_at: asker.cwd.as_deref().filter(|_| sandboxed),
+            };
+            let at = crate::pieceupdate::CloneAt {
+                root,
+                ws: &ask.workspace,
+                repo,
+            };
+            let held = git::isolation().unwrap_or_default();
+            match in_a_checked_clone(root, &ask.workspace, repo, &held, || {
+                crate::pieceupdate::update_clone(&at, step, &reach, &mut say)
+            }) {
+                Ok(code) => code,
+                Err(why) => return no(why),
             }
         }
         GitWork::WorktreeAdd {
@@ -372,6 +413,79 @@ pub fn at_or_above(root: &Path, cwd: Option<&Path>, repo: &str, piece: &str) -> 
     }
 }
 
+/// Whether a chat standing at `cwd` stands at the project root itself (#3831): the one chat
+/// whose place the root's working tree is. Anything else, or a place that cannot be read, is
+/// refused.
+pub fn at_the_root(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
+    match cwd {
+        Some(cwd) if same_dir(root, cwd) => Ok(()),
+        _ => Err(
+            "this chat does not stand at the project root, so the app will not update the \
+             project for it: `purlis worktree update` in a workspace's clone or branch folder \
+             updates that folder"
+                .to_owned(),
+        ),
+    }
+}
+
+/// Whether a chat standing at `cwd` stands in clone `repo` of workspace `ws`, or above it: at
+/// the project root or the workspace's own folder (#3831). A chat in a branch folder, or in
+/// another folder of the workspace, is refused: the app updates the clone a chat works in.
+pub fn at_or_above_clone(
+    root: &Path,
+    cwd: Option<&Path>,
+    ws: &str,
+    repo: &str,
+) -> Result<(), String> {
+    let Some(cwd) = cwd else {
+        return Err(
+            "the app has no record of where this chat stands, so it will not run git for it"
+                .to_owned(),
+        );
+    };
+    if let Some(here) = crate::worktree::locate(root, cwd) {
+        return Err(format!(
+            "this chat stands in branch folder {} · {}, so the app will not update clone {repo} \
+             for it: `purlis worktree update` there brings that folder up instead",
+            here.repo, here.piece
+        ));
+    }
+    let unplaced = || {
+        format!(
+            "the app could not place where this chat stands in workspace '{}', so it will not \
+             update clone {repo} for it",
+            crate::shown::short(ws)
+        )
+    };
+    let (Ok(project), Ok(workspace), Ok(here)) = (
+        std::fs::canonicalize(root),
+        std::fs::canonicalize(root.join("workspaces").join(ws)),
+        std::fs::canonicalize(cwd),
+    ) else {
+        return Err(unplaced());
+    };
+    // At the project root: above every clone.
+    if here == project {
+        return Ok(());
+    }
+    let Ok(below) = here.strip_prefix(&workspace) else {
+        return Err(format!(
+            "this chat stands outside workspace '{}', so the app will not update clone {repo} \
+             for it",
+            crate::shown::short(ws)
+        ));
+    };
+    match below.components().next() {
+        // The workspace's own folder: above its clones.
+        None => Ok(()),
+        Some(first) if first.as_os_str() == repo => Ok(()),
+        Some(first) => Err(format!(
+            "this chat stands in {}, so the app will not update clone {repo} for it",
+            crate::shown::short(&first.as_os_str().to_string_lossy())
+        )),
+    }
+}
+
 /// Whether a chat standing at `cwd` stands in the project at `root`: at its root, or in one of
 /// its workspaces. Where a chat may ask for a workspace to be made (qw387).
 pub fn in_the_project(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
@@ -488,7 +602,8 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         GitWork::WorktreeAdd { repo, .. }
         | GitWork::WorktreeCut { repo, .. }
         | GitWork::WorktreeUpdate { repo, .. }
-        | GitWork::WorktreePush { repo, .. } => {
+        | GitWork::WorktreePush { repo, .. }
+        | GitWork::CloneUpdate { repo, .. } => {
             if crate::contain::repo_name_ok(repo) && crate::contain::workspace_name_ok(ws) {
                 vec![root.join("workspaces").join(ws).join(repo)]
             } else {
@@ -500,7 +615,8 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
             .map(|found| found.repos.into_iter().map(|repo| repo.path).collect())
             .unwrap_or_default(),
         // A workspace that is not there yet holds no clone; one that is there is refused.
-        GitWork::Create { .. } => Vec::new(),
+        // The root is the window's own Update's to check, as it checks it for the person.
+        GitWork::Create { .. } | GitWork::RootUpdate {} => Vec::new(),
     }
 }
 
@@ -581,6 +697,10 @@ pub fn checked_repo(repo: &Path) -> Result<Checked, String> {
              chat"
         )
     };
+    // A real folder, never a link to one: where git keeps a clone is not for a chat to point.
+    if !crate::worktree::is_own_git_dir(&repo.join(".git")) {
+        return Err(not_a_clone());
+    }
     let own = std::fs::canonicalize(repo.join(".git")).map_err(|_| not_a_clone())?;
     let id = git::DirId::of(&own);
     let resolved = git::run(repo, &["rev-parse", "--absolute-git-dir"], git::READ)

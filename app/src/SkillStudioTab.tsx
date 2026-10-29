@@ -475,12 +475,12 @@ export function SkillStudioTab({
 
   /** **Make my own copy** (#3686): the copy made, said with its built-in still loading, and its
    *  page opened; or the core's refusal, said in the dialog. */
-  const copy = (name: string, level: SkillLevel, to: string) => {
+  const copy = (name: string, level: SkillLevel, to: string, description: string) => {
     setBusy(true);
     const refusedWith = (why: string) =>
       setCopying((was) => (was === undefined ? was : { ...was, refused: why }));
     void commands
-      .skillCopy(plane, name, level, to)
+      .skillCopy(plane, name, level, to, description)
       .then((answer) => {
         if (answer.status === "error") {
           refusedWith(answer.error);
@@ -1258,6 +1258,10 @@ export function SkillStudioTab({
       {copying !== undefined && studio !== undefined && (
         <SkillCopy
           builtIns={builtInNames}
+          descriptionOf={(name) =>
+            skills.find((skill) => skill.level === "built-in" && skill.name === name)
+              ?.description ?? ""
+          }
           from={copying.from}
           levels={levels}
           start={start}
