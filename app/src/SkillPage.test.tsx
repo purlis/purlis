@@ -8,7 +8,7 @@
  * faked at its command boundary.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { chooseMore, forgetStudio, renderStudioAt } from "./SkillStudioTab.testkit";
