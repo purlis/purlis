@@ -1202,6 +1202,11 @@ fn cancel(held: &Held, asker: u32, of: u32) -> Result<Answer, String> {
                 None => dispatched::being_stopped(&name, of),
             });
         }
+        // The person has typed in it: it is theirs (#3785, ruled 2026-10-29), as a close is
+        // refused for it.
+        if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
+            return Err(dispatched::the_person_typed_in(&name, of, "cancel"));
+        }
         let began = held.tasks().ledger().cancel(of, &name, &from)?;
         if began {
             crate::stopping::cancel(held, of, &deciding);
@@ -1711,10 +1716,7 @@ fn close_refused(held: &Held, of: u32, from: &HandedFrom, name: &str) -> Result<
         ));
     }
     if stepped_in(held, of) || held.tasks().ledger().keyed(of) {
-        return Err(format!(
-            "the person has typed in '{name}' (chat {of}), so it is theirs to close, from its \
-             tab."
-        ));
+        return Err(dispatched::the_person_typed_in(name, of, "close"));
     }
     if held.chats().looks_at(of) {
         return Err(format!(

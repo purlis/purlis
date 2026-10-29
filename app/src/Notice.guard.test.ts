@@ -447,6 +447,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why: "a copy the clipboard refused, said beside the read-only screen it was asked of (#3676)",
   },
   "SearchTab.tsx": { count: 1, why: "the search's progress, a live value" },
+  "SkillCopy.tsx": {
+    count: 2,
+    why:
+      "Make my own copy's refusals (#3686), beside the fields the person is still filling: a " +
+      "built-in skill's name, said as it is typed, and the core's sentence for the copy just " +
+      "asked for. Make the copy is the retry",
+  },
   "SkillSources.tsx": {
     count: 3,
     why: "the Sources pages' reads in place (#3687): the line said after a second while rows are held, a read that failed with Try again, and the updates still being read",

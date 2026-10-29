@@ -1799,6 +1799,34 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             any_case: true,
         })
         .collect();
+    // The Skill studio's records (SK-9, SK-16, SK-58, SK-59): which levels a running chat could
+    // have made, the drafts, the tries, the grades and the opt-in to grade after each edit, each
+    // written by the app or the session host alone. Read, never written. Under every spelling of
+    // the state folder and where `$PURLIS_HOME` puts it, and, on macOS's case-folding disk, under
+    // every spelling of each record's name: one not there yet is made under the name as typed.
+    let mut states: Vec<PathBuf> = crate::names::STATE_DIR
+        .spellings()
+        .map(|state| root.join(state))
+        .collect();
+    if !states.contains(&ctx.state) {
+        states.push(ctx.state.clone());
+    }
+    let studio_held: Vec<Denial> = states
+        .iter()
+        .flat_map(|state| {
+            crate::skills::KEPT_IN_STATE
+                .iter()
+                .map(move |kept| state.join(kept))
+        })
+        .map(|path| Denial {
+            class: Class::Integrity,
+            path,
+            access: Access::Write,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: machine.os == Os::MacOs,
+        })
+        .collect();
 
     // 3. Human powers: the approvals a person gave on this machine.
     let config_root = crate::machine::rooted(
@@ -1947,6 +1975,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         }
     }
     paths.extend(held_whole);
+    paths.extend(studio_held);
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {

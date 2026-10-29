@@ -147,3 +147,32 @@ fn the_handoff_page_shows_no_report_flag_on_the_command_and_says_what_becomes_of
         "the page says what a --report handoff becomes"
     );
 }
+
+/// #3786, ruled 2026-10-29: the persona skill teaches purlis's dispatch tools first and the
+/// command second, and names the tool for every subcommand a chat runs on its tasks.
+#[test]
+fn the_persona_skill_teaches_the_dispatch_tools_before_the_command() {
+    purlis_core::unsteered!();
+    let text = skill("persona");
+    let tool = text
+        .find("the `dispatch` tool")
+        .expect("the tool is taught");
+    let command = text
+        .find("purlis dispatch --to <persona>")
+        .expect("the command is taught");
+    assert!(tool < command, "the tool comes first");
+    for name in [
+        "dispatch_list",
+        "dispatch_read",
+        "dispatch_wait",
+        "dispatch_tell",
+        "dispatch_answer",
+        "dispatch_cancel",
+        "dispatch_close",
+        "dispatch_note",
+        "dispatch_ask",
+        "dispatch_report",
+    ] {
+        assert!(text.contains(&format!("`{name}`")), "{name} is not taught");
+    }
+}

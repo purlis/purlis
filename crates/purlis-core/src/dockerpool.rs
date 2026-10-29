@@ -7,9 +7,10 @@
 //!
 //! **Every runner container is confined the same way, and nothing loosens it** ([`Runner`]):
 //!
-//! - Docker's default seccomp profile with one call added, `pidfd_getfd`, which the Linux
-//!   sandbox's supervisor takes a chat's socket with to make its `listen` ([`SECCOMP_PROFILE`],
-//!   #3410); the runtime's default AppArmor profile; and never `--privileged`;
+//! - Docker's default seccomp profile with what purlis needs added ([`SECCOMP_PROFILE`]):
+//!   `pidfd_getfd`, which the Linux sandbox's supervisor takes a chat's socket with to make its
+//!   `listen` (#3410), and what the browser engine's own sandbox needs to start (#3298); the
+//!   runtime's default AppArmor profile; and never `--privileged`;
 //! - every capability dropped (`--cap-drop ALL`), none added, and no new privileges
 //!   (`no-new-privileges`), so nothing in it gains a power its user does not have;
 //! - a user who is not root, by number ([`User`]);
@@ -18,7 +19,8 @@
 //! - its own network namespace on Docker's default bridge, never the machine's;
 //! - a read-only root file system, so its home volume is the only place it can write that may
 //!   hold a program it runs: `/tmp` is a `tmpfs` (`nosuid`, `nodev`, `noexec`), and Docker's
-//!   own `/dev/shm` is memory-backed and `noexec` too;
+//!   own `/dev/shm` is memory-backed and `noexec` too, a quarter of the runner's memory, which
+//!   the browser engine shares its pages' memory through (#3298);
 //! - the pool's limits ([`Limits`]): CPUs, memory with no swap beyond it, processes, and the
 //!   size of `/tmp`.
 //!
@@ -286,6 +288,14 @@ impl Limits {
     fn tmp_options(&self) -> String {
         format!("rw,nosuid,nodev,noexec,size={}m", self.tmp_mib)
     }
+
+    /// **The size of a runner's `/dev/shm`, in MiB** (#3298): a quarter of its memory. The
+    /// browser engine shares its pages' memory through it, and Docker's own 64 MiB is too
+    /// little for a busy page, which then ends. It is memory-backed and counted against the
+    /// runner's memory, so it gives the runner nothing past its limit.
+    pub fn shm_mib(&self) -> u64 {
+        self.memory_mib / 4
+    }
 }
 
 /// **How long a pool's runner is left without a link from its desktop before it suspends
@@ -446,6 +456,7 @@ impl Runner {
         pair("--security-opt", format!("seccomp={}", seccomp.display()));
         pair("--network", "bridge".into());
         pair("--ipc", "private".into());
+        pair("--shm-size", format!("{}m", self.limits.shm_mib()));
         pair("--cgroupns", "private".into());
         pair(
             "--mount",
@@ -457,6 +468,12 @@ impl Runner {
         pair("--memory-swap", format!("{}m", self.limits.memory_mib));
         pair("--pids-limit", self.limits.pids.to_string());
         args.push("--read-only".to_owned());
+        // The `purlis` the check asks whether it holds its programs from namespaces is the one
+        // that serves (D-2050-26, #3702): whatever the image's own entrypoint, with the runtime's
+        // init as PID 1 to reap what a chat's programs leave behind, as the image's `tini` did.
+        args.push("--init".to_owned());
+        args.push("--entrypoint".to_owned());
+        args.push(PURLIS.to_owned());
         let mut all = vec!["run".to_owned(), "--detach".to_owned()];
         all.extend(args);
         all.push(self.image.as_str().to_owned());
@@ -574,8 +591,13 @@ pub struct Engine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Seccomp {
     /// The runner's own, [`SECCOMP_PROFILE`]: a server a chat starts there listens where it
-    /// was bound.
+    /// was bound, and the browser engine makes its sandbox there.
     Runners,
+    /// The runner's profile as a purlis made it from #3410 until #3298
+    /// ([`EARLIER_SECCOMP_PROFILE`]): a server a chat starts there listens, and the browser
+    /// engine cannot make its sandbox, so no browser starts there until the runner is removed
+    /// and added again. It is stricter than the runner's own, so the runner is still linked.
+    RunnersEarlier,
     /// The runtime's own default, which a runner made before #3410 runs. It is stricter than
     /// the runner's (it refuses `pidfd_getfd`), so the runner is still linked, and no server a
     /// chat starts there listens until the runner is removed and added again.
@@ -637,6 +659,57 @@ pub fn ran(inspected: &serde_json::Value) -> Ran {
         started: at("StartedAt"),
         finished: at("FinishedAt"),
     }
+}
+
+/// **The disk each volume holds, by its name** (#3493), from what `docker system df -v` printed
+/// (`printed`): its `Local Volumes space usage` table, as Docker and Podman both write it, a
+/// volume's name first on its line and its size last. A size is read as both write one (Go's
+/// `units.HumanSize`, decimal: `0B`, `512kB`, `1.234GB`), in bytes; a line whose size is not
+/// written so is left out, so nothing is guessed. Podman will not print this verbose table in
+/// another format, so the table is read rather than `--format`.
+pub fn homes_held(printed: &str) -> std::collections::BTreeMap<String, u64> {
+    let mut held = std::collections::BTreeMap::new();
+    let mut lines = printed
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("Local Volumes space usage"))
+        .skip(1)
+        .skip_while(|line| line.trim().is_empty());
+    // Its header.
+    if !lines
+        .next()
+        .is_some_and(|line| line.trim_start().starts_with("VOLUME NAME"))
+    {
+        return held;
+    }
+    for line in lines.take_while(|line| !line.trim().is_empty()) {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        // Its name, its links, its size.
+        let [name, _, .., size] = words.as_slice() else {
+            continue;
+        };
+        if let Some(bytes) = bytes_of(size) {
+            held.insert((*name).to_owned(), bytes);
+        }
+    }
+    held
+}
+
+/// `size` as Go's `units.HumanSize` writes it (`1.234GB`), in bytes; `None` where it is not.
+fn bytes_of(size: &str) -> Option<u64> {
+    const UNITS: [&str; 9] = ["B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+    let at = size.find(|c: char| !(c.is_ascii_digit() || c == '.'))?;
+    let (number, unit) = size.split_at(at);
+    let power = UNITS
+        .iter()
+        .position(|one| one.eq_ignore_ascii_case(unit))?;
+    let (whole, part) = number.split_once('.').unwrap_or((number, ""));
+    if whole.is_empty() || part.len() > 9 || !part.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let digits: u128 = format!("{whole}{part}").parse().ok()?;
+    let scale = 1000u128.checked_pow(u32::try_from(power).ok()?)?;
+    let bytes = digits.checked_mul(scale)? / 10u128.pow(u32::try_from(part.len()).ok()?);
+    Some(u64::try_from(bytes).unwrap_or(u64::MAX))
 }
 
 /// **How a runner's container was made to suspend itself** (#3717), which its pool's
@@ -756,22 +829,21 @@ fn checked_on(
     if !options.iter().any(|option| is_no_new_privileges(option)) {
         return Err(not("may gain new privileges"));
     }
-    // The runner's seccomp profile, or, on a runner made before it, the runtime's own default
-    // (no seccomp option at all), which is stricter.
-    let seccomp = if options
+    // The runner's seccomp profile, or, on a runner made before it, its earlier one or the
+    // runtime's own default (no seccomp option at all), each stricter.
+    let seccomp = if let Some(seccomp) = options
         .iter()
-        .any(|option| is_the_runners_seccomp(option, podman))
+        .find_map(|option| the_runners_seccomp(option, podman))
     {
-        Seccomp::Runners
+        seccomp
     } else if options.iter().any(|option| option.starts_with("seccomp")) {
         return Err(not("does not have the runner's seccomp profile"));
     } else {
         Seccomp::RuntimeDefault
     };
-    if let Some(option) = options
-        .iter()
-        .find(|option| !is_no_new_privileges(option) && !is_the_runners_seccomp(option, podman))
-    {
+    if let Some(option) = options.iter().find(|option| {
+        !is_no_new_privileges(option) && the_runners_seccomp(option, podman).is_none()
+    }) {
         let named = option.split(['=', ':']).next().unwrap_or_default();
         return Err(not(&format!(
             "has a security option of its own ({named}), where purlis keeps the runtime's defaults"
@@ -1128,7 +1200,10 @@ pub fn check_oci(
     // own default ([`check_podman`]).
     let compiled = oci.pointer("/linux/seccomp");
     let held = match seccomp {
-        Seccomp::Runners => compiled.is_some_and(is_the_runners_compiled),
+        Seccomp::Runners => compiled.is_some_and(|it| is_compiled_from(SECCOMP_PROFILE, it)),
+        Seccomp::RunnersEarlier => {
+            compiled.is_some_and(|it| is_compiled_from(EARLIER_SECCOMP_PROFILE, it))
+        }
         Seccomp::RuntimeDefault => {
             compiled.is_some_and(|it| it.is_object() && it["defaultAction"] == "SCMP_ACT_ERRNO")
         }
@@ -1163,7 +1238,8 @@ pub fn check_oci(
         let own = RUNTIME_MOUNTS.contains(&(to, kind)) && from == kind
             || (to == "/dev/shm" && kind == "tmpfs")
             || (kind == "bind" && own_file)
-            || (kind == "bind" && to == made.runner.home && from_path == home_volume);
+            || (kind == "bind" && to == made.runner.home && from_path == home_volume)
+            || is_podmans_init(mount);
         if !own {
             return Err(not(&format!(
                 "has {to} mounted from {from}, which is not the pool's own"
@@ -1171,6 +1247,20 @@ pub fn check_oci(
         }
     }
     Ok(())
+}
+
+/// **Whether `mount` is Podman's own init, as `--init` binds it** (#3702): its `catatonit`, from
+/// where the machine's Podman keeps it (a regular file there), bound read-only at `/run/podman-init`, the runner's PID 1
+/// that reaps what a chat's programs leave behind. Measured on rootless Podman 2026-10-29.
+fn is_podmans_init(mount: &serde_json::Value) -> bool {
+    let field = |name: &str| mount.get(name).and_then(serde_json::Value::as_str);
+    let from = std::path::Path::new(field("source").unwrap_or_default());
+    field("destination") == Some("/run/podman-init")
+        && field("type") == Some("bind")
+        && from.is_absolute()
+        && from.file_name().is_some_and(|name| name == "catatonit")
+        && std::fs::metadata(from).is_ok_and(|found| found.is_file())
+        && mount.get("options") == Some(&serde_json::json!(["bind", "ro", "rprivate"]))
 }
 
 /// Where Podman keeps its default seccomp profile, as `podman info` names it.
@@ -1223,54 +1313,92 @@ fn is_containers_default(profile: &str) -> bool {
     a_version && a_suffix
 }
 
-/// **The runner container's seccomp profile** (#3410): Docker's default, the Moby project's
-/// `seccomp/v0.2.4` (Apache-2.0), kept beside it as published (`seccomp-moby-v0.2.4.json`), with
-/// one rule added after its first: `pidfd_getfd` allowed, which that profile allows only with
-/// `CAP_SYS_PTRACE`. The Linux sandbox's supervisor takes a chat's own socket with it to make the
-/// chat's `listen` (`purlis_linux_sandbox`), and every capability is dropped from a runner, so
-/// without it no server a chat starts there listens. Nothing else differs from Docker's default.
+/// **The runner container's seccomp profile** (#3410, #3298): Docker's default, the Moby
+/// project's `seccomp/v0.2.4` (Apache-2.0), kept beside it as published
+/// (`seccomp-moby-v0.2.4.json`), with four rules added after its first. Every capability is
+/// dropped from a runner, and Docker's default allows each of these calls only with one:
+///
+/// - `pidfd_getfd`: the Linux sandbox's supervisor takes a chat's own socket with it to make the
+///   chat's `listen` (`purlis_linux_sandbox`), so without it no server a chat starts listens;
+/// - `clone` and `unshare` making no namespace but a user, a process and a network one
+///   (`CLONE_NEWNS`, `CLONE_NEWCGROUP`, `CLONE_NEWUTS` and `CLONE_NEWIPC` refused, and
+///   `CLONE_NEWTIME` to `unshare`, which alone takes it), and `chroot`:
+///   the browser engine's own sandbox makes them as it starts, and ends without them (measured
+///   2026-10-28; ruled that day, ADR 0089). `chroot` reaches nothing outside a user namespace a
+///   process made itself, since the kernel still asks for `CAP_SYS_CHROOT`. Only the browser engine
+///   may make namespaces on a runner: its host starts everything else unable to
+///   (`purlis_linux_sandbox::NO_NAMESPACES`).
+///
+/// Nothing else differs from Docker's default.
 pub const SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp.json");
 
-/// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read.
-pub const SECCOMP_FILE: &str = "runner-seccomp.json";
+/// **The runner's profile as a purlis made it from #3410 until #3298**: Docker's default and
+/// `pidfd_getfd` alone, kept as it was so a runner made then is still known and linked
+/// ([`Seccomp::RunnersEarlier`]).
+pub const EARLIER_SECCOMP_PROFILE: &str = include_str!("dockerpool/seccomp-runner-2026-10-27.json");
 
-/// [`SECCOMP_PROFILE`], read.
-fn the_runners_profile() -> serde_json::Value {
-    serde_json::from_str(SECCOMP_PROFILE).unwrap_or(serde_json::Value::Null)
+/// The file name [`SECCOMP_PROFILE`] is kept under in a run's folder, for `docker` to read: a
+/// name of its own, so Podman, which keeps only the path, says which profile a runner runs.
+pub const SECCOMP_FILE: &str = "runner-seccomp-engine.json";
+
+/// The file name [`EARLIER_SECCOMP_PROFILE`] is kept under, as a purlis from #3410 to #3298
+/// kept the runner's profile.
+pub const EARLIER_SECCOMP_FILE: &str = "runner-seccomp.json";
+
+/// **What a runner image's `purlis` is asked, to tell whether it holds what it starts from
+/// namespaces** (#3298, D-2050-26): `_no-namespaces` starting a shell that ends at once. A
+/// `purlis` from before it does not know the command, and answers otherwise.
+const HOLDS_FROM_NAMESPACES: [&str; 5] = ["_no-namespaces", "--", "/bin/sh", "-c", "exit 0"];
+
+/// A profile kept here, read.
+fn profile_of(text: &str) -> serde_json::Value {
+    serde_json::from_str(text).unwrap_or(serde_json::Value::Null)
 }
 
-/// Whether `option`, one of a container's security options as `inspect` writes it, is the
-/// runner's seccomp profile. Docker's client reads the file and sends its contents, and the
-/// engine keeps them as they came: held to the runner's profile rule for rule. Podman reads the
-/// file as it makes the container and keeps only its path: held to an absolute path naming the
-/// runner's profile's file, and, where its runtime's config can be read (rootless), to what it
-/// compiled from it ([`check_oci`]). Rootful Podman's runtime config is root's: there the path is
-/// all that is read (ADR 0078, amended 2026-10-27).
-fn is_the_runners_seccomp(option: &str, podman: bool) -> bool {
-    let Some(profile) = option.strip_prefix("seccomp=") else {
-        return false;
-    };
+/// Which of the runner's seccomp profiles `option`, one of a container's security options as
+/// `inspect` writes it, is, if either. Docker's client reads the file and sends its contents,
+/// and the engine keeps them as they came: held to the runner's profile, or its earlier one, rule
+/// for rule. Podman reads the file as it makes the container and keeps only its path: held to an
+/// absolute path naming either profile's file, each a name of its own, and, where its runtime's
+/// config can be read (rootless), to what it compiled from it ([`check_oci`]). Rootful Podman's
+/// runtime config is root's: there the path is all that is read (ADR 0078, amended 2026-10-27
+/// and 2026-10-28).
+fn the_runners_seccomp(option: &str, podman: bool) -> Option<Seccomp> {
+    let profile = option.strip_prefix("seccomp=")?;
     if podman {
         let path = std::path::Path::new(profile);
-        path.is_absolute() && path.file_name() == Some(std::ffi::OsStr::new(SECCOMP_FILE))
+        if !path.is_absolute() {
+            return None;
+        }
+        match path.file_name().and_then(std::ffi::OsStr::to_str) {
+            Some(SECCOMP_FILE) => Some(Seccomp::Runners),
+            Some(EARLIER_SECCOMP_FILE) => Some(Seccomp::RunnersEarlier),
+            _ => None,
+        }
     } else {
-        serde_json::from_str::<serde_json::Value>(profile)
-            .is_ok_and(|given| given == the_runners_profile())
+        let given = serde_json::from_str::<serde_json::Value>(profile).ok()?;
+        if given == profile_of(SECCOMP_PROFILE) {
+            Some(Seccomp::Runners)
+        } else if given == profile_of(EARLIER_SECCOMP_PROFILE) {
+            Some(Seccomp::RunnersEarlier)
+        } else {
+            None
+        }
     }
 }
 
 /// Whether `compiled`, the profile Podman's runtime config holds for a container, is exactly what
-/// Podman makes of [`SECCOMP_PROFILE`] for a runner, which holds no capability, on the
-/// architecture the profile names first ([`compiled_for`]).
-fn is_the_runners_compiled(compiled: &serde_json::Value) -> bool {
+/// Podman makes of `profile` for a runner, which holds no capability, on the architecture the
+/// profile names first ([`compiled_for`]).
+fn is_compiled_from(profile: &str, compiled: &serde_json::Value) -> bool {
     compiled
         .pointer("/architectures/0")
         .and_then(serde_json::Value::as_str)
-        .and_then(compiled_for)
+        .and_then(|native| compiled_for(profile, native))
         .is_some_and(|ours| &ours == compiled)
 }
 
-/// **What Podman (`containers/common`'s seccomp) makes of [`SECCOMP_PROFILE`]** for a container
+/// **What Podman (`containers/common`'s seccomp) makes of `text`**, a runner's profile, for a container
 /// with no capability on the architecture `native` (`SCMP_ARCH_X86_64` or `SCMP_ARCH_AARCH64`),
 /// as its runtime config holds it: the default action and errno; `native` and the
 /// architectures its map puts beside it; and each rule its conditions keep, by its names,
@@ -1278,14 +1406,14 @@ fn is_the_runners_compiled(compiled: &serde_json::Value) -> bool {
 /// is kept unless it is for other architectures, excluded on this one, or for a capability. Each
 /// rule's lowest kernel is below the 6.12 the Linux sandbox needs, so none is dropped for it.
 /// None for any other architecture, or a condition this does not know.
-fn compiled_for(native: &str) -> Option<serde_json::Value> {
+fn compiled_for(text: &str, native: &str) -> Option<serde_json::Value> {
     use serde_json::{Map, Value, json};
     let arch = match native {
         "SCMP_ARCH_X86_64" => "amd64",
         "SCMP_ARCH_AARCH64" => "arm64",
         _ => return None,
     };
-    let profile = the_runners_profile();
+    let profile = profile_of(text);
     let mut architectures = vec![Value::from(native)];
     for map in profile["archMap"].as_array()? {
         if map["architecture"] == native {
@@ -1368,12 +1496,38 @@ pub struct Docker {
     /// Where each run's copy of Docker's settings is made: `<data>/docker-settings`, unless
     /// another folder is named (a test's).
     settings_in: Option<std::path::PathBuf>,
-    /// How long each run may take, where a caller holds it to a time ([`Docker::within`]); none
-    /// for a run that takes as long as it takes (a pull, a make).
-    within: Option<std::time::Duration>,
+    /// How long each run that only reads may take (an inspect, a version, a list): [`READS_WITHIN`]
+    /// unless a caller holds it to another time ([`Docker::within`]). A run that changes
+    /// something (a pull, a make, a start, a removal) takes as long as it takes.
+    reads_within: std::time::Duration,
 }
 
+/// **How long each `docker` run that only reads may take** (#3546): an inspect, an `info`, a
+/// list, a runner's version. One still running then is ended and refused, saying it did not
+/// answer, so a wedged engine holds up no pool surface that asks it.
+///
+/// The time stops this machine's `docker`, not what it started: a runner's `purlis --version`
+/// that hangs inside its container keeps running there until the container stops. It is
+/// purlis's own, which prints and ends, and a version once read is not asked again.
+pub const READS_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
+
 pub mod settings;
+
+/// Why a `docker` run gave no answer: it did not answer in its time ([`READS_WITHIN`]), or it
+/// was refused otherwise. Only the first says the engine may be stuck, so nothing that would
+/// follow a refusal (a pull after an inspect, a Podman's `info` after Docker's) is run then.
+enum Failed {
+    Late(Refused),
+    Refused(Refused),
+}
+
+impl From<Failed> for Refused {
+    fn from(failed: Failed) -> Refused {
+        match failed {
+            Failed::Late(why) | Failed::Refused(why) => why,
+        }
+    }
+}
 
 /// Where a `docker` command is looked for first: where Docker's installers put it, Docker
 /// Desktop's own, `/usr/local`'s, Homebrew's and the system's.
@@ -1415,16 +1569,16 @@ impl Docker {
         Docker {
             program: program.into(),
             settings_in: None,
-            within: None,
+            reads_within: READS_WITHIN,
         }
     }
 
-    /// **This `docker`, each of its runs held to `within`** (#2052): a run still going when it is
-    /// up is ended and refused, so a wedged engine holds up nothing that asks it. For what only
-    /// reads (an inspect, a version); a pull or a make takes as long as it takes.
+    /// **This `docker`, each of its runs that only reads held to `within`** rather than
+    /// [`READS_WITHIN`] (#2052, #3546): a read still going when it is up is ended and refused.
+    /// A pull or a make takes as long as it takes.
     #[must_use]
     pub fn within(mut self, within: std::time::Duration) -> Docker {
-        self.within = Some(within);
+        self.reads_within = within;
         self
     }
 
@@ -1594,7 +1748,23 @@ impl Docker {
     fn run(&self, args: &[String], input: Option<&str>, most: u64) -> Result<String, Refused> {
         // A checked copy of Docker's settings, the engine pinned, and its helpers found where it
         // is (#2752), whatever the window's environment and Docker's own settings say.
-        self.run_prepared(&self.prepared()?, args, input, most)
+        self.run_prepared(&self.prepared()?, args, input, most, None)
+    }
+
+    /// [`Docker::run`], for a run that **only reads**: held to its time ([`READS_WITHIN`]).
+    fn read(&self, args: &[String], most: u64) -> Result<String, Refused> {
+        self.read_or_late(args, most).map_err(Refused::from)
+    }
+
+    /// [`Docker::read`], saying apart a read that did not answer in its time ([`Failed::Late`]).
+    fn read_or_late(&self, args: &[String], most: u64) -> Result<String, Failed> {
+        self.ran_prepared(
+            &self.prepared().map_err(Failed::Refused)?,
+            args,
+            None,
+            most,
+            Some(self.reads_within),
+        )
     }
 
     /// [`Docker::run`], given its run's folder already prepared, which is kept until the run
@@ -1605,7 +1775,21 @@ impl Docker {
         args: &[String],
         input: Option<&str>,
         most: u64,
+        within: Option<std::time::Duration>,
     ) -> Result<String, Refused> {
+        self.ran_prepared(prepared, args, input, most, within)
+            .map_err(Refused::from)
+    }
+
+    /// [`Docker::run_prepared`], saying apart a run that did not answer in its time.
+    fn ran_prepared(
+        &self,
+        prepared: &settings::Prepared,
+        args: &[String],
+        input: Option<&str>,
+        most: u64,
+        within: Option<std::time::Duration>,
+    ) -> Result<String, Failed> {
         let mut command = std::process::Command::new(&self.program);
         command.envs(prepared.env.iter().map(|(name, value)| (name, value)));
         for name in settings::CLEARED {
@@ -1613,10 +1797,21 @@ impl Docker {
         }
         command.args(args);
         let first = || args.first().map(String::as_str).unwrap_or_default();
-        let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, self.within)
+        let ran = crate::boundedrun::run_within(&mut command, input, most, MOST_SAID, within)
             .map_err(|why| {
             use crate::boundedrun::Unanswered;
-            refused(match why {
+            if let Unanswered::NotFinished(why) = &why
+                && why.kind() == std::io::ErrorKind::TimedOut
+            {
+                let secs = within.unwrap_or_default().as_secs().max(1);
+                return Failed::Late(refused(format!(
+                    "docker {} did not answer within {}, so purlis ended it: the Docker engine \
+                     may be stuck",
+                    first(),
+                    crate::counts::counted(secs, "second", "seconds")
+                )));
+            }
+            Failed::Refused(refused(match why {
                 Unanswered::NotStarted(why) => {
                     format!("{} could not be run: {why}", self.program.display())
                 }
@@ -1627,24 +1822,31 @@ impl Docker {
                 Unanswered::NotFinished(why) => {
                     format!("{} did not finish: {why}", self.program.display())
                 }
-            })
+            }))
         })?;
         if !ran.status.success() {
             // Docker's own words say why (ADR 0078 §2: a connector's stderr is shown in full).
-            return Err(refused(format!(
+            return Err(Failed::Refused(refused(format!(
                 "docker {} failed: {}",
                 first(),
                 String::from_utf8_lossy(&ran.said).trim()
-            )));
+            ))));
         }
-        String::from_utf8(ran.printed)
-            .map_err(|_| refused("docker answered with something that is not text"))
+        String::from_utf8(ran.printed).map_err(|_| {
+            Failed::Refused(refused("docker answered with something that is not text"))
+        })
     }
 
     fn json(&self, args: &[&str], what: &str) -> Result<serde_json::Value, Refused> {
+        self.json_or_late(args, what).map_err(Refused::from)
+    }
+
+    /// [`Docker::json`], saying apart a read that did not answer in its time ([`Failed::Late`]).
+    fn json_or_late(&self, args: &[&str], what: &str) -> Result<serde_json::Value, Failed> {
         let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
-        let out = self.run(&args, None, MOST_INSPECTED)?;
-        serde_json::from_str(&out).map_err(|_| refused(format!("{what} did not answer JSON")))
+        let out = self.read_or_late(&args, MOST_INSPECTED)?;
+        serde_json::from_str(&out)
+            .map_err(|_| Failed::Refused(refused(format!("{what} did not answer JSON"))))
     }
 
     /// The user and home `image` declares, for the runner made from it: its `USER` must be a
@@ -1652,21 +1854,23 @@ impl Docker {
     /// this machine does not hold yet is pulled first, by its digest.
     pub fn declared(&self, image: &Image) -> Result<(User, String), Refused> {
         let inspect = || {
-            self.json(
+            self.json_or_late(
                 &["image", "inspect", image.as_str()],
                 "docker image inspect",
             )
         };
-        // An image this machine does not hold yet is pulled, by its digest, then read.
+        // An image this machine does not hold yet is pulled, by its digest, then read. An engine
+        // that did not answer is said to be so, and nothing is pulled from it.
         let inspected = match inspect() {
             Ok(inspected) => inspected,
-            Err(_) => {
+            Err(Failed::Late(why)) => return Err(why),
+            Err(Failed::Refused(_)) => {
                 self.run(
                     &["pull".into(), "--quiet".into(), image.as_str().into()],
                     None,
                     MOST_INSPECTED,
                 )?;
-                inspect()?
+                inspect().map_err(Refused::from)?
             }
         };
         let config = inspected
@@ -1700,13 +1904,15 @@ impl Docker {
     /// The daemon's security options, held to [`check_daemon`]; or, for a Podman, which has no
     /// such field, its host's security, held to [`check_podman`] (#2680).
     fn check_daemon(&self) -> Result<Engine, Refused> {
-        let docker = self.json(
+        let docker = self.json_or_late(
             &["info", "--format", "{{json .SecurityOptions}}"],
             "docker info",
         );
         match docker {
             Ok(options) => check_daemon(&options).map(|()| Engine::default()),
-            Err(why) => match self.json(
+            // An engine that did not answer is not asked again as a Podman.
+            Err(Failed::Late(why)) => Err(why),
+            Err(Failed::Refused(why)) => match self.json(
                 &["info", "--format", "{{json .Host.Security}}"],
                 "podman info",
             ) {
@@ -1730,7 +1936,7 @@ impl Docker {
     pub fn make_for(&self, runner: &Runner, desktop: Option<&str>) -> Result<Made, Refused> {
         self.check_daemon()?;
         let volume = runner.volume();
-        let listed = self.run(
+        let listed = self.read(
             &[
                 "volume".into(),
                 "ls".into(),
@@ -1738,7 +1944,6 @@ impl Docker {
                 "--filter".into(),
                 format!("name={volume}"),
             ],
-            None,
             MOST_INSPECTED,
         )?;
         if listed.lines().any(|line| line.trim() == volume) {
@@ -1750,7 +1955,7 @@ impl Docker {
         // Nor where a container of its name is: one a run that failed can leave is then
         // this runner's alone, and removed with its volume.
         let container = runner.container();
-        let named = self.run(
+        let named = self.read(
             &[
                 "container".into(),
                 "ls".into(),
@@ -1760,7 +1965,6 @@ impl Docker {
                 "--filter".into(),
                 format!("name={container}"),
             ],
-            None,
             MOST_INSPECTED,
         )?;
         if named.lines().any(|line| line.trim() == container) {
@@ -1772,19 +1976,27 @@ impl Docker {
         // Docker makes the container and its volume before it starts it, so a run that fails
         // can leave both: they are removed with the refusal.
         // The runner's seccomp profile, in the run's own folder, read by `docker` as it runs.
+        // The profile that lets the browser engine make its sandbox only for an image whose
+        // `purlis` holds everything else it starts from namespaces (D-2050-26); the earlier one,
+        // where its browsers are refused, for any other.
+        let holds = self.holds_from_namespaces(runner);
+        let (file, profile) = if holds {
+            (SECCOMP_FILE, SECCOMP_PROFILE)
+        } else {
+            (EARLIER_SECCOMP_FILE, EARLIER_SECCOMP_PROFILE)
+        };
         let prepared = self.prepared()?;
-        let seccomp = prepared
-            .keep(SECCOMP_FILE, SECCOMP_PROFILE)
-            .map_err(|why| {
-                refused(format!(
-                    "purlis could not keep the runner's seccomp profile for docker: {why}"
-                ))
-            })?;
+        let seccomp = prepared.keep(file, profile).map_err(|why| {
+            refused(format!(
+                "purlis could not keep the runner's seccomp profile for docker: {why}"
+            ))
+        })?;
         let made = self.run_prepared(
             &prepared,
             &runner.create_args_for(desktop, &seccomp),
             None,
             MOST_INSPECTED,
+            None,
         );
         drop(prepared);
         let out = match made {
@@ -1800,11 +2012,16 @@ impl Docker {
                 return Err(self.and_removed(why, &runner.container(), &volume));
             }
         };
-        // A runner made now runs the runner's profile: the runtime's own default is taken only
-        // for one made before it (#3410).
+        // A runner made now runs the profile chosen for it: the runtime's own default is taken
+        // only for one made before #3410.
+        let wanted = if holds {
+            Seccomp::Runners
+        } else {
+            Seccomp::RunnersEarlier
+        };
         match self.checked(&made) {
-            Ok(Seccomp::Runners) => Ok(made),
-            Ok(Seccomp::RuntimeDefault) => {
+            Ok(seccomp) if seccomp == wanted => Ok(made),
+            Ok(_) => {
                 let why = refused(format!(
                     "runner {}'s container was made without the runner's seccomp profile, so \
                      purlis does not link to it",
@@ -1814,6 +2031,59 @@ impl Docker {
             }
             Err(why) => Err(self.and_removed(why, made.container.as_str(), &volume)),
         }
+    }
+
+    /// **Whether `runner`'s image's `purlis` holds what it starts from namespaces** (D-2050-26),
+    /// asked of a container of the image made for that alone and removed as it ends: no network,
+    /// every capability dropped, no new privileges, its root read-only. Anything but a clean
+    /// answer within [`PROBE_WITHIN`] is a no, and its container is removed: an image whose
+    /// `purlis` does not answer holds up no pool.
+    fn holds_from_namespaces(&self, runner: &Runner) -> bool {
+        // No name of its own, which a runner's could be: the engine's id for it, written to a
+        // file of this run's, is what removes it, and nothing else (#3702).
+        let Ok(folder) = tempfile::tempdir() else {
+            return false;
+        };
+        let cidfile = folder.path().join("probe.cid");
+        let mut args: Vec<String> = [
+            "run",
+            "--rm",
+            "--cidfile",
+            &cidfile.display().to_string(),
+            "--user",
+            &runner.user.spelled(),
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--network",
+            "none",
+            "--read-only",
+            "--entrypoint",
+            PURLIS,
+            runner.image.as_str(),
+        ]
+        .iter()
+        .map(|word| (*word).to_owned())
+        .collect();
+        args.extend(HOLDS_FROM_NAMESPACES.iter().map(|word| (*word).to_owned()));
+        let held = self
+            .clone()
+            .within(PROBE_WITHIN)
+            .run(&args, None, MOST_INSPECTED)
+            .is_ok();
+        if !held {
+            let id = std::fs::read_to_string(&cidfile).unwrap_or_default();
+            if let Ok(id) = ContainerId::new(id.trim()) {
+                let rm = [
+                    "rm".to_owned(),
+                    "--force".to_owned(),
+                    id.as_str().to_owned(),
+                ];
+                let _ = self.run(&rm, None, MOST_SAID);
+            }
+        }
+        held
     }
 
     /// `why`, after removing the container `container` names and the volume `volume`; a
@@ -1915,17 +2185,26 @@ impl Docker {
                 .ok_or_else(|| refused("podman did not say where its runtime's config is"))?;
             let store = self.json(&["info", "--format", "{{json .Store}}"], "podman info")?;
             let config = std::path::Path::new(path);
-            check_oci(
-                &read_oci(config)?,
-                made,
-                config,
-                &podman_store(&store)?,
-                seccomp,
-            )?;
+            let (oci, store) = (read_oci(config)?, podman_store(&store)?);
+            check_oci(&oci, made, config, &store, seccomp)?;
         }
         let volume = made.runner.volume();
         let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
         check_volume(&inspected, made)?;
+        // A runner whose profile lets the browser engine make namespaces runs a `purlis` that
+        // holds everything else it starts from them (D-2050-26), or it is not linked.
+        if seccomp == Seccomp::Runners
+            && self
+                .run(&made.exec(&HOLDS_FROM_NAMESPACES), None, MOST_INSPECTED)
+                .is_err()
+        {
+            return Err(refused(format!(
+                "runner {}'s container lets its browser engine make namespaces, and its purlis \
+                 does not hold its programs from them, so purlis does not link to it; remove \
+                 the runner and add it again",
+                made.runner.name
+            )));
+        }
         Ok(seccomp)
     }
 
@@ -1942,6 +2221,17 @@ impl Docker {
             "docker container inspect",
         )?;
         Ok(ran(&inspected))
+    }
+
+    /// **The disk each volume on this engine holds, by its name** (#3493, [`homes_held`]): read
+    /// by `docker system df -v`, which only reads, so no container is started by it, a
+    /// suspended runner's included; held to its time as every read is ([`READS_WITHIN`]).
+    pub fn homes_held(&self) -> Result<std::collections::BTreeMap<String, u64>, Refused> {
+        let printed = self.read(
+            &["system".into(), "df".into(), "--verbose".into()],
+            MOST_INSPECTED,
+        )?;
+        Ok(homes_held(&printed))
     }
 
     /// **[`MadeSuspending`] of `made`'s container** (#3717): `None` where its command is not a
@@ -2020,7 +2310,7 @@ impl Docker {
         let container = format!("{PREFIX}{name}");
         let volume = format!("{PREFIX}{name}-home");
         let mut removed = Vec::new();
-        let listed = self.run(
+        let listed = self.read(
             &words(&[
                 "container",
                 "ls",
@@ -2034,7 +2324,6 @@ impl Docker {
                 "--filter",
                 &format!("label={LABEL}={name}"),
             ]),
-            None,
             MOST_INSPECTED,
         )?;
         for line in listed.lines() {
@@ -2056,7 +2345,7 @@ impl Docker {
             removed.push(format!("container {container}"));
         }
         // A home volume goes only once no container of its name is left, whoever made it.
-        let still = self.run(
+        let still = self.read(
             &words(&[
                 "container",
                 "ls",
@@ -2066,13 +2355,12 @@ impl Docker {
                 "--filter",
                 &format!("name={container}"),
             ]),
-            None,
             MOST_INSPECTED,
         )?;
         if still.lines().any(|line| line.trim() == container) {
             return Ok(removed);
         }
-        let volumes = self.run(
+        let volumes = self.read(
             &words(&[
                 "volume",
                 "ls",
@@ -2080,7 +2368,6 @@ impl Docker {
                 "--filter",
                 &format!("name={volume}"),
             ]),
-            None,
             MOST_INSPECTED,
         )?;
         if volumes.lines().any(|line| line.trim() == volume) {
@@ -2098,7 +2385,7 @@ impl Docker {
     /// its container passes the check.
     pub fn version_of(&self, made: &Made) -> Result<String, Refused> {
         self.check(made)?;
-        let out = self.run(&made.version_args(), None, crate::runnerlink::MOST_LINE)?;
+        let out = self.read(&made.version_args(), crate::runnerlink::MOST_LINE)?;
         version_in(&out).map(str::to_owned).ok_or_else(|| {
             refused(format!(
                 "runner {}'s purlis did not say its version as purlis does: {:?}",
@@ -2170,7 +2457,7 @@ impl Docker {
         let Err(why) = self.run(&words(removing), None, MOST_INSPECTED) else {
             return Ok(());
         };
-        match self.run(&words(listing), None, MOST_INSPECTED) {
+        match self.read(&words(listing), MOST_INSPECTED) {
             Ok(list) if !list.lines().any(|line| line.trim() == listed) => Ok(()),
             _ => Err(refused(format!(
                 "{what} could not be removed ({why}); remove it with `{how}`"
@@ -2254,6 +2541,10 @@ fn read_oci(path: &std::path::Path) -> Result<serde_json::Value, Refused> {
 
 /// The most of what `docker` prints that purlis reads, for an answer that is not a pairing's.
 const MOST_INSPECTED: u64 = 4 * 1024 * 1024;
+
+/// How long an image's `purlis` is given to answer whether it holds what it starts from
+/// namespaces (D-2050-26): its image is already here, and the answer is a start and an exit.
+const PROBE_WITHIN: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The most of what `docker` says on standard error that purlis keeps to show.
 const MOST_SAID: u64 = 64 * 1024;

@@ -290,15 +290,18 @@ describe("a skill's totals", () => {
     });
     render(<SkillTab plane="p" name="deploy" changed={0} />);
 
+    // Each table fills its rows in after it is first drawn (#3750): wait for what is read.
     const harness = await screen.findByTestId("skill-totals-by_harness");
-    expect(harness.textContent).toContain("Claude Code");
-    expect(harness.textContent).toContain("2 runs");
-    expect(harness.textContent).toContain("1 run, 0 ended");
-    expect(harness.textContent).toContain("Not recorded");
-    expect(harness.textContent).toContain("1200");
-    expect(harness.textContent).toContain("1 min 5 s");
-    expect(screen.getByTestId("skill-totals-by_persona").textContent).toContain("ops");
-    expect(screen.getByTestId("skill-totals-by_workspace").textContent).toContain("Project root");
+    await waitFor(() => {
+      expect(harness).toHaveTextContent("Claude Code");
+      expect(screen.getByTestId("skill-totals-by_persona")).toHaveTextContent("ops");
+      expect(screen.getByTestId("skill-totals-by_workspace")).toHaveTextContent("Project root");
+    });
+    expect(harness).toHaveTextContent("2 runs");
+    expect(harness).toHaveTextContent("1 run, 0 ended");
+    expect(harness).toHaveTextContent("Not recorded");
+    expect(harness).toHaveTextContent("1200");
+    expect(harness).toHaveTextContent("1 min 5 s");
     expect(screen.getByTestId("skill-totals").textContent).not.toMatch(/pass|fail|harness/i);
   });
 
