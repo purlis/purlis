@@ -293,7 +293,7 @@ function SaidUnderInItsPanel() {
         {...panelRoot("side")}
         aria-label="Navigation"
         role="region"
-        style={{ display: "flex", flexDirection: "column", inlineSize: 260, blockSize: 200 }}
+        style={{ display: "flex", flexDirection: "column", inlineSize: 260, blockSize: 260 }}
       >
         <ChatsSection rows={UNDER} front={1} onOpen={() => {}} restarts={{ 2: RESTART }} />
       </div>
