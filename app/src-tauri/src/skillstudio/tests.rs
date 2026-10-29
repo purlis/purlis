@@ -94,6 +94,7 @@ fn the_studio_shows_nothing_while_its_flag_is_off() {
             pins_refused: None,
             not_supported: Vec::new(),
             router: None,
+            needs: Vec::new(),
         }
     );
 }

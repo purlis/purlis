@@ -1939,6 +1939,11 @@ export const commands = {
 	skillSave: (plane: PlaneId, level: SkillLevel, name: string, was: string, now: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_save", { plane, level, name, was, now })),
 	/**  **Renames a skill**, and every persona and skill that names it. */
 	skillRename: (plane: PlaneId, level: SkillLevel, name: string, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_rename", { plane, level, name, to })),
+	/**
+	 *  **Make my own copy** (#3686): the built-in skill `name` copied to `level` under the new name
+	 *  `to`, which the person can edit. The built-in skill keeps loading.
+	 */
+	skillCopy: (plane: PlaneId, name: string, level: SkillLevel, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_copy", { plane, name, level, to })),
 	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
 	skillMoveNeedsGrant: (from: SkillLevel, to: SkillLevel) => __TAURI_INVOKE<boolean>("skill_move_needs_grant", { from, to }),
 	/**  **Moves a skill** from `from` to `to`, with `grant` where it becomes a project skill. */
@@ -4081,6 +4086,8 @@ export const SKILL_GRADE = "skill-grade" as const;
 
 export const SKILL_GRADE_AFTER_EDIT = "skill-grade-after-edit" as const;
 
+export const SKILL_NEEDS_IN = "skills.needs:" as const;
+
 export const SKILL_RUNS_PANEL = "runs" as const;
 
 export const SKILL_STUDIO_IN = "skills.studio:" as const;
@@ -5750,6 +5757,11 @@ export type DevicesShown = {
 	 *  person's.
 	 */
 	owned: boolean,
+	/**
+	 *  How many projects the window holds (#3534): with more than one, each chat and browser
+	 *  row names its project.
+	 */
+	projects: number,
 };
 
 /**  Why a grant the person accepted before waits for a yes again. */
@@ -8385,6 +8397,38 @@ export type Need =
  */
 { kind: "task_failed"; id: string; chat?: number | null; task: string; how: HowFailed; why: string };
 
+/**  **The one fix an item offers**, as the window runs it. */
+export type NeedFix = 
+/**  Accept the folder a chat made (`skill_level_accept`). */
+{ kind: "accept"; folder: string } | 
+/**  Rename the plane's copy of a skill: its page in the Library, with Rename open. */
+{ kind: "rename"; name: string; level: Level; local: boolean } | 
+/**  The Harness skills page, where the other copy's switch is. */
+{ kind: "harness" } | 
+/**  Take the pin `name` out of `by`'s pins (`skill_pin`, off). */
+{ kind: "unpin"; by: SkillPinner; name: string } | 
+/**  The Library, where each pinned skill says so and its pin can be taken out. */
+{ kind: "library" } | 
+/**
+ *  Move the project's skills where every program reads them: the doctor's fix, by its id
+ *  (`plane_doctor_fix`).
+ */
+{ kind: "move-skills"; fix: string } | 
+/**
+ *  Propose the files without the old keys, for the person to apply
+ *  (`remove_old_harness_plugins`); or leave them, which says so once
+ *  (`dismiss_old_harness_plugins`).
+ */
+{ kind: "remove-old-keys" } | 
+/**
+ *  Leave the old keys, which no file can be proposed without: said once
+ *  (`dismiss_old_harness_plugins`).
+ */
+{ kind: "leave-old-keys" };
+
+/**  **What kind of decision an item is**, in the order the page groups them. */
+export type NeedKind = "review" | "clash" | "problem" | "pins" | "tidy-up";
+
 /**
  *  **A profile's command waiting on the operator's approval** (ADR 0022), as a waiting chat's
  *  Notice offers it (#1246): which profile, and the exact line the approval is for.
@@ -8405,6 +8449,30 @@ export type NeedsApproval = {
 	approval: string,
 	/**  What it would run, as the picker shows it (`profiletrust::shown`), already contained. */
 	shown: string,
+};
+
+/**  **One item of Needs you**: what it is about, why it needs the person, and its fix. */
+export type NeedsYou = {
+	/**
+	 *  Unique among a studio's items, and the same from one read to the next: what the page
+	 *  keeps chosen.
+	 */
+	id: string,
+	kind: NeedKind,
+	/**  What it is about: a skill's name, or what the tidy-up is. */
+	title: string,
+	/**
+	 *  Where it is: the skill's level as a person reads it, or the file. `None` where nothing
+	 *  more is worth saying.
+	 */
+	tag: string | null,
+	/**  Why it needs the person, in sentences. */
+	reason: string,
+	fix: NeedFix,
+	/**  The fix's words, on its button. */
+	fix_label: string,
+	/**  What pressing it does, in a sentence. */
+	fix_does: string,
 };
 
 /**  A branch the window cut: the piece it is, and what git calls it (ADR 0072 §4). */
@@ -12800,6 +12868,11 @@ export type Studio = {
 	 *  while the studio is off.
 	 */
 	router: StudioRouter | null,
+	/**
+	 *  **What in these skills needs the person** (#3689): the Needs you page's items, by kind,
+	 *  each with why and one fix ([`needs`]). Empty while the studio is off.
+	 */
+	needs: NeedsYou[],
 };
 
 /**

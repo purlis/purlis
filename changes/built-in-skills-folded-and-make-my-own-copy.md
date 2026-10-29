@@ -1,0 +1,3 @@
+### Changed
+
+- **Built-in skills fold away in the Library, and you can make your own copy of one** (Skill studio preview, #3686). The skills purlis ships sit in one quiet line at the end of the Library, which unfolds them in place; the Built-in chip lists them alone. A built-in skill still shows on its own when it needs you, when a skill of yours has its name, or when your search finds it. Make my own copy, on a built-in skill's page or under the folded line, copies it to a skill level you pick under a new name, as a skill you can edit, and opens it; the built-in skill stays as it is, and chats keep getting it beside your copy.

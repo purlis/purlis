@@ -7,7 +7,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SkillStudioTab } from "./SkillStudioTab";
 import { PLANE, STUDIO_HISTORY, forgetStudio, renderStudio } from "./SkillStudioTab.testkit";
-import { skill, studio } from "./skillsListing.testkit";
+import { need, skill, studio } from "./skillsListing.testkit";
 import {
   AT_THE_ROOT,
   asPersona,
@@ -214,6 +214,32 @@ describe("the Harness skills page (#3692)", () => {
     expect(within(item).getByRole("heading", { name: /review/ })).toBeInTheDocument();
     expect(within(item).getByText("Repo api", { selector: "dd" })).toBeInTheDocument();
     expect(screen.getByTestId("found-claude-review")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("lands on the program's skill a Needs you item's Show in Harness skills is about", async () => {
+    core(() =>
+      studio([], {
+        harnesses: harnesses(),
+        needs: [
+          need("problem:langfuse", {
+            kind: "problem",
+            title: "langfuse",
+            tag: "installed",
+            reason: "Step 3 names a script the skill doesn't have.",
+            fix: { kind: "harness" },
+            fix_label: "Show in Harness skills",
+            fix_does: "Opens Harness skills, where langfuse has its switch for this project.",
+          }),
+        ],
+      }),
+    );
+    const user = userEvent.setup();
+    renderStudio(AT_THE_ROOT, "needs");
+
+    await user.click(await screen.findByRole("button", { name: "Show in Harness skills" }));
+    const item = await screen.findByTestId("harness-skill-item");
+    expect(within(item).getByRole("heading", { name: /langfuse/ })).toBeInTheDocument();
+    expect(within(item).getByRole("switch")).toBeInTheDocument();
   });
 
   it("lists under a program each project skill a repo leaves out of its chats, and each program that takes no skills", async () => {

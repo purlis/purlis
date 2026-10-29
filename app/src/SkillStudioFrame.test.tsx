@@ -19,7 +19,7 @@ import {
   inWorkspace,
   studioTabsGone,
 } from "./skillStudio";
-import { skill, studio } from "./skillsListing.testkit";
+import { need, skill, studio } from "./skillsListing.testkit";
 import { closeTab, noTabs, openView } from "./tabs";
 import { openViewAt } from "./ui/panel/viewHistory";
 import { pickIn } from "./ui/select/select.testkit";
@@ -110,26 +110,19 @@ describe("the Skill studio's frame", () => {
   });
 
   it("shows Needs you and Drafts, with their counts, once each holds something", async () => {
-    core(
-      () =>
-        studio(LIBRARY, {
-          workspace: "ops",
-          first: { starts: false, unmoved: { skills: 2, fix: "project-skills" } },
-        }),
-      {
-        skill_drafts: [
-          {
-            id: "triage-id",
-            name: "triage",
-            level: { at: "project", local: false },
-            chat: 4,
-            new: true,
-            stale: false,
-            files: [],
-          },
-        ],
-      },
-    );
+    core(() => studio(LIBRARY, { workspace: "ops", needs: [need("triage")] }), {
+      skill_drafts: [
+        {
+          id: "triage-id",
+          name: "triage",
+          level: { at: "project", local: false },
+          chat: 4,
+          new: true,
+          stale: false,
+          files: [],
+        },
+      ],
+    });
     renderStudio(inWorkspace("ops"));
     await waitFor(() =>
       expect(pages()).toEqual([

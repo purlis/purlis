@@ -3024,6 +3024,7 @@ fn commands() -> Builder<tauri::Wry> {
         // The Skill studio's catalogue row and a persona's scope key (#2768): named once for
         // the persona page's summary row and the window's catalogue.
         .constant("SKILL_STUDIO_IN", skillstudio::STUDIO_IN)
+        .constant("SKILL_NEEDS_IN", skillstudio::NEEDS_IN)
         .constant("SKILL_RUNS_PANEL", skillstudio::RUNS_PANEL)
         // What `skill-grade` carries, and the event's name (SK-16, #2779).
         .typ::<skillgrade::SkillGradeStep>()
@@ -3662,7 +3663,7 @@ pub fn run() {
                 // A browser whose engine ends by itself leaves its chat at once, with any Ask
                 // about it (#2385).
                 let window = app.handle().clone();
-                app.manage(std::sync::Arc::new(
+                let browsers = std::sync::Arc::new(
                     browsers::WindowBrowsers::new(host.connection())
                         .budgeted_by(std::sync::Arc::new(|| {
                             purlis_core::browserlimits::Limits::here().on_this_device
@@ -3686,7 +3687,20 @@ pub fn run() {
                                 }
                             })
                         }),
-                ));
+                );
+                // The browsers on a pool's runner end once a chat ran there without the
+                // sandbox (D-2050-28): off the thread that kept it.
+                let ending = std::sync::Arc::downgrade(&browsers);
+                host.connection()
+                    .ending_browsers_with(std::sync::Arc::new(move |pool: &str| {
+                        let (ending, pool) = (ending.clone(), pool.to_owned());
+                        tauri::async_runtime::spawn_blocking(move || {
+                            if let Some(browsers) = ending.upgrade() {
+                                browsers.end_on(&pool);
+                            }
+                        });
+                    }));
+                app.manage(browsers);
                 app.manage(host);
             }
             // No session host to fail where none runs.

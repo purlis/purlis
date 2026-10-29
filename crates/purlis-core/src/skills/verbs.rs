@@ -483,6 +483,64 @@ pub fn create(
     Ok(folder)
 }
 
+/// **Make my own copy** (#3686, spec #3679 S12): the built-in skill `name`, copied to `level`
+/// under the new name `to`, as a skill of the plane the person can edit, committed. Its
+/// `SKILL.md` keeps the built-in's text with its `name:` changed to `to`; a project skill starts
+/// granted to the project's root alone, as a new one does. The built-in skill is not touched and
+/// keeps loading: a chat gets both.
+///
+/// Refused where `name` is no built-in skill in `cx.built_in`, for a name the open format does
+/// not allow, one that belongs to a built-in skill ([`Ctx::not_built_in`]), or one `level`
+/// already holds. A built-in skill is its `SKILL.md` alone (held by a test of the bundle), so
+/// that one file is what is copied.
+pub fn copy_built_in(
+    cx: &mut Ctx<'_>,
+    name: &str,
+    level: &Level,
+    to: &str,
+) -> Result<PathBuf, String> {
+    let plane = cx.plane;
+    crate::settings::writable(plane)?;
+    let source = cx
+        .built_in
+        .map(super::read)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|skill| skill.name == name)
+        .ok_or_else(|| format!("{name} is no built-in skill, so there is nothing to copy"))?;
+    if let Some(why) = change::name_problem(to) {
+        return Err(format!("{to:?} cannot be a skill's name: {why}"));
+    }
+    cx.not_built_in(to)?;
+    let is_file = std::fs::symlink_metadata(&source.path).is_ok_and(|meta| meta.is_file());
+    let text = is_file
+        .then(|| std::fs::read_to_string(&source.path).ok())
+        .flatten()
+        .ok_or_else(|| format!("{name}'s instructions could not be read, so nothing was copied"))?;
+    let copied = change::with_name(&text, to)
+        .ok_or_else(|| format!("{name}'s instructions have no name: line to change"))?;
+    if let Some(problem) = change::check(&copied, to).first() {
+        return Err(format!("the copy would not be a whole skill: {problem}"));
+    }
+    let dir = free_at(plane, level, to, to)?;
+    let folder = dir.join(to);
+    write(
+        plane,
+        &format!("{}/SKILL.md", rel(plane, &folder)),
+        &format!("{to}'s instructions"),
+        None,
+        &copied,
+        level.depth(),
+    )?;
+    cx.done(format!(
+        "{to} is made, a {level} skill in {}, copied from the built-in skill {name}, which \
+         chats still get",
+        rel(plane, &folder)
+    ));
+    cx.commit(&[rel(plane, &folder)], &format!("skill copy {name} {to}"));
+    Ok(folder)
+}
+
 /// The text of the skill named `name` at `level`'s `SKILL.md`, which the light editor opens, and
 /// its folder.
 pub fn text_of(plane: &Path, level: &Level, name: &str) -> Result<(PathBuf, String), String> {

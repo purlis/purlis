@@ -5,6 +5,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import {
   commands,
   PERSONA_SCOPE_KEY,
+  SKILL_NEEDS_IN,
   SKILL_STUDIO_IN,
   type SkillPinner,
   type SkillPinsRefused,
@@ -273,6 +274,15 @@ export function skillStudioAs(persona: string): string {
   return `${SKILL_STUDIO_IN}${scopeKey(asPersona(persona))}`;
 }
 
+/** The catalogue row that opens the studio's Needs you on a scope's chats, before the scope's key
+ *  (#3695): a summary line's "need you". The core names it once (`skillstudio::NEEDS_IN`). */
+export { SKILL_NEEDS_IN };
+
+/** The catalogue row that opens Needs you on `persona`'s chats: its page's "need you" row. */
+export function skillNeedsAs(persona: string): string {
+  return `${SKILL_NEEDS_IN}${scopeKey(asPersona(persona))}`;
+}
+
 /** **What opens the studio, in words**: the palette's row and the Skills view's header (#3266). */
 export const OPEN_SKILL_STUDIO = "Open Skill studio";
 
@@ -347,10 +357,11 @@ export async function setSkillStudioOn(on: boolean): Promise<string | undefined>
 
 /**
  * **A start the studio is asked to open on** (#3266): the Skills view's New skill opens the
- * studio's own form, so each start is the studio's one copy. Browse sources is a page
+ * studio's own form, and its Make my own copy the studio's own dialog (#3693), so each start is
+ * the studio's one copy. Browse sources is a page
  * ({@link skillStudioAt}'s `sources`), not a start.
  */
-export type StudioStart = "new";
+export type StudioStart = "new" | "copy";
 
 /** The start asked for, by the studio tab's key, until the tab of that key takes it. */
 let startAsked: { key: string; start: StudioStart } | undefined;

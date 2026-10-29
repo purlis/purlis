@@ -205,51 +205,6 @@ impl Verdict {
     }
 }
 
-/// **A tool call the person is asked about**, where nothing refuses it: a dispatch or a handoff
-/// that shares its call with another command (D-1444-14, [`crate::dispatchguard::rider_ask`]).
-///
-/// A Claude Code chat the app starts is handed an `allow` for `purlis dispatch …` and `purlis
-/// handoff …`, and whether the harness then asks about a second command in the same call is
-/// not measured. So purlis answers `ask` for the whole call, and the allow covers a dispatch
-/// that stands alone. GATED on a project, as A7 and A7d are: outside one nothing is dispatched.
-/// Asked only after [`verdict`] refuses nothing, so a refusal always wins.
-pub fn asks(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Asks> {
-    plane?;
-    crate::dispatchguard::rider_ask(call.command, call.caller).map(|why| Asks {
-        reason: crate::dispatchguard::REASON_RIDER,
-        why,
-    })
-}
-
-/// A tool call the person is asked about ([`asks`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Asks {
-    /// The trace key.
-    pub reason: &'static str,
-    /// purlis's sentence, which the harness shows beside its prompt.
-    pub why: String,
-}
-
-impl Asks {
-    /// The whole answer a `PreToolUse` hook writes on stdout: `permissionDecision: "ask"`,
-    /// written as [`Verdict::emitted`] writes a denial. It carries no override note: nothing
-    /// is refused, and the person's answer is the override.
-    pub fn emitted(&self) -> String {
-        pyjson::dumps(
-            &serde_json::json!({
-                "hookSpecificOutput": {
-                    "hookEventName": EVENT,
-                    "permissionDecision": "ask",
-                    "permissionDecisionReason": format!("purlis guard: {}", self.why),
-                }
-            }),
-            None,
-            ", ",
-            ": ",
-        )
-    }
-}
-
 /// `_deny`'s sentence: charter's own prefix, the arm's reason, and the override note.
 pub fn said(reason: &str) -> String {
     format!("purlis guard: {reason}{OVERRIDE_NOTE}")
@@ -461,6 +416,17 @@ fn arms(call: &Call<'_>, plane: Option<&Plane<'_>>) -> Option<Verdict> {
     {
         return Some(Verdict::new(projectgit::REASON, Some(sub), why));
     }
+    // A10: a dispatch, a handoff or a commit the app makes, pre-allowed alone, that writes and
+    // shares its call with another command (#3785, superseding D-1444-14's `ask`). Refused with
+    // the shape to retry, so the chat corrects itself and nobody is stopped on a prompt; a
+    // dispatch that only looks gets no verdict. GATED, as A7d is. Last, so every arm that
+    // refuses one of these lines for a reason of its own says it first.
+    if plane.is_some()
+        && let Some((reason, why)) = crate::dispatchguard::rider_refusal(cmd, call.caller)
+    {
+        // No `cmd` on this trace row, for A7's reason: the line carries a brief.
+        return Some(Verdict::new(reason, None, why));
+    }
     // Everything below this line in the Python is a WRITE or the persona tool-gate's ALLOW,
     // and neither is ported. See the module header.
     None
@@ -513,25 +479,15 @@ mod tests {
     }
 
     fn verdict_of(cmd: &str, fix: &Fixture, in_a_plane: bool) -> Option<Verdict> {
-        let root = fix.root();
-        let forges = forges();
-        let state = fix.state();
-        let plane = Plane {
-            root: &root,
-            forges: &forges,
-            session_dir: "",
-            launched: Launched::default(),
-        };
-        let call = Call {
-            command: cmd,
-            cwd: "",
-            state_dir: &state,
-            caller: attended(),
-        };
-        verdict(&call, in_a_plane.then_some(&plane))
+        verdict_as(cmd, fix, in_a_plane, attended())
     }
 
-    fn asks_of(cmd: &str, fix: &Fixture, in_a_plane: bool, caller: Caller<'_>) -> Option<Asks> {
+    fn verdict_as(
+        cmd: &str,
+        fix: &Fixture,
+        in_a_plane: bool,
+        caller: Caller<'_>,
+    ) -> Option<Verdict> {
         let root = fix.root();
         let forges = forges();
         let state = fix.state();
@@ -547,12 +503,12 @@ mod tests {
             state_dir: &state,
             caller,
         };
-        asks(&call, in_a_plane.then_some(&plane))
+        verdict(&call, in_a_plane.then_some(&plane))
     }
 
     /// #1456, #1463: the text a dispatch subcommand sends, beside a live substitution, is
-    /// refused inside a project (A7e), before the person would be asked about the call as a
-    /// rider. Outside a project nothing is dispatched, and the text written out passes.
+    /// refused inside a project (A7e), before the call is refused as a rider. Outside a project
+    /// nothing is dispatched, and the text written out passes.
     #[test]
     fn a_dispatch_subcommand_s_text_with_a_live_substitution_is_refused_in_a_project() {
         let fix = Fixture::new();
@@ -577,64 +533,49 @@ mod tests {
         );
     }
 
-    /// D-1444-14: a dispatch or a handoff that shares its call with another command is asked
-    /// about, on Claude Code, inside a project. Alone it is not, and a refusal still wins.
+    /// #3785, superseding D-1444-14: a dispatch or a handoff that shares its call with another
+    /// command is refused with the shape to retry, on Claude Code, inside a project, and never
+    /// asked about. Alone it passes; a dispatch that only looks passes beside anything.
     #[test]
-    fn a_dispatch_or_a_handoff_with_a_rider_is_asked_about_and_one_alone_is_not() {
+    fn a_dispatch_or_a_handoff_with_a_rider_is_refused_and_one_alone_or_that_looks_is_not() {
         let fix = Fixture::new();
         let task = "purlis dispatch --name x <<'B'\nlook\nB";
         let moved = "purlis handoff --name x beta <<'B'\nlook\nB";
         for own in [task, moved] {
-            assert_eq!(asks_of(own, &fix, true, attended()), None, "{own:?}");
             assert_eq!(verdict_of(own, &fix, true), None, "{own:?}");
             for cmd in [
                 format!("{own}\ntouch /tmp/zz"),
                 format!("touch /tmp/zz && {own}"),
             ] {
-                // Nothing refuses it, and the person is asked.
-                assert_eq!(verdict_of(&cmd, &fix, true), None, "{cmd:?}");
-                let asked = asks_of(&cmd, &fix, true, attended()).expect("asked about");
-                assert_eq!(asked.reason, "dispatch-rider");
-                assert!(asked.why.contains("(`touch /tmp/zz`)"), "{}", asked.why);
-                let out = asked.emitted();
-                assert!(out.contains(r#""permissionDecision": "ask""#), "{out}");
-                assert!(
-                    out.contains("purlis guard: this call runs `purlis "),
-                    "{out}"
-                );
-                assert!(!out.contains("Wrong about this case?"), "{out}");
+                let refused = verdict_of(&cmd, &fix, true).expect("refused");
+                assert_eq!(refused.reason, crate::dispatchguard::REASON_RIDER);
+                let out = refused.emitted();
+                assert!(out.contains(r#""permissionDecision": "deny""#), "{out}");
+                assert!(out.contains("(`touch /tmp/zz`)"), "{out}");
+                assert!(out.contains("in a call of its own"), "{out}");
                 // Outside a project nothing is dispatched, and on another harness there is
                 // no allow to stand behind.
-                assert_eq!(asks_of(&cmd, &fix, false, attended()), None);
+                assert_eq!(verdict_of(&cmd, &fix, false), None);
                 let codex = Caller {
                     harness: Some("codex"),
                     ..attended()
                 };
-                assert_eq!(asks_of(&cmd, &fix, true, codex), None);
+                assert_eq!(verdict_as(&cmd, &fix, true, codex), None);
             }
         }
-        // A helper sub-agent's dispatch with a rider is refused, which is what the hook says.
+        // The look the operator met (2026-10-29): the harness's own rules decide it.
+        assert_eq!(
+            verdict_of("purlis dispatch list 2>&1 | head -20", &fix, true),
+            None
+        );
+        // A helper sub-agent's dispatch with a rider is refused as a helper's.
         let helper = Caller {
             agent_id: Some("sub-1"),
             ..attended()
         };
-        let cmd = format!("{task}\ntouch /tmp/zz");
-        let root = fix.root();
-        let forges = forges();
-        let state = fix.state();
-        let plane = Plane {
-            root: &root,
-            forges: &forges,
-            session_dir: "",
-            launched: Launched::default(),
-        };
-        let call = Call {
-            command: &cmd,
-            cwd: "",
-            state_dir: &state,
-            caller: helper,
-        };
-        assert!(verdict(&call, Some(&plane)).is_some());
+        let refused =
+            verdict_as(&format!("{task}\ntouch /tmp/zz"), &fix, true, helper).expect("refused");
+        assert_eq!(refused.reason, crate::dispatchguard::REASON_SUBAGENT);
     }
 
     /// A9 speaks only to a chat the app says it gave a sandbox, and only where that chat's
