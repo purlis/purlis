@@ -7,4 +7,5 @@
   its chats on that runner. Before every link purlis checks that the Pool still names the key you
   checked and that the operator still vouches for the runner it paired with; either changed is
   refused and asked about, as a Docker runner's changed key is. purlis runs your own `kubectl`,
-  found where its installers put it, always on the kubeconfig and context the pool names (#3292).
+  found where its installers put it. The pool keeps its own copy of the context, taken when it
+  was added; to pick up a changed kubeconfig, add the pool again (#3292).
