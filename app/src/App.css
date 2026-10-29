@@ -666,16 +666,10 @@ body {
   min-height: 0;
 }
 
+/* The empty sentence is a secondary line (`ui-text-secondary`, #1920): the role's colour is what
+   makes it quiet, never a fade over it, which took it to 3.4:1 in Purlis light (#3790). */
 .empty {
   padding: var(--space-5);
-  opacity: 0.6;
-}
-
-/* In the Explorer and in a panel the empty sentence is a secondary line (`ui-text-secondary`,
-   #1920): the role's colour is what makes it quiet, so the dimming is not drawn on top of it. */
-.explorer .empty,
-.panels .empty {
-  opacity: 1;
 }
 
 .pane {
@@ -3217,7 +3211,7 @@ body {
   border-top: var(--separator-width) solid var(--separator-fill, var(--border-subtle));
   margin-top: var(--space-4);
   padding-top: var(--space-2);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 .explorer .absent-heading,
@@ -3842,7 +3836,7 @@ body {
 .state-bar .pending,
 .state-bar .note,
 .state-bar .stamp {
-  opacity: 0.6;
+  color: var(--text-muted);
 }
 
 .state-bar .note {
@@ -3912,7 +3906,7 @@ body {
 }
 
 .came-back code {
-  opacity: 0.7;
+  color: var(--text-secondary);
 }
 
 /* **While you were away** (`AwaySummary.tsx`, #1514): each part of the sentence is a link to
@@ -4025,12 +4019,12 @@ body {
 
 .ending .what {
   min-width: 4rem;
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 .ending .where {
   font-size: var(--font-size-xs);
-  opacity: 0.55;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4206,7 +4200,7 @@ body {
 .refused {
   margin: 0 0 var(--space-5);
   font-size: var(--font-size-sm);
-  opacity: 0.8;
+  color: var(--text-secondary);
 }
 
 .refused summary {
@@ -4302,7 +4296,7 @@ body {
    placeholder disappears the moment somebody types. */
 .palette-ask {
   font-size: var(--font-size-xs);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 /* The field family's box (#2905), across the palette. */
@@ -4344,7 +4338,7 @@ body {
 .palette .held,
 .palette .none {
   margin: 0;
-  opacity: 0.8;
+  color: var(--text-secondary);
 }
 
 /* The way out of the key the palette claimed (charter-app#47). Quieter than a row and
@@ -4353,7 +4347,7 @@ body {
 .palette-through {
   margin: 0;
   font-size: var(--font-size-xs);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 /* ⌘P's files (FM-7): a group of their own under the projects, headed by the scope they were
@@ -4662,7 +4656,7 @@ body {
   margin: var(--space-5) 0 var(--space-2);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-regular);
-  opacity: 0.7;
+  color: var(--text-muted);
 }
 
 .changes,
@@ -4681,7 +4675,7 @@ body {
 [data-scope="dialog"] .where {
   margin: 0;
   font-size: var(--font-size-xs);
-  opacity: 0.7;
+  color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
@@ -4693,7 +4687,7 @@ body {
 }
 
 [data-scope="dialog"] .value {
-  opacity: 0.6;
+  color: var(--text-muted);
 }
 
 /* A slot with nothing in it keeps its handle in the group — `RegionFrame`'s `Slot` says why —
