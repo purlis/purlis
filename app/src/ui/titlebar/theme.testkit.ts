@@ -6,6 +6,11 @@
 import type { FamilyTheme } from "../../theme/families.testkit";
 
 export default {
+  classless: [
+    // A warning's notice dot (#3649), its part named by its kind (`KINDS` in
+    // `TitleBarWorkspaces.tsx`): a 16px mark over a chip's corner, which holds no button.
+    '[data-part="dot-warning"][data-scope="titlebar"]',
+  ],
   faint: [
     // The slash between the title bar's project and its pinned workspaces, a mark (#2916, R156).
     '[data-part="slash"][data-scope="titlebar"]',

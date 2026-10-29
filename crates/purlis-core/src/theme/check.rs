@@ -777,6 +777,9 @@ pub const PAIRS: &[Pair] = &[
     // A ticked box, a picked radio and a switch that is on (#2907): the tick, the dot and the
     // thumb in the window's colour on the accent's fill, a mark held to 3:1.
     p("surface.base", "accent.base", 3.0),
+    // A warning's notice dot (#3649): its triangle in the window's colour on the waiting amber, a
+    // mark held to 3:1.
+    p("surface.base", "state.waiting", 3.0),
 ];
 
 /// The floor the sixteen ANSI colours clear on the terminal's own background.
