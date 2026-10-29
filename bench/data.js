@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793240513353,
+  "lastUpdate": 1793242169901,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29148,6 +29148,48 @@ window.BENCHMARK_DATA = {
             "value": 101.749605,
             "unit": "ms",
             "extra": "median of 5 runs: 100.835, 101.645, 101.750, 101.958, 102.967 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e62c62947d691138771fe83a45fdaf4a189db5d5",
+          "message": "M66: list card row, sections that fold, notice attention tone (#3669, #3670, #3678) (#3763)\n\n* List family: a card row with a two-line description, its reason and one fix (#3669)\n\nListCardRow draws a row of a List as a small card (the row's new `card`\nvariant, the sidebar Skills view's variant C): its name, its tag, its own\nactions and a ⋯ that opens the row's own menu on its first line; its\ndescription cut after two lines, or a reason in its place in the waiting\ncolour or the quiet tier (RowSummary); and its one fix on an action line\n(RowActions). The whole summary is the row's tooltip. A state changes a\nfill or a ring, never its room. The list family's manifest gains the\n`row` and `card` variants and the `summary` and `actions` parts, since\nNEXT; Purlis stands card rows on the window's ground.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* List family: sections that fold, with a count and a tone, and a run folded to one quiet line (#3670)\n\nListFoldSection is a group of a List whose name is a row the keyboard\nreaches: Enter, Space, → and ← fold and unfold it, aria-expanded says\nwhich, its count is at its end, `waiting` draws its name in the waiting\ncolour, and it may start folded with its owner holding the state.\nListRun folds a run of rows into one quiet line (\"4 built-in skills\")\nthat unfolds them in place, followed by an optional closing line; a row\nthat must show (`standsOut`) is drawn on its own outside the fold. The\ntwist is the tree's own (TwistMark, now exported). → and ← are heard by\nan element around the list that draws nothing, as the tree's are, and a\nfold's row runs nothing of the list's onAction. The manifest gains the\nlist's `count` and `run` parts, since NEXT.\n\nAlso from the first test run of #3669: a card row holds no consent\nanswer (HOLDS_NO_CONSENT rather than STANDS_ON, whose row variant has no\nground), and Purlis's parts may name the list's card ground.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* List family: fixes from the first checks (#3669, #3670)\n\nThe fold keys take React's key event under its own name, so the list's\nDOM menu-key listener keeps the DOM's; a run's closing line, which holds\nits own button, takes no pill under the pointer, and a fold row's pill\nis listed as a ground no button stands on; prettier.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Notice family: an attention tone for what needs a decision (#3678)\n\nA third tone beside news and trouble: nothing went wrong, but the person\nmust choose (a change a chat made to review, a grade plan that changed,\na draft out of date). Trouble stays for real failures.\n\n- New tokens attention.surface and attention.text in every built-in\n  theme and appearance (Purlis dark, light by its reflection rule, and\n  dark high contrast; Classic dark and light), held by the engine at\n  4.5:1 for its words, the primary and the muted tier on its ground; a\n  ground buttons stand on; purlis's own, never a tint's.\n- Never told by colour alone: a triangle (a card's mark, a line's first\n  word, the band's mark in a chat's pane), \"Needs a decision:\" to a\n  screen reader, a dotted outline in forced colours.\n- A polite status like every Notice, never an alert; the Inbox lists\n  trouble, then attention, then news.\n- The notice manifest gains the `attention` variant, since NEXT. The\n  stories' copy of the built-in themes is written again (it carries\n  #3669's card ground too), and Classic's digests take the new tone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Card row, folds, attention: fixes from the code review (#3669, #3670, #3678)\n\n- Purlis keeps a card row's pill under the pointer and its wash when\n  chosen: its card ground is a rest rule in the parts layer, so it names\n  the two states as well.\n- A fold's name that is data is drawn as written (`data-named` on the\n  row, where the header's rule reads it).\n- A Space while typing to find a row goes on finding it, and folds\n  nothing (React Aria's one-second typing window).\n- A fold's twist turns with its own row, never with an open row or\n  disclosure around the list.\n- An attention Notice's mark is a question in a circle everywhere, the\n  band's too: the triangle was a news warning's mark there, so the two\n  were told apart by colour alone.\n- A run partitions its rows once; a fold is documented for a list that\n  does not choose, and a run inside a section starts afresh when it\n  unfolds unless its owner holds it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Folds and attention: fixes from the first stories run (#3670, #3678)\n\n- A fold says whether it is open on its row's cell: axe refuses\n  aria-expanded on a grid's row (a treegrid's takes it), and the grid's\n  one cell may carry it. The keys read the row's data-expanded.\n- The typing window starts closed, so a Space in the page's first\n  second still folds.\n- The attention story walks the card's × before its fix, in the card's\n  own order.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Card row and folds: reach a row's words inside its grid cell; attention's pictures\n\nReact Aria draws a grid row's content inside its cell, so the card row's\nname, a fold's title, its waiting tone, its run's words and its twist\nare reached as the row's descendants, not its children: the tag stands\nbeside the name again and Needs you is drawn in the waiting colour. The\nattention story's baselines, from the pinned image.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n* Card row and folds: their pictures, from the pinned image\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M5CA2NCVPS64FHX0Y8T6N2YM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T02:28:37Z",
+          "tree_id": "9b26ffc41d9472803c0df0991a18e790498f0061",
+          "url": "https://github.com/purlis/purlis/commit/e62c62947d691138771fe83a45fdaf4a189db5d5"
+        },
+        "date": 1793242165294,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5312034999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.519, 0.526, 0.531, 0.537, 0.538 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4326705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.196, 16.202, 16.433, 16.434, 16.464 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5464455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.054, 101.359, 101.546, 101.684, 101.726 ms"
           }
         ]
       }
