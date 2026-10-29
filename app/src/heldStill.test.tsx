@@ -85,6 +85,18 @@ describe("a list held still (useHeldStill)", () => {
     expect(holding()).toBe(false);
   });
 
+  it("lets the pointer's hold go once the pointer is over a menu that is not the list's", () => {
+    const { rerender } = render(<Held menu />);
+    fireEvent.pointerOver(item("Open"), { relatedTarget: null });
+    expect(holding()).toBe(true);
+
+    // The row's menu went from under the pointer, which comes next onto another menu.
+    rerender(<Held />);
+    fireEvent.pointerOver(item("Other"), { relatedTarget: null });
+
+    expect(holding()).toBe(false);
+  });
+
   it("keeps the pointer's hold while the pointer moves from one of its elements to another", () => {
     render(<Held menu />);
     fireEvent.pointerOver(button("row"), { relatedTarget: null });
