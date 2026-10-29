@@ -144,11 +144,31 @@ export const SKILL_PAGE_TAB_NAMES: Record<SkillPageTab, string> = {
 };
 
 /**
+ * **A grading page under a skill** (#3688, the amendment's S6): the plan (`afterEdit`: the plan
+ * that turns on grading after each edit), a grade running, its scorecard, or one of its chats.
+ */
+export type GradingAt =
+  | { at: "plan"; afterEdit?: true }
+  | { at: "running"; grade: string }
+  | { at: "scorecard"; grade: string }
+  | { at: "chat"; grade: string; chat: string };
+
+/** A grading page read back from a target, or nothing for one that names none. */
+function gradingOf(read: unknown): GradingAt | undefined {
+  if (typeof read !== "object" || read === null) return undefined;
+  const { at, grade, chat, afterEdit } = read as Record<string, unknown>;
+  if (at === "plan") return afterEdit === true ? { at, afterEdit } : { at };
+  if (typeof grade !== "string") return undefined;
+  if (at === "running" || at === "scorecard") return { at, grade };
+  return at === "chat" && typeof chat === "string" ? { at, grade, chat } : undefined;
+}
+
+/**
  * **A place in the studio**: one step of its tab's history (`ui/panel/viewHistory.ts`). The
  * page, whose chats it covers, on Library the skill chosen (its row's id, {@link skillRowId}),
  * the tab of its page shown (`tab`, Overview where none is said) and on Runs the run to mark
  * (`run`, from a run's chip), and on another page the item chosen in its list (`item`: a draft's
- * id on Drafts, a deleted skill's on Deleted).
+ * id on Drafts, a deleted skill's on Deleted). `grading` is a grading page under the skill.
  */
 export interface StudioPlace {
   page: StudioPage;
@@ -157,6 +177,7 @@ export interface StudioPlace {
   tab?: SkillPageTab;
   run?: string;
   item?: string;
+  grading?: GradingAt;
 }
 
 /** Where a studio tab starts when nothing opened it anywhere: Library, at the project's root. */
@@ -193,7 +214,8 @@ export function samePlace(one: StudioPlace, other: StudioPlace): boolean {
     one.page === other.page &&
     sameScope(one.scope, other.scope) &&
     one.skill === other.skill &&
-    one.item === other.item
+    one.item === other.item &&
+    JSON.stringify(one.grading) === JSON.stringify(other.grading)
   );
 }
 
@@ -214,14 +236,23 @@ export function skillStudioAt(
     tab,
     run,
     item,
+    grading,
     newTab = false,
-  }: { skill?: string; tab?: SkillPageTab; run?: string; item?: string; newTab?: boolean } = {},
+  }: {
+    skill?: string;
+    tab?: SkillPageTab;
+    run?: string;
+    item?: string;
+    grading?: GradingAt;
+    newTab?: boolean;
+  } = {},
 ): ViewRef {
   const place: StudioPlace & { newTab?: true } = { page, scope };
   if (skill !== undefined) place.skill = skill;
   if (tab !== undefined) place.tab = tab;
   if (run !== undefined) place.run = run;
   if (item !== undefined) place.item = item;
+  if (grading !== undefined) place.grading = grading;
   if (newTab) place.newTab = true;
   return { ...SKILL_STUDIO_VIEW, key: `${TARGET}${JSON.stringify(place)}` };
 }
@@ -248,6 +279,7 @@ function placeOfTarget(key: string): (StudioPlace & { newTab?: boolean }) | unde
     const scope = read.scope;
     if (page === undefined || scope === undefined || !(scope.at in SCOPES)) return undefined;
     const tab = SKILL_PAGE_TABS.find((one) => one === read.tab);
+    const grading = gradingOf(read.grading);
     return {
       page,
       scope: { at: scope.at, name: String(scope.name ?? "") },
@@ -255,6 +287,7 @@ function placeOfTarget(key: string): (StudioPlace & { newTab?: boolean }) | unde
       ...(tab === undefined ? {} : { tab }),
       ...(typeof read.run === "string" ? { run: read.run } : {}),
       ...(typeof read.item === "string" ? { item: read.item } : {}),
+      ...(grading === undefined ? {} : { grading }),
       ...(read.newTab === true ? { newTab: true } : {}),
     };
   } catch {
@@ -284,6 +317,7 @@ export function studioOpening(
           ...(target.tab === undefined ? {} : { tab: target.tab }),
           ...(target.run === undefined ? {} : { run: target.run }),
           ...(target.item === undefined ? {} : { item: target.item }),
+          ...(target.grading === undefined ? {} : { grading: target.grading }),
         };
   let key = "";
   if (target?.newTab === true) for (let n = 2; !free(key); n++) key = `#${n}`;
@@ -293,13 +327,35 @@ export function studioOpening(
 /** The view name a skill's own tab had (SK-3), retired by its page in the studio (#3682). */
 const SKILL_TAB = "skill";
 
+/** The view names a grade's scorecard tab and its chat's tab had (SK-59), retired by the grading
+ *  pages in the studio (#3688). */
+const GRADE_TAB = "skill-grade";
+const GRADE_CHAT_TAB = "skill-grade-chat";
+
+/** **The studio at a grading page under skill `name`** (#3688): on its Grades tab. */
+export function skillGrading(scope: StudioScope, name: string, grading: GradingAt): ViewRef {
+  return skillStudioAt(scope, "library", { skill: skillRowNamed(name), tab: "grades", grading });
+}
+
 /**
  * **A skill's own tab an older launch kept** (SK-3), keyed `deploy` or `deploy@<run>`: it comes
  * back as the studio at Library › that skill, on its Runs where it was opened on a run, as the
- * skill's own tab is retired (#3682). Nothing for any other view.
+ * skill's own tab is retired (#3682). A grade's scorecard tab (`deploy@<grade>`) and its chat's
+ * tab (`deploy@<grade>@<chat>`) come back as that scorecard and that chat in the studio, as
+ * those tabs are retired too (#3688). Nothing for any other view.
  */
 export function studioOfSkillTab(view: ViewRef): ViewRef | undefined {
-  if (view.from !== null || view.view !== SKILL_TAB || view.key === "") return undefined;
+  if (view.from !== null) return undefined;
+  if (view.view === GRADE_TAB || view.view === GRADE_CHAT_TAB) {
+    const [name, grade, chat, ...rest] = view.key.split("@");
+    if (!name || !grade || rest.length > 0) return undefined;
+    if (view.view === GRADE_TAB)
+      return chat === undefined
+        ? skillGrading(AT_THE_ROOT, name, { at: "scorecard", grade })
+        : undefined;
+    return chat ? skillGrading(AT_THE_ROOT, name, { at: "chat", grade, chat }) : undefined;
+  }
+  if (view.view !== SKILL_TAB || view.key === "") return undefined;
   const at = view.key.indexOf("@");
   const name = at === -1 ? view.key : view.key.slice(0, at);
   return at === -1

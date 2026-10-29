@@ -34,6 +34,7 @@ import { useViewHistory } from "./ui/panel/viewHistory";
 import { NEEDS_YOU_LEAD, NeedsYouItem, NeedsYouList, needShown } from "./SkillStudioNeedsYou";
 import { proposeOldKeysRemoval } from "./oldHarnessPlugins";
 import { RouterGrade } from "./RouterGrade";
+import { GradingPage, gradingCrumbTo, gradingPath, type GradingGo } from "./SkillGrades";
 import { Notice } from "./Notice";
 import { DraftPage, DraftsList } from "./SkillStudioDrafts";
 import { DeletedList, DeletedPage } from "./SkillStudioDeleted";
@@ -357,6 +358,15 @@ export function SkillStudioTab({
     history.go(place);
   };
 
+  /** Goes to a grading page under the chosen skill (S6), or back to its Grades tab. */
+  const grading: GradingGo = (to, how) => {
+    const next: StudioPlace = { ...at, tab: "grades" };
+    if (to === undefined) delete next.grading;
+    else next.grading = to;
+    if (how === "go") go(next);
+    else history.replace(next);
+  };
+
   const change: Change = (label, run, then) => {
     setBusy(true);
     void run()
@@ -672,6 +682,7 @@ export function SkillStudioTab({
     ...(chosen !== undefined && at.tab !== undefined && at.tab !== "overview"
       ? [{ id: "tab", label: SKILL_PAGE_TAB_NAMES[at.tab] }]
       : []),
+    ...(chosen !== undefined && at.grading !== undefined ? gradingPath(at.grading) : []),
     ...(doing === undefined ? [] : [{ id: "doing", label: DOING_NAMES[doing.what] }]),
   ];
   const restoring = said?.restore;
@@ -704,7 +715,13 @@ export function SkillStudioTab({
               scope,
               ...(at.skill === undefined ? {} : { skill: at.skill }),
             });
-          } else if (crumb.id === "tab") setDoing(undefined);
+          } else if (crumb.id === "tab") {
+            setDoing(undefined);
+            if (at.grading !== undefined) grading(undefined, "go");
+          } else if (at.grading !== undefined) {
+            const to = gradingCrumbTo(at.grading, crumb.id);
+            if (to !== undefined) grading(to, "go");
+          }
         }}
       >
         {controls}
@@ -940,11 +957,24 @@ export function SkillStudioTab({
           onMoveTo={moveTo}
         />
       ) : undefined;
+    // A grading page under the chosen skill (S6) is the page of a skill this studio can grade.
+    const gradingLevel =
+      chosen !== undefined && at.grading !== undefined ? levelOf(chosen, scope) : null;
     item =
       doing?.what === "new" && panel !== undefined ? (
         <div className="skill-studio-item" data-testid="skill-studio-doing">
           {panel}
         </div>
+      ) : chosen !== undefined && at.grading !== undefined && gradingLevel !== null ? (
+        <GradingPage
+          key={`${skillRowId(chosen)}:${JSON.stringify(at.grading)}`}
+          plane={plane}
+          name={chosen.name}
+          level={gradingLevel}
+          grading={at.grading}
+          changed={changed + done}
+          onGrading={grading}
+        />
       ) : chosen !== undefined && studio !== undefined ? (
         <SkillPage
           key={skillRowId(chosen)}
@@ -974,6 +1004,7 @@ export function SkillStudioTab({
           offerFor={offerFor}
           onPress={onPress}
           onOpenView={onOpenView}
+          onGrading={grading}
         />
       ) : (
         <EmptyState
