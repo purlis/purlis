@@ -171,14 +171,12 @@ pub(super) const LIST: Family = Family {
 /// **A row's colours as `app/src/ui/list/list.css` draws them**, which a test holds to that file:
 /// at rest in the secondary tier on no ground of its own (R19); under the pointer, the pill;
 /// chosen, the wash with its words in the primary tier (R21), under the pointer too; and a row
-/// that cannot be used in the faint tier. A card row stands on a control's ground (#3669, #3774):
-/// the one ground every theme draws apart from the window and a panel, since a button stands on
-/// both; under the pointer, a control's under the pointer.
+/// that cannot be used in the faint tier. A card row stands on the raised ground at rest (#3669).
 pub(super) fn list_look(variant: &str, states: &[State]) -> Look {
     if states.contains(&State::Disabled) {
         return Look {
             fill: if variant == "card" {
-                "control.base"
+                "surface.raised"
             } else {
                 TRANSPARENT
             },
@@ -194,16 +192,11 @@ pub(super) fn list_look(variant: &str, states: &[State]) -> Look {
         };
     }
     Look {
-        fill: if variant == "card" {
-            // A card row stands on a control's ground (#3774): the raised one barely shows on the
-            // window's in Purlis Classic dark.
-            if states.contains(&State::Hover) {
-                "control.hover"
-            } else {
-                "control.base"
-            }
-        } else if states.contains(&State::Hover) {
+        fill: if states.contains(&State::Hover) {
             "surface.hover"
+        } else if variant == "card" {
+            // A card row stands on the raised ground at rest (#3669).
+            "surface.raised"
         } else {
             TRANSPARENT
         },

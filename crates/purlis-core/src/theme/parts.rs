@@ -3207,8 +3207,17 @@ pub(super) struct CardOnSide {
     pub side: &'static str,
 }
 
-/// What [`CardOnSide`] says of `theme`.
-pub(super) fn card_on_side(theme: &ResolvedTheme) -> CardOnSide {
+/// What [`CardOnSide`] says of `theme`, where its parts choose a card row's or a panel's look:
+/// as a meter's fill on its track is (#3674), a palette alone is not yet held (#3735), since the
+/// family's own raised ground is what a theme with no parts draws its cards on.
+pub(super) fn card_on_side(theme: &ResolvedTheme) -> Option<CardOnSide> {
+    let chosen = theme.parts.keys().any(|key| {
+        (key.family == "list" && key.variant == Some("card"))
+            || (key.family == "panel" && key.part == "root")
+    });
+    if !chosen {
+        return None;
+    }
     let held = held_once(theme);
     let rules = &held.0;
     let (Some(list), Some(panel)) = (family("list"), family("panel")) else {
@@ -3221,11 +3230,11 @@ pub(super) fn card_on_side(theme: &ResolvedTheme) -> CardOnSide {
         Some(_) => true,
         None => list.border_width > 0.0,
     };
-    CardOnSide {
+    Some(CardOnSide {
         card: card.fill,
         edge: (edged && card.border != TRANSPARENT).then_some(card.border),
         side: drawn(rules, panel, "side", &[]).fill,
-    }
+    })
 }
 
 /// The rules with the floors held, and what fell.

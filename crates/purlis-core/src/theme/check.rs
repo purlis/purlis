@@ -993,13 +993,17 @@ pub(super) fn check(theme: &ResolvedTheme) -> Report {
 
 /// **Whether a side view's card row stands apart from its panel** (#3774): its fill a step from
 /// the panel's ([`CARD_STEP`]), or an edge a hairline from it ([`CARD_EDGE`]). A see-through
-/// panel is laid on the window's frame, and a see-through card on the panel.
+/// panel is laid on the window's frame, and a see-through card on the panel. Held where the
+/// theme's parts choose a card row's or a panel's look ([`super::parts::card_on_side`]).
 fn card_apart(
     theme: &ResolvedTheme,
     tint: Option<&'static str>,
-    on: super::parts::CardOnSide,
+    on: Option<super::parts::CardOnSide>,
     findings: &mut Vec<Finding>,
 ) {
+    let Some(on) = on else {
+        return;
+    };
     let laid = |token: &str, under: &str| {
         let value = theme.value(token);
         if token == "transparent" || value.is_empty() || is_platform(token, value) {
