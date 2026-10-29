@@ -16,6 +16,7 @@ import { expect, screen, waitFor, within } from "storybook/test";
 import { OUTSIDE } from "./actions";
 import { workspaceMade } from "./actionResult";
 import type { ChipNotice, ChipNotices } from "./ChipNotices";
+import { untilFocused } from "./stories.testkit";
 import { TitleBarSwitch, type SwitchProject } from "./TitleBarSwitch";
 
 /** What `purlis workspace create` says of a workspace made with no vision. */
@@ -342,9 +343,9 @@ export const NeedsYouBesideTheCount: Story = {
     );
     // The arrows of the strip reach it, as they reach every dot: from the chip, back one.
     chip.focus();
-    await waitFor(() => expect(chip).toHaveFocus());
+    await untilFocused(() => chip, "the chip of 3rd-try");
     await userEvent.keyboard("{ArrowLeft}");
-    await waitFor(() => expect(hand).toHaveFocus());
+    await untilFocused(() => hand, "the ✋ on 3rd-try");
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByText("Brought chat 7 forward")).toBeInTheDocument());
     await waitFor(() => expect(cardOf()).not.toBeNull());
