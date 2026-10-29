@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793312404234,
+  "lastUpdate": 1793314059200,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30198,6 +30198,48 @@ window.BENCHMARK_DATA = {
             "value": 102.431512,
             "unit": "ms",
             "extra": "median of 5 runs: 101.497, 101.555, 102.432, 102.438, 102.910 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4793caa27f2f48221b5e56e0ed7bdcaf25872c69",
+          "message": "Skills: a chat learns purlis root; gl-refresh is the window's, never a chat's (#3827) (#3864)\n\n* Skills: a chat learns purlis root; gl-refresh is the window's, never a chat's (#3827)\n\nworking-in-a-clone names purlis root beside purlis workspace current, so a\nchat inside a clone can find the plane root. gl-refresh stays unnamed on\npurpose: it is the window's background refresher of the CI column, and a\nchat that wants CI state asks its forge itself.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HTVYZH8AREQ40PG70T5K1\nPurlis-Persona: steward\n\n* Skills: a branch-folder commit runs alone in its call, naming a relative path (#3827)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HTVYZH8AREQ40PG70T5K1\nPurlis-Persona: steward\n\n* Skills: the commit-alone line names no command the scanner reads as one (#3827)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M63HTVYZH8AREQ40PG70T5K1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T22:20:38Z",
+          "tree_id": "06a27eb0f209ba468b332f57f750ba6ced2b7331",
+          "url": "https://github.com/purlis/purlis/commit/4793caa27f2f48221b5e56e0ed7bdcaf25872c69"
+        },
+        "date": 1793314056172,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6614019999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.641, 0.659, 0.661, 0.662, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.609737,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.434, 16.602, 16.610, 16.665, 16.687 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.216311,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.816, 101.484, 102.216, 102.326, 102.891 ms"
           }
         ]
       }
