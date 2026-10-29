@@ -85,7 +85,7 @@ import {
   type StudioPage,
   type StudioScope,
 } from "./skillStudio";
-import { BUILT_IN_STAYS, PINNABLE, turnOf } from "./skillsListing";
+import { PINNABLE, turnOf } from "./skillsListing";
 import { useOpenUseSkill } from "./UseSkill";
 import { PLANE_ROOT, pieceFileTitle, pieceFileView, type Place } from "./pieceViews";
 import type { ViewRef } from "./tabs";
@@ -555,7 +555,8 @@ export function SkillPage({
   const actions = (
     <>
       <Button
-        variant={skill.on ? "primary" : "secondary"}
+        // The suggested action only while it can be taken: a disabled fill reads as none.
+        variant={useReason === undefined ? "primary" : "secondary"}
         isDisabled={useReason !== undefined}
         tooltip={useReason ?? `Types ${name} into ${chat?.name ?? "the chat"}, and sends nothing.`}
         onPress={() => chat !== undefined && openUseSkill(chat.session, name)}
@@ -824,7 +825,7 @@ export function SkillPage({
       />
       {builtIn && (
         <p className="honest" data-testid="skill-built-in">
-          {`It ships with purlis, so it can't be edited, moved or turned off. ${BUILT_IN_STAYS}`}
+          It ships with purlis, so it can't be edited, moved or turned off.
         </p>
       )}
       {banner !== undefined && dismissed !== banner.cause && (

@@ -784,7 +784,7 @@ describe("each program's own skills in the Skill studio (SK-6)", () => {
     );
     expect(
       within(await openSkill("skill-secrets", user)).getByTestId("skill-built-in"),
-    ).toHaveTextContent(/cannot be turned off/);
+    ).toHaveTextContent(/can't be edited, moved or turned off/);
   });
 
   it("turns one off through the core and reads the project again", async () => {
