@@ -9,7 +9,8 @@ through the API, and holds no `exec` or `attach` right to a pod.
 1. **One Secret, two keys.** `purlis-cluster-operator-signing-key` holds `key.pem`, the key the
    operator signs with, and during a roll `next.pem`, the key it rolls to. The operator's pod
    mounts the whole Secret, not one key of it, so the kubelet refreshes both files when a team
-   admin changes them, and the operator reads them again every minute: a roll needs no restart.
+   admin changes them, and the operator reads them again, both from one version of the Secret,
+   each time it signs a statement or looks at a Pool: a roll needs no restart.
    A `next.pem` it cannot read stops the operator from starting, and while it runs leaves the
    keys it last read in use.
 2. **The Pool's status names the next key, and the current key vouches for it.** During a roll

@@ -81,6 +81,7 @@ fn written() -> Vec<Value> {
                 size: "10Gi".into(),
                 storage_class_name: Some("standard".into()),
             },
+            stopped: false,
         },
     );
     pool.metadata.uid = Some("u".into());
@@ -96,6 +97,7 @@ fn written() -> Vec<Value> {
             requester: "ada@example.com".into(),
             // Kept, so its volume's fields are checked too (#2057).
             kept: true,
+            stopped: false,
         },
         status: None,
     };
@@ -117,6 +119,20 @@ fn written() -> Vec<Value> {
             &claim,
             &Default::default(),
             &runner,
+        )),
+        // A runner suspended or run again when its Pool or Claim is stopped (#2058).
+        serde_json::to_value(upstream::sandbox_in_mode(
+            &upstream::Sandbox {
+                metadata: ObjectMeta {
+                    name: Some("ada-1".into()),
+                    namespace: Some("ada".into()),
+                    uid: Some("w".into()),
+                    ..ObjectMeta::default()
+                },
+                spec: Default::default(),
+                status: None,
+            },
+            "Suspended",
         )),
     ]
     .into_iter()

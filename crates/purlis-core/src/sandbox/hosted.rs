@@ -343,7 +343,9 @@ impl Hosted {
             }
             ReachChange::KeepBlocked { host } => {
                 match answered_about(self.planned, &self.left_out, host)? {
-                    Answered::Host(host) => board.keep_blocked(&host),
+                    Answered::Host(host) => {
+                        board.keep_blocked(&host);
+                    }
                     Answered::LeftOut(port) => board.keep_left_out_blocked(port),
                 }
                 Vec::new()

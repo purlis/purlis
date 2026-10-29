@@ -15,8 +15,8 @@ import { closeTheViewTabsOpenedSince, tabNames } from "../reach.js";
  * briefed on and runs Codex's hook for that shell command through the real binary
  * (`USES_A_SKILL`); the hook tells the app over the socket the app opened, and the app opens
  * the run on the chat's tab and logs its start in the project's skill log. The harness holds
- * its turn, so the run stays open. Pressing the chip opens the skill's own tab, whose Runs panel
- * lists that run, and its totals count it by what it ran on, persona and workspace (SK-20).
+ * its turn, so the run stays open. Pressing the chip opens the Skill studio at the skill's page,
+ * on its Runs (#3682), which lists that run marked, and its totals count it by what it ran on, persona and workspace (SK-20).
  * Ending the chat ends the run, and the chip goes.
  */
 
@@ -39,7 +39,7 @@ describe("a skill run on a chat's tab", function () {
     await closeTheViewTabsOpenedSince(wereOpen);
   });
 
-  it("shows the skill in use, opens its tab on the run, and goes with the chat", async () => {
+  it("shows the skill in use, opens its Runs in the studio on the run, and goes with the chat", async () => {
     await pressAndStart("New tab");
     // The harness holds its output until a line is typed; then it uses the skill.
     const pane = await $('[data-testid="pane"]');
@@ -56,11 +56,15 @@ describe("a skill run on a chat's tab", function () {
 
     await chip.click();
     const runs = await $('[data-testid="skill-runs"]');
-    await runs.waitForExist({ timeout: 20_000, timeoutMsg: "the skill's tab did not open" });
+    await runs.waitForExist({ timeout: 20_000, timeoutMsg: "the skill's Runs did not open" });
     const shown = await runs.$('tr[aria-current="true"]');
     await shown.waitForExist({ timeout: 20_000, timeoutMsg: "the run was not in its Runs panel" });
     await expect(shown).toHaveText(expect.stringContaining("The chat read the skill"));
-    expect(await tabNames()).toContain(USED_SKILL);
+    // The studio's one tab, at the skill's page: the skill's own tab is retired (#3682).
+    expect(await tabNames()).toContain("Skill studio");
+    await expect($('[data-testid="skill-studio-skill"] h2')).toHaveText(
+      expect.stringContaining(USED_SKILL),
+    );
     // Its totals count the run, still open, by what it ran on, persona and workspace (SK-20).
     for (const by of ["by_harness", "by_persona", "by_workspace"]) {
       const totals = await $(`[data-testid="skill-totals-${by}"]`);

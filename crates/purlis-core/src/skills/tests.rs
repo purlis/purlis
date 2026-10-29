@@ -2555,6 +2555,26 @@ fn each_built_in_skill_is_its_skill_md_alone() {
     }
 }
 
+/// #3777: the description Make my own copy proposes for a copy, each built-in skill's with the
+/// note `copyDescriptionOf` (`app/src/SkillCopy.tsx`) adds, is one the core takes, so the copy
+/// is made in one click whichever built-in it is of.
+#[test]
+fn each_built_in_skills_proposed_copy_description_keeps_the_rules() {
+    let bundle = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/plugin/skills");
+    let skills = crate::skills::read(&bundle);
+    assert!(!skills.is_empty());
+    for skill in skills {
+        let proposed = format!("{} (your copy of {})", skill.description.trim(), skill.name);
+        assert_eq!(
+            purlis_skills::change::description_problem(&proposed),
+            None,
+            "{}",
+            skill.name
+        );
+        assert!(purlis_skills::fence::holds(&proposed), "{}", skill.name);
+    }
+}
+
 #[test]
 fn a_built_in_skills_name_is_reserved_with_or_without_a_bundle() {
     let bundle = tempfile::tempdir().unwrap();

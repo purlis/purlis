@@ -1941,9 +1941,10 @@ export const commands = {
 	skillRename: (plane: PlaneId, level: SkillLevel, name: string, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_rename", { plane, level, name, to })),
 	/**
 	 *  **Make my own copy** (#3686): the built-in skill `name` copied to `level` under the new name
-	 *  `to`, which the person can edit. The built-in skill keeps loading.
+	 *  `to` and its own `description` (#3777), which the person can edit. The built-in skill keeps
+	 *  loading.
 	 */
-	skillCopy: (plane: PlaneId, name: string, level: SkillLevel, to: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_copy", { plane, name, level, to })),
+	skillCopy: (plane: PlaneId, name: string, level: SkillLevel, to: string, description: string) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_copy", { plane, name, level, to, description })),
 	/**  Whether moving a skill from `from` to `to` asks for a grant: it becomes a project skill. */
 	skillMoveNeedsGrant: (from: SkillLevel, to: SkillLevel) => __TAURI_INVOKE<boolean>("skill_move_needs_grant", { from, to }),
 	/**  **Moves a skill** from `from` to `to`, with `grant` where it becomes a project skill. */
@@ -8386,6 +8387,12 @@ export type Moved = {
 	 */
 	asking?: boolean | null,
 	/**
+	 *  **What this chat waits on of its own** (#3878, `purlis_core::ownwork::OwnWork`): its
+	 *  turn ended while work of its own is in flight, so it is waiting, and not on the person.
+	 *  `null` for every other chat.
+	 */
+	own_work?: OwnWork | null,
+	/**
 	 *  Which snapshot of the board this is — bigger was taken later (charter-app#248).
 	 * 
 	 *  **What lets the window put its events back in order.** Every `Moved` is built under the
@@ -8952,6 +8959,23 @@ export type OwnBranch = {
 	 *  the folder is there, and where the branch is gone too or could not be read.
 	 */
 	left: LeftBranch | null,
+};
+
+/**
+ *  **What a chat waits on of its own, as the window is sent it** (#3878,
+ *  `purlis_core::ownwork::OwnWork`): how many of each kind of work, and when it next wakes
+ *  on a schedule of its own, in seconds since 1970. Counts of none are `0`.
+ */
+export type OwnWork = {
+	helpers: number,
+	workflows: number,
+	monitors: number,
+	shells: number,
+	/**
+	 *  When it next wakes on a schedule of its own, in seconds since 1970. A `u32`, as
+	 *  `Moved::moved_at` is, since `specta` carries no 64-bit number: it holds until 2106.
+	 */
+	wakes_at?: number | null,
 };
 
 /**  Whose a skill from outside the plane is. */

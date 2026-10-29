@@ -179,6 +179,11 @@ const POLICY_HEADER: &str = "# Copyright 2026 Purlis
 # namespace (purlis-runners-*) or changes who it is for, and the operator binds
 # purlis-runner-owner, and makes the quota purlis-person, in a runner namespace alone, for the
 # one person that namespace is for, who is not the operator.
+#
+# The third policy, purlis-operator-changes-only-a-sandboxs-mode, narrows the operator's own
+# `patch` on upstream's sandboxes (#2058), which RBAC cannot scope to a field or an owner: the
+# operator may change only a Sandbox's spec.operatingMode, and only on a Sandbox a SandboxClaim
+# controls.
 ";
 
 /// The plain manifests the chart's default render makes: `operator.yaml` and `policy.yaml`.

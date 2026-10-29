@@ -511,7 +511,15 @@ pub(super) const TITLEBAR: Family = Family {
             name: "dot",
             since: super::NEXT,
             description: "The dot a notice about the workspace leaves on its chip's corner while \
-                          its card is hidden: its shape and its fill, ringed in the bar's ground.",
+                          its card is hidden, where the most urgent is news: its disc and its \
+                          fill, ringed in the bar's ground.",
+            properties: &[Prop::Fill, Prop::Text],
+        },
+        Part {
+            name: "dot-warning",
+            since: super::NEXT,
+            description: "The dot on a chip's corner where the most urgent of its hidden notices \
+                          is a warning: its triangle and its fill, ringed in the bar's ground.",
             properties: &[Prop::Fill, Prop::Text],
         },
     ],
@@ -558,12 +566,19 @@ pub(super) const TITLEBAR: Family = Family {
         ("row", "text.secondary"),
         // A notice's dot (#3648): its shape, a mark, in the window's ground on the accent.
         ("dot", "surface.base"),
+        // A warning's dot (#3649): its triangle, a mark, in the window's ground on the amber.
+        ("dot-warning", "surface.base"),
     ],
     corner_most: None,
     // A chip's notice dot is the chip's sibling in its slot (#3648), drawn around the chip.
-    around: &["dot"],
+    // Each kind's dot is a part of its own (#3649), so a theme colours one kind at a time.
+    around: &["dot", "dot-warning"],
     // The count's pill, the amber wash (`titlebar.css`): its digits are read on it (#3041).
-    fills: &[("count", "wash.warning"), ("dot", "accent.base")],
+    fills: &[
+        ("count", "wash.warning"),
+        ("dot", "accent.base"),
+        ("dot-warning", "state.waiting"),
+    ],
     // A switcher's row and its pin paint no ground at rest: they stand on the popover's surface
     // the switcher is drawn on, which their words are read on (#3099).
     under: &[("row", "surface.overlay"), ("pin", "surface.overlay")],

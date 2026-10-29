@@ -77,8 +77,9 @@ D-2047-8 in the pull request). §7's table row for secrets stands, read as below
     runner, found in that host's hold by its id and the program that started it. Each run is
     held to the sandbox as it was compiled at the start, plus the hosts that confinement's board
     allows live as its values come, read again then, so a change while the person was asked
-    holds for that run, and a chat gone meanwhile runs nothing. So an Allow on a block's Notice for the chat reaches its tool's next run,
-    and a Forget narrows that run again, as `confines_now` holds a run on the desktop. Only the
+    holds for that run, and a chat gone meanwhile runs nothing. So an Allow on a block's Notice
+    for the chat reaches its tool's next run, and a Forget narrows that run again, as
+    `confines_now` holds a run on the desktop. Only the
     window's answers change the board, so nothing else can widen a run. A confinement that has
     ended, or one held under its id for another program, allows nothing live. *Decided in
     implementation, to be confirmed* (D-3407-1, D-3407-2).

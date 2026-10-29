@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **Skill runs** (SK-3, #2766): the run open in each chat, for the chip on its tab, and the tab
- * of one skill, where its Runs panel lists every run.
+ * **Skill runs** (SK-3, #2766): the run open in each chat, for the chip on its tab, which opens
+ * the skill's Runs in the Skill studio (#3682).
  *
  * The core opens a run when a chat uses a skill, counts the tool calls made inside it and ends
  * it with the turn, and sends `chat-skill-run` each time a chat's open run changes. This holds
@@ -15,7 +15,6 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { listen } from "./here";
 import { commands, type ChatSkillRun, type OpenRun, type PlaneId } from "./bindings";
-import type { ViewRef } from "./tabs";
 
 /** The open run of each chat, by session. A session that is not here has none open. */
 export type OpenRuns = Readonly<Record<number, OpenRun>>;
@@ -160,28 +159,4 @@ export function useSkillRuns(plane: PlaneId | undefined): RunsOf {
   }, [plane, store]);
 
   return { store, plane };
-}
-
-/** The view name of one skill's tab. */
-export const SKILL_VIEW = "skill";
-
-/**
- * One skill's tab, keyed by its name, and by the run it opens on where it was opened from a run's
- * chip: `deploy`, or `deploy@<run>`. A skill's name never holds an `@`.
- */
-export function skillView(name: string, run?: string): ViewRef {
-  return { from: null, view: SKILL_VIEW, key: run === undefined ? name : `${name}@${run}` };
-}
-
-/** The skill a skill's tab is of, and the run it was opened on, from its key. */
-export function skillOfView(view: ViewRef): { name: string; run?: string } {
-  const at = view.key.indexOf("@");
-  return at === -1
-    ? { name: view.key }
-    : { name: view.key.slice(0, at), run: view.key.slice(at + 1) };
-}
-
-/** Whether `view` is a skill's tab. */
-export function isSkillTab(view: ViewRef): boolean {
-  return view.from === null && view.view === SKILL_VIEW && view.key !== "";
 }

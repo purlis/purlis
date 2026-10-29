@@ -512,6 +512,55 @@ fn a_kept_claims_runner_keeps_its_pairing_and_its_home_when_its_pod_is_made_agai
         .await;
         assert!(drawn.contains("the conversation so far"), "{drawn}");
     });
+
+    // Stopped and run again (#2058): suspended, never destroyed, it is the same runner, paired
+    // as it was.
+    let stop = |stopped: bool| {
+        kubectl
+            .run(
+                &kubectl.args(&[
+                    "patch",
+                    "claims.runners.purlis.dev",
+                    "ada-kept",
+                    "--namespace",
+                    &namespace,
+                    "--type",
+                    "merge",
+                    "-p",
+                    &format!("{{\"spec\":{{\"stopped\":{stopped}}}}}"),
+                ]),
+                None,
+                64 * 1024,
+            )
+            .expect("the claim patched");
+    };
+    stop(true);
+    eventually("the stopped runner's pod ends", || {
+        field(&kubectl, &runner, "pod", "ada-kept", "{.metadata.uid}")
+            .is_none()
+            .then_some(())
+    });
+    stop(false);
+    let resumed = eventually("the operator vouches for the runner run again", || {
+        let now = clusterpool::vouched_for(&kubectl, &operator, &kept).ok()??;
+        (clusterpool::held_to(&paired, &now).is_ok()).then_some(now)
+    });
+    assert_eq!(resumed.key, paired.pinned.key);
+    runtime.block_on(async {
+        let (client, mut views) = linked(&kubectl, &operator, &paired, identity()).await;
+        client
+            .hold_project(PROJECT, "")
+            .await
+            .expect("the runner holds the project where it keeps it");
+        let drawn = ran(
+            &client,
+            &mut views,
+            "cat \"$HOME/conversation\"; echo done; exec sleep 120",
+            "done",
+        )
+        .await;
+        assert!(drawn.contains("the conversation so far"), "{drawn}");
+    });
     runtime.shutdown_timeout(Duration::from_secs(5));
     let _ = kubectl.delete_claim(&namespace, "ada-kept");
 }

@@ -54,7 +54,9 @@ pub use reconcile::{
     CLUSTER_NAMESPACE, FIELD_MANAGER, LinkKeyIs, OVER_QUOTA_AGAIN, UNCOUNTED_FOR,
     claims_of_upstream, claims_woken_by, cluster_of, pool_objects_go_with, pool_status_patch,
     retry_after_conflict, run, settled, status_of, status_of_a_deleted_pool,
-    status_of_a_missing_pool, status_of_an_object_in_the_way, status_patch, status_withdrawn,
+    status_of_a_missing_pool, status_of_a_stopped_claim,
+    status_of_a_suspended_runner_of_a_deleted_pool, status_of_an_object_in_the_way, status_patch,
+    status_withdrawn, suspending_again,
 };
 pub use resources::{
     Claim, ClaimSpec, ClaimStatus, KeptVolume, LinkKey, NextSigningKeyVouch, Pool, PoolSpec,

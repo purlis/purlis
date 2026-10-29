@@ -179,9 +179,17 @@ export type Said = {
   title?: string;
   details?: string;
   ways?: readonly SaidWay[];
-  /** A line about work still under way ("Cloning 2 repo(s)…"), which the next line replaces:
-   *  said, but not kept under Results. */
+  /** A line about work still under way ("Cloning 2 repos…"), which the next line replaces:
+   *  said, but not kept under Results, unless it is on a `track`. */
   progress?: boolean;
+  /** **The run of lines it is one of** (#3649): a line on a track takes the place of the one
+   *  kept before it on that track, in place, so a clone's progress turns into its result in one
+   *  notice. A progress line on a track is kept until then. */
+  track?: string;
+  /** **A line said just before it, in the same breath** (#3649): a workspace's ready notice,
+   *  said a moment before its clone's first line. The window draws only the newest line of a
+   *  render, so it keeps this one first, where it has not kept it already. */
+  after?: Said;
   /** **The one workspace it is about**, where it is about a whole workspace (a workspace made):
    *  its notice hangs from that workspace's chip in the title bar (`noticePlace.ts`, #3648). */
   workspace?: string;

@@ -1107,6 +1107,11 @@ impl Spooled {
 
 /// What a drain found, one item at a time, in each chat's order.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "nearly every item a drain finds is a line: boxing each would allocate once per \
+              line for the sake of a gap or a refusal that comes rarely"
+)]
 pub enum Drained {
     /// A line that checked: number `seq` in chat `chat`'s spool.
     Line { chat: u32, seq: u64, line: Spooled },

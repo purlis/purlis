@@ -279,6 +279,8 @@ fn arguments(tool: &str, todo: &str) -> Value {
         "session_record_read" => json!({ "file": RECORD }),
         "session_record" => json!({ "title": "Read only", "body": record }),
         "workspace_vision" => json!({ "text": "Ship every widget" }),
+        // The app's to run, and refused on a project this purlis cannot write (#3831).
+        "worktree_update" => json!({}),
         "workspace_section" => json!({ "section": "decisions", "text": "Blue, because it sells" }),
         "change_status" => json!({ "change": "widget-v2" }),
         "dispatch" => json!({ "name": "paint", "brief": "Paint the widget" }),
