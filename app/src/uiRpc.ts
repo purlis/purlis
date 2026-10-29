@@ -1029,12 +1029,7 @@ export const commands = {
 	skillDraftChat: __WINDOW_ONLY_RESULT,
 	skillDraftTry: __WINDOW_ONLY_RESULT,
 	skillLevelAccept: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Accepts every workspace and persona folder of the project there now** (#3718): the person's one
-	 *  press where purlis cannot confirm which of them they accepted before
-	 *  (`levels::to_confirm`).
-	 */
-	skillLevelsConfirm: (plane: PlaneId) => typedError<SkillChanged, string>(__TAURI_INVOKE("skill_levels_confirm", { plane })),
+	skillLevelsConfirm: __WINDOW_ONLY_RESULT,
 	/**  **What grading the copy of `skill` at `level` would run**, before anything runs. */
 	skillGradePlan: (plane: PlaneId, level: SkillLevel, skill: string, profile: string | null, model: string | null) => typedError<SkillGradePlan, string>(__TAURI_INVOKE("skill_grade_plan", { plane, level, skill, profile, model })),
 	skillGradeStart: __WINDOW_ONLY_RESULT,
