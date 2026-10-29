@@ -651,10 +651,10 @@ fn not_started(picked: bool) -> (Block, Option<String>) {
 }
 
 /// #3396: a test server on a port the system picks is refused with no port to allow, and still
-/// raises a block, which says the port was the system's to pick: in Node's and Go's own words,
-/// and in the sandbox's line. Words that only printed it raise nothing.
+/// raises a block, a server that did not start, naming the port as the system's to pick: in
+/// Node's and Go's own words, and in the sandbox's line. Words that only printed it raise nothing.
 #[test]
-fn a_server_refused_a_port_the_system_picks_is_a_block_of_its_own() {
+fn a_server_refused_a_port_the_system_picks_is_a_server_that_did_not_start() {
     let node = "Error: listen EPERM: operation not permitted 127.0.0.1\n    at \
                 Server.setupListenHandle [as _listen2] (node:net:1872:21)";
     assert_eq!(

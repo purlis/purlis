@@ -2604,11 +2604,23 @@ fn a_server_that_did_not_start_on_no_port_to_allow_is_told_what_to_do() {
         assert!(said.contains("without the sandbox"), "{said}");
     }
     assert!(PICKED_PORT_SAID.contains("a port the system picks"));
-    // Claude Code's own words for a port it cannot be allowed are for a named port alone.
+    // True of each refusal that names no port: another machine's address, a runner's socket.
+    assert!(NO_PORT_SAID.contains("named no port purlis could allow"));
+    assert!(NO_PORT_SAID.contains("remove the runner and add it again"));
+    // purlis's own wrap keeps the words; a Claude Code chat, which no port of its own would
+    // help, is told the ways that work there.
     assert_eq!(
-        for_its_harness(Some(Harness::ClaudeCode), picked.clone()),
+        for_its_harness(Some(Harness::Codex), picked.clone()),
         picked
     );
+    for refused in [picked, unnamed] {
+        let (offer, target, why) = for_its_harness(Some(Harness::ClaudeCode), refused);
+        assert_eq!(offer, BlockOffer::Unsandboxed);
+        assert_eq!(target, None);
+        assert_eq!(why.as_deref(), Some(CLAUDE_CODE_NO_PORT_SAID));
+    }
+    assert!(CLAUDE_CODE_NO_PORT_SAID.contains("without the sandbox"));
+    assert!(CLAUDE_CODE_NO_PORT_SAID.contains("Codex or opencode chat"));
 }
 
 /// #2019: a port below 1024 is never one to serve on, and a port something on this Mac listens

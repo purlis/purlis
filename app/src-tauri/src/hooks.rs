@@ -1846,6 +1846,14 @@ fn for_its_harness(
         let (offer, _, why) = without_the_sandbox(CLAUDE_CODE_LISTEN_SAID);
         return (offer, target, why);
     }
+    // A server that did not start on no port to allow (#3396, #3440): in a Claude Code chat a
+    // port of its own would end in the same Notice, so it is told the ways that work there.
+    if offer == BlockOffer::Unsandboxed
+        && claude
+        && matches!(route.as_deref(), Some(PICKED_PORT_SAID | NO_PORT_SAID))
+    {
+        return (offer, target, Some(CLAUDE_CODE_NO_PORT_SAID.to_owned()));
+    }
     // A service on this Mac (qw384b): Claude Code's sandbox takes no one port, so its chat is
     // carried the port by name through purlis's proxy, and the Notice says how it is reached.
     if offer == BlockOffer::Port && claude {
@@ -1887,11 +1895,22 @@ pub const PICKED_PORT_SAID: &str = "It asked for a port the system picks, as a t
      listen 3000 -- <command>) to be asked about it, or start this chat without the sandbox to \
      run tests that pick their own ports.";
 
-/// Why a server the sandbox named no port for cannot be allowed (#3440): what purlis would allow
-/// is one port, and none was said.
-pub const NO_PORT_SAID: &str = "The sandbox did not say which port it asked for, so there is no \
-     port to allow. Start the server on a port of its own, from 1024 (PORT=3000, or purlis \
-     listen 3000 -- <command>), to be asked about it, or start this chat without the sandbox.";
+/// Why a server refused on no port purlis could allow cannot be allowed (#3440): what reached the
+/// Notice named none, which is so of another machine's address, and of a runner that could not
+/// hand purlis the server's socket. True of each; what to do for each.
+pub const NO_PORT_SAID: &str = "The sandbox named no port purlis could allow for it: a server is \
+     allowed only on one port of this Mac's loopback, from 1024. Start it on such a port \
+     (PORT=3000, or purlis listen 3000 -- <command>) to be asked about it. If it already asked \
+     for one and this chat runs on a runner, purlis could not take its socket there: remove the \
+     runner and add it again. Or start this chat without the sandbox.";
+
+/// [`PICKED_PORT_SAID`] and [`NO_PORT_SAID`] in a Claude Code chat (#3396): its sandbox cannot be
+/// allowed one port either ([`CLAUDE_CODE_LISTEN_SAID`]), so a port of the server's own would end
+/// in the same Notice. Its ways on are the two that work there.
+pub const CLAUDE_CODE_NO_PORT_SAID: &str = "A Claude Code chat's sandbox cannot be allowed a port \
+     to listen on, so purlis cannot allow this server here. Start this chat without the sandbox, \
+     or run the server, or the tests that start it, in a Codex or opencode chat, where it can be \
+     allowed one port of its own.";
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
 /// names (#1637), which an administrator's policy may still forbid ([`held`]).

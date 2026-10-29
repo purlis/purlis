@@ -626,6 +626,10 @@ while (accept(my $c, $s)) {
     #[test]
     fn no_server_binds_a_socket_in_a_folder_denied_to_writes() {
         if !can_apply() {
+            let _ = writeln!(
+                std::io::stderr(),
+                "skipped: this process is already sandboxed, so no second profile applies"
+            );
             return;
         }
         let base = tempfile::tempdir().expect("a folder");
