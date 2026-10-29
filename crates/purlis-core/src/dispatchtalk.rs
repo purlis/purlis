@@ -2863,6 +2863,7 @@ mod tests {
             from: "steward 3".to_owned(),
             chat: 3,
             text: text.to_owned(),
+            instruction: None,
         }
     }
 
@@ -3010,6 +3011,7 @@ mod tests {
             from: "check the queue".to_owned(),
             chat: 9,
             text: text.to_owned(),
+            instruction: None,
         };
         assert_eq!(
             said(&from_task(Kind::Note, "Half way.")),
