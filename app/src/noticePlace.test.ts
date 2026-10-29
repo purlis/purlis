@@ -178,6 +178,14 @@ describe("the title bar's chips", () => {
     ]);
   });
 
+  it("draw a gone workspace in front once, dormant, and no dashed chip for it", () => {
+    expect(chipsOf({ pins: ["beta"], dormant: ["gamma"], focused: "gamma" })).toEqual([
+      ROOT,
+      ANOTHER,
+      DORMANT,
+    ]);
+  });
+
   it("draw a name once, as a live pin, where the store names it both pinned and gone", () => {
     expect(chipsOf({ pins: ["gamma"], dormant: ["gamma"], focused: "gamma" })).toEqual([
       ROOT,

@@ -2302,10 +2302,14 @@ function App() {
               onDrop={dropResult}
               onSettings={followSaid}
               // **No chip, so listed here alone, with a way there** (#3651, D-3648-16): a
-              // result about a workspace the title bar draws no chip for offers "Open X".
+              // result about a workspace the title bar draws no chip for offers "Open X",
+              // while the project has that workspace.
               openOf={(one) => {
                 const place = placeOfSaid(one, chipsInFront);
                 if (place.at !== "centre") return undefined;
+                // Only to a workspace the project still has: one removed or renamed since has
+                // no way there, and a way that does nothing is no way (#3651's review).
+                if (workspacesInFront?.names.includes(place.open) !== true) return undefined;
                 return {
                   label: `Open ${place.open}`,
                   onPress: () => switchDoes.go(inFront, place.open),

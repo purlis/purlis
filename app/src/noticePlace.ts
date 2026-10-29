@@ -96,7 +96,14 @@ export function chipsOf({
       .filter((workspace) => !pins.includes(workspace))
       .map((workspace): Chip => ({ workspace, look: "dormant" })),
   ];
-  if (focused !== undefined && focused !== OUTSIDE && !pins.includes(focused))
+  // A workspace in front that has gone is drawn once, dormant: never also as a dashed chip,
+  // whose press would pin a workspace the project does not have (#3651's review).
+  if (
+    focused !== undefined &&
+    focused !== OUTSIDE &&
+    !pins.includes(focused) &&
+    !dormant.includes(focused)
+  )
     chips.push({ workspace: focused, look: "unpinned" });
   return chips;
 }

@@ -118,13 +118,15 @@ export function useChipNotices({
 }): ChipNotices {
   const on = useMemo(() => {
     const by = new Map<string, ChipNotice[]>();
+    /** The workspaces whose chip is dormant: gone, so nothing is offered to do in them. */
+    const dormant = new Set(chips.filter((one) => one.look === "dormant").map((one) => one.workspace));
     for (const one of kept) {
       if (one.plane !== plane) continue;
       const place = placeOfSaid(one.said, chips);
       if (place.at !== "chip") continue;
       by.set(place.workspace, [
         ...(by.get(place.workspace) ?? []),
-        { id: one.id, said: one.said, kind: kindOf(one.said) },
+        { id: one.id, said: onDormant(one.said, dormant), kind: kindOf(one.said) },
       ]);
     }
     // Newest first, by the order each was first kept, whatever order they are handed in: a line
@@ -228,6 +230,17 @@ export function useChipNotices({
   };
 }
 
+/**
+ * **What a result says on a dormant chip** (#3651's review): its words and its Details, but no
+ * way to act in a workspace the project no longer has (an "Add a vision" on a workspace made and
+ * gone since, ADR 0034's hazard). Elsewhere, as it was said.
+ */
+function onDormant(said: Said, dormant: ReadonlySet<string>): Said {
+  if (said.workspace === undefined || !dormant.has(said.workspace)) return said;
+  if (said.ways === undefined || said.ways.length === 0) return said;
+  return { ...said, ways: [] };
+}
+
 /** No standing lines, one value for every render. */
 const NO_STANDING: readonly StandingNotice[] = [];
 
@@ -250,7 +263,12 @@ export function ChipCard({
   takesKeyboard = false,
   onKeyboardTaken,
   clip,
+  fallback,
 }: {
+  /** **Where the keyboard goes when the chip it hung from has gone with it** (#3651's review):
+   *  a dormant chip's Forget takes the chip and the card at once. The strip's stop then: the
+   *  chosen chip, else the house, else the ⌄, as a switcher closing hands it back. */
+  fallback?: () => HTMLElement | null;
   /** What clips the chip it hangs from (the strip): out of its sight, the card is hidden. */
   clip?: RefObject<Element | null>;
   /** Brought back by a press of its dot: the keyboard goes into it as it comes, which no notice
@@ -292,19 +310,26 @@ export function ChipCard({
   // drawn, unless something else took it as it went. The dot it may have come from is gone.
   const chip = useRef<Element | null>(null);
   const clipped = useRef<Element | null>(null);
+  const instead = useRef(fallback);
   useLayoutEffect(() => {
     chip.current = anchor.current;
     clipped.current = clip?.current ?? null;
+    instead.current = fallback;
   });
   useLayoutEffect(
     () => () => {
       const had = region.current?.contains(document.activeElement) ?? false;
-      const to = chip.current;
+      const was = chip.current;
       const by = clipped.current;
-      if (!had || !(to instanceof HTMLElement)) return;
+      const otherwise = instead.current;
+      if (!had) return;
       queueMicrotask(() => {
         const at = document.activeElement;
-        if ((at !== null && at !== document.body) || !to.isConnected) return;
+        if (at !== null && at !== document.body) return;
+        // The chip, while it is still drawn; else, gone with its card (a dormant pin forgotten),
+        // the strip's stop, never the page (WCAG 2.4.3).
+        const to = was instanceof HTMLElement && was.isConnected ? was : (otherwise?.() ?? null);
+        if (to === null || !to.isConnected) return;
         // A chip out of its strip's sight is brought back into it, so the keyboard's focus is
         // never on what cannot be seen (WCAG 2.4.11); one in sight stays where it is.
         const box = to.getBoundingClientRect();

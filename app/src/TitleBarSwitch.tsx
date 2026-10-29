@@ -55,6 +55,20 @@ import {
   type Step,
 } from "./workspaceSwitch";
 
+/**
+ * **The strip's stop**: the chip of the workspace in front, else the plane root's house while the
+ * root is (#3654), else the ⌄. Where the keyboard goes when what it was on has gone: a switcher
+ * closed on nothing it came from, or a card whose chip went with it (#3651's review).
+ */
+function stripStop(strip: HTMLElement | null, house: HTMLElement | null): HTMLElement | null {
+  return (
+    strip?.querySelector<HTMLElement>('[data-part="workspace"][data-selected]') ??
+    (house?.hasAttribute("data-selected") === true ? house : null) ??
+    strip?.querySelector<HTMLElement>("[data-titlebar-all]") ??
+    null
+  );
+}
+
 /** No pins, one value for every render. */
 const NO_PINS: readonly string[] = [];
 
@@ -194,10 +208,7 @@ export function TitleBarSwitch({
         from.focus({ preventScroll: true });
         return;
       }
-      const chosen =
-        strip.current?.querySelector<HTMLElement>('[data-part="workspace"][data-selected]') ??
-        (house.current?.hasAttribute("data-selected") ? house.current : null) ??
-        strip.current?.querySelector<HTMLElement>("[data-titlebar-all]");
+      const chosen = stripStop(strip.current, house.current);
       chosen?.focus({ preventScroll: true });
     });
   }, [open]);
@@ -314,8 +325,14 @@ export function TitleBarSwitch({
   /** A chip with the workspace's own menu around it, where the window gives one. */
   const withMenu = (workspace: string, drawn: ReactNode) =>
     menuOf === undefined ? drawn : menuOf(workspace, drawn);
+  // A workspace in front that has gone is drawn dormant, never dashed (#3651's review).
   const unpinned =
-    focused !== undefined && focused !== OUTSIDE && !pins.includes(focused) ? focused : undefined;
+    focused !== undefined &&
+    focused !== OUTSIDE &&
+    !pins.includes(focused) &&
+    !(workspaces?.dormant ?? NO_PINS).includes(focused)
+      ? focused
+      : undefined;
   /** The strip's one Tab stop: the chip of the workspace in front, else the first pin, else the
    *  ⌄ (charter-app#189). */
   const stop = unpinned ?? (focused !== undefined && pins.includes(focused) ? focused : pins[0]);
@@ -467,6 +484,7 @@ export function TitleBarSwitch({
             // The house is in no strip, so nothing clips it.
             clip={cardOn === OUTSIDE ? undefined : strip}
             onKeyboardTaken={() => setHandTo(undefined)}
+            fallback={() => stripStop(strip.current, house.current)}
           />
         )}
       {open === "workspaces" && (
