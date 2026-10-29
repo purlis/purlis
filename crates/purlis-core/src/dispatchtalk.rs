@@ -130,9 +130,18 @@ pub const ASKED_BY_THE_PERSON: &str = "the person started this task from another
     answer. Nothing was sent. A question for the person is asked in this chat itself, and \
     everything else goes in the report.";
 
-/// A task that has reported sends nothing more up, and is sent nothing more down.
-pub fn still_working(name: &str, chat: u32, from: &HandedFrom, state: &str) -> Result<(), String> {
-    if from.report == Owed::Due {
+/// A task that has reported is sent nothing more down, **unless its program still runs**
+/// (#3899, [`crate::dispatched::still_running_after_report`]): a report purlis made from its
+/// last message, or a blocked one, leaves it at work, and a follow-up reaches its next turn.
+/// `seen` is its chat as the app has it, and `state` where it stands, as its list says it.
+pub fn still_working(
+    name: &str,
+    chat: u32,
+    from: &HandedFrom,
+    seen: crate::dispatched::Seen,
+    state: &str,
+) -> Result<(), String> {
+    if from.report == Owed::Due || crate::dispatched::still_running_after_report(from, seen) {
         return Ok(());
     }
     Err(format!(
@@ -1561,8 +1570,13 @@ mod tests {
             report: Owed::Sent,
             ..task_of(ASKER)
         };
+        let running = crate::dispatched::Seen {
+            heard: true,
+            running: true,
+            ..Default::default()
+        };
         assert_eq!(
-            still_working("check the queue", 9, &reported, "reported: done"),
+            still_working("check the queue", 9, &reported, running, "reported: done"),
             Err(
                 "'check the queue' (chat 9) has finished: it is reported: done. A message would \
                  reach no turn of its work. Dispatch a new task for more."
@@ -1570,8 +1584,45 @@ mod tests {
             )
         );
         assert_eq!(
-            still_working("check the queue", 9, &task_of(ASKER), "running"),
+            still_working("check the queue", 9, &task_of(ASKER), running, "running"),
             Ok(())
+        );
+    }
+
+    #[test]
+    fn a_follow_up_reaches_a_task_that_reported_while_its_program_still_runs() {
+        // #3899: a report purlis made from its last message, or a blocked one, leaves the
+        // task working: it may be told. Once its program has ended, it may not.
+        let again = HandedFrom {
+            report: Owed::Again,
+            ..task_of(ASKER)
+        };
+        let running = crate::dispatched::Seen {
+            heard: true,
+            waiting: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            still_working(
+                "check the queue",
+                9,
+                &again,
+                running,
+                "reported, still running"
+            ),
+            Ok(())
+        );
+        let ended = crate::dispatched::Seen {
+            ended: true,
+            ..running
+        };
+        assert_eq!(
+            still_working("check the queue", 9, &again, ended, "reported"),
+            Err(
+                "'check the queue' (chat 9) has finished: it is reported. A message would reach \
+                 no turn of its work. Dispatch a new task for more."
+                    .to_owned()
+            )
         );
     }
 

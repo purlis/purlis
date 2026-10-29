@@ -39,6 +39,7 @@ fn asked_by(mut known: Known, chat: u32, name: &str) -> Known {
         reported: false,
         mode: Mode::Handoff,
         owes: false,
+        again: false,
     });
     known
 }
@@ -853,6 +854,21 @@ fn every_turn_a_chat_with_open_tasks_is_shown_them_and_one_with_none_is_shown_no
         "{said}"
     );
     known[1].asking = None;
+
+    // A task that reported while its program still runs is still open (#3899): it may be
+    // told and cancelled, and the roster says so.
+    {
+        let from = known[1].from.as_mut().expect("asked");
+        from.reported = true;
+        from.owes = false;
+        from.again = true;
+    }
+    let said = turn(&known, 1, &mut told).expect("lines");
+    assert!(
+        said.contains("chat 4 'check prod' reported, still running;"),
+        "{said}"
+    );
+    known[1].from.as_mut().expect("asked").again = false;
 
     // A task that reported is no longer open, nor one that ended.
     known[1].from.as_mut().expect("asked").reported = true;

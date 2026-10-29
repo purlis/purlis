@@ -735,8 +735,9 @@ pub static TOOLS: [Tool; 26] = [
         name: DISPATCH_TELL,
         description: "Send a follow-up to a task this chat dispatched that is still working, \
                       quoted as data from this chat. A task at rest is started on it at once; \
-                      one mid-turn reads it when that turn ends. Refused, with the task's \
-                      state, once the task has finished.",
+                      one mid-turn reads it when that turn ends. A task that reported while \
+                      its program still runs is told too. Refused, with the task's state, once \
+                      its program has ended.",
         schema: || {
             json!({
                 "type": "object",
@@ -778,7 +779,8 @@ pub static TOOLS: [Tool; 26] = [
         name: DISPATCH_CANCEL,
         description: "Cancel a task this chat dispatched: its turn is ended and it is asked for \
                       one short report of what it did, which arrives with the outcome \
-                      `cancelled`. Refused for a task the person has typed in: that one is \
+                      `cancelled`. A task that reported while its program still runs can be \
+                      cancelled too. Refused for a task the person has typed in: that one is \
                       theirs.",
         schema: || {
             json!({

@@ -104,6 +104,10 @@ pub struct Asker {
     pub mode: Mode,
     /// Whether this chat still owes it a report.
     pub owes: bool,
+    /// Whether this chat reported and may report once more (`Owed::Again`, #1768): purlis made
+    /// its report from its last message, or it came out blocked. While its program runs it is
+    /// [`Doing::ReportedStillRunning`] (#3899).
+    pub again: bool,
 }
 
 /// How the chat that asked for a chat started it, as the chat is told it (#1455): the
@@ -141,6 +145,10 @@ pub enum Doing {
     WaitingOnItsOwnWork,
     /// It has sent its report, and is still open.
     Reported,
+    /// **It reported and its program still runs** (#3899,
+    /// [`crate::dispatched::still_running_after_report`]): purlis made its report from its last
+    /// message, or it came out blocked. Still its asking chat's to tell and cancel.
+    ReportedStillRunning,
     /// Its program ended, content.
     Ended,
     /// Its program ended badly.
@@ -152,6 +160,13 @@ impl Doing {
         match known.state {
             State::Done => Self::Ended,
             State::Failed => Self::Failed,
+            _ if known
+                .from
+                .as_ref()
+                .is_some_and(|from| from.reported && from.again) =>
+            {
+                Self::ReportedStillRunning
+            }
             _ if known.from.as_ref().is_some_and(|from| from.reported) => Self::Reported,
             State::Unknown => Self::Open,
             State::Running => Self::Running,
@@ -168,6 +183,7 @@ impl Doing {
             Self::Waiting => "waiting",
             Self::WaitingOnItsOwnWork => crate::dispatched::WAITING_ON_ITS_OWN_WORK,
             Self::Reported => "reported",
+            Self::ReportedStillRunning => "reported, still running",
             Self::Ended => "ended",
             Self::Failed => "failed",
         }
@@ -371,7 +387,8 @@ impl Stage {
             Doing::Open | Doing::Running | Doing::Waiting | Doing::WaitingOnItsOwnWork => {
                 Self::Live
             }
-            Doing::Reported => Self::Reported,
+            // It reported: a sibling is told so once, as of any report.
+            Doing::Reported | Doing::ReportedStillRunning => Self::Reported,
             Doing::Ended => Self::Finished,
             Doing::Failed => Self::Failed,
         }
@@ -512,7 +529,12 @@ fn open_tasks(known: &[Known], chat: u32) -> Vec<OpenTask> {
                 .as_ref()
                 .is_some_and(|from| from.mode == Mode::Task)
         })
-        .filter(|one| Stage::of(Doing::of(one)) == Stage::Live)
+        // A task that reported while its program still runs is open too (#3899): it is still
+        // its asking chat's to tell and cancel.
+        .filter(|one| {
+            let doing = Doing::of(one);
+            Stage::of(doing) == Stage::Live || doing == Doing::ReportedStillRunning
+        })
         .map(|one| OpenTask {
             chat: one.chat,
             name: one.name.clone(),

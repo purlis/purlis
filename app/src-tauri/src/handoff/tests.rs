@@ -9953,6 +9953,43 @@ fn a_follow_up_to_a_task_that_has_finished_is_refused_with_its_state() {
 }
 
 #[test]
+fn a_task_that_reported_while_its_program_still_runs_is_told_listed_and_cancelled() {
+    // #3899: a blocked report (as one purlis made from its last message) leaves the task
+    // owing one more and its program running. "Reported" is not "unreachable" while it runs.
+    let (_plane, _planes, id, held, asking, task) = a_dispatched_task();
+    tasks_report(
+        &held,
+        &id,
+        &Tickets::default(),
+        task,
+        purlis_core::handback::Outcome::Blocked,
+        None,
+    );
+
+    assert_eq!(
+        asks(&held, &id, asking, tell(task, "Try the other mirror.")),
+        sent(Kind::FollowUp, "check the queue")
+    );
+    assert_eq!(dispatchtalk::take(held.root(), task).len(), 1);
+
+    let listed = asks(&held, &id, asking, What::List);
+    assert!(
+        matches!(&listed, Answer::Task(answered)
+            if matches!(&**answered, Answered::Listed { rows }
+                if rows.iter().any(|row| row.chat == task
+                    && row.state == "reported: blocked, still running"))),
+        "{listed:?}"
+    );
+
+    let cancelled = asks(&held, &id, asking, What::Cancel { of: task });
+    assert!(
+        matches!(&cancelled, Answer::Task(answered)
+            if matches!(&**answered, Answered::Cancelling { of, .. } if *of == task)),
+        "{cancelled:?}"
+    );
+}
+
+#[test]
 fn a_message_goes_only_along_the_lineage() {
     // Forged asks: a task to its sibling, a task down to the chat above it, a chat to
     // another chat's task, an answer to a task that is not the sender's.

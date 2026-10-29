@@ -138,14 +138,15 @@ pub enum DispatchCommand {
     /// Cancel a task this chat dispatched: its turn is ended and it is asked for one short
     /// report of what it did, which arrives with the outcome `cancelled`. Only a task this
     /// chat dispatched can be cancelled by it, and not one the person typed in: that one is
-    /// theirs.
+    /// theirs. A task that reported while its program still runs can be cancelled too.
     Cancel {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,
     },
     /// Send a follow-up to a task this chat dispatched that is still working, quoted as data
     /// from this chat. A task at rest is started on it at once; one mid-turn reads it when that
-    /// turn ends. Refused, with the task's state, once the task has finished.
+    /// turn ends. A task that reported while its program still runs is told too. Refused,
+    /// with the task's state, once its program has ended.
     Tell {
         /// The task's chat, by its number in `purlis dispatch list`.
         chat: u32,

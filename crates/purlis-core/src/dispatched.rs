@@ -444,8 +444,28 @@ pub enum State {
     Cancelling,
     /// It reported; how, where the app still knows.
     Reported(Option<Outcome>),
+    /// **It reported and its program still runs** (#3899, [`still_running_after_report`]):
+    /// purlis made its report from its last message, or it came out blocked, and it may send
+    /// one more. It can still be told, answer and be answered, and be cancelled.
+    ReportedStillRunning(Option<Outcome>),
     /// Its program ended without a report.
     Ended,
+}
+
+/// What a task that has reported is said to be while its program still runs (#3899), after
+/// its report: its list row, and the roster of its asking chat ([`crate::awareness`]).
+pub const STILL_RUNNING: &str = "still running";
+
+/// **Whether a task that has reported is still running, and so still reachable** (#3899, the
+/// operator's ruling of 2026-10-29: "reported" does not mean "unreachable" while the task's
+/// program runs). Its record says it reported and may report once more (`Owed::Again`: purlis
+/// made its report from its last message, it came out blocked, or the person took it up again
+/// after it), and its program has not ended. A task whose one report was sent (`Owed::Sent`)
+/// is ending at it (#1485), and is not.
+///
+/// The one rule a follow-up, a cancel, the list and the roster read, so they cannot disagree.
+pub fn still_running_after_report(from: &HandedFrom, seen: Seen) -> bool {
+    from.report == Owed::Again && !seen.ended
 }
 
 /// **What a chat waiting on its own work is said to be** (#3878), whoever is told: its task's
@@ -466,6 +486,10 @@ impl State {
             Self::Cancelling => "cancelling".to_owned(),
             Self::Reported(Some(outcome)) => format!("reported: {}", outcome.word()),
             Self::Reported(None) => "reported".to_owned(),
+            Self::ReportedStillRunning(Some(outcome)) => {
+                format!("reported: {}, {STILL_RUNNING}", outcome.word())
+            }
+            Self::ReportedStillRunning(None) => format!("reported, {STILL_RUNNING}"),
             Self::Ended => "ended without a report".to_owned(),
         }
     }
@@ -1750,7 +1774,15 @@ impl Ledger {
                 .and_then(|entry| entry.report.as_ref())
                 .and_then(|kept| kept.report.task.as_ref())
                 .map(|task| task.outcome);
-            return State::Reported(outcome);
+            return if still_running_after_report(from, seen)
+                && entry.is_some_and(|entry| entry.cancelling)
+            {
+                State::Cancelling
+            } else if still_running_after_report(from, seen) {
+                State::ReportedStillRunning(outcome)
+            } else {
+                State::Reported(outcome)
+            };
         }
         if seen.ended {
             State::Ended
@@ -1789,12 +1821,20 @@ impl Ledger {
             .map(|question| Waited::Asks { question })
     }
 
-    /// The asking chat cancels `task`, called `name`, whose record is `from`. Answers whether a
-    /// cancel began: `false` for one already under way, which is left as it is. Refused for a
-    /// task that has reported, with how it stands.
-    pub fn cancel(&mut self, task: u32, name: &str, from: &HandedFrom) -> Result<bool, String> {
-        if from.report.reported() {
-            let state = self.state(task, from, Seen::default());
+    /// The asking chat cancels `task`, called `name`, whose record is `from` and whose chat is
+    /// `seen`. Answers whether a cancel began: `false` for one already under way, which is
+    /// left as it is. Refused for a task that has reported, with how it stands, **unless its
+    /// program still runs** (#3899, [`still_running_after_report`]): that one is cancelled as
+    /// a working task is, and its report, where it sends one, comes out `cancelled`.
+    pub fn cancel(
+        &mut self,
+        task: u32,
+        name: &str,
+        from: &HandedFrom,
+        seen: Seen,
+    ) -> Result<bool, String> {
+        if from.report.reported() && !still_running_after_report(from, seen) {
+            let state = self.state(task, from, seen);
             return Err(format!(
                 "'{name}' (chat {task}) has already {}, so there is nothing to cancel.",
                 match state {
@@ -1810,6 +1850,24 @@ impl Ledger {
         entry.cancelled = true;
         entry.cancelling = true;
         Ok(true)
+    }
+
+    /// **Cancelled task `task` ended its cancel's turn without a report of its own**, having
+    /// reported before the cancel (#3899): its report stands, and its program is ended as a
+    /// task's is at its report ([`Self::end_step`]). Answers whether that end was set: only for
+    /// a task that was cancelled, has a report kept, and is not ending already.
+    pub fn cancelled_without_a_report(&mut self, task: u32) -> bool {
+        let Some(entry) = self.tasks.get_mut(&task) else {
+            return false;
+        };
+        if !entry.cancelled || entry.report.is_none() || entry.end.is_some() {
+            return false;
+        }
+        entry.cancelling = false;
+        entry.end = Some(End::Reported);
+        entry.later_turn = false;
+        entry.bound_owed = false;
+        true
     }
 
     /// **The person is stopping `task`** (D-T59-j3): a cancel of it stands down, for good. The
@@ -2854,6 +2912,87 @@ mod tests {
     }
 
     #[test]
+    fn a_task_reported_whose_program_still_runs_is_reported_still_running_until_it_ends() {
+        // #3899: a report purlis made from its last message, or a blocked one, leaves the task
+        // owing one more (`Owed::Again`) and its program running. It is still reachable.
+        let mut ledger = Ledger::default();
+        let again = HandedFrom {
+            report: Owed::Again,
+            ..dispatched_by(ASKER)
+        };
+        ledger.reported(TASK, ASKER, a_report(Outcome::LastMessage), None);
+        for seen in [RUNNING, WAITING, ASKING] {
+            assert_eq!(
+                ledger.state(TASK, &again, seen),
+                State::ReportedStillRunning(Some(Outcome::LastMessage))
+            );
+            assert!(still_running_after_report(&again, seen));
+        }
+        assert_eq!(
+            State::ReportedStillRunning(Some(Outcome::LastMessage)).say(),
+            "reported: made from its last message, still running"
+        );
+        assert_eq!(
+            State::ReportedStillRunning(None).say(),
+            "reported, still running"
+        );
+        // Once its program has ended, it is reported, as it always was.
+        assert_eq!(
+            ledger.state(TASK, &again, ENDED),
+            State::Reported(Some(Outcome::LastMessage))
+        );
+        assert!(!still_running_after_report(&again, ENDED));
+        // A task that sent its one report is ending at it: never reachable this way.
+        let sent = HandedFrom {
+            report: Owed::Sent,
+            ..dispatched_by(ASKER)
+        };
+        assert!(!still_running_after_report(&sent, RUNNING));
+        // Nor is one that still owes its report: it is simply working.
+        assert!(!still_running_after_report(&dispatched_by(ASKER), RUNNING));
+    }
+
+    #[test]
+    fn a_task_reported_still_running_can_be_cancelled_and_ends_without_another_report() {
+        // #3899: cancel works while its program runs, and only then.
+        let again = HandedFrom {
+            report: Owed::Again,
+            ..dispatched_by(ASKER)
+        };
+        let mut ledger = Ledger::default();
+        ledger.reported(TASK, ASKER, a_report(Outcome::LastMessage), None);
+        assert_eq!(
+            ledger.cancel(TASK, "check the queue", &again, ENDED),
+            Err(
+                "'check the queue' (chat 9) has already reported (made from its last message), \
+                 so there is nothing to cancel."
+                    .to_owned()
+            ),
+            "its program has ended: today's refusal stands"
+        );
+        assert_eq!(
+            ledger.cancel(TASK, "check the queue", &again, WAITING),
+            Ok(true)
+        );
+        assert!(ledger.cancelling(TASK));
+        assert_eq!(ledger.state(TASK, &again, WAITING), State::Cancelling);
+        // Its cancel's turn ended with no report of its: its program is ended all the same.
+        assert!(!ledger.ending(TASK));
+        assert!(ledger.cancelled_without_a_report(TASK));
+        assert!(ledger.ending(TASK));
+        assert!(ledger.cancelled_and_ending(TASK));
+        assert!(
+            !ledger.cancelled_without_a_report(TASK),
+            "once: it is ending already"
+        );
+        // A task nobody cancelled is not ended this way.
+        let mut ledger = Ledger::default();
+        ledger.reported(TASK, ASKER, a_report(Outcome::LastMessage), None);
+        assert!(!ledger.cancelled_without_a_report(TASK));
+        assert!(!ledger.ending(TASK));
+    }
+
+    #[test]
     fn the_list_says_persona_task_where_state_and_age_for_each() {
         let rows = [
             Row {
@@ -2977,7 +3116,7 @@ mod tests {
     fn cancelling() -> Ledger {
         let mut ledger = Ledger::default();
         assert_eq!(
-            ledger.cancel(TASK, "check the queue", &dispatched_by(ASKER)),
+            ledger.cancel(TASK, "check the queue", &dispatched_by(ASKER), RUNNING),
             Ok(true)
         );
         ledger
@@ -3056,7 +3195,7 @@ mod tests {
         };
         ledger.reported(TASK, ASKER, a_report(Outcome::Done), None);
         assert_eq!(
-            ledger.cancel(TASK, "check the queue", &reported),
+            ledger.cancel(TASK, "check the queue", &reported, RUNNING),
             Err(
                 "'check the queue' (chat 9) has already reported (done), so there is nothing to \
                  cancel."
@@ -3066,7 +3205,7 @@ mod tests {
 
         let mut ledger = cancelling();
         assert_eq!(
-            ledger.cancel(TASK, "check the queue", &dispatched_by(ASKER)),
+            ledger.cancel(TASK, "check the queue", &dispatched_by(ASKER), RUNNING),
             Ok(false),
             "one cancel, under way"
         );
