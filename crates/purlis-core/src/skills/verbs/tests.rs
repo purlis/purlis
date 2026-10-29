@@ -1919,6 +1919,26 @@ fn a_deleted_skill_named_as_a_built_in_one_is_restored_under_a_new_name() {
     assert!(deleted(root).is_empty(), "{:?}", deleted(root));
 }
 
+/// #3729: a skill whose name is free comes back under it alone: renamed after, what names it
+/// follows, as a restore under a new name would leave it behind.
+#[test]
+fn a_deleted_skill_whose_name_is_free_is_not_restored_under_another() {
+    let tmp = plane();
+    let root = tmp.path();
+    did(root, |cx| delete(cx, &Level::project(), "deploy")).unwrap();
+    let listed = deleted(root);
+
+    let refused = did(root, |cx| restore(cx, &listed[0], Some("ship")));
+
+    assert_eq!(
+        refused.unwrap_err(),
+        "deploy is restored under its own name: restore it, then rename it, so what names it \
+         follows"
+    );
+    assert!(!root.join("skills/ship").exists());
+    assert!(!root.join("skills/deploy").exists());
+}
+
 /// #3729: from the commit that removed it, as one commit that lands it under its new name.
 #[test]
 fn a_committed_deleted_skill_comes_back_under_a_new_name_in_one_commit() {
@@ -1965,6 +1985,8 @@ fn a_deleted_skill_is_not_restored_under_a_name_it_cannot_take() {
     assert!(bad.unwrap_err().contains("cannot be a skill's name"));
     let taken = did(root, |cx| restore(cx, &listed[0], Some("vault")));
     assert!(taken.unwrap_err().contains("already have one named vault"));
+    let same = did(root, |cx| restore(cx, &listed[0], Some("secrets")));
+    assert_eq!(same.unwrap_err(), crate::skills::NAME_RESERVED);
 
     assert!(!root.join("skills/secrets").exists());
     assert!(!root.join("skills/browser").exists());

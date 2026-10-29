@@ -1714,11 +1714,12 @@ fn taken_again(plane: &Path, level: &Level, name: &str, folder: &str, toml_count
 /// [`deleted`] lists (restored already, or its folder or its name at that level taken again).
 /// One commit.
 ///
-/// **`under` a new name** (#3729), where its own belongs to a built-in skill now (a newer purlis
-/// ships one of that name) or the person wants another: the name is checked as [`rename`]'s is
+/// **`under` a new name** (#3729), and only where its own belongs to a built-in skill now (a
+/// newer purlis ships one of that name): the name is checked as [`rename`]'s is
 /// ([`Ctx::not_built_in`] among them), and the skill comes back with its `SKILL.md`'s `name:`
-/// rewritten and its folder named as it, in the same commit. Nothing that names its old name is
-/// changed: that name means the built-in skill now.
+/// rewritten and its folder named as it, in the same commit, or does not come back at all.
+/// Nothing that names its old name is changed: that name means the built-in skill now. A skill
+/// whose name is free comes back under it, to be renamed after, so what names it follows.
 pub fn restore(
     cx: &mut Ctx<'_>,
     deleted: &Deleted,
@@ -1734,15 +1735,21 @@ pub fn restore(
         ));
     }
     let name = &deleted.name;
-    let new = under.filter(|new| *new != name.as_str());
-    match new {
-        None if cx.reserved(name) => {
+    let reserved = cx.reserved(name);
+    match under {
+        None if reserved => {
             return Err(format!(
                 "{name} cannot be restored under its name: it belongs to a built-in skill now, so \
                  restore it under a new name"
             ));
         }
         None => {}
+        Some(_) if !reserved => {
+            return Err(format!(
+                "{name} is restored under its own name: restore it, then rename it, so what \
+                 names it follows"
+            ));
+        }
         Some(new) => {
             if let Some(why) = change::name_problem(new) {
                 return Err(format!("{new:?} cannot be a skill's name: {why}"));
@@ -1771,13 +1778,14 @@ pub fn restore(
     let folder = dir.join(&deleted.folder);
     let folder_rel = rel(plane, &folder);
     let toml_rel = rel(plane, &beside(&folder));
+    let mut toml_there = false;
     match &deleted.kept.0 {
         Source::Commit(sha) => {
             let source = format!("--source={sha}^");
             let folder_spec = literally(&folder_rel);
             let toml_spec = literally(&toml_rel);
             let mut args = vec!["restore", source.as_str(), "--worktree", "--", &folder_spec];
-            let toml_there = git(plane, &["cat-file", "-e", &format!("{sha}^:{toml_rel}")]).is_ok();
+            toml_there = git(plane, &["cat-file", "-e", &format!("{sha}^:{toml_rel}")]).is_ok();
             if toml_there {
                 args.push(&toml_spec);
             }
@@ -1796,12 +1804,38 @@ pub fn restore(
                     }
                 },
             )?;
-            // Its `from` and the folder it kept, now empty, and nothing else.
-            store::put_away(&state, DELETED_DIR, kept, KEPT_FROM);
         }
     }
     let mut touched = vec![folder_rel.clone(), toml_rel];
-    let Some(new) = new else {
+    let landed = match under {
+        None => folder.clone(),
+        Some(new) => match renamed_back(plane, &folder, name, new) {
+            Ok(landed) => landed,
+            // Never left under a built-in skill's name: what came back goes back.
+            Err(Unmoved::Nothing(why)) => {
+                return Err(match taken_back(plane, deleted, &folder, toml_there) {
+                    Ok(()) => format!("{name} was not restored: {why}"),
+                    Err(left) => format!(
+                        "{name} was restored under its old name and could not be named {new} \
+                         ({why}), nor taken back ({left}): rename it"
+                    ),
+                });
+            }
+            Err(Unmoved::Stranded(what)) => {
+                return Err(format!("{name} was restored only in part: {what}"));
+            }
+        },
+    };
+    if let Source::Here(kept) = &deleted.kept.0 {
+        // Its `from` and the folder it kept, now empty, and nothing else.
+        store::put_away(
+            &crate::plane::state_dir(plane),
+            DELETED_DIR,
+            kept,
+            KEPT_FROM,
+        );
+    }
+    let Some(new) = under else {
         cx.done(format!(
             "{name} is restored, a {} skill in {folder_rel}",
             deleted.level
@@ -1809,7 +1843,6 @@ pub fn restore(
         cx.commit(&touched, &format!("skill restore {name}"));
         return Ok(folder);
     };
-    let landed = renamed_back(plane, &folder, name, new)?;
     if landed != folder {
         touched.push(rel(plane, &landed));
         touched.push(rel(plane, &beside(&landed)));
@@ -1825,30 +1858,69 @@ pub fn restore(
 
 /// The skill `name` just restored to `folder`, named `new`: its `SKILL.md`'s `name:` rewritten,
 /// then its folder, and the file beside it, moved to `new` beside it where it is named otherwise.
-/// Answers where it is now. Where the folder cannot move, it stays where it was, named `new`.
-fn renamed_back(plane: &Path, folder: &Path, name: &str, new: &str) -> Result<PathBuf, String> {
+/// Answers where it is now; [`Unmoved::Nothing`] where it is still where it came back to, for
+/// [`taken_back`] to take away.
+fn renamed_back(plane: &Path, folder: &Path, name: &str, new: &str) -> Result<PathBuf, Unmoved> {
     let what = format!("{name}'s instructions");
     let file = format!("{}/SKILL.md", rel(plane, folder));
-    // The restored skill keeps a built-in skill's name only until this is written: said so.
-    let kept = |why: String| {
-        format!(
-            "{name} was restored under its old name, and could not be named {new} ({why}): \
-             rename it"
-        )
-    };
-    let text = text_in(plane, folder, name).map_err(kept)?;
+    let text = text_in(plane, folder, name).map_err(Unmoved::Nothing)?;
     let renamed = change::with_name(&text, new)
-        .ok_or_else(|| kept(format!("{what} has no name: line to change")))?;
-    write(plane, &file, &what, Some(&text), &renamed, usize::MAX).map_err(kept)?;
+        .ok_or_else(|| Unmoved::Nothing(format!("{what} has no name: line to change")))?;
+    write(plane, &file, &what, Some(&text), &renamed, usize::MAX).map_err(Unmoved::Nothing)?;
     if folder_name(folder) == new {
         return Ok(folder.to_path_buf());
     }
     let to = folder.with_file_name(new);
-    match move_skill(plane, folder, plane, &to, usize::MAX) {
-        Ok(()) => Ok(to),
-        // Named `new` where it was: still the skill asked for, in a folder of another name.
-        Err(Unmoved::Nothing(_)) => Ok(folder.to_path_buf()),
-        Err(Unmoved::Stranded(what)) => Err(format!("{name} was restored only in part: {what}")),
+    move_skill(plane, folder, plane, &to, usize::MAX)?;
+    Ok(to)
+}
+
+/// **Takes away what a restore of `deleted` put back at `folder`**, where it could not be named
+/// as asked: the kept copy moved back to this machine's [`DELETED_DIR`], or each file the commit
+/// that removed it held taken away again (the file beside it too, where `toml_there`), then its
+/// folders once empty. A file git ignores, there already, is left.
+fn taken_back(
+    plane: &Path,
+    deleted: &Deleted,
+    folder: &Path,
+    toml_there: bool,
+) -> Result<(), String> {
+    match &deleted.kept.0 {
+        Source::Here(kept) => {
+            let state = crate::plane::state_dir(plane);
+            let from = state.join(DELETED_DIR).join(kept).join(&deleted.folder);
+            move_skill(plane, folder, &state, &from, usize::MAX).map_err(|unmoved| match unmoved {
+                Unmoved::Nothing(why) | Unmoved::Stranded(why) => why,
+            })
+        }
+        Source::Commit(sha) => {
+            let tree = format!("{sha}^:{}", rel(plane, folder));
+            let listed = git(plane, &["ls-tree", "-r", "-z", "--name-only", &tree])?;
+            let mut folders = vec![folder.to_path_buf()];
+            for part in listed.split('\0').filter(|part| !part.is_empty()) {
+                let path = folder.join(part);
+                let mut up = path.parent();
+                while let Some(at) = up.filter(|at| at.starts_with(folder) && *at != folder) {
+                    if !folders.iter().any(|one| one == at) {
+                        folders.push(at.to_path_buf());
+                    }
+                    up = at.parent();
+                }
+                if path.symlink_metadata().is_ok_and(|meta| !meta.is_dir()) {
+                    std::fs::remove_file(&path).map_err(|why| why.to_string())?;
+                }
+            }
+            let toml = beside(folder);
+            if toml_there && toml.symlink_metadata().is_ok_and(|meta| meta.is_file()) {
+                std::fs::remove_file(&toml).map_err(|why| why.to_string())?;
+            }
+            // The deepest first: each folder goes once nothing is left in it.
+            folders.sort_by_key(|one| std::cmp::Reverse(one.components().count()));
+            for one in folders {
+                let _ = std::fs::remove_dir(one);
+            }
+            Ok(())
+        }
     }
 }
 
