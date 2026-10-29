@@ -430,34 +430,34 @@ describe("a dialog", () => {
   async function aRowsMenuOpenInATable(wait: ReturnType<typeof holdTheDialogsWait>) {
     render(
       <Dialog onClose={() => {}} title="Workspace">
-        <Table aria-label="Hosts" rowMenus>
+        <Table aria-label="Personas" rowMenus>
           <TableHeader>
-            <TableColumn id="host" isRowHeader>
-              Host
+            <TableColumn id="persona" isRowHeader>
+              Persona
             </TableColumn>
           </TableHeader>
           <TableBody>
             <TableRow
-              id="pypi.org"
-              textValue="pypi.org"
+              id="steward"
+              textValue="steward"
               menu={() => (
-                <Menu aria-label="pypi.org">
+                <Menu aria-label="steward">
                   <MenuItem id="confirm" textValue="Confirm">
                     <MenuWords said="Confirm" />
                   </MenuItem>
                 </Menu>
               )}
             >
-              <TableCell>pypi.org</TableCell>
+              <TableCell>steward</TableCell>
             </TableRow>
           </TableBody>
         </Table>
       </Dialog>,
     );
     await wait.drawFrame();
-    const more = screen.getByRole("button", { name: "More for pypi.org" });
+    const more = screen.getByRole("button", { name: "More for steward" });
     // Reached as a person reaches it: the row, then along it to its end.
-    act(() => screen.getByRole("row", { name: (said) => said.startsWith("pypi.org") }).focus());
+    act(() => screen.getByRole("row", { name: (said) => said.startsWith("steward") }).focus());
     await userEvent.keyboard("{ArrowRight}{ArrowRight}");
     await waitFor(() => expect(more).toHaveFocus());
     await userEvent.keyboard("{Enter}");
@@ -504,7 +504,7 @@ describe("a dialog", () => {
     const wait = holdTheDialogsWait();
     try {
       const more = await aRowsMenuOpenInATable(wait);
-      more.closest("[data-key]")?.setAttribute("data-key", "api.github.com");
+      more.closest("[data-key]")?.setAttribute("data-key", "reviewer");
       await escapeToTheMomentItGoes();
       expect(more).not.toHaveFocus();
     } finally {
