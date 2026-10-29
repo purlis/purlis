@@ -561,7 +561,7 @@ fn the_profile_denies_every_class_after_what_it_lets_the_chat_write() {
     // The integrity class inside the plane, written for, under every spelling on macOS.
     assert!(
         held_in_every_case(
-            &profile,
+            profile,
             &real(&plane.path().join(".charter/app"))
                 .display()
                 .to_string(),
@@ -1280,7 +1280,10 @@ fn stated(harness: Harness, plane: &Path, cwd: &Path, machine: &Machine) -> Stat
             // As spelled, or under every spelling, as macOS holds what is in the state folder.
             Stated {
                 denies_write: Box::new(move |path| {
-                    profile.contains(path) || held_in_every_case(&profile, path, Access::Write)
+                    profile.contains(path)
+                        || [Access::Write, Access::ReadWrite]
+                            .into_iter()
+                            .any(|access| held_in_every_case(&profile, path, access))
                 }),
                 denies_read: Box::new(move |path| {
                     read.contains(&format!(
