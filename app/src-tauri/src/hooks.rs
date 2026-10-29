@@ -1661,6 +1661,13 @@ fn offered_to(
                 }
             }
         }
+        // A server that did not start, refused on no port a person could allow (#3396, #3440):
+        // one the system picks, as a test suite's are, or one the sandbox named no port for. No
+        // Allow names either; the Notice says so, and what to do.
+        (Operation::Listen, Kind::System) => without_the_sandbox(match target {
+            Some(_) => PICKED_PORT_SAID,
+            None => NO_PORT_SAID,
+        }),
         // A service of the runner the chat runs on, which its runner asks about (#2510): Allow,
         // naming its port, for this chat alone there. Its runner's name is said where the
         // window knows it ([`on_its_runner`]).
@@ -1870,6 +1877,21 @@ pub const CLAUDE_CODE_LISTEN_SAID: &str = "Claude Code's sandbox can let a comma
      also lets this chat reach every service on this Mac. So purlis cannot allow this one port \
      for this chat. Start it without the sandbox, or start the server in a Codex or opencode \
      chat, which can be allowed its one port.";
+
+/// Why a server on a port the system picks cannot be allowed (#3396): a test suite's servers
+/// (`listen(0)`) take whatever port is free, so there is no one port to allow, and purlis
+/// allows a chat's server only on one port of its own, behind its door. What to do instead.
+pub const PICKED_PORT_SAID: &str = "It asked for a port the system picks, as a test suite's \
+     servers often do, so there is no one port to allow: purlis lets a chat's server listen only \
+     on a port of its own, from 1024. Start the server on such a port (PORT=3000, or purlis \
+     listen 3000 -- <command>) to be asked about it, or start this chat without the sandbox to \
+     run tests that pick their own ports.";
+
+/// Why a server the sandbox named no port for cannot be allowed (#3440): what purlis would allow
+/// is one port, and none was said.
+pub const NO_PORT_SAID: &str = "The sandbox did not say which port it asked for, so there is no \
+     port to allow. Start the server on a port of its own, from 1024 (PORT=3000, or purlis \
+     listen 3000 -- <command>), to be asked about it, or start this chat without the sandbox.";
 
 /// Start without the sandbox, saying `why` nothing is allowed: the way out of a block no grant
 /// names (#1637), which an administrator's policy may still forbid ([`held`]).

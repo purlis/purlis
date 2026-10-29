@@ -2574,6 +2574,43 @@ fn a_port_to_listen_on_is_offered_as_that_port_and_claude_code_is_told_why_not()
     purlis_core::sandbox::localport::release(own_port);
 }
 
+/// #3396, #3440: a server refused on no port a person could allow, one the system picks or one
+/// the sandbox named none for, is a server that did not start: no Allow, and the Notice says
+/// why and what to do, in a Claude Code chat as in any other.
+#[test]
+fn a_server_that_did_not_start_on_no_port_to_allow_is_told_what_to_do() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let refused = Block {
+        operation: Operation::Listen,
+        kind: Kind::System,
+        ours: false,
+    };
+    let picked = offered(
+        &root,
+        &refused,
+        Some(purlis_core::sandbox::localport::PICKED),
+    );
+    assert_eq!(picked.0, BlockOffer::Unsandboxed);
+    assert_eq!(picked.1, None);
+    assert_eq!(picked.2.as_deref(), Some(PICKED_PORT_SAID));
+    let unnamed = offered(&root, &refused, None);
+    assert_eq!(unnamed.0, BlockOffer::Unsandboxed);
+    assert_eq!(unnamed.2.as_deref(), Some(NO_PORT_SAID));
+    for said in [PICKED_PORT_SAID, NO_PORT_SAID] {
+        assert!(said.contains("purlis listen 3000 -- <command>"), "{said}");
+        assert!(said.contains("without the sandbox"), "{said}");
+    }
+    assert!(PICKED_PORT_SAID.contains("a port the system picks"));
+    // Claude Code's own words for a port it cannot be allowed are for a named port alone.
+    assert_eq!(
+        for_its_harness(Some(Harness::ClaudeCode), picked.clone()),
+        picked
+    );
+}
+
 /// #2019: a port below 1024 is never one to serve on, and a port something on this Mac listens
 /// on is asked about as a service to connect to, in its own words; a server asking for a port
 /// its chat serves on already is told how to start it, with no Allow.
