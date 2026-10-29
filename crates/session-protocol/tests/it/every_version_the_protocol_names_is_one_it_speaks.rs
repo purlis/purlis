@@ -12,8 +12,9 @@ use purlis_session_protocol::session::VERSION;
 
 const SOURCE: &str = include_str!("../../src/session.rs");
 
-/// Minors no change added: their numbers were passed over.
-const PASSED_OVER: &[u16] = &[12, 19, 20];
+/// Minors no change added: their numbers were passed over. 47 is held for a change of its own
+/// still to land (#3677), whose doc line comes with it; whichever lands second renumbers.
+const PASSED_OVER: &[u16] = &[12, 19, 20, 47];
 
 /// Each `pub const KNOWS_…: Version` in the source, with its minor.
 fn knows() -> Vec<(String, u16)> {

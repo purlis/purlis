@@ -221,7 +221,7 @@ fn deciding(
     reads: Arc<Mutex<u32>>,
     owned: Arc<Mutex<Bound>>,
     within: Duration,
-) -> mpsc::Receiver<Result<Handed, String>> {
+) -> mpsc::Receiver<Result<Approved, String>> {
     let (done, decided) = mpsc::channel();
     std::thread::spawn(move || {
         let ask = kubectl_asked();
@@ -234,7 +234,7 @@ fn deciding(
             *reads.lock().unwrap() += 1;
             Ok(vec![(
                 tool.values[0].key.clone(),
-                "v-kubeconfig".to_owned(),
+                Zeroizing::new("v-kubeconfig".to_owned()),
             )])
         };
         let checked = checked(&gate).expect("passes the gate");
@@ -269,7 +269,7 @@ type Deciding = (
     Arc<AtomicBool>,
     Arc<Mutex<u32>>,
     Arc<Mutex<Bound>>,
-    mpsc::Receiver<Result<Handed, String>>,
+    mpsc::Receiver<Result<Approved, String>>,
 );
 
 fn a_run_deciding(within: Duration) -> Deciding {
@@ -301,7 +301,8 @@ fn a_run_waits_on_the_person_and_once_allowed_is_sent_its_values_for_that_run() 
     let handed = decided
         .recv_timeout(Duration::from_secs(10))
         .unwrap()
-        .expect("sent");
+        .expect("sent")
+        .handed;
     assert!(
         handed.is_for(6, "kubectl", "r1"),
         "bound to the run: {handed:?}"
@@ -418,4 +419,82 @@ fn a_run_answered_already_or_of_another_chat_is_not_answered_again() {
     assert!(tools.answer(7, run, true).is_none(), "another chat's");
     assert!(tools.answer(6, run, true).is_some());
     assert!(tools.answer(6, run, true).is_none(), "once");
+}
+
+/// What a run the person allowed sends: chat 6's run `r1` of kubectl on pool builds.
+fn allowed() -> Approved {
+    let ask = kubectl_asked();
+    let checked = checked(&a_gate(&ask)).expect("passes the gate");
+    Approved {
+        handed: Handed::of(
+            6,
+            "kubectl",
+            "r1",
+            [("kubeconfig".to_owned(), "v-kubeconfig".to_owned())],
+        ),
+        checked,
+    }
+}
+
+/// Every line of chat 6's trace in `project`.
+fn traced(project: &Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(purlis_core::trace::file(project, "6"))
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("a trace line"))
+        .collect()
+}
+
+#[test]
+fn values_sent_to_a_runner_are_recorded_on_this_desktop_as_forwarded() {
+    let desktop = tempfile::tempdir().unwrap();
+    let mut went = None;
+
+    let sent = sent(desktop.path(), allowed(), |handed| {
+        went = Some(handed);
+        Ok(())
+    });
+
+    assert!(sent.is_ok());
+    assert!(went.is_some_and(|handed| handed.is_for(6, "kubectl", "r1")));
+    let lines = traced(desktop.path());
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let forwarded = &lines[0];
+    assert_eq!(forwarded["event"], "secret.forwarded");
+    assert_eq!(forwarded["vault"], "team");
+    assert_eq!(forwarded["key_names"], serde_json::json!(["kubeconfig"]));
+    assert_eq!(forwarded["runner"], "01JB0RUNNER0000000000000000");
+    assert_eq!(forwarded["pool"], "builds");
+    assert_eq!(forwarded["chat"], 6);
+    assert_eq!(forwarded["persona"], "devops");
+    assert_eq!(forwarded["tool"], "kubectl");
+    assert!(
+        !forwarded.to_string().contains("v-kubeconfig"),
+        "{forwarded}"
+    );
+}
+
+#[test]
+fn values_that_could_not_be_sent_are_not_recorded_as_sent() {
+    let desktop = tempfile::tempdir().unwrap();
+
+    let sent = sent(desktop.path(), allowed(), |_| Err(()));
+
+    assert!(sent.is_err());
+    assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
+}
+
+#[test]
+fn values_too_large_for_the_link_are_never_handed_on() {
+    let ask = kubectl_asked();
+    let huge = "v".repeat(purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES);
+    let handed = Handed::of(6, "kubectl", "r1", [("kubeconfig".to_owned(), huge)]);
+    let approved = Approved {
+        handed,
+        checked: checked(&a_gate(&ask)).expect("passes the gate"),
+    };
+    let desktop = tempfile::tempdir().unwrap();
+
+    assert!(sent(desktop.path(), approved, hand_on_the_link).is_err());
+    assert_eq!(traced(desktop.path()), Vec::<serde_json::Value>::new());
 }

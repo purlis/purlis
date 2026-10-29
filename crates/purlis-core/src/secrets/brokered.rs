@@ -1731,11 +1731,13 @@ impl std::fmt::Debug for Handed {
 
 impl Handed {
     /// The values `values`, each a key and its value, for run `run` of chat `chat`'s tool `tool`.
-    pub fn of(
+    /// Each value is taken as it is, never copied: one read into a [`zeroize::Zeroizing`] stays
+    /// the one copy (#3420).
+    pub fn of<V: Into<zeroize::Zeroizing<String>>>(
         chat: u32,
         tool: &str,
         run: &str,
-        values: impl IntoIterator<Item = (String, String)>,
+        values: impl IntoIterator<Item = (String, V)>,
     ) -> Handed {
         Handed {
             chat,
@@ -1743,7 +1745,7 @@ impl Handed {
             run: run.to_owned(),
             values: values
                 .into_iter()
-                .map(|(key, value)| (key, zeroize::Zeroizing::new(value)))
+                .map(|(key, value)| (key, value.into()))
                 .collect(),
         }
     }
@@ -1759,8 +1761,9 @@ impl Handed {
     }
 
     /// The value sent for `key`, remembered as read ([`super::seen`]) so no store of a chat's
-    /// words on this host keeps it; refused where the desktop sent none.
-    fn value(&self, key: &str) -> Result<String, super::VaultError> {
+    /// words on this host keeps it; refused where the desktop sent none. Its copy is wiped as it
+    /// is dropped (#3420).
+    fn value(&self, key: &str) -> Result<zeroize::Zeroizing<String>, super::VaultError> {
         let (_, value) = self
             .values
             .iter()
@@ -1771,7 +1774,7 @@ impl Handed {
                 ))
             })?;
         super::seen::remember(value);
-        Ok(value.to_string())
+        Ok(value.clone())
     }
 }
 
@@ -1802,6 +1805,91 @@ pub fn a_run_number() -> Option<String> {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).ok()?;
     Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+/// **The event a desktop records each run's values it sent to a runner under** (#3406, ADR 0078
+/// §10, its registry row in ADR 0075 as amended there): on the desktop's own record, where the
+/// runner records the run itself as `secret-exec`.
+pub const FORWARDED: &str = "secret.forwarded";
+
+/// **What the desktop's record of values it sent names beside the run's own** ([`Forwarded`]).
+pub struct Sent<'a> {
+    /// The persona whose tool it is.
+    pub persona: &'a str,
+    /// The vault the values were read from.
+    pub vault: &'a str,
+    /// The pool whose runner they went to.
+    pub pool: &'a str,
+    /// That runner's device id.
+    pub runner: &'a str,
+}
+
+/// **The request a run's values answer, as both chains name it** (#3406): the first 8 bytes of
+/// the SHA-256 of the run's number, in hex. The desktop's [`FORWARDED`] and the runner's
+/// `secret-exec` say the same, so each is found from the other; the number itself is never
+/// written.
+pub fn request_of(run: &str) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(run.as_bytes())
+        .iter()
+        .take(8)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// **What the desktop records of values it sends a runner for one run** (#3406), taken from
+/// them before they go: the chat, the tool, the keys and the request ([`request_of`]); never a
+/// value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Forwarded {
+    chat: u32,
+    tool: String,
+    keys: Vec<String>,
+    request: String,
+}
+
+impl Forwarded {
+    /// What `handed` is recorded by.
+    pub fn of(handed: &Handed) -> Forwarded {
+        let mut keys: Vec<String> = handed.keys().map(str::to_owned).collect();
+        keys.sort();
+        keys.dedup();
+        Forwarded {
+            chat: handed.chat,
+            tool: handed.tool.clone(),
+            keys,
+            request: request_of(&handed.run),
+        }
+    }
+
+    /// **Records on this desktop that the values were sent** (#3406): [`FORWARDED`] under the
+    /// chat's own session in project `root`, naming the vault, the keys, the runner's device id,
+    /// its pool, the chat, its persona, the tool and the request. Kept by the 30-day sweep, as
+    /// every hand-out is, until it is audited (V71).
+    pub fn record(&self, root: &Path, sent: &Sent<'_>) {
+        let chat = self.chat.to_string();
+        let ctx = Ctx::new(root, Env::of(&[(crate::active::SESSION_ID_ENV, &chat)]));
+        cmd::trace_secret_use(
+            &ctx,
+            // [`FORWARDED`], written as a literal: the sweep's test finds every hand-out's
+            // event by the literal each call names.
+            "secret.forwarded",
+            &[],
+            &[
+                ("vault", Value::String(sent.vault.to_owned())),
+                (
+                    "key_names",
+                    Value::Array(self.keys.iter().cloned().map(Value::String).collect()),
+                ),
+                ("runner", Value::String(sent.runner.to_owned())),
+                ("pool", Value::String(sent.pool.to_owned())),
+                ("chat", Value::from(self.chat)),
+                ("persona", Value::String(sent.persona.to_owned())),
+                ("tool", Value::String(self.tool.clone())),
+                ("request", Value::String(self.request.clone())),
+            ],
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1952,7 +2040,7 @@ pub(crate) fn serve_recorded(
     // A host that carries one of the run's values is never told: no Notice names it and no
     // grant is made from it. The values are known once the run is prepared, which is after its
     // proxy starts; until then nothing is told.
-    let values: Arc<std::sync::OnceLock<Vec<String>>> = Arc::default();
+    let values: Arc<std::sync::OnceLock<zeroize::Zeroizing<Vec<String>>>> = Arc::default();
     let refusals = crate::sandbox::egress::Refusals::telling({
         let asker = asker.clone();
         let vault = wanted.vault.clone();
@@ -2086,7 +2174,7 @@ pub(crate) fn serve_recorded(
         Err(Stopped::Said(code, why)) => return refuse(&mut *writer, code, why),
         Err(Stopped::Signal(code)) => return refuse(&mut *writer, code, "stopped".to_owned()),
     };
-    let _ = values.set(prepared.secret_values.clone());
+    let _ = values.set(zeroize::Zeroizing::new(prepared.secret_values.clone()));
     let mut prepared = prepared;
     let given: Vec<PathBuf> = Vec::new();
     // A value that points at a host the chat may reach goes through a tunnel to exactly it, and
@@ -2216,15 +2304,16 @@ pub(crate) fn serve_recorded(
     std::os::unix::process::CommandExt::process_group(&mut child, 0);
     // purlis's own wrap starts with nothing but the run's environment carried for the command
     // (#2460), and gives the command exactly that; `sandbox-exec` hands on its own.
-    let start_with = match &applying {
+    // A copy of the run's values: wiped once the child has its own (#3420).
+    let start_with = exec::WipedEnv(match &applying {
         Applying::Purlis(_) => purlis_linux_sandbox::carried::carried(prepared.env.iter().cloned()),
         _ => prepared.env.clone(),
-    };
+    });
     child
         .args(&command[1..])
         .current_dir(start_in)
         .env_clear()
-        .envs(start_with)
+        .envs(start_with.0.iter().map(|(k, v)| (k, v)))
         .stdin(if wanted.stdin {
             std::process::Stdio::piped()
         } else {
@@ -2253,6 +2342,16 @@ pub(crate) fn serve_recorded(
             (
                 "persona",
                 Value::String(asker.persona.clone().unwrap_or_default()),
+            ),
+            // Values its desktop sent (#3406): said so, with the request its desktop's
+            // `secret.forwarded` names.
+            (
+                "from",
+                handed.map_or(Value::Null, |_| Value::String("desktop".to_owned())),
+            ),
+            (
+                "request",
+                handed.map_or(Value::Null, |handed| Value::String(request_of(&handed.run))),
             ),
         ],
     );
@@ -2355,13 +2454,16 @@ fn tunnelled(
             .rev()
             .find(|(k, _)| k == name)
             .and_then(|(_, v)| v.to_str())
-            .map(str::to_owned)
+            .map(|value| zeroize::Zeroizing::new(value.to_owned()))
         else {
             continue;
         };
         // A host alone in its variable, its port beside it in another (#1708).
         let pair = host_pair(name, &value, &prepared.env);
-        let routed = pair.as_ref().map_or(value, |pair| pair.target.clone());
+        let routed = zeroize::Zeroizing::new(
+            pair.as_ref()
+                .map_or_else(|| value.to_string(), |pair| pair.target.clone()),
+        );
         let mut routed = route(&routed, &client, &opening.reach, &opening.own);
         if pair
             .as_ref()
@@ -2399,7 +2501,11 @@ fn tunnelled(
             };
             let routed = route(value, &client, &opening.reach, &opening.own);
             if let Some((pointed, at)) = opening.open(&name, routed)? {
-                *value = pointed.at(at);
+                // The value it was is wiped as the file is pointed (#3420).
+                drop(zeroize::Zeroizing::new(std::mem::replace(
+                    value,
+                    pointed.at(at),
+                )));
                 prepared.secret_values.push(value.clone());
                 let escaped = super::dotenv::escaped(value);
                 if escaped != *value {
@@ -2409,7 +2515,8 @@ fn tunnelled(
             }
         }
         if moved {
-            std::fs::write(&handed.path, handed_body(&handed.entries)?)?;
+            let body = zeroize::Zeroizing::new(handed_body(&handed.entries)?);
+            std::fs::write(&handed.path, body.as_bytes())?;
         }
     }
     Ok((opening.tunnels, opening.notes))
@@ -3143,20 +3250,22 @@ fn listen(
 ///
 /// It holds back the bytes that could still be the start of a value, at most one byte short of
 /// the longest, and never emits part of an occurrence that a later chunk could complete.
+/// What it holds, the values and the output it holds back, is wiped as it is dropped (#3420).
 pub struct Redactor {
-    secrets: Vec<String>,
+    secrets: zeroize::Zeroizing<Vec<String>>,
     longest: usize,
-    held: Vec<u8>,
+    held: zeroize::Zeroizing<Vec<u8>>,
 }
 
 impl Redactor {
     pub fn new(secrets: &[String]) -> Self {
-        let secrets: Vec<String> = secrets.iter().filter(|s| !s.is_empty()).cloned().collect();
+        let secrets: zeroize::Zeroizing<Vec<String>> =
+            zeroize::Zeroizing::new(secrets.iter().filter(|s| !s.is_empty()).cloned().collect());
         let longest = secrets.iter().map(String::len).max().unwrap_or(0);
         Self {
             secrets,
             longest,
-            held: Vec::new(),
+            held: zeroize::Zeroizing::new(Vec::new()),
         }
     }
 
@@ -3171,7 +3280,7 @@ impl Redactor {
         // held back whole, and so is any that then straddles the new cut.
         loop {
             let mut moved = false;
-            for secret in &self.secrets {
+            for secret in self.secrets.iter() {
                 let needle = secret.as_bytes();
                 let first = cut.saturating_sub(needle.len() - 1);
                 let straddling = (first..cut)
