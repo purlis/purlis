@@ -18,8 +18,11 @@
  * colour is a ground; an image or gradient is not read. Words faded by nothing are left to axe
  * and the engine; words in a control that is disabled (WCAG 1.4.3 exempts an inactive control),
  * words hidden from assistive technology (a separator drawn as a glyph), words at opacity 0
- * (nothing is drawn) and words whose opacity is moving (an animation or a transition, which has
- * no one value to measure) are not measured. Hidden from assistive technology includes what a
+ * (nothing is drawn) and words whose opacity moves for ever (an endless animation, which has no
+ * one value to measure) are not measured. **An opacity on its way somewhere is measured where it
+ * comes to rest**: each animation or transition of an opacity that ends is finished first, so a
+ * dialog whose scrim is still fading in when its story ends (its words drawn at 0 for that
+ * moment) is measured as it stands once open. Hidden from assistive technology includes what a
  * modal hides behind it (react-aria marks the page under an open dialog `aria-hidden`), so a
  * story with a dialog open measures the dialog and not the page under its scrim.
  * `GateLeavesAlone` (`FadedWords.stories.tsx`) holds each of these.
@@ -123,17 +126,27 @@ function filterOpacity(filter: string): number {
   return out;
 }
 
-/** Whether a box's opacity is moving now: a running animation or transition of its opacity.
- *  One that moves something else (a spinner's turn) leaves its opacity a value to measure. */
+/** Whether `one` is a running animation or transition of an opacity. One that moves something
+ *  else (a spinner's turn) leaves the opacity a value to measure. */
+function movesOpacity(one: Animation): boolean {
+  return (
+    one.playState === "running" &&
+    one.effect instanceof KeyframeEffect &&
+    one.effect.getKeyframes().some((frame) => "opacity" in frame)
+  );
+}
+
+/** Whether a box's opacity moves for ever: an endless animation of it, still running once every
+ *  one that ends has been finished. */
 function moving(element: Element): boolean {
-  return element
-    .getAnimations()
-    .some(
-      (one) =>
-        one.playState === "running" &&
-        one.effect instanceof KeyframeEffect &&
-        one.effect.getKeyframes().some((frame) => "opacity" in frame),
-    );
+  return element.getAnimations().some(movesOpacity);
+}
+
+/** Every animation or transition of an opacity under `root` that ends, finished now: the page as
+ *  it comes to rest. An endless one cannot be finished, and is left running. */
+function settle(root: Element): void {
+  for (const one of root.getAnimations({ subtree: true }))
+    if (movesOpacity(one) && one.effect?.getComputedTiming().endTime !== Infinity) one.finish();
 }
 
 /** `tag.class` of an element, the way a person finds its rule. */
@@ -150,6 +163,7 @@ function nameOf(element: Element): string {
  * own is measured once, as drawn now.
  */
 export function fadedWordsUnderFloor(root: Element): FadedWord[] {
+  settle(root);
   const colour = colourReader();
   const found: FadedWord[] = [];
   const seen = new Set<Element>();

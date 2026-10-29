@@ -166,9 +166,10 @@ export const GateSeesAFade: Story = {
 
 /**
  * **What the gate leaves alone, and what it does not** (#3790): words at 0.3 in a disabled
- * button, words hidden from assistive technology, words at opacity 0 and words whose opacity is
- * moving are not measured; words at 0.3 in a box that only turns (an animation of something
- * else) are, and so are plain words at 0.3. Drawn in a box of their own and taken away before
+ * button, words hidden from assistive technology, words at opacity 0 and words whose opacity
+ * moves for ever are not measured; words fading in to 0.3 are, where they come to rest, and so
+ * are words at 0.3 in a box that only turns (an animation of something else) and plain words at
+ * 0.3. Drawn in a box of their own and taken away before
  * the story ends, so the gate after it measures nothing of them.
  */
 export const GateLeavesAlone: Story = {
@@ -186,17 +187,23 @@ export const GateLeavesAlone: Story = {
     (faded("a disabled control", "button") as HTMLButtonElement).disabled = true;
     faded("hidden from assistive technology").setAttribute("aria-hidden", "true");
     faded("not drawn").style.opacity = "0";
-    const fading = faded("fading");
+    const fading = faded("fading for ever");
+    const arriving = faded("arriving");
     const turning = faded("turning");
     faded("plain");
     document.body.append(box);
-    const fade = fading.animate([{ opacity: 0.3 }, { opacity: 0.2 }], 60_000);
+    const fade = fading.animate([{ opacity: 0.3 }, { opacity: 0.2 }], {
+      duration: 1_000,
+      iterations: Infinity,
+    });
+    const arrive = arriving.animate([{ opacity: 0 }, { opacity: 0.3 }], 60_000);
     const turn = turning.animate([{ rotate: "0deg" }, { rotate: "1deg" }], 60_000);
     try {
       const under = fadedWordsUnderFloor(box).map(({ words }) => words);
-      await expect(under).toEqual(["turning", "plain"]);
+      await expect(under).toEqual(["arriving", "turning", "plain"]);
     } finally {
       fade.cancel();
+      arrive.cancel();
       turn.cancel();
       box.remove();
     }
