@@ -3,7 +3,7 @@
 
 //! The driver against a stand-in engine that answers DevTools as the real one does, from the
 //! recorded trees of the fixture site's frames page. What only a real engine can show (that the
-//! page really changed) is in `tests/the_fixture_sites_hard_pages_pass.rs`.
+//! page really changed) is in `tests/it/the_fixture_sites_hard_pages_pass.rs`.
 
 use std::collections::HashMap;
 use std::sync::mpsc::{self, SyncSender};

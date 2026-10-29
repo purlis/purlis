@@ -24,5 +24,12 @@ minisign-verify = "0.3"
 # nothing derived from one is ever committed to this repository.
 minisign = "0.10"
 
+# Every integration test as a module of one binary (#3613, #3752): each `tests/*.rs` was a binary
+# of its own that linked the whole graph, the core's included, 19 of them. `tests/it/main.rs`
+# fails on a `.rs` left straight under `tests/`, and on a file in `tests/it/` it does not name.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
 [lints]
 workspace = true

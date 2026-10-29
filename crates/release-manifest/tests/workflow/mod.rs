@@ -8,7 +8,7 @@
 //! `- ` items under `steps:` (or `steps: &anchor`), which is all these tests need, and no YAML
 //! crate is in the workspace for them.
 
-#![allow(dead_code)] // Each test crate that includes this module uses a different part of it.
+#![allow(dead_code)] // Each test that reads a workflow uses a different part of it.
 
 use std::path::{Path, PathBuf};
 

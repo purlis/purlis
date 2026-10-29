@@ -13,7 +13,7 @@ publish = false
 
 # Not purlis-core: the host is linked by the app and by `purlis serve`, and what it adds to
 # either is the session protocol and the same-user checks, nothing of git, HTTP or the keyring
-# (`tests/the_host_links_no_git_http_or_keyring_code.rs`).
+# (`tests/it/the_host_links_no_git_http_or_keyring_code.rs`).
 [dependencies]
 thiserror.workspace = true
 tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
@@ -55,6 +55,13 @@ serde_json.workspace = true
 bytes = "1"
 # `test-util`: a link renewed ahead of its limit, an hour on, in the runtime's virtual time.
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "test-util", "time"] }
+
+# Every integration test as a module of one binary (#3613, #3752): each `tests/*.rs` was a binary
+# of its own that linked the whole graph, 32 of them. `tests/it/main.rs` fails on a `.rs` left
+# straight under `tests/`, and on a file in `tests/it/` it does not name.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
 
 [lints]
 workspace = true

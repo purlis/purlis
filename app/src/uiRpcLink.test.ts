@@ -3,7 +3,7 @@
 
 // The UI RPC's typed client (`uiRpc.ts`, generated from `ipc_commands.rs`) sends each command
 // on the link's control lane as the host reads it. The frames here are the ones
-// `crates/session-protocol/tests/the_ui_rpc_rides_beside_the_session_protocol_for_one_build.rs`
+// `crates/session-protocol/tests/it/the_ui_rpc_rides_beside_the_session_protocol_for_one_build.rs`
 // holds the host to, so the two ends agree on the wire.
 
 import { afterEach, describe, expect, it } from "vitest";

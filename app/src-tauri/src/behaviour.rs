@@ -34,7 +34,7 @@
 //! of the test's, which in the host's target holds the host's switch too, as the app's does
 //! when chats run in the host. What the host itself does with it, across its restart and for
 //! links that are not the window's, is the host's own tests'
-//! (`crates/host/tests/the_kill_switch_is_held_by_the_host.rs`).
+//! (`crates/host/tests/it/the_kill_switch_is_held_by_the_host.rs`).
 //!
 //! **The event log has one writer on each target** (#2003): the window, holding it in a data
 //! home of the test's, or the host, holding it there while the window hands it each write and
