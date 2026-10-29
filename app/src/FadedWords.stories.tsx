@@ -187,24 +187,21 @@ export const GateLeavesAlone: Story = {
     (faded("a disabled control", "button") as HTMLButtonElement).disabled = true;
     faded("hidden from assistive technology").setAttribute("aria-hidden", "true");
     faded("not drawn").style.opacity = "0";
-    const fading = faded("fading for ever");
-    const arriving = faded("arriving");
-    const turning = faded("turning");
+    /** The window's own keyframes, timed by its motion tokens: no motion is written here. */
+    const moved = (one: HTMLElement, name: string, iterations = "1") => {
+      one.style.animationName = name;
+      one.style.animationDuration = "var(--motion-duration-enter)";
+      one.style.animationIterationCount = iterations;
+    };
+    moved(faded("fading for ever"), "charter-breathe", "infinite");
+    moved(faded("arriving"), "charter-appear");
+    moved(faded("turning"), "charter-spin", "infinite");
     faded("plain");
     document.body.append(box);
-    const fade = fading.animate([{ opacity: 0.3 }, { opacity: 0.2 }], {
-      duration: 1_000,
-      iterations: Infinity,
-    });
-    const arrive = arriving.animate([{ opacity: 0 }, { opacity: 0.3 }], 60_000);
-    const turn = turning.animate([{ rotate: "0deg" }, { rotate: "1deg" }], 60_000);
     try {
       const under = fadedWordsUnderFloor(box).map(({ words }) => words);
       await expect(under).toEqual(["arriving", "turning", "plain"]);
     } finally {
-      fade.cancel();
-      arrive.cancel();
-      turn.cancel();
       box.remove();
     }
   },
