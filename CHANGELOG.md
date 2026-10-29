@@ -13,17 +13,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Every `purlis dispatch` subcommand is a chat tool.** `dispatch_wait`, `dispatch_tell`,
-  `dispatch_answer`, `dispatch_cancel`, `dispatch_close`, `dispatch_note` and `dispatch_ask`
-  join `dispatch`, `dispatch_list`, `dispatch_read` and `dispatch_report`, on every harness. A
-  Claude Code chat runs each one without its harness asking. Chats are taught the tools first,
-  and the command stays for terminals and scripts (#3786).
-- **A chat always knows its open tasks.** While it has any, every turn begins with a short
-  roster: each task's number, name and state. A task it was told had stopped on the person is
-  announced once when it is back at work. A dispatch under the exact name of one of its tasks
-  that is still open is refused, naming that task's number and state and saying to wait on it,
-  tell it more or cancel it (#3788).
-
 - **The event log keeps 30 days and can be followed from a cursor.** The host's event log
   (`<data>/events/<device>/`) is now written in segments: at 16 MiB a segment is sealed as
   `events.<first seq>.jsonl`, and a sealed segment whose newest event is more than 30 days old is
@@ -395,13 +384,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **A chat no longer stops on a permission prompt around its own tasks.** A dispatch that only
-  looks (`list`, `read`, `wait`, `--help`) is left to the harness's own rules whatever stands
-  beside it, so `purlis dispatch list 2>&1 | head -20` no longer asks. A dispatch that writes,
-  a handoff or a worktree commit that shares its call with another command is now refused with
-  the shape to retry ("run the dispatch in a call of its own") instead of asking the person.
-  `purlis dispatch close` no longer prompts in a Claude Code chat, and `purlis dispatch cancel`
-  is refused for a task the person has typed in, as `close` already was (#3785).
 - **A chat on a pool's runner has its hooks recorded.** Each line a runner chat's hook sends
   is now written once, in the runner's own event log, and the hook is told it was taken. Before,
   the runner refused the line, so it was recorded in no event log and the hook kept a copy
