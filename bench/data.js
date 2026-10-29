@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793275141221,
+  "lastUpdate": 1793276987101,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29526,6 +29526,48 @@ window.BENCHMARK_DATA = {
             "value": 101.788533,
             "unit": "ms",
             "extra": "median of 5 runs: 100.459, 101.727, 101.789, 102.108, 102.288 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "db82c2bbcf2fd515c5a0040042d3fc9b008d5363",
+          "message": "Runners: disk held per pool in Devices, and a key-changed runner's row removes its pool (#3493, #3533) (#3806)\n\n* Runners: disk held per pool and person in Devices (#3493)\n\nThe Devices view's use table gets a Disk held column: each pool's kept\nrunners' home volumes together, a draining runner's included, as\n`docker system df --verbose` (Docker or Podman) reports them. The read\nstarts nothing, so a suspended runner is never woken by it. It is its\nown window-only command, `devices_disk`, so a slow count holds up no\nother part of the view, joined while in flight and held to the same\n20 seconds as each runner's ask. A home Docker does not list is said\napart, never counted as nothing; a read Docker refused says why, in\nDocker's words shown safely.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: a key-changed runner's row in Devices removes its pool (#3533)\n\nA runner whose key changed is refused on every link, so its row in\nDevices now has Remove pool beside its badge. It asks the Pools\nsettings' own question (`RemovePool`), removes nothing until that is\nanswered, then reads every device again. What a removal left, or why it\ndid not run, is a Notice under the devices. `removePool` now answers\nwhat it said, so a caller outside the Pools settings can show it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T11:54:40Z",
+          "tree_id": "df509cd0914ce2e404f878f205f2896368e2cbe3",
+          "url": "https://github.com/purlis/purlis/commit/db82c2bbcf2fd515c5a0040042d3fc9b008d5363"
+        },
+        "date": 1793276981993,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.542947,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.538, 0.540, 0.543, 0.544, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5286435,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.278, 16.356, 16.529, 16.566, 16.651 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.67502099999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.436, 101.403, 101.675, 102.146, 103.364 ms"
           }
         ]
       }
