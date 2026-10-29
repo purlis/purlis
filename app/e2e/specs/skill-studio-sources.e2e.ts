@@ -121,7 +121,7 @@ describe("installing a skill from a skill source", function () {
     await typeInto("Repository", url);
     // A folder on this machine is this machine's source alone.
     await choose(
-      '[data-scope="select"][data-part="root"][aria-label="Who can browse it"]',
+      '[data-testid="skill-source-add"] [data-scope="select"][data-part="root"]',
       "local",
     );
     await (await $("button=More: branch, folder, sign-in")).click();
@@ -135,7 +135,7 @@ describe("installing a skill from a skill source", function () {
     const offered = await $(`[data-testid="offered-${SHIPPER}"]`);
     await offered.waitForExist({ timeout: 30_000 });
     await expect(offered).toHaveText(/runs a script/);
-    await (await $(`aria/Review ${SHIPPER}`)).click();
+    await (await $(`aria/Review install: ${SHIPPER}`)).click();
 
     const review = await $('[data-testid="install-review"]');
     await review.waitForExist({ timeout: 30_000 });

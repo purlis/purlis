@@ -412,7 +412,7 @@ function SourcesList({
               {offers.map((offer, at) => (
                 <span key={`${sourceKey(offer.remote)}\u0000${offer.name}`}>
                   {at > 0 && ", "}
-                  <code>{offer.name}</code> from {offer.remote.label}
+                  {offer.name} from {offer.remote.label}
                   {offer.edited && " (edited here since it was installed)"}
                 </span>
               ))}
@@ -799,13 +799,14 @@ function SourcePage({
                         <Button
                           size="sm"
                           variant={update !== undefined ? "primary" : undefined}
-                          aria-label={
+                          // Named for its row, its words first (WCAG 2.5.3, label in name).
+                          aria-label={`${
                             update !== undefined
-                              ? `Review the update of ${skill.name}`
+                              ? "Review update"
                               : installed
-                                ? `See ${skill.name} in Library`
-                                : `Review ${skill.name}`
-                          }
+                                ? "See it in Library"
+                                : "Review install"
+                          }: ${skill.name}`}
                           onPress={() => onward(skill)}
                         >
                           {update !== undefined

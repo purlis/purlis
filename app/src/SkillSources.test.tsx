@@ -360,12 +360,14 @@ describe("a source's page", () => {
     const deploy = await within(page).findByTestId("offered-deploy");
     expect(deploy).toHaveTextContent("runs a script");
     expect(deploy).toHaveTextContent("reaches 1 host");
-    expect(within(deploy).getByRole("button", { name: "Review deploy" })).toBeInTheDocument();
+    expect(
+      within(deploy).getByRole("button", { name: "Review install: deploy" }),
+    ).toBeInTheDocument();
     const notify = within(page).getByTestId("offered-notify");
     expect(notify).toHaveTextContent("Installed");
     expect(notify).toHaveTextContent("Update available");
     expect(
-      within(notify).getByRole("button", { name: "Review the update of notify" }),
+      within(notify).getByRole("button", { name: "Review update: notify" }),
     ).toBeInTheDocument();
     expect(within(page).getByTestId("offered-huge")).toHaveTextContent(
       "its files are read when you review it",
@@ -413,7 +415,7 @@ describe("a source's page", () => {
     renderStudio(AT_THE_ROOT, "sources");
     const page = await openSource(user);
     const notify = await within(page).findByTestId("offered-notify");
-    await user.click(within(notify).getByRole("button", { name: "See notify in Library" }));
+    await user.click(within(notify).getByRole("button", { name: "See it in Library: notify" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Library" })).toHaveAttribute(
         "aria-current",
@@ -429,7 +431,7 @@ describe("the install review", () => {
     const user = userEvent.setup();
     renderStudio(AT_THE_ROOT, "sources");
     const page = await openSource(user);
-    await user.click(await within(page).findByRole("button", { name: "Review deploy" }));
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
 
     const review = await screen.findByTestId("install-review");
     expect(within(review).getByRole("heading", { name: /Install deploy from/ })).toBeVisible();
@@ -477,7 +479,7 @@ describe("the install review", () => {
     const user = userEvent.setup();
     renderStudio(AT_THE_ROOT, "sources");
     const page = await openSource(user);
-    await user.click(await within(page).findByRole("button", { name: "Review deploy" }));
+    await user.click(await within(page).findByRole("button", { name: "Review install: deploy" }));
     const review = await screen.findByTestId("install-review");
     expect(within(review).getByRole("button", { name: "Install" })).toHaveAttribute(
       "aria-disabled",
@@ -525,7 +527,7 @@ describe("the update review", () => {
     renderStudio(AT_THE_ROOT, "sources");
     const page = await openSource(user);
     const notify = await within(page).findByTestId("offered-notify");
-    await user.click(within(notify).getByRole("button", { name: "Review the update of notify" }));
+    await user.click(within(notify).getByRole("button", { name: "Review update: notify" }));
     const review = await screen.findByTestId("update-review");
     await user.click(within(review).getByRole("button", { name: "Not now" }));
     expect(await screen.findByTestId("skill-source-page")).toBeInTheDocument();
