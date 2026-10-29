@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793268702391,
+  "lastUpdate": 1793270158607,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29358,6 +29358,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0106695,
             "unit": "ms",
             "extra": "median of 5 runs: 101.533, 101.753, 102.011, 102.015, 102.286 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c182eabe4b1fffa03caa6cee644d0544455acfec",
+          "message": "Time the tab-chip rest on the page's clock, not the runner's (#3660) (#3772)\n\n* Time the tab-chip rest on the page's clock, not the runner's (#3660)\n\nThe case \"opens the menu once the pointer has rested on the chip\" paused\n110 ms on the runner and then looked for a menu. On a slow runner that\nlook was answered long after the 350 ms rest had ended, so it saw the\nmenu the product had rightly opened.\n\nThe page now stamps, with performance.now(), the move that starts the\nrest and the first moment a task menu is drawn (a MutationObserver), and\nthe case asserts the second is at least a rest after the first. It still\nfails if the menu opens at once on the pointer's arrival.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Format the tab-chip rest timing (#3660)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n* Read the tab-chip rest from the app, and stop the watch in a finally (#3660)\n\nREST_MS and GRACE_MS move into src/tabRest.ts, a module that imports\nnothing, which tabTasks.ts re-exports. The scenario spec imports REST_MS\nfrom there, as e2e/menus.ts imports menuWords.ts, so a rest changed in\nthe app is the rest the spec checks.\n\nThe menu watch is taken down in a finally, so a failing case leaves no\nobserver on the page, and the tolerance comment says what the check does:\n2 ms under the rest.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M4V610KJH75YKMQHN124WK1Y\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T10:03:46Z",
+          "tree_id": "1bd37436b408980ca378b1cab7fdf6b92a878375",
+          "url": "https://github.com/purlis/purlis/commit/c182eabe4b1fffa03caa6cee644d0544455acfec"
+        },
+        "date": 1793270153909,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5554195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.526, 0.544, 0.555, 0.556, 0.558 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4557805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.216, 16.266, 16.456, 16.501, 16.547 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.62744749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.465, 101.545, 101.627, 103.271, 103.488 ms"
           }
         ]
       }
