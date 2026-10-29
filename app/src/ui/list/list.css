@@ -101,24 +101,25 @@
 
 /* A group of what needs the person (Needs you): its name in the waiting colour. Drawn on its
    words, so a theme's colour for the name never takes the tone away. */
-[data-scope="list"][data-part="header"][data-tone="waiting"] > [data-part="title"] {
+[data-scope="list"][data-part="header"][data-tone="waiting"] [data-part="title"] {
   color: var(--state-waiting);
 }
 
-/* A fold's twist turns with its own row, never with an open row or disclosure around the list. */
-[data-fold]:not([data-expanded]) > [data-scope="tree"][data-part="twist"] > svg {
+/* A fold's twist turns with its own row, never with an open row or disclosure around the list.
+   (A row's words are inside its grid cell, so they are reached as its descendants.) */
+[data-fold]:not([data-expanded]) [data-scope="tree"][data-part="twist"] > svg {
   transform: none;
 }
 
-[data-fold]:not([data-expanded]) > [data-scope="tree"][data-part="twist"]:dir(rtl) > svg {
+[data-fold]:not([data-expanded]) [data-scope="tree"][data-part="twist"]:dir(rtl) > svg {
   transform: scaleX(-1);
 }
 
-[data-fold][data-expanded] > [data-scope="tree"][data-part="twist"] > svg {
+[data-fold][data-expanded] [data-scope="tree"][data-part="twist"] > svg {
   transform: rotate(90deg);
 }
 
-[data-scope="list"][data-part="header"] > [data-part="title"] {
+[data-scope="list"][data-part="header"] [data-part="title"] {
   flex: 1 1 auto;
   min-inline-size: 0;
   overflow: hidden;
@@ -151,12 +152,12 @@
   outline: none;
 }
 
-[data-scope="list"][data-part="run"] > [data-part="label"] {
+[data-scope="list"][data-part="run"] [data-part="label"] {
   flex: 0 1 auto;
 }
 
 /* The closing line's words wrap: it is a sentence, not a name. */
-[data-scope="list"][data-part="run"][data-end] > [data-part="label"] {
+[data-scope="list"][data-part="run"][data-end] [data-part="label"] {
   white-space: normal;
 }
 
@@ -297,7 +298,7 @@
 }
 
 /* Its name keeps its tag beside it, and its actions go to the line's end. */
-[data-scope="list"][data-part="root"][data-variant="card"] > [data-part="label"] {
+[data-scope="list"][data-part="root"][data-variant="card"] [data-part="label"] {
   flex: 0 1 auto;
 }
 
