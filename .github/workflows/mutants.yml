@@ -123,9 +123,10 @@ name: mutants
 
 # **Paused on 2026-10-29: run it by hand (`workflow_dispatch`) until #3837.** In 30 nights it
 # was never green, used 1,699 runner-hours and led to no fix after #461 (2026-09-26):
-#   * on a night the baseline passed, 16 to 30 shards each ran into the 300-minute limit below
-#     without finishing (80 to 146 runner-hours a night), so "since the last green run" never
-#     moved and every night was the same oversized diff;
+#   * on a night the baseline passed, shards ran into the 300-minute limit below without
+#     finishing, or failed on survivors: a night spent 38 to 181 runner-hours, and on the
+#     nights since 2026-10-24 every shard ran out of time. No night was green, so "since the
+#     last green run" never moved and every night was the same oversized diff;
 #   * on the others the baseline was red (#1892; on 2026-10-29 a whole-process memory test
 #     that #3749 had put in one process with ~1,990 others), and nothing else ran.
 # #3837 runs it on a pull request's own purlis-core diff, by label, where someone reads it.

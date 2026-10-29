@@ -114,7 +114,8 @@ Two that have each cost a red `main`:
 
 Mutation testing runs on `purlis-core` only (`.github/workflows/mutants.yml`) and never gates a
 PR. Its nightly schedule is paused since 2026-10-29 (30 nights, none green); run it by hand, and
-see #3837 for running it on a pull request's own diff. It is a report, so the only thing that matters about it is that its red is readable:
+see #3837 for running it on a pull request's own diff. It is a report, so the only thing that
+matters about it is that its red is readable:
 
 - **`baseline` red** — purlis-core's own tests do not pass. Nothing else in the run is evidence.
 - **`core (N)` red** — shard N did not finish. Its verdict says whether the budget was too small
@@ -135,7 +136,8 @@ TIMEOUT stays a survivor, because it may be a suite cut short. Shards run on dif
 so one shard's suite says nothing about another's: on 2026-09-25 ten slow shards reported 432
 TIMEOUTs and no MISSED mutant, and this rule is what keeps such a night red.
 
-When the nightly is not clean it keeps one issue in this repo up to date. Sunday tests one of
+When the nightly is not clean it keeps one issue in this repo up to date. Sunday (while the
+schedule runs) tests one of
 13 weekly slices of the crate (whole files), so the issue records which files are not known
 clean: a night that is not clean adds the files it tested, a slice that runs clean clears only
 its own, and the issue closes, with any copies, only when none is left: a full cycle of clean
