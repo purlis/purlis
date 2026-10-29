@@ -512,6 +512,100 @@ while (accept(my $c, $s)) {
             assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "no");
         }
     }
+    /// **Claude Code's rules for a socket it is allowed** (#3316), as its macOS profile builder
+    /// writes each `network.allowUnixSockets` path (read out of Claude Code 2.1.312): the socket
+    /// domain, `network-bind` and `network-outbound` on the path as a `subpath`, and no
+    /// `network-inbound`. With the file's own make and remove allowed, as its `allowWrite` would.
+    /// What a server there gets is printed: `yes`, or the step refused.
+    #[test]
+    fn claude_codes_rules_for_an_allowed_socket_and_a_server_there() {
+        if !can_apply() {
+            let _ = writeln!(
+                std::io::stderr(),
+                "skipped: this process is already sandboxed, so no second profile applies"
+            );
+            return;
+        }
+        let base = tempfile::tempdir().expect("a folder");
+        let folder = base.path().canonicalize().expect("real").join("serve");
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&folder)
+            .expect("the chat's folder");
+        let socket = serve_socket(&folder, 4000);
+        let at = seatbelt::string(&socket.display().to_string()).expect("a string");
+        let cwd = tempfile::tempdir().expect("a folder");
+        let tmp = tempfile::tempdir().expect("a temp folder");
+        let mut own = seatbelt::Own::default();
+        own.after.extend([
+            "(allow system-socket (socket-domain AF_UNIX))".to_owned(),
+            format!("(allow network-bind (local unix-socket (subpath {at})))"),
+            format!("(allow network-outbound (remote unix-socket (subpath {at})))"),
+            format!("(allow file-write-create file-write-unlink (literal {at}))"),
+        ]);
+        let profile =
+            seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None).expect("a profile");
+        let out = crate::forklock::output(
+            std::process::Command::new(backend::SANDBOX_EXEC)
+                .args(["-p", &profile, "/usr/bin/perl", "-e", UNIX])
+                .arg(socket.display().to_string())
+                .arg("once")
+                .current_dir(cwd.path()),
+        )
+        .expect("it runs");
+        let got = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        let _ = writeln!(std::io::stderr(), "PROBE-3316 claude code socket: {got}");
+        assert_eq!(got, "yes", "PROBE-3316");
+    }
+
+    /// **A port the system picks** (#3396): a bind of `127.0.0.1:0` allowed by a Seatbelt rule
+    /// on port 0, with listening allowed on every loopback port. What a server gets is printed.
+    #[test]
+    fn a_port_the_system_picks_under_a_rule_for_port_zero() {
+        if !can_apply() {
+            let _ = writeln!(
+                std::io::stderr(),
+                "skipped: this process is already sandboxed, so no second profile applies"
+            );
+            return;
+        }
+        let cwd = tempfile::tempdir().expect("a folder");
+        let tmp = tempfile::tempdir().expect("a temp folder");
+        let mut own = seatbelt::Own::default();
+        own.after.extend([
+            r#"(allow network-bind (local ip "localhost:0"))"#.to_owned(),
+            r#"(allow network-inbound (local ip "localhost:*"))"#.to_owned(),
+        ]);
+        let Ok(profile) = seatbelt::profile(&[], &own, cwd.path(), tmp.path(), &[], None) else {
+            panic!("PROBE-3396 no profile");
+        };
+        let tried = |words: &[&str]| -> String {
+            let out = crate::forklock::output(
+                std::process::Command::new(backend::SANDBOX_EXEC)
+                    .args(["-p", &profile, "/usr/bin/perl", "-e", TCP])
+                    .args(words)
+                    .current_dir(cwd.path()),
+            )
+            .expect("it runs");
+            format!(
+                "{} {}",
+                String::from_utf8_lossy(&out.stdout).trim(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )
+        };
+        let zero = tried(&["4", "127.0.0.1", "0"]);
+        let named = tried(&["4", "127.0.0.1", &free_port().to_string()]);
+        let every = tried(&["4", "0.0.0.0", "0"]);
+        let _ = writeln!(
+            std::io::stderr(),
+            "PROBE-3396 zero: {zero} | named: {named} | every: {every}"
+        );
+        assert!(
+            zero.starts_with("yes"),
+            "PROBE-3396 {zero} | {named} | {every}"
+        );
+    }
+
     /// A server the person starts on every interface after the door opened is refused its
     /// bind, as on Linux, and the port is free on every interface once the door is let go.
     #[test]
