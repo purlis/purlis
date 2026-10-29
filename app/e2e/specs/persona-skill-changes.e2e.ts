@@ -143,11 +143,10 @@ describe("changing a persona's own skills", function () {
     await studioSkill(RENAMED);
     await studioMore(RENAMED, "Move to another level");
     const prompt = '[data-testid="skill-move"]';
-    const first = `${prompt} input[type="radio"]`;
-    await $(first).waitForExist({ timeout: 20_000 });
-    await browser.execute((css: string) => {
-      document.querySelector<HTMLElement>(css)?.click();
-    }, first);
+    // The level by its name, as a screen reader reads the radio, never by its tag.
+    const project = await (await $(prompt)).$("aria/project");
+    await project.waitForExist({ timeout: 20_000 });
+    await project.click();
     await untilSays(`${prompt} [data-testid="persona-keeps"]`, `${PERSONA} keeps it`);
     await press(prompt, "Move");
 

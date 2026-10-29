@@ -12,7 +12,6 @@ import {
   type SkillLevel,
   type SkillTemplate,
   type SkillTemplateId,
-  type SkillUsers,
   type SkillDraft,
   type Studio,
   type StudioRouter,
@@ -259,6 +258,11 @@ export function SkillStudioTab({
   // point leaves it behind, so it never stands under another skill's name. One started now binds
   // to the place the tab is drawn at next, which a step taken with it has already reached.
   const [inHand, setInHand] = useState<{ doing: Doing; at: StudioPlace | "next" }>();
+  // The change in hand as last drawn, for an answer that comes back after it may have closed.
+  const inHandNow = useRef(inHand);
+  useEffect(() => {
+    inHandNow.current = inHand;
+  });
   const setDoing = (next: Doing | undefined) =>
     setInHand(next === undefined ? undefined : { doing: next, at: "next" });
   // Bound as it is drawn (React's state adjusted while rendering, not in an effect).
@@ -392,13 +396,19 @@ export function SkillStudioTab({
         setDone((n) => n + 1);
       });
   };
-  /** The dialog in hand told why the core refused it: said in the dialog, which stays open. */
-  const refusedInDialog = (why: string) =>
-    setInHand((was) =>
-      was === undefined || !("skill" in was.doing) || was.doing.what === "edit"
-        ? was
-        : { ...was, doing: { ...was.doing, refused: why } },
-    );
+  /** Why the core refused the dialog `asked`'s change: said in that dialog, which stays open;
+   *  or in the notice where the person closed it meanwhile, or another is open now. */
+  const refusedInDialog =
+    (asked: Doing, label: string) =>
+    (why: string): void => {
+      if (inHandNow.current?.doing === asked)
+        setInHand((was) =>
+          was === undefined || was.doing !== asked || !("refused" in was.doing)
+            ? was
+            : { ...was, doing: { ...was.doing, refused: why } },
+        );
+      else setSaid({ tone: "trouble", label, text: why });
+    };
   /** A field of the dialog in hand changed: the core's last refusal no longer stands. */
   const editedInDialog = () =>
     setInHand((was) =>
@@ -420,7 +430,7 @@ export function SkillStudioTab({
     });
   };
   /** **Rename** (S4, #3685): done, its place follows the new name, and Undo renames it back. */
-  const rename = (skill: StudioSkill, level: SkillLevel, to: string, users?: SkillUsers) => {
+  const rename = (asked: Doing, skill: StudioSkill, level: SkillLevel, to: string) => {
     const from = skill.name;
     const back = () =>
       change(
@@ -436,27 +446,21 @@ export function SkillStudioTab({
       () => commands.skillRename(plane, level, from, to),
       async (notes) => {
         history.replace({ ...placeNow.current, skill: skillRowNamed(to) });
-        const followed =
-          users === undefined
-            ? []
-            : [
-                ...(users.personas.length === 0
-                  ? []
-                  : [counted(users.personas.length, "persona", "personas")]),
-                ...(users.skills.length === 0
-                  ? []
-                  : [counted(users.skills.length, "skill", "skills")]),
-              ];
-        const named =
-          followed.length === 0 ? "" : `, with the ${followed.join(" and ")} that name it`;
-        return { ...resultOf("Skill renamed", `${from} is ${to} now${named}.`, notes), undo: back };
+        // What followed it, and what was left as it was, is the core's to say: its notes.
+        return { ...resultOf("Skill renamed", `${from} is ${to} now.`, notes), undo: back };
       },
-      refusedInDialog,
+      refusedInDialog(asked, "The skill was not renamed"),
     );
   };
   /** **Move** (S4, #3685): done, and Undo moves it back, with the grant it had where it was a
    *  project skill. */
-  const move = (skill: StudioSkill, from: SkillLevel, to: SkillLevel, grant: SkillGrant | null) => {
+  const move = (
+    asked: Doing,
+    skill: StudioSkill,
+    from: SkillLevel,
+    to: SkillLevel,
+    grant: SkillGrant | null,
+  ) => {
     const name = skill.name;
     const back = () =>
       change(
@@ -471,7 +475,8 @@ export function SkillStudioTab({
               ? (skill.granted ?? { to: "root" })
               : null,
           ),
-        async (notes) => resultOf("Move undone", `${name} is a ${labelOf(levels, from)} skill again.`, notes),
+        async (notes) =>
+          resultOf("Move undone", `${name} is a ${labelOf(levels, from)} skill again.`, notes),
       );
     change(
       "The skill was not moved",
@@ -480,7 +485,7 @@ export function SkillStudioTab({
         ...resultOf("Skill moved", `${name} is a ${labelOf(levels, to)} skill now.`, notes),
         undo: back,
       }),
-      refusedInDialog,
+      refusedInDialog(asked, "The skill was not moved"),
     );
   };
   /** Adds `written` to the persona's skills, or takes it out (SK-5, #2768), as a change. */
@@ -504,14 +509,12 @@ export function SkillStudioTab({
       answer.status === "ok"
         ? answer.data.find((d) => d.name === name && sameLevel(d.level, level))
         : undefined;
-    const days = one === undefined ? 30 : one.days_left;
+    // Where it is not found in Deleted, no days and no Bring it back are promised.
+    if (one === undefined) return resultOf("Skill deleted", `${name} is deleted.`, notes);
+    const days = counted(one.days_left, "day", "days");
     return {
-      ...resultOf(
-        "Skill deleted",
-        `${name} is deleted. It stays in Deleted for ${counted(days, "day", "days")}.`,
-        notes,
-      ),
-      ...(one === undefined ? {} : { restore: one.id }),
+      ...resultOf("Skill deleted", `${name} is deleted. It stays in Deleted for ${days}.`, notes),
+      restore: one.id,
     };
   };
 
@@ -1282,7 +1285,7 @@ export function SkillStudioTab({
           busy={busy}
           refused={doing.refused}
           onEdit={editedInDialog}
-          onRename={(to, users) => rename(doing.skill, doing.level, to, users)}
+          onRename={(to) => rename(doing, doing.skill, doing.level, to)}
           onClose={() => setDoing(undefined)}
         />
       )}
@@ -1296,7 +1299,7 @@ export function SkillStudioTab({
           busy={busy}
           refused={doing.refused}
           onEdit={editedInDialog}
-          onMove={(to, grant) => move(doing.skill, doing.from, to, grant)}
+          onMove={(to, grant) => move(doing, doing.skill, doing.from, to, grant)}
           onClose={() => setDoing(undefined)}
         />
       )}
@@ -1312,7 +1315,7 @@ export function SkillStudioTab({
               "The skill was not deleted",
               () => commands.skillDelete(plane, doing.level, doing.skill.name),
               (notes) => restoreOffered(doing.skill.name, doing.level, notes),
-              refusedInDialog,
+              refusedInDialog(doing, "The skill was not deleted"),
             )
           }
           onClose={() => setDoing(undefined)}

@@ -754,7 +754,11 @@ fn references_renamed(cx: &mut Ctx<'_>, level: &Level, old: &str, new: &str) -> 
     if level.at == Whose::Project {
         changed.extend(turned_off_renamed(cx, old, Some(new)));
     }
-    changed.extend(pins_renamed(cx, old, new));
+    // Pins are written in the project's files: a local skill's rename leaves them as they are,
+    // since a teammate's pin of the name means the skill they have.
+    if !level.local {
+        changed.extend(pins_renamed(cx, old, new));
+    }
     changed
 }
 

@@ -252,6 +252,22 @@ fn a_rename_takes_its_pins_with_it_in_their_place_and_who_uses_it_names_them() {
 }
 
 #[test]
+fn a_local_skills_rename_leaves_the_projects_pins_alone() {
+    let tmp = plane();
+    let root = tmp.path();
+    let local = Level::project().local(true);
+    let dir = local.dir(root).unwrap();
+    let folder = dir.strip_prefix(root).unwrap().join("notes");
+    skill(root, folder.to_str().unwrap(), "notes", "Keeps notes.");
+    let ops = crate::skills::PinnedBy::Workspace("ops".to_owned());
+    crate::skills::pin(root, &ops, "notes", true).unwrap();
+
+    did(root, |cx| rename(cx, &local, "notes", "jottings")).unwrap();
+
+    assert_eq!(crate::skills::pins_written(root, &ops), ["notes"]);
+}
+
+#[test]
 fn a_rename_leaves_the_references_alone_while_another_skill_keeps_the_old_name() {
     let tmp = plane();
     let root = tmp.path();

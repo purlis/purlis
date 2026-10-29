@@ -40,11 +40,7 @@ export const DELETED_FOR = "It moves to Deleted for 30 days, where you can bring
 
 /** The chats a skill reaches now, each as a person reads it. */
 export function chatsOf(users: SkillUsers): string[] {
-  return [
-    ...(users.root ? ["chats at the project's root"] : []),
-    ...users.workspaces.map((ws) => `chats in ${ws}`),
-    ...(users.persona === null ? [] : [`chats as ${users.persona}, in every workspace`]),
-  ];
+  return reachOfUsers(users).map(reachSaid);
 }
 
 /** A pinner, as a person reads it: `workspace ops`, `persona steward`. */
@@ -59,8 +55,9 @@ function upperFirst(words: string): string {
 
 /** **What changes with a rename** (S4): the personas and skills that name it, its pins, each by
  *  name, or that nothing else names it. */
-export function renameReach(users: SkillUsers): string[] {
-  const pins = users.pinned_by;
+export function renameReach(users: SkillUsers, local: boolean): string[] {
+  // Pins are written in the project's files, which a local skill's rename leaves alone.
+  const pins = local ? [] : users.pinned_by;
   const lines = [
     ...(users.personas.length === 0
       ? []
@@ -103,13 +100,16 @@ function reachOfUsers(users: SkillUsers): Reach[] {
  *  persona's own skill moved into the project is added to that persona's skills (SK-32), so its
  *  chats keep it. */
 function reachAt(
+  now: readonly Reach[],
   from: SkillLevel,
   to: SkillLevel,
   grant: SkillGrant | null,
   workspaces: readonly string[],
-): Reach[] {
+): readonly Reach[] {
   if (to.at === "workspace") return [`ws:${to.name}`];
   if (to.at === "persona") return [`as:${to.name}`];
+  // Between the project's shared and local skills it keeps its grant: the same chats.
+  if (from.at === "project") return now;
   const reached =
     grant === null || grant.to === "root"
       ? []
@@ -127,7 +127,7 @@ function reachAt(
 function reachSaid(reach: Reach): string {
   if (reach === "root") return "chats at the project's root";
   if (reach.startsWith("ws:")) return `chats in ${reach.slice(3)}`;
-  return `chats as ${reach.slice(3)}`;
+  return `chats as ${reach.slice(3)}, in every workspace`;
 }
 
 /** **What changes for this move** (S4): who stops getting it, who starts, and what leaving or
@@ -140,7 +140,7 @@ export function moveChanges(
   workspaces: readonly string[],
 ): string[] {
   const now = reachOfUsers(users);
-  const then = reachAt(from, to, grant, workspaces);
+  const then = reachAt(now, from, to, grant, workspaces);
   const lost = now.filter((one) => !then.includes(one));
   const gained = then.filter((one) => !now.includes(one));
   return [
@@ -278,7 +278,7 @@ export function RenameDialog({
   refused?: string;
   /** The name changed: a refusal of the last one no longer stands. */
   onEdit: () => void;
-  onRename: (to: string, users: SkillUsers | undefined) => void;
+  onRename: (to: string) => void;
   onClose: () => void;
 }) {
   const name = skill.name;
@@ -292,14 +292,14 @@ export function RenameDialog({
       onClose={onClose}
       title={`Rename ${name}`}
       titleId="skill-rename"
-      description="Every persona and skill that names it, and its pins, are changed with it, in one commit."
+      description={`Every persona and skill that names it${level.local ? "" : ", and its pins,"} are changed with it, in one commit.`}
       initialFocus="field"
       main={{
         children: busy ? "Renaming…" : "Rename",
         reserve: ["Rename", "Renaming…"],
         isDisabled: !ready,
         onPress: () => {
-          if (ready) onRename(wanted, users);
+          if (ready) onRename(wanted);
         },
       }}
       data-testid="skill-rename"
@@ -327,7 +327,7 @@ export function RenameDialog({
       <Refused refused={refused} testid="skill-rename-refused" />
       <Reach
         heading="Changed with it"
-        lines={users === undefined ? undefined : renameReach(users)}
+        lines={users === undefined ? undefined : renameReach(users, level.local)}
         refused={unread}
         again={again}
         testid="skill-rename-reach"
@@ -372,7 +372,8 @@ export function MoveDialog({
     from.at === "workspace" ? { to: "only", workspaces: [from.name] } : { to: "root" },
   );
   // Whether the move picked makes it a project skill, which asks where it reaches: the core's.
-  const [asksGrant, setAsksGrant] = useState<{ key: string; asks: boolean }>();
+  const [asksGrant, setAsksGrant] = useState<{ key: string; asks?: boolean; refused?: string }>();
+  const [askedAgain, setAskedAgain] = useState(0);
   const { users, refused: unread, again } = useUsers(plane, from, name);
   const toKey = to === undefined ? undefined : levelKey(to);
   useEffect(() => {
@@ -383,14 +384,17 @@ export function MoveDialog({
       .then((asks) => {
         if (live) setAsksGrant({ key: toKey, asks });
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        if (live) setAsksGrant({ key: toKey, refused: String(err) });
+      });
     return () => {
       live = false;
     };
     // The levels are read by their keys.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [levelKey(from), toKey]);
-  const grantAsked = asksGrant !== undefined && asksGrant.key === toKey ? asksGrant.asks : undefined;
+  }, [levelKey(from), toKey, askedAgain]);
+  const grantRead = asksGrant !== undefined && asksGrant.key === toKey ? asksGrant : undefined;
+  const grantAsked = grantRead?.asks;
   const others = levels.filter((one) => !sameLevel(one.level, from));
   const ready = !busy && to !== undefined && grantAsked !== undefined;
   const fromLabel = labelOf(levels, from);
@@ -453,6 +457,14 @@ export function MoveDialog({
           )}
         </>
       )}
+      {grantRead?.refused !== undefined && (
+        <p className="trouble" data-testid="skill-move-grant-unread">
+          {`purlis could not tell whether this move asks where it reaches: ${grantRead.refused} `}
+          <Button size="sm" onPress={() => setAskedAgain((n) => n + 1)}>
+            Try again
+          </Button>
+        </p>
+      )}
       <Refused refused={refused} testid="skill-move-refused" />
       {to !== undefined && (
         <>
@@ -496,13 +508,12 @@ export function DeleteDialog({
 }) {
   const name = skill.name;
   const { users, refused: unread, again } = useUsers(plane, level, name);
+  const chats = users === undefined ? [] : chatsOf(users);
   const lines =
     users === undefined
       ? undefined
       : [
-          chatsOf(users).length === 0
-            ? "No chat gets it now."
-            : `${upperFirst(chatsOf(users).join(", "))}.`,
+          chats.length === 0 ? "No chat gets it now." : `${upperFirst(chats.join(", "))}.`,
           ...(users.personas.length === 0
             ? []
             : [

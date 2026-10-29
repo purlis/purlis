@@ -186,9 +186,7 @@ describe("the Skill studio's changes", () => {
       }),
     );
     const notice = await screen.findByRole("status", { name: /Skill renamed/ });
-    expect(notice).toHaveTextContent(
-      "deploy is ship now, with the 1 persona and 1 skill that name it.",
-    );
+    expect(notice).toHaveTextContent("deploy is ship now.");
     expect(screen.queryByRole("dialog", { name: "Rename deploy" })).toBeNull();
     await user.click(within(notice).getByRole("button", { name: "Undo" }));
     await waitFor(() =>
