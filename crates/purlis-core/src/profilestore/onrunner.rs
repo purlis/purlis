@@ -58,6 +58,13 @@ pub struct Kept {
 /// the link carries, since their bytes cross as base64.
 pub const MOST_SETTINGS_BYTES: usize = purlis_session_protocol::link::MOST_CONTROL_FRAME_BYTES / 2;
 
+/// **The most settings files sent with a profile** (#3448).
+pub const MOST_SETTINGS_FILES: usize = 2048;
+
+/// What frames one settings file on the wire beside its path and bytes, counted against
+/// [`MOST_SETTINGS_BYTES`]: its JSON keys, quotes and commas.
+const FRAMING_BYTES: usize = 32;
+
 impl Kept {
     /// **The desktop's profile `record`, as its runners keep it**, or why it is not kept on a
     /// runner: one signed in by a key, a cloud's credentials or a local model, and one of a
@@ -119,14 +126,39 @@ impl Kept {
 /// sandbox-only mark and pin, and, where [`Kept::settings_in`] names its settings folder, the
 /// settings files a made profile imports, read as an import reads them (#3448): never a sign-in
 /// or a file named like a credential, and at most [`MOST_SETTINGS_BYTES`], or why not.
+///
+/// **Each settings file is sent with no sign-in in it** ([`super::sent::without_credentials`],
+/// D-3448-8): every environment block, and every setting that names or runs a credential source,
+/// is removed, and a settings file that does not parse is refused in words. What is sent, each
+/// file's path and bytes with what frames them, is held to [`MOST_SETTINGS_BYTES`] and
+/// [`MOST_SETTINGS_FILES`].
 pub fn to_send(kept: &Kept) -> Result<purlis_session_protocol::session::ProfileToKeep, String> {
     let settings = match &kept.settings_in {
-        Some(folder) => Some(
-            super::made::settings_read(&kept.harness, folder, MOST_SETTINGS_BYTES)?
-                .into_iter()
-                .map(|(path, bytes)| purlis_session_protocol::session::SettingsFile { path, bytes })
-                .collect(),
-        ),
+        Some(folder) => {
+            let read = super::made::settings_read(&kept.harness, folder, MOST_SETTINGS_BYTES)?;
+            if read.len() > MOST_SETTINGS_FILES {
+                return Err(format!(
+                    "its settings in {} are more than {MOST_SETTINGS_FILES} files, more than a \
+                     link to a runner carries at once",
+                    folder.display()
+                ));
+            }
+            let mut sent = Vec::with_capacity(read.len());
+            let mut size = 0;
+            for (path, bytes) in read {
+                let bytes = super::sent::without_credentials(&kept.harness, &path, &bytes)?;
+                size += bytes.len() + path.len() + FRAMING_BYTES;
+                sent.push(purlis_session_protocol::session::SettingsFile { path, bytes });
+            }
+            if size > MOST_SETTINGS_BYTES {
+                return Err(format!(
+                    "its settings in {} are larger than a link to a runner carries ({} KiB)",
+                    folder.display(),
+                    MOST_SETTINGS_BYTES / 1024
+                ));
+            }
+            Some(sent)
+        }
         None => None,
     };
     Ok(purlis_session_protocol::session::ProfileToKeep {

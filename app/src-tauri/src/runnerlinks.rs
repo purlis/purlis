@@ -404,17 +404,24 @@ pub type ProfilesKept = Vec<Result<purlis_session_protocol::session::ProfileStan
 /// before 1.43, which is sent nothing and runs chats on profiles of its own.
 pub fn keep_profiles(
     to: &ToARunner,
-    profiles: Vec<purlis_session_protocol::session::ProfileToKeep>,
+    profiles: Vec<purlis_core::profilestore::onrunner::Kept>,
 ) -> Result<Option<ProfilesKept>, String> {
     on_one_link(to, async |linked| match linked {
         Ok(client) if !keeps_profiles(client.version()) => Ok(None),
         Ok(client) => {
             let version = client.version();
             let mut said = Vec::with_capacity(profiles.len());
-            for profile in profiles {
+            for kept in &profiles {
+                let profile = match for_a_runner_of(version, kept) {
+                    Ok(profile) => profile,
+                    Err(why) => {
+                        said.push(Err(why));
+                        continue;
+                    }
+                };
                 said.push(
                     client
-                        .keep_profile(for_a_runner_of(version, profile))
+                        .keep_profile(profile)
                         .await
                         .map_err(|why| match why.refusal() {
                             Some(refused) => said_by_the_runner(&refused.why),
@@ -428,16 +435,19 @@ pub fn keep_profiles(
     })
 }
 
-/// `profile`, as a runner speaking `version` is sent it: with its settings only from 1.50
-/// (#3448), since a runner before ignores them; one before keeps the settings it has.
+/// **`kept`, as a runner speaking `version` is sent it**: with its settings, read now
+/// ([`purlis_core::profilestore::onrunner::to_send`]), only from 1.50 (#3448). A runner before
+/// ignores them, so none is read for it, and nothing about them can refuse a chat that starts on
+/// it: it keeps the settings it has, as before. `Err`, in words, where its settings cannot be
+/// sent to a runner of 1.50 or later.
 pub fn for_a_runner_of(
     version: purlis_session_protocol::version::Version,
-    mut profile: purlis_session_protocol::session::ProfileToKeep,
-) -> purlis_session_protocol::session::ProfileToKeep {
+    kept: &purlis_core::profilestore::onrunner::Kept,
+) -> Result<purlis_session_protocol::session::ProfileToKeep, String> {
     if version < purlis_session_protocol::session::KNOWS_PROFILE_SETTINGS {
-        profile.settings = None;
+        return Ok(kept.clone().into());
     }
-    profile
+    purlis_core::profilestore::onrunner::to_send(kept)
 }
 
 /// Whether a runner speaking `version` keeps a desktop's profiles (`keep_profile`, 1.43).

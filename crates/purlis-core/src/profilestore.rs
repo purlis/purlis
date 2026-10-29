@@ -522,6 +522,7 @@ pub use made::*;
 pub mod onrunner;
 pub mod pin;
 pub mod sandbox_only;
+pub mod sent;
 pub mod sign_in;
 
 #[cfg(test)]

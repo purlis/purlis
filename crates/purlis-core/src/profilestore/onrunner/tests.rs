@@ -721,10 +721,9 @@ fn a_profiles_settings_reach_the_runner_that_keeps_it_and_no_credential_file_doe
             PathBuf::from("settings.json"),
         ]
     );
-    assert_eq!(
-        fs::read_to_string(config.join("settings.json")).unwrap(),
-        "{\"theme\":\"dark\"}"
-    );
+    let settings: serde_json::Value =
+        serde_json::from_slice(&fs::read(config.join("settings.json")).unwrap()).unwrap();
+    assert_eq!(settings, serde_json::json!({"theme": "dark"}));
     assert_eq!(
         fs::read_to_string(config.join("agents/review.md")).unwrap(),
         "Review."
@@ -882,4 +881,55 @@ fn a_runner_refuses_a_settings_file_named_like_a_credential_or_outside_the_list(
             "{path}: nothing written"
         );
     }
+}
+
+/// **No sign-in rides inside a settings file to the runner** (D-3448-8): a subscription's token
+/// and a key in Claude Code's `env`, and a helper that prints one, are not in what the runner
+/// keeps, and the rest of the settings is.
+#[test]
+fn a_token_in_a_settings_files_env_never_reaches_the_runner() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    fs::write(
+        desktop.folders.config.join("settings.json"),
+        r#"{"theme":"dark","apiKeyHelper":"/bin/key","env":{"CLAUDE_CODE_OAUTH_TOKEN":"oauth-of-the-desktop","ANTHROPIC_API_KEY":"key-of-the-desktop"}}"#,
+    )
+    .unwrap();
+
+    let sent = to_send(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+    let kept = kept_with_its_settings(dir.path(), &desktop);
+
+    let on_the_wire = format!(
+        "{:?}",
+        sent.settings.as_ref().map(|s| s
+            .iter()
+            .map(|f| String::from_utf8_lossy(&f.bytes).into_owned())
+            .collect::<Vec<_>>())
+    );
+    assert!(!on_the_wire.contains("desktop"), "{on_the_wire}");
+    let there = fs::read_to_string(kept.folders.config.join("settings.json")).unwrap();
+    assert!(!there.contains("of-the-desktop"), "{there}");
+    assert!(!there.contains("apiKeyHelper"), "{there}");
+    assert!(there.contains("\"theme\""), "{there}");
+}
+
+/// A settings file the harness could not read refuses the profile's settings in words, and the
+/// runner keeps none of them.
+#[test]
+fn a_settings_file_that_does_not_parse_is_refused_and_nothing_is_sent() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_signed_in_desktop_profile(dir.path());
+    fs::write(
+        desktop.folders.config.join("settings.json"),
+        "{\"env\": {\"CLAUDE_CODE_OAUTH_TOKEN\": \"oauth-of-the-desktop",
+    )
+    .unwrap();
+
+    let refused = to_send(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap_err();
+
+    assert!(
+        refused.contains("not one its harness can read"),
+        "{refused}"
+    );
+    assert!(!refused.contains("of-the-desktop"), "{refused}");
 }

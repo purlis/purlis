@@ -888,6 +888,7 @@ pub fn settings_read(
     let (_, allowed) = harness_of(kind)?;
     let from = settings_dest(allowed, config);
     let mut files = Vec::new();
+    let mut copied = Copied::default();
     let read = (|| {
         let Ok(source) = from.canonicalize() else {
             return Ok(());
@@ -901,7 +902,6 @@ pub fn settings_read(
             Err(rustix::io::Errno::NOENT | rustix::io::Errno::NOTDIR) => return Ok(()),
             Err(e) => return Err(io::Error::from(e)),
         };
-        let mut copied = Copied::default();
         let mut place = Place {
             into: Sink::Memory {
                 files: &mut files,
@@ -928,6 +928,11 @@ pub fn settings_read(
         }
         Ok(())
     })();
+    // What was left out is said in the log, so a setting missing on a runner can be told apart
+    // from one never written.
+    for why in &copied.skipped {
+        tracing::info!("purlis: a setting is not sent to a runner: {why}");
+    }
     match read {
         Ok(()) => Ok(files),
         Err(e) if e.kind() == io::ErrorKind::FileTooLarge => Err(format!(
@@ -1007,6 +1012,13 @@ pub fn settings_kept(
             crate::shown::short(bad)
         ));
     }
+    // Whatever sent them, no sign-in is kept in them here (D-3448-8).
+    let checked = files
+        .iter()
+        .map(|(path, bytes)| {
+            super::sent::without_credentials(&record.harness, path, bytes).map(|b| (path, b))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let dest = settings_dest(allowed, &record.folders.config);
     // A made profile is written within its own folder; an adopted one within its settings
     // folder, which is made where it is missing and never a link.
@@ -1029,7 +1041,7 @@ pub fn settings_kept(
         for one in allowed.files.iter().chain(allowed.folders) {
             remove_within(&folder, &dest.join(one))?;
         }
-        for (path, bytes) in files {
+        for (path, bytes) in &checked {
             let to = dest.join(path);
             if let Some(parent) = to.parent() {
                 private_dirs_within(&folder, parent)?;

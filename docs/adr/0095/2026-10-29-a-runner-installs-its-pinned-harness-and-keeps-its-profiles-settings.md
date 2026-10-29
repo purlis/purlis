@@ -3,8 +3,8 @@
 **Built by #3446 and #3448**, under spec #2041 (*"A profile pins its harness version and the
 runner installs exactly it"*; a move sends *"the profile's settings with it"*). It amends the
 2026-10-27 amendment's items 1 and 7, which left both to these tickets. Everything here is
-**decided in implementation, to be confirmed** (D-3446-1 to D-3446-7 and D-3448-1 to D-3448-7 in
-the pull request). §3 stands: no sign-in is copied between devices.
+**decided in implementation, to be confirmed** (D-3446-1 to D-3446-8 and D-3448-1 to D-3448-9 in
+the pull request; D-3448-8 is the steward's). §3 stands: no sign-in is copied between devices.
 
 1. **A profile's settings reach the runner that keeps it** (session protocol 1.50,
    `keep_profile`'s `settings`). At a chat's start or move on a pool, the desktop sends the
@@ -20,6 +20,23 @@ the pull request). §3 stands: no sign-in is copied between devices.
    any**, by the same check as item 2 of the 2026-10-27 amendment, and nothing is read for any
    other. Item 1's *no setting has a field in what is sent* no longer holds; *no file of the
    desktop's sign-in, and no vault reference, has a field* still does.
+   - **No sign-in rides inside a settings file** (D-3448-8, the steward's ruling of 2026-10-29).
+     Each harness's own settings file is sent with every environment block removed whole
+     (Claude Code's `env`, a Codex server's `env` and its shell policy's `set`, an opencode
+     server's `environment`), whatever its variables are called, and with every setting that
+     names or runs a credential source (Claude Code's `apiKeyHelper`, `awsCredentialExport`,
+     `awsAuthRefresh`, `gcpAuthRefresh` and `otelHeadersHelper`; Codex's bearer tokens, the
+     variables that name one, a provider's `env_key` and `auth`; opencode's `apiKey`; and the
+     headers any of them sends). A value a chat needs belongs in a vault, and reaches a runner
+     chat as vault values do. A settings file that does not parse is refused in words, and
+     nothing is sent. The runner removes the same again before it keeps them.
+   - **Unlike vault values, settings are kept on the runner.** A vault value crosses once per
+     run and is never kept there; a profile's settings are written to the runner's profile
+     folder on its home volume, and stay until the next start or move replaces them, or the
+     pool's runner is removed with its home volume. Removing the profile on the desktop does not
+     yet remove it from its runners.
+   - Only a runner of 1.50 or later has the settings read for it, so a settings folder that
+     could not be sent refuses no chat on an older one.
 2. **A runner chat runs exactly the version its profile pins, installed on the runner.** A
    profile a runner keeps for its desktop with a pin runs that version, never the harness on
    `PATH`. It is installed as a chat first starts on it, and never for a profile no chat starts

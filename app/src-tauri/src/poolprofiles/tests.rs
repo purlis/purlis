@@ -31,6 +31,35 @@ fn a_pool_not_shown_to_be_owned_is_sent_nothing_and_is_its_own_to_say() {
     assert_eq!(said, Ok(None));
 }
 
+/// **A pool not shown to be owned is sent no setting, and none is read** (#3448): a profile
+/// whose settings could not be read at all (larger than a link carries) is the runner's own to
+/// say there, so nothing of its folder was read.
+#[test]
+fn a_pool_not_shown_to_be_owned_is_sent_no_setting_and_none_is_read() {
+    let config = tempfile::tempdir().unwrap();
+    let settings = tempfile::tempdir().unwrap();
+    std::fs::write(
+        settings.path().join("settings.json"),
+        vec![b' '; onrunner::MOST_SETTINGS_BYTES + 1],
+    )
+    .unwrap();
+    let kept = onrunner::Kept {
+        settings_in: Some(settings.path().to_path_buf()),
+        ..work()
+    };
+    assert!(onrunner::to_send(&kept).is_err(), "reading it would refuse");
+
+    let said = keep_on_as(
+        Err("DOCKER_HOST names tcp://builds:2375".to_owned()),
+        &config.path().join("nowhere"),
+        "builds",
+        &kept,
+        Waking::Yes,
+    );
+
+    assert_eq!(said, Ok(None));
+}
+
 /// The same keep on a pool shown to be the person's own goes on to the pool, and is refused
 /// where this machine keeps no such pool.
 #[test]

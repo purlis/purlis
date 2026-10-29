@@ -521,7 +521,9 @@ fn ready_given(
     // given (charter-app#134). A bare word handed to a pty is resolved against whatever
     // `PATH` the app itself was started with — which for a Finder-launched `.app` is
     // `/usr/bin:/bin:/usr/sbin:/sbin` and holds no harness.
-    let mut argv = match pinned_program(profile, &home)? {
+    let pinned = pinned_program(profile, &home)?;
+    let runs_its_pin = pinned.is_some();
+    let mut argv = match pinned {
         Some(argv) => argv,
         None => crate::programs::resolve_argv(&profiles::expanded_command(profile, &home))
             .map_err(|gone| format!("{} Nothing was started.", gone.said()))?,
@@ -535,6 +537,11 @@ fn ready_given(
         start.show_footer,
         &standing,
     );
+    // A runner's pinned version is the one it runs (#3446): Claude Code's own updater, which
+    // would fetch another version beside it, is kept off.
+    if runs_its_pin && profile.kind == "claude" {
+        env.push(("DISABLE_AUTOUPDATER".to_owned(), "1".to_owned()));
+    }
     // What the program answered `--version`, where the sandbox's check asked it.
     let mut heard = None;
     // Ruling V87g: a sandbox binds only the harness it was compiled for, and never a program a
