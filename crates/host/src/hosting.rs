@@ -148,6 +148,7 @@ pub trait Beside {
 }
 
 /// What a confinement's board holds now, read each time it is asked ([`Beside::reach_of`]).
+/// The same type as the core's `hostedchats::Live`, which keeps it with a chat's record.
 pub type ReachOf = Arc<dyn Fn() -> session::ReachNow + Send + Sync + 'static>;
 
 /// A host whose binary composes no start: every start is refused with a sentence.

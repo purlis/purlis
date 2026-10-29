@@ -21,9 +21,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
-
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use purlis_session_protocol::session::ReachNow;
 
@@ -48,7 +46,8 @@ pub struct Composed {
 }
 
 /// What a chat's confinement holds now, read from its board as it is asked: the hosts allowed
-/// live since the chat started, none once the confinement has ended.
+/// live since the chat started, none once the confinement has ended. The same type as the host
+/// crate's `purlis_host::ReachOf`, which hands it over.
 pub type Live = Arc<dyn Fn() -> ReachNow + Send + Sync + 'static>;
 
 /// [`Live`], kept with a chat's record.

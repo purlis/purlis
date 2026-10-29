@@ -1145,3 +1145,76 @@ async fn a_composed_chat_reads_its_confinement_as_the_window_changed_it_until_it
     until("its confinement ends", || confines.ended(NAMED)).await;
     assert_eq!(read(), ReachNow::default(), "an ended one holds nothing");
 }
+
+/// A host that composes each start by its names with [`ComposesReading`], a window linked to
+/// it holding the project, and what the host was asked to confine.
+async fn reading() -> (
+    ComposesReading,
+    StandInConfines,
+    Client,
+    tempfile::TempDir,
+    Hosting,
+) {
+    let composes = ComposesReading::default();
+    let confines = StandInConfines::default();
+    let hosting = Hosting::confining(composes.clone(), confines.clone(), StandIns::default());
+    let (client, _events) = linked_as(&hosting, Scope::LocalUi).await;
+    let project = tempfile::tempdir().unwrap();
+    client
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .expect("held");
+    (composes, confines, client, project, hosting)
+}
+
+/// The Allow of `pypi.example.com` for this chat, as the window sends it.
+fn allowed_pypi() -> ReachChange {
+    ReachChange::Allow {
+        host: "pypi.example.com".into(),
+        layer: Layer::Chat,
+    }
+}
+
+/// #3407: a chat's reader reads nothing of a confinement held under its id since for another
+/// program's start, whatever that one is allowed.
+#[tokio::test]
+async fn a_composed_chat_reads_nothing_of_a_confinement_another_program_holds_under_its_id_since() {
+    let (composes, confines, client, _project, _hosting) = reading().await;
+    let first = client
+        .start_program(by_its_names(Some(NAMED)))
+        .await
+        .expect("composed in the host");
+    let read = composes.0.lock().unwrap().clone().expect("it may read it");
+    client.close(&first).await.expect("closed");
+    until("its confinement ends", || confines.ended(NAMED)).await;
+
+    client
+        .start_program(by_its_names(Some(NAMED)))
+        .await
+        .expect("another start under the same id");
+    changed(&client, NAMED, allowed_pypi())
+        .await
+        .expect("allowed for the other");
+
+    assert_eq!(read(), ReachNow::default(), "the other program's");
+}
+
+/// #3407: and nothing of one a link made under its id since, which no program runs in.
+#[tokio::test]
+async fn a_composed_chat_reads_nothing_of_a_confinement_a_link_made_under_its_id_since() {
+    let (composes, confines, client, _project, _hosting) = reading().await;
+    let first = client
+        .start_program(by_its_names(Some(NAMED)))
+        .await
+        .expect("composed in the host");
+    let read = composes.0.lock().unwrap().clone().expect("it may read it");
+    client.close(&first).await.expect("closed");
+    until("its confinement ends", || confines.ended(NAMED)).await;
+
+    confine(&client, NAMED).await.expect("the link's own");
+    changed(&client, NAMED, allowed_pypi())
+        .await
+        .expect("allowed for the link's");
+
+    assert_eq!(read(), ReachNow::default(), "the link's");
+}
