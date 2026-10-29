@@ -339,9 +339,14 @@ impl Asks {
     }
 
     /// **The person kept `host` blocked**, from the window: what is held on it is refused now,
-    /// and so is every later connection to it, until an Allow.
+    /// and so is every later connection to it, until an Allow. The later answer wins: an
+    /// earlier live Allow of a host it covers, or that covers it, ends with it, at every scope,
+    /// as [`Self::allow`] ends a Keep blocked it covers.
     pub fn keep_blocked(&self, host: &Host) {
         let mut state = self.state();
+        state.live.retain(|(entry, _)| {
+            Host::parse(entry).is_ok_and(|allowed| !host.covers(&allowed) && !allowed.covers(host))
+        });
         if !state.blocked.contains(host) {
             state.blocked.push(host.clone());
             if state.blocked.len() > MOST_KEPT {
@@ -358,8 +363,17 @@ impl Asks {
     /// The hosts allowed live on this board, as a grant writes each, with the scope each was
     /// allowed at: what a run for the chat started now carries besides what the chat was
     /// compiled with (#1667), decided at that scope (#1708).
+    /// A host kept blocked is never among them.
     pub fn allowed_live(&self) -> Vec<(String, By)> {
-        self.state().live.clone()
+        let state = self.state();
+        state
+            .live
+            .iter()
+            .filter(|(entry, _)| {
+                Host::parse(entry).is_ok_and(|allowed| !state.blocked.contains(&allowed))
+            })
+            .cloned()
+            .collect()
     }
 
     /// **An Allow of `host` at scope `by` was removed**: what it allowed live reaches nothing
