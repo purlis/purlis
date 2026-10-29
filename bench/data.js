@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793272136922,
+  "lastUpdate": 1793273776370,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -29442,6 +29442,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7027065,
             "unit": "ms",
             "extra": "median of 5 runs: 100.874, 101.527, 101.703, 102.404, 102.591 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "85938ce65a4ebb262b2b395262ef0336433ecfe0",
+          "message": "Runners: an upstream claim on a purlis pool made directly is refused (#2055, part 1) (#3701)\n\n* Runners: an upstream claim on a purlis pool made directly is refused (#2055)\n\nThe admission policy on Claims now also matches upstream SandboxClaims and\nSandboxWarmPools. One that names a purlis pool's warm pool or template\n(purlis-pool-<pool>), made or moved there by anyone but the operator's\nservice account, is refused in the policy's words: a runner from a pool is\nhad only through a Claim, so the use check and the requester stamp always\napply. Upstream objects that are not a pool's are left alone.\n\nRefs #2055\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n* Runners: nor is an upstream object moved off a purlis pool's objects (#2055)\n\nOn an update, the policy now refuses a SandboxClaim or SandboxWarmPool\nwhose reference moves onto or off a purlis-pool-* object, unless the\noperator's service account makes the change. The kind test also moves an\nupstream claim onto a purlis warm pool, and the operator's own upstream\nclaim and warm pool off theirs. The docs state the usual Kubernetes\nboundary: whoever may act as the operator's service account, or change\nthe policy, passes it.\n\nRefs #2055\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M61C7XFQ05J7KX9MTZN41NZR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T10:46:59Z",
+          "tree_id": "d02e7c90fc0639cc8741a513cb450cd5b74d235b",
+          "url": "https://github.com/purlis/purlis/commit/85938ce65a4ebb262b2b395262ef0336433ecfe0"
+        },
+        "date": 1793273770426,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6545194999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.641, 0.653, 0.655, 0.668, 0.680 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.805304500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.294, 16.333, 16.805, 16.909, 16.973 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.918561,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.468, 101.772, 101.919, 102.097, 102.512 ms"
           }
         ]
       }
