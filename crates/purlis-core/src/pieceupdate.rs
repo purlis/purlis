@@ -202,7 +202,10 @@ impl Here {
         let clone = worktree::clone_dir(root, ws, repo).map_err(|e| e.to_string())?;
         let git_dir = PathBuf::from(ran(&clone, &["rev-parse", "--absolute-git-dir"])?);
         let own = std::fs::canonicalize(clone.join(".git")).ok();
-        if own.is_none() || own != std::fs::canonicalize(&git_dir).ok() {
+        if !worktree::is_own_git_dir(&clone.join(".git"))
+            || own.is_none()
+            || own != std::fs::canonicalize(&git_dir).ok()
+        {
             return Err(format!(
                 "{repo} keeps its git directory somewhere other than its own `.git`, so purlis \
                  does not update it for a chat: update it from your own terminal"
@@ -804,6 +807,14 @@ fn abort(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
     let label = &here.label;
     if !stopped_in(here).is_some_and(|stopped| stopped.operation == Some(Operation::Rebase)) {
         return Err(format!("no rebase is stopped in {label}"));
+    }
+    // Only a rebase purlis started for an update, as `--continue` holds it: one the person
+    // started is theirs to finish or abort.
+    if Record::read(&here.git_dir).is_none() {
+        return Err(format!(
+            "the rebase stopped in {label} is not one purlis started: finish or abort it from \
+             your own terminal"
+        ));
     }
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--abort"]);

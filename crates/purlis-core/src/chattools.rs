@@ -523,12 +523,13 @@ pub static TOOLS: [Tool; 26] = [
     },
     Tool {
         name: WORKTREE_UPDATE,
-        description: "Bring the clone or branch folder this chat stands in up to date, as \
-                      `purlis worktree update` there does: the app fetches, then fast-forwards \
-                      or rebases the folder's branch onto its remote (a clone) or its base (a \
-                      branch folder). Refused with uncommitted changes, or where it would \
-                      overwrite a file that is not committed. A conflict stops it and names the \
-                      files: resolve them, then call it with step continue, or abort.",
+        description: "Bring the clone, branch folder or project root this chat stands in up \
+                      to date, as `purlis worktree update` there does: the app fetches, then \
+                      fast-forwards or rebases the folder's branch onto its remote (a clone), \
+                      its base (a branch folder), or runs the window's Update (the root). \
+                      Refused with uncommitted changes, or where it would overwrite a file that \
+                      is not committed. A conflict stops it and names the files: resolve them, \
+                      then call it with step continue, or abort.",
         schema: || {
             json!({
                 "type": "object",

@@ -118,10 +118,23 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         GitWork::WorktreeUpdate { repo, piece, .. } => format!("worktree update {repo} {piece}"),
         GitWork::WorktreePush { repo, piece, .. } => format!("worktree push {repo} {piece}"),
         GitWork::CloneUpdate { repo, .. } => format!("worktree update {repo}"),
+        GitWork::RootUpdate {} => "worktree update at the project root".to_owned(),
     };
     let isolation = isolation();
-    let answer =
-        purlis_core::gitbroker::answer(held.root(), &asker, ask, &isolation, chrono::Utc::now());
+    let run =
+        || purlis_core::gitbroker::answer(held.root(), &asker, ask, &isolation, chrono::Utc::now());
+    let root_update = matches!(ask.work, GitWork::RootUpdate {});
+    // The root's update is the window's own Update (#3831), fetched as the window fetches it:
+    // its sign-in, offered to the remote recorded for the project alone.
+    let answer = if root_update {
+        crate::forgeaccounts::window_git(run)
+    } else {
+        run()
+    };
+    // The tree moved under every reader, as after the window's own Update.
+    if root_update && matches!(answer, Answer::Said { code: 0, .. }) {
+        held.tree_moved();
+    }
     match &answer {
         Answer::Said { code, .. } => tracing::info!(
             "purlis: chat {} asked the app to {what} in workspace '{}'; it ran, exit {code}",

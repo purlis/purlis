@@ -795,3 +795,47 @@ fn a_clone_update_for_a_sandboxed_chat_that_would_write_a_denied_file_does_not_s
     assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), before);
     assert!(!w.clone.join(".vscode").exists());
 }
+
+#[test]
+fn an_abort_is_only_of_a_rebase_purlis_started_never_of_the_persons_own() {
+    // #3831: `--abort` undoes the update purlis started for the chat; a rebase the person
+    // started in their own terminal is theirs to finish.
+    purlis_core::unsteered!();
+    let w = world();
+    write(&w.clone, "shared.txt", "a\nmine\nc\n");
+    git(&w.clone, &["commit", "-q", "-am", "mine"]);
+    w.they_commit("shared.txt", "a\ntheirs\nc\n");
+    git(&w.clone, &["fetch", "-q", "origin"]);
+    // The person's own rebase, stopped on the conflict.
+    let mut person = support::unsigned();
+    person
+        .args(["-c", "user.name=t", "-c", "user.email=t@e.invalid", "-C"])
+        .arg(&w.clone)
+        .args(["rebase", "origin/main"])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null");
+    let theirs = purlis_core::forklock::output(&mut person).expect("git runs");
+    assert!(
+        !theirs.status.success(),
+        "the person's rebase stops on the conflict"
+    );
+    let git_dir = PathBuf::from(out(&w.clone, &["rev-parse", "--absolute-git-dir"]));
+    assert!(git_dir.join("rebase-merge").is_dir());
+
+    let (code, said) = update_clone(&w, &UpdateStep::Abort, &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("not one purlis started"), "{said}");
+    assert!(
+        git_dir.join("rebase-merge").is_dir(),
+        "the person's rebase was aborted"
+    );
+
+    // Theirs to abort; then purlis's own update, stopped, is purlis's to abort.
+    git(&w.clone, &["rebase", "--abort"]);
+    let mine = out(&w.clone, &["rev-parse", "HEAD"]);
+    let (code, _) = update_clone(&w, &start(None), &Reach::default());
+    assert_eq!(code, 1);
+    let (code, said) = update_clone(&w, &UpdateStep::Abort, &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(out(&w.clone, &["rev-parse", "HEAD"]), mine);
+}

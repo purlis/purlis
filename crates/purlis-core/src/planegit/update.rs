@@ -91,6 +91,9 @@ pub enum Left {
     InTheWay(Vec<String>),
     /// Files the incoming commits change that purlis may not write. Nothing was started.
     Unwritable(Vec<String>),
+    /// Files the incoming commits change that the asking chat's sandbox denies it (#3831): a
+    /// project manifest, or a file a program run later loads code from. Nothing was started.
+    HeldFromChats(Vec<String>),
     /// A request mode, and commits here that an open request carries: `mine` of them.
     WaitsOnRequest {
         mine: u32,
@@ -133,6 +136,7 @@ impl Left {
             Self::Unsaved(_) => "unsaved",
             Self::InTheWay(_) => "in-the-way",
             Self::Unwritable(_) => "unwritable",
+            Self::HeldFromChats(_) => "held-from-chats",
             Self::WaitsOnRequest { .. } => "waits-on-request",
             Self::Conflict(_) => "conflict",
             Self::Unsigned(_) => "unsigned",
@@ -145,7 +149,10 @@ impl Left {
     /// The files the reason is about, where it names any.
     pub fn files(&self) -> &[String] {
         match self {
-            Self::InTheWay(files) | Self::Unwritable(files) | Self::Conflict(files) => files,
+            Self::InTheWay(files)
+            | Self::Unwritable(files)
+            | Self::HeldFromChats(files)
+            | Self::Conflict(files) => files,
             Self::NotPutBack { still, .. } => &still.files,
             Self::Stopped(stopped) => &stopped.unmerged,
             _ => &[],
@@ -213,6 +220,13 @@ impl Left {
             Self::Unwritable(files) => format!(
                 "Nothing was updated: the incoming commits change {}, which cannot be \
                  written here. Nothing was started. {AS_IT_WAS}",
+                named(files),
+            ),
+            Self::HeldFromChats(files) => format!(
+                "Nothing was updated: the incoming commits change {}, which a chat's sandbox \
+                 does not let it write (a project manifest, or a file a program run later loads \
+                 code from), so purlis does not update the project for a chat. The person \
+                 updates it with Update in the window, or in their own terminal. {AS_IT_WAS}",
                 named(files),
             ),
             Self::WaitsOnRequest { mine, url, why } => {
@@ -345,9 +359,24 @@ fn one_line(said: &str) -> String {
 /// remote recorded for it, then fast-forward, or replay the project's own commits on top.
 /// `say` hears what it is doing as it goes.
 ///
-/// For the person's own press in the window, and nothing else: it moves the working tree, so
-/// it is never run for a chat, and it holds the project's [`Claim`], so no save runs beside it.
+/// For the person's own press in the window: it moves the working tree, and it holds the
+/// project's [`Claim`], so no save runs beside it. A chat has it run by the app through
+/// [`update_for_a_chat`], judged first.
 pub fn update(root: &Path, say: Sink) -> Updated {
+    update_as(root, false, say)
+}
+
+/// [`update`], run by the app for a chat at the project root (#3831, the operator's ruling of
+/// 2026-10-29): only where the tree is clean, as for the window, and **judged before anything
+/// moves**: where the incoming commits change a file a chat's sandbox denies it (ADR 0067 §5,
+/// [`super::resolve::held_from_chats`]), nothing is started and the person updates instead. The
+/// move then runs onto the commit id that was judged, never onto what the remote-tracking
+/// branch names by the time git runs.
+pub fn update_for_a_chat(root: &Path, say: Sink) -> Updated {
+    update_as(root, true, say)
+}
+
+fn update_as(root: &Path, for_a_chat: bool, say: Sink) -> Updated {
     let Some(_claim) = Claim::of(root) else {
         return Updated::Left(Left::Busy);
     };
@@ -370,6 +399,9 @@ pub fn update(root: &Path, say: Sink) -> Updated {
     ));
     if let Err(why) = fetch_branch(root, &branch) {
         return Updated::Left(Left::NotFetched(why.trim_end_matches('.').to_string()));
+    }
+    if for_a_chat {
+        return bring_in_for_a_chat(root, &plane, &branch, say);
     }
     bring_in(
         root,
@@ -425,7 +457,59 @@ pub(super) fn bring_in(
     look_first: bool,
     say: Sink,
 ) -> Updated {
-    let got = move_onto(root, plane, branch, caller, deadline, look_first, say);
+    let theirs = format!("refs/remotes/origin/{branch}");
+    bring_in_at(
+        root, plane, branch, &theirs, caller, deadline, look_first, say,
+    )
+}
+
+/// [`bring_in`] for a chat (#3831), after the fetch: the remote-tracking branch read once as
+/// a commit id, the move from HEAD to it judged for the files a chat's sandbox denies, and the
+/// move run onto that id.
+fn bring_in_for_a_chat(root: &Path, plane: &Plane, branch: &str, say: Sink) -> Updated {
+    let theirs = format!("refs/remotes/origin/{branch}");
+    let (Some(head), Some(theirs)) = (head_of(root), commit_of(root, &theirs)) else {
+        return Updated::Left(Left::Failed(format!(
+            "purlis has no copy of the remote's `{branch}`"
+        )));
+    };
+    let changed: Vec<String> = differing(root, &head, &theirs)
+        .into_iter()
+        .map(|(_, path)| path)
+        .collect();
+    let held = super::resolve::held_from_chats(root, &changed);
+    if !held.is_empty() {
+        return Updated::Left(Left::HeldFromChats(held));
+    }
+    // No person waits on a chat's update: the forge is asked as a trigger would ask it.
+    bring_in_at(
+        root,
+        plane,
+        branch,
+        &theirs,
+        &forge::Caller::trigger(),
+        WRITE,
+        true,
+        say,
+    )
+}
+
+/// [`bring_in`], onto `theirs`: the remote-tracking branch, or the commit id a chat's update
+/// judged.
+#[allow(clippy::too_many_arguments)]
+fn bring_in_at(
+    root: &Path,
+    plane: &Plane,
+    branch: &str,
+    theirs: &str,
+    caller: &forge::Caller,
+    deadline: Duration,
+    look_first: bool,
+    say: Sink,
+) -> Updated {
+    let got = move_onto(
+        root, plane, branch, theirs, caller, deadline, look_first, say,
+    );
     if matches!(&got, Updated::Moved(moved) if !moved.by_request) {
         super::forget_replayed_push(root);
     }
@@ -433,16 +517,17 @@ pub(super) fn bring_in(
 }
 
 /// [`bring_in`]'s move itself.
+#[allow(clippy::too_many_arguments)]
 fn move_onto(
     root: &Path,
     plane: &Plane,
     branch: &str,
+    theirs: &str,
     caller: &forge::Caller,
     deadline: Duration,
     look_first: bool,
     say: Sink,
 ) -> Updated {
-    let theirs = format!("refs/remotes/origin/{branch}");
     let failed = |said: &str| Updated::Left(Left::Failed(said.to_string()));
     let Some(before) = head_of(root) else {
         return failed("the project has no commit to update from");
@@ -454,7 +539,7 @@ fn move_onto(
         return Updated::Nothing(branch.to_string());
     }
     if look_first {
-        let found = look(root, &before, &theirs);
+        let found = look(root, &before, theirs);
         if !found.in_the_way.is_empty() {
             return Updated::Left(Left::InTheWay(found.in_the_way));
         }
@@ -472,7 +557,7 @@ fn move_onto(
     };
     // Whatever stopped a move, the tree is put back, and the answer is the reason only where
     // that worked.
-    let left = |reason: Left| match put_back(root, &before, &theirs) {
+    let left = |reason: Left| match put_back(root, &before, theirs) {
         Ok(()) => Updated::Left(reason),
         Err(still) => Updated::Left(Left::NotPutBack {
             said: reason.stopped_by(),
@@ -516,7 +601,7 @@ fn move_onto(
         // Untimed: a merge checks out a tree, and a killed one leaves it half-written.
         return match git::run_untimed(
             root,
-            &["merge", "--ff-only", "--no-overwrite-ignore", &theirs],
+            &["merge", "--ff-only", "--no-overwrite-ignore", theirs],
         ) {
             Ok(run) if run.ok() => moved(0, false),
             Ok(run) => left(Left::Failed(one_line(&tail(&run)))),
@@ -530,7 +615,7 @@ fn move_onto(
         )
         .into(),
     ));
-    match rebase_onto(root, &theirs, plane.sign.value, deadline) {
+    match rebase_onto(root, theirs, plane.sign.value, deadline) {
         Rebased::Replayed => moved(mine, false),
         Rebased::Conflict(files) => left(Left::Conflict(files)),
         Rebased::Unsigned(signer) => left(Left::Unsigned(signer)),
@@ -539,6 +624,16 @@ fn move_onto(
         // Under a chat's sandbox, which the window never is: nothing was started.
         Rebased::Held(files) => Updated::Left(Left::Unwritable(files)),
     }
+}
+
+/// The commit `name` names in `root`, or `None`.
+fn commit_of(root: &Path, name: &str) -> Option<String> {
+    let spec = format!("{name}^{{commit}}");
+    git::run(root, &["rev-parse", "--verify", "-q", &spec], git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .map(|r| r.line().trim().to_string())
+        .filter(|id| !id.is_empty())
 }
 
 fn head_of(root: &Path) -> Option<String> {

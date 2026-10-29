@@ -56,7 +56,8 @@ pub enum WorktreeCommand {
     },
     /// Bring the branch folder you stand in up to its base: fetch, bring the base up to its
     /// remote, and rebase onto it. Standing in a workspace's clone, bring the clone's branch up
-    /// to the remote branch it follows: fetch, then fast-forward or rebase. Stops on a conflict
+    /// to the remote branch it follows: fetch, then fast-forward or rebase. At the project root,
+    /// run the window's Update, which moves the project whole or not at all. Stops on a conflict
     /// and names the files: resolve them, then `--continue`, or `--abort` to put the branch
     /// back. Refused with uncommitted changes, or where it would overwrite a file on disk that
     /// is not committed. In a chat the app runs it.
@@ -262,11 +263,12 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, String> {
     Ok(code)
 }
 
-/// The folder `purlis worktree update` stands in (#3831): a branch folder, or a workspace's
-/// clone itself.
+/// The folder `purlis worktree update` stands in (#3831): a branch folder, a workspace's clone
+/// itself, or the project root.
 enum Updated {
     Piece(purlis_core::worktree::Located),
     Clone { ws: String, repo: String },
+    Root,
 }
 
 impl Updated {
@@ -275,13 +277,17 @@ impl Updated {
         if let Some(at) = purlis_core::worktree::locate(root, &here.cwd) {
             return Some(Self::Piece(at));
         }
-        purlis_core::worktree::locate_clone(root, &here.cwd)
-            .map(|(ws, repo)| Self::Clone { ws, repo })
+        if let Some((ws, repo)) = purlis_core::worktree::locate_clone(root, &here.cwd) {
+            return Some(Self::Clone { ws, repo });
+        }
+        let real = |path: &std::path::Path| std::fs::canonicalize(path).ok();
+        (real(root).is_some() && real(root) == real(&here.cwd)).then_some(Self::Root)
     }
 
     /// The ask the app is handed for `step`, and the workspace it is in.
     fn work(&self, step: &purlis_core::hookwire::UpdateStep) -> (&str, GitWork) {
         match self {
+            Self::Root => ("", GitWork::RootUpdate {}),
             Self::Piece(at) => (
                 &at.workspace,
                 GitWork::WorktreeUpdate {
@@ -302,9 +308,22 @@ impl Updated {
 }
 
 /// What `update` says where it stands in no folder it updates.
-const NOT_IN_A_FOLDER: &str = "not inside a branch folder or a workspace's clone: run `purlis \
-     worktree update` from inside the one to bring up to date (`purlis worktree list` shows the \
-     branch folders)";
+const NOT_IN_A_FOLDER: &str = "not inside a branch folder or a workspace's clone, nor at the \
+     project root: run `purlis worktree update` from the one to bring up to date (`purlis \
+     worktree list` shows the branch folders)";
+
+/// What `update` says of a step the project root does not take: its update moves the project
+/// whole or puts it back, so nothing is left to go on with, and it has no base.
+const AT_THE_ROOT: &str = "at the project root, `purlis worktree update` takes no `--base`, \
+     `--continue` or `--abort`: the project is either updated whole or left exactly as it was";
+
+/// Whether `step` is one the project root takes: a plain start.
+fn root_takes(step: &purlis_core::hookwire::UpdateStep) -> bool {
+    matches!(
+        step,
+        purlis_core::hookwire::UpdateStep::Start { base: None }
+    )
+}
 
 /// `purlis worktree update`: in a chat the app started, handed to the app; elsewhere, run here.
 fn update(
@@ -316,6 +335,10 @@ fn update(
         say(purlis_core::repocmd::Say::Fail(NOT_IN_A_FOLDER.into()));
         return 1;
     };
+    if matches!(updated, Updated::Root) && !root_takes(step) {
+        say(purlis_core::repocmd::Say::Fail(AT_THE_ROOT.into()));
+        return 1;
+    }
     let (ws, work) = updated.work(step);
     let asked = crate::gitask::told(
         crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST),
@@ -336,6 +359,19 @@ fn update(
             &reach,
             say,
         ),
+        // From a terminal, the person's own: the window's Update, as they would press it.
+        Updated::Root => {
+            let updated = purlis_core::planegit::update(root, say);
+            let request = purlis_core::forge::request_words_of(root, root).request_noun();
+            let said = updated.said(request);
+            if matches!(updated, purlis_core::planegit::Updated::Left(_)) {
+                say(purlis_core::repocmd::Say::Fail(said.into()));
+                1
+            } else {
+                say(purlis_core::repocmd::Say::Done(said.into()));
+                0
+            }
+        }
     }
 }
 
@@ -350,6 +386,9 @@ pub fn update_by_the_app(
     use crate::gitask::Forwarded;
     use purlis_core::repocmd::Say;
     let updated = Updated::of(here).ok_or_else(|| NOT_IN_A_FOLDER.to_owned())?;
+    if matches!(updated, Updated::Root) && !root_takes(step) {
+        return Err(AT_THE_ROOT.to_owned());
+    }
     let (ws, work) = updated.work(step);
     let (lines, code) =
         match crate::gitask::forwarded(ws, work, crate::gitask::A_PIECE_UPDATE_TAKES_AT_MOST) {

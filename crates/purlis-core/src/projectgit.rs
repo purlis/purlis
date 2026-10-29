@@ -89,7 +89,9 @@ pub fn said(sub: &str) -> String {
          view. Leave the project's commits, pushes and fetches to it, and tell the operator \
          when something is ready to save. Read-only git (`git status`, `git log`, `git diff`) \
          works here. A workspace's clone or branch folder is another repository: run `purlis \
-         worktree update` in it, and the app brings it up to its remote for this chat."
+         worktree update` in it, and the app brings it up to its remote for this chat. The \
+         project itself is brought up to date by the operator's Update in the window, or by \
+         `purlis worktree update` from a chat at the project root."
     )
 }
 

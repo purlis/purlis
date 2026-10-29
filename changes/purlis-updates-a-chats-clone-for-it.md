@@ -1,8 +1,10 @@
 ### Added
 
-- **purlis brings a sandboxed chat's clone up to date for it.** `purlis worktree update`, run
-  in a workspace's clone, fetches and fast-forwards or rebases it, with `--continue` and
-  `--abort` after a conflict, as it already did for a branch folder. In a chat the app runs it
-  without asking, from the command or the new `worktree_update` tool. It refuses uncommitted
-  changes and any move that would overwrite a file that is not committed. The refusals that
-  sent a chat's `git pull` to the person now name it (#3831).
+- **purlis brings a sandboxed chat's clone, branch folder or project root up to date for
+  it.** `purlis worktree update` now works in a workspace's clone as it did in a branch
+  folder. It fetches, then fast-forwards or rebases, with `--continue` and `--abort` after a
+  conflict. At the project root it runs the window's own Update for the chat. In a chat the
+  app runs it without asking, from the command or the new `worktree_update` tool. It refuses
+  uncommitted changes and any move that would overwrite a file that is not committed. A move
+  that would write a file the chat's sandbox denies is still left to the person. The refusals
+  that sent a chat's `git pull` to the person now name the command (#3831, #3862).

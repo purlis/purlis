@@ -1698,6 +1698,10 @@ pub enum GitWork {
     /// onto the remote branch it follows. A kind of its own, so an app that does not know it
     /// answers nothing rather than reading it as a branch folder's.
     CloneUpdate { repo: String, step: UpdateStep },
+    /// `purlis worktree update` standing at the project root (#3831, ruled 2026-10-29): the
+    /// window's own Update run for the chat, only on a clean tree, and refused where it would
+    /// write a file the chat's sandbox denies. The ask's workspace is empty and unread.
+    RootUpdate {},
     /// `purlis worktree push [--force-with-lease]` (qw387): the branch of folder
     /// `<repo>/<piece>` pushed to its remote, under its own name and nothing else.
     WorktreePush {
@@ -5103,6 +5107,7 @@ mod tests {
                 repo: "widget".to_owned(),
                 step: UpdateStep::Abort,
             },
+            GitWork::RootUpdate {},
         ] {
             let ask = Ask::Git(Box::new(GitAsk {
                 chat: 7,

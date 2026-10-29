@@ -1595,6 +1595,12 @@ pub fn locate(plane: &Path, path: &Path) -> Option<Located> {
     }
 }
 
+/// Whether `dot_git` is a clone's own git folder: a real folder, never a link to one, nor a
+/// `.git` file pointing elsewhere (#3831).
+pub fn is_own_git_dir(dot_git: &Path) -> bool {
+    std::fs::symlink_metadata(dot_git).is_ok_and(|meta| meta.file_type().is_dir())
+}
+
 /// Which workspace's clone a path stands in, as `(workspace, repo)`, or `None` for a path in no
 /// clone (#3831): `workspaces/<ws>/<repo>` or below it, where that folder holds a `.git`, and
 /// never a branch folder. Path arithmetic, as [`locate`] is; git is asked the rest by the
@@ -1610,12 +1616,7 @@ pub fn locate_clone(plane: &Path, path: &Path) -> Option<(String, String)> {
     if repo == DIR_NAME
         || !crate::contain::workspace_name_ok(ws)
         || !crate::contain::repo_name_ok(repo)
-        || workspaces
-            .join(ws)
-            .join(repo)
-            .join(".git")
-            .symlink_metadata()
-            .is_err()
+        || !is_own_git_dir(&workspaces.join(ws).join(repo).join(".git"))
     {
         return None;
     }
@@ -1745,6 +1746,24 @@ mod locate_tests {
             locate_clone(&root, &root.join("workspaces/alpha/.worktrees/thing/piece")),
             None
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_clone_whose_git_folder_is_a_link_is_no_clone() {
+        let dir = plane();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let elsewhere = root.join("elsewhere.git");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::create_dir_all(root.join("workspaces/alpha/linked")).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, root.join("workspaces/alpha/linked/.git")).unwrap();
+
+        assert_eq!(
+            locate_clone(&root, &root.join("workspaces/alpha/linked")),
+            None
+        );
+        assert!(!is_own_git_dir(&root.join("workspaces/alpha/linked/.git")));
+        assert!(is_own_git_dir(&elsewhere));
     }
 
     #[test]

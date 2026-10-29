@@ -274,6 +274,70 @@ fn a_real_conflict_is_aborted_cleanly_and_names_its_files() {
     );
 }
 
+impl Project {
+    /// [`Project::brings_in`], as the app runs it for a chat at the project root (#3831).
+    fn brings_in_for_a_chat(&self) -> Updated {
+        let plane = Settings::read(&self.root).plane;
+        bring_in_for_a_chat(&self.root, &plane, "main", &mut |_| {})
+    }
+}
+
+#[test]
+fn a_chats_update_of_a_clean_project_brings_the_remotes_commits_in() {
+    // #3831, ruled 2026-10-29: the window's own Update, run for a chat.
+    let project = Project::new();
+    project.commits("mine.md", "mine\n");
+    project.remote_commits(|root| std::fs::write(root.join("theirs.md"), "theirs\n").unwrap());
+
+    let got = project.brings_in_for_a_chat();
+
+    assert!(
+        matches!(got, Updated::Moved(Moved { replayed: 1, .. })),
+        "{got:?}"
+    );
+    assert!(project.root.join("theirs.md").is_file());
+    assert!(project.root.join("mine.md").is_file());
+    assert!(project.is_clean());
+}
+
+#[test]
+fn a_chats_update_that_would_write_a_file_its_sandbox_denies_does_not_start() {
+    let project = Project::new();
+    project.remote_commits(|root| {
+        std::fs::create_dir_all(root.join(".vscode")).unwrap();
+        std::fs::write(root.join(".vscode/tasks.json"), "{}\n").unwrap();
+        std::fs::write(root.join("theirs.md"), "theirs\n").unwrap();
+    });
+    let before = project.as_it_is();
+
+    let got = project.brings_in_for_a_chat();
+
+    assert_eq!(
+        got,
+        Updated::Left(Left::HeldFromChats(vec![".vscode/tasks.json".into()]))
+    );
+    assert_eq!(project.as_it_is(), before, "nothing moved");
+    let said = got.said("pull request");
+    assert!(said.contains("`.vscode/tasks.json`"), "{said}");
+    assert!(said.contains("Update in the window"), "{said}");
+    // The window's own Update brings the same commits in.
+    let (got, said) = project.brings_in(true);
+    assert!(matches!(got, Updated::Moved(_)), "{got:?} {said:?}");
+}
+
+#[test]
+fn a_chats_update_of_a_project_with_unsaved_work_is_refused_before_anything_is_fetched() {
+    let project = Project::new();
+    project.remote_commits(|root| std::fs::write(root.join("theirs.md"), "theirs\n").unwrap());
+    std::fs::write(project.root.join("new.md"), "not committed\n").unwrap();
+    let before = project.as_it_is();
+
+    let got = update_for_a_chat(&project.root, &mut |_| {});
+
+    assert_eq!(got, Updated::Left(Left::Unsaved(1)));
+    assert_eq!(project.as_it_is(), before, "nothing moved, nothing stashed");
+}
+
 #[test]
 fn a_project_with_unsaved_work_is_never_touched_and_is_told_to_save_first() {
     let project = Project::new();
@@ -508,6 +572,7 @@ fn every_reason_says_whether_the_project_is_as_it_was() {
         Left::OutOfTime(120),
         Left::Unsigned("no key".into()),
         Left::Unwritable(vec!["a.md".into()]),
+        Left::HeldFromChats(vec!["a.md".into()]),
     ] {
         assert!(left.as_it_was());
         assert!(
