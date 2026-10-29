@@ -77,7 +77,8 @@ impl Downloads {
 
     /// Download `guid` came to `received` bytes, of `total` where that is not 0, and is now in
     /// the engine's `state`. Answers it to be discarded as it first passes `limits`' most bytes,
-    /// for itself or with the browser's others. What purlis discarded stays said so.
+    /// for itself or with the browser's others. What purlis discarded stays said so, and is
+    /// answered to be discarded again should the engine still finish it.
     pub(super) fn moved(
         &mut self,
         guid: &str,
@@ -97,7 +98,12 @@ impl Downloads {
         let held = others.saturating_add(received);
         one.total = (total > 0).then_some(total);
         let discard = match one.state {
-            DownloadState::TooLarge => None,
+            // Cut already; but the engine may finish it before the cancel reaches it, and the
+            // file it then writes goes too.
+            DownloadState::TooLarge => (state == "completed").then(|| Discard {
+                guid: guid.to_owned(),
+                going: false,
+            }),
             _ if received > limits.most_download_bytes
                 || held > limits.most_held_bytes
                 || one

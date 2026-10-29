@@ -247,6 +247,44 @@ fn a_download_past_the_most_bytes_has_its_file_removed_even_once_it_is_done() {
     assert!(engine.sent("Browser.cancelDownload").is_empty());
 }
 
+/// The engine finishes a download purlis has already cut, its cancel too late to stop it: the
+/// file it then writes goes too.
+#[test]
+fn a_download_cut_while_going_that_the_engine_still_finishes_has_its_file_removed() {
+    let held = tempfile::tempdir().unwrap();
+    let (browser, engine) = browser_with(Limits {
+        most_download_bytes: 1000,
+        ..limits()
+    });
+    browser.hold_downloads_in(held.path()).unwrap();
+    began(&engine, "GUID-13", "https://example.com/big", "big");
+    progress(&engine, "GUID-13", 2000, 0, "inProgress");
+    let start = Instant::now();
+    while engine.sent("Browser.cancelDownload").is_empty()
+        && start.elapsed() < Duration::from_secs(5)
+    {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(engine.sent("Browser.cancelDownload").len(), 1);
+    // The engine had already written the last of it as the cancel came.
+    std::fs::write(held.path().join("GUID-13"), vec![0u8; 3000]).unwrap();
+    progress(&engine, "GUID-13", 3000, 3000, "completed");
+    let start = Instant::now();
+    while held.path().join("GUID-13").exists() && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !held.path().join("GUID-13").exists(),
+        "the file the engine finished went"
+    );
+    let listed = listed_once(&browser, |_| true);
+    assert_eq!(
+        listed[0].state,
+        DownloadState::TooLarge,
+        "still said too large"
+    );
+}
+
 #[test]
 fn a_browser_whose_engine_refuses_its_downloads_folder_is_refused_too() {
     let (browser, engine) = browser();
