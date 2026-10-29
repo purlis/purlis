@@ -228,19 +228,36 @@
   background-color: var(--surface-hover);
 }
 
-/* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves. */
+/* Unavailable: its words in the faint tier, on its own ground and edge, so nothing moves. Its
+   line goes faint with its title, so the description never reads louder than the name, and what
+   follows the title (a badge, which draws its own colours) is dimmed with them. */
 [data-scope="card"][data-part="pressable"][data-disabled] {
   color: var(--text-faint);
+}
+
+[data-scope="card"][data-part="pressable"][data-disabled] > [data-part="line"] {
+  color: var(--text-faint);
+}
+
+[data-scope="card"][data-part="pressable"][data-disabled] [data-part="more"] {
+  opacity: 0.45;
 }
 
 [data-scope="card"][data-part="press"][data-disabled] {
   cursor: default;
 }
 
-/* The ring, around the whole card. */
+/* The ring, around the whole card: outside a door, as a control's is. */
 [data-scope="card"][data-part="press"][data-focus-visible]::after {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset);
+}
+
+/* A pick's ring sits inside it, as a row's does: picks stand in a list that scrolls, which would
+   clip a ring drawn outside (`theme/geometry.css`, `--focus-ring-inset`). */
+[data-scope="card"][data-part="pressable"][data-variant="pick"]
+  > [data-part="press"][data-focus-visible]::after {
+  outline-offset: var(--focus-ring-inset);
 }
 
 /* Its mark, in the accent: the only colour on a page of doors, so the eye finds them first. */
@@ -257,9 +274,11 @@
   color: inherit;
 }
 
-/* What follows its title (a badge): laid out as the button's own items. */
+/* What follows its title (a badge): its own items, in a row, beside the title. */
 [data-scope="card"][data-part="more"] {
-  display: contents;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 /* Its line: what it does, in the secondary tier. */

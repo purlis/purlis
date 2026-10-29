@@ -43,7 +43,12 @@ export interface CardButtonProps
   line?: ReactNode;
   /** A mark before the title, in the accent: the door's icon. */
   mark?: ReactNode;
-  /** What follows its title on the button, and in its name: a badge. */
+  /**
+   * What follows its title on the button, and in its name: a badge. **Words and marks only,
+   * never a link or another button**: it is drawn inside the card's one button, whose `::after`
+   * covers the card, so anything interactive in it would be nested in a button (axe's
+   * `nested-interactive`) and could never be pressed on its own.
+   */
   children?: ReactNode;
   /** A place for it in its view: margin, width, flex, order. Never a look. */
   className?: string;

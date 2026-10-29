@@ -123,6 +123,11 @@ describe("your repos (#1818)", () => {
     await screen.findByRole("list", { name: "Your repos" });
     expect(rows()).toEqual(["acme/team-project purlis project", "acme/api", "octocat/dots"]);
     expect(screen.getAllByText("purlis project")).toHaveLength(1);
+    // Each row is described by its own forge and the account it was listed as.
+    for (const path of ["acme/team-project", "acme/api", "octocat/dots"])
+      expect(
+        screen.getByRole("button", { name: new RegExp(`^${path}`) }),
+      ).toHaveAccessibleDescription("github.com · octocat");
   });
 
   it("searches by name and owner, and says what to do when nothing matches", async () => {
@@ -222,6 +227,9 @@ describe("your repos (#1818)", () => {
     expect(forges).toHaveTextContent("1 repo on gitlab.com as jdoe.");
     expect(within(forges).getByRole("button", { name: "Sign in again…" })).toBeInTheDocument();
     expect(rows()).toEqual(["grp/api"]);
+    expect(screen.getByRole("button", { name: "grp/api" })).toHaveAccessibleDescription(
+      "gitlab.com · jdoe",
+    );
 
     const asked = forge.lists();
     forge.next(LISTED);

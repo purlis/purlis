@@ -352,9 +352,20 @@ function Picks() {
     { name: "purlis", owner: "purlis", project: true },
     { name: "website", owner: "purlis", project: false },
   ];
+  // The list scrolls as the Get page's does (`.repo-picks`), with no padding of its own, so the
+  // picture shows a pick's ring whole where a scroller would clip one drawn outside it.
   return (
     <OnAPanel>
-      <ul aria-label="Your repos" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+      <ul
+        aria-label="Your repos"
+        style={{
+          maxBlockSize: "14rem",
+          overflowY: "auto",
+          margin: 0,
+          padding: 0,
+          listStyle: "none",
+        }}
+      >
         {repos.map(({ name, owner, project }) => (
           <li key={name}>
             <CardButton
@@ -378,7 +389,8 @@ function Picks() {
 
 /**
  * **The picks** (#3655): Tab reaches each repo by the words it shows, described by its forge;
- * Enter gets one, and the other is unavailable while it comes, out of the tab sequence.
+ * Enter gets one, and the other is unavailable while it comes, out of the tab sequence. They
+ * stand in a list that scrolls, as on the Get page, and the focused one's ring is inside it.
  */
 export const PressablePicks: Story = {
   render: () => <Picks />,
@@ -393,6 +405,8 @@ export const PressablePicks: Story = {
       name: "purlis/website",
     });
     await untilFocused(() => second, "Picks: Tab lands on the second repo");
+    // Its ring is drawn inside the pick, so the list that scrolls never clips it.
+    await expect(parseFloat(getComputedStyle(second, "::after").outlineOffset)).toBeLessThan(0);
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(canvas.getByRole("status")).toHaveTextContent("Getting website"));
     await expect(first).toBeDisabled();

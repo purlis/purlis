@@ -12,6 +12,8 @@ export default {
   faint: [
     // An unavailable pressed card's words, as a disabled button's (#3655).
     '[data-scope="card"][data-part="pressable"][data-disabled]',
+    // Its line, faint with its title, so the description never reads louder than the name.
+    '[data-scope="card"][data-part="pressable"][data-disabled] > [data-part="line"]',
   ],
   // Of the family's parts, only its root is a ground a button stands on: a pressed card is
   // itself the button, and holds no other (#3655).
