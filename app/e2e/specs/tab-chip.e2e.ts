@@ -231,6 +231,14 @@ const FENCE = "__purlisTabChipFence";
 /** The window global the parked case keeps what the counts heard on, and how to stop hearing. */
 const HEARD = "__purlisTabChipHeard";
 
+/** The window global {@link pointer} stamps, on the page's own clock, when it last moved onto a
+ *  chip's counts, and {@link watchForMenu} when a task menu was first drawn after that (#3660). */
+const RESTED = "__purlisTabChipRested";
+
+/** How long a rest on a chip is: `REST_MS` in `src/tabTasks.ts`, which this file cannot import
+ *  (it would bring the app's modules into the runner). */
+const REST_MS = 350;
+
 /** How many events the fence and the parked case's counts keep: the last ones, for a failure. */
 const KEPT = 20;
 
@@ -303,6 +311,45 @@ async function menus(): Promise<number> {
 }
 
 /**
+ * **When a task menu opens is read on the page's clock, not the runner's** (#3660). A pause
+ * on the runner followed by a look at the menus says nothing on a slow runner: its look can
+ * be answered after the rest is long over. This watches the page from now on and stamps, with
+ * `performance.now()`, the first moment a task menu is drawn, beside the moment
+ * {@link pointer} last came onto a chip. Answers whether a menu was already open.
+ */
+async function watchForMenu(): Promise<boolean> {
+  return browser.execute((key: string) => {
+    const held = window as unknown as Record<string, unknown>;
+    const was = held[key] as { observer?: MutationObserver } | undefined;
+    was?.observer?.disconnect();
+    const open = () => document.querySelector('.tasks-menu[data-part="root"]') !== null;
+    const watch: { arrived?: number; opened?: number; observer?: MutationObserver } = {};
+    watch.observer = new MutationObserver(() => {
+      if (watch.opened !== undefined || !open()) return;
+      watch.opened = performance.now();
+      watch.observer?.disconnect();
+    });
+    watch.observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    held[key] = watch;
+    return open();
+  }, RESTED);
+}
+
+/** How long after the pointer came onto the chip its menu was drawn, in the page's own
+ *  milliseconds, once {@link watchForMenu} has seen both; or why it cannot say. */
+async function restTook(): Promise<number | string> {
+  return browser.execute((key: string) => {
+    const watch = (window as unknown as Record<string, { arrived?: number; opened?: number }>)[
+      key
+    ];
+    if (watch === undefined) return "nothing was watching for the menu";
+    if (watch.arrived === undefined) return "the pointer never came onto the chip";
+    if (watch.opened === undefined) return "no menu was drawn";
+    return watch.opened - watch.arrived;
+  }, RESTED);
+}
+
+/**
  * Takes the pointer along the strip, onto each thing in it in turn and off the end: every
  * tab, every chip's hand and counts, every close. `dwell` is how long it stays on each, in
  * milliseconds. Answers how many things it went over, and how many of them were chips.
@@ -355,7 +402,7 @@ async function cross(dwell: number): Promise<{ over: number; chips: number }> {
 /** Puts the pointer on the counts of the chip on the tab called `name`, or takes it off. */
 async function pointer(name: string, what: "on" | "off"): Promise<boolean> {
   return browser.execute(
-    (strip: string, called: string, how: string) => {
+    (strip: string, called: string, how: string, rested: string) => {
       const cell = [...document.querySelectorAll<HTMLElement>(`${strip} > .tab`)].find(
         (one) => one.querySelector(".tab-name")?.textContent === called,
       );
@@ -379,6 +426,11 @@ async function pointer(name: string, what: "on" | "off"): Promise<boolean> {
         // Onto it, and then a move to another point: a rest is counted from a move the
         // person made, never from the pointer merely being found there.
         send("pointerover");
+        // The rest is counted from this move: when it was, for a case that watches the menu.
+        const watch = (window as unknown as Record<string, { arrived?: number } | undefined>)[
+          rested
+        ];
+        if (watch) watch.arrived = performance.now();
         send("pointermove", 2);
       } else send("pointerout");
       return true;
@@ -386,6 +438,7 @@ async function pointer(name: string, what: "on" | "off"): Promise<boolean> {
     STRIP,
     name,
     what,
+    RESTED,
   );
 }
 
@@ -689,15 +742,19 @@ describe("the chip a session's tab wears for its tasks", () => {
     await pretend(asker, ["working", "failed", "done"]);
     await untilChip(mine[0], true);
 
+    expect(await watchForMenu()).toBe(false);
     expect(await pointer(mine[0], "on")).toBe(true);
-    // Not at once: a third of the way into the rest there is still no menu.
-    await browser.pause(110);
-    expect(await menus()).toBe(0);
     await browser.waitUntil(async () => (await menus()) === 1, {
       timeout: 5_000,
       interval: 50,
       timeoutMsg: "resting on the chip opened no menu",
     });
+    // Not at once: the menu was drawn no sooner than a whole rest after the pointer came, on
+    // the page's clock, however long the runner took to look (#3660). A millisecond either
+    // side for the clock's coarsening.
+    const took = await restTook();
+    if (typeof took === "string") throw new Error(`the rest was not timed: ${took}`);
+    check("the menu opened before the pointer had rested, ms", took, "atLeast", REST_MS - 2);
 
     const seen = await browser.execute(() => {
       const menu = document.querySelector<HTMLElement>('.tasks-menu[data-part="root"]');
