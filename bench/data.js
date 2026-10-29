@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793306837981,
+  "lastUpdate": 1793308155668,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -30030,6 +30030,48 @@ window.BENCHMARK_DATA = {
             "value": 102.726384,
             "unit": "ms",
             "extra": "median of 5 runs: 102.090, 102.163, 102.726, 102.847, 102.905 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e517c70d13000e79c81a4b681382c7128252c593",
+          "message": "purlis updates a sandboxed chat's clone, branch folder or clean root for it (#3831, #3862) (#3863)\n\n* purlis updates a sandboxed chat's clone for it (#3831)\n\n`purlis worktree update`, run standing in a workspace's clone, now fetches\nthe remote the clone's branch follows and fast-forwards or rebases it, with\n`--continue`/`--abort`, as it already did for a branch folder. In a chat\nthe app runs it (a new `CloneUpdate` git ask), judged for the files the\nchat's sandbox denies, and refused on uncommitted changes or where the move\nwould overwrite an untracked or ignored file on disk (both kinds of folder).\n\nClaude Code chats carry allow rules for the command and its new tool twin,\n`worktree_update`, alone in their call. The clone guard's pull and\nunnamed-commit refusals, the project-git refusal and a branch folder's\nblocked git record now name the command. The project root stays the\nperson's. ADR 0067 amendment and changelog fragment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Fix the clone conflict test's base and the tool's wording (#3831)\n\nThe clone keeps both of its own commits after the resolved rebase, so\ntheirs is HEAD~2. The tool description no longer reads \"purlis fetches\"\nafter a colon, which the command-name check took for a command.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* purlis updates a clean project root for a chat, and tighten the checks (#3831, #3862)\n\nRoot (#3862, ruled 2026-10-29): `purlis worktree update` (and the\n`worktree_update` tool) from the chat at the project root hands the app a\nnew `RootUpdate` ask, which runs the window's own Update for the chat. It is\nrefused on any uncommitted change before the fetch, and, after it, where the\nmove would write a file the chat's sandbox denies (new\n`Left::HeldFromChats`); the move runs onto the commit id that was judged.\nThe root and project-git refusals name the command.\n\nReview fixes:\n- a clone's `.git` must be a real directory, never a link, wherever a clone\n  is located or checked;\n- `--abort` only undoes a rebase purlis started, as `--continue` already\n  required;\n- the clone placement check fails closed on its own;\n- the ADR amendment notes that the untracked/ignored check narrows the\n  window before git runs without closing it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Open the abort test with `unsteered!()` first (#3831)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Tighten the chat's root update and the rebase records (#3831, #3862)\n\n- A chat's root update is refused in a saving mode that goes through a pull\n  request: an update there may merge or publish one, which stays the\n  person's in the window. No request merge or fetch runs for a chat.\n- The check fails closed: where git cannot say which files the move writes,\n  the update is refused.\n- The move runs only from the HEAD it was judged from, onto the commit it\n  was judged against.\n- The move is judged against the asking chat's own sandbox, as the clone\n  guard judges a rebase, as well as the fixed floor of denied files.\n- `--continue` and `--abort` also require git's own note of where the\n  stopped rebase started to match purlis's record.\n- ADR amendment: the root fetch uses the window's own sign-in and is not\n  limited to the chat's internet access; neutral wording for what the\n  untracked-file check narrows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T20:41:51Z",
+          "tree_id": "a6c7b79b954571d572fbd36e87b31fc3389ed94f",
+          "url": "https://github.com/purlis/purlis/commit/e517c70d13000e79c81a4b681382c7128252c593"
+        },
+        "date": 1793308153302,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6664890000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.636, 0.658, 0.666, 0.668, 0.678 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5783175,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.500, 16.555, 16.578, 16.623, 16.653 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4267885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.460, 101.852, 102.427, 102.723, 102.889 ms"
           }
         ]
       }
