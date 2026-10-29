@@ -1125,6 +1125,10 @@ pub struct ClusterPool {
     namespace: String,
     operator: OperatorKey,
     cluster: Option<String>,
+    /// The programs its kubectl runs, by their real paths, as they were found when it was added:
+    /// kubectl itself and each credential plugin its context names (#3292). A chat writes none of
+    /// them ([`cluster_holds`]).
+    holds: Vec<std::path::PathBuf>,
 }
 
 impl ClusterPool {
@@ -1175,7 +1179,7 @@ impl ClusterPool {
                 kubeconfig.display()
             )));
         }
-        if !plain_text(context) || context.starts_with('-') {
+        if !clusterpool::is_context(context) {
             return Err(Refused::Other(format!(
                 "\"{context}\" is not a kubeconfig context purlis can name"
             )));
@@ -1199,7 +1203,25 @@ impl ClusterPool {
             namespace: namespace.to_owned(),
             operator,
             cluster,
+            holds: Vec::new(),
         })
+    }
+
+    /// This pool, holding `holds`, the real paths of the programs its kubectl runs, for no chat
+    /// to write (#3292). Each is absolute.
+    pub fn holding(self, holds: Vec<std::path::PathBuf>) -> Result<ClusterPool, Refused> {
+        if let Some(relative) = holds.iter().find(|held| !held.is_absolute()) {
+            return Err(Refused::Other(format!(
+                "{} is not a program's path purlis can hold",
+                relative.display()
+            )));
+        }
+        Ok(ClusterPool { holds, ..self })
+    }
+
+    /// The real paths of the programs its kubectl runs ([`ClusterPool::holding`]).
+    pub fn holds(&self) -> &[std::path::PathBuf] {
+        &self.holds
     }
 
     pub fn name(&self) -> &str {
@@ -1436,6 +1458,41 @@ pub fn forget_cluster_runner_locked(
     Ok(())
 }
 
+/// **The programs every cluster pool's kubectl runs** (#3292), by their real paths, each with
+/// the folder it is in: what a chat's sandbox holds for no chat to write. None where the file
+/// cannot be read.
+pub fn cluster_holds(config_root: &Path) -> Vec<std::path::PathBuf> {
+    let mut held: Vec<std::path::PathBuf> = Vec::new();
+    for pool in cluster_pools(config_root).unwrap_or_default() {
+        for program in pool.holds() {
+            for path in
+                std::iter::once(program.clone()).chain(program.parent().map(Path::to_path_buf))
+            {
+                if !held.contains(&path) {
+                    held.push(path);
+                }
+            }
+        }
+    }
+    held
+}
+
+/// **Where every cluster pool's kubectl keeps its caches** (`--cache-dir`, #3292): a folder of
+/// this user's alone beside the pools' own copies of their contexts, made where it is not.
+pub fn kubectl_cache(config_root: &Path) -> Result<std::path::PathBuf, Refused> {
+    let at = crate::machine::dir(config_root)
+        .join(crate::machine::CLUSTER_KUBECONFIGS_DIR)
+        .join(KUBECTL_CACHE);
+    purlis_same_user::PrivateDirectory::open(&at).map_err(|why| {
+        Refused::Other(format!("kubectl's cache folder could not be made: {why}"))
+    })?;
+    Ok(at)
+}
+
+/// The cache folder's name in [`crate::machine::CLUSTER_KUBECONFIGS_DIR`]: no pool's copy, which
+/// ends in `.yaml`, is called so.
+const KUBECTL_CACHE: &str = "cache";
+
 /// **Where the cluster pool `name` keeps its own copy of its kubeconfig's context** (#3292):
 /// `<pool>.yaml` in [`crate::machine::CLUSTER_KUBECONFIGS_DIR`].
 pub fn kubeconfig_kept_at(config_root: &Path, name: &str) -> std::path::PathBuf {
@@ -1495,8 +1552,8 @@ pub fn keep_cluster_pin(config_root: &Path, name: &str, pin: &PoolPin) -> Result
 }
 
 /// A cluster pool's row (#3292): `{"name", "kind": "cluster", "kubeconfig", "context", "pool",
-/// "namespace", "operatorKey", "cluster"}`, `cluster` left out only of a pool kept before its
-/// cluster was pinned (#3305).
+/// "namespace", "operatorKey", "cluster", "holds"}`, `cluster` left out only of a pool kept
+/// before its cluster was pinned (#3305).
 fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
     let mut row = serde_json::json!({
         "name": pool.name(),
@@ -1506,6 +1563,11 @@ fn cluster_pool_to_row(pool: &ClusterPool) -> serde_json::Value {
         "pool": pool.pool(),
         "namespace": pool.namespace(),
         "operatorKey": pool.operator().spelled(),
+        "holds": pool
+            .holds()
+            .iter()
+            .map(|held| held.display().to_string())
+            .collect::<Vec<_>>(),
     });
     if let Some(cluster) = &pool.cluster {
         row["cluster"] = cluster.as_str().into();
@@ -1525,10 +1587,17 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         "namespace",
         "operatorKey",
         "cluster",
+        "holds",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
     }
+    let holds = fields
+        .get("holds")?
+        .as_array()?
+        .iter()
+        .map(|held| held.as_str().map(std::path::PathBuf::from))
+        .collect::<Option<Vec<_>>>()?;
     let text = |key: &str| fields.get(key).and_then(serde_json::Value::as_str);
     // Every key but `cluster` is there.
     if known[..7].iter().any(|key| text(key).is_none()) {
@@ -1547,6 +1616,7 @@ fn cluster_pool_from_row(row: &serde_json::Value) -> Option<ClusterPool> {
         OperatorKey::from_spelled(text("operatorKey")?).ok()?,
         cluster,
     )
+    .and_then(|pool| pool.holding(holds))
     .ok()
 }
 

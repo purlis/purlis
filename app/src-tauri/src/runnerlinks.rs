@@ -285,7 +285,7 @@ pub fn relays_to(config_root: PathBuf) -> purlis_host::RelaysTo {
         };
         let to = ToARunner::of_cluster(
             &config_root,
-            &crate::clusterpools::kubectl()?,
+            &crate::clusterpools::kubectl(&config_root)?,
             &cluster,
             &kept,
         )?;
@@ -354,7 +354,7 @@ pub fn every_runner(config_root: PathBuf) -> purlis_host::EveryRunner {
 fn cluster_runners_to_stop(config_root: &Path) -> Vec<(String, Result<purlis_host::Keep, String>)> {
     let pools = purlis_core::runners::cluster_pools(config_root).unwrap_or_default();
     let kept = purlis_core::runners::cluster_runners(config_root).unwrap_or_default();
-    let kubectl = crate::clusterpools::kubectl();
+    let kubectl = crate::clusterpools::kubectl(config_root);
     kept.iter()
         .filter_map(|kept| {
             let pool = pools.iter().find(|pool| pool.name() == kept.name)?;

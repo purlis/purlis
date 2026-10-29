@@ -80,11 +80,35 @@ pub struct ClusterPoolAdding {
 
 /// **This machine's `kubectl`, by its absolute path** (#3292,
 /// [`Kubectl::on_this_machine`]): where its installers put it, else an absolute folder of the
-/// window's `PATH`.
-pub fn kubectl() -> Result<Kubectl, String> {
+/// window's `PATH`; its caches kept in a folder of purlis's under `config`
+/// ([`purlis_core::runners::kubectl_cache`]).
+pub fn kubectl(config: &Path) -> Result<Kubectl, String> {
     let path = purlis_core::envvar::var("PATH");
     let home = home();
-    Kubectl::on_this_machine(path.as_deref(), home.as_deref()).map_err(|why| why.to_string())
+    let cache = purlis_core::runners::kubectl_cache(config).map_err(|why| why.to_string())?;
+    Kubectl::on_this_machine(path.as_deref(), home.as_deref())
+        .map(|kubectl| kubectl.with_cache_dir(cache))
+        .map_err(|why| why.to_string())
+}
+
+/// **The context and the cluster's Pool, held to what purlis names to kubectl** (#3292), before
+/// kubectl runs: a context that cannot read as a flag, and a Pool named as Kubernetes names it.
+pub fn usable(context: &str, pool: &str) -> Result<(), String> {
+    if !purlis_core::clusterpool::is_context(context.trim()) {
+        return Err(format!(
+            "\"{}\" is not a kubeconfig context purlis can name. Choose one of the kubeconfig's \
+             contexts.",
+            context.trim()
+        ));
+    }
+    if !purlis_core::clusterpool::is_subdomain(pool.trim()) {
+        return Err(format!(
+            "\"{}\" is not a cluster pool's name. Write it as your cluster's admin gives it: \
+             lower-case letters, digits, dashes and dots.",
+            pool.trim()
+        ));
+    }
+    Ok(())
 }
 
 fn home() -> Option<PathBuf> {
@@ -138,7 +162,7 @@ pub fn contexts_with(kubectl: &Kubectl, kubeconfig: &Path) -> Result<ClusterCont
 pub async fn cluster_contexts(kubeconfig: Option<String>) -> Result<ClusterContexts, String> {
     crate::off_the_window("reading the kubeconfig's contexts", move || {
         let path = kubeconfig_of(kubeconfig.as_deref(), home().as_deref())?;
-        contexts_with(&kubectl()?, &path)
+        contexts_with(&kubectl(&config_root()?)?, &path)
     })
     .await
 }
@@ -171,8 +195,9 @@ pub async fn cluster_pool_key(
     pool: String,
 ) -> Result<ClusterPoolKey, String> {
     crate::off_the_window("reading the cluster operator's key", move || {
+        usable(&context, &pool)?;
         let path = kubeconfig_of(kubeconfig.as_deref(), home().as_deref())?;
-        key_with(&kubectl()?, &path, &context, &pool)
+        key_with(&kubectl(&config_root()?)?, &path, &context, &pool)
     })
     .await
 }
@@ -184,10 +209,11 @@ pub async fn cluster_pool_key(
 #[specta::specta]
 pub async fn add_cluster_pool(adding: ClusterPoolAdding) -> Result<ClusterPoolRow, String> {
     crate::off_the_window("adding a cluster pool", move || {
+        usable(&adding.context, &adding.pool)?;
         let config = config_root()?;
         add_on(
             &config,
-            &kubectl()?,
+            &kubectl(&config)?,
             &adding,
             home().as_deref(),
             purlis_core::pools::VOUCHED_WITHIN,
@@ -239,16 +265,33 @@ pub fn add_on(
 
 /// **Removes the cluster pool `name`** on `config` (#3292): this machine out of its runner's
 /// peers over a link of its own while it answers, then its claim deleted, and with it its runner.
+///
+/// The pool is forgotten here whatever the cluster answers, and what may be left there is said,
+/// with how to delete it: a missing kubectl, a cluster that does not answer or a claim that is
+/// not this desktop's never keeps it on this machine.
 pub fn remove_on(config: &Path, name: &str) -> Result<Option<String>, String> {
-    let kubectl = kubectl()?;
+    let kubectl = kubectl(config).ok();
+    let device =
+        purlis_core::linkkey::kept(config, &*purlis_core::linkkey::this_builds_keyring(config))
+            .ok()
+            .map(|desktop| desktop.pinned().device);
     let unpair = |pool: &ClusterPool, kept: &ClusterKept| {
-        let to = ToARunner::of_cluster(config, &kubectl, pool, kept)?;
+        let kubectl = kubectl
+            .as_ref()
+            .ok_or_else(|| "purlis found no kubectl on this machine".to_owned())?;
+        let to = ToARunner::of_cluster(config, kubectl, pool, kept)?;
         crate::runnerlinks::unpair(&to)
     };
-    purlis_core::pools::remove_cluster(config, &kubectl, name, Some(&unpair))
-        .map_err(|why| crate::dockerpools::refused_said(&why.to_string()))?;
+    let left = purlis_core::pools::remove_cluster(
+        config,
+        kubectl.as_ref(),
+        name,
+        device.as_deref(),
+        Some(&unpair),
+    )
+    .map_err(|why| crate::dockerpools::refused_said(&why.to_string()))?;
     crate::notheld::recheck(config);
-    Ok(None)
+    Ok(crate::dockerpools::left_said(left))
 }
 
 /// **Where the cluster pool `name`'s runner stands** on `config` (#3292): its cluster operator
@@ -257,7 +300,7 @@ pub fn link_on(config: &Path, name: &str) -> Result<PoolLink, String> {
     let (pool, kept) = purlis_core::runners::cluster_runner_for(config, name)
         .map_err(|why| why.to_string())?
         .ok_or_else(|| format!("no cluster pool named {name} is on this machine"))?;
-    let kubectl = kubectl()?;
+    let kubectl = kubectl(config)?;
     let to = ToARunner::of_cluster(config, &kubectl, &pool, &kept)?;
     link_through(config, &kubectl, name, || {
         crate::runnerlinks::link_state(&to)

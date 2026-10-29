@@ -799,13 +799,16 @@ pub(crate) struct FakeCluster {
 }
 
 /// The context the stand-in's kubeconfig gives whole (`config view --minify --raw --flatten`).
-pub(crate) const CONTEXT_KEPT: &str = "apiVersion: v1\nkind: Config\ncurrent-context: team\n";
+pub(crate) const CONTEXT_KEPT: &str = r#"{"apiVersion": "v1", "kind": "Config", "current-context": "team", "users": [{"name": "ada", "user": {}}]}"#;
 
 /// The uid the stand-in gives every claim it makes.
 pub(crate) const CLAIM_UID: &str = "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60";
 
 /// The stand-in's cluster: the uid of its `kube-system` namespace.
 pub(crate) const CLUSTER: &str = "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b";
+
+/// The device id of the desktop the stand-in's claims are marked as.
+pub(crate) const OURS_DEVICE: &str = "01JA0DESKT0P00000000000000";
 
 /// Who the stand-in's kubeconfig signs in as.
 pub(crate) const REQUESTER: &str = "ada@example.com";
@@ -948,7 +951,15 @@ impl FakeCluster {
         }
         self.write(
             "claim.json",
-            &serde_json::json!({"status": {"linkKey": link_key}}).to_string(),
+            &serde_json::json!({
+                "metadata": {
+                    "uid": CLAIM_UID,
+                    "annotations": {DESKTOP_ANNOTATION: desktop_label(OURS_DEVICE)},
+                },
+                "spec": {"requester": REQUESTER},
+                "status": {"linkKey": link_key},
+            })
+            .to_string(),
         );
     }
 
@@ -1130,9 +1141,12 @@ fn a_claim_never_vouched_for_is_deleted_and_says_what_the_claim_says() {
     let why = claim_and_pair(
         &cluster.kubectl(),
         &cluster.pin(),
-        "default",
-        "ada",
-        "team-1",
+        &ClaimTo {
+            pool: "default",
+            namespace: "ada",
+            name: "team-1",
+            desktop: "0123456789abcdef",
+        },
         &desktop,
         std::time::Duration::ZERO,
         std::time::Duration::ZERO,
@@ -1147,4 +1161,46 @@ fn a_claim_never_vouched_for_is_deleted_and_says_what_the_claim_says() {
         "{}",
         cluster.calls()
     );
+}
+
+#[test]
+fn a_desktops_label_is_its_device_ids_in_any_spelling() {
+    let label = desktop_label("01JA0DESKT0P00000000000000");
+    assert_eq!(label.len(), 16);
+    assert!(
+        label
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    );
+    assert_eq!(label, desktop_label("01ja0deskt0p00000000000000"));
+    assert_ne!(label, desktop_label("01JA0DESKT0P00000000000001"));
+}
+
+#[test]
+fn a_kubeconfigs_plugins_are_each_users_exec_command() {
+    let kept = r#"{"users": [
+        {"name": "a", "user": {"exec": {"command": "gke-gcloud-auth-plugin"}}},
+        {"name": "b", "user": {"token": "t"}},
+        {"name": "c", "user": {"exec": {"command": "/usr/local/bin/aws", "args": ["eks"]}}}
+    ]}"#;
+    assert_eq!(
+        plugins_named(kept).unwrap(),
+        ["gke-gcloud-auth-plugin", "/usr/local/bin/aws"]
+    );
+    assert!(plugins_named("apiVersion: v1").is_err());
+}
+
+#[test]
+fn a_context_is_named_as_its_kubeconfig_names_it_but_never_as_a_flag() {
+    for named in [
+        "team",
+        "arn:aws:eks:eu-west-1:1:cluster/team",
+        "gke_p_z_team",
+        "Kind-Team",
+    ] {
+        assert!(is_context(named), "{named}");
+    }
+    for refused in ["", "--server=https://elsewhere", "-n", "a\nb"] {
+        assert!(!is_context(refused), "{refused:?}");
+    }
 }

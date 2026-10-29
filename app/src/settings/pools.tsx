@@ -258,11 +258,9 @@ function ClusterPoolEntry({
   return (
     <li className="ui-machine-entry">
       <span className="ui-machine-name">{pool.name}</span>
-      <Tooltip tip={`Cluster operator key ${pool.operator_key}`}>
-        <span className="ui-machine-path">
-          Pool {pool.pool} in {pool.context}, namespace {pool.namespace}
-        </span>
-      </Tooltip>
+      <span className="ui-machine-path">
+        Pool {pool.pool} in {pool.context}, namespace {pool.namespace}
+      </span>
       <Badge variant="accent">{linkSaid(link)}</Badge>
       <Button
         size="sm"
@@ -272,6 +270,9 @@ function ClusterPoolEntry({
       >
         {removing ? "Removing…" : "Remove"}
       </Button>
+      <p className="ui-setting-help">
+        Cluster operator key <code>{pool.operator_key}</code>
+      </p>
       <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={onAsk} />
       {typeof link === "object" && link.state === "down" && (
         <p className="ui-setting-help">{link.why}</p>
@@ -305,7 +306,7 @@ export function NotHeldNotice({
 const poolsList = (plane: string | undefined): LiveSetting => ({
   id: `${POOLS}.list`,
   label: "Pools on this machine",
-  help: "Remove takes this machine out of the runner's peers while it answers, then removes its container and home. There is no undo.",
+  help: "Remove takes this machine out of the runner's peers while it answers, then removes a Docker pool's container and home, or releases a cluster pool's claim in its cluster. There is no undo.",
   useControl: function usePoolsList() {
     const now = usePools();
     const notHeld = useProjectsNotHeld();

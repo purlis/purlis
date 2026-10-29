@@ -42,6 +42,10 @@ import { Dialog } from "./ui/dialog/Dialog";
  */
 export function AddDockerPoolHost({ plane }: { plane?: string }) {
   const pools = usePools();
+  // What was typed is kept while the dialog is open, across a change of Kind, and no longer.
+  useEffect(() => {
+    if (!pools.adding) drafts.clear();
+  }, [pools.adding]);
   if (pools.added !== undefined && !pools.adding) {
     return <SignInOnTheAddedPool pool={pools.added} plane={plane} />;
   }
@@ -104,6 +108,23 @@ function KindRow({ kind, disabled }: { kind: PoolKind; disabled: boolean }) {
   );
 }
 
+/** What is typed in each box of the dialog, by kind and box, while it is open (#3292): kept
+ *  when the Kind is changed, so the other form shows what was typed in it. */
+const drafts = new Map<string, string>();
+
+/** A box's text, kept in {@link drafts}. */
+function useDrafted(kind: PoolKind, box: string): [string, (to: string) => void] {
+  const id = `${kind}.${box}`;
+  const [value, setValue] = useState(() => drafts.get(id) ?? "");
+  return [
+    value,
+    (to: string) => {
+      drafts.set(id, to);
+      setValue(to);
+    },
+  ];
+}
+
 /** A count typed, or `null` for the default; `undefined` when it is not a count. */
 function count(typed: string): number | null | undefined {
   const trimmed = typed.trim();
@@ -122,15 +143,15 @@ function AddDockerPool({
   /** How a new pool's runner's browsers are watched over the link, by default (#3297). */
   linkFrames: { frames: number | undefined; width: number | undefined };
 }) {
-  const [name, setName] = useState("");
-  const [image, setImage] = useState("");
-  const [cpus, setCpus] = useState("");
-  const [memory, setMemory] = useState("");
-  const [processes, setProcesses] = useState("");
-  const [tmp, setTmp] = useState("");
-  const [after, setAfter] = useState("");
-  const [frames, setFrames] = useState("");
-  const [width, setWidth] = useState("");
+  const [name, setName] = useDrafted("docker", "name");
+  const [image, setImage] = useDrafted("docker", "image");
+  const [cpus, setCpus] = useDrafted("docker", "cpus");
+  const [memory, setMemory] = useDrafted("docker", "memory");
+  const [processes, setProcesses] = useDrafted("docker", "processes");
+  const [tmp, setTmp] = useDrafted("docker", "tmp");
+  const [after, setAfter] = useDrafted("docker", "after");
+  const [frames, setFrames] = useDrafted("docker", "frames");
+  const [width, setWidth] = useDrafted("docker", "width");
   const [trouble, setTrouble] = useState<string | undefined>();
   const [adding, setAdding] = useState(false);
 
@@ -311,17 +332,26 @@ function AddDockerPool({
  * which shows the cluster operator key the Pool names, then Add pool, which pins it.
  */
 function AddClusterPool() {
-  const [name, setName] = useState("");
-  const [kubeconfig, setKubeconfig] = useState("");
-  // The kubeconfig whose contexts are offered: the one typed, once its box is left.
-  const [readFrom, setReadFrom] = useState("");
+  const [name, setName] = useDrafted("cluster", "name");
+  const [kubeconfig, setKubeconfig] = useDrafted("cluster", "kubeconfig");
+  // The kubeconfig whose contexts are offered: the one typed, a moment after it stops changing.
+  const [readFrom, setReadFrom] = useState(() => kubeconfig.trim());
   const [contexts, setContexts] = useState<string[]>([]);
+  // Why the contexts could not be read, said under its box rather than as an alert.
+  const [unread, setUnread] = useState<string | undefined>();
   const [defaultKubeconfig, setDefaultKubeconfig] = useState<string | undefined>();
   const [context, setContext] = useState<string | undefined>();
-  const [pool, setPool] = useState("");
+  const [pool, setPool] = useDrafted("cluster", "pool");
   const [checked, setChecked] = useState<ClusterPoolKey | undefined>();
   const [trouble, setTrouble] = useState<string | undefined>();
   const [busy, setBusy] = useState<"checking" | "adding" | undefined>();
+
+  useEffect(() => {
+    const typed = kubeconfig.trim();
+    if (typed === readFrom) return;
+    const later = setTimeout(() => setReadFrom(typed), 400);
+    return () => clearTimeout(later);
+  }, [kubeconfig, readFrom]);
 
   useEffect(() => {
     let gone = false;
@@ -329,9 +359,10 @@ function AddClusterPool() {
       if (gone) return;
       if ("trouble" in read) {
         setContexts([]);
-        setTrouble(read.trouble);
+        setUnread(read.trouble);
         return;
       }
+      setUnread(undefined);
       if (readFrom === "") setDefaultKubeconfig(read.kubeconfig);
       setContexts(read.contexts);
       setContext((was) =>
@@ -355,6 +386,10 @@ function AddClusterPool() {
     if (busy !== undefined) return;
     if (context === undefined) {
       setTrouble("Nothing was checked: choose a context of the kubeconfig.");
+      return;
+    }
+    if (pool.trim() === "") {
+      setTrouble("Nothing was checked: name the cluster's pool, as your cluster's admin gives it.");
       return;
     }
     setTrouble(undefined);
@@ -423,7 +458,7 @@ function AddClusterPool() {
       />
       <SettingRow
         label="Kubeconfig"
-        help="The kubeconfig your kubectl signs in to the cluster with. Empty is kubectl's own."
+        help="The kubeconfig your kubectl signs in to the cluster with. Empty is kubectl's own. The pool keeps its own copy of the context, taken when it is added; to pick up a changed kubeconfig, add the pool again."
         control={(ids) => (
           <Field
             kind="text"
@@ -432,13 +467,16 @@ function AddClusterPool() {
             placeholder={defaultKubeconfig}
             disabled={busy !== undefined}
             onChange={changing(setKubeconfig)}
-            onCommit={() => setReadFrom(kubeconfig.trim())}
           />
         )}
       />
       <SettingRow
         label="Context"
-        help="The kubeconfig's context for the cluster. Its namespace is where the runner is claimed."
+        help={
+          unread === undefined
+            ? "The kubeconfig's context for the cluster. Its namespace is where the runner is claimed."
+            : `No context to choose: ${unread}`
+        }
         control={(ids) => (
           <Choice
             kind="select"
@@ -459,7 +497,6 @@ function AddClusterPool() {
             kind="text"
             ids={ids}
             value={pool}
-            placeholder="default"
             disabled={busy !== undefined}
             onChange={changing(setPool)}
           />

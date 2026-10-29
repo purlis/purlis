@@ -22,7 +22,7 @@ fn a_cluster_pool_kept(config: &Path) {
         "pools": [{
             "name": "team", "kind": "cluster", "kubeconfig": "/home/ada/.kube/config",
             "context": "team", "pool": "default", "namespace": "ada", "operatorKey": OPERATOR,
-            "cluster": CLUSTER,
+            "cluster": CLUSTER, "holds": ["/opt/homebrew/bin/kubectl"],
         }],
         "runners": [{
             "name": "team", "pool": "cluster", "namespace": "ada", "claim": "team-1",
@@ -151,4 +151,16 @@ fn a_cluster_pools_runner_is_reached_by_its_pools_name_alone() {
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn a_context_or_pool_purlis_cannot_name_is_refused_before_kubectl_runs() {
+    assert_eq!(usable("team", "default"), Ok(()));
+    assert_eq!(
+        usable("arn:aws:eks:eu-west-1:1:cluster/team", "default"),
+        Ok(())
+    );
+    assert!(usable("--server=https://elsewhere", "default").is_err());
+    assert!(usable("team", "-default").is_err());
+    assert!(usable("team", "Default Pool").is_err());
 }

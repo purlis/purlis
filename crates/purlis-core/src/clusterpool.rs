@@ -639,6 +639,8 @@ pub struct Kubectl {
     /// The `PATH` its runs are given, and that they are handed no `KUBECONFIG`: set for the
     /// kubectl found on this machine ([`Kubectl::on_this_machine`]), the one the window runs.
     path: Option<std::ffi::OsString>,
+    /// The folder its discovery and HTTP caches are kept in (`--cache-dir`), where one is named.
+    cache_dir: Option<PathBuf>,
 }
 
 /// The variables a run of kubectl is never handed from this process: the kubeconfig is named,
@@ -676,7 +678,44 @@ impl Kubectl {
             kubeconfig: None,
             context: None,
             path: None,
+            cache_dir: None,
         }
+    }
+
+    /// This kubectl, keeping its caches in `folder` (`--cache-dir`) rather than the home's.
+    #[must_use]
+    pub fn with_cache_dir(mut self, folder: impl Into<PathBuf>) -> Kubectl {
+        self.cache_dir = Some(folder.into());
+        self
+    }
+
+    /// **The program this kubectl is**, by its real path, links followed (#3292).
+    pub fn real_program(&self) -> Result<PathBuf, Refused> {
+        self.program.canonicalize().map_err(|why| {
+            Refused::Other(format!(
+                "{} could not be read as a program: {why}",
+                self.program.display()
+            ))
+        })
+    }
+
+    /// **Where a kubeconfig's credential plugin `command` is**, by its real path, as a run of
+    /// this kubectl finds it (#3292): an absolute command as it is, a bare name in the folders
+    /// its runs are given on `PATH`. `None` where it is not found.
+    pub fn plugin_at(&self, command: &str) -> Option<PathBuf> {
+        let named = std::path::Path::new(command);
+        let found = if named.is_absolute() {
+            Some(named.to_path_buf())
+        } else if command.contains('/') {
+            None
+        } else {
+            self.path.as_ref().and_then(|path| {
+                std::env::split_paths(path)
+                    .map(|folder| folder.join(command))
+                    .find(|candidate| crate::programs::runnable(candidate))
+            })
+        };
+        found.and_then(|found| found.canonicalize().ok())
     }
 
     /// **The `kubectl` command on this machine, by its absolute path** (#3292), found as
@@ -799,6 +838,10 @@ impl Kubectl {
         if let Some(context) = &self.context {
             args.push("--context".to_owned());
             args.push(context.clone());
+        }
+        if let Some(folder) = &self.cache_dir {
+            args.push("--cache-dir".to_owned());
+            args.push(folder.display().to_string());
         }
         args
     }
@@ -938,7 +981,7 @@ impl Kubectl {
                 "--raw",
                 "--flatten",
                 "--output",
-                "yaml",
+                "json",
             ]),
             None,
             MOST_PRINTED,
@@ -1026,7 +1069,24 @@ impl Kubectl {
         requester: &str,
         keeping: Keeping,
     ) -> Result<String, Refused> {
-        let claim = claim_definition(namespace, name, pool, requester, keeping);
+        self.claim_marked(namespace, name, pool, requester, keeping, None)
+    }
+
+    /// [`Kubectl::claim`], the Claim marked as this desktop's (`desktop`, [`DESKTOP_ANNOTATION`])
+    /// where one is given (#3292).
+    pub fn claim_marked(
+        &self,
+        namespace: &str,
+        name: &str,
+        pool: &str,
+        requester: &str,
+        keeping: Keeping,
+        desktop: Option<&str>,
+    ) -> Result<String, Refused> {
+        let mut claim = claim_definition(namespace, name, pool, requester, keeping);
+        if let Some(desktop) = desktop {
+            claim["metadata"]["annotations"] = serde_json::json!({ DESKTOP_ANNOTATION: desktop });
+        }
         let made = self.json(
             &["create", "--filename", "-", "--output", "json"],
             Some(&claim.to_string()),
@@ -1067,7 +1127,46 @@ impl Kubectl {
             }))
     }
 
-    /// Deletes the Claim `namespace`/`name`, and with it its runner.
+    /// **The Claim `namespace`/`name` as the cluster holds it** (#3292): its uid, who asked for
+    /// it and the desktop it is marked as ([`DESKTOP_ANNOTATION`]); `None` where there is none.
+    pub fn claim_seen(&self, namespace: &str, name: &str) -> Result<Option<ClaimSeen>, Refused> {
+        let printed = self.run(
+            &self.args(&[
+                "get",
+                "claims.runners.purlis.dev",
+                name,
+                "--namespace",
+                namespace,
+                "--ignore-not-found",
+                "--output",
+                "json",
+            ]),
+            None,
+            MOST_PRINTED,
+        )?;
+        if printed.trim().is_empty() {
+            return Ok(None);
+        }
+        let held: serde_json::Value = serde_json::from_str(&printed)
+            .map_err(|_| Refused::Other("kubectl get did not answer JSON".into()))?;
+        let text = |path: &str| {
+            held.pointer(path)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        };
+        Ok(Some(ClaimSeen {
+            uid: text("/metadata/uid").unwrap_or_default(),
+            requester: text("/spec/requester"),
+            desktop: held
+                .pointer("/metadata/annotations")
+                .and_then(|marks| marks.get(DESKTOP_ANNOTATION))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        }))
+    }
+
+    /// Deletes the Claim `namespace`/`name`, and with it its runner; nothing where it is gone
+    /// already.
     pub fn delete_claim(&self, namespace: &str, name: &str) -> Result<(), Refused> {
         self.run(
             &self.args(&[
@@ -1076,6 +1175,7 @@ impl Kubectl {
                 name,
                 "--namespace",
                 namespace,
+                "--ignore-not-found",
                 "--wait=false",
             ]),
             None,
@@ -1083,6 +1183,63 @@ impl Kubectl {
         )
         .map(|_| ())
     }
+}
+
+/// **The annotation that marks a Claim as one desktop's** (#3292): its value is that desktop's
+/// label ([`desktop_label`]), so a desktop removes only a Claim it made.
+pub const DESKTOP_ANNOTATION: &str = "runners.purlis.dev/desktop";
+
+/// **A desktop's label on the Claims it makes** (#3292): the first 16 hex digits of the SHA-256
+/// of its device id, in lower case, the same however the device id is spelled.
+pub fn desktop_label(device: &str) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(device.to_ascii_lowercase().as_bytes());
+    hex_of(digest.as_slice())[..16].to_owned()
+}
+
+/// A Claim as the cluster holds it ([`Kubectl::claim_seen`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimSeen {
+    pub uid: String,
+    pub requester: Option<String>,
+    pub desktop: Option<String>,
+}
+
+/// **Whether a kubeconfig's context can be named to kubectl** (#3292): plain text, at most 253
+/// bytes, that cannot read as a flag. A context is named as its kubeconfig names it, which a
+/// managed cluster's often does with capitals, colons or underscores, so it is not held to a
+/// Kubernetes object's name.
+pub fn is_context(context: &str) -> bool {
+    plain(context) && context.len() <= 253 && !context.starts_with('-')
+}
+
+/// **The credential plugins a kubeconfig names** (#3292): each user's `exec.command`, in `kept`,
+/// a kubeconfig as JSON ([`Kubectl::context_kept`]).
+pub fn plugins_named(kept: &str) -> Result<Vec<String>, Refused> {
+    let kept: serde_json::Value = serde_json::from_str(kept)
+        .map_err(|_| Refused::Other("the kubeconfig's context is not one purlis reads".into()))?;
+    Ok(kept
+        .get("users")
+        .and_then(serde_json::Value::as_array)
+        .map(|users| {
+            users
+                .iter()
+                .filter_map(|user| user.pointer("/user/exec/command"))
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// **What a claim of a pool is made as** ([`claim_and_pair`]): the cluster's Pool, the namespace
+/// the Claim is made in, its name, and the desktop it is marked as ([`DESKTOP_ANNOTATION`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimTo<'a> {
+    pub pool: &'a str,
+    pub namespace: &'a str,
+    pub name: &'a str,
+    pub desktop: &'a str,
 }
 
 /// **Whether a claim's runner keeps its work** (#2057).
@@ -1348,20 +1505,20 @@ pub fn before_link(
 /// `patience` until the operator vouches for its key (asked every `every`), then paired over this
 /// desktop's own `kubectl exec` ([`pair`]). What fails deletes the claim it made, and says what
 /// the claim last said of itself.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each is one of what a claim is made of"
-)]
 pub fn claim_and_pair(
     kubectl: &Kubectl,
     pin: &PoolPin,
-    pool: &str,
-    namespace: &str,
-    name: &str,
+    to: &ClaimTo<'_>,
     desktop: &Pinned,
     patience: std::time::Duration,
     every: std::time::Duration,
 ) -> Result<Paired, Refused> {
+    let ClaimTo {
+        pool,
+        namespace,
+        name,
+        desktop: label,
+    } = *to;
     // Claimed by name: a pool's name and namespace, each as Kubernetes names them.
     if !is_subdomain(pool) || !is_label(namespace) || !is_subdomain(name) {
         return Err(Refused::Other(format!(
@@ -1370,7 +1527,14 @@ pub fn claim_and_pair(
         )));
     }
     let requester = kubectl.whoami()?;
-    let uid = kubectl.claim(namespace, name, pool, &requester, Keeping::Kept)?;
+    let uid = kubectl.claim_marked(
+        namespace,
+        name,
+        pool,
+        &requester,
+        Keeping::Kept,
+        Some(label),
+    )?;
     let claimed = Claimed {
         namespace: namespace.to_owned(),
         name: name.to_owned(),

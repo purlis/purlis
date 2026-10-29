@@ -369,7 +369,8 @@ kubectl get pools.runners.purlis.dev <pool> --output jsonpath='{.status.signingK
 ```
 
 prints it. Add pool pins it and makes the person's one kept Claim, `<pool>-<a label of their
-desktop>`, in the namespace their context names (`default` where it names none). A Pool that
+desktop>`, marked `runners.purlis.dev/desktop: <that label>`, in the namespace their context
+names (`default` where it names none). Removing the pool deletes only that Claim. A Pool that
 later names another key refuses every link to that desktop's runner, and the window asks the
 person to check it and add the pool again.
 
