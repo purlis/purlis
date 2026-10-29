@@ -9,14 +9,16 @@
 //! ```toml
 //! [sandbox.personas.devops]
 //! tools = { kubectl = { vault = "devops", as = "KUBECONFIG file", key = "kubeconfig",
-//!                       args = ["get", "describe", "-n", "--namespace=*", "*"] } }
+//!                       args = ["get", "describe", "pods", "deployments", "--namespace=*"] } }
 //! ```
 //!
 //! **Each pattern is for one whole argument** ([`matches`]): `*` stands for any run of
 //! characters, every other character for itself. A run goes ahead only where every argument
 //! matches one pattern, in any order ([`permits`]); `[]` runs the tool with no argument. **An
 //! option is allowed only by a pattern that spells one**: an argument starting with `-` matches
-//! only a pattern starting with `-`, so `"*"` lets in operands and no option.
+//! only a pattern starting with `-`, so `"*"` lets in operands and no option. A pattern holds no
+//! place, so `"*"` lets in every operand, a command's own verb among them: a list that keeps a
+//! tool to some of its commands names its operands rather than `"*"`.
 //!
 //! Absent, a tool runs with whatever arguments the chat gives it, as before; the built-in
 //! refusals ([`refused_forge`]) apply either way.
