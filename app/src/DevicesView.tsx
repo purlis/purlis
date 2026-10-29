@@ -10,9 +10,12 @@
  *
  * - **The list family**: a section per device, its first row how it is, then a row per chat
  *   and per browser on it, and one for what it holds that this window has not open; and a
- *   section for what runs on a pool this machine no longer keeps. **No row acts yet**: opening a
- *   chat, a runner's shell or its log from its row is #3494's, and until then a row is a stop
- *   for the keyboard and the screen reader that reads it, and nothing more.
+ *   section for what runs on a pool this machine no longer keeps. **A row acts only where its
+ *   runner's key changed** (#3533): its Remove pool asks the Pools settings' own question
+ *   ({@link RemovePool}) and removes nothing before it is answered, then every device is read
+ *   again; what a removal left is a Notice. Opening a chat, a runner's shell or its log from its
+ *   row is #3494's, and until then any other row is a stop for the keyboard and the screen
+ *   reader that reads it, and nothing more.
  * - **What Docker or the link said is drawn apart** from purlis's own words: after the row's
  *   facts, isolated (`<bdi>`), as said elsewhere. The core has already put it on one line, capped
  *   and with nothing a reader does not see.
@@ -26,7 +29,7 @@
  * - **Refresh** reads every device again, as the view's coming on screen does. A runner still
  *   being asked is not asked twice: Refresh waits on that ask for it, and asks every other one.
  */
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { List, ListRow, ListRowSection } from "./ui/list/List";
 import { RowDescription, RowLabel, RowTrail } from "./ui/list/Row";
 import { Badge } from "./ui/badge/Badge";
@@ -34,6 +37,8 @@ import { Button } from "./ui/button/Button";
 import { Notice } from "./Notice";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "./ui/table/Table";
 import type { DevicesShown, PlaneId } from "./bindings";
+import { removePool } from "./pools";
+import { RemovePool } from "./settings/pools";
 import {
   arranged,
   contactSaid,
@@ -107,19 +112,25 @@ function DeviceSection({
   version,
   now,
   inProject,
+  removing,
+  onRemove,
 }: {
   row: DeviceRow;
   asked: Asked | undefined;
   version: string;
   now: Date;
   inProject: InProject;
+  /** Whether its pool is being removed. */
+  removing: boolean;
+  /** Asks whether to remove its pool (#3533). */
+  onRemove: (pool: string) => void;
 }) {
   const runner = row.runner;
   const title =
     runner === undefined ? "This machine" : `Runner ${runner.runner} of pool ${runner.pool}`;
   const health =
     runner === undefined
-      ? { badge: "here", line: "Where this window runs", said: undefined }
+      ? { badge: "here", line: "Where this window runs", said: undefined, removes: undefined }
       : healthSaid(asked);
   const runs =
     runner === undefined
@@ -141,6 +152,16 @@ function DeviceSection({
         <Facts facts={facts} said={health.said} />
         <RowTrail>
           <Badge variant="neutral">{health.badge}</Badge>
+          {runner !== undefined && health.removes === true && (
+            <Button
+              size="sm"
+              aria-label={removing ? `Removing pool ${runner.pool}` : `Remove pool ${runner.pool}`}
+              aria-disabled={removing}
+              onPress={removing ? undefined : () => onRemove(runner.pool)}
+            >
+              {removing ? "Removing…" : "Remove pool"}
+            </Button>
+          )}
         </RowTrail>
       </ListRow>
       {row.chats.map((chat) => (
@@ -233,6 +254,21 @@ function DiskTrouble({ trouble }: { trouble: ReturnType<typeof diskTrouble> }) {
 /** **The view tab**: the devices, then each pool's use. */
 export function DevicesView({ now = new Date() }: { now?: Date }) {
   const { read, asked, disk } = useDevices();
+  // The pool a key-changed runner's row asks to remove, the one being removed, and what its
+  // removal left (#3533). It asks first, with the Pools settings' own question.
+  const [asking, setAsking] = useState<string | undefined>();
+  const [removing, setRemoving] = useState<string | undefined>();
+  const [left, setLeft] = useState<{ pool: string; said: string } | undefined>();
+  const remove = (pool: string) => {
+    setAsking(undefined);
+    setRemoving(pool);
+    setLeft(undefined);
+    void removePool(pool).then((said) => {
+      setRemoving(undefined);
+      if (said !== undefined) setLeft({ pool, said });
+      return rereadDevices();
+    });
+  };
   if (read.state === "reading")
     return (
       <div className="devices-view" data-testid="devices-view">
@@ -273,10 +309,29 @@ export function DevicesView({ now = new Date() }: { now?: Date }) {
             version={shown.version}
             now={now}
             inProject={inProject}
+            removing={row.runner !== undefined && removing === row.runner.pool}
+            onRemove={setAsking}
           />
         ))}
         <UnkeptSection placement={shown.placement} inProject={inProject} />
       </List>
+      {left !== undefined && (
+        <Notice
+          cause={`devices-pool-removed:${left.pool}`}
+          tone="trouble"
+          onDismiss={() => setLeft(undefined)}
+        >
+          {`Removing pool ${left.pool} did not finish: `}
+          <bdi>{left.said}</bdi>
+        </Notice>
+      )}
+      {asking !== undefined && (
+        <RemovePool
+          name={asking}
+          onCancel={() => setAsking(undefined)}
+          onRemove={() => remove(asking)}
+        />
+      )}
       {use.length > 0 && (
         <Table aria-label="Use per pool and person" className="devices-use">
           <TableHeader>

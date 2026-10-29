@@ -290,9 +290,15 @@ export function arranged(shown: DevicesShown, asked: Readonly<Record<string, Ask
 
 /**
  * What a runner's row says of how it is: its badge, its first line, and what Docker or the link
- * said, which the row draws apart from purlis's own words, as said elsewhere.
+ * said, which the row draws apart from purlis's own words, as said elsewhere. `removes` where its
+ * way out is to remove its pool (#3533): a runner whose key changed is refused on every link.
  */
-export type Health = { badge: string; line: string; said?: { by: string; text: string } };
+export type Health = {
+  badge: string;
+  line: string;
+  said?: { by: string; text: string };
+  removes?: true;
+};
 
 /** **How a runner is, in words** (#2052): `asked` as its row says it. */
 export function healthSaid(asked: Asked | undefined): Health {
@@ -323,7 +329,8 @@ export function healthSaid(asked: Asked | undefined): Health {
   if (link.state === "key_changed")
     return {
       badge: "key changed",
-      line: "It answered with another key than the one this machine paired with, so purlis does not link to it. Remove its pool in Settings › You › This machine › Pools, then add the pool again.",
+      removes: true,
+      line: "It answered with another key than the one this machine paired with, so purlis does not link to it. Remove its pool, then add the pool again.",
     };
   // Suspended is said by the container alone: this view's link is never made to one, and so
   // never says so (D-2052-9).

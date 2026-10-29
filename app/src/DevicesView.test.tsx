@@ -330,4 +330,37 @@ describe("DevicesView", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Cannot connect to the Docker daemon").tagName).toBe("BDI");
   });
+
+  it("leads a key-changed runner's row to removing its pool, asking first", async () => {
+    asked["builds/builds"] = { ...asked["builds/builds"], link: { state: "key_changed" } };
+    render(<DevicesView />);
+    const builds = await waitFor(() => section("Runner builds of pool builds"));
+    const remove = await within(builds).findByRole("button", { name: "Remove pool builds" });
+    // No other runner's row offers it.
+    expect(
+      within(section("Runner qa of pool qa")).queryByRole("button", { name: /Remove pool/ }),
+    ).toBeNull();
+
+    await userEvent.click(remove);
+    const asking = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(within(asking).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(removed).toEqual([]);
+
+    const read = devicesRead;
+    removeSays = "runner builds's home volume could not be removed";
+    await userEvent.click(
+      within(section("Runner builds of pool builds")).getByRole("button", {
+        name: "Remove pool builds",
+      }),
+    );
+    const again = await screen.findByRole("alertdialog", { name: "Remove pool builds?" });
+    await userEvent.click(within(again).getByRole("button", { name: "Remove pool" }));
+    await waitFor(() => expect(removed).toEqual(["builds"]));
+    // What could not be removed is said, and every device is read again.
+    expect(
+      await screen.findByText(/runner builds's home volume could not be removed/),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(devicesRead).toBeGreaterThan(read));
+  });
 });
