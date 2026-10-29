@@ -2533,10 +2533,49 @@ impl Chats {
     /// **The person kept `host` blocked for chat `session`, from the window** (#1666): what its
     /// proxy holds on it is refused now. Nothing is granted. The chat is told by whoever kept
     /// it blocked ([`Self::tell_outcome`], #1987).
+    ///
+    /// The later answer wins (#3407): an Allow of a host it covers, or one that covers it, kept
+    /// for the chat ends too, so the Granted list and the chat's next start agree with its
+    /// proxy. Where the chat's reach narrowed so, its browsers end, as they do when an Allow is
+    /// removed (#2013).
     pub fn keep_blocked_live(&self, session: u32, host: &purlis_core::sandbox::hosts::Host) {
-        if let Some(board) = self.board_of(session) {
-            board.keep_blocked(host);
+        let id = lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.chat.identity.id.clone());
+        let ended = id.is_some_and(|id| self.end_grants_of_host(&id, host));
+        let narrowed = match self.board_of(session) {
+            Some(board) => {
+                let before = board.allowed_live();
+                board.keep_blocked(host);
+                board.allowed_live() != before
+            }
+            None => false,
+        };
+        if ended || narrowed {
+            self.narrowed(&[session]);
         }
+    }
+
+    /// Takes back chat `id`'s grants of a host `host` covers, or that covers it: whether any
+    /// was taken back.
+    fn end_grants_of_host(&self, id: &str, host: &purlis_core::sandbox::hosts::Host) -> bool {
+        let mut grants = lock(&self.grants);
+        let Some(made) = grants.get_mut(id) else {
+            return false;
+        };
+        let before = made.len();
+        made.retain(|one| match &one.what {
+            purlis_core::sandbox::grant::What::Host(granted) => {
+                !host.covers(granted) && !granted.covers(host)
+            }
+            _ => true,
+        });
+        let ended = made.len() != before;
+        drop(grants);
+        if ended {
+            self.took_back(id);
+        }
+        ended
     }
 
     /// **Hands chat `session`'s next turn the person's answer to an Ask of its** (#1666,

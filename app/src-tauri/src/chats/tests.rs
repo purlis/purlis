@@ -8002,7 +8002,13 @@ impl purlis_core::sandbox::Board for Told {
         Vec::new()
     }
 
-    fn keep_blocked(&self, _: &purlis_core::sandbox::hosts::Host) {}
+    /// As a chat's board does: an Allow it covers, or that covers it, ends.
+    fn keep_blocked(&self, host: &purlis_core::sandbox::hosts::Host) {
+        lock(&self.allowed).retain(|(entry, _)| {
+            purlis_core::sandbox::hosts::Host::parse(entry)
+                .is_ok_and(|allowed| !host.covers(&allowed) && !allowed.covers(host))
+        });
+    }
 
     fn forget(
         &self,
@@ -8149,6 +8155,60 @@ fn a_one_chat_allow_forgotten_live_reaches_only_its_chat() {
     chats.forget_live(None, &host, Level::You);
     assert_eq!(hosts_of(&one.forgot), ["live.example.com"]);
     assert_eq!(hosts_of(&two.forgot), ["live.example.com"]);
+}
+
+/// #3407: **Keep blocked ends the chat's own Allow of the host**: the Allow kept for the chat
+/// goes, so its Granted list and its next start agree with its proxy, and its browsers end as
+/// they do when an Allow is removed. Another chat's is left as it is.
+#[test]
+fn keep_blocked_ends_the_chats_own_allow_of_the_host_and_its_browsers() {
+    use purlis_core::sandbox::grant::{Level, What};
+    let host = purlis_core::sandbox::grant::host("live.example.com").expect("a host");
+    let plane = a_sandboxed_plane();
+    let (chats, [one, two]) = two_chats_asking_live(plane.path());
+    chats.allow_live(Some(1), &host, Level::Chat);
+    chats.allow_live(Some(2), &host, Level::Chat);
+    chats
+        .hold_grant(1, What::Host(host.clone()), 1)
+        .expect("held");
+    chats
+        .hold_grant(2, What::Host(host.clone()), 1)
+        .expect("held");
+    let narrowed = Arc::new(Mutex::new(Vec::new()));
+    chats.tell_narrowed_to({
+        let narrowed = Arc::clone(&narrowed);
+        Arc::new(move |session| lock(&narrowed).push(session))
+    });
+
+    chats.keep_blocked_live(1, &host);
+
+    assert!(!chats.holds_for(1, &What::Host(host.clone())), "its own");
+    assert!(
+        chats.holds_for(2, &What::Host(host.clone())),
+        "not chat 2's"
+    );
+    assert!(hosts_of(&one.allowed).is_empty(), "its proxy's");
+    assert_eq!(hosts_of(&two.allowed), ["live.example.com"]);
+    assert_eq!(*lock(&narrowed), [1]);
+}
+
+/// #3407: Keep blocked of a host the chat was never allowed ends none of its browsers.
+#[test]
+fn keep_blocked_of_a_host_never_allowed_ends_no_browser() {
+    let plane = a_sandboxed_plane();
+    let (chats, _boards) = two_chats_asking_live(plane.path());
+    let narrowed = Arc::new(Mutex::new(Vec::new()));
+    chats.tell_narrowed_to({
+        let narrowed = Arc::clone(&narrowed);
+        Arc::new(move |session| lock(&narrowed).push(session))
+    });
+
+    chats.keep_blocked_live(
+        1,
+        &purlis_core::sandbox::grant::host("other.example.com").expect("a host"),
+    );
+
+    assert!(lock(&narrowed).is_empty());
 }
 
 /// #2629: **a host is never allowed once**, from a chat's Notice: the Allow is refused before
