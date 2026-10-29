@@ -116,9 +116,11 @@ describe("a skill's Grades tab (S6)", () => {
       within(limit).getByRole("button", { name: "Scorecard of the grade of 2026-10-22 09:00 UTC" }),
     );
     expect(onGrading).toHaveBeenLastCalledWith({ at: "scorecard", grade: "01B" }, "go");
-    expect(within(interrupted).getByRole("button", { name: /Scorecard of/ })).toHaveTextContent(
-      "What ran",
-    );
+    expect(
+      within(interrupted).getByRole("button", {
+        name: "What ran of the grade of 2026-10-20 08:00 UTC",
+      }),
+    ).toHaveTextContent("What ran");
   });
 
   it("explains trigger tests to a skill that has none, and offers no grading after each edit", async () => {

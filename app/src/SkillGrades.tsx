@@ -73,6 +73,11 @@ export function gradingCrumbTo(grading: GradingAt, crumb: string): GradingAt | u
     : undefined;
 }
 
+/** What a grade's row opens its scorecard by: what ran, for a grade that compared nothing. */
+function openSaid(row: GradeRow): string {
+  return row.outcome === "interrupted" ? "What ran" : "Scorecard";
+}
+
 /** What a grade spent, as its row says it. */
 function spentSaid(row: GradeRow): string {
   return row.spent.cost_usd === null ? "Not said" : dollarsSaid(row.spent.cost_usd);
@@ -274,12 +279,13 @@ export function GradesTab({
                     </Badge>
                   </TableCell>
                   <TableCell textValue="Scorecard">
+                    {/* Its name starts with the words it shows, so a voice user's words find it. */}
                     <Button
                       size="sm"
-                      aria-label={`Scorecard of the grade of ${row.graded}`}
+                      aria-label={`${openSaid(row)} of the grade of ${row.graded}`}
                       onPress={() => onGrading({ at: "scorecard", grade: row.grade }, "go")}
                     >
-                      {row.outcome === "interrupted" ? "What ran" : "Scorecard"}
+                      {openSaid(row)}
                     </Button>
                   </TableCell>
                 </TableRow>
