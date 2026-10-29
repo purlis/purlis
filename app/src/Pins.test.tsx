@@ -12,6 +12,7 @@ import {
   goToWorkspace,
   stripNamed,
   workspaceChips,
+  workspaceInFront,
   workspacesListed,
 } from "./test-strips";
 import { forgetInboxOpen, inboxOpenAtLaunch } from "./test-inbox";
@@ -524,8 +525,8 @@ describe("the title bar's pins (#2916)", () => {
   });
 
   it("pins a workspace made from the window, so it is a chip", async () => {
-    // You just made it in order to work in it (ADR 0054). The chat in front keeps you in
-    // alpha, so the new workspace is a chip only because it is pinned.
+    // You just made it in order to work in it (ADR 0054), so it is opened (#3648), past the
+    // chat in front in alpha, and pinned: alpha, unpinned and no longer in front, has no chip.
     core([chat(1, "one", "alpha")]);
     render(<App />);
     await waitFor(() => expect(workspaceNames()).toEqual(["alpha"]));
@@ -535,8 +536,9 @@ describe("the title bar's pins (#2916)", () => {
     await userEvent.type(within(dialog).getByLabelText("Name"), "delta");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
 
-    await waitFor(() => expect(workspaceNames()).toEqual(["delta", "alpha"]));
+    await waitFor(() => expect(workspaceNames()).toEqual(["delta"]));
     expect(pinChips()).toBe(1);
+    expect(workspaceInFront()).toBe("delta");
   });
 });
 

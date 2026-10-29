@@ -43,6 +43,8 @@ import { Notice, NoticeList } from "./Notice";
 import { ForgeSignInEnded } from "./ForgeSignInEnded";
 import { AddDockerPoolHost } from "./AddDockerPool";
 import { ActionResultNotice, ResultsGroup } from "./ActionResultNotice";
+import { placeOfSaid, useChipNotices } from "./ChipNotices";
+import { chipsOf } from "./noticePlace";
 import { dismissGone, GoneProjectNotice, settleGone, useGoneDismissed } from "./GoneProjectNotice";
 import { goneCause, goneKept, keepGoneDismissed, letGoneGo, settleGoneKept } from "./dismissals";
 import { askUpdate, tellSaved, useRepoSaving } from "./saving";
@@ -1272,6 +1274,26 @@ function App() {
   /** Every result said, kept for the Inbox's Notices under Results (#3344). */
   const { kept: keptResults, drop: dropResult } = useKeptResults(said, inFront);
   const resultsInFront = useMemo(() => resultsFor(keptResults, inFront), [keptResults, inFront]);
+  /** The title bar's chips of the project in front, which a notice about a workspace hangs from
+   *  (#3648, `noticePlace.ts`). */
+  const workspacesInFront = inFront === undefined ? undefined : reports[inFront]?.workspaces;
+  const chipsInFront = useMemo(
+    () =>
+      workspacesInFront === undefined
+        ? []
+        : chipsOf({ pins: workspacesInFront.pins, focused: workspacesInFront.focused }),
+    [workspacesInFront],
+  );
+  /** The notices hung from those chips: a view onto the kept results, so a dismissal in either
+   *  place is one (#3648). */
+  const chipNotices = useChipNotices({
+    said,
+    kept: keptResults,
+    plane: inFront,
+    chips: chipsInFront,
+    drop: dropResult,
+    onSettings: followSaid,
+  });
   const windowLines = useMemo(
     () => ({
       at: setInboxLinesAt,
@@ -2151,6 +2173,7 @@ function App() {
                   held={paletteOpen}
                   does={switchDoes}
                   menuOf={workspaceMenu}
+                  notices={chipNotices}
                 />
               )}
             </>
@@ -2214,14 +2237,20 @@ function App() {
           sentence behind the overlay. One state, two places it can be drawn — never two states.
           Closed, it stays closed until the next result; it is kept under Results in the Inbox's
           Notices either way. */}
-          {said && said !== closedSaid && !paletteOpen && (
-            <ActionResultNotice
-              cause={`result:${said.from}`}
-              said={said}
-              onClose={() => setClosedSaid(said)}
-              onSettings={followSaid}
-            />
-          )}
+          {/* A result about a workspace is never in the page's flow (#3648): it hangs from its
+          chip, or is listed in the Notices centre alone while it has none. A project's or the
+          app's result still stands here until the status bar's card takes it (#3653). */}
+          {said &&
+            said !== closedSaid &&
+            !paletteOpen &&
+            placeOfSaid(said, chipsInFront).at === "status" && (
+              <ActionResultNotice
+                cause={`result:${said.from}`}
+                said={said}
+                onClose={() => setClosedSaid(said)}
+                onSettings={followSaid}
+              />
+            )}
           {resultsAt !== null && inFront !== undefined && (
             <ResultsGroup
               kept={resultsInFront}
