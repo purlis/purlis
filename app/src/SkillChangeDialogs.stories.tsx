@@ -101,6 +101,8 @@ function Shown({ which }: { which: Which }) {
 const meta = {
   component: Shown,
   args: { which: "rename" },
+  // A dialog is drawn over the page, outside the story's frame: the page is pictured.
+  parameters: { screenshot: "page" },
   beforeEach: () => {
     mockIPC((cmd) => {
       if (cmd === "skill_users")
