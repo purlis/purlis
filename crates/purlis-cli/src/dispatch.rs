@@ -950,10 +950,11 @@ pub fn answer(to: u32, text: &str) -> Result<String, String> {
 /// `purlis dispatch note "<text>"`: a progress note to the chat that dispatched this one; with
 /// `ack`, the acknowledgement of that instruction of its (#3904), the text then optional.
 pub fn note(text: Option<&str>, ack: Option<u32>) -> Result<String, String> {
-    let text = match (text, ack) {
-        (Some(text), _) if ack.is_none() || !text.trim().is_empty() => message(text)?,
-        (_, Some(_)) => String::new(),
-        (None, None) => return Err(message("").expect_err("an empty message is refused")),
+    // With an acknowledgement, a note left out or empty sends nothing more.
+    let text = match text {
+        Some(text) if ack.is_none() || !text.trim().is_empty() => message(text)?,
+        _ if ack.is_some() => String::new(),
+        _ => message("")?,
     };
     let queued = Queued::Note {
         text: (!text.is_empty()).then(|| text.clone()),
